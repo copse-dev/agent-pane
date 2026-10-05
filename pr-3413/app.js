@@ -82311,7 +82311,7 @@ function visibleText(node2) {
     const elNode = node2;
     if (elNode.classList.contains("inline-paste-chip") || elNode.classList.contains("inline-thread-chip"))
       return CHIP_CHAR;
-    if (elNode.tagName === "BR") return "\n";
+    if (elNode.tagName === "BR") return elNode.hasAttribute("data-composer-tail") ? "" : "\n";
   }
   let out = "";
   for (const child of Array.from(node2.childNodes)) out += visibleText(child);
@@ -82410,6 +82410,7 @@ function mountComposerEditor() {
     return chip2;
   }
   function insertChip(chip2) {
+    root.querySelector("br[data-composer-tail]")?.remove();
     const selection2 = editor.isFocused() ? selectionInRoot() : null;
     if (selection2) {
       const range = selection2.getRangeAt(0);
@@ -82571,6 +82572,7 @@ function mountComposerEditor() {
       insertChip(makeThreadChip(id, state));
     },
     insertText(text2) {
+      root.querySelector("br[data-composer-tail]")?.remove();
       const node2 = document.createTextNode(text2);
       const sel = editor.isFocused() ? selectionInRoot() : null;
       if (sel) {
@@ -82583,6 +82585,11 @@ function mountComposerEditor() {
         sel.addRange(range);
       } else {
         root.append(node2);
+      }
+      if (visibleText(root).endsWith("\n")) {
+        const tail = document.createElement("br");
+        tail.setAttribute("data-composer-tail", "");
+        root.append(tail);
       }
       emitInput();
     },
@@ -85573,6 +85580,300 @@ var init_markdown_quote = __esm({
   }
 });
 
+// src/renderer/dom/selection-quote.ts
+function bindSelectionQuote(transcript, actions) {
+  const input2 = el("textarea", {
+    class: "transcript-selection-reply",
+    placeholder: "Reply\u2026",
+    "aria-label": "Reply to selected text",
+    rows: "2"
+  });
+  input2.setAttribute("aria-keyshortcuts", "Enter Meta+Enter Control+Enter");
+  const sendLabel = el("span", {}, "Send");
+  const sendButton = el(
+    "button",
+    {
+      class: "transcript-selection-send",
+      type: "button",
+      "aria-keyshortcuts": "Meta+Enter Control+Enter"
+    },
+    sendLabel
+  );
+  const status = el("div", { class: "transcript-selection-status", role: "status", hidden: true });
+  const popup = el(
+    "div",
+    {
+      class: "transcript-selection-quote",
+      hidden: true,
+      role: "group",
+      "aria-label": "Selection reply"
+    },
+    input2,
+    el("div", { class: "transcript-selection-actions" }, sendButton),
+    status
+  );
+  document.body.append(popup);
+  let selectedText = "";
+  let selectedRange = null;
+  const highlights = typeof CSS === "undefined" ? void 0 : CSS.highlights;
+  const highlight = typeof Highlight === "undefined" ? null : new Highlight();
+  let dragging = false;
+  let suppressed = false;
+  let sending = false;
+  let hadText = false;
+  let revision = 0;
+  let reservedSpace = false;
+  let scrollingTo = null;
+  const hasDraft = () => input2.value.length > 0 || sending;
+  const updateControls = () => {
+    input2.disabled = sending;
+    sendButton.disabled = sending || !input2.value.trim();
+    sendLabel.textContent = sending ? "Sending\u2026" : "Send";
+    hadText = input2.value.length > 0;
+  };
+  const dismiss = () => {
+    revision++;
+    popup.hidden = true;
+    selectedText = "";
+    selectedRange = null;
+    scrollingTo = null;
+    if (reservedSpace) {
+      transcript.style.removeProperty("--selection-reply-space");
+      reservedSpace = false;
+    }
+    if (highlight) {
+      if (highlights && highlights.get("transcript-reply-selection") === highlight) {
+        highlights.delete("transcript-reply-selection");
+      }
+      highlight.clear();
+    }
+    input2.value = "";
+    status.hidden = true;
+    status.textContent = "";
+    sending = false;
+    updateControls();
+  };
+  const selectionBounds = () => {
+    if (!selectedRange) return null;
+    const rects = [...selectedRange.getClientRects()].filter(
+      (rect) => rect.width > 0 && rect.height > 0
+    );
+    if (rects.length === 0) return null;
+    return {
+      top: Math.min(...rects.map((rect) => rect.top)),
+      bottom: Math.max(...rects.map((rect) => rect.bottom)),
+      left: Math.min(...rects.map((rect) => rect.left)),
+      right: Math.max(...rects.map((rect) => rect.right))
+    };
+  };
+  const position2 = () => {
+    let selection2 = selectionBounds();
+    const bounds = transcript.getBoundingClientRect();
+    if (!selection2 || selection2.bottom <= bounds.top || selection2.top >= bounds.bottom || selection2.right <= bounds.left || selection2.left >= bounds.right) {
+      if (hasDraft()) {
+        const size2 = popup.getBoundingClientRect();
+        const top2 = Number.parseFloat(popup.style.top) || bounds.top;
+        const left2 = Number.parseFloat(popup.style.left) || bounds.left;
+        const bottom = Math.min(bounds.bottom, window.innerHeight - 8);
+        popup.style.top = `${String(Math.max(8, Math.min(top2, bottom - size2.height)))}px`;
+        popup.style.left = `${String(Math.max(8, Math.min(left2, window.innerWidth - size2.width - 8)))}px`;
+      } else {
+        dismiss();
+      }
+      return;
+    }
+    popup.hidden = false;
+    const size = popup.getBoundingClientRect();
+    const gap = 8;
+    const visibleTop = Math.max(bounds.top, gap);
+    const visibleBottom = Math.min(bounds.bottom, window.innerHeight - gap);
+    let top = selection2.top - size.height - gap;
+    if (top < visibleTop) {
+      top = selection2.bottom + gap;
+      if (top + size.height > visibleBottom) {
+        transcript.style.setProperty(
+          "--selection-reply-space",
+          `${String(size.height + 2 * gap)}px`
+        );
+        reservedSpace = true;
+        const before = transcript.scrollTop;
+        transcript.scrollTop += Math.max(0, selection2.bottom + gap + size.height - visibleBottom);
+        if (transcript.scrollTop !== before) scrollingTo = transcript.scrollTop;
+        selection2 = selectionBounds();
+        if (!selection2) {
+          dismiss();
+          return;
+        }
+        top = selection2.bottom + gap;
+      }
+    }
+    const left = Math.max(
+      bounds.left + gap,
+      Math.min(selection2.left, bounds.right - size.width - gap)
+    );
+    popup.style.left = `${String(Math.max(gap, Math.min(left, window.innerWidth - size.width - gap)))}px`;
+    popup.style.top = `${String(top)}px`;
+  };
+  const refresh = () => {
+    if (hasDraft() || dragging || suppressed || popup.contains(document.activeElement)) return;
+    const selection2 = document.getSelection();
+    if (!transcript.isConnected || !selection2 || selection2.isCollapsed || selection2.rangeCount === 0 || !transcript.contains(selection2.anchorNode) || !transcript.contains(selection2.focusNode)) {
+      dismiss();
+      return;
+    }
+    const text2 = trimSelectionText(selection2.toString());
+    if (!text2) {
+      dismiss();
+      return;
+    }
+    if (text2 !== selectedText) {
+      input2.value = "";
+      status.hidden = true;
+      revision++;
+    }
+    const opening = popup.hidden;
+    selectedText = text2;
+    selectedRange = selection2.getRangeAt(0).cloneRange();
+    if (highlight && highlights) {
+      highlight.clear();
+      highlight.add(selectedRange);
+      highlights.set("transcript-reply-selection", highlight);
+    }
+    updateControls();
+    position2();
+    if (opening && !popup.hidden) input2.focus({ preventScroll: true });
+  };
+  const reposition = () => {
+    if (!popup.hidden) position2();
+  };
+  const addToPrompt = () => {
+    if (!selectedText || sending) return;
+    const text2 = selectedText;
+    const reply = input2.value.trim();
+    dismiss();
+    actions.quote(text2, reply);
+  };
+  const sendReply = async () => {
+    if (!selectedText || !input2.value.trim() || sending) return;
+    const ticket = revision;
+    sending = true;
+    status.hidden = true;
+    updateControls();
+    let handedOff = false;
+    try {
+      handedOff = await actions.send(selectedText, input2.value.trim());
+    } catch {
+    }
+    if (ticket !== revision) return;
+    sending = false;
+    if (handedOff) {
+      dismiss();
+    } else {
+      status.textContent = "Reply not sent. Try again or press Enter to add it to the prompt.";
+      status.hidden = false;
+      updateControls();
+      position2();
+    }
+  };
+  input2.addEventListener("input", () => {
+    if (hadText && input2.value.length === 0) {
+      suppressed = true;
+      dismiss();
+    } else {
+      updateControls();
+    }
+  });
+  input2.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing || event.shiftKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.metaKey || event.ctrlKey) void sendReply();
+    else addToPrompt();
+  });
+  sendButton.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
+  sendButton.addEventListener("click", () => void sendReply());
+  const onPointerDown = (event) => {
+    if (event.target instanceof Node && popup.contains(event.target)) return;
+    if (event.button === 2 && event.target instanceof Node && transcript.contains(event.target)) {
+      suppressed = true;
+      return;
+    }
+    dragging = event.button === 0;
+    if (dragging) suppressed = false;
+    if (!hasDraft()) dismiss();
+  };
+  const onPointerUp = (event) => {
+    if (event.button !== 0 || !dragging) return;
+    dragging = false;
+    refresh();
+  };
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") {
+      suppressed = true;
+      dismiss();
+    } else if (event.shiftKey && event.key.startsWith("Arrow")) {
+      suppressed = false;
+    }
+  };
+  const onContextMenu = () => {
+    const selection2 = document.getSelection();
+    if (selection2 && selectedRange && transcript.contains(selectedRange.startContainer) && transcript.contains(selectedRange.endContainer) && (selection2.isCollapsed || !transcript.contains(selection2.anchorNode) || !transcript.contains(selection2.focusNode))) {
+      selection2.removeAllRanges();
+      selection2.addRange(selectedRange.cloneRange());
+    }
+    if (hasDraft()) return;
+    suppressed = true;
+    dismiss();
+  };
+  const onPointerCancel = () => {
+    dragging = false;
+    if (!hasDraft()) dismiss();
+  };
+  const onScroll = (event) => {
+    if (event.target instanceof Node && popup.contains(event.target)) return;
+    if (event.target === transcript && scrollingTo !== null && Math.abs(transcript.scrollTop - scrollingTo) < 1) {
+      scrollingTo = null;
+      return;
+    }
+    if (hasDraft()) position2();
+    else dismiss();
+  };
+  document.addEventListener("selectionchange", refresh);
+  document.addEventListener("pointerdown", onPointerDown);
+  document.addEventListener("pointerup", onPointerUp);
+  document.addEventListener("pointercancel", onPointerCancel);
+  document.addEventListener("keydown", onKeyDown);
+  transcript.addEventListener("contextmenu", onContextMenu);
+  document.addEventListener("scroll", onScroll, true);
+  window.addEventListener("resize", reposition);
+  window.addEventListener("blur", onPointerCancel);
+  updateControls();
+  return {
+    dismiss,
+    destroy: () => {
+      dismiss();
+      popup.remove();
+      document.removeEventListener("selectionchange", refresh);
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onPointerCancel);
+      document.removeEventListener("keydown", onKeyDown);
+      transcript.removeEventListener("contextmenu", onContextMenu);
+      document.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("blur", onPointerCancel);
+    }
+  };
+}
+var init_selection_quote = __esm({
+  "src/renderer/dom/selection-quote.ts"() {
+    init_helpers();
+    init_markdown_quote();
+  }
+});
+
 // src/renderer/views/conversation.ts
 function interruptionCause(outcome, next) {
   if (next?.role !== "user" || next.origin !== void 0) return "user";
@@ -87313,6 +87614,10 @@ function mountConversation(root, store2, api2) {
     e3.stopPropagation();
     navigateToChange(store2, path);
   });
+  const selectionQuote = bindSelectionQuote(list, {
+    quote: quoteTranscriptSelection,
+    send: (text2, reply) => getPromptAttachmentHandlers()?.sendQuotedReply?.(text2, reply) ?? Promise.resolve(false)
+  });
   list.addEventListener("contextmenu", (e3) => {
     if (e3.defaultPrevented) return;
     const targetEl = e3.target instanceof Element ? e3.target : null;
@@ -88636,6 +88941,7 @@ function mountConversation(root, store2, api2) {
       lastScrollTop = 0;
     }
     disclosureElements.clear();
+    if (!rebuildingSameThread) selectionQuote.dismiss();
     disposeInlineArtefacts(list);
     avatarMotion.setActive(null);
     clear(list);
@@ -88963,6 +89269,7 @@ function mountConversation(root, store2, api2) {
   reviewerInput.sync();
   return () => {
     disposed = true;
+    selectionQuote.destroy();
     avatarMotion.dispose();
     backfillGeneration++;
     listResizeObserver?.disconnect();
@@ -88990,10 +89297,10 @@ function mountConversation(root, store2, api2) {
 function messageContentById(store2, msgId) {
   return store2.getState().threads.flatMap((t2) => t2.messages).find((m2) => m2.id === msgId)?.content;
 }
-function quoteTranscriptSelection(text2) {
+function quoteTranscriptSelection(text2, reply) {
   const handlers3 = getPromptAttachmentHandlers();
   if (!handlers3) return;
-  handlers3.quoteText(text2);
+  handlers3.quoteText(text2, reply);
   handlers3.focusComposer?.();
 }
 async function addTranscriptSelectionToRoadmap(api2, text2) {
@@ -89097,6 +89404,7 @@ var init_conversation = __esm({
     init_conversation_search();
     init_thread_history_editor();
     init_markdown_quote();
+    init_selection_quote();
     init_ipc_error_message();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
     markedTranscripts = /* @__PURE__ */ new WeakSet();
@@ -105993,14 +106301,24 @@ ${description}
     // Unlike attachTextBlock, a quote lands as literal editable text so the
     // user can trim or edit it inline before sending, matching how a reply
     // quote behaves everywhere else.
-    quoteText: (content) => {
+    quoteText: (content, reply = "") => {
       const quote = formatMarkdownQuote(content);
       const caret = composer.selectionStart;
       const prevChar = caret > 0 ? composer.value[caret - 1] : void 0;
       const needsLeadingBreak = prevChar !== void 0 && prevChar !== "\n";
       composer.insertText(`${needsLeadingBreak ? "\n\n" : ""}${quote}
 
-`);
+${reply}`);
+      const quoteEnd = composer.selectionStart;
+      composer.focus();
+      composer.setSelectionRange(quoteEnd, quoteEnd);
+      composer.el.scrollTop = composer.el.scrollHeight;
+    },
+    sendQuotedReply: async (content, reply) => {
+      if (!getActiveThreadId() || imageDescriptionInProgress) return false;
+      attachmentHandlers.quoteText(content, reply);
+      await submit();
+      return true;
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
