@@ -16152,13 +16152,13 @@ dialog.activity-panel-overlay {
 .roadmap-filter {
   display: flex;
   flex: 1;
-  min-width: 120px;
+  min-width: min(200px, 100%);
   max-width: 320px;
   gap: 4px;
 }
 .roadmap-search-input {
   flex: 1;
-  min-width: 80px;
+  min-width: 0;
 }
 .roadmap-filter-toggle {
   flex: none;
