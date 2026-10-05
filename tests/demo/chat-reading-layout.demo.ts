@@ -208,10 +208,12 @@ describe('assistant Reading layout in the real renderer', () => {
       if (!card || !prose) throw new Error('Missing prose alongside the tool')
       return {
         proseSize: getComputedStyle(prose).fontSize,
+        proseLineHeight: getComputedStyle(prose).lineHeight,
         toolSize: getComputedStyle(card).fontSize,
       }
     })
-    expect(mixed.proseSize).toBe('16px')
+    expect(mixed.proseSize).toBe('15px')
+    expect(mixed.proseLineHeight).toBe('24px')
     expect(parseFloat(mixed.toolSize)).toBeLessThan(16)
     await saveAppScreenshot('chat-reading-layout-streaming.png')
     await browser.waitUntil(async () => (await $$(liveProse).length) === 0, {
