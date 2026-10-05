@@ -28,6 +28,7 @@ import {
   getThreadById,
   markThreadUnread,
   applyPreparedThreadCheckout,
+  patchThreadAnywhere,
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
 import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
@@ -434,6 +435,16 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           model: chunk.model,
           ...(chunk.requestedModel !== undefined ? { requestedModel: chunk.requestedModel } : {}),
         })
+        // Publish the route before the first bubble exists. Footer chrome reads
+        // thread state, and a previous turn's persisted resolution may be stale.
+        if (
+          patchThreadAnywhere(store, threadId, (thread) => ({
+            ...thread,
+            resolvedModel: chunk.model,
+          }))
+        ) {
+          store.emit('thread_model_resolved', threadId)
+        }
         break
       }
       case 'usage': {
