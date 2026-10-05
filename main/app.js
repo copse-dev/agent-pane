@@ -56781,6 +56781,7 @@ function applyPreparedThreadCheckout(store2, threadId, prepared) {
     worktreeChoice: prepared.choice,
     ...prepared.branch ? { gitBranch: prepared.branch } : {},
     ...prepared.worktree ? { worktree: prepared.worktree } : {},
+    ...prepared.deferredWorktree ? { deferredWorktree: prepared.deferredWorktree } : {},
     updatedAt: Date.now()
   }));
   if (!applied) return;
@@ -56964,7 +56965,7 @@ async function loadProjects(api2) {
     if (typeof value["missing"] === "boolean") project2.missing = value["missing"];
     if (typeof value["groupId"] === "string") project2.groupId = value["groupId"];
     const worktreeMode = value["worktreeMode"];
-    if (worktreeMode === "never" || worktreeMode === "always") {
+    if (worktreeMode === "never" || worktreeMode === "always" || worktreeMode === "on-write") {
       project2.worktreeMode = worktreeMode;
     } else if (worktreeMode === "from-default-branch") {
       project2.worktreeMode = "always";
@@ -57726,7 +57727,10 @@ var init_tool_display = __esm({
       prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" },
       coordination_check: { running: "Checking overlapping work", done: "Checked overlapping work" },
       coordination_note: { running: "Sending peer note", done: "Sent peer note" },
-      coordination_read: { running: "Reading peer notes", done: "Read peer notes" }
+      coordination_read: { running: "Reading peer notes", done: "Read peer notes" },
+      // Deliberately ungrouped: the switch from reading the user's checkout to the
+      // thread's own worktree should stand out in the transcript.
+      request_write_access: { running: "Creating worktree", done: "Created worktree" }
     };
     TOOL_GROUPS = {
       reading: {
@@ -61338,6 +61342,20 @@ function mountSettingsDialog(store2, api2) {
             </fieldset>
 
             <fieldset>
+              <legend>Deferred worktrees</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="deferredWorktreesEnabled" />
+                Create a worktree only when the agent needs to write
+              </label>
+              <p class="field-hint">
+                Applies across Copse to new threads using automatic checkout. Eligible agents
+                start by reading your checkout without changing it, then get an isolated worktree
+                before writing. Explicit worktree choices and ACP agents still create one up front.
+                Projects with worktrees disabled and existing threads keep their checkout behavior.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="containerRunsEnabled" />
@@ -63941,6 +63959,7 @@ var init_settings_dialog = __esm({
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
       { name: "conciseThreadsEnabled", kind: "checkbox", default: false, save: true },
+      { name: "deferredWorktreesEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true },
@@ -106528,7 +106547,7 @@ ${description}
     const prefetchedPromptState = prefetchedGitState?.[1];
     let preparedPromptState;
     const threadBranch = thread.gitBranch;
-    const isolatedWorktree = thread.worktree !== void 0;
+    const isolatedWorktree = thread.worktree !== void 0 || thread.deferredWorktree !== void 0;
     if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })) {
       if (getActiveThreadId() === id) showBranchMismatch(threadBranch);
       return;
@@ -145045,6 +145064,10 @@ function startAgentController(store2, api2) {
       case "todo_update": {
         setThreadTodos(store2, threadId, chunk.todos);
         activity(threadId);
+        break;
+      }
+      case "thread_checkout": {
+        applyPreparedThreadCheckout(store2, threadId, chunk.prepared);
         break;
       }
       case "panel_update": {
