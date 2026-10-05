@@ -83,6 +83,18 @@ repository identity, and base commit, and the per-worktree Git directory must co
 recovery marker. The persisted branch identity is retained while HEAD is detached. An unrelated
 detached checkout remains blocked. The footer offers recovery continuation after the agent turn ends.
 
+### Deferred-worktree threads (prototype)
+
+In an `on-write` project a thread's first turns read the user's own checkout before it has a
+worktree (see [`plans/deferred-thread-worktrees.md`](plans/deferred-thread-worktrees.md)). While
+deferred, a contained `run_shell` command runs in the ordinary profile with every write at or under
+the checkout removed; reads, the workspace tmp dir, agent scratch, and the no-network policy are
+unchanged. There is no unsandboxed route in that state: a command the platform matrix would run
+outside the sandbox (hard-external, trusted-routed, or `expects_sandbox_block`), or any command when
+no sandbox is active, first allocates the thread's worktree and then follows the matrix above
+there. The reactive unsandboxed retry and denial-cache escalation are not offered, and the spawn
+layer refuses an unsandboxed read-only request outright.
+
 ## Apple development operations
 
 Apple Development uses actor-specific consent. Clicking Load targets, Build, Test, Run, or Cancel
@@ -551,7 +563,9 @@ Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, an
 `TMPPREFIX` into the existing workspace scratch directory. zsh uses `TMPPREFIX` for large
 heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks patch commands even
 when every destination file is inside the workspace. This redirect does not widen the sandbox's
-writable roots or change the approval policy.
+writable roots or change the approval policy. When `COPSE_DIR` is reached through a symlink,
+Copse canonicalizes the scratch directory before setting `$TMPDIR`; macOS seatbelt otherwise
+rejects traversal through the home-directory link before its target allow can apply.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp
 directory returned by `getconf DARWIN_USER_TEMP_DIR` (typically `/var/folders/…/T`). Apple

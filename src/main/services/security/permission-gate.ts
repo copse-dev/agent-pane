@@ -1902,6 +1902,7 @@ function recordExplicitToolPolicy(
 export async function ensureToolPermitted(
   check: PermissionCheck,
   signal?: AbortSignal,
+  afterHooks?: (effectiveArgs: unknown) => Promise<void>,
 ): Promise<boolean> {
   const initialOverride = resolveToolPermission(check.toolName)
   if (initialOverride) recordExplicitToolPolicy(check.toolName, initialOverride)
@@ -1928,6 +1929,13 @@ export async function ensureToolPermitted(
     })
     if (blocked) return false
   }
+
+  // Some host preparation needs the hook-rewritten input but must not happen
+  // when a blocking toolGate hook denies, asks and is declined, or halts the
+  // run. Deferred-worktree allocation is one such side effect. Run it after
+  // hooks and the read-only gate, but before host permission policy so that
+  // approval keys and routing observe the execution root the tool will use.
+  await afterHooks?.(check.args)
 
   const explicitPolicy =
     initialOverride?.policy === 'allow' || initialOverride?.policy === 'ask'

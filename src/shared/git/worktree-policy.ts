@@ -1,4 +1,9 @@
-import type { ProjectWorktreeMode, ThreadWorktreeChoice } from '@shared/types/worktree.ts'
+import type {
+  ProjectWorktreeMode,
+  ThreadDeferredWorktree,
+  ThreadWorktree,
+  ThreadWorktreeChoice,
+} from '@shared/types/worktree.ts'
 
 /**
  * Threads are isolated unless a project opts out. Every caller that resolves a
@@ -19,6 +24,7 @@ export type WorktreePolicyReason =
 export interface WorktreePolicyInput {
   choice?: ThreadWorktreeChoice
   projectMode?: ProjectWorktreeMode
+  deferredWorktreesEnabled?: boolean
   isLocal: boolean
   isGitRepository: boolean
   currentBranch: string | null
@@ -32,6 +38,12 @@ export type WorktreePolicyDecision =
       checkoutMode: 'worktree'
       reason: 'explicit-worktree' | 'project-always'
       seededFromDirtyProject: boolean
+      /**
+       * Allocate at the first write rather than before the first message
+       * (the global opt-in or `on-write` projects). Only an automatic choice defers: a user who
+       * explicitly picked a worktree gets one up front.
+       */
+      deferAllocation: boolean
     }
   | {
       checkoutMode: 'shared'
@@ -115,6 +127,7 @@ export function decideThreadWorktreePolicy(input: WorktreePolicyInput): Worktree
       checkoutMode: 'worktree',
       reason: 'explicit-worktree',
       seededFromDirtyProject: canSeedFromDirtyProject(input),
+      deferAllocation: false,
     }
   }
 
@@ -125,6 +138,7 @@ export function decideThreadWorktreePolicy(input: WorktreePolicyInput): Worktree
     checkoutMode: 'worktree',
     reason: 'project-always',
     seededFromDirtyProject: canSeedFromDirtyProject(input),
+    deferAllocation: projectMode === 'on-write' || input.deferredWorktreesEnabled === true,
   }
 }
 
@@ -161,4 +175,16 @@ export function isInitialThreadWorktreeBranchName(branch: string, threadId: stri
     if (branch === initialThreadWorktreeBranchName(threadId, collision)) return true
   }
   return false
+}
+
+/**
+ * Whether a thread is still waiting for its deferred worktree. A thread keeps
+ * `deferredWorktree` as a record after allocating, so the checkout itself is
+ * what ends the wait — the same order the execution context resolves in.
+ */
+export function isWorktreeDeferralPending(thread: {
+  readonly deferredWorktree?: ThreadDeferredWorktree | undefined
+  readonly worktree?: ThreadWorktree | undefined
+}): boolean {
+  return thread.deferredWorktree !== undefined && thread.worktree === undefined
 }

@@ -2,8 +2,11 @@ import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { StreamChunk, Thread } from '@shared/types'
 import { agentErrorNotice, classifyAgentError } from './agent-errors.ts'
 import { getThreadMeta, updateMeta } from './thread-store.ts'
-import { getProjectRoot } from './workspace.ts'
+import { getProjectRoot, setExecutionRootAliasLookup } from './workspace.ts'
 import {
+  clearUpgradedThreadExecutionContext,
+  currentThreadExecutionContext,
+  setUpgradedThreadExecutionContext,
   threadExecutionContextStorage,
   type ThreadCheckoutMode,
   type ThreadExecutionContext,
@@ -20,7 +23,7 @@ import {
   type ValidatedThreadWorktreeRecovery,
 } from './worktree-manager.ts'
 import { startExecutionRootIndexing } from './search/workspace-indexing.ts'
-import type { ThreadWorktree } from '@shared/types/worktree.ts'
+import type { ThreadDeferredWorktree, ThreadWorktree } from '@shared/types/worktree.ts'
 import type { ThreadWorktreeAttachment, ThreadWorktreeReattachResult } from '@shared/types/git.ts'
 
 async function syncAdoptedWorktreeBranch(
@@ -45,6 +48,7 @@ export interface ThreadExecutionContextDependencies {
     readonly gitBranch?: string
     readonly worktree?: ThreadWorktree
     readonly automation?: NonNullable<Thread['automation']>
+    readonly deferredWorktree?: ThreadDeferredWorktree
   } | null>
   validateWorktree?: (input: {
     projectId: string
@@ -267,6 +271,7 @@ async function resolveThreadExecutionContextUncached(
     checkoutMode: 'shared',
     branch: threadMeta.gitBranch ?? null,
     ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
+    ...(threadMeta.deferredWorktree ? { deferredWorktree: threadMeta.deferredWorktree } : {}),
   })
 }
 
@@ -299,12 +304,43 @@ export function runWithThreadExecutionContext<T>(context: ThreadExecutionContext
   return storage.run(context, fn)
 }
 
+/** Move every deferred context bound for this thread onto its new worktree. */
+export function adoptUpgradedThreadExecutionContext(context: ThreadExecutionContext): void {
+  if (context.checkoutMode !== 'worktree') {
+    throw new Error('An upgraded execution context must own a worktree')
+  }
+  setUpgradedThreadExecutionContext(context)
+}
+
+/** Drop the upgrade once the turn that performed it has finished. */
+export function releaseUpgradedThreadExecutionContext(owner: ThreadExecutionOwner): void {
+  clearUpgradedThreadExecutionContext(owner)
+}
+
+function currentContext(): ThreadExecutionContext | undefined {
+  return currentThreadExecutionContext() ?? undefined
+}
+
 export function getThreadExecutionContext(): ThreadExecutionContext | null {
-  return storage.getStore() ?? null
+  return currentContext() ?? null
+}
+
+// File tools in a worktree turn read an absolute path into the project checkout
+// as the same file in the worktree (see `resolvePathWithinRoot`). Scoped to the
+// turn's own root, so renderer IPC and any other explicit root are unaffected.
+setExecutionRootAliasLookup((root) => {
+  const context = currentContext()
+  if (context?.checkoutMode !== 'worktree' || context.root !== root) return null
+  return context.projectRoot
+})
+
+/** True while the active turn is a read-only view awaiting its first write. */
+export function isThreadCheckoutDeferred(): boolean {
+  return currentContext()?.deferredWorktree !== undefined
 }
 
 export function requireThreadExecutionContext(): ThreadExecutionContext {
-  const context = storage.getStore()
+  const context = currentContext()
   if (!context) throw new Error('No thread execution context is active')
   return context
 }
@@ -320,7 +356,7 @@ export function requireThreadExecutionContext(): ThreadExecutionContext {
  * around every bridged call (#1439), so this resolves on that chain too.
  */
 export function requireThreadExecutionOwner(): ThreadExecutionOwner {
-  const context = storage.getStore()
+  const context = currentContext()
   if (context) return { projectId: context.projectId, threadId: context.threadId }
   throw new Error('No thread execution context is active')
 }

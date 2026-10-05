@@ -21,7 +21,7 @@ import { expectRecord } from '@shared/unknown-value.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 import { describeToolArgError } from './tool-arg-error.ts'
 import { clampNumericRangeArgs, describeClampRepair } from './tool-arg-repair.ts'
-import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { getThreadExecutionContext, isThreadCheckoutDeferred } from './thread-execution-context.ts'
 import { isActiveSshWorkspace } from './ssh-workspace/execution-target.ts'
 import { isExecutionRootWatched, watchExecutionRootSoon } from './search/execution-root-watcher.ts'
 import {
@@ -32,7 +32,12 @@ import {
   type ToolCacheIdentity,
 } from './search/tool-result-cache.ts'
 
-type PermissionGateFn = (check: PermissionCheck, signal?: AbortSignal) => Promise<boolean>
+type BeforePermissionPolicy = (effectiveArgs: unknown) => Promise<void>
+type PermissionGateFn = (
+  check: PermissionCheck,
+  signal?: AbortSignal,
+  beforePolicy?: BeforePermissionPolicy,
+) => Promise<boolean>
 
 interface RegisteredTool {
   name: string
@@ -50,16 +55,33 @@ export interface ToolCatalogDescriptor {
   description: string
 }
 
+type DeferredCheckoutModule = typeof import('./deferred-worktree.ts')
+let deferredCheckoutModule: DeferredCheckoutModule | null = null
+
+/** Loaded on first use, like the permission gate: most turns never defer. */
+async function loadDeferredCheckout(): Promise<DeferredCheckoutModule> {
+  deferredCheckoutModule ??= await import('./deferred-worktree.ts')
+  return deferredCheckoutModule
+}
+
 let permissionGateOverride: PermissionGateFn | null = null
 let permissionGateDefault: PermissionGateFn | null = null
 
-async function ensurePermitted(check: PermissionCheck, signal: AbortSignal): Promise<boolean> {
-  if (permissionGateOverride) return permissionGateOverride(check, signal)
+async function ensurePermitted(
+  check: PermissionCheck,
+  signal: AbortSignal,
+  beforePolicy?: BeforePermissionPolicy,
+): Promise<boolean> {
+  if (permissionGateOverride) {
+    const permitted = await permissionGateOverride(check, signal)
+    if (permitted) await beforePolicy?.(check.args)
+    return permitted
+  }
   if (!permissionGateDefault) {
     const mod = await import('./security/permission-gate.ts')
     permissionGateDefault = mod.ensureToolPermitted
   }
-  return permissionGateDefault(check, signal)
+  return permissionGateDefault(check, signal, beforePolicy)
 }
 
 /** Test hook — bypasses the real permission gate (and its Electron deps). */
@@ -214,16 +236,42 @@ export class ToolRegistry {
         throw described ? new Error(described) : err
       }
     }
+    const parsedFieldsBeforeGate = isRecord(parsed) ? new Map(Object.entries(parsed)) : null
     const mcpAnnotations = name.startsWith('mcp__') ? getMcpToolMeta(name)?.annotations : undefined
     if (isAgentRunReadonly()) {
       const blockReason = getReadonlyToolBlockReason(name, { mcpAnnotations })
       if (blockReason) return blockReason
     }
     // The check is passed by reference so the gate can stamp back a hook's
-    // current-turn injected context (H2) — read off the same object after.
+    // rewritten input (H1) and current-turn injected context (H2). Deferred
+    // checkout preparation runs at the gate's post-hook seam: a blocking hook
+    // can refuse without creating a branch, while allocation still precedes
+    // host policy so approval keys and routing see the root the tool will use.
     const check: PermissionCheck = { toolName: name, args: parsed }
-    const permitted = await ensurePermitted(check, signal)
+    const checkoutNotes: string[] = []
+    const permitted = await ensurePermitted(check, signal, async (effectiveArgs) => {
+      if (!isThreadCheckoutDeferred()) return
+      const checkoutNote = await (
+        await loadDeferredCheckout()
+      ).prepareCheckoutForTool(name, effectiveArgs, mcpAnnotations)
+      if (checkoutNote !== null) checkoutNotes.push(checkoutNote)
+    })
     if (!permitted) return `User rejected the ${name} tool call.`
+
+    // The registered wrapper parses once more immediately before execution so
+    // schema transforms apply exactly once to the value the tool receives. Feed
+    // it only fields the gate changed or added, on top of the repaired raw
+    // input; copying every already-parsed field would transform unchanged ones
+    // twice. Hook rewrites are shallow top-level merges by contract (H1).
+    if (isRecord(executeArgs) && isRecord(check.args) && parsedFieldsBeforeGate) {
+      const rewrittenFields = Object.entries(check.args).filter(
+        ([key, value]) =>
+          !parsedFieldsBeforeGate.has(key) || !Object.is(parsedFieldsBeforeGate.get(key), value),
+      )
+      if (rewrittenFields.length > 0) {
+        executeArgs = { ...executeArgs, ...Object.fromEntries(rewrittenFields) }
+      }
+    }
 
     // Search caching is scoped to a thread's fixed execution root, so it needs
     // the trusted per-turn context — never the renderer-selected workspace.
@@ -234,7 +282,7 @@ export class ToolRegistry {
       ? { threadId: context.threadId, root: context.root, branch: context.branch }
       : null
     const cacheable = identity !== null && CACHEABLE_TOOLS.has(name)
-    const cached = cacheable ? getCachedToolResult(identity, name, parsed) : undefined
+    const cached = cacheable ? getCachedToolResult(identity, name, check.args) : undefined
     let result: ToolExecuteResult
     if (cached !== undefined) {
       result = cached
@@ -254,7 +302,7 @@ export class ToolRegistry {
         // checkout synchronously, so it happens after this call returns rather
         // than inside it; this result goes uncached until then.
         if (isExecutionRootWatched(identity.root)) {
-          setCachedToolResult(identity, name, parsed, result)
+          setCachedToolResult(identity, name, check.args, result)
         } else {
           watchExecutionRootSoon(identity.root)
         }
@@ -276,7 +324,10 @@ export class ToolRegistry {
     // result so the model reads it right after the tool output. The numeric-
     // range repair's clamp note rides the same channel: it is Copse-authored
     // context about the call, not tool output, and the model must read it.
+    // A worktree this call allocated is announced on the same channel, first:
+    // the model must learn its root moved from the first result produced there.
     const reminders = [
+      ...checkoutNotes.map(formatSystemReminder),
       ...(clampedNotes.length > 0 ? [formatSystemReminder(describeClampRepair(clampedNotes))] : []),
       ...(check.injectContext !== undefined && check.injectContext.length > 0
         ? [check.injectContext]
