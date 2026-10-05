@@ -75,4 +75,6 @@
 // agent chunk.
 // v46 versions the removal of `activeRunThreadIds` from the process-manager snapshot.
 // v47 conservatively versions optional PR/commit production evidence on thread payloads.
-export const API_PROTOCOL_VERSION = 47 as const
+// v48 adds `threads:backlinks`, and versions the optional `sideChat` link and the
+// recorded `links` on thread payloads.
+export const API_PROTOCOL_VERSION = 48 as const

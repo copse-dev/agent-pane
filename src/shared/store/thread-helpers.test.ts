@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createStore } from './store.ts'
 import {
   archiveThread,
+  restoreThread,
   createThread,
   deleteThread,
   openNewThread,
@@ -24,6 +25,7 @@ import {
   setThreadTitle,
 } from './thread-helpers.ts'
 import type { AppStore } from './store.ts'
+import { buildSideChatThread } from '@shared/threads/side-chat.ts'
 import type { Thread } from '@shared/types'
 import { resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 
@@ -839,7 +841,122 @@ describe('archiveThread', () => {
     archiveThread(store, first)
     assert.equal(getThreadById(store, first)?.archivedAt, stamped)
   })
+
+  describe('side chats', () => {
+    function withSideChat(store: AppStore, parentId: string): string {
+      const parent = getThreadById(store, parentId)
+      const anchor = parent?.messages[0]
+      assert.ok(parent && anchor)
+      const side = buildSideChatThread(parent, { anchorMessageId: anchor.id })
+      assert.ok(side)
+      store.setState({ threads: [side, ...store.getState().threads] })
+      return side.id
+    }
+
+    it('archives a thread together with its side chats', () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      const second = createThread(store)
+      addMessage(store, second, 'user', 'second')
+      const side = withSideChat(store, first)
+
+      archiveThread(store, first)
+
+      assert.equal(isThreadArchived(getThreadById(store, side) ?? failMissing()), true)
+      assert.equal(store.getState().activeThreadId, second)
+    })
+
+    it('returns focus to the parent when the active side chat is archived, leaving the parent alone', () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      const second = createThread(store)
+      addMessage(store, second, 'user', 'second')
+      const side = withSideChat(store, first)
+      store.setState({ activeThreadId: side })
+
+      archiveThread(store, side)
+
+      assert.equal(store.getState().activeThreadId, first)
+      assert.equal(isThreadArchived(getThreadById(store, first) ?? failMissing()), false)
+      assert.equal(isThreadArchived(getThreadById(store, side) ?? failMissing()), true)
+    })
+
+    it('deleting a thread deletes its side chats, and a deleted side chat returns to its parent', () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      const second = createThread(store)
+      addMessage(store, second, 'user', 'second')
+      const side = withSideChat(store, first)
+      const sibling = withSideChat(store, first)
+      store.setState({ activeThreadId: side })
+
+      deleteThread(store, side)
+      assert.equal(getThreadById(store, side), undefined)
+      assert.equal(store.getState().activeThreadId, first)
+      assert.ok(getThreadById(store, sibling))
+
+      deleteThread(store, first)
+      assert.equal(getThreadById(store, first), undefined)
+      assert.equal(getThreadById(store, sibling), undefined)
+      assert.equal(store.getState().activeThreadId, second)
+    })
+
+    it('never prunes an empty side chat as a blank thread when switching away', () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      const second = createThread(store)
+      addMessage(store, second, 'user', 'second')
+      const side = withSideChat(store, first)
+      assert.equal(isBlankThread(getThreadById(store, side) ?? failMissing()), false)
+      store.setState({ activeThreadId: side })
+
+      switchThread(store, second)
+      normalizeBlankThreads(store)
+
+      assert.ok(getThreadById(store, side))
+    })
+
+    it('restores an archived side chat without touching its parent', () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      const second = createThread(store)
+      addMessage(store, second, 'user', 'second')
+      const side = withSideChat(store, first)
+      archiveThread(store, side)
+      assert.equal(isThreadArchived(getThreadById(store, side) ?? failMissing()), true)
+
+      restoreThread(store, side)
+
+      const restored = getThreadById(store, side) ?? failMissing()
+      assert.equal(isThreadArchived(restored), false)
+      assert.equal('archivedAt' in restored, false)
+      assert.equal(restored.sideChat?.parentThreadId, first)
+    })
+
+    it('does not count side chats as visible threads when the last real thread is archived', () => {
+      const store = createStore()
+      const only = createThread(store)
+      addMessage(store, only, 'user', 'solo')
+      withSideChat(store, only)
+
+      archiveThread(store, only)
+
+      const active = getActiveThread(store)
+      assert.ok(active)
+      assert.equal(isBlankThread(active), true)
+      assert.equal(active.sideChat, undefined)
+    })
+  })
 })
+
+function failMissing(): never {
+  throw new Error('thread missing from store')
+}
 
 describe('per-chunk streaming updates mutate in place, independent of loaded history (#1155/#1255)', () => {
   // Two non-blank threads, each with a streaming assistant message. addMessage

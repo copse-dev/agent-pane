@@ -203,7 +203,11 @@ export class SqliteThreadIndex {
     })
   }
 
-  #upsert(thread: Thread): void {
+  /**
+   * `fresh` means no row for this thread can exist yet (a rebuild just emptied the
+   * tables), so the side-chat and link rows need no clearing first.
+   */
+  #upsert(thread: Thread, fresh = false): void {
     const { messages: _messages, messagesLoaded, ...meta } = thread
     this.#putThread.run(
       thread.id,
@@ -213,8 +217,10 @@ export class SqliteThreadIndex {
     )
     this.#db.prepare('DELETE FROM pr_links WHERE thread_id=?').run(thread.id)
     this.#db.prepare('DELETE FROM commit_links WHERE thread_id=?').run(thread.id)
-    this.#db.prepare('DELETE FROM side_chats WHERE thread_id=?').run(thread.id)
-    this.#db.prepare('DELETE FROM links WHERE thread_id=?').run(thread.id)
+    if (!fresh) {
+      this.#db.prepare('DELETE FROM side_chats WHERE thread_id=?').run(thread.id)
+      this.#db.prepare('DELETE FROM links WHERE thread_id=?').run(thread.id)
+    }
     // Archived side chats stay listed (archived, not deleted); only PR/commit/link
     // claims are withheld from archived threads.
     if (thread.sideChat) this.#putSideChat.run(thread.id, thread.sideChat.parentThreadId)
@@ -256,8 +262,13 @@ export class SqliteThreadIndex {
     this.#db.exec('BEGIN IMMEDIATE')
     try {
       this.#db.exec('DELETE FROM threads; DELETE FROM pending;')
+      const seen = new Set<string>()
       for (let start = 0; start < threads.length; start += BATCH_SIZE) {
-        for (const thread of threads.slice(start, start + BATCH_SIZE)) this.#upsert(thread)
+        for (const thread of threads.slice(start, start + BATCH_SIZE)) {
+          // A repeated id is an update of the row just written, not a fresh insert.
+          this.#upsert(thread, !seen.has(thread.id))
+          seen.add(thread.id)
+        }
         await setImmediate()
       }
       this.#db.exec('UPDATE state SET ready=1 WHERE id=1; COMMIT')

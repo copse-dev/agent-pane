@@ -1,4 +1,5 @@
 import { openAppRunDialog } from './app-run-dialog.ts'
+import { withoutSideChats } from '@shared/threads/side-chat.ts'
 import { el, clear } from '../dom/helpers.ts'
 import {
   contextMenuClosedByPressOn,
@@ -45,6 +46,7 @@ import {
   addRemoteProject,
   createNewProject,
   getSidebarThreads,
+  getSideChatUnreadParents,
   isProjectSwitchInFlight,
   dismissOrphanProject,
   listOrphanProjects,
@@ -1487,13 +1489,20 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (thread.status === 'running') {
         chatRow.classList.add('is-running')
         chatRow.insertBefore(runningStatus('Agent is working'), title)
-      } else if (thread.unreadAt !== undefined && thread.id !== activeId) {
+      } else if (
+        (thread.unreadAt !== undefined ||
+          getSideChatUnreadParents(store, project.id).has(thread.id)) &&
+        thread.id !== activeId
+      ) {
         chatRow.classList.add('is-unread')
         chatRow.insertBefore(
           el('span', {
             class: 'chat-unread-dot',
             role: 'img',
-            'aria-label': 'Unread agent completion',
+            'aria-label':
+              thread.unreadAt !== undefined
+                ? 'Unread agent completion'
+                : 'Unread reply in a side chat',
           }),
           title,
         )
@@ -1991,7 +2000,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
       const isFiltering = threadFilter.length > 0 && project.id === activeProjectId
       const sidebarThreads = isFiltering
-        ? sortThreadsNewestFirst(store.getState().threads).filter(
+        ? withoutSideChats(sortThreadsNewestFirst(store.getState().threads)).filter(
             (thread) => thread.archivedAt == null,
           )
         : getSidebarThreads(store, project.id)

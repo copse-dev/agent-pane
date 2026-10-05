@@ -48,8 +48,9 @@ describe('side chats', () => {
 
   it('inherits the parent model when none is chosen and titles from the anchor', () => {
     const side = buildSideChatThread(parent, { anchorMessageId: 'm1' })
-    assert.equal(side?.model, 'acp:claude-acp#sonnet')
-    assert.equal(side?.title, 'Why does the mermaid spec flake?')
+    assert.ok(side)
+    assert.equal(side.model, 'acp:claude-acp#sonnet')
+    assert.equal(side.title, 'Why does the mermaid spec flake?')
   })
 
   it('refuses an unknown anchor and refuses chains of side chats', () => {
@@ -103,5 +104,13 @@ describe('side chats', () => {
     )
     assert.deepEqual([...unreadSideChatParents(threads)], ['parent'])
     assert.deepEqual([...unreadSideChatParents([thread('x', { sideChat: link })])], [])
+  })
+
+  it('keeps an orphaned side chat listed so it stays reachable', () => {
+    const orphan = thread('orphan', { sideChat: { parentThreadId: 'gone', anchorMessageId: 'm' } })
+    assert.deepEqual(
+      withoutSideChats([parent, orphan]).map((item) => item.id),
+      ['parent', 'orphan'],
+    )
   })
 })

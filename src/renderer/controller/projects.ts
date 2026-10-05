@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, Thread } from '@shared/types'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import { unreadSideChatParents, withoutSideChats } from '@shared/threads/side-chat.ts'
 import {
   createThread,
   markThreadRead,
@@ -178,7 +179,25 @@ export function getSidebarThreads(store: AppStore, projectId: string): SidebarTh
   const { activeProjectId, threads } = store.getState()
   const list = projectId === activeProjectId ? threads : (threadCache.get(projectId) ?? [])
   // Archived threads stay in the project store / on disk but leave the sidebar.
-  return list.filter((t) => t.archivedAt == null)
+  // Side chats are hidden by default too: they are listed under their parent in
+  // the Context panel, and an unread one rolls up to the parent's row dot.
+  return withoutSideChats(list).filter((t) => t.archivedAt == null)
+}
+
+const sideChatUnreadCache = new WeakMap<object, Set<string>>()
+
+/**
+ * Threads of the active project with an unread side chat. Other projects' lists
+ * are compacted sidebar rows, which carry the link but are not scanned here.
+ */
+export function getSideChatUnreadParents(store: AppStore, projectId: string): Set<string> {
+  const { activeProjectId, threads } = store.getState()
+  if (projectId !== activeProjectId) return new Set()
+  const cached = sideChatUnreadCache.get(threads)
+  if (cached) return cached
+  const parents = unreadSideChatParents(threads)
+  sideChatUnreadCache.set(threads, parents)
+  return parents
 }
 
 /** An archive completed after the user switched to another project. */

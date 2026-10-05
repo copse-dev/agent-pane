@@ -16,6 +16,7 @@ export type PopoutMode = RightPanelMode
 
 const TITLES: Record<PopoutMode, string> = {
   explorer: 'Explorer — Copse',
+  context: 'Context — Copse',
   terminal: 'Terminal — Copse',
   changes: 'Changes — Copse',
   prs: 'Pull requests — Copse',

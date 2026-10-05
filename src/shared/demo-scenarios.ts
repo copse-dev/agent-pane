@@ -12,6 +12,8 @@ import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
+const SIDE_CHATS_MAIN_ID = '7b3e9a10-5c2d-4f6e-8a41-0d9c2b7e5f13'
+const SIDE_CHATS_OTHER_ID = '3c1f0a52-8b3e-4d7a-9f10-2a6b7c8d9e01'
 const FOOTER_INPUT_TOKENS = 50_000
 const FOOTER_OUTPUT_TOKENS = 1_800
 
@@ -2467,6 +2469,144 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       files: [],
       checks: 'success',
     })),
+  },
+  {
+    id: 'side-chats-context',
+    label: 'Side chats and the thread Context panel',
+    project: project('demo-side-chats', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      filesPaneOpen: true,
+      rightPanelMode: 'context',
+      layout: {
+        projectsPaneWidth: 240,
+        filesPaneWidth: 680,
+        filesPaneHeight: 360,
+        fileTreeWidth: 180,
+      },
+    },
+    threads: [
+      {
+        id: SIDE_CHATS_MAIN_ID,
+        title: 'Fix flaky mermaid e2e',
+        status: 'idle',
+        gitBranch: 'fix/mermaid-wait',
+        model: 'acp:claude-acp#sonnet',
+        messages: [
+          {
+            id: 'sc-user-1',
+            role: 'user',
+            content: 'The mermaid e2e spec fails about one run in five on CI. Any idea why?',
+            toolCalls: [],
+            createdAt: FIXED_TIME + 1_000,
+          },
+          {
+            id: 'sc-assistant-1',
+            role: 'assistant',
+            content: [
+              'The spec asserts on the rendered svg right after navigation, but Mermaid renders',
+              'asynchronously. See https://webdriver.io/docs/api/element/waitForDisplayed and the',
+              `release thread copse://thread/${SIDE_CHATS_OTHER_ID}. Fix proposed in`,
+              'https://github.com/acme/widgets/pull/42.',
+            ].join(' '),
+            toolCalls: [
+              {
+                id: 'sc-explore-call',
+                name: 'explore',
+                args: { query: 'waitForExist usages' },
+                status: 'done',
+                result: '14 matches across 3 specs.',
+                subagent: {
+                  id: 'sc-explore-session',
+                  kind: 'explore',
+                  status: 'done',
+                  prompt: 'Find every waitForExist on the mermaid selector',
+                  summary: '14 matches across 3 specs.',
+                  messages: [],
+                  model: 'acp:claude-acp#haiku',
+                },
+              },
+            ],
+            createdAt: FIXED_TIME + 2_000,
+          },
+        ],
+        prRefs: [
+          {
+            owner: 'acme',
+            repo: 'widgets',
+            number: 42,
+            url: 'https://github.com/acme/widgets/pull/42',
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME + 5_000,
+      },
+      {
+        id: 'sc-side-1',
+        title: 'waitForExist vs waitForDisplayed',
+        status: 'idle',
+        model: 'acp:codex-acp#fast',
+        sideChat: { parentThreadId: SIDE_CHATS_MAIN_ID, anchorMessageId: 'sc-assistant-1' },
+        unreadAt: FIXED_TIME + 4_000,
+        messages: [],
+        messagesLoaded: false,
+        prRefs: [],
+        links: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME + 3_000,
+        updatedAt: FIXED_TIME + 4_000,
+      },
+      {
+        id: 'sc-side-2',
+        title: 'Is this safe to merge?',
+        status: 'idle',
+        model: 'acp:claude-acp#sonnet',
+        sideChat: { parentThreadId: SIDE_CHATS_MAIN_ID, anchorMessageId: 'sc-user-1' },
+        archivedAt: FIXED_TIME + 4_500,
+        messages: [],
+        messagesLoaded: false,
+        prRefs: [],
+        links: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME + 2_500,
+        updatedAt: FIXED_TIME + 4_500,
+      },
+      {
+        id: SIDE_CHATS_OTHER_ID,
+        title: 'Release notes draft',
+        status: 'idle',
+        messages: [
+          {
+            id: 'sc-other-1',
+            role: 'user',
+            content: `Include the mermaid fix from copse://thread/${SIDE_CHATS_MAIN_ID}.`,
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        prRefs: [],
+        links: [{ kind: 'thread', target: SIDE_CHATS_MAIN_ID }],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME + 1_000,
+      },
+    ],
+    pullRequests: [
+      {
+        owner: 'acme',
+        repo: 'widgets',
+        number: 42,
+        url: 'https://github.com/acme/widgets/pull/42',
+        title: 'Wait for the mermaid svg to be displayed',
+        state: 'OPEN',
+        body: '',
+        files: [],
+        checks: 'success',
+      },
+    ],
   },
   {
     id: 'chat-layout-styling',

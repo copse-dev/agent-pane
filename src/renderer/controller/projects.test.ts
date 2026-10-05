@@ -9,6 +9,7 @@ import {
   applyCachedSidebarPrRefs,
   attachProjectThreadCache,
   getSidebarThreads,
+  getSideChatUnreadParents,
   isProjectSwitchInFlight,
   paginateSidebarThreads,
   dismissOrphanProject,
@@ -25,6 +26,7 @@ import {
   switchProjectThread,
 } from './projects.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { collectActivityThreads } from './activity-model.ts'
 
 function thread(id: string, title = id): Thread {
   return {
@@ -1318,4 +1320,33 @@ test('paginateSidebarThreads hides Show more when all threads fit', () => {
   const result = paginateSidebarThreads(threads, SIDEBAR_THREADS_PAGE_SIZE, null)
   assert.equal(result.visibleThreads.length, 8)
   assert.equal(result.hasMore, false)
+})
+
+test('side chats stay out of the sidebar and activity lists and roll an unread dot up to the parent', () => {
+  resetProjectSwitchStateForTest()
+  const link = { parentThreadId: 'parent', anchorMessageId: 'parent-msg' }
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [
+      thread('parent'),
+      { ...thread('side'), sideChat: link, unreadAt: 5 },
+      { ...thread('side-archived'), sideChat: link, unreadAt: 5, archivedAt: 6 },
+      { ...thread('other'), unreadAt: 7 },
+    ],
+  })
+
+  assert.deepEqual(
+    getSidebarThreads(store, 'a').map((t) => t.id),
+    ['parent', 'other'],
+  )
+  assert.deepEqual(
+    collectActivityThreads(store).map((t) => t.id),
+    ['parent', 'other'],
+  )
+  assert.deepEqual([...getSideChatUnreadParents(store, 'a')], ['parent'])
+  // Other projects' rows are compacted and not scanned.
+  assert.deepEqual([...getSideChatUnreadParents(store, 'b')], [])
 })

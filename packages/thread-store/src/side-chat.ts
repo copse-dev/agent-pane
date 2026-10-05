@@ -108,9 +108,19 @@ export function sideChatsOf(
   return rows.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
 }
 
-/** Thread-browser view: side chats are hidden by default. */
-export function withoutSideChats<T extends Pick<Thread, 'sideChat'>>(threads: readonly T[]): T[] {
-  return threads.filter((thread) => thread.sideChat === undefined)
+/**
+ * Thread-browser view: side chats are hidden by default, as long as their parent
+ * is in the same list. A side chat whose parent is gone (deleted from another
+ * window, or on disk before the cascade existed) is listed like any thread, so
+ * a hidden thread can never become unreachable.
+ */
+export function withoutSideChats<T extends { id: string; sideChat?: SideChatLink | undefined }>(
+  threads: readonly T[],
+): T[] {
+  const ids = new Set(threads.map((thread) => thread.id))
+  return threads.filter(
+    (thread) => thread.sideChat === undefined || !ids.has(thread.sideChat.parentThreadId),
+  )
 }
 
 /**

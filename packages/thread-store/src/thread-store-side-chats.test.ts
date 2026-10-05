@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { configureThreadStore } from './environment.ts'
 import type { Message, Thread } from './thread-types.ts'
-import { THREAD_INDEX_FILE } from './sqlite-thread-index.ts'
+import { SqliteThreadIndex, THREAD_INDEX_FILE } from './sqlite-thread-index.ts'
 import { buildSideChatThread, sideChatsOf } from './side-chat.ts'
 import {
   appendMessage,
@@ -148,6 +148,22 @@ describe('side chats and links in the SQLite projection', () => {
       (await lookupThreadBacklinks('p', 'url', DOCS)).map((row) => row.threadId),
       ['a'],
     )
+  })
+
+  it('a rebuild with a repeated thread id keeps only the last copy of its side-chat and link rows', async () => {
+    mkdirSync(join(root, 'p'), { recursive: true })
+    const index = new SqliteThreadIndex(join(root, 'p', THREAD_INDEX_FILE))
+    try {
+      const link = { parentThreadId: 'parent', anchorMessageId: 'm' }
+      await index.replaceAll([
+        thread('dup', { sideChat: link, links: [{ kind: 'url', target: 'https://a.test/' }] }),
+        thread('dup'),
+      ])
+      assert.deepEqual(index.sideChatsOf('parent', true), [])
+      assert.deepEqual(index.linksOf('dup'), [])
+    } finally {
+      index.close()
+    }
   })
 
   it('rebuilds an incompatible v1 projection from the authoritative files', async () => {
