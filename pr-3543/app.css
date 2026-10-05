@@ -11448,7 +11448,8 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   flex: 1;
   min-width: 0;
 }
-.mcp-permissions-btn {
+.mcp-permissions-btn,
+.mcp-auth-btn {
   flex: none;
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: var(--font-size-sm);
@@ -12172,6 +12173,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 
 /* src/renderer/styles/global/image-expand.css */
+.image-expand-photo,
 .image-expand-image {
   display: block;
   max-width: min(94vw - 32px, 1280px);
@@ -12179,6 +12181,47 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   width: auto;
   height: auto;
   object-fit: contain;
+}
+.image-expand-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+.image-expand-frame[hidden] {
+  display: none;
+}
+.image-expand-single {
+  position: relative;
+  display: flex;
+  width: min(80vw, 800px);
+  height: min(60vh, 480px);
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.image-expand-single .image-expand-frame {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+.image-expand-single .image-expand-photo {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+.image-expand-single .image-expand-annotate {
+  flex: 0 0 auto;
+  align-self: flex-end;
+}
+.image-expand-annotate[aria-pressed=true] {
+  background: var(--bg-selected);
+  color: var(--accent);
 }
 .attachment-preview-dialog[data-preview-kind=image-gallery] {
   position: relative;
@@ -12234,12 +12277,20 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   overflow: hidden;
   padding: 64px 72px 28px;
 }
-.image-expand-stage .image-expand-image {
+.image-expand-stage .image-expand-photo {
   width: 100%;
   height: 100%;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+.image-expand-stage .image-expand-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.image-expand-stage .annotation-toolstrip {
+  width: max-content;
 }
 .image-expand-nav-zone {
   position: absolute;
@@ -12275,6 +12326,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   opacity: 0.25;
 }
 .image-expand-gallery-footer {
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 76px;
@@ -12283,6 +12335,13 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   justify-content: center;
   padding: var(--spacing-xs) var(--spacing-md);
   border-top: 1px solid var(--border);
+}
+.image-expand-gallery-footer .image-expand-thumbnails {
+  max-width: calc(100% - 112px);
+}
+.image-expand-gallery-action {
+  position: absolute;
+  right: var(--spacing-md);
 }
 .image-expand-thumbnails {
   display: flex;
@@ -16151,13 +16210,13 @@ dialog.activity-panel-overlay {
 .roadmap-filter {
   display: flex;
   flex: 1;
-  min-width: 120px;
+  min-width: min(200px, 100%);
   max-width: 320px;
   gap: 4px;
 }
 .roadmap-search-input {
   flex: 1;
-  min-width: 80px;
+  min-width: 0;
 }
 .roadmap-filter-toggle {
   flex: none;

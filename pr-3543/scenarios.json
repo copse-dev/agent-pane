@@ -92,6 +92,10 @@
     "label": "Settings scroll + sticky footer geometry"
   },
   {
+    "id": "mcp-sign-in",
+    "label": "MCP servers that sign in with OAuth"
+  },
+  {
     "id": "automation-permissions",
     "label": "Automation permission preferences"
   },
