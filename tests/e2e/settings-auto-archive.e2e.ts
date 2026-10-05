@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedE2eViewport,
+  seedEmptyProject,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 
 // Settings → Storage → Merged threads: the control behind the auto-archive
 // sweep (#3330). The sweep itself is unit-tested against fakes; this proves the
@@ -32,7 +37,7 @@ describe('Auto-archive setting', function () {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-auto-archive-settings')
+    seedEmptyProject(seedStableWorkspace(), 'e2e-auto-archive-settings')
     seedE2eViewport({ width: 1280, height: 800 }, { autoArchiveAfterDays: 7 })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })

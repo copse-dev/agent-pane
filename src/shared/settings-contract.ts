@@ -15,6 +15,7 @@ export interface SettingsValues {
   uiScale: number
   animateAgentAvatars: boolean
   autoPortraitRightPanel: boolean
+  autoArchiveAfterDays: number
   rightPanelPosition: 'auto' | 'side' | 'bottom'
   uiAccentColor: string
   uiTintColor: string
