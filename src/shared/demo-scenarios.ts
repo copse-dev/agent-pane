@@ -137,6 +137,8 @@ export interface DemoScenario {
   prBody?: string
   /** Uncommitted line counts the demo's working tree reports for the Changes chip. */
   changeStats?: { readonly additions: number; readonly deletions: number }
+  /** Unlanded work per thread id, for the sidebar's "changes" glyph. */
+  threadChanges?: Readonly<Record<string, { readonly dirty: boolean; readonly unpushed?: number }>>
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -2060,6 +2062,10 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       uiTintStrength: 'off',
     },
     // Newest-prompted first, as the store keeps them: neither creation nor title order.
+    threadChanges: {
+      'demo-sidebar-sort-d': { dirty: false, unpushed: 2 },
+      'demo-sidebar-sort-a': { dirty: true },
+    },
     threads: [
       {
         id: 'demo-sidebar-sort-b',

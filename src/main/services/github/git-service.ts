@@ -34,6 +34,7 @@ import {
   type GitFileDiff,
   type GitPromptState,
   type GitStatusResult,
+  type ThreadChangeSummary,
 } from '@shared/types/git.ts'
 import { isNonNull } from '@shared/nullish.ts'
 
@@ -823,6 +824,28 @@ export async function getGitStatus(
   const { stdout, code } = await runGitRead(args, root)
   if (code !== 0) return null
   return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix)
+}
+
+/**
+ * Cheap "does this checkout hold unlanded work" read for a sidebar row: one
+ * `git status --porcelain=v1 -z` plus one `rev-list --count`. Deliberately
+ * smaller than {@link getGitStatus} (no path normalisation, no untracked walk
+ * beyond what status does by default) and free of PR lookups. Null when `root`
+ * is not a work tree or git cannot be read.
+ */
+export async function readThreadChangeSummary(root: string): Promise<ThreadChangeSummary | null> {
+  if (isActiveSshWorkspace()) return null
+  if (!(await isGitAvailableForTarget()) || !(await confirmInsideWorkTree(root, true))) return null
+  const status = await runGitRead(['status', '--porcelain=v1', '-z'], root)
+  if (status.code !== 0) return null
+  const dirty = status.stdout.length > 0
+  let counted = await runGitRead(['rev-list', '--count', '@{u}..HEAD'], root)
+  // No upstream configured: fall back to commits no remote-tracking ref has.
+  if (counted.code !== 0) {
+    counted = await runGitRead(['rev-list', '--count', 'HEAD', '--not', '--remotes'], root)
+  }
+  const unpushed = counted.code === 0 ? Number.parseInt(counted.stdout.trim(), 10) : Number.NaN
+  return Number.isFinite(unpushed) && unpushed > 0 ? { dirty, unpushed } : { dirty }
 }
 
 /**

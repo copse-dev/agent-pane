@@ -812,6 +812,24 @@ Logic lives in [`thread-pr-status.ts`](../src/shared/git/thread-pr-status.ts). S
 [`projects-pane-pr-status.test.ts`](../src/renderer/views/projects-pane-pr-status.test.ts),
 [`tests/e2e/thread-pr-status.e2e.ts`](../tests/e2e/thread-pr-status.e2e.ts).
 
+## Thread changes glyph (no-PR rows)
+
+A finished sidebar thread with **no PR** that still has unlanded work shows one muted
+git-branch glyph in the same slot as the PR icon (`.chat-changes-status`, `--text-muted`,
+never accent). It means "unpushed commits or a non-clean working tree" and carries no dot and
+no counts on the row; the detail is tooltip / `aria-label` only: `N unpushed commit(s)`,
+`Uncommitted changes`, or both joined with "and". Clean, running and PR-linked rows show nothing
+extra (a PR rollup always wins the slot), and rows wait for PR refs to settle before asking so a
+PR thread never flashes the glyph first.
+
+The read is `git:thread-change-summary`, **inspect-only**: it never arms a working-tree watcher,
+groups threads by resolved checkout (N shared-checkout threads cost one `git status` + one
+`rev-list --count`), caches per root, and limits concurrency. The pane re-reads a row at most
+every 30s and follows working-tree events for the active thread only. Specs:
+[`thread-change-summary.test.ts`](../src/main/services/github/thread-change-summary.test.ts),
+[`projects-pane-thread-changes.test.ts`](../src/renderer/views/projects-pane-thread-changes.test.ts),
+[`tests/demo/sidebar-thread-changes.demo.ts`](../tests/demo/sidebar-thread-changes.demo.ts).
+
 ## SSH chrome — plain text, no decorative emoji
 
 The titlebar SSH target is plain `user@host` (`.workspace-ssh-target`), not `⚡ user@host`.

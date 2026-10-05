@@ -1025,6 +1025,13 @@
           2
         ]
       },
+      "git:thread-change-summary": {
+        "api": "git.threadChangeSummary",
+        "args": [
+          1,
+          1
+        ]
+      },
       "git:working-file-diff": {
         "api": "git.workingFileDiff",
         "args": [
