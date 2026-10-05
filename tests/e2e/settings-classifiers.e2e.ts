@@ -12,7 +12,7 @@ import { createServer, type Server } from 'node:http'
 import type { listClassifierProfiles } from '../../src/main/services/classifiers/classifier-service.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 
@@ -66,7 +66,7 @@ describe('classifier connections settings', () => {
     assert.ok(address && typeof address !== 'string')
     baseUrl = `http://127.0.0.1:${String(address.port)}/v1`
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-classifier-settings')
+    seedEmptyProject(seedStableWorkspace(), 'e2e-classifier-settings')
     await browser.reloadSession()
   })
 
@@ -83,6 +83,34 @@ describe('classifier connections settings', () => {
       server.close((error) => (error ? reject(error) : resolve()))
     })
   })
+
+  /**
+   * The fixture server binds an ephemeral port and the app mints a random profile id, so both
+   * differ on every run. Show fixed stand-ins for the capture, then put the real values back.
+   */
+  async function saveClassifierScreenshot(selector: string, filename: string): Promise<void> {
+    await browser.execute(() => {
+      for (const input of document.querySelectorAll<HTMLInputElement>('[name="classifierUrl"]')) {
+        input.dataset.e2eReal = input.value
+        input.value = input.value.replace(/:\d+(?=\/)/, ':4000')
+      }
+      for (const code of document.querySelectorAll('#settings-classifiers-host .field-hint code')) {
+        code.setAttribute('data-e2e-real', code.textContent ?? '')
+        code.textContent = (code.textContent ?? '').replace(/-[0-9a-f]{8}$/, '-00000000')
+      }
+    })
+    await saveElementScreenshot(selector, filename)
+    await browser.execute(() => {
+      for (const input of document.querySelectorAll<HTMLInputElement>('[data-e2e-real]')) {
+        input.value = input.dataset.e2eReal ?? input.value
+        delete input.dataset.e2eReal
+      }
+      for (const code of document.querySelectorAll('code[data-e2e-real]')) {
+        code.textContent = code.getAttribute('data-e2e-real')
+        code.removeAttribute('data-e2e-real')
+      }
+    })
+  }
 
   async function openClassifiers(): Promise<void> {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -129,7 +157,7 @@ describe('classifier connections settings', () => {
     await expect(host.$('[name="classifierProtocol"]')).toHaveValue('systemone')
     await expect(host.$('[name="classifierAuth"]')).toHaveValue('bearer')
     await expect(host.$('[name="classifierKeyEnv"]')).toHaveValue('LIQUID_API_KEY')
-    await saveElementScreenshot('#settings-dialog', 'settings-classifiers-liquid.png')
+    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-liquid.png')
     await toggleOptions()
     assert.equal(requests, 0, 'selecting Liquid must not call inference')
     // Exercise saving and invocation against the local fixture, without a live Liquid key.
@@ -166,7 +194,7 @@ describe('classifier connections settings', () => {
       summaryListStyle: 'none',
       chevron: true,
     })
-    await saveElementScreenshot(
+    await saveClassifierScreenshot(
       '#settings-classifiers-host .provider-advanced',
       'settings-classifiers-options.png',
     )
@@ -200,7 +228,7 @@ describe('classifier connections settings', () => {
     await assertKitButtonChrome('#settings-classifiers-host .classifier-save', 'primary')
     await assertKitButtonChrome('#settings-classifiers-host .classifier-test', 'secondary')
     await assertKitButtonChrome('#settings-classifiers-host .classifier-remove', 'danger')
-    await saveElementScreenshot('#settings-dialog', 'settings-classifiers.png')
+    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers.png')
     await host.$('[name="classifierUrl"]').setValue('https://example.com/v1')
     await expect(host.$('.classifier-destination-note')).toBeDisplayed()
     await expect(host.$('.classifier-destination-note')).toHaveText(
@@ -220,7 +248,7 @@ describe('classifier connections settings', () => {
     assert.ok(fields.url && fields.label, 'classifier fields must render')
     assert.equal(fields.url.width, fields.label.width, 'Base URL matches its siblings’ width')
     assert.equal(fields.url.left, fields.label.left, 'Base URL shares its siblings’ left edge')
-    await saveElementScreenshot('#settings-dialog', 'settings-classifiers-destination.png')
+    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-destination.png')
     await host.$('[name="classifierUrl"]').setValue(baseUrl)
   })
 
@@ -356,7 +384,7 @@ describe('classifier connections settings', () => {
     assert.ok(typeof screeningId === 'string' && screeningId.startsWith('kev-'))
     await expect(screening).toHaveValue(screeningId)
     assert.equal(requests, 4, 'choosing a screening classifier must not call inference')
-    await saveElementScreenshot('#settings-dialog', 'settings-classifiers-screening.png')
+    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-screening.png')
 
     // Background questions are routed separately, through their own IPC.
     const background = host.$('[name="classifierBackground"]')
@@ -377,7 +405,7 @@ describe('classifier connections settings', () => {
     await expect(background).toHaveValue(screeningId)
     await expect(screening).toHaveValue(screeningId)
     assert.equal(requests, 4, 'choosing a background classifier must not call inference')
-    await saveElementScreenshot('#settings-dialog', 'settings-classifiers-background.png')
+    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-background.png')
 
     fail = true
     await clickAction('test')
@@ -387,7 +415,7 @@ describe('classifier connections settings', () => {
     )
     assert.match(await host.$('.classifier-status').getText(), /auth|401|key/i)
     await assertErrorColor('#settings-classifiers-host .classifier-status .ui-inline-status')
-    await saveElementScreenshot('#settings-dialog', 'settings-classifiers-error.png')
+    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-error.png')
     await clickAction('remove')
     await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 1, {
       timeout: 10_000,
@@ -437,7 +465,7 @@ describe('classifier connections settings', () => {
     await expect(host.$('.classifier-status')).not.toHaveText(
       expect.stringContaining('IpcValidationError'),
     )
-    await saveElementScreenshot('#settings-dialog', 'settings-classifiers-key-failure.png')
+    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-key-failure.png')
     await clickAction('remove')
     await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 0, {
       timeout: 10_000,

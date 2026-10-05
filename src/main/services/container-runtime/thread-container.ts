@@ -60,6 +60,7 @@ import { z } from 'zod'
 import { decodeWorkerPhase, type WorkerPhase } from './worker-events.ts'
 import { EgressBroker, hostLocalAliasRefusal } from './egress-broker.ts'
 import {
+  EGRESS_TOKEN_STDIN_FLAG,
   findEgressRule,
   formatEgressRule,
   GUEST_NO_PROXY,
@@ -447,23 +448,30 @@ function guestRunArgs(input: ContainerRunInput): string[] {
     // names loopback only: nothing else is reachable direct, and the guest's
     // own listeners (the ACP native-tools bridge) must not be sent to the
     // proxy, which would refuse them.
-    // The URL carries the run's token: Node's env-proxy dispatcher reads it
-    // once at startup, after which the worker blanks these variables so the
-    // shell children it spawns inherit no way onto the proxy (decision A7).
-    const proxy = guestEgressProxyUrl(input.egressToken)
+    // The token is not in this environment. Docker's `--env` lands in PID 1's
+    // `/proc/1/environ`, which any same-uid process in the guest can read, so
+    // the token travels as the first line of the container's stdin instead and
+    // the entrypoint builds the proxy URL from it (`attachContainer`,
+    // `WORKER_ENTRYPOINT_SH`). Node's env-proxy dispatcher still reads that URL
+    // once at startup; the worker runs from an unreadable `node` binary, so its
+    // own `/proc/<pid>/environ` and memory are closed to the shell children it
+    // spawns (decision A7, as amended). A run with no token gets the plain URL.
+    const proxy = guestEgressProxyUrl(null)
     args.push(
       '--env',
       'COPSE_EGRESS=stdio',
-      '--env',
-      `COPSE_EGRESS_TOKEN=${input.egressToken ?? ''}`,
-      '--env',
-      `HTTPS_PROXY=${proxy}`,
-      '--env',
-      `HTTP_PROXY=${proxy}`,
-      '--env',
-      `https_proxy=${proxy}`,
-      '--env',
-      `http_proxy=${proxy}`,
+      ...(input.egressToken !== null
+        ? ['--env', `${EGRESS_TOKEN_STDIN_FLAG}=1`]
+        : [
+            '--env',
+            `HTTPS_PROXY=${proxy}`,
+            '--env',
+            `HTTP_PROXY=${proxy}`,
+            '--env',
+            `https_proxy=${proxy}`,
+            '--env',
+            `http_proxy=${proxy}`,
+          ]),
       '--env',
       `NO_PROXY=${GUEST_NO_PROXY}`,
       '--env',
@@ -1373,6 +1381,8 @@ function attachContainer(
   name: string,
   options: {
     broker: EgressBroker | null
+    /** Written as the first stdin line; the entrypoint reads it before the worker starts. */
+    token: string | null
     onLog: (line: string) => void
     onPhase?: ((phase: WorkerPhase) => void) | undefined
   },
@@ -1380,11 +1390,12 @@ function attachContainer(
   const child = spawn(engineCommand(engine), ['start', '--attach', '--interactive', name], {
     stdio: ['pipe', 'pipe', 'pipe'],
   })
-  if (options.broker) options.broker.attach(child.stdout, child.stdin)
-  else child.stdin.end()
   child.stdin.on('error', () => {
     // EPIPE once the container is gone; the link's own close handles it.
   })
+  if (options.broker && options.token !== null) child.stdin.write(`${options.token}\n`)
+  if (options.broker) options.broker.attach(child.stdout, child.stdin)
+  else child.stdin.end()
   createInterface({ input: child.stderr }).on('line', (line) => {
     const phase = decodeWorkerPhase(line)
     if (phase !== null) {
@@ -2019,6 +2030,7 @@ async function runThreadInContainerLeased(
     if (options.signal?.aborted) throw new Error(STOPPED_BEFORE_START)
     attached = attachContainer(engine, containerName(runtimeId), {
       broker: egress.length > 0 || apiKey !== null ? broker : null,
+      token: runInput.egressToken,
       onPhase: options.onPhase,
       onLog: (line) => {
         log(`[guest] ${line}`)

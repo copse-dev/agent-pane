@@ -24,6 +24,8 @@ export const APP_ICON_VARIANTS = [
 export type AppIconVariant = (typeof APP_ICON_VARIANTS)[number]
 
 export const DEFAULT_APP_ICON_VARIANT: AppIconVariant = 'rose'
+/** Temporary native icon shown while Copse is running a scheduled automation. */
+export const AUTOMATION_APP_ICON_VARIANT: AppIconVariant = 'amber'
 
 export const APP_ICON_VARIANT_LABELS: Record<AppIconVariant, string> = {
   rose: 'Rose',
