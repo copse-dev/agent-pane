@@ -1341,6 +1341,15 @@ thread filter's matches stay newest first, so the button has nothing to change w
 open. An untitled thread sorts as "New Thread", the name its row shows. Spec:
 `tests/demo/sidebar-thread-sort.demo.ts`.
 
+The same menu opens with **Group by**: Project (the tree, and the default), Status, or None. Status
+drops the tree for Needs you / Working / Recent sections over every project visited this session,
+and None for one flat list; both name each thread's project as the muted `· project` suffix the
+Automations section uses, since the tree no longer does, and an empty section is left out. A thread
+that is running and waiting on the user is under Needs you. The sort applies inside each section,
+and Activity order across projects means last prompted. The choice is saved per profile
+(`sidebarThreadGroup`). A thread search keeps the tree, because it is scoped to the open project.
+Automation runs stay in their own section above whichever layout is chosen.
+
 ## Sidebar selections
 
 Chat rows use flat, square, full-bleed selection and hover fills, and **the fill is the whole
