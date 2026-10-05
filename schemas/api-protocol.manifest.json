@@ -1029,7 +1029,7 @@
         "api": "git.threadChangeSummary",
         "args": [
           1,
-          1
+          2
         ]
       },
       "git:working-file-diff": {

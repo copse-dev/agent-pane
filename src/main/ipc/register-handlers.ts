@@ -97,6 +97,7 @@ import {
 } from './ipc-guards.ts'
 import {
   inspectThreadCheckoutAttachment,
+  inspectThreadCheckoutRoot,
   reattachThreadCheckout,
   resolveThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
@@ -2904,19 +2905,22 @@ export function registerAllHandlers(
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getGitStatus(await resolveWatchedGitRoot(projectId, threadId))
   })
-  // Inspect-only: resolves each thread's checkout WITHOUT ensureWorkingTreeWatched.
+  // Inspect-only: resolves each thread's checkout without restoring worktrees, syncing
+  // metadata, or ensureWorkingTreeWatched.
   const readThreadChangeSummaries = createThreadChangeSummaryReader({
-    resolveRoot: async (projectId, threadId) =>
-      (await resolveThreadExecutionContext(projectId, threadId)).root,
+    resolveRoot: inspectThreadCheckoutRoot,
     read: readThreadChangeSummary,
   })
   ipcMain.handle('git:thread-change-summary', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    const [refs] = parseIpcArgs(
-      z.tuple([z.array(z.object({ projectId: zProjectId, threadId: zThreadId })).max(200)]),
+    const [refs, opts] = parseIpcArgs(
+      z.tuple([
+        z.array(z.object({ projectId: zProjectId, threadId: zThreadId })).max(200),
+        z.object({ fresh: z.boolean().optional() }).optional(),
+      ]),
       rawArgs,
     )
-    return readThreadChangeSummaries(refs)
+    return readThreadChangeSummaries(refs, opts?.fresh === true ? { fresh: true } : {})
   })
   ipcMain.handle('git:change-stats', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)

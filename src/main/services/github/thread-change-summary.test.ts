@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import type { ThreadChangeSummary } from '@shared/types/git.ts'
 import { createThreadChangeSummaryReader } from './thread-change-summary.ts'
 
@@ -44,6 +45,24 @@ const ref = (threadId: string): { projectId: string; threadId: string } => ({
   threadId,
 })
 
+describe('git:thread-change-summary handler', () => {
+  it('resolves roots without restoring worktrees or arming a watcher', async () => {
+    const source = await readFile(
+      new URL('../../ipc/register-handlers.ts', import.meta.url),
+      'utf8',
+    )
+    const start = source.indexOf('createThreadChangeSummaryReader({')
+    const end = source.indexOf("ipcMain.handle('git:change-stats'")
+    assert.ok(start !== -1 && end > start, 'handler block not found')
+    const block = source.slice(start, end)
+    assert.match(block, /resolveRoot: inspectThreadCheckoutRoot/)
+    assert.doesNotMatch(
+      block,
+      /ensureWorkingTreeWatched|resolveThreadExecutionContext|resolveWatchedGitRoot/,
+    )
+  })
+})
+
 describe('createThreadChangeSummaryReader', () => {
   it('reads a shared checkout once for N threads', async () => {
     const { summarize, reads } = harness({ a: '/shared', b: '/shared', c: '/shared', d: '/shared' })
@@ -76,6 +95,28 @@ describe('createThreadChangeSummaryReader', () => {
     t = 1_500
     await summarize([ref('a')])
     assert.deepEqual(reads, ['/r', '/r'])
+  })
+
+  it('lets a fresh request bypass the cache', async () => {
+    const { summarize, reads } = harness({ a: '/r' }, { ttlMs: 60_000 })
+    await summarize([ref('a')])
+    await summarize([ref('a')])
+    assert.deepEqual(reads, ['/r'])
+    await summarize([ref('a')], { fresh: true })
+    assert.deepEqual(reads, ['/r', '/r'])
+  })
+
+  it('treats a thread with no inspectable checkout as null without reading', async () => {
+    const reads: string[] = []
+    const summarize = createThreadChangeSummaryReader({
+      resolveRoot: async () => null,
+      read: async (root) => {
+        reads.push(root)
+        return { dirty: false }
+      },
+    })
+    assert.deepEqual(await summarize([ref('retired')]), [null])
+    assert.deepEqual(reads, [])
   })
 
   it('limits distinct-root concurrency', async () => {

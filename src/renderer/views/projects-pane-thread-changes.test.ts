@@ -1,7 +1,7 @@
 // Sidebar rows show a muted branch glyph for a finished thread that has unlanded
 // work and no PR; the detail is the tooltip / aria-label only.
 import '../../../tests/setup-dom.ts'
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ThreadChangeSummary } from '@shared/types/git.ts'
@@ -99,5 +99,44 @@ describe('projects pane thread changes glyph (component)', () => {
     )
     // Running rows are never asked about, and a settled read is not repeated.
     assert.deepEqual(asked, [['a', 'b', 'c']])
+  })
+
+  it('rechecks idle rows once their summary is stale and redraws when it changed', async () => {
+    mock.timers.enable({ apis: ['Date'] })
+    try {
+      let summary: ThreadChangeSummary | null = { dirty: true }
+      const asked: string[][] = []
+      const base = apiWithSummaries({})
+      mount([thread('a', 'Moves on')], {
+        ...base,
+        git: {
+          ...base['git'],
+          threadChangeSummary: async (refs): Promise<Array<ThreadChangeSummary | null>> => {
+            asked.push(refs.map((ref) => ref.threadId))
+            return refs.map(() => summary)
+          },
+        },
+      })
+      await settle()
+      const glyph = (): boolean =>
+        rowByTitle('Moves on')?.querySelector('.chat-changes-status') != null
+      assert.equal(glyph(), true)
+      assert.deepEqual(asked, [['a']])
+
+      // Pushed elsewhere: nothing redraws, so only a focus recheck can notice.
+      summary = { dirty: false }
+      mock.timers.tick(10_000)
+      window.dispatchEvent(new Event('focus'))
+      await settle()
+      assert.deepEqual(asked, [['a']], 'a fresh summary is not re-read')
+
+      mock.timers.tick(30_000)
+      window.dispatchEvent(new Event('focus'))
+      await settle()
+      assert.deepEqual(asked, [['a'], ['a']])
+      assert.equal(glyph(), false)
+    } finally {
+      mock.timers.reset()
+    }
   })
 })

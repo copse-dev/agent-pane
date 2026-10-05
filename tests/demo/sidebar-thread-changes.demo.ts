@@ -17,14 +17,14 @@ async function glyphLabel(title: string): Promise<string | null> {
 describe('sidebar thread changes glyph', () => {
   before(async () => {
     await browser.url('about:blank')
-    await browser.url('/?scenario=sidebar-thread-sort')
+    await browser.url('/?scenario=sidebar-thread-changes')
     await $('.chat-changes-status').waitForExist({ timeout: 30_000 })
   })
 
   it('marks unpushed commits and uncommitted changes, and nothing else', async () => {
     expect(await glyphLabel('Refactor auth')).toBe('2 unpushed commits')
     expect(await glyphLabel('Add a retry to uploads')).toBe('Uncommitted changes')
-    expect(await glyphLabel('Fix the flaky sandbox test')).toBeNull()
+    expect(await glyphLabel('Update onboarding copy')).toBeNull()
     expect(await glyphLabel('Run the schema migration')).toBeNull()
     expect(await $$('.chat-changes-status')).toHaveLength(2)
     expect(await $$('.chat-pr-status')).toHaveLength(0)

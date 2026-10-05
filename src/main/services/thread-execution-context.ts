@@ -175,6 +175,31 @@ async function activeThreadWorktreeInput(
   return { projectId, threadId, projectRoot, worktree }
 }
 
+/**
+ * The checkout a thread would run in, for read-only inspection (sidebar status).
+ * Unlike {@link resolveThreadExecutionContext} this never restores a retired
+ * worktree, validates/adopts a branch, or rewrites thread metadata: a shared
+ * thread yields the project root, an active isolated worktree its recorded path,
+ * and a retired or PR'd worktree (which resolution would recreate) yields null.
+ */
+export async function inspectThreadCheckoutRoot(
+  projectId: string,
+  threadId: string,
+  dependencies: Pick<
+    ThreadExecutionContextDependencies,
+    'getProjectRoot' | 'getThreadMeta'
+  > = defaultDependencies,
+): Promise<string | null> {
+  const projectRoot = dependencies.getProjectRoot(projectId)
+  if (!projectRoot) return null
+  const threadMeta = await dependencies.getThreadMeta(projectId, threadId)
+  if (threadMeta?.id !== threadId) return null
+  const worktree = threadMeta.worktree
+  if (!worktree) return projectRoot
+  if (worktree.retiredAt !== undefined || worktree.pullRequestUrl) return null
+  return worktree.path
+}
+
 /** Whether the thread's isolated checkout is detached; shared and retired checkouts report attached. */
 export async function inspectThreadCheckoutAttachment(
   projectId: string,

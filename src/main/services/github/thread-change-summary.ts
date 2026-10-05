@@ -12,7 +12,7 @@ export interface ThreadChangeSummaryDeps {
    * inspect-only, and watching one root per sidebar row is what made the
    * Activity sidebar re-read every thread's status on one working-tree event.
    */
-  resolveRoot: (projectId: string, threadId: string) => Promise<string>
+  resolveRoot: (projectId: string, threadId: string) => Promise<string | null>
   read: (root: string) => Promise<ThreadChangeSummary | null>
   now?: () => number
   ttlMs?: number
@@ -32,13 +32,13 @@ interface CacheEntry {
  */
 export function createThreadChangeSummaryReader(deps: ThreadChangeSummaryDeps) {
   const now = deps.now ?? Date.now
-  const ttlMs = deps.ttlMs ?? 10_000
+  const ttlMs = deps.ttlMs ?? 2_000
   const concurrency = Math.max(1, deps.concurrency ?? 3)
   const cache = new Map<string, CacheEntry>()
 
-  function readRoot(root: string): Promise<ThreadChangeSummary | null> {
+  function readRoot(root: string, fresh: boolean): Promise<ThreadChangeSummary | null> {
     const hit = cache.get(root)
-    if (hit && now() - hit.at < ttlMs) return hit.promise
+    if (hit && !fresh && now() - hit.at < ttlMs) return hit.promise
     const promise = deps.read(root).catch(() => null)
     cache.set(root, { at: now(), promise })
     return promise
@@ -46,10 +46,11 @@ export function createThreadChangeSummaryReader(deps: ThreadChangeSummaryDeps) {
 
   return async function summarize(
     refs: readonly ThreadChangeRef[],
+    opts: { fresh?: boolean } = {},
   ): Promise<Array<ThreadChangeSummary | null>> {
     for (const [root, entry] of cache) if (now() - entry.at >= ttlMs) cache.delete(root)
     const roots = await Promise.all(
-      refs.map((ref) => deps.resolveRoot(ref.projectId, ref.threadId).catch(() => null)),
+      refs.map((ref) => deps.resolveRoot(ref.projectId, ref.threadId).catch((): null => null)),
     )
     const unique = [...new Set(roots.filter(isNonNull))]
     const results = new Map<string, ThreadChangeSummary | null>()
@@ -57,7 +58,7 @@ export function createThreadChangeSummaryReader(deps: ThreadChangeSummaryDeps) {
     const worker = async (): Promise<void> => {
       for (let i = next++; i < unique.length; i = next++) {
         const root = unique[i]
-        if (root !== undefined) results.set(root, await readRoot(root))
+        if (root !== undefined) results.set(root, await readRoot(root, opts.fresh === true))
       }
     }
     await Promise.all(Array.from({ length: Math.min(concurrency, unique.length) }, worker))

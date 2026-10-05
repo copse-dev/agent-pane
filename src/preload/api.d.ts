@@ -1315,10 +1315,12 @@ export interface ApiClient {
     /**
      * Inspect-only "has unlanded work" read for sidebar rows, aligned with `refs`:
      * dirty working tree and/or unpushed commits, null when unreadable. Never arms a
-     * file watcher, and threads sharing a checkout cost one read.
+     * file watcher or restores a worktree, and threads sharing a checkout cost one read.
+     * `fresh` bypasses the short per-checkout cache.
      */
     threadChangeSummary: (
       refs: Array<{ projectId: string; threadId: string }>,
+      opts?: { fresh?: boolean },
     ) => Promise<Array<ThreadChangeSummary | null>>
     fileDiff: (
       projectId: string,

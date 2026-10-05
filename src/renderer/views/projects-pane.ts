@@ -637,7 +637,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const threadChangeKey = (projectId: string, threadId: string): string =>
     `${projectId}\0${threadId}`
 
-  function refreshThreadChanges(refs: Array<{ projectId: string; threadId: string }>): void {
+  // Rows drawn by the latest render, so an idle sidebar can re-check them.
+  let threadChangeRendered: Array<{ projectId: string; threadId: string }> = []
+
+  function refreshThreadChanges(
+    refs: Array<{ projectId: string; threadId: string }>,
+    opts: { fresh?: boolean } = {},
+  ): void {
     const batch = refs
       .filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId)))
       .slice(0, THREAD_CHANGE_MAX_PER_PASS)
@@ -655,9 +661,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         }
         threadChangeCache.set(key, { summary, at: Date.now() })
       }
+      // Only an unmounted pane must not redraw from a late answer.
       if (changed && generation === threadChangeGeneration) render(true)
     }
-    void api.git.threadChangeSummary(batch).then(settle, () => {
+    void api.git.threadChangeSummary(batch, opts).then(settle, () => {
       settle([])
     })
   }
@@ -853,6 +860,20 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           if (lifecycleChanged) render()
         })
     }
+  }
+
+  // A sidebar left idle keeps its glyphs honest after a commit or push elsewhere:
+  // the TTL is otherwise only checked when something redraws, so re-check when the
+  // window regains focus or becomes visible, which is when someone looks again.
+  function recheckStaleThreadChanges(): void {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    const now = Date.now()
+    refreshThreadChanges(
+      threadChangeRendered.filter(({ projectId, threadId }) => {
+        const cached = threadChangeCache.get(threadChangeKey(projectId, threadId))
+        return !cached || now - cached.at > THREAD_CHANGE_TTL_MS
+      }),
+    )
   }
 
   function ciFailingForThread(thread: SidebarThread): boolean {
@@ -1352,6 +1373,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     clear(list)
     const prBackfillRows: Array<{ row: HTMLElement; projectId: string; threadId: string }> = []
     const threadChangeWanted: Array<{ projectId: string; threadId: string }> = []
+    const threadChangeSeen: Array<{ projectId: string; threadId: string }> = []
+    const threadChangeSeenKeys = new Set<string>()
     syncFilterControls()
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
       store.getState()
@@ -1569,6 +1592,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         )
       } else if (thread.status !== 'running' && thread.prRefs !== undefined && !project.sshHost) {
         const key = threadChangeKey(project.id, thread.id)
+        threadChangeSeen.push({ projectId: project.id, threadId: thread.id })
+        threadChangeSeenKeys.add(key)
         const cached = threadChangeCache.get(key)
         const changesLabel = describeThreadChanges(cached?.summary ?? null)
         if (changesLabel) {
@@ -2321,6 +2346,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       prBackfillObserver = observer
       for (const { row } of prBackfillRows) observer.observe(row)
     }
+    threadChangeRendered = threadChangeSeen
+    const pruneBefore = Date.now() - 2 * THREAD_CHANGE_TTL_MS
+    for (const [key, entry] of threadChangeCache) {
+      if (entry.at < pruneBefore && !threadChangeSeenKeys.has(key)) threadChangeCache.delete(key)
+    }
     refreshThreadChanges(threadChangeWanted)
     if (preserveScroll) list.scrollTop = scrollTop
   }
@@ -2332,9 +2362,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       const { activeProjectId, activeThreadId, projects } = store.getState()
       if (!activeProjectId || !activeThreadId) return
       if (projects.find((p) => p.id === activeProjectId)?.sshHost) return
-      refreshThreadChanges([{ projectId: activeProjectId, threadId: activeThreadId }])
+      refreshThreadChanges([{ projectId: activeProjectId, threadId: activeThreadId }], {
+        fresh: true,
+      })
     }, 1_500)
   })
+
+  window.addEventListener('focus', recheckStaleThreadChanges)
+  document.addEventListener('visibilitychange', recheckStaleThreadChanges)
 
   const unsubs = [
     unsubWorkingTree,
@@ -2379,6 +2414,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     threadChangeGeneration += 1
     if (threadChangeTimer !== null) clearTimeout(threadChangeTimer)
     threadChangeTimer = null
+    window.removeEventListener('focus', recheckStaleThreadChanges)
+    document.removeEventListener('visibilitychange', recheckStaleThreadChanges)
+    threadChangeCache.clear()
+    threadChangeInFlight.clear()
     orphanScanGeneration += 1
     dismissContextMenu()
     renaming = null

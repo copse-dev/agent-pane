@@ -1550,8 +1550,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:status', projectId, threadId),
     changeStats: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:change-stats', projectId, threadId),
-    threadChangeSummary: (refs: Array<{ projectId: string; threadId: string }>) =>
-      ipcRenderer.invoke('git:thread-change-summary', refs),
+    threadChangeSummary: (
+      refs: Array<{ projectId: string; threadId: string }>,
+      opts?: { fresh?: boolean },
+    ) => ipcRenderer.invoke('git:thread-change-summary', refs, opts),
     fileDiff: (projectId: string, threadId: string, path: string, staged: boolean) =>
       ipcRenderer.invoke('git:file-diff', projectId, threadId, path, staged),
     workingFileDiff: (projectId: string, threadId: string, path: string) =>
