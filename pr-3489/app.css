@@ -1669,6 +1669,10 @@ copse-ui-field input[type=password],
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 .pane-chat.is-activity-home .conversation {
+  display: none;
+}
+.pane-chat.is-activity-home .conversation:has(> .thread-roadmap-origin:not([hidden])) {
+  display: flex;
   flex: 0 0 auto;
   padding-bottom: 0;
 }
@@ -4781,6 +4785,15 @@ label {
   object-fit: contain;
   border: 1px solid var(--border);
   background: var(--bg-base);
+}
+.msg-user.is-preview-compact .message-image {
+  max-width: min(100%, 88px);
+  max-height: 64px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .msg-user .message-image {
+    transition: max-width 0.22s ease, max-height 0.22s ease;
+  }
 }
 .tool-result-preview {
   margin: 0;
@@ -13353,7 +13366,7 @@ dialog.activity-panel-overlay {
     mask-image:
       linear-gradient(
         to right,
-        #000 calc(100% - 28px),
+        var(--text-primary) calc(100% - 28px),
         transparent);
   }
   .activity-home .activity-strip-card,
