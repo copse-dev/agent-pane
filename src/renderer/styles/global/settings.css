@@ -1951,6 +1951,238 @@ dialog.settings-overlay::backdrop {
    registered plugin: name + trust badge + enable toggle in the header, then a
    description, contribution chips enumerating what the plugin contributes, and a
    generic settings block rendered from the manifest schema. */
+.plugin-view-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-muted);
+}
+.plugin-view-tab {
+  min-height: calc(30px * var(--ui-scale));
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.plugin-view-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.plugin-view-tab.active {
+  color: var(--text-primary);
+  background: var(--bg-selected);
+  font-weight: 600;
+}
+.plugin-catalog-browser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.plugin-catalog-intro,
+.plugin-catalog-result-status {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.plugin-catalog-search {
+  display: block;
+}
+.plugin-catalog-search-input {
+  width: min(100%, 520px);
+}
+.plugin-catalog-result-status {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.plugin-catalog-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.plugin-catalog-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+.plugin-catalog-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+}
+.plugin-catalog-icon {
+  width: calc(36px * var(--ui-scale));
+  height: calc(36px * var(--ui-scale));
+  border-radius: var(--radius);
+}
+.plugin-catalog-title {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.plugin-catalog-publisher {
+  color: var(--text-muted);
+  font-size: var(--badge-font-size);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.plugin-catalog-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+}
+.plugin-catalog-description {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.plugin-catalog-keywords {
+  margin-top: auto;
+}
+.plugin-catalog-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding-top: var(--spacing-xs);
+}
+.plugin-catalog-actions,
+.plugin-managed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+}
+.plugin-catalog-action {
+  flex: none;
+}
+.plugin-catalog-operation-status {
+  min-height: 1.2em;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  word-break: break-word;
+}
+/* Install review: what the plugin adds leads, its pin folds away. The confirm
+   dialog's detail slot is `pre-wrap` for plain-string details; this is DOM. */
+#confirm-dialog:has(.plugin-install-review-dialog) {
+  max-width: 560px;
+}
+.plugin-install-review-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  white-space: normal;
+}
+.plugin-install-review-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.plugin-install-review-provenance {
+  margin-top: calc(-1 * var(--spacing-sm));
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.plugin-install-review-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.plugin-install-review-heading {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.plugin-install-review-servers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+.plugin-install-review-servers li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-xs) var(--spacing-sm);
+}
+.plugin-install-review-server-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.plugin-install-review-server-transport {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.plugin-install-review-server-target {
+  min-width: 0;
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+.plugin-install-review-warnings {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+  color: var(--warning);
+  font-size: var(--font-size-sm);
+}
+.plugin-install-review-pin {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+.plugin-install-review-pin > .settings-disclosure-summary {
+  margin-inline: calc(-1 * var(--spacing-sm));
+}
+.plugin-install-review-pin[open] > .settings-disclosure-summary {
+  margin-bottom: var(--spacing-xs);
+}
+.plugin-uninstall-data-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+.plugin-managed-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.plugin-managed-actions {
+  justify-content: flex-start;
+}
+.plugin-catalog-provenance {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.plugin-catalog-source-link {
+  flex: none;
+  text-decoration: none;
+}
+.plugin-catalog-more {
+  align-self: center;
+}
 .plugins-group {
   display: flex;
   flex-direction: column;
