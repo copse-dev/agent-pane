@@ -85327,7 +85327,7 @@ function bindSelectionQuote(transcript, actions) {
   sendButton.addEventListener("click", () => void sendReply());
   const onPointerDown = (event) => {
     if (event.target instanceof Node && popup.contains(event.target)) return;
-    if (event.button === 2) {
+    if (event.button === 2 && event.target instanceof Node && transcript.contains(event.target)) {
       suppressed = true;
       return;
     }
