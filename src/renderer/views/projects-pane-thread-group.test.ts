@@ -23,7 +23,14 @@ function thread(id: string, title: string, status: Thread['status'] = 'idle'): T
   }
 }
 
-function mount(group: ThreadGroupMode): {
+function mount(
+  group: ThreadGroupMode,
+  threads: Thread[] = [
+    thread('idle', 'Idle one'),
+    thread('run', 'Runner', 'running'),
+    thread('ask', 'Asker'),
+  ],
+): {
   store: ReturnType<typeof createStore>
   saved: Array<[string, unknown]>
 } {
@@ -48,12 +55,8 @@ function mount(group: ThreadGroupMode): {
     activeProjectId: 'p1',
     expandedProjectId: 'p1',
     workspaceRoot: '/work',
-    threads: [
-      thread('idle', 'Idle one'),
-      thread('run', 'Runner', 'running'),
-      thread('ask', 'Asker'),
-    ],
-    activeThreadId: 'idle',
+    threads,
+    activeThreadId: threads[0]?.id ?? null,
     sidebarThreadGroup: group,
   })
   const host = document.createElement('div')
@@ -106,5 +109,34 @@ describe('projects pane group by (component)', () => {
     assert.equal(store.getState().sidebarThreadGroup, 'status')
     assert.deepEqual(saved, [['sidebarThreadGroup', 'status']])
     assert.equal(document.querySelector('.project-row'), null)
+  })
+
+  describe('an empty project', () => {
+    const projectNames = (): string[] =>
+      Array.from(document.querySelectorAll('.project-entry .project-name')).map(
+        (n) => n.textContent,
+      )
+
+    for (const group of ['status', 'none'] as const) {
+      it(`keeps its row and "+" in ${group} grouping, and "+" starts a thread`, () => {
+        const { store } = mount(group, [])
+        assert.equal(document.querySelector('.sidebar-empty')?.textContent, 'No threads yet')
+        assert.deepEqual(projectNames(), ['work', 'other'])
+        const plus = document.querySelector<HTMLButtonElement>(
+          '.project-entry[data-project-id="p1"] .project-new-thread-btn',
+        )
+        assert.ok(plus, 'the active project has a "+"')
+        plus.click()
+        assert.equal(store.getState().threads.length, 1)
+      })
+    }
+
+    it('shows a quiet hint in project grouping', () => {
+      mount('project', [])
+      assert.equal(
+        document.querySelector('.chats-list .sidebar-empty')?.textContent,
+        'No threads yet',
+      )
+    })
   })
 })

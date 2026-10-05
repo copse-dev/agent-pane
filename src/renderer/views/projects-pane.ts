@@ -1812,6 +1812,33 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       return section
     }
 
+    /** The "+" beside a project: switch to it first, then start a thread there. */
+    function renderNewThreadButton(project: Project): HTMLButtonElement {
+      const newThreadBtn = el(
+        'button',
+        {
+          type: 'button',
+          class: 'project-new-thread-btn',
+          'aria-label': 'New thread',
+          'data-tooltip': 'New thread',
+        },
+        plusIcon('ui-icon ui-icon-sm'),
+      )
+      newThreadBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        if (project.id !== store.getState().activeProjectId) {
+          switchProject(store, api, project.id)
+          return
+        }
+        if (!store.getState().workspaceRoot) {
+          void addProject(store, api)
+          return
+        }
+        openNewThread(store)
+      })
+      return newThreadBtn
+    }
+
     /**
      * One project's whole block — header row, quarantine notice, thread list —
      * as a single element. Wrapping it means a drop indicator can be drawn
@@ -1962,29 +1989,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
 
       if (isExpanded) {
-        const newThreadBtn = el(
-          'button',
-          {
-            type: 'button',
-            class: 'project-new-thread-btn',
-            'aria-label': 'New thread',
-            'data-tooltip': 'New thread',
-          },
-          plusIcon('ui-icon ui-icon-sm'),
-        )
-        newThreadBtn.addEventListener('click', (e) => {
-          e.stopPropagation()
-          if (project.id !== store.getState().activeProjectId) {
-            switchProject(store, api, project.id)
-            return
-          }
-          if (!store.getState().workspaceRoot) {
-            void addProject(store, api)
-            return
-          }
-          openNewThread(store)
-        })
-        projectLine.append(newThreadBtn)
+        projectLine.append(renderNewThreadButton(project))
       }
 
       if (!isExpanded) return entry
@@ -2067,6 +2072,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         )
       } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads'))
+      } else if (!isFiltering && visibleThreads.length === 0) {
+        chats.append(el('div', { class: 'sidebar-empty' }, 'No threads yet'))
       }
 
       for (const thread of visibleThreads) {
@@ -2133,7 +2140,26 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           ? groupRowsByStatus(ordered, isThreadAwaitingAttention)
           : [{ id: 'all', label: '', rows: ordered }]
       if (ordered.length === 0) {
-        return [el('div', { class: 'sidebar-empty' }, 'No threads yet')]
+        // The tree is gone in this layout, so an empty project would vanish with
+        // it, taking its name and its "+" along. Keep one compact row per project.
+        return [
+          el('div', { class: 'sidebar-empty' }, 'No threads yet'),
+          ...Array.from(owners.values(), (project) => {
+            const nameRow = el(
+              'button',
+              { class: 'project-row', title: project.path },
+              el('span', { class: 'project-name' }, projectDisplayName(project)),
+            )
+            nameRow.addEventListener('click', () => {
+              switchProject(store, api, project.id)
+            })
+            return el(
+              'div',
+              { class: 'project-entry', 'data-project-id': project.id },
+              el('div', { class: 'project-line' }, nameRow, renderNewThreadButton(project)),
+            )
+          }),
+        ]
       }
       return sections.map((section) => {
         const block = el('div', { class: 'thread-section', 'data-section-id': section.id })
