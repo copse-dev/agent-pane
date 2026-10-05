@@ -21070,6 +21070,867 @@ var init_storage_maintenance_panel = __esm({
   }
 });
 
+// src/renderer/dom/outline-icon.ts
+function outlineIcon(label, paths, className) {
+  const svg2 = document.createElementNS(SVG_NS, "svg");
+  svg2.setAttribute("class", className);
+  svg2.setAttribute("viewBox", "0 0 24 24");
+  svg2.setAttribute("width", ICON_SIZE);
+  svg2.setAttribute("height", ICON_SIZE);
+  svg2.setAttribute("aria-hidden", "true");
+  svg2.setAttribute("focusable", "false");
+  svg2.setAttribute("data-icon", label);
+  svg2.setAttribute("fill", "none");
+  svg2.setAttribute("stroke", "currentColor");
+  svg2.setAttribute("stroke-width", "1.75");
+  svg2.setAttribute("stroke-linecap", "round");
+  svg2.setAttribute("stroke-linejoin", "round");
+  for (const d3 of paths) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d3);
+    svg2.append(path);
+  }
+  return svg2;
+}
+var SVG_NS, ICON_SIZE;
+var init_outline_icon = __esm({
+  "src/renderer/dom/outline-icon.ts"() {
+    SVG_NS = "http://www.w3.org/2000/svg";
+    ICON_SIZE = "16";
+  }
+});
+
+// src/renderer/dom/icons.ts
+function playIcon(className = DEFAULT) {
+  return outlineIcon("play", ["m6 3 14 9-14 9V3Z"], className);
+}
+function chevronRightIcon(className = DEFAULT) {
+  return outlineIcon("chevron-right", ["m9 18 6-6-6-6"], className);
+}
+function chevronDownIcon(className = DEFAULT) {
+  return outlineIcon("chevron-down", ["m6 9 6 6 6-6"], className);
+}
+function chevronUpIcon(className = DEFAULT) {
+  return outlineIcon("chevron-up", ["m18 15-6-6-6 6"], className);
+}
+function arrowLeftIcon(className = DEFAULT) {
+  return outlineIcon("arrow-left", ["M19 12H5", "m12 19-7-7 7-7"], className);
+}
+function arrowRightIcon(className = DEFAULT) {
+  return outlineIcon("arrow-right", ["M5 12h14", "m12 5 7 7-7 7"], className);
+}
+function arrowDownIcon(className = DEFAULT) {
+  return outlineIcon("arrow-down", ["M12 5v14", "m19 12-7 7-7-7"], className);
+}
+function arrowUpDownIcon(className = DEFAULT) {
+  return outlineIcon(
+    "arrow-up-down",
+    ["m21 16-4 4-4-4", "M17 20V4", "m3 8 4-4 4 4", "M7 4v16"],
+    className
+  );
+}
+function refreshIcon(className = DEFAULT) {
+  return outlineIcon(
+    "refresh",
+    [
+      "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
+      "M21 3v5h-5",
+      "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
+      "M8 16H3v5"
+    ],
+    className
+  );
+}
+function externalLinkIcon(className = DEFAULT) {
+  return outlineIcon(
+    "external-link",
+    ["M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"],
+    className
+  );
+}
+function closeIcon(className = DEFAULT) {
+  return outlineIcon("close", ["M18 6 6 18", "m6 6 12 12"], className);
+}
+function plusIcon(className = DEFAULT) {
+  return outlineIcon("plus", ["M5 12h14", "M12 5v14"], className);
+}
+function monitorIcon(className = DEFAULT) {
+  return outlineIcon(
+    "monitor",
+    [
+      "M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
+      "M8 21h8",
+      "M12 17v4"
+    ],
+    className
+  );
+}
+function downloadIcon(className = DEFAULT) {
+  return outlineIcon(
+    "download",
+    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
+    className
+  );
+}
+function uploadIcon(className = DEFAULT) {
+  return outlineIcon(
+    "upload",
+    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m17 8-5-5-5 5", "M12 3v12"],
+    className
+  );
+}
+function maximizeIcon(className = DEFAULT) {
+  return outlineIcon("maximize", ["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"], className);
+}
+function minimizeIcon(className = DEFAULT) {
+  return outlineIcon("minimize", ["M4 14h6v6", "M20 10h-6V4", "M14 10l7-7", "M3 21l7-7"], className);
+}
+function moreHorizontalIcon(className = DEFAULT) {
+  return outlineIcon("more-horizontal", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
+}
+function moreVerticalIcon(className = DEFAULT) {
+  return outlineIcon("more-vertical", ["M12 5h.01", "M12 12h.01", "M12 19h.01"], className);
+}
+function runningStatusIcon(className = DEFAULT) {
+  return outlineIcon("running-status", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
+}
+function checkIcon(className = DEFAULT) {
+  return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
+}
+function shieldIcon(className = DEFAULT) {
+  return outlineIcon(
+    "shield",
+    [
+      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+    ],
+    className
+  );
+}
+function bellIcon(className = DEFAULT) {
+  return outlineIcon(
+    "bell",
+    [
+      "M10.27 21a2 2 0 0 0 3.46 0",
+      "M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"
+    ],
+    className
+  );
+}
+function messageQuestionIcon(className = DEFAULT) {
+  return outlineIcon(
+    "message-circle-question",
+    ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
+    className
+  );
+}
+function banIcon(className = DEFAULT) {
+  return outlineIcon(
+    "ban",
+    ["M4.93 4.93a10 10 0 1 0 14.14 14.14A10 10 0 0 0 4.93 4.93Z", "m4.93 4.93 14.14 14.14"],
+    className
+  );
+}
+function dotIcon(className = DEFAULT) {
+  return outlineIcon("dot", ["M12 12h.01"], `${className} ui-icon-dot`);
+}
+function circleIcon(className = DEFAULT) {
+  return outlineIcon("circle", ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"], className);
+}
+function spinnerIcon(className = DEFAULT) {
+  return outlineIcon("loader-circle", ["M21 12a9 9 0 1 1-6.219-8.56"], className);
+}
+function minusIcon(className = DEFAULT) {
+  return outlineIcon("minus", ["M5 12h14"], className);
+}
+function warningIcon(className = DEFAULT) {
+  return outlineIcon(
+    "triangle-alert",
+    [
+      "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z",
+      "M12 9v4",
+      "M12 17h.01"
+    ],
+    className
+  );
+}
+function searchIcon(className = DEFAULT) {
+  return outlineIcon(
+    "search",
+    ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "m21 21-4.35-4.35"],
+    className
+  );
+}
+function fileTextIcon(className = DEFAULT) {
+  return outlineIcon(
+    "file-text",
+    [
+      "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z",
+      "M14 2v6h6",
+      "M8 13h8",
+      "M8 17h8"
+    ],
+    className
+  );
+}
+function imageIcon(className = DEFAULT) {
+  return outlineIcon(
+    "image",
+    [
+      "M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8.3",
+      "m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21",
+      "M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7",
+      "M9 9h.01"
+    ],
+    className
+  );
+}
+function sparkleIcon(className = DEFAULT) {
+  return outlineIcon(
+    "sparkle",
+    [
+      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
+    ],
+    className
+  );
+}
+function zapIcon(className = DEFAULT) {
+  return outlineIcon(
+    "zap",
+    [
+      "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
+    ],
+    className
+  );
+}
+function gitBranchIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-branch",
+    [
+      "M6 3v12",
+      "M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M15 6a9 9 0 0 0-9 9"
+    ],
+    className
+  );
+}
+function gitPullRequestIcon(className = DEFAULT, conflicts = false) {
+  return outlineIcon(
+    "git-pull-request",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      conflicts ? "M3 3l6 6m0-6L3 9" : "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M13 6h3a2 2 0 0 1 2 2v7",
+      "M6 9v12"
+    ],
+    className
+  );
+}
+function gitMergeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-merge",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 21V9a9 9 0 0 0 9 9"
+    ],
+    className
+  );
+}
+function penLineIcon(className = DEFAULT) {
+  return outlineIcon(
+    "pen-line",
+    [
+      "M12 20h9",
+      "M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"
+    ],
+    className
+  );
+}
+function slashIcon(className = DEFAULT) {
+  return outlineIcon("slash", ["M20 4 4 20"], className);
+}
+function arrowUpRightIcon(className = DEFAULT) {
+  return outlineIcon("arrow-up-right", ["M7 7h10v10", "M7 17 17 7"], className);
+}
+function squareIcon(className = DEFAULT) {
+  return outlineIcon(
+    "square",
+    ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"],
+    className
+  );
+}
+function eraserIcon(className = DEFAULT) {
+  return outlineIcon(
+    "eraser",
+    [
+      "m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21",
+      "M22 21H7",
+      "m5 11 9 9"
+    ],
+    className
+  );
+}
+function undoIcon(className = DEFAULT) {
+  return outlineIcon(
+    "undo",
+    ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"],
+    className
+  );
+}
+function trashIcon(className = DEFAULT) {
+  return outlineIcon(
+    "trash",
+    [
+      "M3 6h18",
+      "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
+      "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+    ],
+    className
+  );
+}
+var DEFAULT;
+var init_icons = __esm({
+  "src/renderer/dom/icons.ts"() {
+    init_outline_icon();
+    DEFAULT = "ui-icon";
+  }
+});
+
+// src/renderer/attachments/attachment-preview.ts
+function releaseCurrent() {
+  const cleanup = currentCleanup;
+  currentCleanup = null;
+  cleanup?.();
+  bodyEl?.replaceChildren();
+}
+function ensureDialog() {
+  if (dialog) {
+    if (!dialog.isConnected) {
+      if (dialog.open) dialog.close();
+      document.body.append(dialog);
+    }
+    return dialog;
+  }
+  dialog = document.createElement("dialog");
+  dialog.className = "attachment-preview-dialog";
+  titleEl = el("h2", { class: "attachment-preview-title" });
+  bodyEl = el("div", { class: "attachment-preview-body" });
+  const closeBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost attachment-preview-close",
+      "aria-label": "Close"
+    },
+    closeIcon()
+  );
+  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
+  dialog.append(header, bodyEl);
+  document.body.append(dialog);
+  closeBtn.addEventListener("click", () => dialog?.close());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog?.close();
+  });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") event.stopPropagation();
+  });
+  dialog.addEventListener("close", () => {
+    const resolveFocusTarget = returnFocus;
+    returnFocus = null;
+    activeToken += 1;
+    const closedToken = activeToken;
+    releaseCurrent();
+    queueMicrotask(() => {
+      if (activeToken !== closedToken || dialog?.open) return;
+      const focusTarget = resolveFocusTarget?.();
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    });
+  });
+  return dialog;
+}
+function statusNode(message2) {
+  return el("p", { class: "attachment-preview-status" }, message2);
+}
+function openAttachmentPreview(options) {
+  const previewDialog = ensureDialog();
+  const previewBody = bodyEl;
+  const previewTitle = titleEl;
+  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
+  activeToken += 1;
+  const token = activeToken;
+  releaseCurrent();
+  currentCleanup = options.onClose ?? null;
+  previewDialog.dataset["previewKind"] = options.kind;
+  previewDialog.setAttribute(
+    "aria-label",
+    options.ariaLabel ?? `Attachment preview: ${options.title}`
+  );
+  previewTitle.textContent = options.title;
+  if (options.content) previewBody.replaceChildren(options.content);
+  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
+  if (!previewDialog.open) {
+    const activeElement = document.activeElement;
+    const defaultReturnFocus = () => activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null;
+    returnFocus = options.returnFocus ?? defaultReturnFocus;
+    previewDialog.showModal();
+  }
+  const isActive = () => token === activeToken && previewDialog.open;
+  return {
+    isActive,
+    setContent(content) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(content);
+      return true;
+    },
+    setStatus(message2) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(statusNode(message2));
+      return true;
+    },
+    close() {
+      if (isActive()) previewDialog.close();
+    }
+  };
+}
+var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
+var init_attachment_preview = __esm({
+  "src/renderer/attachments/attachment-preview.ts"() {
+    init_helpers();
+    init_icons();
+    dialog = null;
+    titleEl = null;
+    bodyEl = null;
+    currentCleanup = null;
+    returnFocus = null;
+    activeToken = 0;
+  }
+});
+
+// src/renderer/views/settings/source-row.ts
+function makeSourceRowTitle(title, action) {
+  if (!action) {
+    const span = document.createElement("span");
+    span.className = "sources-row-title";
+    span.textContent = title;
+    return span;
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "sources-row-title sources-row-title-btn";
+  button.textContent = title;
+  button.title = action.label;
+  button.setAttribute("aria-label", action.label);
+  button.addEventListener("click", action.run);
+  return button;
+}
+function makeSourceRow(title, badge, detail, opts = {}) {
+  const row2 = document.createElement("div");
+  row2.className = "sources-row";
+  if (opts.titleAttr) row2.title = opts.titleAttr;
+  const header = document.createElement("div");
+  header.className = "sources-row-header";
+  const primary = document.createElement("div");
+  primary.className = "sources-row-primary";
+  const titleEl2 = makeSourceRowTitle(title, opts.titleAction);
+  primary.append(titleEl2);
+  if (opts.hoverDetail) {
+    const hoverEl = document.createElement("span");
+    hoverEl.className = "sources-row-hover-detail";
+    const pathEl = document.createElement("bdi");
+    pathEl.textContent = opts.hoverDetail;
+    hoverEl.append(pathEl);
+    primary.append(hoverEl);
+  }
+  header.append(primary);
+  if (badge) {
+    const badgeEl = document.createElement("span");
+    badgeEl.className = opts.badgeClass ? `ui-badge sources-badge ${opts.badgeClass}` : "ui-badge sources-badge";
+    badgeEl.textContent = badge;
+    header.append(badgeEl);
+  }
+  for (const extra of opts.extraBadges ?? []) {
+    const badgeEl = document.createElement("span");
+    badgeEl.className = `ui-badge sources-badge ${extra.className}`;
+    badgeEl.textContent = extra.text;
+    header.append(badgeEl);
+  }
+  row2.append(header);
+  if (detail) {
+    const detailEl = document.createElement("div");
+    detailEl.className = "sources-row-detail";
+    detailEl.textContent = detail;
+    row2.append(detailEl);
+  }
+  return row2;
+}
+var init_source_row = __esm({
+  "src/renderer/views/settings/source-row.ts"() {
+  }
+});
+
+// src/renderer/views/settings/sources-section.ts
+function createSourcesSection({
+  root,
+  api: api2,
+  onTrusted,
+  onHeadingsChanged
+}) {
+  let generation = 0;
+  function makeAgentRows(result) {
+    const rows = [];
+    for (const agent of result.agents) {
+      const extraBadges = [
+        // The container is a directory name (`.cursor`, `.claude`): a literal,
+        // shown as written rather than as a sentence-case label.
+        { text: agent.container, className: "ui-badge-literal" }
+      ];
+      if (agent.unsupportedFields.length > 0) {
+        extraBadges.push({ text: "partly supported", className: "sources-badge-unsupported" });
+      }
+      const detail = [
+        agent.description,
+        ...agent.unsupportedFields.map((f4) => `${f4.field}: ${f4.reason}`)
+      ].filter(isNonEmptyString).join(" \xB7 ");
+      rows.push(
+        makeSourceRow(agent.name, agent.source, detail || null, {
+          extraBadges,
+          titleAttr: agent.agentPath,
+          hoverDetail: agent.agentPath
+        })
+      );
+    }
+    for (const shadowed of result.shadowed) {
+      rows.push(
+        makeSourceRow(shadowed.name, shadowed.source, `overridden by ${shadowed.shadowedBy}`, {
+          extraBadges: [{ text: "overridden", className: "sources-badge-warning" }],
+          titleAttr: shadowed.agentPath,
+          hoverDetail: shadowed.agentPath
+        })
+      );
+    }
+    for (const skipped of result.skipped) {
+      rows.push(
+        makeSourceRow(basenameOf(skipped.agentPath), skipped.source, skipped.reason, {
+          extraBadges: [{ text: "skipped", className: "sources-badge-error" }],
+          titleAttr: skipped.agentPath,
+          hoverDetail: skipped.agentPath
+        })
+      );
+    }
+    return rows;
+  }
+  function basenameOf(path) {
+    return path.split(/[/\\]/).pop() ?? path;
+  }
+  function makeHookRow(h3) {
+    const extraBadges = [];
+    if (h3.supported === false) {
+      extraBadges.push({ text: "unsupported", className: "sources-badge-unsupported" });
+    }
+    if (h3.sandbox === false) {
+      extraBadges.push({ text: "outside sandbox", className: "sources-badge-unsandboxed" });
+    }
+    if (h3.lastError) {
+      extraBadges.push({ text: "error", className: "sources-badge-error" });
+    }
+    const familyLabel = h3.family === "claude" ? "Claude Code" : h3.family === "copse" ? "Copse" : "Cursor";
+    const title = h3.family === "claude" && h3.matcher ? `${h3.event} \xB7 ${h3.matcher}` : h3.event;
+    const detail = `${familyLabel} \xB7 ${h3.command}`;
+    const row2 = makeSourceRow(title, h3.scope, detail, {
+      extraBadges
+    });
+    if (h3.lastError) {
+      const errorEl = document.createElement("div");
+      errorEl.className = "sources-row-error";
+      errorEl.textContent = `Last run failed: ${h3.lastError}`;
+      row2.append(errorEl);
+    }
+    addHookTester(row2, h3);
+    return row2;
+  }
+  function addHookTester(row2, h3) {
+    const header = row2.querySelector(".sources-row-header");
+    if (!header) return;
+    const testBtn = document.createElement("button");
+    testBtn.type = "button";
+    testBtn.className = "ui-btn ui-btn-secondary sources-hook-test-btn";
+    testBtn.textContent = "Test";
+    testBtn.title = "Dry-run this hook against a synthetic payload for its event";
+    header.append(testBtn);
+    const result = document.createElement("div");
+    result.className = "hook-test";
+    result.hidden = true;
+    row2.append(result);
+    testBtn.addEventListener("click", () => {
+      void runHookTest(h3, testBtn, result);
+    });
+  }
+  async function runHookTest(h3, btn, result) {
+    btn.disabled = true;
+    btn.textContent = "Testing\u2026";
+    result.hidden = false;
+    result.innerHTML = "";
+    const pending = document.createElement("div");
+    pending.className = "hook-test-summary";
+    pending.textContent = "Running dry-run\u2026";
+    result.append(pending);
+    try {
+      const req = {
+        family: h3.family,
+        event: h3.event,
+        command: h3.command,
+        source: h3.source,
+        scope: h3.scope,
+        ...h3.sandbox !== void 0 ? { sandbox: h3.sandbox } : {}
+      };
+      const res = await api2.hooks.test(req);
+      renderHookTestResult(result, res);
+    } catch {
+      result.innerHTML = "";
+      const err2 = document.createElement("div");
+      err2.className = "hook-test-summary hook-test-error";
+      err2.textContent = "Dry-run failed to start.";
+      result.append(err2);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Test";
+    }
+  }
+  function renderHookTestResult(container, res) {
+    container.innerHTML = "";
+    if (!res.ran) {
+      const notice = document.createElement("div");
+      notice.className = "hook-test-summary hook-test-error";
+      notice.textContent = res.error ?? "This hook could not be dry-run.";
+      container.append(notice);
+      return;
+    }
+    const summary = document.createElement("div");
+    summary.className = "hook-test-summary";
+    const chips = [];
+    if (res.wireEvent) chips.push(`event ${res.wireEvent}`);
+    if (res.timedOut) chips.push("timed out");
+    else if (res.spawnError) chips.push("failed to start");
+    chips.push(
+      `exit ${res.exitCode === null || res.exitCode === void 0 ? "unknown" : String(res.exitCode)}`
+    );
+    chips.push(`${String(res.durationMs ?? 0)} ms`);
+    chips.push(res.parseOk ? "parsed ok" : "parse failed");
+    if (res.sandboxed) chips.push("sandboxed");
+    for (const text2 of chips) {
+      const chip2 = document.createElement("span");
+      chip2.className = "hook-test-chip";
+      chip2.textContent = text2;
+      summary.append(chip2);
+    }
+    container.append(summary);
+    if (res.outcomeSummary) {
+      const outcome = document.createElement("div");
+      outcome.className = "hook-test-outcome";
+      outcome.textContent = `Outcome: ${res.outcomeSummary}`;
+      container.append(outcome);
+    }
+    appendHookTestStream(container, "stdin", res.stdin ?? "");
+    appendHookTestStream(container, "stdout", res.stdout ?? "");
+    appendHookTestStream(container, "stderr", res.stderr ?? "");
+  }
+  function appendHookTestStream(container, label, text2) {
+    const block = document.createElement("div");
+    block.className = "hook-test-stream";
+    const heading = document.createElement("div");
+    heading.className = "hook-test-stream-label";
+    heading.textContent = label;
+    const pre = document.createElement("pre");
+    pre.textContent = text2.length > 0 ? text2 : "(empty)";
+    if (text2.length === 0) pre.classList.add("hook-test-stream-empty");
+    block.append(heading, pre);
+    container.append(block);
+  }
+  function makeHookWarningRow(w2) {
+    const row2 = makeSourceRow(w2.message, w2.scope, w2.source, {
+      extraBadges: [{ text: "warning", className: "sources-badge-warning" }]
+    });
+    row2.classList.add("sources-row-warning");
+    return row2;
+  }
+  function fillSourceList(selector, rows, emptyText) {
+    const list = qsRequired(root, selector);
+    list.innerHTML = "";
+    if (rows.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "sources-empty";
+      empty.textContent = emptyText;
+      list.append(empty);
+      return;
+    }
+    for (const row2 of rows) list.append(row2);
+  }
+  function openInstructionFile(file2) {
+    const session = openAttachmentPreview({
+      kind: "text",
+      title: file2.name,
+      ariaLabel: `Instruction file: ${file2.path}`,
+      status: `Loading ${file2.name}\u2026`
+    });
+    void api2.instructions.read(file2.path).then((content) => {
+      const text2 = document.createElement("pre");
+      text2.className = "attachment-preview-text";
+      text2.textContent = content;
+      session.setContent(text2);
+    }).catch((error62) => {
+      session.setStatus(errorMessage(error62));
+    });
+  }
+  function applyWorkspaceTrusted(statuses) {
+    onTrusted(statuses);
+    void refreshSources();
+  }
+  async function trustWorkspaceFromBadge(button) {
+    const unsandboxed = await api2.workspace.unsandboxedProjectHooks().catch(() => []);
+    const detail = [
+      "Its instruction files join the system prompt, and the MCP servers and hooks it defines are allowed to run.",
+      unsandboxed.length > 0 ? `${String(unsandboxed.length)} of those hooks declare "sandbox": false and run OUTSIDE the project sandbox: ${unsandboxed.map((h3) => `${h3.event}: ${h3.command}`).join("; ")}` : ""
+    ].filter(Boolean).join(" ");
+    const confirmed = await showConfirmDialog({
+      message: "Trust this workspace?",
+      detail,
+      confirmLabel: "Trust workspace"
+    });
+    if (!confirmed) return;
+    button.disabled = true;
+    const statusEl = qsRequired(root, "#sources-reload-status");
+    statusEl.textContent = "Trusting workspace\u2026";
+    const pending = api2.workspace.setTrusted(true).then(
+      (statuses) => ({ statuses }),
+      (error62) => ({ error: error62 })
+    );
+    await refreshSources();
+    const result = await pending;
+    if ("statuses" in result) applyWorkspaceTrusted(result.statuses);
+    else statusEl.textContent = errorMessage(result.error);
+  }
+  function makeInstructionRow(file2) {
+    const nestedStatus = file2.scopePath === void 0 ? "" : file2.duplicateOf !== void 0 ? ` \xB7 scope: ${file2.scopePath}/ \xB7 identical to ${file2.duplicateOf}, loaded once through it` : file2.active ? ` \xB7 scope: ${file2.scopePath}/ \xB7 active this turn` : ` \xB7 scope: ${file2.scopePath}/ \xB7 activates when a path under this directory enters context`;
+    const detail = `${file2.path} \xB7 ${formatByteSize(file2.bytes)}` + (file2.trusted ? nestedStatus : " \xB7 inert until you trust this workspace \u2014 click the badge to trust it");
+    const badge = !file2.trusted ? "not loaded" : file2.duplicateOf !== void 0 ? "duplicate" : file2.scopePath !== void 0 ? file2.active ? "active" : "scoped" : file2.scope;
+    const row2 = makeSourceRow(file2.name, badge, detail, {
+      badgeClass: !file2.trusted ? "sources-badge-untrusted" : file2.scopePath !== void 0 && file2.active && file2.duplicateOf === void 0 ? "sources-badge-active" : void 0,
+      titleAction: {
+        label: `Open ${file2.name}`,
+        run: () => {
+          openInstructionFile(file2);
+        }
+      }
+    });
+    if (file2.trusted) return row2;
+    const badgeEl = row2.querySelector(".sources-badge");
+    if (badgeEl) {
+      const trustBtn = document.createElement("button");
+      trustBtn.type = "button";
+      trustBtn.className = `${badgeEl.className} sources-badge-btn`;
+      trustBtn.textContent = badgeEl.textContent;
+      trustBtn.title = `Trust this workspace to load ${file2.name}`;
+      trustBtn.setAttribute("aria-label", `Trust this workspace to load ${file2.name}`);
+      trustBtn.addEventListener("click", () => {
+        void trustWorkspaceFromBadge(trustBtn);
+      });
+      badgeEl.replaceWith(trustBtn);
+    }
+    return row2;
+  }
+  async function refreshSources() {
+    const statusEl = qsRequired(root, "#sources-reload-status");
+    const request = ++generation;
+    statusEl.textContent = "Loading\u2026";
+    try {
+      const [instructions, cursorRules, skills, agents, hooks] = await Promise.all([
+        api2.instructions.list(),
+        api2.cursorRules.list(),
+        api2.skills.list(),
+        api2.agents.list(),
+        api2.hooks.list()
+      ]);
+      if (request !== generation) return;
+      fillSourceList(
+        "#sources-instructions-list",
+        instructions.map((f4) => makeInstructionRow(f4)),
+        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
+      );
+      if (instructions.some((f4) => f4.discoveryTruncated)) {
+        const note = document.createElement("span");
+        note.className = "sources-empty";
+        note.id = "sources-instructions-truncated";
+        note.textContent = "Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.";
+        qsRequired(root, "#sources-instructions-list").append(note);
+      }
+      const kindLabel2 = {
+        always: "always",
+        auto: "auto",
+        agent: "agent",
+        manual: "manual"
+      };
+      fillSourceList(
+        "#sources-cursor-rules-list",
+        cursorRules.map((r2) => {
+          const bits = [formatByteSize(r2.bytes)];
+          if (r2.globs?.length) bits.push(`globs: ${r2.globs.join(", ")}`);
+          if (r2.description) bits.push(r2.description);
+          bits.push(r2.path);
+          return makeSourceRow(r2.name, kindLabel2[r2.kind] ?? r2.kind, bits.join(" \xB7 "));
+        }),
+        "No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file)."
+      );
+      qsRequired(root, "#cursor-rules-fieldset").hidden = cursorRules.length === 0;
+      if (!root.querySelector(".settings-content")?.classList.contains("settings-searching"))
+        onHeadingsChanged();
+      fillSourceList(
+        "#sources-skills-list",
+        skills.map(
+          (s16) => makeSourceRow(s16.name, s16.source, s16.description || null, {
+            // Keep the resting list uncluttered: path lives on hover (and as a
+            // native tooltip fallback). Description stays as the always-visible
+            // detail; when a skill has none, the hover line is the only path.
+            titleAttr: s16.skillPath,
+            hoverDetail: s16.skillPath
+          })
+        ),
+        "No skills discovered."
+      );
+      fillSourceList("#sources-agents-list", makeAgentRows(agents), "No agents discovered.");
+      fillSourceList(
+        "#sources-hooks-list",
+        [...hooks.warnings.map(makeHookWarningRow), ...hooks.hooks.map(makeHookRow)],
+        "No Cursor or Claude Code hooks configured."
+      );
+      statusEl.textContent = "";
+    } catch {
+      if (request !== generation) return;
+      statusEl.textContent = "Failed to load sources.";
+    }
+  }
+  qsRequired(root, "#sources-reload-btn").addEventListener("click", () => {
+    void refreshSources();
+  });
+  return {
+    refresh: refreshSources,
+    invalidate: () => {
+      generation += 1;
+    }
+  };
+}
+var init_sources_section = __esm({
+  "src/renderer/views/settings/sources-section.ts"() {
+    init_errors4();
+    init_file_bytes();
+    init_nullish2();
+    init_helpers();
+    init_attachment_preview();
+    init_confirm_dialog();
+    init_source_row();
+  }
+});
+
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
   const canonical2 = CANONICAL_WORDS.get(word);
@@ -34090,443 +34951,6 @@ var init_advisor_strategy_plugin = __esm({
         toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
       }
     );
-  }
-});
-
-// src/renderer/dom/outline-icon.ts
-function outlineIcon(label, paths, className) {
-  const svg2 = document.createElementNS(SVG_NS, "svg");
-  svg2.setAttribute("class", className);
-  svg2.setAttribute("viewBox", "0 0 24 24");
-  svg2.setAttribute("width", ICON_SIZE);
-  svg2.setAttribute("height", ICON_SIZE);
-  svg2.setAttribute("aria-hidden", "true");
-  svg2.setAttribute("focusable", "false");
-  svg2.setAttribute("data-icon", label);
-  svg2.setAttribute("fill", "none");
-  svg2.setAttribute("stroke", "currentColor");
-  svg2.setAttribute("stroke-width", "1.75");
-  svg2.setAttribute("stroke-linecap", "round");
-  svg2.setAttribute("stroke-linejoin", "round");
-  for (const d3 of paths) {
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", d3);
-    svg2.append(path);
-  }
-  return svg2;
-}
-var SVG_NS, ICON_SIZE;
-var init_outline_icon = __esm({
-  "src/renderer/dom/outline-icon.ts"() {
-    SVG_NS = "http://www.w3.org/2000/svg";
-    ICON_SIZE = "16";
-  }
-});
-
-// src/renderer/dom/icons.ts
-function playIcon(className = DEFAULT) {
-  return outlineIcon("play", ["m6 3 14 9-14 9V3Z"], className);
-}
-function chevronRightIcon(className = DEFAULT) {
-  return outlineIcon("chevron-right", ["m9 18 6-6-6-6"], className);
-}
-function chevronDownIcon(className = DEFAULT) {
-  return outlineIcon("chevron-down", ["m6 9 6 6 6-6"], className);
-}
-function chevronUpIcon(className = DEFAULT) {
-  return outlineIcon("chevron-up", ["m18 15-6-6-6 6"], className);
-}
-function arrowLeftIcon(className = DEFAULT) {
-  return outlineIcon("arrow-left", ["M19 12H5", "m12 19-7-7 7-7"], className);
-}
-function arrowRightIcon(className = DEFAULT) {
-  return outlineIcon("arrow-right", ["M5 12h14", "m12 5 7 7-7 7"], className);
-}
-function arrowDownIcon(className = DEFAULT) {
-  return outlineIcon("arrow-down", ["M12 5v14", "m19 12-7 7-7-7"], className);
-}
-function arrowUpDownIcon(className = DEFAULT) {
-  return outlineIcon(
-    "arrow-up-down",
-    ["m21 16-4 4-4-4", "M17 20V4", "m3 8 4-4 4 4", "M7 4v16"],
-    className
-  );
-}
-function refreshIcon(className = DEFAULT) {
-  return outlineIcon(
-    "refresh",
-    [
-      "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
-      "M21 3v5h-5",
-      "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
-      "M8 16H3v5"
-    ],
-    className
-  );
-}
-function externalLinkIcon(className = DEFAULT) {
-  return outlineIcon(
-    "external-link",
-    ["M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"],
-    className
-  );
-}
-function closeIcon(className = DEFAULT) {
-  return outlineIcon("close", ["M18 6 6 18", "m6 6 12 12"], className);
-}
-function plusIcon(className = DEFAULT) {
-  return outlineIcon("plus", ["M5 12h14", "M12 5v14"], className);
-}
-function monitorIcon(className = DEFAULT) {
-  return outlineIcon(
-    "monitor",
-    [
-      "M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
-      "M8 21h8",
-      "M12 17v4"
-    ],
-    className
-  );
-}
-function downloadIcon(className = DEFAULT) {
-  return outlineIcon(
-    "download",
-    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
-    className
-  );
-}
-function uploadIcon(className = DEFAULT) {
-  return outlineIcon(
-    "upload",
-    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m17 8-5-5-5 5", "M12 3v12"],
-    className
-  );
-}
-function maximizeIcon(className = DEFAULT) {
-  return outlineIcon("maximize", ["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"], className);
-}
-function minimizeIcon(className = DEFAULT) {
-  return outlineIcon("minimize", ["M4 14h6v6", "M20 10h-6V4", "M14 10l7-7", "M3 21l7-7"], className);
-}
-function moreHorizontalIcon(className = DEFAULT) {
-  return outlineIcon("more-horizontal", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
-}
-function moreVerticalIcon(className = DEFAULT) {
-  return outlineIcon("more-vertical", ["M12 5h.01", "M12 12h.01", "M12 19h.01"], className);
-}
-function runningStatusIcon(className = DEFAULT) {
-  return outlineIcon("running-status", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
-}
-function checkIcon(className = DEFAULT) {
-  return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
-}
-function shieldIcon(className = DEFAULT) {
-  return outlineIcon(
-    "shield",
-    [
-      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
-    ],
-    className
-  );
-}
-function bellIcon(className = DEFAULT) {
-  return outlineIcon(
-    "bell",
-    [
-      "M10.27 21a2 2 0 0 0 3.46 0",
-      "M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"
-    ],
-    className
-  );
-}
-function messageQuestionIcon(className = DEFAULT) {
-  return outlineIcon(
-    "message-circle-question",
-    ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
-    className
-  );
-}
-function banIcon(className = DEFAULT) {
-  return outlineIcon(
-    "ban",
-    ["M4.93 4.93a10 10 0 1 0 14.14 14.14A10 10 0 0 0 4.93 4.93Z", "m4.93 4.93 14.14 14.14"],
-    className
-  );
-}
-function dotIcon(className = DEFAULT) {
-  return outlineIcon("dot", ["M12 12h.01"], `${className} ui-icon-dot`);
-}
-function circleIcon(className = DEFAULT) {
-  return outlineIcon("circle", ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"], className);
-}
-function spinnerIcon(className = DEFAULT) {
-  return outlineIcon("loader-circle", ["M21 12a9 9 0 1 1-6.219-8.56"], className);
-}
-function minusIcon(className = DEFAULT) {
-  return outlineIcon("minus", ["M5 12h14"], className);
-}
-function warningIcon(className = DEFAULT) {
-  return outlineIcon(
-    "triangle-alert",
-    [
-      "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z",
-      "M12 9v4",
-      "M12 17h.01"
-    ],
-    className
-  );
-}
-function searchIcon(className = DEFAULT) {
-  return outlineIcon(
-    "search",
-    ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "m21 21-4.35-4.35"],
-    className
-  );
-}
-function fileTextIcon(className = DEFAULT) {
-  return outlineIcon(
-    "file-text",
-    [
-      "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z",
-      "M14 2v6h6",
-      "M8 13h8",
-      "M8 17h8"
-    ],
-    className
-  );
-}
-function imageIcon(className = DEFAULT) {
-  return outlineIcon(
-    "image",
-    [
-      "M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8.3",
-      "m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21",
-      "M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7",
-      "M9 9h.01"
-    ],
-    className
-  );
-}
-function sparkleIcon(className = DEFAULT) {
-  return outlineIcon(
-    "sparkle",
-    [
-      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
-    ],
-    className
-  );
-}
-function zapIcon(className = DEFAULT) {
-  return outlineIcon(
-    "zap",
-    [
-      "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
-    ],
-    className
-  );
-}
-function gitBranchIcon(className = DEFAULT) {
-  return outlineIcon(
-    "git-branch",
-    [
-      "M6 3v12",
-      "M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
-      "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
-      "M15 6a9 9 0 0 0-9 9"
-    ],
-    className
-  );
-}
-function gitPullRequestIcon(className = DEFAULT, conflicts = false) {
-  return outlineIcon(
-    "git-pull-request",
-    [
-      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      conflicts ? "M3 3l6 6m0-6L3 9" : "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M13 6h3a2 2 0 0 1 2 2v7",
-      "M6 9v12"
-    ],
-    className
-  );
-}
-function gitMergeIcon(className = DEFAULT) {
-  return outlineIcon(
-    "git-merge",
-    [
-      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M6 21V9a9 9 0 0 0 9 9"
-    ],
-    className
-  );
-}
-function penLineIcon(className = DEFAULT) {
-  return outlineIcon(
-    "pen-line",
-    [
-      "M12 20h9",
-      "M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"
-    ],
-    className
-  );
-}
-function slashIcon(className = DEFAULT) {
-  return outlineIcon("slash", ["M20 4 4 20"], className);
-}
-function arrowUpRightIcon(className = DEFAULT) {
-  return outlineIcon("arrow-up-right", ["M7 7h10v10", "M7 17 17 7"], className);
-}
-function squareIcon(className = DEFAULT) {
-  return outlineIcon(
-    "square",
-    ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"],
-    className
-  );
-}
-function eraserIcon(className = DEFAULT) {
-  return outlineIcon(
-    "eraser",
-    [
-      "m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21",
-      "M22 21H7",
-      "m5 11 9 9"
-    ],
-    className
-  );
-}
-function undoIcon(className = DEFAULT) {
-  return outlineIcon(
-    "undo",
-    ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"],
-    className
-  );
-}
-function trashIcon(className = DEFAULT) {
-  return outlineIcon(
-    "trash",
-    [
-      "M3 6h18",
-      "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
-      "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-    ],
-    className
-  );
-}
-var DEFAULT;
-var init_icons = __esm({
-  "src/renderer/dom/icons.ts"() {
-    init_outline_icon();
-    DEFAULT = "ui-icon";
-  }
-});
-
-// src/renderer/attachments/attachment-preview.ts
-function releaseCurrent() {
-  const cleanup = currentCleanup;
-  currentCleanup = null;
-  cleanup?.();
-  bodyEl?.replaceChildren();
-}
-function ensureDialog() {
-  if (dialog) {
-    if (!dialog.isConnected) {
-      if (dialog.open) dialog.close();
-      document.body.append(dialog);
-    }
-    return dialog;
-  }
-  dialog = document.createElement("dialog");
-  dialog.className = "attachment-preview-dialog";
-  titleEl = el("h2", { class: "attachment-preview-title" });
-  bodyEl = el("div", { class: "attachment-preview-body" });
-  const closeBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "ui-btn ui-btn-ghost attachment-preview-close",
-      "aria-label": "Close"
-    },
-    closeIcon()
-  );
-  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
-  dialog.append(header, bodyEl);
-  document.body.append(dialog);
-  closeBtn.addEventListener("click", () => dialog?.close());
-  dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog?.close();
-  });
-  dialog.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") event.stopPropagation();
-  });
-  dialog.addEventListener("close", () => {
-    const resolveFocusTarget = returnFocus;
-    returnFocus = null;
-    activeToken += 1;
-    const closedToken = activeToken;
-    releaseCurrent();
-    queueMicrotask(() => {
-      if (activeToken !== closedToken || dialog?.open) return;
-      const focusTarget = resolveFocusTarget?.();
-      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
-    });
-  });
-  return dialog;
-}
-function statusNode(message2) {
-  return el("p", { class: "attachment-preview-status" }, message2);
-}
-function openAttachmentPreview(options) {
-  const previewDialog = ensureDialog();
-  const previewBody = bodyEl;
-  const previewTitle = titleEl;
-  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
-  activeToken += 1;
-  const token = activeToken;
-  releaseCurrent();
-  currentCleanup = options.onClose ?? null;
-  previewDialog.dataset["previewKind"] = options.kind;
-  previewDialog.setAttribute(
-    "aria-label",
-    options.ariaLabel ?? `Attachment preview: ${options.title}`
-  );
-  previewTitle.textContent = options.title;
-  if (options.content) previewBody.replaceChildren(options.content);
-  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
-  if (!previewDialog.open) {
-    const activeElement = document.activeElement;
-    const defaultReturnFocus = () => activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null;
-    returnFocus = options.returnFocus ?? defaultReturnFocus;
-    previewDialog.showModal();
-  }
-  const isActive = () => token === activeToken && previewDialog.open;
-  return {
-    isActive,
-    setContent(content) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(content);
-      return true;
-    },
-    setStatus(message2) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(statusNode(message2));
-      return true;
-    },
-    close() {
-      if (isActive()) previewDialog.close();
-    }
-  };
-}
-var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
-var init_attachment_preview = __esm({
-  "src/renderer/attachments/attachment-preview.ts"() {
-    init_helpers();
-    init_icons();
-    dialog = null;
-    titleEl = null;
-    bodyEl = null;
-    currentCleanup = null;
-    returnFocus = null;
-    activeToken = 0;
   }
 });
 
@@ -61325,6 +61749,7 @@ function mountSettingsDialog(store2, api2) {
           searchInput.value = "";
           applySearch("");
         }
+        sourcesSection.invalidate();
         showSection(id);
         if (id === "classifiers") void classifiersSection.refresh();
         if (id === "usage") void usageSection.refresh();
@@ -61346,241 +61771,23 @@ function mountSettingsDialog(store2, api2) {
       }
     });
   });
+  const sourcesSection = createSourcesSection({
+    root: overlay,
+    api: api2,
+    onTrusted: (statuses) => {
+      renderMcpServers(statuses);
+    },
+    onHeadingsChanged: () => {
+      renderNavSubheadings(activeSection);
+    }
+  });
+  const refreshSources = sourcesSection.refresh;
+  function applyWorkspaceTrusted(statuses) {
+    renderMcpServers(statuses);
+    void refreshSources();
+  }
   async function refreshLocalModelSelects() {
     await modelRoutingSection.refresh();
-  }
-  function makeSourceRowTitle(title, action) {
-    if (!action) {
-      const span = document.createElement("span");
-      span.className = "sources-row-title";
-      span.textContent = title;
-      return span;
-    }
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "sources-row-title sources-row-title-btn";
-    button.textContent = title;
-    button.title = action.label;
-    button.setAttribute("aria-label", action.label);
-    button.addEventListener("click", action.run);
-    return button;
-  }
-  function makeAgentRows(result) {
-    const rows = [];
-    for (const agent of result.agents) {
-      const extraBadges = [
-        // The container is a directory name (`.cursor`, `.claude`): a literal,
-        // shown as written rather than as a sentence-case label.
-        { text: agent.container, className: "ui-badge-literal" }
-      ];
-      if (agent.unsupportedFields.length > 0) {
-        extraBadges.push({ text: "partly supported", className: "sources-badge-unsupported" });
-      }
-      const detail = [
-        agent.description,
-        ...agent.unsupportedFields.map((f4) => `${f4.field}: ${f4.reason}`)
-      ].filter(isNonEmptyString).join(" \xB7 ");
-      rows.push(
-        makeSourceRow(agent.name, agent.source, detail || null, {
-          extraBadges,
-          titleAttr: agent.agentPath,
-          hoverDetail: agent.agentPath
-        })
-      );
-    }
-    for (const shadowed of result.shadowed) {
-      rows.push(
-        makeSourceRow(shadowed.name, shadowed.source, `overridden by ${shadowed.shadowedBy}`, {
-          extraBadges: [{ text: "overridden", className: "sources-badge-warning" }],
-          titleAttr: shadowed.agentPath,
-          hoverDetail: shadowed.agentPath
-        })
-      );
-    }
-    for (const skipped of result.skipped) {
-      rows.push(
-        makeSourceRow(basenameOf(skipped.agentPath), skipped.source, skipped.reason, {
-          extraBadges: [{ text: "skipped", className: "sources-badge-error" }],
-          titleAttr: skipped.agentPath,
-          hoverDetail: skipped.agentPath
-        })
-      );
-    }
-    return rows;
-  }
-  function basenameOf(path) {
-    return path.split(/[/\\]/).pop() ?? path;
-  }
-  function makeSourceRow(title, badge, detail, opts = {}) {
-    const row2 = document.createElement("div");
-    row2.className = "sources-row";
-    if (opts.titleAttr) row2.title = opts.titleAttr;
-    const header = document.createElement("div");
-    header.className = "sources-row-header";
-    const primary = document.createElement("div");
-    primary.className = "sources-row-primary";
-    const titleEl2 = makeSourceRowTitle(title, opts.titleAction);
-    primary.append(titleEl2);
-    if (opts.hoverDetail) {
-      const hoverEl = document.createElement("span");
-      hoverEl.className = "sources-row-hover-detail";
-      const pathEl = document.createElement("bdi");
-      pathEl.textContent = opts.hoverDetail;
-      hoverEl.append(pathEl);
-      primary.append(hoverEl);
-    }
-    header.append(primary);
-    if (badge) {
-      const badgeEl = document.createElement("span");
-      badgeEl.className = opts.badgeClass ? `ui-badge sources-badge ${opts.badgeClass}` : "ui-badge sources-badge";
-      badgeEl.textContent = badge;
-      header.append(badgeEl);
-    }
-    for (const extra of opts.extraBadges ?? []) {
-      const badgeEl = document.createElement("span");
-      badgeEl.className = `ui-badge sources-badge ${extra.className}`;
-      badgeEl.textContent = extra.text;
-      header.append(badgeEl);
-    }
-    row2.append(header);
-    if (detail) {
-      const detailEl = document.createElement("div");
-      detailEl.className = "sources-row-detail";
-      detailEl.textContent = detail;
-      row2.append(detailEl);
-    }
-    return row2;
-  }
-  function makeHookRow(h3) {
-    const extraBadges = [];
-    if (h3.supported === false) {
-      extraBadges.push({ text: "unsupported", className: "sources-badge-unsupported" });
-    }
-    if (h3.sandbox === false) {
-      extraBadges.push({ text: "outside sandbox", className: "sources-badge-unsandboxed" });
-    }
-    if (h3.lastError) {
-      extraBadges.push({ text: "error", className: "sources-badge-error" });
-    }
-    const familyLabel = h3.family === "claude" ? "Claude Code" : h3.family === "copse" ? "Copse" : "Cursor";
-    const title = h3.family === "claude" && h3.matcher ? `${h3.event} \xB7 ${h3.matcher}` : h3.event;
-    const detail = `${familyLabel} \xB7 ${h3.command}`;
-    const row2 = makeSourceRow(title, h3.scope, detail, {
-      extraBadges
-    });
-    if (h3.lastError) {
-      const errorEl = document.createElement("div");
-      errorEl.className = "sources-row-error";
-      errorEl.textContent = `Last run failed: ${h3.lastError}`;
-      row2.append(errorEl);
-    }
-    addHookTester(row2, h3);
-    return row2;
-  }
-  function addHookTester(row2, h3) {
-    const header = row2.querySelector(".sources-row-header");
-    if (!header) return;
-    const testBtn = document.createElement("button");
-    testBtn.type = "button";
-    testBtn.className = "ui-btn ui-btn-secondary sources-hook-test-btn";
-    testBtn.textContent = "Test";
-    testBtn.title = "Dry-run this hook against a synthetic payload for its event";
-    header.append(testBtn);
-    const result = document.createElement("div");
-    result.className = "hook-test";
-    result.hidden = true;
-    row2.append(result);
-    testBtn.addEventListener("click", () => {
-      void runHookTest(h3, testBtn, result);
-    });
-  }
-  async function runHookTest(h3, btn, result) {
-    btn.disabled = true;
-    btn.textContent = "Testing\u2026";
-    result.hidden = false;
-    result.innerHTML = "";
-    const pending = document.createElement("div");
-    pending.className = "hook-test-summary";
-    pending.textContent = "Running dry-run\u2026";
-    result.append(pending);
-    try {
-      const req = {
-        family: h3.family,
-        event: h3.event,
-        command: h3.command,
-        source: h3.source,
-        scope: h3.scope,
-        ...h3.sandbox !== void 0 ? { sandbox: h3.sandbox } : {}
-      };
-      const res = await api2.hooks.test(req);
-      renderHookTestResult(result, res);
-    } catch {
-      result.innerHTML = "";
-      const err2 = document.createElement("div");
-      err2.className = "hook-test-summary hook-test-error";
-      err2.textContent = "Dry-run failed to start.";
-      result.append(err2);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Test";
-    }
-  }
-  function renderHookTestResult(container, res) {
-    container.innerHTML = "";
-    if (!res.ran) {
-      const notice = document.createElement("div");
-      notice.className = "hook-test-summary hook-test-error";
-      notice.textContent = res.error ?? "This hook could not be dry-run.";
-      container.append(notice);
-      return;
-    }
-    const summary = document.createElement("div");
-    summary.className = "hook-test-summary";
-    const chips = [];
-    if (res.wireEvent) chips.push(`event ${res.wireEvent}`);
-    if (res.timedOut) chips.push("timed out");
-    else if (res.spawnError) chips.push("failed to start");
-    chips.push(
-      `exit ${res.exitCode === null || res.exitCode === void 0 ? "unknown" : String(res.exitCode)}`
-    );
-    chips.push(`${String(res.durationMs ?? 0)} ms`);
-    chips.push(res.parseOk ? "parsed ok" : "parse failed");
-    if (res.sandboxed) chips.push("sandboxed");
-    for (const text2 of chips) {
-      const chip2 = document.createElement("span");
-      chip2.className = "hook-test-chip";
-      chip2.textContent = text2;
-      summary.append(chip2);
-    }
-    container.append(summary);
-    if (res.outcomeSummary) {
-      const outcome = document.createElement("div");
-      outcome.className = "hook-test-outcome";
-      outcome.textContent = `Outcome: ${res.outcomeSummary}`;
-      container.append(outcome);
-    }
-    appendHookTestStream(container, "stdin", res.stdin ?? "");
-    appendHookTestStream(container, "stdout", res.stdout ?? "");
-    appendHookTestStream(container, "stderr", res.stderr ?? "");
-  }
-  function appendHookTestStream(container, label, text2) {
-    const block = document.createElement("div");
-    block.className = "hook-test-stream";
-    const heading = document.createElement("div");
-    heading.className = "hook-test-stream-label";
-    heading.textContent = label;
-    const pre = document.createElement("pre");
-    pre.textContent = text2.length > 0 ? text2 : "(empty)";
-    if (text2.length === 0) pre.classList.add("hook-test-stream-empty");
-    block.append(heading, pre);
-    container.append(block);
-  }
-  function makeHookWarningRow(w2) {
-    const row2 = makeSourceRow(w2.message, w2.scope, w2.source, {
-      extraBadges: [{ text: "warning", className: "sources-badge-warning" }]
-    });
-    row2.classList.add("sources-row-warning");
-    return row2;
   }
   function fillSourceList(selector, rows, emptyText) {
     const list = qsRequired(overlay, selector);
@@ -62141,145 +62348,6 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
       if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return;
       fillSourceList("#sources-worktrees-list", [], "Could not list worktrees.");
       statusEl.textContent = errorMessage(error62);
-    }
-  }
-  function openInstructionFile(file2) {
-    const session = openAttachmentPreview({
-      kind: "text",
-      title: file2.name,
-      ariaLabel: `Instruction file: ${file2.path}`,
-      status: `Loading ${file2.name}\u2026`
-    });
-    void api2.instructions.read(file2.path).then((content) => {
-      const text2 = document.createElement("pre");
-      text2.className = "attachment-preview-text";
-      text2.textContent = content;
-      session.setContent(text2);
-    }).catch((error62) => {
-      session.setStatus(errorMessage(error62));
-    });
-  }
-  function applyWorkspaceTrusted(statuses) {
-    renderMcpServers(statuses);
-    void refreshSources();
-  }
-  async function trustWorkspaceFromBadge(button) {
-    const unsandboxed = await api2.workspace.unsandboxedProjectHooks().catch(() => []);
-    const detail = [
-      "Its instruction files join the system prompt, and the MCP servers and hooks it defines are allowed to run.",
-      unsandboxed.length > 0 ? `${String(unsandboxed.length)} of those hooks declare "sandbox": false and run OUTSIDE the project sandbox: ${unsandboxed.map((h3) => `${h3.event}: ${h3.command}`).join("; ")}` : ""
-    ].filter(Boolean).join(" ");
-    const confirmed = await showConfirmDialog({
-      message: "Trust this workspace?",
-      detail,
-      confirmLabel: "Trust workspace"
-    });
-    if (!confirmed) return;
-    button.disabled = true;
-    const statusEl = qsRequired(overlay, "#sources-reload-status");
-    statusEl.textContent = "Trusting workspace\u2026";
-    const pending = api2.workspace.setTrusted(true).then(
-      (statuses) => ({ statuses }),
-      (error62) => ({ error: error62 })
-    );
-    await refreshSources();
-    const result = await pending;
-    if ("statuses" in result) applyWorkspaceTrusted(result.statuses);
-    else statusEl.textContent = errorMessage(result.error);
-  }
-  function makeInstructionRow(file2) {
-    const nestedStatus = file2.scopePath === void 0 ? "" : file2.duplicateOf !== void 0 ? ` \xB7 scope: ${file2.scopePath}/ \xB7 identical to ${file2.duplicateOf}, loaded once through it` : file2.active ? ` \xB7 scope: ${file2.scopePath}/ \xB7 active this turn` : ` \xB7 scope: ${file2.scopePath}/ \xB7 activates when a path under this directory enters context`;
-    const detail = `${file2.path} \xB7 ${formatByteSize(file2.bytes)}` + (file2.trusted ? nestedStatus : " \xB7 inert until you trust this workspace \u2014 click the badge to trust it");
-    const badge = !file2.trusted ? "not loaded" : file2.duplicateOf !== void 0 ? "duplicate" : file2.scopePath !== void 0 ? file2.active ? "active" : "scoped" : file2.scope;
-    const row2 = makeSourceRow(file2.name, badge, detail, {
-      badgeClass: !file2.trusted ? "sources-badge-untrusted" : file2.scopePath !== void 0 && file2.active && file2.duplicateOf === void 0 ? "sources-badge-active" : void 0,
-      titleAction: {
-        label: `Open ${file2.name}`,
-        run: () => {
-          openInstructionFile(file2);
-        }
-      }
-    });
-    if (file2.trusted) return row2;
-    const badgeEl = row2.querySelector(".sources-badge");
-    if (badgeEl) {
-      const trustBtn = document.createElement("button");
-      trustBtn.type = "button";
-      trustBtn.className = `${badgeEl.className} sources-badge-btn`;
-      trustBtn.textContent = badgeEl.textContent;
-      trustBtn.title = `Trust this workspace to load ${file2.name}`;
-      trustBtn.setAttribute("aria-label", `Trust this workspace to load ${file2.name}`);
-      trustBtn.addEventListener("click", () => {
-        void trustWorkspaceFromBadge(trustBtn);
-      });
-      badgeEl.replaceWith(trustBtn);
-    }
-    return row2;
-  }
-  async function refreshSources() {
-    const statusEl = qsRequired(overlay, "#sources-reload-status");
-    statusEl.textContent = "Loading\u2026";
-    try {
-      const [instructions, cursorRules, skills, agents, hooks] = await Promise.all([
-        api2.instructions.list(),
-        api2.cursorRules.list(),
-        api2.skills.list(),
-        api2.agents.list(),
-        api2.hooks.list()
-      ]);
-      fillSourceList(
-        "#sources-instructions-list",
-        instructions.map((f4) => makeInstructionRow(f4)),
-        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
-      );
-      if (instructions.some((f4) => f4.discoveryTruncated)) {
-        const note = document.createElement("span");
-        note.className = "sources-empty";
-        note.id = "sources-instructions-truncated";
-        note.textContent = "Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.";
-        qsRequired(overlay, "#sources-instructions-list").append(note);
-      }
-      const kindLabel2 = {
-        always: "always",
-        auto: "auto",
-        agent: "agent",
-        manual: "manual"
-      };
-      fillSourceList(
-        "#sources-cursor-rules-list",
-        cursorRules.map((r2) => {
-          const bits = [formatByteSize(r2.bytes)];
-          if (r2.globs?.length) bits.push(`globs: ${r2.globs.join(", ")}`);
-          if (r2.description) bits.push(r2.description);
-          bits.push(r2.path);
-          return makeSourceRow(r2.name, kindLabel2[r2.kind] ?? r2.kind, bits.join(" \xB7 "));
-        }),
-        "No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file)."
-      );
-      qsRequired(overlay, "#cursor-rules-fieldset").hidden = cursorRules.length === 0;
-      if (!contentEl.classList.contains("settings-searching")) renderNavSubheadings(activeSection);
-      fillSourceList(
-        "#sources-skills-list",
-        skills.map(
-          (s16) => makeSourceRow(s16.name, s16.source, s16.description || null, {
-            // Keep the resting list uncluttered: path lives on hover (and as a
-            // native tooltip fallback). Description stays as the always-visible
-            // detail; when a skill has none, the hover line is the only path.
-            titleAttr: s16.skillPath,
-            hoverDetail: s16.skillPath
-          })
-        ),
-        "No skills discovered."
-      );
-      fillSourceList("#sources-agents-list", makeAgentRows(agents), "No agents discovered.");
-      fillSourceList(
-        "#sources-hooks-list",
-        [...hooks.warnings.map(makeHookWarningRow), ...hooks.hooks.map(makeHookRow)],
-        "No Cursor or Claude Code hooks configured."
-      );
-      statusEl.textContent = "";
-    } catch {
-      statusEl.textContent = "Failed to load sources.";
     }
   }
   let advisorModelSelectEl = null;
@@ -63263,9 +63331,6 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
       statusEl.classList.add("err");
     });
   });
-  qsRequired(overlay, "#sources-reload-btn").addEventListener("click", () => {
-    void refreshSources();
-  });
   qsRequired(overlay, "#plugins-reload-btn").addEventListener("click", () => {
     void refreshPlugins();
   });
@@ -63638,6 +63703,7 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     })();
   });
   overlay.addEventListener("close", () => {
+    sourcesSection.invalidate();
     if (!appearanceCommitted && appearanceBaseline) applyAppearancePreview(appearanceBaseline);
     appearanceBaseline = null;
     resetDirtyState();
@@ -63649,6 +63715,8 @@ var isSettingsSection, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, 
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
     init_storage_maintenance_panel();
+    init_sources_section();
+    init_source_row();
     init_errors4();
     init_humanize_identifier();
     init_auto_approval();
@@ -63666,7 +63734,6 @@ var init_settings_dialog = __esm({
     init_advisor_strategy_plugin();
     init_icons();
     init_file_bytes();
-    init_attachment_preview();
     init_confirm_dialog();
     init_helpers();
     init_inline_status();
@@ -63704,7 +63771,6 @@ var init_settings_dialog = __esm({
     init_thread_link();
     init_commit_attribution();
     init_appearance();
-    init_nullish2();
     isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental" || value === "about";
     COPSE_SITE_TINT_COLOR = "#002E2B";
     TINT_STRENGTH_AMOUNTS = {
