@@ -67426,6 +67426,186 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home",
+        label: "Activity home on a new thread",
+        project: project("demo-activity-home-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the active one and is empty, so the chat pane is the
+        // Activity home. The others give it something to list: one waiting on an
+        // approval, two running, one that finished while the user was elsewhere.
+        threads: [
+          {
+            id: "demo-activity-home-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-home-refactor",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-activity-home-audit",
+            title: "Dependency audit",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          {
+            id: "demo-activity-home-flaky",
+            title: "Fix the flaky sandbox test",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 3,
+            updatedAt: FIXED_TIME - 3
+          },
+          {
+            id: "demo-activity-home-copy",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            unreadAt: FIXED_TIME - 6e4,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 4,
+            updatedAt: FIXED_TIME - 4
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-activity-home-approval",
+            threadId: "demo-activity-home-refactor",
+            title: "Run shell command?",
+            body: "printf 'auth-check-passed\\n'",
+            bodyAdvice: "Auto-run for sandbox commands is disabled in Settings",
+            bodyFooter: "Allow running it once?",
+            type: "shell"
+          }
+        ]
+      },
+      {
+        id: "activity-home-project-filter",
+        label: "Activity home after a project finishes waiting",
+        project: project("demo-activity-home-filter-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [
+          {
+            id: "demo-activity-filter-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-filter-refactor",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            unreadAt: FIXED_TIME - 6e4,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-activity-filter-approval",
+            threadId: "demo-activity-filter-refactor",
+            title: "Run shell command?",
+            body: "printf 'auth-check-passed\\n'",
+            type: "shell"
+          }
+        ]
+      },
+      {
+        id: "activity-home-question",
+        label: "Activity home with a question waiting",
+        project: project("demo-activity-home-question-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the active, empty one; the second is blocked on a question.
+        threads: [
+          {
+            id: "demo-activity-home-question-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-home-question-schema",
+            title: "Schema bump",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        askUserRequests: [
+          {
+            id: "demo-activity-home-question",
+            threadId: "demo-activity-home-question-schema",
+            questions: [
+              {
+                question: "Which migration order should the schema bump use?",
+                options: ["Columns first", "Backfill first"]
+              },
+              { question: "Keep the old column until the next release?" }
+            ]
+          }
+        ]
+      },
+      {
+        id: "activity-home-empty",
+        label: "Activity home with nothing to list",
+        project: project("demo-activity-home-empty-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first-run case: one empty thread and nothing running or waiting.
+        threads: [
+          {
+            id: "demo-activity-home-empty-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
         id: "chat-layout-styling",
         label: "Chat layout styling",
         project: project("demo-chat-layout-project"),
@@ -67899,7 +68079,22 @@ function createDemoApi(scenario, options = {}) {
         return () => void 0;
       },
       onApprovalCancelled: subscribe,
-      onAskUserRequest: subscribe,
+      onAskUserRequest: (handler) => {
+        for (const askUserRequest of scenario.askUserRequests ?? []) {
+          const request = {
+            id: askUserRequest.id,
+            ...askUserRequest.threadId === void 0 ? {} : { threadId: askUserRequest.threadId },
+            questions: askUserRequest.questions.map((question) => ({
+              question: question.question,
+              ...question.options === void 0 ? {} : { options: [...question.options] }
+            }))
+          };
+          setTimeout(() => {
+            handler(request);
+          }, 0);
+        }
+        return () => void 0;
+      },
       onAskUserCancelled: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
@@ -72442,11 +72637,11 @@ function createActivityView(api2, store2, sources3, deps, host) {
   const now = deps.now ?? Date.now;
   const setTimer = deps.setTimer ?? defaultTimer2;
   const timings = trackRunTimings(store2, now);
-  const summary = el("p", { id: "activity-panel-summary", class: "activity-panel-summary" });
+  const summary = el("p", { id: `${host.idPrefix}-summary`, class: "activity-panel-summary" });
   const list = el("nav", { class: "activity-list", "aria-label": "Threads" });
   const detail = el("section", {
     class: "activity-detail",
-    "aria-labelledby": "activity-detail-title"
+    "aria-labelledby": `${host.idPrefix}-detail-title`
   });
   const body = el("div", { class: "activity-panel-body" }, list, detail);
   const status = el("p", {
@@ -72457,6 +72652,17 @@ function createActivityView(api2, store2, sources3, deps, host) {
   const rowCache = /* @__PURE__ */ new Map();
   const groupCache = /* @__PURE__ */ new Map();
   const quiet = el("p", { class: "activity-quiet" }, "Nothing needs you right now.");
+  const strip = el("div", {
+    class: "activity-strip",
+    role: "group",
+    "aria-label": "Projects"
+  });
+  const stripCache = /* @__PURE__ */ new Map();
+  const defaultCollapsed = () => new Set(host.collapsibleGroups ? ["working"] : []);
+  let collapsed = defaultCollapsed();
+  const seenNeedsYou = /* @__PURE__ */ new Set();
+  let projectFilter = null;
+  let userChose = false;
   let renderScheduled = false;
   let cancelRender = null;
   let lastRenderAt = Number.NEGATIVE_INFINITY;
@@ -72464,6 +72670,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   let needsYouSignature = null;
   let cancelSettle = null;
   let settling = false;
+  const drafts = /* @__PURE__ */ new Map();
   let selectedKey = null;
   let selectedIndex = 0;
   let shownKey = null;
@@ -72505,6 +72712,79 @@ function createActivityView(api2, store2, sources3, deps, host) {
     status.textContent = !sent ? "That request was already answered." : approved ? `Approved once for ${row2.threadTitle}.` : `Rejected for ${row2.threadTitle}.`;
     scheduleRender();
   }
+  function hasAnswer(requestId) {
+    return (drafts.get(requestId) ?? []).some((text2) => text2.trim() !== "");
+  }
+  function sendAnswer(row2) {
+    const requestId = row2.requestId;
+    if (!requestId || settling || !hasAnswer(requestId)) return;
+    const asked = sources3.questions.pending().find((request) => request.id === requestId);
+    if (!asked) return;
+    const typed = drafts.get(requestId) ?? [];
+    for (const control of detail.querySelectorAll(
+      ".activity-answer, .activity-option, .activity-answer-input"
+    )) {
+      control.disabled = true;
+      control.dataset["answered"] = "true";
+    }
+    const sent = sources3.questions.answer(
+      requestId,
+      asked.questions.map((_3, index) => typed[index] ?? "")
+    );
+    if (sent) drafts.delete(requestId);
+    status.textContent = sent ? `Answered ${row2.threadTitle}.` : "That question was already answered.";
+    scheduleRender();
+  }
+  function answerField(requestId, row2, question, index, options) {
+    const questionId = `${host.idPrefix}-question-${String(index)}`;
+    const input2 = el("textarea", {
+      class: "activity-answer-input",
+      rows: "2",
+      "data-control": `answer-${String(index)}`,
+      "aria-labelledby": questionId
+    });
+    input2.value = drafts.get(requestId)?.[index] ?? "";
+    const sync = () => {
+      const next = [...drafts.get(requestId) ?? []];
+      next[index] = input2.value;
+      drafts.set(requestId, next);
+      const send = detail.querySelector(".activity-answer");
+      if (send) send.disabled = !hasAnswer(requestId);
+    };
+    input2.addEventListener("input", sync);
+    input2.addEventListener("keydown", (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+      event.stopPropagation();
+      if (event.isComposing || event.repeat) return;
+      event.preventDefault();
+      sendAnswer(row2);
+    });
+    const asked = el("div", {
+      id: questionId,
+      class: "activity-question streaming-markdown"
+    });
+    asked.innerHTML = renderMarkdown(question);
+    const field = el("div", { class: "activity-answer-field" }, asked);
+    if (options.length > 0) {
+      const choices = el("div", { class: "activity-options" });
+      for (const option of options) {
+        const choice = el("button", {
+          type: "button",
+          class: "ui-btn ui-btn-secondary activity-option"
+        });
+        setInlineMarkdown(choice, option);
+        choice.addEventListener("click", () => {
+          input2.value = choice.textContent;
+          sync();
+          input2.focus();
+        });
+        choices.append(choice);
+      }
+      field.append(choices);
+    }
+    field.append(input2);
+    return field;
+  }
   function button(className, control, label, onClick, ariaLabel) {
     const node2 = el(
       "button",
@@ -72525,6 +72805,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const node2 = button("ui-btn-ghost activity-open-thread", "open-thread", "Open thread", () => {
       openThread(row2);
     });
+    if (host.openThreadArrow)
+      node2.append(arrowUpRightIcon("ui-icon ui-icon-sm activity-open-arrow"));
     node2.disabled = !canOpen(row2);
     return node2;
   }
@@ -72546,17 +72828,24 @@ function createActivityView(api2, store2, sources3, deps, host) {
     }
     if (row2.state === "needs-answer") {
       const asked = sources3.questions.pending().find((request) => request.id === row2.requestId);
-      const questions = asked?.questions ?? [row2.want];
+      if (!asked || !row2.requestId) {
+        return [
+          el("p", { class: "activity-detail-text" }, row2.want),
+          el(
+            "p",
+            { class: "activity-detail-note" },
+            "Answer in the thread, where the question is waiting for you."
+          )
+        ];
+      }
+      const requestId = row2.requestId;
       return [
         el(
-          "ol",
-          { class: "activity-questions" },
-          ...questions.map((question) => el("li", {}, question))
-        ),
-        el(
-          "p",
-          { class: "activity-detail-note" },
-          "Answer in the thread, where the question is waiting for you."
+          "div",
+          { class: "activity-answer-form" },
+          ...asked.questions.map(
+            (question, index) => answerField(requestId, row2, question, index, asked.options[index] ?? [])
+          )
         )
       ];
     }
@@ -72586,20 +72875,27 @@ function createActivityView(api2, store2, sources3, deps, host) {
       const approve = button(
         "ui-btn-primary activity-approve",
         "approve",
-        "Approve once",
+        "Approve",
         () => {
           answerApproval(row2, true);
         },
-        `Approve once: ${title} (${row2.threadTitle})`
+        `Approve: ${title} (${row2.threadTitle})`
       );
       approve.disabled = settling;
       actions.push(approve);
-    } else if (row2.state === "needs-answer") {
-      const answer = button("ui-btn-primary activity-answer", "answer", "Answer in thread", () => {
-        if (row2.threadId === null) host.close();
-        else openThread(row2);
-      });
-      answer.disabled = row2.threadId !== null && !canOpen(row2);
+    } else if (row2.state === "needs-answer" && row2.requestId) {
+      const requestId = row2.requestId;
+      const answer = button(
+        "ui-btn-primary activity-answer",
+        "answer",
+        "Send answer",
+        () => {
+          sendAnswer(row2);
+        },
+        `Send answer: ${row2.want} (${row2.threadTitle})`
+      );
+      answer.dataset["requestId"] = requestId;
+      answer.disabled = settling || !hasAnswer(requestId);
       actions.push(answer);
     }
     return el("div", { class: "activity-detail-actions" }, ...actions);
@@ -72608,6 +72904,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (!row2) {
       detail.replaceChildren();
       detail.hidden = true;
+      return;
+    }
+    if (row2.state === "needs-answer" && detail.dataset["rowKey"] === row2.key && detail.dataset["state"] === row2.state && document.activeElement instanceof HTMLTextAreaElement && detail.contains(document.activeElement)) {
       return;
     }
     detail.hidden = false;
@@ -72624,7 +72923,11 @@ function createActivityView(api2, store2, sources3, deps, host) {
           el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
           meta3
         ),
-        el("h3", { id: "activity-detail-title", class: "activity-detail-title" }, row2.threadTitle)
+        el(
+          "h3",
+          { id: `${host.idPrefix}-detail-title`, class: "activity-detail-title" },
+          row2.threadTitle
+        )
       ),
       el("div", { class: "activity-detail-body" }, ...detailContent(row2)),
       detailActions(row2)
@@ -72710,23 +73013,50 @@ function createActivityView(api2, store2, sources3, deps, host) {
     rowCache.set(row2.key, { signature, node: node2 });
     return node2;
   }
+  function toggleGroup(id) {
+    if (collapsed.has(id)) collapsed.delete(id);
+    else collapsed.add(id);
+    renderNow();
+  }
   function groupElement(group, at3) {
     const hidden = group.total - group.rows.length;
     const count = hidden > 0 ? `${String(group.rows.length)} of ${String(group.total)}` : String(group.total);
+    const folded = host.collapsibleGroups === true && collapsed.has(group.id);
     let entry = groupCache.get(group.id);
     if (!entry) {
-      const titleId = `activity-group-${group.id}`;
+      const titleId = `${host.idPrefix}-group-${group.id}`;
       const countNode = el("span", { class: "activity-group-count" }, count);
       const rowsNode = el("ul", {
         class: "activity-rows",
         role: "list",
         "aria-labelledby": titleId
       });
+      let heading;
+      if (host.collapsibleGroups) {
+        const toggle = el(
+          "button",
+          {
+            type: "button",
+            class: "activity-group-toggle",
+            "data-group-toggle": group.id,
+            "aria-expanded": "true"
+          },
+          chevronDownIcon("ui-icon ui-icon-sm activity-group-chevron"),
+          el("span", { class: "activity-group-label" }, group.label),
+          countNode
+        );
+        toggle.addEventListener("click", () => {
+          toggleGroup(group.id);
+        });
+        heading = el("h4", { id: titleId, class: "activity-group-title" }, toggle);
+      } else {
+        heading = el("h4", { id: titleId, class: "activity-group-title" }, group.label, countNode);
+      }
       entry = {
         section: el(
           "section",
           { class: "activity-group", "data-group": group.id },
-          el("h4", { id: titleId, class: "activity-group-title" }, group.label, countNode),
+          heading,
           rowsNode
         ),
         count: countNode,
@@ -72735,11 +73065,79 @@ function createActivityView(api2, store2, sources3, deps, host) {
       groupCache.set(group.id, entry);
     }
     if (entry.count.textContent !== count) entry.count.textContent = count;
-    patchChildren(
-      entry.rows,
-      group.rows.map((row2) => cachedRow(row2, at3))
-    );
+    if (host.collapsibleGroups) {
+      entry.count.hidden = !folded;
+      entry.section.dataset["collapsed"] = folded ? "true" : "false";
+      entry.section.querySelector(".activity-group-toggle")?.setAttribute("aria-expanded", folded ? "false" : "true");
+    }
+    entry.rows.hidden = folded;
+    patchChildren(entry.rows, folded ? [] : group.rows.map((row2) => cachedRow(row2, at3)));
     return entry.section;
+  }
+  function projectStats(groups) {
+    const stats = /* @__PURE__ */ new Map();
+    for (const group of groups) {
+      if (group.id === "recent") continue;
+      for (const row2 of group.rows) {
+        if (!row2.projectId) continue;
+        const entry = stats.get(row2.projectId) ?? {
+          name: row2.projectName ?? row2.projectId,
+          need: 0,
+          working: 0
+        };
+        if (group.id === "needs-you") entry.need += 1;
+        else entry.working += 1;
+        stats.set(row2.projectId, entry);
+      }
+    }
+    return stats;
+  }
+  function stripCard(id, name, need, working) {
+    const selected = projectFilter === id;
+    const signature = JSON.stringify([name, need, working, selected]);
+    const hit = stripCache.get(id);
+    if (hit?.signature === signature) return hit.node;
+    const stats = el("span", { class: "activity-strip-stats" });
+    stats.append(
+      need > 0 ? el("span", { class: "activity-strip-need" }, `${String(need)} need you`) : el("span", {}, "All clear")
+    );
+    if (working > 0) stats.append(el("span", {}, `${String(working)} working`));
+    const node2 = el(
+      "button",
+      {
+        type: "button",
+        class: "activity-strip-card",
+        "data-project": id ?? "all",
+        "data-project-key": JSON.stringify(id),
+        "aria-pressed": selected ? "true" : "false"
+      },
+      el("span", { class: "activity-strip-name" }, name),
+      stats
+    );
+    node2.addEventListener("click", () => {
+      projectFilter = id;
+      renderNow();
+    });
+    stripCache.set(id, { signature, node: node2 });
+    return node2;
+  }
+  function renderStrip(groups) {
+    const stats = projectStats(groups);
+    if (projectFilter !== null && !stats.has(projectFilter)) {
+      const project2 = store2.getState().projects.find((entry) => entry.id === projectFilter);
+      if (project2) stats.set(project2.id, { name: project2.name, need: 0, working: 0 });
+    }
+    const need = groups.find((group) => group.id === "needs-you")?.total ?? 0;
+    const working = groups.find((group) => group.id === "working")?.total ?? 0;
+    const cards = [stripCard(null, "All projects", need, working)];
+    const shown = [...stats.entries()].filter(([id, entry]) => entry.need > 0 || id === projectFilter).sort((a3, b4) => b4[1].need - a3[1].need || a3[1].name.localeCompare(b4[1].name));
+    for (const [id, entry] of shown)
+      cards.push(stripCard(id, entry.name, entry.need, entry.working));
+    patchChildren(strip, cards);
+    const live = /* @__PURE__ */ new Set([null, ...shown.map(([id]) => id)]);
+    for (const id of stripCache.keys()) {
+      if (!live.has(id)) stripCache.delete(id);
+    }
   }
   function emptyState() {
     return el(
@@ -72787,6 +73185,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
   function captureFocus() {
     const active2 = document.activeElement;
     if (!(active2 instanceof HTMLElement)) return null;
+    const toggled = active2.dataset["groupToggle"];
+    if (toggled !== void 0) return { area: "toggle", group: toggled };
+    const projectKey = active2.dataset["projectKey"];
+    if (projectKey !== void 0 && strip.contains(active2)) return { area: "strip", projectKey };
     if (list.contains(active2)) return { area: "list" };
     if (detail.contains(active2)) {
       return {
@@ -72799,8 +73201,23 @@ function createActivityView(api2, store2, sources3, deps, host) {
   }
   function restoreFocus(spot) {
     if (!spot) return;
+    if (spot.area === "toggle") {
+      list.querySelector(`[data-group-toggle="${spot.group}"]`)?.focus({
+        preventScroll: true
+      });
+      return;
+    }
+    if (spot.area === "strip") {
+      const card = [...strip.querySelectorAll("[data-project-key]")].find(
+        (node2) => node2.dataset["projectKey"] === spot.projectKey
+      );
+      card?.focus({ preventScroll: true });
+      return;
+    }
     if (spot.area === "detail" && spot.key === selectedKey) {
-      const control = detail.querySelector(`[data-control="${spot.control}"]`);
+      const control = detail.querySelector(
+        `[data-control="${spot.control}"]`
+      );
       if (control && !control.disabled) {
         control.focus();
         return;
@@ -72813,14 +73230,20 @@ function createActivityView(api2, store2, sources3, deps, host) {
   function armSettle() {
     cancelSettle?.();
     settling = true;
-    for (const approve of detail.querySelectorAll(".activity-approve")) {
-      approve.disabled = true;
+    for (const control of detail.querySelectorAll(
+      ".activity-approve, .activity-answer"
+    )) {
+      control.disabled = true;
     }
     cancelSettle = setTimer(() => {
       cancelSettle = null;
       settling = false;
-      for (const approve of detail.querySelectorAll(".activity-approve")) {
-        if (!approve.dataset["answered"]) approve.disabled = false;
+      for (const control of detail.querySelectorAll(
+        ".activity-approve, .activity-answer"
+      )) {
+        if (control.dataset["answered"]) continue;
+        const requestId = control.dataset["requestId"];
+        control.disabled = requestId !== void 0 && !hasAnswer(requestId);
       }
     }, APPROVAL_SETTLE_MS);
   }
@@ -72832,25 +73255,57 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const focus = captureFocus();
     const previousListScrollTop = list.scrollTop;
     const listScrollAnchor = captureListScrollAnchor();
-    const groups = deriveActivity({
-      threads: collectActivityThreads(store2),
-      approvals: sources3.approvals.pending(),
-      questions: sources3.questions.pending(),
+    const allThreads = collectActivityThreads(store2);
+    const approvals = sources3.approvals.pending();
+    const questions = sources3.questions.pending();
+    const waiting = new Set(questions.map((request) => request.id));
+    for (const requestId of drafts.keys()) {
+      if (!waiting.has(requestId)) drafts.delete(requestId);
+    }
+    const everything = deriveActivity({
+      threads: allThreads,
+      approvals,
+      questions,
       runs: timings.runs
     });
+    let groups = everything;
+    if (projectFilter !== null) {
+      const inProject = allThreads.filter((thread) => thread.projectId === projectFilter);
+      const ids = new Set(inProject.map((thread) => thread.id));
+      groups = deriveActivity({
+        threads: inProject,
+        approvals: approvals.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
+        questions: questions.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
+        runs: timings.runs
+      });
+    }
+    if (host.projectStrip) renderStrip(everything);
     const needsYou = groups.find((group) => group.id === "needs-you");
+    const currentNeeds = new Set(needsYou?.rows.map((row2) => row2.key));
+    for (const key of currentNeeds) {
+      if (!seenNeedsYou.has(key)) {
+        seenNeedsYou.add(key);
+        collapsed.delete("needs-you");
+      }
+    }
+    for (const key of seenNeedsYou) {
+      if (!currentNeeds.has(key)) seenNeedsYou.delete(key);
+    }
     const working = groups.find((group) => group.id === "working");
     const signature = needsYou?.rows.map((row2) => row2.key).join("\n") ?? "";
     const listChanged = needsYouSignature !== null && signature !== needsYouSignature;
     needsYouSignature = signature;
-    const rows = groups.flatMap((group) => group.rows);
+    const rows = groups.filter((group) => !(host.collapsibleGroups && collapsed.has(group.id))).flatMap((group) => group.rows);
+    const urgent = rows[0];
+    if (host.followUrgent && !userChose && urgent) selectedKey = urgent.key;
     let selected = rows.find((row2) => row2.key === selectedKey);
     if (!selected) {
       selected = rows[Math.min(selectedIndex, rows.length - 1)];
       selectedKey = selected?.key ?? null;
     }
     selectedIndex = selected ? rows.indexOf(selected) : 0;
-    if (listChanged || selectedKey !== shownKey && selected?.state === "needs-approval") {
+    const releases = selected?.state === "needs-approval" || selected?.state === "needs-answer";
+    if (listChanged || selectedKey !== shownKey && releases) {
       armSettle();
     }
     shownKey = selectedKey;
@@ -72886,9 +73341,11 @@ function createActivityView(api2, store2, sources3, deps, host) {
       renderDetail(selected, at3);
     }
     host.onNeedsYou?.(needCount);
+    host.onIdle?.(everything.every((group) => group.rows.length === 0));
     restoreFocus(focus);
   }
   function select(rowKey2) {
+    userChose = true;
     if (rowKey2 !== selectedKey) {
       selectedKey = rowKey2;
       renderNow();
@@ -72966,24 +73423,34 @@ function createActivityView(api2, store2, sources3, deps, host) {
     status.textContent = "";
     for (const entry of groupCache.values()) entry.rows.replaceChildren();
     rowCache.clear();
+    stripCache.clear();
+    collapsed = defaultCollapsed();
+    seenNeedsYou.clear();
+    projectFilter = null;
+    userChose = false;
   }
-  function show2() {
+  function show2({ focusFirstRow = true } = {}) {
     needsYouSignature = null;
     selectedKey = null;
     selectedIndex = 0;
     shownKey = null;
+    userChose = false;
     render();
-    const first = selectedOpener();
-    if (first) first.focus();
-    else host.fallbackFocus();
+    if (focusFirstRow) {
+      const first = selectedOpener();
+      if (first) first.focus();
+      else host.fallbackFocus();
+    }
     tickAges();
   }
-  return { summary, body, status, show: show2, hide: hide3 };
+  return { summary, body, strip, status, show: show2, hide: hide3 };
 }
 var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LONG, AGE_VERB, defaultTimer2;
 var init_activity_view = __esm({
   "src/renderer/views/activity-view.ts"() {
     init_helpers();
+    init_dist();
+    init_inline_markdown();
     init_patch_children();
     init_icons();
     init_projects();
@@ -73043,6 +73510,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
   );
   closeButton.addEventListener("click", close);
   const view = createActivityView(api2, store2, sources3, deps, {
+    idPrefix: "activity-panel",
     close,
     isShown: isOpen,
     fallbackFocus: () => {
@@ -141595,13 +142063,27 @@ function mountAskUserDialog(api2, store2) {
     childList: true,
     subtree: true
   });
-  function respond(answers) {
-    const current = active2;
-    if (!current) return;
-    dialog2.close();
-    active2 = null;
-    void api2.ask.respond(current.id, answers);
+  function settle2(request, answers) {
+    if (active2 === request) {
+      dialog2.close();
+      active2 = null;
+    } else {
+      const idx = queue.indexOf(request);
+      if (idx === -1) return;
+      queue.splice(idx, 1);
+    }
+    void api2.ask.respond(request.id, answers);
     showNext();
+    syncAttention();
+  }
+  function respond(answers) {
+    if (active2) settle2(active2, answers);
+  }
+  function answerFrom(id, answers) {
+    const request = active2?.id === id ? active2 : queue.find((req) => req.id === id);
+    if (request === void 0 || answers.length !== request.questions.length) return false;
+    settle2(request, [...answers]);
+    return true;
   }
   function submit() {
     respond(inputs.map((input2) => input2.value));
@@ -141662,8 +142144,10 @@ function mountAskUserDialog(api2, store2) {
       id: req.id,
       threadId: req.threadId,
       questions: req.questions.map((q2) => q2.question),
+      options: req.questions.map((q2) => q2.options ?? []),
       receivedAt: req.receivedAt
     })),
+    answer: answerFrom,
     onChange: (listener) => {
       changeListeners.add(listener);
       return () => {
@@ -142987,6 +143471,66 @@ var init_process_manager_dialog = __esm({
     init_confirm_dialog();
     init_toast();
     init_dialog_shell();
+  }
+});
+
+// src/renderer/views/activity-home.ts
+function mountActivityHome(pane, api2, store2, sources3, deps = {}) {
+  let shown = false;
+  const root = el("section", {
+    id: "activity-home",
+    class: "activity-home",
+    "aria-labelledby": "activity-home-title",
+    hidden: ""
+  });
+  const view = createActivityView(api2, store2, sources3, deps, {
+    idPrefix: "activity-home",
+    // Nothing to dismiss: opening a row switches thread, which hides this screen.
+    close: () => {
+    },
+    isShown: () => shown,
+    // Focus belongs to the composer on this screen.
+    fallbackFocus: () => {
+      pane.querySelector("#input-bar .prompt-input")?.focus({ preventScroll: true });
+    },
+    onNeedsYou: (count) => {
+      root.dataset["needsYou"] = String(count);
+    },
+    // With nothing to list the strip and card would only say so: the screen steps
+    // aside and the composer takes the middle of the pane, as a first run always had.
+    onIdle: (idle) => {
+      root.dataset["idle"] = String(idle);
+      pane.classList.toggle("is-activity-idle", idle);
+    },
+    collapsibleGroups: true,
+    projectStrip: true,
+    followUrgent: true,
+    openThreadArrow: true
+  });
+  view.status.classList.add("activity-home-sr");
+  root.append(
+    el("h2", { id: "activity-home-title", class: "activity-home-sr" }, "Activity"),
+    view.strip,
+    view.body,
+    view.status,
+    el("p", { class: "activity-home-caption" }, "Start a new thread")
+  );
+  pane.insertBefore(root, pane.querySelector("#input-bar"));
+  return {
+    setShown: (next) => {
+      if (next === shown) return;
+      shown = next;
+      root.hidden = !next;
+      if (!next) pane.classList.remove("is-activity-idle");
+      if (next) view.show({ focusFirstRow: false });
+      else view.hide();
+    }
+  };
+}
+var init_activity_home = __esm({
+  "src/renderer/views/activity-home.ts"() {
+    init_helpers();
+    init_activity_view();
   }
 });
 
@@ -145292,24 +145836,30 @@ function isActiveThreadEmpty(store2) {
   const { activeThreadId, threads } = store2.getState();
   if (!activeThreadId) return false;
   const thread = threads.find((t2) => t2.id === activeThreadId);
-  return thread ? thread.messages.length === 0 : false;
+  return thread ? thread.messages.length === 0 && !needsHydration(thread) : false;
 }
-function bindChatComposerLayout(store2) {
+function bindChatComposerLayout(store2, onActivityHome) {
   const pane = document.getElementById("pane-chat");
   const input2 = document.getElementById("input-bar");
   const conversation = document.getElementById("conversation");
   if (!pane || !input2 || !conversation) return () => {
   };
+  let focusedFor = null;
   const sync = () => {
-    const centered = isActiveThreadEmpty(store2);
-    pane.classList.toggle("composer-centered", centered);
-    if (centered) {
-      pane.style.setProperty("--chat-composer-height", "0px");
-      if (document.documentElement.dataset["demoEmbedded"] !== "on") {
-        const composer = input2.querySelector(".prompt-input");
-        composer?.focus({ preventScroll: true });
+    const home = isActiveThreadEmpty(store2);
+    pane.classList.toggle("is-activity-home", home);
+    onActivityHome?.(home);
+    if (home) {
+      const threadId = store2.getState().activeThreadId;
+      if (threadId !== focusedFor) {
+        focusedFor = threadId;
+        if (document.documentElement.dataset["demoEmbedded"] !== "on") {
+          const composer = input2.querySelector(".prompt-input");
+          composer?.focus({ preventScroll: true });
+        }
       }
-      return;
+    } else {
+      focusedFor = null;
     }
     const height = Math.max(Math.ceil(input2.getBoundingClientRect().height), 72);
     pane.style.setProperty("--chat-composer-height", `${String(height)}px`);
@@ -145330,6 +145880,7 @@ function bindChatComposerLayout(store2) {
 }
 var init_chat_layout = __esm({
   "src/renderer/views/chat-layout.ts"() {
+    init_thread_hydration();
   }
 });
 
@@ -154419,7 +154970,8 @@ async function boot() {
   mountCommandPalette(store, api);
   mountKeyboardShortcutsDialog();
   openProcessManager = mountProcessManagerDialog(api, store);
-  mountActivityPanel(api, store, { approvals: approvalRequests, questions: askUserRequests });
+  activitySources = { approvals: approvalRequests, questions: askUserRequests };
+  mountActivityPanel(api, store, activitySources);
   mountSshStatusBanner(store, api);
   mark("renderer:dialogs-mounted");
   const startupSettings = await loadStartupSettings(api.settings);
@@ -154658,7 +155210,8 @@ function mountFullLayout() {
   if (!inputRoot.querySelector(".prompt-input")) {
     throw new Error("Chat composer failed to mount (#input-bar missing .prompt-input)");
   }
-  bindChatComposerLayout(store);
+  const activityHome = activitySources ? mountActivityHome(requireElement("pane-chat"), api, store, activitySources) : null;
+  bindChatComposerLayout(store, activityHome?.setShown);
   mountFileTree(requireElement("file-tree-host"), store, api);
   mountRightPanelLayout(store);
   mountTerminalsPane(
@@ -154836,7 +155389,7 @@ function switchToNextThread() {
   const next = nextThreadId(store);
   if (next) switchThread(store, next);
 }
-var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager, rendererReady;
+var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager, activitySources, rendererReady;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
     init_mobile_chat();
@@ -154889,6 +155442,7 @@ var init_main = __esm({
     init_conversation_search();
     init_keyboard_shortcuts_dialog();
     init_process_manager_dialog();
+    init_activity_home();
     init_activity_panel();
     init_agent();
     init_diff_state();
@@ -154956,6 +155510,7 @@ var init_main = __esm({
     unmountPopoutTitlebar = null;
     handleStopShortcut = null;
     openProcessManager = null;
+    activitySources = null;
     if (popoutMode) {
       api.panes.onSwitchMode((mode) => {
         if (!isPopoutMode(mode)) return;
