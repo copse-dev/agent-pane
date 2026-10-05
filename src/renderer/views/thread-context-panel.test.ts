@@ -68,6 +68,7 @@ function recorder(): { handlers: ThreadContextHandlers; calls: string[] } {
     calls,
     handlers: {
       openThread: (id) => calls.push(`thread:${id}`),
+      openSideChat: (id) => calls.push(`side:${id}`),
       openPr: (ref) => calls.push(`pr:${String(ref.number)}`),
       openUrl: (url) => calls.push(`url:${url}`),
       startSideChat: () => calls.push('start'),
@@ -110,7 +111,7 @@ test('renders every section with safe text and routes each click to its own hand
     'start',
     'archive:s1',
     'restore:s2',
-    'thread:s1',
+    'side:s1',
   ])
 })
 
@@ -171,12 +172,17 @@ test('the mounted pane renders the active thread, indexes sections, and starts a
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.ok(viewer.querySelector('[data-thread-id="other"]'), 'backlinks arrive from the index')
 
+  const opened: string[] = []
+  store.on('side_chat_open_requested', (id) => opened.push(id))
   viewer.querySelector<HTMLElement>('[data-action="new-side-chat"]')?.click()
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(forks.length, 1)
-  assert.ok(
-    viewer.querySelector('[data-context="side-of"]'),
-    'the opened side chat shows its banner',
+  assert.equal(opened.length, 1, 'the new side chat is announced for the Side chat panel')
+  assert.equal(store.getState().activeThreadId, threadId, 'the main thread stays open')
+  assert.equal(
+    viewer.querySelectorAll('.thread-context-row[data-side-chat-id]').length,
+    1,
+    'and it is listed under Side chats',
   )
   dispose()
 })

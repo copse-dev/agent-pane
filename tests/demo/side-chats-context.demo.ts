@@ -6,28 +6,51 @@ const sidebarTitles = async (): Promise<string[]> =>
     [...document.querySelectorAll('.chat-row .chat-title')].map((node) => node.textContent ?? ''),
   )
 
-describe('Side chats and the thread Context panel', () => {
+const MAIN = 'Fix flaky mermaid e2e'
+
+/** The panel control toggles, so only click it when the Context pane is not already showing. */
+async function openContext(): Promise<void> {
+  if (!(await $('.thread-context').isDisplayed())) {
+    if (!(await $('#pane-files').isDisplayed()))
+      await $('[aria-label="Toggle right panel"]').click()
+    await $('[aria-label="Open thread context"]').click()
+  }
+  await $('.thread-context').waitForDisplayed({ timeout: 20_000 })
+}
+
+/** Reveal a hover-only message action, then click it. */
+async function hoverClick(messageSelector: string, actionSelector: string): Promise<void> {
+  const message = $(messageSelector)
+  await message.waitForDisplayed({ timeout: 10_000 })
+  await message.scrollIntoView()
+  await message.moveTo()
+  const action = message.$(actionSelector)
+  await action.waitForExist({ timeout: 5_000 })
+  await action.click()
+}
+
+describe('Side chats beside the main thread, and the thread Context panel', () => {
   before(async () => {
     await browser.url('/?scenario=side-chats-context')
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const pane = $('#pane-files')
-    if (!(await pane.isDisplayed())) await $('[aria-label="Toggle right panel"]').click()
-    await $('[aria-label="Open thread context"]').click()
-    await $('.thread-context').waitForDisplayed({ timeout: 20_000 })
+    await openContext()
   })
 
-  it('hides side chats from the sidebar and rolls their unread dot up to the parent', async () => {
-    await expect($('.chat-row.selected .chat-title')).toHaveText('Fix flaky mermaid e2e')
-    expect(await sidebarTitles()).toEqual(['Fix flaky mermaid e2e', 'Release notes draft'])
-    // The unread side chat marks its parent, which is the open thread, so the dot is
-    // suppressed there and the other row carries none.
-    await expect($$('.chat-row .chat-unread-dot')).toBeElementsArrayOfSize(0)
+  it('hides side chats from the sidebar, marks the branched message, and rolls the dot up to the parent', async () => {
+    await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
+    expect(await sidebarTitles()).toEqual([MAIN, 'Release notes draft'])
+    // The branched message carries a chip, with a dot while a side chat is unread.
+    const chip = $('[data-message-id="sc-assistant-1"] .msg-side-chat-chip')
+    await chip.waitForExist({ timeout: 10_000 })
+    await expect(chip).toHaveText('1 side chat')
+    await expect(chip).toHaveAttribute('data-unread', 'true')
+    await saveElementScreenshot('#pane-chat', 'side-chat-anchor-chip.png')
 
-    // Open the other thread: now the parent shows the roll-up dot.
+    // Open the other thread: now the parent row shows the roll-up dot.
     await $('.chat-row*=Release notes draft').click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('Release notes draft')
     await $('.chat-row.is-unread .chat-unread-dot').waitForExist({ timeout: 10_000 })
-    await expect($('.chat-row.is-unread .chat-title')).toHaveText('Fix flaky mermaid e2e')
+    await expect($('.chat-row.is-unread .chat-title')).toHaveText(MAIN)
     await expect($('.chat-row.is-unread .chat-unread-dot')).toHaveAttribute(
       'aria-label',
       'Unread reply in a side chat',
@@ -35,10 +58,11 @@ describe('Side chats and the thread Context panel', () => {
     await saveElementScreenshot('#pane-projects', 'side-chat-unread-rollup-sidebar.png')
 
     await $('.chat-row*=Fix flaky mermaid e2e').click()
-    await expect($('.chat-row.selected .chat-title')).toHaveText('Fix flaky mermaid e2e')
+    await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
   })
 
   it('lists repos, side chats, links, mentions and subagents for the open thread', async () => {
+    await openContext()
     await expect($('[data-context-section="repos"] .thread-context-repo')).toHaveText(
       expect.stringContaining('fix/mermaid-wait'),
     )
@@ -66,57 +90,89 @@ describe('Side chats and the thread Context panel', () => {
     await saveElementScreenshot('#pane-files', 'side-chats-context-panel.png')
   })
 
-  it('opens an existing side chat, shows what it reads, and returns to the parent', async () => {
+  it('opens a side chat beside the main thread and reads it without leaving the thread', async () => {
     await $('.thread-context-row[data-side-chat-id="sc-side-1"]').click()
-    await $('[data-context="side-of"]').waitForDisplayed()
-    await expect($('[data-context="side-of"]')).toHaveText(
-      expect.stringContaining('Fix flaky mermaid e2e'),
+    await $('.side-chat-body-host').waitForDisplayed({ timeout: 10_000 })
+    // The main thread is still the open thread, and its conversation is still on screen.
+    await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
+    await expect($('.msg-user')).toHaveText(expect.stringContaining('fails about one run in five'))
+    expect(await sidebarTitles()).toEqual([MAIN, 'Release notes draft'])
+    // The side chat shows what it reads, its transcript, and its own composer.
+    await expect($('[data-side-chat-context]')).toHaveText(expect.stringContaining('Read-only'))
+    await expect($('[data-side-chat-context]')).toHaveText(
+      expect.stringContaining('The spec asserts on the rendered svg'),
     )
-    await expect($('[data-context="side-of"]')).toHaveText(expect.stringContaining('Read-only'))
-    // A side chat cannot start another.
-    await expect($('[data-action="new-side-chat"]')).toBeDisabled()
-    // Still hidden from the sidebar while it is the open thread.
-    expect(await sidebarTitles()).toEqual(['Fix flaky mermaid e2e', 'Release notes draft'])
-    await saveElementScreenshot('#body', 'side-chat-open-with-context.png')
-
-    await $('[data-action="back-to-parent"]').click()
-    await expect($('.chat-row.selected .chat-title')).toHaveText('Fix flaky mermaid e2e')
-    await expect($('[data-context="side-of"]')).not.toBeDisplayed()
-    // Opening the side chat read it: the unread mark is gone from its row.
-    await expect($('.thread-context-row[data-side-chat-id="sc-side-1"]')).not.toHaveAttribute(
+    await expect($$('.side-chat-msg')).toBeElementsArrayOfSize(2)
+    await expect($('.side-chat-msg.is-assistant code')).toHaveText('waitForExist')
+    await expect($('.side-chat-input')).toBeEnabled()
+    // Showing it counts as reading it: the unread mark is gone.
+    await expect($('.side-chat-row[data-side-chat-id="sc-side-1"]')).not.toHaveAttribute(
       'data-unread',
       'true',
     )
+    // The titlebar control counts the live side chats.
+    await expect($('[data-panel-control="side-chat"] .titlebar-btn-badge')).toHaveText('1')
+    await saveElementScreenshot('#body', 'side-chat-beside-main-thread.png')
   })
 
-  it('starts a side chat, archives it, and restores an archived one', async () => {
-    await $('[data-action="new-side-chat"]').click()
-    await $('[data-context="side-of"]').waitForDisplayed()
-    await expect($('.chat-row.selected .chat-title')).not.toExist()
-    expect(await sidebarTitles()).toEqual(['Fix flaky mermaid e2e', 'Release notes draft'])
-    await $('[data-action="back-to-parent"]').click()
-    await expect($$('.thread-context-row[data-side-chat-id]')).toBeElementsArrayOfSize(3)
-    // A long side chat title must ellipsize, never widen the column.
+  it('asks a question in the side chat and gets the reply there, not in the main thread', async () => {
+    const mainMessages = await $$('#conversation .msg-user').length
+    await $('.side-chat-input').setValue('Is waitForDisplayed enough on its own?')
+    await $('.side-chat-send').click()
+    await browser.waitUntil(async () => (await $$('.side-chat-msg')).length === 4, {
+      timeout: 10_000,
+      timeoutMsg: 'the side chat never showed the question and its reply',
+    })
+    await expect($$('.side-chat-msg')[2]).toHaveText('Is waitForDisplayed enough on its own?')
+    expect(await $$('#conversation .msg-user').length).toBe(mainMessages)
+    await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
+  })
+
+  it('starts a side chat from a hover action on a message and offers suggestions', async () => {
+    await hoverClick('#conversation .msg-user', '.msg-side-chat')
+    await $('.side-chat-empty').waitForDisplayed({ timeout: 10_000 })
+    await expect($$('.side-chat-suggestion')).toBeElementsArrayOfSize(3)
+    await expect($('[data-side-chat-context]')).toHaveText(
+      expect.stringContaining('The mermaid e2e spec fails'),
+    )
+    await expect($('[data-panel-control="side-chat"] .titlebar-btn-badge')).toHaveText('2')
+    // The new side chat is hidden from the sidebar like the others.
+    expect(await sidebarTitles()).toEqual([MAIN, 'Release notes draft'])
+    await saveElementScreenshot('#pane-files', 'side-chat-new-with-suggestions.png')
+    await $$('.side-chat-suggestion')[0]?.click()
+    await browser.waitUntil(async () => (await $$('.side-chat-msg')).length === 2, {
+      timeout: 10_000,
+    })
+  })
+
+  it('promotes a side chat to a thread', async () => {
+    await $('[data-action="promote-side-chat"]').click()
+    await browser.waitUntil(async () => (await sidebarTitles()).length === 3, {
+      timeout: 10_000,
+      timeoutMsg: 'the promoted thread never appeared in the sidebar',
+    })
+    // It is now an ordinary thread, active, carrying the parent slice and its own turns.
+    await expect($('.chat-row.selected .chat-title')).toHaveText(
+      expect.stringContaining('mermaid e2e spec fails'),
+    )
+    await expect($$('#conversation .msg-user')).toBeElementsArrayOfSize(2)
+    await saveElementScreenshot('#body', 'side-chat-promoted-to-thread.png')
+  })
+
+  it('archives and restores side chats from the Context panel', async () => {
+    await $('.chat-row*=Fix flaky mermaid e2e').click()
+    await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
+    await openContext()
     const overflow = await browser.execute(() => {
       const viewer = document.querySelector('#context-viewer-host')
       return viewer ? viewer.scrollWidth - viewer.clientWidth : -1
     })
     expect(overflow).toBe(0)
-
-    // Side chats list oldest first, so the one just created is the last active row.
-    // Archiving it must leave the seeded unread one alone.
-    const archive = await $$('[data-action="archive-side-chat"]')
-    const created = archive[archive.length - 1]
-    if (!created) throw new Error('No side chat to archive')
-    expect(await created.getAttribute('data-side-chat-id')).not.toBe('sc-side-1')
-    await created.click()
-    await expect($$('[data-action="archive-side-chat"]')).toBeElementsArrayOfSize(1)
-    await expect($$('[data-action="restore-side-chat"]')).toBeElementsArrayOfSize(2)
-    await expect($('.thread-context-row[data-side-chat-id="sc-side-1"]')).not.toHaveAttribute(
+    await $('[data-action="archive-side-chat"][data-side-chat-id="sc-side-1"]').click()
+    await expect($('.thread-context-row[data-side-chat-id="sc-side-1"]')).toHaveAttribute(
       'data-archived',
       'true',
     )
-
     await $('[data-action="restore-side-chat"][data-side-chat-id="sc-side-2"]').click()
     await expect($('.thread-context-row[data-side-chat-id="sc-side-2"]')).not.toHaveAttribute(
       'data-archived',

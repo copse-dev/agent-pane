@@ -23,6 +23,8 @@ import { deriveThreadContext, type ThreadContextModel } from './thread-context-m
 
 export interface ThreadContextHandlers {
   openThread: (threadId: string) => void
+  /** Show a side chat beside the main thread (the Side chat panel). */
+  openSideChat: (threadId: string) => void
   openPr: (ref: GithubPrRef) => void
   openUrl: (url: string) => void
   startSideChat: () => void
@@ -142,7 +144,7 @@ function sideChatsSection(model: ThreadContextModel, handlers: ThreadContextHand
       chat.archived ? el('span', { class: 'thread-context-chip' }, 'Archived') : '',
     )
     open.addEventListener('click', () => {
-      handlers.openThread(chat.id)
+      handlers.openSideChat(chat.id)
     })
     const toggle = el(
       'button',
@@ -334,6 +336,9 @@ export function mountThreadContextPane(
   const handlers: ThreadContextHandlers = {
     openThread: (threadId) => {
       switchThread(store, threadId)
+    },
+    openSideChat: (threadId) => {
+      store.emit('side_chat_open_requested', threadId)
     },
     openPr: (ref) => {
       openPullRequest(store, ref)

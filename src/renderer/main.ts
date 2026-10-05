@@ -31,6 +31,7 @@ import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
 import { mountMemoriesPane } from './views/memories-pane.ts'
 import { mountThreadContextPane } from './views/thread-context-panel.ts'
+import { mountSideChatPane } from './views/side-chat-panel.ts'
 import { mountPortsSection } from './views/ports-section.ts'
 import { mountTerminalRailResizers } from './views/terminal-rail-resizer.ts'
 import { mountRoadmapPane } from './views/roadmap-pane.ts'
@@ -193,6 +194,7 @@ const api = window.api
 const POPOUT_MODES = [
   'explorer',
   'context',
+  'side-chat',
   'terminal',
   'changes',
   'prs',
@@ -680,6 +682,12 @@ function mountFullLayout(): void {
   mountThreadContextPane(
     requireElement('context-host'),
     requireElement('context-viewer-host'),
+    store,
+    api,
+  )
+  mountSideChatPane(
+    requireElement('side-chat-host'),
+    requireElement('side-chat-viewer-host'),
     store,
     api,
   )

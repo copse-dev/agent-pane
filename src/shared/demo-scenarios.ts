@@ -2551,8 +2551,23 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         model: 'acp:codex-acp#fast',
         sideChat: { parentThreadId: SIDE_CHATS_MAIN_ID, anchorMessageId: 'sc-assistant-1' },
         unreadAt: FIXED_TIME + 4_000,
-        messages: [],
-        messagesLoaded: false,
+        messages: [
+          {
+            id: 'sc-side1-user',
+            role: 'user',
+            content: 'What is the difference between waitForExist and waitForDisplayed here?',
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3_100,
+          },
+          {
+            id: 'sc-side1-assistant',
+            role: 'assistant',
+            content:
+              '`waitForExist` only checks that the node is in the DOM. `waitForDisplayed` also needs a non-zero size and no `display: none`. Mermaid inserts an empty svg first, so the first one passes too early.',
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3_900,
+          },
+        ],
         prRefs: [],
         links: [],
         usage: { inputTokens: 0, outputTokens: 0 },

@@ -3290,6 +3290,7 @@ export function registerAllHandlers(
       z.enum([
         'explorer',
         'context',
+        'side-chat',
         'terminal',
         'changes',
         'prs',
@@ -3309,6 +3310,7 @@ export function registerAllHandlers(
       z.enum([
         'explorer',
         'context',
+        'side-chat',
         'terminal',
         'changes',
         'prs',

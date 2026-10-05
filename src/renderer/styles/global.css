@@ -6,6 +6,7 @@
 @import './global/layout.css';
 @import './global/pr-thread-relationships.css';
 @import './global/thread-context.css';
+@import './global/side-chat.css';
 @import './global/titlebar.css';
 @import './global/forms.css';
 @import './global/model-picker.css';
