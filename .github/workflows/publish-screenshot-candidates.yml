@@ -40,6 +40,8 @@ concurrency:
   # publisher must not restore pending state after a concurrent decision.
   group: >-
     ${{ github.event.workflow_run.pull_requests[0].number && format('screenshot-review-{0}', github.event.workflow_run.pull_requests[0].number) || format('screenshot-candidates-{0}', github.event.workflow_run.id) }}
+  # Retain queued publications and decisions; the default replaces pending runs.
+  queue: max
   cancel-in-progress: false
 
 permissions:

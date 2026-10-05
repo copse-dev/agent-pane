@@ -30,6 +30,8 @@ permissions:
 
 concurrency:
   group: screenshot-review-${{ github.event.issue.number }}
+  # Retain queued publications and decisions; the default replaces pending runs.
+  queue: max
   cancel-in-progress: false
 
 jobs:

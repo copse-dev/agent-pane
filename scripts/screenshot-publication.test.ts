@@ -378,15 +378,27 @@ function statusOf(write: StatusWrite | undefined): string[] {
 }
 
 describe('blocking screenshot review gate', () => {
-  it('serializes publication with label and checkbox decisions for the same PR', () => {
-    const workflow = z
-      .object({ concurrency: z.object({ group: z.string(), 'cancel-in-progress': z.boolean() }) })
-      .parse(load(readFileSync('.github/workflows/publish-screenshot-candidates.yml', 'utf8')))
+  it('serializes publication and decisions without replacing pending runs', () => {
+    const concurrencySchema = z.object({
+      concurrency: z.object({
+        group: z.string(),
+        queue: z.literal('max'),
+        'cancel-in-progress': z.literal(false),
+      }),
+    })
+    const publisher = concurrencySchema.parse(
+      load(readFileSync('.github/workflows/publish-screenshot-candidates.yml', 'utf8')),
+    )
     assert.match(
-      workflow.concurrency.group,
+      publisher.concurrency.group,
       /format\('screenshot-review-\{0\}', github\.event\.workflow_run\.pull_requests\[0\]\.number\)/,
     )
-    assert.equal(workflow.concurrency['cancel-in-progress'], false)
+    for (const name of ['screenshot-review-labels', 'screenshot-review-selection']) {
+      const workflow = concurrencySchema.parse(
+        load(readFileSync(`.github/workflows/${name}.yml`, 'utf8')),
+      )
+      assert.match(workflow.concurrency.group, /^screenshot-review-/)
+    }
   })
 
   it('holds a head with candidates pending until a label decides', async () => {
