@@ -145,6 +145,10 @@ describe('native PR and commit provenance', function () {
       'data-relationship',
       'related',
     )
+    await expect($('.pr-list-meta .pr-list-relationship[data-relationship="produced"]')).toHaveText(
+      'Produced',
+    )
+    await expect($('.pr-list-row*=#1001').$$('.pr-list-status')).toBeElementsArrayOfSize(1)
     await saveElementScreenshot('#pane-files', screenshot)
   }
 

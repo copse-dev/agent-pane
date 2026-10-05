@@ -148,6 +148,16 @@ afterEach(() => {
 })
 
 describe('pr pane filter (issue #2482)', () => {
+  it('keeps relationship labels with repository and CI metadata in the current row layout', async () => {
+    const { listRoot } = mount()
+    await settle()
+    const row = listRoot.querySelector('.pr-list-row[data-pr-section="linked"]')
+    assert.ok(row)
+    assert.equal(row.querySelector('.pr-list-meta .pr-list-relationship')?.textContent, 'Related')
+    assert.ok(row.querySelector('.pr-list-meta .pr-list-status'))
+    assert.equal(row.querySelectorAll('.pr-list-status').length, 1)
+  })
+
   it('loads conflict metadata for titled unselected rows in every visible group', async () => {
     const linked = { ...LINKED_PR, number: 801, url: 'https://github.com/acme/widgets/pull/801' }
     const secondLinked = {
