@@ -70350,7 +70350,7 @@ function createDemoApi(scenario, options = {}) {
       fetchProviderModels: () => resolved2({ ok: false, models: [], error: "Unavailable in demo" }),
       refreshHuggingFaceModels: () => resolved2({ ok: false, count: 0, error: "Unavailable in demo" })
     },
-    appIcon: { apply: resolvedVoid },
+    appIcon: { apply: resolvedVoid, setAutomationMode: resolvedVoid },
     about: {
       getInfo: () => resolved2({ version: "demo", report: null }),
       openLicenseFile: resolvedVoid
@@ -145523,6 +145523,49 @@ var init_automations2 = __esm({
   }
 });
 
+// src/renderer/controller/automation-appearance.ts
+function hasRunningAutomation(threads, backgroundThreads) {
+  return [...threads, ...backgroundThreads.map(({ thread }) => thread)].some(
+    (thread) => thread.automation !== void 0 && thread.status === "running"
+  );
+}
+function attachAutomationAppearance(store2, api2, root = document.documentElement) {
+  let active2 = null;
+  const sync = () => {
+    const state = store2.getState();
+    const next = hasRunningAutomation(state.threads, state.backgroundThreads);
+    if (next === active2) return;
+    active2 = next;
+    root.toggleAttribute(AUTOMATION_ACTIVE_ATTRIBUTE, next);
+    void api2.setAutomationMode(next).catch((error62) => {
+      console.error("[automations] Failed to apply transient appearance:", error62);
+    });
+  };
+  const unsubs = [
+    store2.on("thread_status_changed", sync),
+    store2.on("threads_changed", sync),
+    store2.on("workspace_changed", sync)
+  ];
+  sync();
+  return () => {
+    unsubs.forEach((unsubscribe) => {
+      unsubscribe();
+    });
+    root.removeAttribute(AUTOMATION_ACTIVE_ATTRIBUTE);
+    if (active2 === true) {
+      void api2.setAutomationMode(false).catch((error62) => {
+        console.error("[automations] Failed to restore the native app icon:", error62);
+      });
+    }
+  };
+}
+var AUTOMATION_ACTIVE_ATTRIBUTE;
+var init_automation_appearance = __esm({
+  "src/renderer/controller/automation-appearance.ts"() {
+    AUTOMATION_ACTIVE_ATTRIBUTE = "data-automation-active";
+  }
+});
+
 // src/renderer/controller/best-value-default.ts
 async function resolveBestValueForActiveBlankThread(store2, api2) {
   const thread = getActiveThread(store2);
@@ -155907,6 +155950,7 @@ async function boot() {
     attachMobileChat(store, api, mobileReady);
     attachBestValueDefaultResolver(store, api);
     attachAutomationController(store, api);
+    attachAutomationAppearance(store, api.appIcon);
     attachPrPanelFollow(store, api);
     startExternalCursorAgentSync(store, api);
   } else {
@@ -156310,6 +156354,7 @@ var init_main = __esm({
     init_agent();
     init_diff_state();
     init_automations2();
+    init_automation_appearance();
     init_best_value_default();
     init_persistence();
     init_perf();
