@@ -20,7 +20,12 @@ class FakePrediction {
       predictedTokensCount: number
     }
   }> {
-    this.opts.onPromptProcessingProgress?.(0.47)
+    this.opts.onPromptProcessingProgress?.(0.47, {
+      cachedTokenCount: 0,
+      totalPromptTokenCount: 100,
+      processedPromptTokenCount: 47,
+      unprocessedPromptTokenCount: 53,
+    })
     this.opts.onPredictionFragment?.({
       content: 'considering',
       tokensCount: 1,
