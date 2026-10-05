@@ -16,7 +16,8 @@ async function headingAlignment(): Promise<{
   arrowOffset: number
   titleOffset: number
   automationTopBorder: string
-  headerBottomBorder: string
+  searchHeaderBottomBorder: string
+  filtersBottomBorder: string
 } | null> {
   return browser.execute(() => {
     const automationArrow = document.querySelector('.automation-threads-twisty')
@@ -25,13 +26,15 @@ async function headingAlignment(): Promise<{
     const projectTitle = document.querySelector('.project-entry .project-row .project-name')
     const automationGroup = document.querySelector('.automation-threads-group')
     const projectsHeader = document.querySelector('.pane-projects-header')
+    const projectsFilters = document.querySelector('.projects-filters')
     if (
       !automationArrow ||
       !automationTitle ||
       !projectArrow ||
       !projectTitle ||
       !automationGroup ||
-      !projectsHeader
+      !projectsHeader ||
+      !projectsFilters
     ) {
       return null
     }
@@ -41,7 +44,8 @@ async function headingAlignment(): Promise<{
       titleOffset:
         automationTitle.getBoundingClientRect().left - projectTitle.getBoundingClientRect().left,
       automationTopBorder: getComputedStyle(automationGroup).borderTopWidth,
-      headerBottomBorder: getComputedStyle(projectsHeader).borderBottomWidth,
+      searchHeaderBottomBorder: getComputedStyle(projectsHeader).borderBottomWidth,
+      filtersBottomBorder: getComputedStyle(projectsFilters).borderBottomWidth,
     }
   })
 }
@@ -229,7 +233,10 @@ describe('workspace-level automations section', function () {
     assert.ok(Math.abs(alignment.arrowOffset) < 1, 'automation and project arrows should align')
     assert.ok(Math.abs(alignment.titleOffset) < 1, 'automation and project titles should align')
     assert.equal(alignment.automationTopBorder, '0px')
-    assert.equal(alignment.headerBottomBorder, '1px')
+    // The always-visible search row and filters share one separator below
+    // the filters; keep the strict boundary check on its current owning row.
+    assert.equal(alignment.searchHeaderBottomBorder, '0px')
+    assert.equal(alignment.filtersBottomBorder, '1px')
 
     // Scale through the product's own Appearance setting, then restore it.
     await setUiScaleThroughSettings('1.25')

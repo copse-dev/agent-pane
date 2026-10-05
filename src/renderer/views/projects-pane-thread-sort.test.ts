@@ -107,4 +107,50 @@ describe('projects pane thread sort (component)', () => {
     ).map((button) => button.textContent)
     assert.deepEqual(checked.sort(), ['Created', 'Project', 'Reverse order'])
   })
+
+  it('closes the menu when its button is pressed again', () => {
+    mount()
+    const button = document.querySelector<HTMLButtonElement>('.projects-sort-btn')
+    assert.ok(button)
+    button.click()
+    assert.equal(document.querySelectorAll('.context-menu').length, 1)
+    // A real second click is a press, which closes the menu, then the click.
+    button.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    button.click()
+    assert.equal(document.querySelectorAll('.context-menu').length, 0)
+    button.click()
+    assert.equal(document.querySelectorAll('.context-menu').length, 1)
+  })
+
+  it('offers New thread first in the header plus menu', () => {
+    mount()
+    document.querySelector<HTMLButtonElement>('.projects-add-btn')?.click()
+    const labels = Array.from(document.querySelectorAll('.context-menu-item')).map(
+      (n) => n.textContent,
+    )
+    assert.deepEqual(labels.slice(0, 2), ['New thread', 'New project'])
+    // A rule sits between New thread and the project actions, as in the prototype.
+    const menu = document.querySelector('.context-menu')
+    assert.equal(menu?.children[1]?.getAttribute('role'), 'separator')
+  })
+
+  it('lists Status first and offers Reverse order and Compact rows as switches', () => {
+    mount()
+    document.querySelector<HTMLButtonElement>('.projects-sort-btn')?.click()
+    const labels = Array.from(document.querySelectorAll('.context-menu-item-label')).map(
+      (n) => n.textContent,
+    )
+    assert.deepEqual(labels.slice(0, 3), ['Status', 'Project', 'None'])
+    assert.deepEqual(labels.slice(-2), ['Reverse order', 'Compact rows'])
+    assert.equal(document.querySelectorAll('.context-menu-switch').length, 2)
+  })
+
+  it('drops the owner names from rows when Compact rows is on', () => {
+    mount()
+    assert.equal(document.querySelector('.projects-list.is-compact'), null)
+    choose('Compact rows')
+    assert.ok(document.querySelector('.projects-list.is-compact'))
+    choose('Compact rows')
+    assert.equal(document.querySelector('.projects-list.is-compact'), null)
+  })
 })
