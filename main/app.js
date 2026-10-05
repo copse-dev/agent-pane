@@ -87163,6 +87163,7 @@ function mountConversation(root, store2, api2) {
   let lastProgrammaticScrollTop = -1;
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
+  let stickyImagePrompt = null;
   let backfillGeneration = 0;
   const disclosurePreferences = /* @__PURE__ */ new Map();
   const liveRollupMessages = /* @__PURE__ */ new Set();
@@ -87285,8 +87286,34 @@ function mountConversation(root, store2, api2) {
   function updateScrollButton() {
     scrollToBottomBtn.hidden = isNearBottom();
   }
+  function syncStickyImagePreview() {
+    const prompt = stickyImagePrompt;
+    if (!prompt?.isConnected) return;
+    const promptStyle = window.getComputedStyle(prompt);
+    if (promptStyle.position !== "sticky") {
+      prompt.classList.remove("is-preview-compact");
+      return;
+    }
+    const listRect = list.getBoundingClientRect();
+    const listStyle = window.getComputedStyle(list);
+    const previous = prompt.previousElementSibling;
+    const naturalTop = previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
+    const stickyTop = listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
+    prompt.classList.toggle("is-preview-compact", naturalTop < stickyTop - 1);
+  }
+  function refreshStickyImagePrompt() {
+    const prompts = list.querySelectorAll(
+      ":scope > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)"
+    );
+    const latest = prompts[prompts.length - 1];
+    const next = latest?.querySelector(".message-images") ? latest : null;
+    if (stickyImagePrompt !== next) stickyImagePrompt?.classList.remove("is-preview-compact");
+    stickyImagePrompt = next;
+    syncStickyImagePreview();
+  }
   function handleUserScroll() {
     const scrollTop = list.scrollTop;
+    syncStickyImagePreview();
     if (scrollTop === lastProgrammaticScrollTop) {
       lastProgrammaticScrollTop = -1;
       lastScrollTop = scrollTop;
@@ -87307,6 +87334,8 @@ function mountConversation(root, store2, api2) {
     updateScrollButton();
   }
   list.addEventListener("scroll", handleUserScroll, { passive: true });
+  const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncStickyImagePreview);
+  listResizeObserver?.observe(list);
   list.addEventListener(
     "wheel",
     (event) => {
@@ -87400,6 +87429,7 @@ function mountConversation(root, store2, api2) {
     const before = list.scrollTop;
     list.scrollTop = top;
     const landed = list.scrollTop;
+    syncStickyImagePreview();
     lastScrollTop = landed;
     if (landed !== before) {
       lastProgrammaticScrollTop = landed;
@@ -87754,6 +87784,7 @@ function mountConversation(root, store2, api2) {
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null);
     finalizeMessageEl(threadId, msgId);
     if (batched) return;
+    if (msg.role === "user") refreshStickyImagePrompt();
     syncModelLabels();
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
@@ -88139,6 +88170,7 @@ function mountConversation(root, store2, api2) {
     disposeInlineArtefacts(list);
     avatarMotion.setActive(null);
     clear(list);
+    stickyImagePrompt = null;
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
     if (!thread) {
@@ -88162,6 +88194,7 @@ function mountConversation(root, store2, api2) {
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
     finishThreadChrome(thread);
+    refreshStickyImagePrompt();
     if (preservedScrollTop === null) {
       scrollToBottom(true);
     } else {
@@ -88463,6 +88496,7 @@ function mountConversation(root, store2, api2) {
     disposed = true;
     avatarMotion.dispose();
     backfillGeneration++;
+    listResizeObserver?.disconnect();
     showAcpTransportNoiseDisclosure = () => false;
     revealTimers.forEach((timer) => {
       clearTimeout(timer);
