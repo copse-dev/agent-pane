@@ -484,11 +484,15 @@ export function createAcpAgentsSection(
     })
     void modelPicker.refresh(initialModel)
 
-    // Detection resolves the agent by its saved id, so it only works once the
-    // agent has been saved (a fresh, unsaved agent has nothing to spawn yet).
-    detectModels.disabled = !isEdit
+    // Detection resolves the saved config, including its enablement. Checking
+    // Enabled in an unsaved editor cannot authorize starting the agent.
+    const canDetectModels = options.initial?.enabled === true
+    detectModels.disabled = !canDetectModels
     if (!isEdit) modelStatus.textContent = 'Save the agent first, then detect its models.'
+    else if (!canDetectModels)
+      modelStatus.textContent = 'Enable and save the agent first, then detect its models.'
     detectModels.addEventListener('click', () => {
+      if (!canDetectModels) return
       const id = idInput.value.trim()
       detectModels.disabled = true
       setInlineStatus(modelStatus, 'pending', 'Detecting… (starting the agent)')
@@ -533,7 +537,7 @@ export function createAcpAgentsSection(
           setInlineStatus(modelStatus, 'error', err instanceof Error ? err.message : String(err))
         })
         .finally(() => {
-          detectModels.disabled = false
+          detectModels.disabled = !canDetectModels
         })
     })
     // For a new agent, predict the id from the title until the user edits id.

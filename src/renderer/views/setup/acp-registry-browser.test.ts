@@ -208,7 +208,13 @@ describe('agent registry browser', () => {
     const enable = panel.root.querySelector<HTMLInputElement>('.checkbox-label input')
     assert.ok(enable)
     assert.equal(enable.disabled, false)
+    assert.equal(button(panel.root, 'Detect models').disabled, true)
+    assert.match(panel.root.textContent, /Enable and save the agent first/)
+    button(panel.root, 'Detect models').click()
+    await flush()
+    assert.equal(probes, 0)
     enable.checked = true
+    assert.equal(button(panel.root, 'Detect models').disabled, true)
     button(panel.root, 'Save').click()
     await flush()
     assert.equal(
@@ -216,6 +222,16 @@ describe('agent registry browser', () => {
       true,
     )
     assert.equal(probes, 0)
+    assert.equal(button(panel.root, 'Detect models').disabled, false)
+    button(panel.root, 'Detect models').click()
+    await flush()
+    assert.equal(probes, 1)
+    const disable = panel.root.querySelector<HTMLInputElement>('.checkbox-label input')
+    assert.ok(disable)
+    disable.checked = false
+    button(panel.root, 'Save').click()
+    await flush()
+    assert.equal(button(panel.root, 'Detect models').disabled, true)
     assert.equal(setups, 0)
   })
 

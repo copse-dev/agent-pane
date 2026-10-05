@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -42,6 +43,25 @@ describe('public agent registry discovery', function () {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     mkdirSync(join(process.cwd(), '.tmp'), { recursive: true })
     scratch = mkdtempSync(join(process.cwd(), '.tmp/acp-registry-e2e-'))
+    const workspace = join(scratch, 'workspace')
+    mkdirSync(workspace)
+    writeFileSync(join(workspace, 'README.md'), 'Registry fixture workspace.\n')
+    const git = (args: string[]): void => {
+      execFileSync('git', args, { cwd: workspace })
+    }
+    git(['init', '-b', 'main'])
+    git(['add', 'README.md'])
+    git([
+      '-c',
+      'commit.gpgsign=false',
+      '-c',
+      'user.name=Copse fixture',
+      '-c',
+      'user.email=fixture@example.com',
+      'commit',
+      '-m',
+      'Seed registry fixture',
+    ])
     registryFile = join(scratch, 'registry.json')
     executable = join(scratch, 'agent.mjs')
     writeFileSync(executable, AGENT)
@@ -72,7 +92,7 @@ describe('public agent registry discovery', function () {
     )
     writeE2eEnv({ COPSE_E2E_ACP_REGISTRY_FIXTURE: registryFile })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-acp-registry', {
+    seedEmptyProject(workspace, 'e2e-acp-registry', {
       windowBounds: { width: 1280, height: 800 },
       registeredAcpAgents: [],
     })
@@ -152,8 +172,15 @@ describe('public agent registry discovery', function () {
     await $('.settings-nav-btn[data-section="general"]').click()
     await $('.provider-chip[data-provider="registry-community-agent"]').click()
     const card = await $('.acp-agent-card')
+    await expect(card.$('button=Detect models')).toBeDisabled()
+    await expect(card).toHaveText(expect.stringContaining('Enable and save the agent first'))
+    await card.$('button=Detect models').scrollIntoView({ block: 'center' })
+    await saveAppScreenshot('acp-registry-saved-disabled.png')
     await card.$('.checkbox-label input').click()
+    await expect(card.$('button=Detect models')).toBeDisabled()
+    assert.equal(existsSync(join(scratch, 'launched')), false)
     await card.$('button=Save').click()
+    await expect($('.acp-agent-card').$('button=Detect models')).toBeEnabled()
     assert.equal(existsSync(join(scratch, 'launched')), false)
     await $('.acp-agent-card').$('button=Detect models').click()
     await browser.waitUntil(async () =>
