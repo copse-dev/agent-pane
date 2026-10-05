@@ -390,6 +390,35 @@ describe('browser-hosted Activity home', () => {
   })
 })
 
+describe('browser-hosted Activity home with a cleared project filter', () => {
+  it('keeps the selected project card after its last request is answered', async () => {
+    await browser.url('about:blank')
+    await browser.url('/?scenario=activity-home-project-filter')
+    const selected = $(
+      '#activity-home .activity-strip-card[data-project="demo-activity-home-filter-project"]',
+    )
+    await selected.waitForDisplayed({ timeout: 30_000 })
+    await selected.click()
+    const approve = $('#activity-home .activity-approve')
+    await approve.waitForEnabled()
+    await approve.click()
+    await browser.waitUntil(
+      async () =>
+        (await $$('#activity-home .activity-row[data-state="needs-approval"]')).length === 0,
+    )
+    await expect(selected).toBeDisplayed()
+    await expect(selected).toHaveAttribute('aria-pressed', 'true')
+    await expect(selected).toHaveText(expect.stringContaining('All clear'))
+    await expect($('#activity-home .activity-strip-card[data-project="all"]')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    await saveAppScreenshot('activity-home-project-cleared.png')
+    await $('#activity-home .activity-strip-card[data-project="all"]').click()
+    await expect($('#activity-home .activity-row[data-state="finished"]')).toBeDisplayed()
+  })
+})
+
 describe('browser-hosted Activity home with nothing to list', () => {
   before(async () => {
     await browser.url('about:blank')

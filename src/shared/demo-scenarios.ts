@@ -1981,6 +1981,43 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'activity-home-project-filter',
+    label: 'Activity home after a project finishes waiting',
+    project: project('demo-activity-home-filter-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [
+      {
+        id: 'demo-activity-filter-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-filter-refactor',
+        title: 'Refactor auth',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        unreadAt: FIXED_TIME - 60_000,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+    ],
+    approvalRequests: [
+      {
+        id: 'demo-activity-filter-approval',
+        threadId: 'demo-activity-filter-refactor',
+        title: 'Run shell command?',
+        body: "printf 'auth-check-passed\\n'",
+        type: 'shell',
+      },
+    ],
+  },
+  {
     id: 'activity-home-empty',
     label: 'Activity home with nothing to list',
     project: project('demo-activity-home-empty-project'),

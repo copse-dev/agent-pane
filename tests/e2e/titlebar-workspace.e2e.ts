@@ -51,6 +51,10 @@ describe('titlebar workspace name', () => {
         paneMid: (frame.top + frame.bottom) / 2,
         conversationDisplay: getComputedStyle(conversation).display,
         composerBorder: getComputedStyle(input).borderTopWidth,
+        borderRight: getComputedStyle(input).borderRightWidth,
+        borderBottom: getComputedStyle(input).borderBottomWidth,
+        borderLeft: getComputedStyle(input).borderLeftWidth,
+        boxShadow: getComputedStyle(input).boxShadow,
       }
     })
     await expect(idle).not.toBeNull()
@@ -58,6 +62,10 @@ describe('titlebar workspace name', () => {
     await expect(Math.abs(idle.barMid - idle.paneMid)).toBeLessThanOrEqual(2)
     await expect(idle.conversationDisplay).toBe('none')
     await expect(idle.composerBorder).toBe('0px')
+    await expect(idle.borderRight).toBe('0px')
+    await expect(idle.borderBottom).toBe('0px')
+    await expect(idle.borderLeft).toBe('0px')
+    await expect(idle.boxShadow).toMatch(/0px 0px 0px 1px/)
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-activity-home.png'))
 
     await newThreadBtn.click()

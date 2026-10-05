@@ -642,6 +642,10 @@ export function createActivityView(
   /** All projects, then the ones that need you (most waiting first) and the chosen one. */
   function renderStrip(groups: readonly ActivityGroup[]): void {
     const stats = projectStats(groups)
+    if (projectFilter !== null && !stats.has(projectFilter)) {
+      const project = store.getState().projects.find((entry) => entry.id === projectFilter)
+      if (project) stats.set(project.id, { name: project.name, need: 0, working: 0 })
+    }
     // Aggregate counts include requests whose thread has no project association.
     const need = groups.find((group) => group.id === 'needs-you')?.total ?? 0
     const working = groups.find((group) => group.id === 'working')?.total ?? 0

@@ -140,6 +140,9 @@ describe('browser-hosted chat layout styling', () => {
       return {
         homeDisplay: getComputedStyle(home).display,
         borderTop: style.borderTopWidth,
+        borderRight: style.borderRightWidth,
+        borderBottom: style.borderBottomWidth,
+        borderLeft: style.borderLeftWidth,
         boxShadow: style.boxShadow,
         barMid: (bar.top + bar.bottom) / 2,
         paneMid: (frame.top + frame.bottom) / 2,
@@ -150,7 +153,10 @@ describe('browser-hosted chat layout styling', () => {
     expect(layout.homeDisplay).toBe('none')
     // Centred, its ring is the shadow, so the docked border is cleared.
     expect(layout.borderTop).toBe('0px')
-    expect(layout.boxShadow).not.toBe('none')
+    expect(layout.borderRight).toBe('0px')
+    expect(layout.borderBottom).toBe('0px')
+    expect(layout.borderLeft).toBe('0px')
+    expect(layout.boxShadow).toMatch(/0px 0px 0px 1px/)
     expect(Math.abs(layout.barMid - layout.paneMid)).toBeLessThanOrEqual(2)
     await saveAppScreenshot('chat-layout-activity-home.png')
   })

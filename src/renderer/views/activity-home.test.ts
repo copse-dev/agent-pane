@@ -465,4 +465,21 @@ describe('activity home project strip', () => {
     card(pane, 'all').click()
     assert.deepEqual(rows(pane).sort(), ['d1', 't1', 't2'])
   })
+
+  it('keeps the chosen project visible after its last pending request settles', () => {
+    const { pane, home, setApprovals } = mount([thread('t1')], {
+      background,
+      approvals: [approval('a1', 't1')],
+    })
+    home.setShown(true)
+    card(pane, 'p1').click()
+    setApprovals([])
+
+    assert.equal(card(pane, 'p1').getAttribute('aria-pressed'), 'true')
+    assert.match(card(pane, 'p1').textContent, /All clear/)
+    assert.equal(card(pane, 'all').getAttribute('aria-pressed'), 'false')
+    card(pane, 'all').click()
+    toggle(pane, 'working').click()
+    assert.deepEqual(rows(pane), ['d1'], 'the user can leave the empty project filter')
+  })
 })
