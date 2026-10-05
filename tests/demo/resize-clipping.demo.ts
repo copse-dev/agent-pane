@@ -1,5 +1,9 @@
 import { $, browser, expect } from '@wdio/globals'
-import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import {
+  prepareE2eScreenshot,
+  prepareThreePaneScreenshot,
+  saveAppScreenshot,
+} from '../e2e/helpers/screenshot.ts'
 
 describe('app frame after resizing', () => {
   it('keeps the frame anchored when overflowing controls are scrolled into view', async () => {
@@ -8,6 +12,8 @@ describe('app frame after resizing', () => {
     await $('[aria-label="Toggle right panel"]').click()
     await $('#pane-files').waitForDisplayed()
     await browser.setWindowSize(760, 900)
+    // Capture preparation must not create another scrollable app root.
+    await prepareE2eScreenshot({ width: 760, height: 800 })
 
     const offsets = await browser.execute(() => {
       const app = document.getElementById('app')!
@@ -37,7 +43,7 @@ describe('app frame after resizing', () => {
         scrollWidth: node.scrollWidth,
       }))
     })
-    const page = offsets.find((node) => node.id === 'BODY')!
+    const page = offsets.find((node) => node.id === 'app')!
     expect(page.scrollWidth).toBeGreaterThan(page.width)
     expect(offsets.map((node) => node.scrollLeft)).toEqual([0, 0, 0, 0])
     expect(offsets.map((node) => node.left)).toEqual([0, 0, 0, 0])
@@ -64,5 +70,39 @@ describe('app frame after resizing', () => {
     expect(restored.projectsLeft).toBe(0)
     expect(restored.appRight).toBe(restored.width)
     await saveAppScreenshot('resize-clipping-restored.png')
+  })
+
+  it('clamps the three-pane capture to the actual window', async () => {
+    await browser.url('/?scenario=chat-layout-styling')
+    await $('#titlebar').waitForDisplayed({ timeout: 30_000 })
+    await $('[aria-label="Toggle right panel"]').click()
+    await $('#pane-files').waitForDisplayed()
+    await browser.setWindowSize(1000, 900)
+    await prepareThreePaneScreenshot()
+    const geometry = await browser.execute(() => {
+      const app = document.getElementById('app')!
+      app.scrollLeft = 300
+      return {
+        width: app.getBoundingClientRect().width,
+        viewport: innerWidth,
+        scrollLeft: app.scrollLeft,
+      }
+    })
+    expect(geometry.width).toBe(geometry.viewport)
+    expect(geometry.scrollLeft).toBe(0)
+    await browser.execute(() => {
+      const app = document.getElementById('app')!
+      for (const property of ['width', 'height', 'overflow', 'box-sizing']) {
+        app.style.removeProperty(property)
+      }
+    })
+    await saveAppScreenshot('resize-clipping-three-pane.png', { width: 1000, height: 800 })
+    const afterCapture = await browser.execute(() => {
+      const app = document.getElementById('app')!
+      return ['width', 'height', 'overflow', 'box-sizing'].map((property) =>
+        app.style.getPropertyValue(property),
+      )
+    })
+    expect(afterCapture).toEqual(['', '', '', ''])
   })
 })

@@ -52,7 +52,7 @@ export async function prepareE2eScreenshot(
     const height = Math.min(viewport.height, window.innerHeight)
     app.style.width = `${width}px`
     app.style.height = `${height}px`
-    app.style.overflow = 'hidden'
+    app.style.overflow = 'clip'
     app.style.boxSizing = 'border-box'
     window.dispatchEvent(new Event('resize'))
   }, size)
@@ -68,9 +68,9 @@ export async function prepareThreePaneScreenshot(): Promise<void> {
     const app = document.getElementById('app')
     const body = document.getElementById('body')
     if (app) {
-      app.style.width = `${viewport.width}px`
-      app.style.height = `${viewport.height}px`
-      app.style.overflow = 'hidden'
+      app.style.width = `${Math.min(viewport.width, window.innerWidth)}px`
+      app.style.height = `${Math.min(viewport.height, window.innerHeight)}px`
+      app.style.overflow = 'clip'
       app.style.boxSizing = 'border-box'
     }
     if (body) {
@@ -88,17 +88,19 @@ export async function saveThreePaneScreenshot(
   filename: string,
   options: { filesPaneWidth?: number } = {},
 ): Promise<void> {
-  await prepareThreePaneScreenshot()
-  if (options.filesPaneWidth !== undefined) {
-    await browser.execute((width) => {
-      document.getElementById('body')?.style.setProperty('--files-width', `${String(width)}px`)
-      window.dispatchEvent(new Event('resize'))
-    }, options.filesPaneWidth)
-    await browser.pause(100)
-  }
-  const body = await browser.$('#body.three-pane')
-  await body.waitForDisplayed({ timeout: 15_000 })
-  await body.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  await withCaptureFrame(async () => {
+    await prepareThreePaneScreenshot()
+    if (options.filesPaneWidth !== undefined) {
+      await browser.execute((width) => {
+        document.getElementById('body')?.style.setProperty('--files-width', `${String(width)}px`)
+        window.dispatchEvent(new Event('resize'))
+      }, options.filesPaneWidth)
+      await browser.pause(100)
+    }
+    const body = await browser.$('#body.three-pane')
+    await body.waitForDisplayed({ timeout: 15_000 })
+    await body.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  })
 }
 
 /**
@@ -123,13 +125,43 @@ export async function parkPointer(): Promise<void> {
   )
 }
 
+/** Capture sizing must not become the layout used by subsequent interactions. */
+async function withCaptureFrame(capture: () => Promise<void>): Promise<void> {
+  const saved = await browser.execute(() => {
+    const app = document.getElementById('app')
+    if (!app) return []
+    return ['width', 'height', 'overflow', 'box-sizing'].map((property) => [
+      property,
+      app.style.getPropertyValue(property),
+      app.style.getPropertyPriority(property),
+    ])
+  })
+  try {
+    await capture()
+  } finally {
+    await browser.execute((styles) => {
+      const app = document.getElementById('app')
+      if (!app) return
+      for (const [property, value, priority] of styles) {
+        if (property === undefined || value === undefined) continue
+        if (value) app.style.setProperty(property, value, priority)
+        else app.style.removeProperty(property)
+      }
+      window.dispatchEvent(new Event('resize'))
+    }, saved)
+    await browser.pause(100)
+  }
+}
+
 /** Capture the app shell at the fixed viewport (excludes OS chrome). */
 export async function saveAppScreenshot(
   filename: string,
   size: { width: number; height: number } = E2E_VIEWPORT,
 ): Promise<void> {
-  await prepareE2eScreenshot(size)
-  await savePreparedAppScreenshot(filename)
+  await withCaptureFrame(async () => {
+    await prepareE2eScreenshot(size)
+    await savePreparedAppScreenshot(filename)
+  })
 }
 
 /** Capture an app shell that the spec has already sized and framed. */
@@ -317,25 +349,27 @@ export async function waitForSettledLayout(
  * already inside the shell is deliberately left exactly where the spec put it.
  */
 export async function saveElementScreenshot(selector: string, filename: string): Promise<void> {
-  await prepareE2eScreenshot()
-  const el = await browser.$(selector)
-  await el.waitForDisplayed({ timeout: 15_000 })
-  // Resolve inside the page: a transcript update can replace `el` between
-  // waitForDisplayed and execute, and WebDriver cannot revive an execute arg.
-  const saved = await browser.execute(recentreClippedCapture, selector, '#app')
-  if (saved) {
-    // Let the scroll settle before capturing, as the prepare step does.
-    await browser.pause(100)
-  }
-  // Settle by selector, then re-resolve: a subject that re-rendered while the
-  // page settled (a tool card whose transcript updated once more) is a fresh
-  // node by now, and the handle taken above would be stale.
-  await waitForSettledLayout(selector)
-  const subject = await browser.$(selector)
-  await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
-  // Hand the page back exactly as the caller left it — the scroll was for the
-  // capture, and specs keep interacting with the page afterwards.
-  if (saved) await browser.execute(restoreScrollAfterCapture, selector, saved)
+  await withCaptureFrame(async () => {
+    await prepareE2eScreenshot()
+    const el = await browser.$(selector)
+    await el.waitForDisplayed({ timeout: 15_000 })
+    // Resolve inside the page: a transcript update can replace `el` between
+    // waitForDisplayed and execute, and WebDriver cannot revive an execute arg.
+    const saved = await browser.execute(recentreClippedCapture, selector, '#app')
+    if (saved) {
+      // Let the scroll settle before capturing, as the prepare step does.
+      await browser.pause(100)
+    }
+    // Settle by selector, then re-resolve: a subject that re-rendered while the
+    // page settled (a tool card whose transcript updated once more) is a fresh
+    // node by now, and the handle taken above would be stale.
+    await waitForSettledLayout(selector)
+    const subject = await browser.$(selector)
+    await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+    // Hand the page back exactly as the caller left it — the scroll was for the
+    // capture, and specs keep interacting with the page afterwards.
+    if (saved) await browser.execute(restoreScrollAfterCapture, selector, saved)
+  })
 }
 
 /**
