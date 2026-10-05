@@ -112,6 +112,10 @@
     "label": "Apple Development test profile"
   },
   {
+    "id": "sidebar-automation-fold",
+    "label": "Sidebar automation fold"
+  },
+  {
     "id": "sidebar-thread-sort",
     "label": "Sidebar thread sort"
   },
