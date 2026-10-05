@@ -22,12 +22,11 @@ function thread(id: string, title: string, date: number, messages: Message[]): T
 }
 
 async function setFilterValue(value: string): Promise<void> {
-  await browser.execute((nextValue) => {
-    const input = document.querySelector<HTMLInputElement>('.projects-search-input')
-    if (!input) throw new Error('Thread filter input is missing')
-    input.value = nextValue
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-  }, value)
+  const input = $('.projects-search-input')
+  await input.click()
+  await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'a'])
+  await browser.keys('Backspace')
+  if (value) await input.addValue(value)
 }
 
 describe('sidebar user-request search', () => {
@@ -119,6 +118,7 @@ describe('sidebar user-request search', () => {
       timeout: 15000,
     })
     await expect($$('.chat-row')).toBeElementsArrayOfSize(1)
+    await expect($('.projects-search-input')).toBeFocused()
     await browser.keys('Escape')
     await expect($('.projects-search-input')).toHaveValue('')
   })
