@@ -958,14 +958,8 @@
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 .pane-chat.is-activity-home .conversation {
-  /* The empty thread has no transcript; the Activity home (views/activity-home.ts)
-     takes the pane above the docked composer. The one thing it can still carry is the
-     roadmap back-link a thread started from a roadmap item shows, so the conversation
-     shrinks to that chip instead of disappearing. */
-  flex: 0 0 auto;
-  padding-bottom: 0;
-}
-.pane-chat.is-activity-home .conversation > :not(.thread-roadmap-origin) {
+  /* The empty thread has nothing to show; the Activity home (views/activity-home.ts)
+     takes the pane above the docked composer. */
   display: none;
 }
 .pane-chat.is-activity-home .conversation:has(> .thread-roadmap-origin:not([hidden])) {

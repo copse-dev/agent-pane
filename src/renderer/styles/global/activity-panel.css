@@ -646,7 +646,7 @@ dialog.activity-panel-overlay {
     margin-bottom: 10px;
     /* The strip scrolls without a bar, so its overflowing edge fades to say there
        is more. A strip that fits ends before the fade starts. */
-    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, var(--text-primary) calc(100% - 28px), transparent);
   }
   .activity-home .activity-strip-card,
   .activity-home .activity-strip-card:first-child {

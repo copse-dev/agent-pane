@@ -607,6 +607,32 @@ describe('activity view folding an automation schedule', () => {
     assert.equal(rowCount(view), 1)
   })
 
+  it('keeps keyboard focus on the fold toggle when it opens and closes', () => {
+    const { view, state } = setup([thread('chat'), run('a'), run('b')])
+    document.body.replaceChildren(view.body)
+    try {
+      state.shown = true
+      view.show()
+      const toggle = view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')
+      assert.ok(toggle)
+      toggle.focus()
+      assert.ok(document.activeElement === toggle)
+      toggle.click()
+      const opened = view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')
+      assert.ok(opened)
+      assert.equal(opened.getAttribute('aria-expanded'), 'true')
+      assert.ok(document.activeElement === opened, 'opening retains keyboard focus')
+      opened.click()
+      const closed = view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')
+      assert.ok(closed)
+      assert.equal(closed.getAttribute('aria-expanded'), 'false')
+      assert.ok(document.activeElement === closed, 'closing retains keyboard focus')
+    } finally {
+      view.hide()
+      document.body.replaceChildren()
+    }
+  })
+
   it('keeps the fold out of the arrow-key rows and never selects it', () => {
     const { view, state } = setup([thread('chat'), run('a'), run('b')])
     state.shown = true

@@ -925,6 +925,7 @@ export function createActivityView(
   /** Where focus was, so a re-render can put it back: the list, or a detail control. */
   function captureFocus():
     | { area: 'list' }
+    | { area: 'fold'; key: string }
     | { area: 'toggle'; group: string }
     | { area: 'detail'; key: string; control: string }
     | { area: 'strip'; projectKey: string }
@@ -935,6 +936,10 @@ export function createActivityView(
     if (toggled !== undefined) return { area: 'toggle', group: toggled }
     const projectKey = active.dataset['projectKey']
     if (projectKey !== undefined && strip.contains(active)) return { area: 'strip', projectKey }
+    const foldKey = active.matches('.activity-fold-toggle')
+      ? active.closest<HTMLElement>('.activity-fold')?.dataset['rowKey']
+      : undefined
+    if (foldKey !== undefined) return { area: 'fold', key: foldKey }
     if (list.contains(active)) return { area: 'list' }
     if (detail.contains(active)) {
       return {
@@ -953,6 +958,16 @@ export function createActivityView(
         preventScroll: true,
       })
       return
+    }
+    if (spot.area === 'fold') {
+      const fold = [...list.querySelectorAll<HTMLElement>('.activity-fold')].find(
+        (node) => node.dataset['rowKey'] === spot.key,
+      )
+      const toggle = fold?.querySelector<HTMLButtonElement>('.activity-fold-toggle')
+      if (toggle) {
+        toggle.focus({ preventScroll: true })
+        return
+      }
     }
     if (spot.area === 'strip') {
       const card = [...strip.querySelectorAll<HTMLElement>('[data-project-key]')].find(
