@@ -419,7 +419,8 @@ function unsupported(): Promise<never> {
 export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = {}): ApiClient {
   const settings = new Map(Object.entries(scenario.settings))
   let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS)
-  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES
+  let mcpStatuses: readonly McpServerStatus[] = scenario.mcpServers ?? DEMO_MCP_STATUSES
+  const pendingMcpSignIns = new Map<string, () => void>()
   const storage = new Map<string, unknown>([
     ['projects', [scenario.project]],
     ['activeProjectId', scenario.project.id],
@@ -849,6 +850,34 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       listCurated: emptyArray,
       listDeclared: emptyArray,
       setCuratedEnabled: emptyArray,
+      // The demo has no browser to finish a sign-in, so it waits like the real
+      // flow does until the visitor cancels.
+      signIn: (name) =>
+        new Promise<McpServerStatus[]>((_resolve, reject) => {
+          pendingMcpSignIns.set(name, () => {
+            reject(new Error('Sign-in cancelled.'))
+          })
+        }),
+      cancelSignIn: (name) => {
+        pendingMcpSignIns.get(name)?.()
+        pendingMcpSignIns.delete(name)
+        return resolvedVoid()
+      },
+      signOut: (name) => {
+        mcpStatuses = mcpStatuses.map((status) =>
+          status.name === name
+            ? {
+                ...status,
+                state: 'error',
+                error: 'Sign-in required',
+                auth: 'required',
+                toolCount: 0,
+                tools: [],
+              }
+            : status,
+        )
+        return resolved(structuredClone([...mcpStatuses]))
+      },
       onStatusChanged: subscribe,
     },
     toolPermissions: {

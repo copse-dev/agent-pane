@@ -78,6 +78,11 @@ export interface McpServerStatus {
   configDisabled: boolean
   /** Defined by the built-in "Copse reviewed" catalog rather than an mcp.json file. */
   curated?: boolean
+  /**
+   * OAuth for a remote server: `required` when it answered 401 and Copse holds
+   * no usable sign-in for its URL, `signed-in` when it connected with one.
+   */
+  auth?: 'required' | 'signed-in'
 }
 
 /**
