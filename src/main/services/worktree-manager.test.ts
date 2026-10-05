@@ -30,6 +30,7 @@ import {
 import {
   allocateThreadWorktree,
   expectedThreadWorktreePath,
+  inspectManagedThreadWorktreePath,
   inspectThreadWorktreeAttachment,
   isSandboxMountArtifact,
   listProjectWorktrees,
@@ -1495,5 +1496,53 @@ describe('worktree manager sandbox overlays', () => {
       `read-only Git commands received the checkout-writable overlay: ${placeholderCommands.join(', ')}`,
     )
     assert.ok(placeholderCommands.includes('worktree'), 'expected the sandboxed worktree add')
+  })
+})
+
+describe('inspectManagedThreadWorktreePath', () => {
+  let temp = ''
+  let previousRoot: string | undefined
+  afterEach(async () => {
+    if (previousRoot === undefined) delete process.env['COPSE_WORKTREES_DIR']
+    else process.env['COPSE_WORKTREES_DIR'] = previousRoot
+    if (temp) await rm(temp, { recursive: true, force: true })
+  })
+  async function setup(): Promise<string> {
+    temp = await mkdtemp(join(tmpdir(), 'copse-inspect-worktree-path-'))
+    previousRoot = process.env['COPSE_WORKTREES_DIR']
+    process.env['COPSE_WORKTREES_DIR'] = join(temp, 'worktrees')
+    return temp
+  }
+
+  it('accepts only the managed path for this owner, and spawns no Git', async () => {
+    await setup()
+    const managed = expectedThreadWorktreePath('project-1', 'thread-1')
+    await mkdir(managed, { recursive: true })
+    assert.equal(
+      await inspectManagedThreadWorktreePath('project-1', 'thread-1', managed),
+      await realpath(managed),
+    )
+    // Another thread's directory, an arbitrary directory, and a missing one are all refused.
+    await mkdir(expectedThreadWorktreePath('project-1', 'thread-2'), { recursive: true })
+    assert.equal(
+      await inspectManagedThreadWorktreePath(
+        'project-1',
+        'thread-1',
+        expectedThreadWorktreePath('project-1', 'thread-2'),
+      ),
+      null,
+    )
+    assert.equal(await inspectManagedThreadWorktreePath('project-1', 'thread-1', temp), null)
+    assert.equal(await inspectManagedThreadWorktreePath('project-1', 'thread-9', managed), null)
+  })
+
+  it('refuses a managed leaf that is a symlink out of the managed tree', async () => {
+    await setup()
+    const outside = join(temp, 'outside')
+    await mkdir(outside)
+    const managed = expectedThreadWorktreePath('project-1', 'thread-1')
+    await mkdir(join(managed, '..'), { recursive: true })
+    await symlink(outside, managed)
+    assert.equal(await inspectManagedThreadWorktreePath('project-1', 'thread-1', managed), null)
   })
 })

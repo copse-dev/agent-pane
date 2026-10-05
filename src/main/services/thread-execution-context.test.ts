@@ -545,11 +545,17 @@ describe('inspectThreadCheckoutRoot', () => {
     inspectThreadCheckoutRoot('project-1', 'thread-1', {
       getProjectRoot: () => '/project',
       getThreadMeta: async () => meta,
+      inspectWorktreePath: async (_projectId, _threadId, recorded) =>
+        recorded === '/worktrees/t1' ? '/canonical/t1' : null,
     })
 
   it('returns the project root for a shared thread and the path of an active worktree', async () => {
     assert.equal(await inspect({ id: 'thread-1' }), '/project')
-    assert.equal(await inspect({ id: 'thread-1', worktree: worktree() }), '/worktrees/t1')
+    assert.equal(await inspect({ id: 'thread-1', worktree: worktree() }), '/canonical/t1')
+  })
+
+  it('returns null when the recorded worktree path is not the managed one', async () => {
+    assert.equal(await inspect({ id: 'thread-1', worktree: worktree({ path: '/etc' }) }), null)
   })
 
   it('returns null for retired or PR worktrees instead of restoring them', async () => {
