@@ -422,7 +422,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   let mcpStatuses: readonly McpServerStatus[] = scenario.mcpServers ?? DEMO_MCP_STATUSES
   const pendingMcpSignIns = new Map<string, () => void>()
   const storage = new Map<string, unknown>([
-    ['projects', [scenario.project]],
+    [
+      'projects',
+      [scenario.project, ...(scenario.otherProjects ?? []).map((other) => other.project)],
+    ],
     ['activeProjectId', scenario.project.id],
   ])
   let workspaceRoot = scenario.project.path
@@ -940,7 +943,14 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         return resolved({ status: 'archived', archivedAt, worktree: thread?.worktree })
       },
       loadProject: (projectId: string) =>
-        resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
+        resolved(
+          projectId === scenario.project.id
+            ? structuredClone(threads)
+            : structuredClone(
+                scenario.otherProjects?.find((other) => other.project.id === projectId)?.threads ??
+                  [],
+              ),
+        ),
       // The demo always hands back whole threads, so nothing ever asks to
       // hydrate one; answering from the in-memory list keeps that true. The
       // exceptions are scenarios built around the hydration window itself,
