@@ -120,6 +120,10 @@
     "label": "Activity home on a new thread"
   },
   {
+    "id": "activity-home-project-filter",
+    "label": "Activity home after a project finishes waiting"
+  },
+  {
     "id": "activity-home-question",
     "label": "Activity home with a question waiting"
   },
