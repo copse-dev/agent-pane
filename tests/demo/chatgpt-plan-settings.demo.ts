@@ -20,12 +20,19 @@ describe('ChatGPT plan connection onboarding', () => {
     await $('[aria-label="Settings"]').click()
 
     const welcome = $('#confirm-dialog')
+    await expect(welcome).not.toBeDisplayed()
+    const openAi = $('#settings-providers-host .provider-chip[data-provider="openai"]')
+    await openAi.click()
     await expect(welcome).toBeDisplayed()
     await expect(welcome).toHaveText('You’re using your ChatGPT plan', { containing: true })
     await expect(welcome).toHaveText('available credits', { containing: true })
     await saveElementScreenshot('#confirm-dialog', 'chatgpt-plan-welcome.png')
     await $('.confirm-dialog-confirm').click()
-    await $('#settings-providers-host .provider-chip[data-provider="openai"]').click()
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() => window.api.settings.get('chatGptPlanWelcomeSeen'))) === true,
+      { timeout: 15_000 },
+    )
     const section = $('[data-testid="chatgpt-plan-section"]')
     await expect(section).toHaveText('Using ChatGPT plan', { containing: true })
     await section.$('summary').click()
@@ -40,6 +47,8 @@ describe('ChatGPT plan connection onboarding', () => {
     await $('#settings-dialog .settings-nav-btn[data-section="general"]').click()
     await $('[aria-label="Close settings"]').click()
     await $('[aria-label="Settings"]').click()
+    await openAi.click()
+    await expect(section).toHaveText('Using ChatGPT plan', { containing: true })
     await expect(welcome).not.toBeDisplayed()
   })
   it('hides plan usage management on other provider routes', async () => {

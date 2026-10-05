@@ -19,7 +19,7 @@ describe('Claude Opus 5.5 in the model picker (browser-hosted)', () => {
     await picker.$('.model-picker-filter').setValue('Opus 5')
     const opus = picker.$('.model-picker-option[data-value="claude-opus-5-5"]')
     await expect(opus).toBeDisplayed()
-    await expect(opus).toHaveText(/^Claude Opus 5\.5 — intellect ~\d+(\.\d)? · \$[\d.]+\/MTok/)
+    await expect(opus).toHaveText(/^Claude Opus 5\.5: intellect ~\d+(\.\d)? · \$[\d.]+\/MTok/)
     await saveElementScreenshot(
       '.footer-model-host .model-picker-menu',
       'claude-opus-5-5-picker.png',
