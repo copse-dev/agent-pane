@@ -12,7 +12,8 @@ name: Screenshot review decision
 #
 # Labels act as buttons. This job removes the label once it has acted, and the
 # decision lives in the commit status of the head it was made on, so any later
-# push starts a new review. A refused label is removed too, with a comment
+# push starts a new review. A successful decision clears `screenshots-need-review`.
+# A refused label is removed too, with a comment
 # saying why.
 #
 # The fast-forward uses the release App token, not GITHUB_TOKEN: a GITHUB_TOKEN
@@ -39,6 +40,8 @@ permissions:
 
 concurrency:
   group: screenshot-review-${{ github.event.pull_request.number }}
+  # Retain queued publications and decisions; the default replaces pending runs.
+  queue: max
   cancel-in-progress: false
 
 jobs:
@@ -302,6 +305,18 @@ jobs:
               });
               core.notice(refusal);
               return;
+            }
+
+            // Clear the PR-wide reminder only for the head this decision left
+            // behind. A later push must keep its own review reminder.
+            const expectedHead = outcome === 'accept' ? process.env.COMPARE_COMMIT : sha;
+            const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (parent.state === 'open' && parent.head.sha === expectedHead && parent.head.repo?.full_name === `${owner}/${repo}`) {
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'screenshots-need-review' });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
             }
 
             // Replace the evidence comment's review block with the decision, so

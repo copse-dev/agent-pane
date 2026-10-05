@@ -306,9 +306,24 @@ interface StatusWrite {
 async function gate(
   env: Record<string, string> = {},
   existing: { context: string; state: string; description: string }[] = [],
-): Promise<{ writes: StatusWrite[]; outputs: Map<string, string> }> {
+  options: {
+    parent?: Parent
+    missingLabel?: boolean
+    createRace?: boolean
+    removeMissing?: boolean
+  } = {},
+): Promise<{
+  writes: StatusWrite[]
+  outputs: Map<string, string>
+  added: string[]
+  removed: string[]
+  created: string[]
+}> {
   const writes: StatusWrite[] = []
   const outputs = new Map<string, string>()
+  const added: string[] = []
+  const removed: string[] = []
+  const created: string[] = []
   await execute('Gate the parent on screenshot review', {
     context,
     core: {
@@ -321,17 +336,37 @@ async function gate(
       rest: {
         repos: {
           listCommitStatusesForRef: async ({ ref }: { ref: string }) => {
-            assert.equal(ref, SHA)
+            assert.equal(ref, env['GATE_SHA'] ?? SHA)
             return { data: existing }
           },
           createCommitStatus: async (status: StatusWrite) => {
             writes.push(status)
           },
         },
+        pulls: {
+          get: async () => ({ data: options.parent ?? parent({ sha: env['GATE_SHA'] ?? SHA }) }),
+        },
+        issues: {
+          getLabel: async () => {
+            if (options.missingLabel) throw Object.assign(new Error('Not Found'), { status: 404 })
+          },
+          createLabel: async ({ name }: { name: string }) => {
+            created.push(name)
+            if (options.createRace)
+              throw Object.assign(new Error('Already exists'), { status: 422 })
+          },
+          addLabels: async ({ labels }: { labels: string[] }) => {
+            added.push(...labels)
+          },
+          removeLabel: async ({ name }: { name: string }) => {
+            removed.push(name)
+            if (options.removeMissing) throw Object.assign(new Error('Not Found'), { status: 404 })
+          },
+        },
       },
     },
   })
-  return { writes, outputs }
+  return { writes, outputs, added, removed, created }
 }
 
 function statusOf(write: StatusWrite | undefined): string[] {
@@ -343,8 +378,33 @@ function statusOf(write: StatusWrite | undefined): string[] {
 }
 
 describe('blocking screenshot review gate', () => {
+  it('serializes publication and decisions without replacing pending runs', () => {
+    const concurrencySchema = z.object({
+      concurrency: z.object({
+        group: z.string(),
+        queue: z.literal('max'),
+        'cancel-in-progress': z.literal(false),
+      }),
+    })
+    const publisher = concurrencySchema.parse(
+      load(readFileSync('.github/workflows/publish-screenshot-candidates.yml', 'utf8')),
+    )
+    assert.match(
+      publisher.concurrency.group,
+      /format\('screenshot-review-\{0\}', github\.event\.workflow_run\.pull_requests\[0\]\.number\)/,
+    )
+    for (const name of ['screenshot-review-labels', 'screenshot-review-selection']) {
+      const workflow = concurrencySchema.parse(
+        load(readFileSync(`.github/workflows/${name}.yml`, 'utf8')),
+      )
+      assert.match(workflow.concurrency.group, /^screenshot-review-/)
+    }
+  })
+
   it('holds a head with candidates pending until a label decides', async () => {
-    const { writes, outputs } = await gate()
+    const { writes, outputs, added, removed } = await gate()
+    assert.deepEqual(added, ['screenshots-need-review'])
+    assert.deepEqual(removed, [])
     assert.equal(writes.length, 1)
     assert.deepEqual(statusOf(writes[0]), [
       'pending',
@@ -355,6 +415,72 @@ describe('blocking screenshot review gate', () => {
       'pending',
       '1 changed screenshot awaits review: label accept-screenshots or decline-screenshots',
     ])
+  })
+
+  it('creates the review label when missing, including a concurrent creation', async () => {
+    for (const createRace of [false, true]) {
+      const result = await gate({}, [], { missingLabel: true, createRace })
+      assert.deepEqual(result.created, ['screenshots-need-review'])
+      assert.deepEqual(result.added, ['screenshots-need-review'])
+    }
+  })
+
+  it('keeps the existing reminder without adding it again', async () => {
+    const result = await gate({}, [], { parent: parent({ labels: ['screenshots-need-review'] }) })
+    assert.deepEqual(result.added, [])
+    assert.deepEqual(result.removed, [])
+    assert.equal(result.writes[0]?.state, 'pending')
+  })
+
+  it('clears the reminder when no candidates remain or this head was reviewed', async () => {
+    for (const description of [
+      '',
+      'Declined by @reviewer; no candidate committed',
+      'Accepted by @reviewer; committed as def456def456',
+    ]) {
+      const result = await gate(
+        { CANDIDATE_COUNT: description ? '2' : '0' },
+        description ? [{ context: 'Screenshot review', state: 'success', description }] : [],
+        { parent: parent({ labels: ['screenshots-need-review', 'ci-full'] }) },
+      )
+      assert.deepEqual(result.removed, ['screenshots-need-review'])
+      assert.deepEqual(result.added, [])
+    }
+  })
+
+  it('tolerates an already-removed reminder', async () => {
+    const result = await gate({ CANDIDATE_COUNT: '0' }, [], {
+      parent: parent({ labels: ['screenshots-need-review'] }),
+      removeMissing: true,
+    })
+    assert.deepEqual(result.removed, ['screenshots-need-review'])
+  })
+
+  it('rechecks a pushed head independently of the previous head’s decision', async () => {
+    const reviewed = await gate({}, [
+      { context: 'Screenshot review', state: 'success', description: 'Declined by @reviewer' },
+    ])
+    assert.deepEqual(reviewed.added, [])
+    const pushed = await gate({ GATE_SHA: 'f'.repeat(40) })
+    assert.equal(pushed.writes[0]?.sha, 'f'.repeat(40))
+    assert.equal(pushed.writes[0].state, 'pending')
+    assert.deepEqual(pushed.added, ['screenshots-need-review'])
+  })
+
+  it('leaves labels alone if the PR moved, closed, or became external', async () => {
+    for (const override of [
+      { sha: 'f'.repeat(40) },
+      { state: 'closed' },
+      { repo: 'fork/agent-pane' },
+    ]) {
+      for (const count of ['0', '2']) {
+        const result = await gate({ CANDIDATE_COUNT: count }, [], {
+          parent: parent({ ...override, labels: ['screenshots-need-review'] }),
+        })
+        assert.deepEqual(result.removed, [])
+        assert.deepEqual(result.added, [])
+      }
+    }
   })
 
   it('passes a head with no candidates, and an integration head unasked', async () => {

@@ -266,14 +266,14 @@ per-role axes can't provide. Pieces:
   blend that reproduces AA's published $9/MTok for Opus 4.8). Local models sit
   at $0 flagged `local`. Surfaced as picker hints (`intellect-hints.ts` — e.g.
   `claude-opus-4-8 — intellect 56 · $9/MTok · frontier`) and the settings
-"Model value map" scatter (`intellect-frontier-panel.ts`), whose tooltips
+  "Model value map" scatter (`intellect-frontier-panel.ts`), whose tooltips
   carry the full derivation.
 - **Best-value chat default** (`auto:best-value`): the default Settings chat
   model (including after onboarding). Each new chat window resolves the
   plan-aware frontier among configured/routable providers (`best-value-model.ts`
   - `pickBestValueFrontierModel`) and sets the footer picker to that concrete
     model id. Prefer plan-included / local $0 winners; otherwise maximize
-  intellect per $/MTok. The sentinel stays Settings-only — the chat picker never
+    intellect per $/MTok. The sentinel stays Settings-only — the chat picker never
     lists it.
 - **Follow-ups**: latency/throughput columns; per-axis benchmark sync for cloud
   models (lets the composite stand alone and be calibrated to the index);
