@@ -1,3 +1,5 @@
+import { EGRESS_TOKEN_STDIN_FLAG, GUEST_EGRESS_PROXY, GUEST_EGRESS_USER } from './egress-rules.ts'
+
 /**
  * The two files the worker image is built from, kept as strings so the app can
  * assemble an image context from its own bundle without shipping loose files.
@@ -36,6 +38,9 @@ export const WORKER_BASE_IMAGE =
  * registry at install time, which the run admits for that step.
  */
 export const WORKER_PNPM_VERSION = '10.34.5'
+
+/** Where the image keeps the execute-only node the worker runs from. */
+export const GUARDED_NODE = '/usr/local/bin/node-guarded'
 
 export const WORKER_DOCKERFILE = `# The Copse container worker image (docs/plans/thread-in-container.md).
 #
@@ -102,6 +107,15 @@ RUN apt-get update \\
 RUN if [ -n "\${ACP_AGENTS}" ]; then npm install -g --no-fund --no-audit \${ACP_AGENTS} && npm cache clean --force; fi
 RUN if [ -n "\${PNPM_VERSION}" ]; then npm install -g --no-fund --no-audit "pnpm@\${PNPM_VERSION}" && npm cache clean --force; fi
 
+# The worker runs from a copy of node that no one can read. Linux marks a
+# process whose executable its user cannot read as non-dumpable, which closes
+# \`/proc/<pid>/environ\`, \`/proc/<pid>/mem\` and ptrace to every same-uid process
+# in the guest: the shell commands the agent runs as the worker's uid cannot
+# recover the run's egress token from the worker (decision A7, as amended).
+# Execute-only is enough to run it; the base image's own node stays readable
+# for every other process.
+RUN install -o root -g root -m 0711 "$(command -v node)" ${GUARDED_NODE}
+
 RUN useradd --create-home --uid "\${WORKER_UID}" --shell /bin/bash copse
 
 WORKDIR /app
@@ -157,5 +171,18 @@ export const WORKER_ENTRYPOINT_SH = `#!/bin/sh
 # without it.
 set -eu
 
-exec setpriv --no-new-privs -- node /app/worker.cjs
+# The run's egress token is the first line of stdin, not of the environment:
+# \`docker create --env\` would put it in PID 1's /proc/1/environ, readable by
+# every same-uid process here. It is read before the worker starts, so the
+# link's frames that follow are untouched, and it reaches the worker's own
+# environment only, which the worker's non-readable executable keeps private.
+if [ "\${${EGRESS_TOKEN_STDIN_FLAG}:-}" = 1 ]; then
+  unset ${EGRESS_TOKEN_STDIN_FLAG}
+  IFS= read -r COPSE_EGRESS_TOKEN
+  proxy="http://${GUEST_EGRESS_USER}:\${COPSE_EGRESS_TOKEN}@${GUEST_EGRESS_PROXY.host}:${String(GUEST_EGRESS_PROXY.port)}"
+  export COPSE_EGRESS_TOKEN HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" https_proxy="$proxy" http_proxy="$proxy"
+  unset proxy
+fi
+
+exec setpriv --no-new-privs -- ${GUARDED_NODE} /app/worker.cjs
 `
