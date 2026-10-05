@@ -1,13 +1,36 @@
 # New-thread activity screen: porting the #3450 prototype
 
-Status: **Proposed; decisions resolved and plan validated by exploration, 2026-10-02.** Not started.
-See [Validation findings](#validation-findings). This plan turns
+Status: **In progress, 2026-10-04.** Slices 0-6 are built; slice 7 is not started. Slices 1b, 3, 4 and 6
+are open PRs (the Activity stack ending at
+[#3489](https://github.com/copse-dev/agent-pane/pull/3489) and the sidebar stack ending at
+[#3488](https://github.com/copse-dev/agent-pane/pull/3488)). Built behaviour that departs from the
+slice text below is recorded in [Divergences from the plan](#divergences-from-the-plan).
+Decisions were resolved and the plan validated by exploration on 2026-10-02. See [Validation findings](#validation-findings). This plan turns
 [#3450](https://github.com/copse-dev/agent-pane/pull/3450) (`prototypes/new-thread-activity.html`,
 a standalone 8,244-line mock-up) into product code.
 
 It extends [`mission-control.md`](mission-control.md). It **reverses one decision recorded there**:
 slice 1 placed the Activity panel as an overlay beside the sidebar, not as a screen. See
 [Decision to reverse](#decision-to-reverse).
+
+## Divergences from the plan
+
+Decided during the build; the slice text below is the original plan and is superseded here.
+
+- **Empty state (slice 3).** With nothing to list, the Activity home is hidden and the composer is
+  centred vertically as well as horizontally; it docks when the first row arrives. This replaces
+  the top-anchored zero-row state.
+- **Strips (slice 3).** One project strip carries the need-you counts; there is no separate
+  attention strip.
+- **Approve and state words (slice 3).** The home uses the prototype's pill Approve and drops the
+  state word for active rows; `ui-taste.md` was amended to allow both.
+- **Sort (slice 4).** Sorting runs at render time over the sidebar rows and leaves the store's
+  newest-first order alone, so the comparators do not replace store-level ordering. Sort and
+  group-by persist per profile.
+- **Answer in place (slice 6).** Questions are released through one function shared with the ask
+  dialog (queued and on-screen requests alike), and quick answers render Markdown as the dialog does.
+- **Automation fold (slice 4c).** The sidebar and Activity list each have their own pure fold
+  (`foldAutomationRuns`, `foldScheduleRuns`); unifying them is deferred.
 
 ## Prior art (inspiration only, not a dependency)
 
@@ -18,7 +41,7 @@ rebase onto them.
 | ---------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------- |
 | [#3386](https://github.com/copse-dev/agent-pane/pull/3386) | Activity thread browser as the default sidebar; inspect-only `git:status` | Open                       |
 | [#3148](https://github.com/copse-dev/agent-pane/pull/3148) | Activity overlay, approve/reject in place                                 | Merged (already in `main`) |
-| [#3407](https://github.com/copse-dev/agent-pane/pull/3407) | Context ring with combined hover                                          | Open, conflicting          |
+| [#3407](https://github.com/copse-dev/agent-pane/pull/3407) | Context ring with combined hover                                          | Merged                     |
 | [#3371](https://github.com/copse-dev/agent-pane/pull/3371) | Thread PR icon colours and glyphs                                         | Merged                     |
 | [#3449](https://github.com/copse-dev/agent-pane/pull/3449) | Roadmap document editing                                                  | Open                       |
 
@@ -310,8 +333,11 @@ references stay stable.
 
 - Right and bottom panel visuals, narrow widths (320 px), light theme, context ring.
 - Mostly CSS. Do not rebuild the pane contents; the real panes already exist.
-- If [#3407](https://github.com/copse-dev/agent-pane/pull/3407) is discarded, fold the
-  context-ring work in here.
+- **Context ring, last (decided 2026-10-04).** [#3407](https://github.com/copse-dev/agent-pane/pull/3407)
+  merged (one ring, one hover) and [#3515](https://github.com/copse-dev/agent-pane/pull/3515) is
+  open on top of it. Do this item last: re-read the prototype's ring against what shipped and port
+  only the differences. The prototype's design workshop (`prototypes/combined-usage/index.html`) was
+  the source for #3407, so start there.
 
 **Total: about 17.5-26.5 focused days (sum of the slice ranges), or 4-6 calendar weeks.** Calendar time runs 1.5-2.5x focused
 effort (CI cycles, merging main, screenshot review). Slices 4 and 6 are independent of 3 and can

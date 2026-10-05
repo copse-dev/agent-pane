@@ -1,3 +1,4 @@
+import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import type {
   AppRunOwner,
   AppRunSelection,
@@ -214,6 +215,12 @@ export interface ApiClient {
      * attaching it; the annotation layer composes its marks on top first.
      */
     captureScreenshot: (webContentsId: number) => Promise<BrowserImageShare>
+    /**
+     * The guest's scroll offsets in CSS pixels, or null when the guest could
+     * not answer. The page-anchored annotation overlay re-reads this while the
+     * user scrolls so marks track the content.
+     */
+    scrollPosition: (webContentsId: number) => Promise<{ x: number; y: number } | null>
     /** Print the tab to a PDF the user picks; resolves null when cancelled. */
     exportPdf: (webContentsId: number) => Promise<string | null>
     /** Download the current live browser page as HTML. */
@@ -542,6 +549,13 @@ export interface ApiClient {
     reopenArtefact: (projectId: string, threadId: string, title: string) => Promise<boolean>
   }
   storage: {
+    maintenance: () => Promise<import('@shared/types/storage-cleanup.ts').StorageMaintenanceState>
+    cleanup: (
+      area: import('@shared/types/storage-cleanup.ts').StorageArea,
+    ) => Promise<import('@shared/types/storage-cleanup.ts').StorageCleanupResult>
+    retention: (
+      policy: import('@shared/types/storage-cleanup.ts').StorageRetention,
+    ) => Promise<void>
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
   }
@@ -589,6 +603,12 @@ export interface ApiClient {
       to: string,
     ) => Promise<import('@shared/types').ModelSelectionEvent>
     delete: (projectId: string, threadId: string) => Promise<void>
+    /** Remove a chat's worktree and archive it; discard requires user confirmation. */
+    archive: (
+      projectId: string,
+      threadId: string,
+      confirmation: string | null,
+    ) => Promise<import('@shared/threads/archive-thread.ts').ThreadArchiveResult>
     /**
      * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,
      * subagents) for download. The JSONL export stays the portable single-file
@@ -802,6 +822,7 @@ export interface ApiClient {
     onProcessManager: (handler: () => void) => () => void
     onSettings: (handler: () => void) => () => void
     onNewThread: (handler: () => void) => () => void
+    onToggleSidebar: (handler: () => void) => () => void
     onTogglePanel: (handler: () => void) => () => void
     onShowExplorer: (handler: () => void) => () => void
     onShowTerminal: (handler: () => void) => () => void
@@ -816,6 +837,8 @@ export interface ApiClient {
   classifiers: ClassifierClient
   localClassifiers: LocalClassifierClient
   settings: {
+    getSnapshot: () => Promise<SettingsSnapshot>
+    update: (changes: SettingsUpdate) => Promise<void>
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
     setSecurity: (prefs: {

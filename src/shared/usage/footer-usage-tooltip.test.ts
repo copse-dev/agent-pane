@@ -647,7 +647,7 @@ describe('buildFooterUsageTooltip subagent headline count', () => {
     })
     assert.equal(tooltip.subagentRuns.length, 2)
     // Two rows below, so the headline says two — tokens sum only the run that reported.
-    assert.equal(tooltip.subagentRow?.value, '2 runs · 100 in / 10 out')
+    assert.equal(tooltip.subagentRow?.value, '2 runs · 100 in / 10 out · 1 running')
   })
 
   it('counts a failed run that never reported usage', () => {
@@ -660,7 +660,16 @@ describe('buildFooterUsageTooltip subagent headline count', () => {
       ]),
     })
     assert.equal(tooltip.subagentRuns.length, 2)
-    assert.match(tooltip.subagentRow?.value ?? '', /^2 runs/)
+    assert.equal(tooltip.subagentRow?.value, '2 runs · 100 in / 10 out · 1 without usage')
+  })
+
+  it('says no usage was reported, not "yet", when the only run has ended without any', () => {
+    const tooltip = buildFooterUsageTooltip(display, {
+      model: 'claude-sonnet-4-6',
+      measuredUsage: usage,
+      messages: withCalls([call('quiet', { status: 'done' })]),
+    })
+    assert.equal(tooltip.subagentRow?.value, '1 run · no usage reported')
   })
 
   it('shows a thread whose only run is still going, without claiming usage was excluded', () => {
@@ -670,7 +679,7 @@ describe('buildFooterUsageTooltip subagent headline count', () => {
       messages: withCalls([call('live', { status: 'running' })]),
     })
     assert.equal(tooltip.subagentRuns.length, 1)
-    assert.equal(tooltip.subagentRow?.value, '1 run · no usage yet')
+    assert.equal(tooltip.subagentRow?.value, '1 run · 1 running')
     // Nothing was folded out of the headline yet, so the scope labels stay off.
     assert.equal(tooltip.conversationLabel, null)
     assert.equal(tooltip.threadLabel, null)

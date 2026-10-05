@@ -54,9 +54,8 @@ describe('afterToolUse (tool-result fire site — D2)', () => {
     originalHome = process.env['HOME']
     process.env['HOME'] = tempHome
     resetCursorHookSessionErrorsForTest()
-    // macOS project-sandbox startup can take ~1.5s before the script itself
-    // begins. Leave enough headroom for the deliberate 600ms slow-hook case;
-    // production still uses Cursor's 30s vendor default.
+    // Allow real process/sandbox startup; timing tests control completion with
+    // a release marker instead of assuming a particular scheduling speed.
     setCursorHookTimeoutForTest(5_000)
   })
 
@@ -227,33 +226,44 @@ describe('afterToolUse (tool-result fire site — D2)', () => {
     assert.match(output, /output truncated/)
   })
 
-  it('is detached — a slow afterToolUse hook does not block the caller (decision 3)', async () => {
-    const marker = join(tempHome, 'slow.marker')
-    const script = join(tempHome, 'slow-after.sh')
-    await writeFile(script, `#!/bin/sh\ncat > /dev/null\nsleep 0.6\n: > '${marker}'\n`, 'utf-8')
-    await chmod(script, 0o755)
-    await writeUserHooks({ hooks: { afterShellExecution: [{ command: script }] } })
+  it(
+    'is detached — completion waits for the caller to release the hook (decision 3)',
+    { timeout: 15_000 },
+    async () => {
+      const marker = join(tempHome, 'completed.marker')
+      const release = join(tempHome, 'release.marker')
+      const script = join(tempHome, 'gated-after.sh')
+      await writeFile(
+        script,
+        `#!/bin/sh\ncat > /dev/null\nwhile [ ! -f '${release}' ]; do sleep 0.02; done\n: > '${marker}'\n`,
+        'utf-8',
+      )
+      await chmod(script, 0o755)
+      await writeUserHooks({ hooks: { afterShellExecution: [{ command: script }] } })
 
-    const t0 = Date.now()
-    const result = await fireAfterToolUse({
-      toolName: 'run_shell',
-      toolCallId: 'tc-slow',
-      isError: false,
-      input: { command: 'sleep' },
-      output: 'done',
-    })
-    const elapsedAfterDispatch = Date.now() - t0
-
-    assert.equal(result.ran, 1)
-    assert.ok(
-      elapsedAfterDispatch < 300,
-      `dispatch must not block on the hook; it took ${String(elapsedAfterDispatch)}ms`,
-    )
-    assert.equal(existsSync(marker), false)
-
-    await result.settled
-    assert.equal(existsSync(marker), true)
-  })
+      const result = await fireAfterToolUse({
+        toolName: 'run_shell',
+        toolCallId: 'tc-slow',
+        isError: false,
+        input: { command: 'sleep' },
+        output: 'done',
+      })
+      let completed = false
+      const settled = result.settled.then(() => {
+        completed = true
+      })
+      try {
+        await Promise.resolve()
+        assert.equal(result.ran, 1)
+        assert.equal(completed, false, 'dispatch must return before the hook settles')
+        assert.equal(existsSync(marker), false)
+      } finally {
+        await writeFile(release, '')
+        await settled
+      }
+      assert.equal(existsSync(marker), true)
+    },
+  )
 
   it('discovery maps vendor event names — a shell hook never fires for a non-shell / MCP tool', async () => {
     await writeUserHooks({ hooks: { afterShellExecution: [{ command: './after.sh' }] } })

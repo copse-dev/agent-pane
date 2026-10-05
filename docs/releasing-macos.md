@@ -22,9 +22,15 @@ every other prerelease shape instead of guessing:
 | `X.Y.Z` / `vX.Y.Z`            | Stable        | `latest-mac.yml` | Normal/latest  |
 | `X.Y.Z-beta.N` / matching tag | Beta          | `beta-mac.yml`   | Prerelease     |
 
-Stable users receive only stable releases. Beta users receive newer beta
-releases and may advance to a newer stable release. Neither channel permits a
-downgrade. The shared classifier in
+The package version decides what a build is. Which feed an installation
+follows is the user's choice in Settings → About (`updateChannel`), remembered
+from the installed build's channel on first launch so beta testers stay on beta
+after a stable release reaches them. Beta follows the beta feed, which also
+carries every stable release. Stable on a stable build follows stable releases
+only. Stable chosen on a beta build checks for a newer stable release first and
+otherwise keeps taking the newest beta, so it moves at the next stable release
+(`getUpdateCheckPlan`). Neither channel permits a downgrade. The shared
+classifier in
 [`src/shared/release-channel.mts`](../src/shared/release-channel.mts) drives both
 the packaged app and the release workflow so their routing cannot drift.
 

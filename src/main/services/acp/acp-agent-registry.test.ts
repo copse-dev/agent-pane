@@ -1,7 +1,8 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { setSetting } from '../storage/settings.ts'
-import { runSerialized } from '../storage/write-queue.ts'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
+import { setSetting, updateSetting } from '../storage/settings.ts'
+import { SETTINGS_WRITE_QUEUE, runSerialized } from '../storage/write-queue.ts'
 import { KNOWN_ACP_AGENTS, RETIRED_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   getAcpAgent,
@@ -61,16 +62,15 @@ describe('acp agent registry', () => {
     )
   })
 
-  it('reads inside the settings queue for its own key, not a private one', async () => {
-    // A private queue cannot see any other writer of `registeredAcpAgents`, so
-    // the read has to sit on `settings:<key>` alongside every other write to it.
+  it('reads after preceding writers in the shared settings transaction queue', async () => {
+    // An earlier batch or mutation must land before registration reads its value.
     await setSetting('registeredAcpAgents', [])
 
-    let release!: () => void
-    const blocked = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    void runSerialized('settings:registeredAcpAgents', () => blocked)
+    const { promise: blocked, resolve: release } = Promise.withResolvers<undefined>()
+    const blocker = runSerialized(SETTINGS_WRITE_QUEUE, () => blocked)
+    const earlierWrite = updateSetting<AcpAgentConfig[]>('registeredAcpAgents', [], () => [
+      { id: 'existing', title: 'Existing', command: 'existing', enabled: true },
+    ])
 
     let settled = false
     const registering = upsertAcpAgent({
@@ -81,15 +81,16 @@ describe('acp agent registry', () => {
     }).then(() => {
       settled = true
     })
-    for (let i = 0; i < 15; i++) await new Promise((resolve) => setTimeout(resolve, 1))
-
-    assert.equal(settled, false, 'the registration must wait behind the queued settings write')
-
-    release()
-    await registering
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    try {
+      assert.equal(settled, false, 'the registration must wait behind the queued settings write')
+    } finally {
+      release(undefined)
+      await Promise.all([blocker, earlierWrite, registering])
+    }
     assert.deepEqual(
       listAcpAgents().map((agent) => agent.id),
-      ['first'],
+      ['existing', 'first'],
     )
   })
 })

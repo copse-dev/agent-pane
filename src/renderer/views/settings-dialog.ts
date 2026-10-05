@@ -1,3 +1,6 @@
+import { createStorageMaintenancePanel } from './storage-maintenance-panel.ts'
+import { createSourcesSection } from './settings/sources-section.ts'
+import { makeSourceRow } from './settings/source-row.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import {
@@ -34,9 +37,7 @@ import {
 } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { chevronDownIcon, closeIcon, warningIcon } from '../dom/icons.ts'
 import type { WorktreeInventoryEntry } from '@shared/types/worktree.ts'
-import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import { formatByteSize } from '@shared/file-bytes.ts'
-import { openAttachmentPreview } from '../attachments/attachment-preview.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { el, qsRequired } from '../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
@@ -117,7 +118,6 @@ export {
   isUiTintStrength,
   type UiTintStrength,
 } from '@shared/appearance.ts'
-import { isNonEmptyString } from '@shared/nullish.ts'
 
 export type SettingsSection =
   | 'general'
@@ -2094,6 +2094,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           searchInput.value = ''
           applySearch('')
         }
+        sourcesSection.invalidate()
         showSection(id)
         if (id === 'classifiers') void classifiersSection.refresh()
         if (id === 'usage') void usageSection.refresh()
@@ -2107,7 +2108,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           void refreshSources()
         }
         if (id === 'customise' || id === 'experimental') void refreshPlugins()
-        if (id === 'storage') void refreshWorktrees()
+        if (id === 'storage') {
+          void refreshWorktrees()
+          void storageMaintenance.refresh()
+        }
         // Plugin toggles and config edits both change what this section claims,
         // and the open-time staged refresh already ran by the time a user comes
         // back to it — so re-read on entry rather than showing a stale account
@@ -2120,330 +2124,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })
   })
 
+  const sourcesSection = createSourcesSection({
+    root: overlay,
+    api,
+    onTrusted: (statuses) => {
+      renderMcpServers(statuses)
+    },
+    onHeadingsChanged: () => {
+      renderNavSubheadings(activeSection)
+    },
+  })
+  const refreshSources = sourcesSection.refresh
+  function applyWorkspaceTrusted(statuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
+    renderMcpServers(statuses)
+    void refreshSources()
+  }
+
   async function refreshLocalModelSelects(): Promise<void> {
     await modelRoutingSection.refresh()
-  }
-
-  /**
-   * The row title, as a plain span or — when the row can open something — a
-   * real `<button>`. A button (rather than a click handler on the span) is what
-   * gives the affordance keyboard focus and a name for assistive tech; the
-   * shared `.sources-row-title` class keeps both variants looking identical.
-   */
-  function makeSourceRowTitle(
-    title: string,
-    action?: { label: string; run: () => void },
-  ): HTMLElement {
-    if (!action) {
-      const span = document.createElement('span')
-      span.className = 'sources-row-title'
-      span.textContent = title
-      return span
-    }
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.className = 'sources-row-title sources-row-title-btn'
-    button.textContent = title
-    button.title = action.label
-    button.setAttribute('aria-label', action.label)
-    button.addEventListener('click', action.run)
-    return button
-  }
-
-  /**
-   * Rows for Settings → Sources → Agents: what Copse found, what it skipped, and
-   * what lost a name collision.
-   *
-   * Skipped and shadowed files get rows of their own rather than a console
-   * warning. With three containers across two scopes, a definition silently
-   * failing to appear — or quietly losing to a copy in another folder — is the
-   * failure users actually hit, and it is unanswerable from the list alone.
-   */
-  function makeAgentRows(
-    result: import('@shared/types/agents.ts').AgentsListResult,
-  ): HTMLElement[] {
-    const rows: HTMLElement[] = []
-
-    for (const agent of result.agents) {
-      const extraBadges: Array<{ text: string; className: string }> = [
-        // The container is a directory name (`.cursor`, `.claude`): a literal,
-        // shown as written rather than as a sentence-case label.
-        { text: agent.container, className: 'ui-badge-literal' },
-      ]
-      if (agent.unsupportedFields.length > 0) {
-        extraBadges.push({ text: 'partly supported', className: 'sources-badge-unsupported' })
-      }
-      const detail = [
-        agent.description,
-        ...agent.unsupportedFields.map((f) => `${f.field}: ${f.reason}`),
-      ]
-        .filter(isNonEmptyString)
-        .join(' · ')
-      rows.push(
-        makeSourceRow(agent.name, agent.source, detail || null, {
-          extraBadges,
-          titleAttr: agent.agentPath,
-          hoverDetail: agent.agentPath,
-        }),
-      )
-    }
-
-    for (const shadowed of result.shadowed) {
-      rows.push(
-        makeSourceRow(shadowed.name, shadowed.source, `overridden by ${shadowed.shadowedBy}`, {
-          extraBadges: [{ text: 'overridden', className: 'sources-badge-warning' }],
-          titleAttr: shadowed.agentPath,
-          hoverDetail: shadowed.agentPath,
-        }),
-      )
-    }
-
-    for (const skipped of result.skipped) {
-      rows.push(
-        makeSourceRow(basenameOf(skipped.agentPath), skipped.source, skipped.reason, {
-          extraBadges: [{ text: 'skipped', className: 'sources-badge-error' }],
-          titleAttr: skipped.agentPath,
-          hoverDetail: skipped.agentPath,
-        }),
-      )
-    }
-
-    return rows
-  }
-
-  /** Last path segment, for rows keyed by file rather than by agent name. */
-  function basenameOf(path: string): string {
-    return path.split(/[/\\]/).pop() ?? path
-  }
-
-  function makeSourceRow(
-    title: string,
-    badge: string | null,
-    detail: string | null,
-    opts: {
-      badgeClass?: string | undefined
-      /** Extra badges rendered after the scope badge (e.g. unsupported / error). */
-      extraBadges?: Array<{ text: string; className: string }>
-      /** Native tooltip (also used when hover-detail CSS is unavailable). */
-      titleAttr?: string | undefined
-      /** Path/origin shown only while the row is hovered or focused. */
-      hoverDetail?: string | undefined
-      /** Makes the row title a button (e.g. open the file in the preview dialog). */
-      titleAction?: { label: string; run: () => void }
-    } = {},
-  ): HTMLElement {
-    const row = document.createElement('div')
-    row.className = 'sources-row'
-    if (opts.titleAttr) row.title = opts.titleAttr
-    const header = document.createElement('div')
-    header.className = 'sources-row-header'
-    // Title + optional hover path share one flex slot so a long origin cannot
-    // inflate the row / settings scrollport (min-content of a bare path would
-    // otherwise win over the section width).
-    const primary = document.createElement('div')
-    primary.className = 'sources-row-primary'
-    const titleEl = makeSourceRowTitle(title, opts.titleAction)
-    primary.append(titleEl)
-    // Origin sits in the primary gutter (title → badge) on hover so the row
-    // height never grows; long paths ellipsize from the left. `<bdi>` keeps
-    // the path LTR so a leading `/` doesn't flip to the end under `direction:
-    // rtl` (same left-elide trick as `.git-change-path`).
-    if (opts.hoverDetail) {
-      const hoverEl = document.createElement('span')
-      hoverEl.className = 'sources-row-hover-detail'
-      const pathEl = document.createElement('bdi')
-      pathEl.textContent = opts.hoverDetail
-      hoverEl.append(pathEl)
-      primary.append(hoverEl)
-    }
-    header.append(primary)
-    if (badge) {
-      const badgeEl = document.createElement('span')
-      badgeEl.className = opts.badgeClass
-        ? `ui-badge sources-badge ${opts.badgeClass}`
-        : 'ui-badge sources-badge'
-      badgeEl.textContent = badge
-      header.append(badgeEl)
-    }
-    for (const extra of opts.extraBadges ?? []) {
-      const badgeEl = document.createElement('span')
-      badgeEl.className = `ui-badge sources-badge ${extra.className}`
-      badgeEl.textContent = extra.text
-      header.append(badgeEl)
-    }
-    row.append(header)
-    if (detail) {
-      const detailEl = document.createElement('div')
-      detailEl.className = 'sources-row-detail'
-      detailEl.textContent = detail
-      row.append(detailEl)
-    }
-    return row
-  }
-
-  /** One Sources → Hooks row: event + scope/unsupported/error badges + command. */
-  function makeHookRow(h: import('@shared/types/hooks.ts').HookSummary): HTMLElement {
-    const extraBadges: Array<{ text: string; className: string }> = []
-    if (h.supported === false) {
-      extraBadges.push({ text: 'unsupported', className: 'sources-badge-unsupported' })
-    }
-    // The `sandbox: false` escape (F3, decision 7) runs the hook OUTSIDE the
-    // project sandbox — badge it so the user sees the elevated risk they granted.
-    if (h.sandbox === false) {
-      extraBadges.push({ text: 'outside sandbox', className: 'sources-badge-unsandboxed' })
-    }
-    if (h.lastError) {
-      extraBadges.push({ text: 'error', className: 'sources-badge-error' })
-    }
-    const familyLabel =
-      h.family === 'claude' ? 'Claude Code' : h.family === 'copse' ? 'Copse' : 'Cursor'
-    const title = h.family === 'claude' && h.matcher ? `${h.event} · ${h.matcher}` : h.event
-    const detail = `${familyLabel} · ${h.command}`
-    const row = makeSourceRow(title, h.scope, detail, {
-      extraBadges,
-    })
-    if (h.lastError) {
-      const errorEl = document.createElement('div')
-      errorEl.className = 'sources-row-error'
-      errorEl.textContent = `Last run failed: ${h.lastError}`
-      row.append(errorEl)
-    }
-    addHookTester(row, h)
-    return row
-  }
-
-  /**
-   * Wire the G2 dry-run tester onto a hook row: a "Test" button that runs the
-   * hook once against a synthetic payload for its event and shows
-   * stdin/stdout/stderr/exit/duration + parse_ok + outcome summary. The dry run
-   * never mutates live agent state (see `src/main/services/hooks/dry-run.ts`).
-   */
-  function addHookTester(row: HTMLElement, h: import('@shared/types/hooks.ts').HookSummary): void {
-    const header = row.querySelector('.sources-row-header')
-    if (!header) return
-    const testBtn = document.createElement('button')
-    testBtn.type = 'button'
-    // A kit button, so it reads as a control beside the row's status badges
-    // (USER, PROJECT) rather than as one more tracked-caps chip.
-    testBtn.className = 'ui-btn ui-btn-secondary sources-hook-test-btn'
-    testBtn.textContent = 'Test'
-    testBtn.title = 'Dry-run this hook against a synthetic payload for its event'
-    header.append(testBtn)
-
-    const result = document.createElement('div')
-    result.className = 'hook-test'
-    result.hidden = true
-    row.append(result)
-
-    testBtn.addEventListener('click', () => {
-      void runHookTest(h, testBtn, result)
-    })
-  }
-
-  async function runHookTest(
-    h: import('@shared/types/hooks.ts').HookSummary,
-    btn: HTMLButtonElement,
-    result: HTMLElement,
-  ): Promise<void> {
-    btn.disabled = true
-    btn.textContent = 'Testing…'
-    result.hidden = false
-    result.innerHTML = ''
-    const pending = document.createElement('div')
-    pending.className = 'hook-test-summary'
-    pending.textContent = 'Running dry-run…'
-    result.append(pending)
-    try {
-      const req: import('@shared/types/hooks.ts').HookTestRequest = {
-        family: h.family,
-        event: h.event,
-        command: h.command,
-        source: h.source,
-        scope: h.scope,
-        ...(h.sandbox !== undefined ? { sandbox: h.sandbox } : {}),
-      }
-      const res = await api.hooks.test(req)
-      renderHookTestResult(result, res)
-    } catch {
-      result.innerHTML = ''
-      const err = document.createElement('div')
-      err.className = 'hook-test-summary hook-test-error'
-      err.textContent = 'Dry-run failed to start.'
-      result.append(err)
-    } finally {
-      btn.disabled = false
-      btn.textContent = 'Test'
-    }
-  }
-
-  /** Render one `hooks:test` result: summary chips + labeled stdin/stdout/stderr streams. */
-  function renderHookTestResult(
-    container: HTMLElement,
-    res: import('@shared/types/hooks.ts').HookTestResult,
-  ): void {
-    container.innerHTML = ''
-    if (!res.ran) {
-      const notice = document.createElement('div')
-      notice.className = 'hook-test-summary hook-test-error'
-      notice.textContent = res.error ?? 'This hook could not be dry-run.'
-      container.append(notice)
-      return
-    }
-
-    const summary = document.createElement('div')
-    summary.className = 'hook-test-summary'
-    const chips: string[] = []
-    if (res.wireEvent) chips.push(`event ${res.wireEvent}`)
-    if (res.timedOut) chips.push('timed out')
-    else if (res.spawnError) chips.push('failed to start')
-    chips.push(
-      `exit ${res.exitCode === null || res.exitCode === undefined ? 'unknown' : String(res.exitCode)}`,
-    )
-    chips.push(`${String(res.durationMs ?? 0)} ms`)
-    chips.push(res.parseOk ? 'parsed ok' : 'parse failed')
-    if (res.sandboxed) chips.push('sandboxed')
-    for (const text of chips) {
-      const chip = document.createElement('span')
-      chip.className = 'hook-test-chip'
-      chip.textContent = text
-      summary.append(chip)
-    }
-    container.append(summary)
-
-    if (res.outcomeSummary) {
-      const outcome = document.createElement('div')
-      outcome.className = 'hook-test-outcome'
-      outcome.textContent = `Outcome: ${res.outcomeSummary}`
-      container.append(outcome)
-    }
-
-    appendHookTestStream(container, 'stdin', res.stdin ?? '')
-    appendHookTestStream(container, 'stdout', res.stdout ?? '')
-    appendHookTestStream(container, 'stderr', res.stderr ?? '')
-  }
-
-  function appendHookTestStream(container: HTMLElement, label: string, text: string): void {
-    const block = document.createElement('div')
-    block.className = 'hook-test-stream'
-    const heading = document.createElement('div')
-    heading.className = 'hook-test-stream-label'
-    heading.textContent = label
-    const pre = document.createElement('pre')
-    pre.textContent = text.length > 0 ? text : '(empty)'
-    if (text.length === 0) pre.classList.add('hook-test-stream-empty')
-    block.append(heading, pre)
-    container.append(block)
-  }
-
-  /** A hooks.json authoring problem (unknown event, bad entry, malformed file). */
-  function makeHookWarningRow(
-    w: import('@shared/types/hooks.ts').HookValidationWarning,
-  ): HTMLElement {
-    const row = makeSourceRow(w.message, w.scope, w.source, {
-      extraBadges: [{ text: 'warning', className: 'sources-badge-warning' }],
-    })
-    row.classList.add('sources-row-warning')
-    return row
   }
 
   function fillSourceList(selector: string, rows: HTMLElement[], emptyText: string): void {
@@ -2687,12 +2385,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         ? 'Looking for package directories…'
         : `Preparing cleanup for ${String(entries.length)} worktrees…`
 
-    const performCleanup = async (setConfirmProgress: (label: string) => void): Promise<void> => {
+    const cleanupState = { started: false }
+    const performCleanup = async (
+      setConfirmProgress: (label: string) => void,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      cleanupState.started = true
+      signal.addEventListener(
+        'abort',
+        () => {
+          setBulkLabel('Stopping…', true)
+          statusEl.textContent = 'Stopping cleanup after the current worktree finishes…'
+        },
+        { once: true },
+      )
       for (const entry of entries) setEntryPhase(entry, 'pending')
       let cleaned = 0
       let reclaimed = 0
       let truncated = false
       for (const [index, entry] of entries.entries()) {
+        if (signal.aborted) break
         setEntryPhase(entry, 'cleaning')
         const progress = `Cleaning ${String(index + 1)} of ${String(entries.length)}…`
         setBulkLabel(progress, true)
@@ -2739,9 +2451,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       }
       const summary =
         cleaned > 0
-          ? `Cleaned up ${String(cleaned)} directories (${truncated ? 'at least ' : ''}${formatByteSize(reclaimed)}).`
-          : 'No ignored package-manager directories found.'
-      statusEl.textContent = [summary, ...problems].join('\n')
+          ? `Cleaned up ${String(cleaned)} director${cleaned === 1 ? 'y' : 'ies'} (${truncated ? 'at least ' : ''}${formatByteSize(reclaimed)}).`
+          : signal.aborted
+            ? 'No package directories were removed.'
+            : 'No ignored package-manager directories found.'
+      statusEl.textContent = [signal.aborted ? 'Cleanup stopped.' : '', summary, ...problems]
+        .filter(Boolean)
+        .join('\n')
     }
 
     try {
@@ -2785,15 +2501,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             ...(preview.directories.length > shown.length
               ? [`\n…and ${String(preview.directories.length - shown.length)} more`]
               : []),
-            `\n\nThis will reclaim ${size}. Your package manager can recreate these directories.`,
+            `\n\nThis will reclaim ${size}. Your package manager can recreate these directories.` +
+              '\n\nCancel closes this dialog; the current worktree will finish cleaning.',
           ),
           confirmLabel: 'Clean up',
           confirmPendingLabel: 'Cleanup pending…',
           onConfirm: performCleanup,
+          cancellable: true,
           danger: true,
         })
         if (!confirmed) {
-          statusEl.textContent = 'Kept.'
+          if (!cleanupState.started) statusEl.textContent = 'Kept.'
           return
         }
       } else {
@@ -2807,15 +2525,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             ' and ',
             el('code', {}, '.venv'),
             '.\n\nCleanup starts immediately; reclaimed size is measured as each worktree completes.' +
-              '\n\nYour package manager can recreate these directories.',
+              '\n\nYour package manager can recreate these directories.' +
+              '\n\nCancel closes this dialog and stops after the current worktree finishes.',
           ),
           confirmLabel: 'Clean up',
           confirmPendingLabel: 'Cleanup pending…',
           onConfirm: performCleanup,
+          cancellable: true,
           danger: true,
         })
         if (!confirmed) {
-          statusEl.textContent = 'Kept.'
+          if (!cleanupState.started) statusEl.textContent = 'Kept.'
           return
         }
       }
@@ -3127,227 +2847,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return
       fillSourceList('#sources-worktrees-list', [], 'Could not list worktrees.')
       statusEl.textContent = errorMessage(error)
-    }
-  }
-
-  /**
-   * Show one instruction file in the shared preview dialog, as plain text.
-   *
-   * Deliberately not rendered as markdown: this is the text that steers the
-   * agent (and, for an untrusted workspace, the text the user is deciding
-   * whether to trust), so it is shown exactly as the prompt would receive it
-   * rather than as formatted prose that could hide its own markup.
-   */
-  function openInstructionFile(file: ProjectInstructionSummary): void {
-    const session = openAttachmentPreview({
-      kind: 'text',
-      title: file.name,
-      ariaLabel: `Instruction file: ${file.path}`,
-      status: `Loading ${file.name}…`,
-    })
-    void api.instructions
-      .read(file.path)
-      .then((content) => {
-        const text = document.createElement('pre')
-        text.className = 'attachment-preview-text'
-        text.textContent = content
-        session.setContent(text)
-      })
-      .catch((error: unknown) => {
-        session.setStatus(errorMessage(error))
-      })
-  }
-
-  /** Both trust entry points land here: the MCP list and Sources must agree. */
-  function applyWorkspaceTrusted(statuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
-    renderMcpServers(statuses)
-    void refreshSources()
-  }
-
-  /**
-   * Trust the workspace from the Sources list. The MCP banner states the stakes
-   * in its own copy before its button; a badge cannot, so the same consent —
-   * including the `sandbox: false` hook warning (F3, decision 7) — is put in a
-   * confirmation dialog rather than dropped.
-   */
-  async function trustWorkspaceFromBadge(button: HTMLButtonElement): Promise<void> {
-    const unsandboxed = await api.workspace.unsandboxedProjectHooks().catch(() => [])
-    const detail = [
-      'Its instruction files join the system prompt, and the MCP servers and hooks it defines are allowed to run.',
-      unsandboxed.length > 0
-        ? `${String(unsandboxed.length)} of those hooks declare "sandbox": false and run OUTSIDE the project sandbox: ${unsandboxed
-            .map((h) => `${h.event}: ${h.command}`)
-            .join('; ')}`
-        : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-    const confirmed = await showConfirmDialog({
-      message: 'Trust this workspace?',
-      detail,
-      confirmLabel: 'Trust workspace',
-    })
-    if (!confirmed) return
-    button.disabled = true
-    const statusEl = qsRequired(overlay, '#sources-reload-status')
-    statusEl.textContent = 'Trusting workspace…'
-    // `setTrusted` only answers once the workspace's MCP servers have been
-    // restarted — seconds, for a repo that defines any. The trust flag itself is
-    // written before that starts, so reload the instruction list right away and
-    // let the server statuses catch up. Settling both branches here (rather than
-    // awaiting inside a try) keeps a rejection handled while that refresh runs.
-    const pending = api.workspace.setTrusted(true).then(
-      (statuses) => ({ statuses }),
-      (error: unknown) => ({ error }),
-    )
-    await refreshSources()
-    const result = await pending
-    if ('statuses' in result) applyWorkspaceTrusted(result.statuses)
-    // The row was rebuilt above, so the failed badge is already clickable again;
-    // this says why nothing happened.
-    else statusEl.textContent = errorMessage(result.error)
-  }
-
-  /**
-   * One Sources → Instructions row. The name opens the file; an inert
-   * (untrusted) file's badge is the button that trusts the workspace, so the
-   * fix for "discovered but not loaded" sits on the thing reporting it.
-   */
-  function makeInstructionRow(file: ProjectInstructionSummary): HTMLElement {
-    const nestedStatus =
-      file.scopePath === undefined
-        ? ''
-        : file.duplicateOf !== undefined
-          ? ` · scope: ${file.scopePath}/ · identical to ${file.duplicateOf}, loaded once through it`
-          : file.active
-            ? ` · scope: ${file.scopePath}/ · active this turn`
-            : ` · scope: ${file.scopePath}/ · activates when a path under this directory enters context`
-    const detail =
-      `${file.path} · ${formatByteSize(file.bytes)}` +
-      (file.trusted
-        ? nestedStatus
-        : ' · inert until you trust this workspace — click the badge to trust it')
-    const badge = !file.trusted
-      ? 'not loaded'
-      : file.duplicateOf !== undefined
-        ? 'duplicate'
-        : file.scopePath !== undefined
-          ? file.active
-            ? 'active'
-            : 'scoped'
-          : file.scope
-    const row = makeSourceRow(file.name, badge, detail, {
-      badgeClass: !file.trusted
-        ? 'sources-badge-untrusted'
-        : file.scopePath !== undefined && file.active && file.duplicateOf === undefined
-          ? 'sources-badge-active'
-          : undefined,
-      titleAction: {
-        label: `Open ${file.name}`,
-        run: () => {
-          openInstructionFile(file)
-        },
-      },
-    })
-    if (file.trusted) return row
-
-    const badgeEl = row.querySelector<HTMLElement>('.sources-badge')
-    if (badgeEl) {
-      const trustBtn = document.createElement('button')
-      trustBtn.type = 'button'
-      trustBtn.className = `${badgeEl.className} sources-badge-btn`
-      trustBtn.textContent = badgeEl.textContent
-      trustBtn.title = `Trust this workspace to load ${file.name}`
-      trustBtn.setAttribute('aria-label', `Trust this workspace to load ${file.name}`)
-      trustBtn.addEventListener('click', () => {
-        void trustWorkspaceFromBadge(trustBtn)
-      })
-      badgeEl.replaceWith(trustBtn)
-    }
-    return row
-  }
-
-  async function refreshSources(): Promise<void> {
-    const statusEl = qsRequired(overlay, '#sources-reload-status')
-    statusEl.textContent = 'Loading…'
-    try {
-      const [instructions, cursorRules, skills, agents, hooks] = await Promise.all([
-        api.instructions.list(),
-        api.cursorRules.list(),
-        api.skills.list(),
-        api.agents.list(),
-        api.hooks.list(),
-      ])
-
-      fillSourceList(
-        '#sources-instructions-list',
-        instructions.map((f) => makeInstructionRow(f)),
-        'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally).',
-      )
-      // Discovery is bounded; say so rather than let a missing nested file
-      // look like it was never written.
-      if (instructions.some((f) => f.discoveryTruncated)) {
-        const note = document.createElement('span')
-        note.className = 'sources-empty'
-        note.id = 'sources-instructions-truncated'
-        note.textContent =
-          'Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.'
-        qsRequired(overlay, '#sources-instructions-list').append(note)
-      }
-
-      const kindLabel: Record<string, string> = {
-        always: 'always',
-        auto: 'auto',
-        agent: 'agent',
-        manual: 'manual',
-      }
-      fillSourceList(
-        '#sources-cursor-rules-list',
-        cursorRules.map((r) => {
-          const bits = [formatByteSize(r.bytes)]
-          if (r.globs?.length) bits.push(`globs: ${r.globs.join(', ')}`)
-          if (r.description) bits.push(r.description)
-          bits.push(r.path)
-          return makeSourceRow(r.name, kindLabel[r.kind] ?? r.kind, bits.join(' · '))
-        }),
-        'No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file).',
-      )
-      // Most projects have no Cursor rules, and a fieldset whose only content is
-      // "there are none" is noise: the section stays hidden until the workspace
-      // actually has rules to disclose. Instruction files above already name
-      // where rules would come from, so nothing is lost by the absence.
-      qsRequired(overlay, '#cursor-rules-fieldset').hidden = cursorRules.length === 0
-      // The sidebar contents list is read off the DOM when a section opens, so a
-      // fieldset that appears after that read has to ask for a re-read — unless
-      // a search is running, which lifts blocks out of their sections and drops
-      // the contents list on purpose.
-      if (!contentEl.classList.contains('settings-searching')) renderNavSubheadings(activeSection)
-
-      fillSourceList(
-        '#sources-skills-list',
-        skills.map((s) =>
-          makeSourceRow(s.name, s.source, s.description || null, {
-            // Keep the resting list uncluttered: path lives on hover (and as a
-            // native tooltip fallback). Description stays as the always-visible
-            // detail; when a skill has none, the hover line is the only path.
-            titleAttr: s.skillPath,
-            hoverDetail: s.skillPath,
-          }),
-        ),
-        'No skills discovered.',
-      )
-
-      fillSourceList('#sources-agents-list', makeAgentRows(agents), 'No agents discovered.')
-
-      fillSourceList(
-        '#sources-hooks-list',
-        [...hooks.warnings.map(makeHookWarningRow), ...hooks.hooks.map(makeHookRow)],
-        'No Cursor or Claude Code hooks configured.',
-      )
-
-      statusEl.textContent = ''
-    } catch {
-      statusEl.textContent = 'Failed to load sources.'
     }
   }
 
@@ -4708,10 +4207,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       })
   })
 
-  qsRequired(overlay, '#sources-reload-btn').addEventListener('click', () => {
-    void refreshSources()
-  })
-
   qsRequired(overlay, '#plugins-reload-btn').addEventListener('click', () => {
     void refreshPlugins()
   })
@@ -4732,6 +4227,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       })
   })
 
+  const storageMaintenance = createStorageMaintenancePanel(api)
+  qsRequired(overlay, '.settings-section[data-section="storage"]').append(
+    storageMaintenance.element,
+  )
   const storageProjectSelect = qsRequired<HTMLSelectElement>(overlay, '#storage-project-select')
   storageProjectSelect.addEventListener('change', () => {
     storageProjectId = storageProjectSelect.value || null
@@ -4814,7 +4313,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       void refreshSources()
       void revealPluginDetail()
     }
-    if (openedSection === 'storage') void refreshWorktrees('', true)
+    if (openedSection === 'storage') {
+      void refreshWorktrees('', true)
+      void storageMaintenance.refresh()
+    }
     searchInput.focus()
     void (async (): Promise<void> => {
       // These stages used to be one unbroken `await` chain inside this
@@ -5183,6 +4685,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
 
   overlay.addEventListener('close', () => {
+    sourcesSection.invalidate()
     if (!appearanceCommitted && appearanceBaseline) applyAppearancePreview(appearanceBaseline)
     appearanceBaseline = null
     resetDirtyState()

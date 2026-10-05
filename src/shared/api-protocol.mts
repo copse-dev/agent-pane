@@ -68,4 +68,5 @@
 // v39 versions the automation lastProblem ledger and startFailedAt provenance.
 // v40 versions the queued-message model snapshot in thread payloads.
 // v41 versions container-run consent fields and terminal state.
-export const API_PROTOCOL_VERSION = 41 as const
+// v42 conservatively versions the persisted sidebar grouping in settings payloads.
+export const API_PROTOCOL_VERSION = 42 as const

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isDirectExecution } from './lib/direct-execution.mts'
 // Base freshness: does an open pull request's green CI still describe the
 // commit that would actually land?
 //
@@ -605,7 +606,7 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1]?.endsWith('base-freshness.mts') === true) {
+if (isDirectExecution(import.meta.url, 'base-freshness')) {
   main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 1

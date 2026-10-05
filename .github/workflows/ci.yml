@@ -25,6 +25,7 @@ on:
     # `edited` is required for base-branch retargets. The tier and oracle diff
     # both depend on the current base; without a new run, a head checked against
     # one base can retain stale CI after it is moved to another (#2520).
+    # Title/body-only edits use isolated concurrency but still test the candidate.
     types: [opened, synchronize, reopened, edited, labeled, ready_for_review]
     # No `branches:` filter — PRs into `main` and the promotion PRs into
     # `release` both run this workflow. Which TIER they get is decided per job by
@@ -46,16 +47,32 @@ on:
 permissions:
   contents: read
 
-# Only the known Copse feedback label may skip CI. Every edited event runs
-# normal CI, including title/body edits: Actions cannot whitelist change keys.
-# The same predicate controls concurrency, roots of the job graph, and the
-# aggregate NAME: a skipped required check would otherwise authorize a red head.
+# Every dispatched CI run must test its candidate and publish its own aggregate.
+# A later metadata-only suite can leave CI Passed Expected despite an earlier
+# exact-head success. Never fill that gap with a green no-op or copied result.
+# Title/body edits and the Copse feedback label still get isolated concurrency:
+# they cannot cancel or replace a pending source run. Retargets and unknown edit
+# keys keep the normal source group. The edit predicate compares all change keys
+# and defaults to normal routing on unknown keys or serialisation drift.
+# scripts/ci-cosmetic-events.test.ts pins concurrency and autoformat routing.
 concurrency:
   # Metadata must never replace a pending real run, even with cancellation off.
   group: >-
-    ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') && format('ci-metadata-{0}', github.run_id) || format('ci-{0}', github.event.pull_request.number || github.ref) }}
+    ${{ (github.event_name == 'pull_request' &&
+    ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
+    (github.event.action == 'edited' &&
+    (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}'))))))) && format('ci-metadata-{0}', github.run_id) || format('ci-{0}', github.event.pull_request.number || github.ref) }}
   cancel-in-progress: >-
-    ${{ github.event_name != 'schedule' && !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') }}
+    ${{ github.event_name != 'schedule' && !(github.event_name == 'pull_request' &&
+    ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
+    (github.event.action == 'edited' &&
+    (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}'))))))) }}
 
 jobs:
   # Job timeouts: every job below sets `timeout-minutes`, and
@@ -118,8 +135,6 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
-    if: >-
-      ${{ !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') }}
     # GitHub-hosted by default; the self-hosted check fleet is opt-in via
     # SELF_HOSTED_CHECKS (see the routing note above).
     # History: the 6 GB self-hosted cgroup has cgroup-killed `tsc` / `eslint .`
@@ -202,8 +217,10 @@ jobs:
             .nvmrc \
             packages/review \
             scripts/prepare-review-stage0.mts \
-            .github/workflows/review-findings.yml \
-            .github/workflows/review-ground.yml \
+            .github/actions/review-ground \
+            .github/actions/review-findings \
+            .github/workflows/reviewer.yml \
+            .github/workflows/review-trigger.yml \
             .github/workflows/review-nightly.yml; then
             echo "required=false" >> "$GITHUB_OUTPUT"
           else
@@ -435,7 +452,7 @@ jobs:
       # Packing the suite into 3 shards makes each
       # container launch too many sequential Electron sessions; accumulated
       # Electron/gortex processes then OOM-crash unrelated late-running specs.
-      # `--shard` and the subset round-robin still partition specs disjointly.
+      # The run step's duration-balanced split still partitions specs disjointly.
       - id: shards
         env:
           PLAN_MODE: ${{ steps.plan.outputs.mode }}
@@ -461,7 +478,7 @@ jobs:
             exit 0
           fi
           if [ "$PLAN_MODE" = "subset" ]; then
-            # SHARD_TOTAL is the round-robin modulus in the run step, so total and
+            # SHARD_TOTAL is the shard count the run step splits across, so total and
             # the list must agree or specs would be assigned to shards that were
             # never dispatched. Cap at 8 (the memory ceiling from #339).
             #
@@ -523,7 +540,14 @@ jobs:
   # format commit pushed there would reach `release` without ever landing on
   # trunk. Those commits were formatted on their own PRs.
   autoformat:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release' && !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback')
+    if: >-
+      github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release' && !(github.event_name == 'pull_request' &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
+      (github.event.action == 'edited' &&
+      (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}')))))))
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint (see precheck).
     runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
@@ -1282,7 +1306,7 @@ jobs:
     timeout-minutes: 45
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
-    # round-robin slice of specs. The shared `dist` artifact
+    # duration-balanced slice of specs. The shared `dist` artifact
     # from the `build` job is unpacked here rather than rebuilt per shard.
     #
     # Every full run uses 8 shards. Each shard runs its slice as one sequential
@@ -1295,8 +1319,9 @@ jobs:
     # cleanup and diagnostics). The ten-minute budget interrupted otherwise
     # passing 44-spec shards at the tail (exit 124), so twelve minutes gives
     # the growing suite bounded headroom without changing individual test caps.
-    # Keep eight shards as the memory ceiling (#339); rebalance or speed up
-    # specs if healthy shard runtime outgrows this budget.
+    # Keep eight shards as the memory ceiling (#339). Shards are balanced by
+    # recorded spec durations; refresh them with `pnpm run e2e:shard-weights`
+    # (and speed up specs) before raising this budget.
     strategy:
       # Fail fast: the first shard to go red cancels the rest. On the self-hosted
       # fleet a failure is usually a whole-run problem (a poisoned dep cache, a
@@ -1424,7 +1449,7 @@ jobs:
       # another job. Wrap each attempt in `timeout` so a plain hang cannot stall
       # the job indefinitely.
       # Oracle gate (see the precheck job's plan step): `full` shards the whole
-      # suite; `subset` distributes only the planned specs round-robin across the
+      # suite; `subset` distributes only the planned specs by duration across the
       # same 8 shards (so no shard exceeds the per-shard memory budget the count
       # is tuned for); `skip` runs nothing. Every shard still reports a status, so
       # this composes with any required check without depending on an aggregate
@@ -1438,25 +1463,27 @@ jobs:
           PLAN_MODE: ${{ needs.precheck.outputs.mode }}
           PLAN_SPECS: ${{ needs.precheck.outputs.specs }}
         run: |
+          # Full and subset plans share one assignment: the oracle splits the
+          # specs across SHARD_TOTAL shards by their recorded CI durations
+          # (scripts/e2e-shard-weights.json), longest first onto the lightest
+          # shard. Round-robin by count let one shard collect the slow specs
+          # (worst shard 541s median against 363s for the fastest, 284 full
+          # runs) and every new spec moved them; the duration split keeps each
+          # shard near the mean. A full plan lists the same eligible suite as
+          # before, preserving exclusions; a weight never skips a spec.
           if [ "$PLAN_MODE" = "full" ]; then
-            # WDIO's contiguous slices put related heavy specs on the same shard.
-            # The explainer family pushed shard 8 over 600s with no test failure.
-            # List the same eligible suite and spread neighbours across the eight
-            # existing workers, preserving exclusions, coverage and timeout caps.
-            PLAN_SPECS="$(node scripts/test-oracle.mts --list-ci-specs)"
-            if [ -z "$PLAN_SPECS" ]; then
-              echo "full e2e plan unexpectedly contains no specs" >&2
+            SHARD_SPECS="$(node scripts/test-oracle.mts --ci-shard "${{ matrix.shard }}/$SHARD_TOTAL")"
+            if [ -z "$SHARD_SPECS" ]; then
+              echo "full e2e plan unexpectedly gave shard ${{ matrix.shard }} no specs" >&2
               exit 1
             fi
+          else
+            # shellcheck disable=SC2086 # PLAN_SPECS is a space-separated list
+            SHARD_SPECS="$(node scripts/test-oracle.mts --ci-shard "${{ matrix.shard }}/$SHARD_TOTAL" --specs $PLAN_SPECS)"
           fi
-          # Use the same round-robin assignment for full and subset plans.
-          i=0
           SPEC_ARGS=""
-          for s in $PLAN_SPECS; do
-            if [ $(( i % SHARD_TOTAL )) -eq $(( ${{ matrix.shard }} - 1 )) ]; then
-              SPEC_ARGS="$SPEC_ARGS --spec $s"
-            fi
-            i=$(( i + 1 ))
+          for s in $SHARD_SPECS; do
+            SPEC_ARGS="$SPEC_ARGS --spec $s"
           done
           if [ -z "$SPEC_ARGS" ]; then
             echo "shard ${{ matrix.shard }}: no specs in this slice — nothing to run"
@@ -2032,16 +2059,14 @@ jobs:
     # so no existing protection rule or consumer changes meaning. (`release-mac.yml`
     # matches this name for a release SHA, which is never a fork PR.)
     name: >-
-      ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') && 'CI metadata ignored' ||
-      (github.event_name == 'pull_request' &&
+      ${{ (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name != github.repository) && 'Fork CI Passed' ||
       github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' ||
       'CI Passed' }}
     # Evaluate even after cancellation, including cancellation while upstream
     # jobs are queued. The first step turns that state into an explicit failure.
-    # Queue this tiny aggregate even for metadata: GitHub leaves a skipped
-    # job's name expression unevaluated. Metadata gets its separate check name
-    # and exits before candidate-result validation; it never creates CI Passed.
+    # Metadata runs earn this result through the same candidate jobs as source
+    # runs; there is no success path that bypasses dependency validation.
     if: ${{ always() }}
     needs: [precheck, check, review-cell, bench, build, e2e, screenshot-artifacts]
     runs-on: ubuntu-latest
@@ -2056,7 +2081,6 @@ jobs:
       - name: Check upstream job results
         if: ${{ !cancelled() }}
         env:
-          METADATA_ONLY: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback' }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           MODE: ${{ needs.precheck.outputs.mode }}
           ANY_FAILURE: ${{ contains(needs.*.result, 'failure') }}
@@ -2075,10 +2099,6 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           set -eu
-          if [ "${METADATA_ONLY:-false}" = "true" ]; then
-            echo "Metadata event ignored; this check does not authorize a merge."
-            exit 0
-          fi
           # Supersession explains why work was canceled; it is never evidence
           # that THIS run passed. The new run must earn its own green check.
           # This guard precedes fork and skip-mode acceptance deliberately.

@@ -1,4 +1,5 @@
 import { $, $$, browser, expect } from '@wdio/globals'
+import { z } from 'zod'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 import { analyzeStreamMotion, type StreamFrame } from './helpers/stream-motion.ts'
 
@@ -11,57 +12,73 @@ import { analyzeStreamMotion, type StreamFrame } from './helpers/stream-motion.t
  */
 
 /**
- * Record every animation frame of the newest reply until it has `stopAt`
- * characters, or — with `null` — until the run ends and the reply has settled.
+ * Record continuously in the page, including while WebDriver takes screenshots.
+ * Gaps between commands must not hide the final streaming-to-settled frame.
  */
-async function recordFrames(stopAt: number | null): Promise<StreamFrame[]> {
-  return browser.execute(async (stopAtLength: number | null) => {
+async function startRecordingFrames(): Promise<void> {
+  await browser.execute(() => {
     const frames: StreamFrame[] = []
     const started = performance.now()
     let settledFrames = 0
-    await new Promise<void>((resolve) => {
-      const tick = (): void => {
-        const texts = document.querySelectorAll<HTMLElement>(
-          '.msg-assistant > .message-body > .message-text',
-        )
-        const text = texts[texts.length - 1]
-        const row = text?.closest<HTMLElement>('.msg')
-        const list = document.querySelector('.messages-list')
-        if (text && row && list) {
-          const host = text.querySelector(':scope > .stream-complete') ?? text
-          const rowTop = row.getBoundingClientRect().top
-          const blockTops = [...host.children]
-            .filter((block) => block instanceof HTMLElement && !block.hidden)
-            .map((block) => {
-              // The first line box, so what counts is margins, not wrapping.
-              const range = document.createRange()
-              range.selectNodeContents(block)
-              const first = range.getClientRects()[0] ?? block.getBoundingClientRect()
-              return first.top - rowTop
-            })
-          frames.push({
-            messageId: row.dataset['messageId'] ?? '',
-            streaming: text.classList.contains('is-streaming'),
-            length: text.textContent.length,
-            height: text.getBoundingClientRect().height,
-            scrollTop: list.scrollTop,
-            blockTops,
+    const recording = { frames, done: false }
+    Reflect.set(window, '__copseStreamMotionCapture', recording)
+    const tick = (): void => {
+      const texts = document.querySelectorAll<HTMLElement>(
+        '.msg-assistant > .message-body > .message-text',
+      )
+      const text = texts[texts.length - 1]
+      const row = text?.closest<HTMLElement>('.msg')
+      const list = document.querySelector('.messages-list')
+      if (text && row && list) {
+        const host = text.querySelector(':scope > .stream-complete') ?? text
+        const rowTop = row.getBoundingClientRect().top
+        const blockTops = [...host.children]
+          .filter((block) => block instanceof HTMLElement && !block.hidden)
+          .map((block) => {
+            // The first line box, so what counts is margins, not wrapping.
+            const range = document.createRange()
+            range.selectNodeContents(block)
+            const first = range.getClientRects()[0] ?? block.getBoundingClientRect()
+            return first.top - rowTop
           })
-        }
-        const last = frames[frames.length - 1]
-        const running = document.querySelector('.submit-btn.with-stop') !== null
-        if (stopAtLength === null && !running && last?.streaming === false) settledFrames++
-        const done =
-          stopAtLength === null
-            ? settledFrames > 20
-            : last?.streaming === true && last.length >= stopAtLength
-        if (done || performance.now() - started > 25_000) resolve()
-        else requestAnimationFrame(tick)
+        frames.push({
+          messageId: row.dataset['messageId'] ?? '',
+          streaming: text.classList.contains('is-streaming'),
+          length: text.textContent.length,
+          height: text.getBoundingClientRect().height,
+          scrollTop: list.scrollTop,
+          blockTops,
+        })
       }
-      requestAnimationFrame(tick)
-    })
-    return frames
-  }, stopAt)
+      const last = frames[frames.length - 1]
+      const running = document.querySelector('.submit-btn.with-stop') !== null
+      if (!running && last?.streaming === false) settledFrames++
+      if (settledFrames > 20 || performance.now() - started > 25_000) recording.done = true
+      else requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+}
+
+const streamFramesSchema = z.array(
+  z.object({
+    messageId: z.string(),
+    streaming: z.boolean(),
+    length: z.number(),
+    height: z.number(),
+    scrollTop: z.number(),
+    blockTops: z.array(z.number()),
+  }),
+)
+
+async function recordedFrames(): Promise<StreamFrame[]> {
+  const captured: unknown = await browser.execute(() => {
+    const recording: unknown = Reflect.get(window, '__copseStreamMotionCapture')
+    return recording !== null && typeof recording === 'object'
+      ? Reflect.get(recording, 'frames')
+      : []
+  })
+  return streamFramesSchema.parse(captured)
 }
 
 describe('streamed reply motion in the real renderer', () => {
@@ -75,16 +92,32 @@ describe('streamed reply motion in the real renderer', () => {
       composer.textContent = 'Show the reading layout with a streamed response.'
       composer.dispatchEvent(new Event('input', { bubbles: true }))
     })
+    await startRecordingFrames()
     await $('.submit-btn').click()
 
     // The tool step and the first prose, then a capture mid-reply.
-    const opening = await recordFrames(700)
+    await browser.waitUntil(
+      async () => (await recordedFrames()).some((frame) => frame.streaming && frame.length >= 700),
+      { timeout: 25_000 },
+    )
     await saveAppScreenshot('streamed-reply-mid-stream.png')
-    const closing = await recordFrames(null)
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const recording: unknown = Reflect.get(window, '__copseStreamMotionCapture')
+          return (
+            recording !== null &&
+            typeof recording === 'object' &&
+            Reflect.get(recording, 'done') === true
+          )
+        }),
+      { timeout: 25_000 },
+    )
+    const frames = await recordedFrames()
     await expect($$('.msg-assistant .message-text.is-streaming')).toBeElementsArrayOfSize(0)
     await saveAppScreenshot('streamed-reply-settled.png')
 
-    const motion = analyzeStreamMotion([opening, closing])
+    const motion = analyzeStreamMotion([frames])
     expect(motion.liveFrames).toBeGreaterThan(60)
     // Chunk-paced painting froze the text for two frames in three.
     expect(motion.advancingShare).toBeGreaterThan(0.8)

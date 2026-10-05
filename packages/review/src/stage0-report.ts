@@ -49,7 +49,7 @@ const checkOutcomeSchema = z
 
 const projectSchema = z.union([
   z.object({
-    ecosystem: z.enum(['typescript-pnpm', 'configured']),
+    ecosystem: z.enum(['typescript-pnpm', 'typescript-npm', 'configured']),
     source: z.enum(['package.json', REVIEW_CONFIG_FILENAME]),
     commands: z.array(
       z.object({

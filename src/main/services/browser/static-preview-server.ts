@@ -297,6 +297,22 @@ export async function workspacePreviewFileUrl(root: string, absolutePath: string
   return staticPreviewUrl(preview.url, previewPath)
 }
 
+/**
+ * Preview URL for an entry page, checked against what the server would serve.
+ * A missing page (say, a build output not written yet) fails here instead of
+ * opening a tab that only shows the server's 404.
+ */
+export async function staticPreviewEntryUrl(root: string, entryPath = '/'): Promise<string> {
+  const preview = await getStaticPreviewServer(root)
+  const url = staticPreviewUrl(preview.url, entryPath)
+  if (!(await resolveRequestFile(preview.root, new URL(url).pathname))) {
+    throw new Error(
+      `Nothing to preview at "${entryPath}": no such file in the workspace. If it is a build output, finish the build before previewing.`,
+    )
+  }
+  return url
+}
+
 export function staticPreviewUrl(baseUrl: string, entryPath = '/'): string {
   const trimmed = entryPath.trim()
   if (!trimmed || trimmed === '/') return baseUrl

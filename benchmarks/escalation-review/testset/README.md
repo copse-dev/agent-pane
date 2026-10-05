@@ -150,7 +150,10 @@ UPDATE_GATE_REPLAY=1 pnpm test -- shell-gate-replay
 ```
 
 The test is `src/main/services/security/shell-gate-replay.test.ts`, and `gate-replay.jsonl` holds
-the pinned outcomes. Each row is one command with one outcome per situation. The situations are the
+the pinned outcomes. The fixture relocates the anonymised home and project under a scratch root,
+and maps the corpus’s unrelated literal `/workspace` tree to a sibling outside that home. This
+preserves their relationship even when the checkout itself lives below `/workspace`; commands are
+analysed, never executed. Each row is one command with one outcome per situation. The situations are the
 cells of the platform matrix in [`docs/shell-permissions.md`](../../../docs/shell-permissions.md#platform-matrix):
 
 | Situation              | What it models                                                                            |

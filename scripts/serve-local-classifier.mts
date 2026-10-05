@@ -14,19 +14,19 @@
  * servers bind 127.0.0.1 on the port their `benchmarks/classifiers/*.json`
  * profile names. Flags after the name go to the server, such as `--context 16384` for
  * Winnow on a machine without room for its 64K default. The app's Settings → Classifiers
- * installer uses the same catalog and cache (`src/main/services/classifiers/local-server.ts`).
+ * installer uses the same catalog and cache (`src/main/services/classifiers/local-server.mts`).
  */
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { spawn } from 'node:child_process'
-import { pathToFileURL } from 'node:url'
 import {
   LOCAL_CLASSIFIER_SERVERS,
   cacheEnvironment,
   localClassifierEntry,
   prepareClassifierCache,
-} from '../src/main/services/classifiers/local-server.ts'
+} from '../src/main/services/classifiers/local-server.mts'
 
 export { prepareClassifierCache }
-export type { ServerSpec } from '../src/main/services/classifiers/local-server.ts'
+export type { ServerSpec } from '../src/main/services/classifiers/local-server.mts'
 
 async function main(): Promise<number> {
   const args = process.argv.slice(2).filter((arg) => arg !== '--')
@@ -61,7 +61,7 @@ async function main(): Promise<number> {
   return 0
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+if (isDirectExecution(import.meta.url, 'serve-local-classifier')) {
   main().then(
     (code) => {
       if (code !== 0) process.exitCode = code

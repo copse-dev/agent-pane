@@ -189,7 +189,7 @@ describe('Activity panel', function () {
     assert.match(label ?? '', /^Needs approval: Run shell command\? — printf/)
 
     // The list only scans; the detail beside it shows the request exactly as the
-    // prompt does, and Approve once exists only there.
+    // prompt does, and the once-only Approve action exists only there.
     await expect($('#activity-panel .activity-list .activity-approve')).not.toBeExisting()
     const detail = $('#activity-panel .activity-detail')
     await expect(detail).toHaveAttribute(

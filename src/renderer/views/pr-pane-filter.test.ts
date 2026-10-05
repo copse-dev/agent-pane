@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { GhCliStatus, GhPrSummary } from '@shared/types/git.ts'
+import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
 import { mountPrPane } from './pr-pane.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import type { GitDiffMonaco } from '../monaco/git-diff-viewer.ts'
@@ -72,7 +72,15 @@ const OTHER_PR: GhPrSummary = {
   authorLogin: 'carol',
 }
 
-function mount(otherPrs: readonly GhPrSummary[] = [OTHER_PR]): {
+function mount(
+  otherPrs: readonly GhPrSummary[] = [OTHER_PR],
+  options: {
+    linkedUrls?: string
+    workspacePrs?: readonly GhPrSummary[]
+    prDetails?: ApiClient['gh']['prDetails']
+    prChecks?: ApiClient['gh']['prChecks']
+  } = {},
+): {
   listRoot: HTMLElement
   viewerRoot: HTMLElement
 } {
@@ -81,7 +89,9 @@ function mount(otherPrs: readonly GhPrSummary[] = [OTHER_PR]): {
     activeThreadId: 'thread-1',
     filesPaneOpen: true,
     rightPanelMode: 'prs',
-    threads: [makeThread('thread-1', 'See https://github.com/acme/widgets/pull/42')],
+    threads: [
+      makeThread('thread-1', options.linkedUrls ?? 'See https://github.com/acme/widgets/pull/42'),
+    ],
   })
   const base = createFakeApi()
   const api: ApiClient = {
@@ -91,10 +101,10 @@ function mount(otherPrs: readonly GhPrSummary[] = [OTHER_PR]): {
       status: async () => READY,
       agentPrLinks: async () => [],
       onListsTick: noopUnsub,
-      listWorkspaceOpenPrs: async () => [LINKED_PR, WORKSPACE_PR],
+      listWorkspaceOpenPrs: async () => [...(options.workspacePrs ?? [LINKED_PR, WORKSPACE_PR])],
       listMyOpenPrs: async () => [...otherPrs],
-      prChecks: async () => 'no_checks',
-      prDetails: async () => null,
+      prChecks: options.prChecks ?? (async (): Promise<GhPrChecksState> => 'no_checks'),
+      prDetails: options.prDetails ?? (async (): Promise<GhPrDetails | null> => null),
     },
   }
   const listRoot = document.createElement('div')
@@ -132,6 +142,192 @@ afterEach(() => {
 })
 
 describe('pr pane filter (issue #2482)', () => {
+  it('loads conflict metadata for titled unselected rows in every visible group', async () => {
+    const linked = { ...LINKED_PR, number: 801, url: 'https://github.com/acme/widgets/pull/801' }
+    const secondLinked = {
+      ...LINKED_PR,
+      number: 804,
+      url: 'https://github.com/acme/widgets/pull/804',
+    }
+    const workspace = { ...WORKSPACE_PR, number: 802 }
+    const other = { ...OTHER_PR, number: 803 }
+    const requests: number[] = []
+    const { listRoot } = mount([other], {
+      linkedUrls: `${linked.url} ${secondLinked.url}`,
+      workspacePrs: [linked, secondLinked, workspace],
+      prDetails: async (owner, repo, number) => {
+        requests.push(number)
+        return {
+          owner,
+          repo,
+          number,
+          title: `Titled PR ${String(number)}`,
+          url: `https://github.com/${owner}/${repo}/pull/${String(number)}`,
+          state: 'OPEN',
+          mergeStateStatus: 'DIRTY',
+          body: '',
+          files: [],
+        }
+      },
+      prChecks: async () => 'failure',
+    })
+    await settle()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.ok(!requests.includes(803), 'collapsed other group must stay lazy')
+    listRoot.querySelector<HTMLButtonElement>('.pr-other-toggle')?.click()
+    await settle()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.equal(
+      listRoot.querySelectorAll('.pr-list-row[data-pr-section="linked"] .has-conflicts').length,
+      2,
+    )
+    for (const section of ['linked', 'workspace', 'mine']) {
+      const status = listRoot.querySelector(
+        `.pr-list-row[data-pr-section="${section}"] .pr-list-status`,
+      )
+      assert.ok(status, section)
+      assert.equal(status.classList.contains('has-conflicts'), true, section)
+      assert.match(status.getAttribute('aria-label') ?? '', /merge conflicts; CI failing/)
+    }
+    for (const number of [801, 802, 803, 804]) assert.ok(requests.includes(number))
+    for (const number of [802, 803, 804]) {
+      assert.equal(requests.filter((requested) => requested === number).length, 1)
+    }
+  })
+
+  it('keeps Files separate from Overview and retains the selected section on refresh', async () => {
+    const { listRoot, viewerRoot } = mount([], {
+      prDetails: async (_owner, _repo, number) =>
+        number === LINKED_PR.number
+          ? {
+              ...LINKED_PR,
+              body: '**Summary** of the change.',
+              additions: 12,
+              deletions: 3,
+              files: [{ path: 'src/login.ts', status: 'modified', additions: 12, deletions: 3 }],
+            }
+          : null,
+    })
+    await settle()
+    const files = viewerRoot.querySelector<HTMLElement>('.pr-viewer-files')
+    const description = viewerRoot.querySelector<HTMLElement>('.pr-viewer-description')
+    assert.ok(files)
+    assert.ok(description)
+    assert.equal(files.hidden, true)
+    assert.equal(description.hidden, false)
+    const filesTab = viewerRoot.querySelector<HTMLButtonElement>('[data-section="files"]')
+    assert.ok(filesTab)
+    filesTab.click()
+    assert.equal(files.hidden, false)
+    assert.equal(description.hidden, true)
+    assert.equal(files.querySelectorAll('.pr-file-row').length, 1)
+    assert.equal(files.querySelector('.pr-file-stats')?.textContent, '+12−3')
+    listRoot.querySelector<HTMLButtonElement>('.pr-pane-refresh-btn')?.click()
+    await settle()
+    assert.equal(
+      viewerRoot.querySelector('[data-section="files"]')?.getAttribute('aria-pressed'),
+      'true',
+    )
+    assert.equal(files.hidden, false)
+    viewerRoot.querySelector<HTMLButtonElement>('[data-section="overview"]')?.click()
+    assert.equal(files.hidden, true)
+    assert.equal(description.hidden, false)
+    assert.equal(viewerRoot.querySelector('.git-diff-editor-wrap')?.hasAttribute('hidden'), true)
+  })
+
+  it('shows known conflicts as an X while retaining the failing CI label', async () => {
+    const { listRoot } = mount([], {
+      linkedUrls: 'https://github.com/acme/widgets/pull/994',
+      prDetails: async (owner, repo, number) =>
+        number === 994
+          ? {
+              owner,
+              repo,
+              number,
+              title: 'Resolve merge conflicts',
+              url: `https://github.com/${owner}/${repo}/pull/${String(number)}`,
+              state: 'OPEN',
+              mergeStateStatus: 'DIRTY',
+              body: '',
+              files: [],
+            }
+          : null,
+      prChecks: async () => 'failure',
+    })
+    await settle()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const status = listRoot.querySelector('.pr-list-row[data-pr-section="linked"] .pr-list-status')
+    assert.ok(status)
+    assert.equal(status.classList.contains('has-conflicts'), true)
+    assert.equal(status.classList.contains('has-ci-failure'), false)
+    assert.match(status.getAttribute('aria-label') ?? '', /merge conflicts; CI failing/)
+    assert.equal(
+      status.querySelector('svg path:nth-child(2)')?.getAttribute('d'),
+      'M3 3l6 6m0-6L3 9',
+    )
+  })
+
+  it('uses thread status glyphs for lifecycle states and resolves failing checks in place', async () => {
+    let resolveChecks: (state: 'failure') => void = () => {}
+    const { listRoot } = mount(
+      [
+        { ...OTHER_PR, number: 991, state: 'MERGED', checks: 'failure' },
+        { ...OTHER_PR, number: 992, state: 'CLOSED', checks: 'failure' },
+      ],
+      {
+        prChecks: () =>
+          new Promise((resolve) => {
+            resolveChecks = resolve
+          }),
+      },
+    )
+    await settle()
+    const open = listRoot.querySelector('.pr-list-status.is-open')
+    assert.ok(open)
+    assert.ok(open.querySelector('svg[data-icon="git-pull-request"]'))
+    assert.equal(open.classList.contains('has-ci-failure'), false)
+    resolveChecks('failure')
+    await settle()
+    assert.ok(listRoot.querySelector('.pr-list-status.is-open.has-ci-failure'))
+    listRoot.querySelector<HTMLButtonElement>('.pr-other-toggle')?.click()
+    await settle()
+    const merged = listRoot.querySelector('.pr-list-status.is-merged')
+    const closed = listRoot.querySelector('.pr-list-status.is-closed')
+    assert.ok(merged)
+    assert.ok(closed)
+    assert.ok(merged.querySelector('svg[data-icon="git-merge"]'))
+    assert.ok(closed.querySelector('svg[data-icon="git-pull-request"]'))
+    assert.equal(merged.classList.contains('has-ci-failure'), false)
+    assert.equal(closed.classList.contains('has-ci-failure'), false)
+    assert.match(merged.getAttribute('aria-label') ?? '', /merged; CI failing/)
+    assert.equal(listRoot.querySelector('.pr-list-ci'), null)
+  })
+
+  it('learns merged lifecycle from details for a chat-linked PR absent from open listings', async () => {
+    const { listRoot } = mount([], {
+      linkedUrls: 'https://github.com/acme/widgets/pull/993',
+      prDetails: async (owner, repo, number) =>
+        number === 993
+          ? {
+              owner,
+              repo,
+              number,
+              title: 'Already shipped',
+              url: `https://github.com/${owner}/${repo}/pull/${String(number)}`,
+              state: 'MERGED',
+              body: '',
+              files: [],
+            }
+          : null,
+    })
+    await settle()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const linked = listRoot.querySelector('.pr-list-row[data-pr-section="linked"]')
+    assert.ok(linked)
+    assert.ok(linked.querySelector('.pr-list-status.is-merged svg[data-icon="git-merge"]'))
+    assert.match(linked.textContent, /Already shipped/)
+  })
+
   it('renders a filter input and all three groups unfiltered', async () => {
     const { listRoot } = mount()
     await settle()

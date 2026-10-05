@@ -95,7 +95,7 @@ async function openPortraitChrome(): Promise<void> {
   )
 }
 
-async function openCenteredPortraitChrome(): Promise<void> {
+async function openEmptyThreadPortraitChrome(): Promise<void> {
   resetUserData()
   seedEmptyProject(seedStableWorkspace(), 'e2e-portrait-panel-centered', {
     okfMemoriesEnabled: true,
@@ -108,7 +108,7 @@ async function openCenteredPortraitChrome(): Promise<void> {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
   await pinPortraitAppShell()
   await setProjectsWidth(200)
-  await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })
+  await $('.pane-chat.is-activity-home').waitForExist({ timeout: 10_000 })
   await $('.portrait-panel-bar').waitForDisplayed({ timeout: 10_000 })
 }
 
@@ -121,8 +121,8 @@ describe('portrait panel controls row', () => {
     resetUserData()
   })
 
-  it('matches the centered empty composer width', async () => {
-    await openCenteredPortraitChrome()
+  it('matches the empty-thread composer width', async () => {
+    await openEmptyThreadPortraitChrome()
 
     const geometry = await browser.execute(() => {
       const input = document.getElementById('input-bar')!.getBoundingClientRect()

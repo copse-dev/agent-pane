@@ -164,7 +164,7 @@ describe('activity panel', () => {
   let cancelApproval: (id: string) => void
   let emitAsk: (req: AskEvent) => void
   let responses: Responded[]
-  let askResponses: string[]
+  let askResponses: Array<{ id: string; answers: string[] }>
   let renders: number
 
   function mount(threads: Thread[]): void {
@@ -201,8 +201,8 @@ describe('activity panel', () => {
         responses.push({ id, approved, remember, grantScope })
         return Promise.resolve()
       },
-      'ask.respond': (id: string): Promise<void> => {
-        askResponses.push(id)
+      'ask.respond': (id: string, answers: string[]): Promise<void> => {
+        askResponses.push({ id, answers })
         return Promise.resolve()
       },
     })
@@ -626,7 +626,7 @@ describe('activity panel', () => {
     assert.equal(qsRequired(view, '.approval-footer').textContent, 'Allow this install?')
   })
 
-  it('sends a question to its thread rather than answering it in the panel', () => {
+  it('answers a question in the panel through the ask dialog, leaving the thread alone', () => {
     mount([thread('focused'), thread('schema', { title: 'Schema bump' })])
     emitAsk({
       id: 'ask-1',
@@ -640,16 +640,43 @@ describe('activity panel', () => {
       qsRequired(row, '.activity-want-text').textContent,
       'Which migration order? (+1 more)',
     )
-    // The detail lists every question; answering happens in the thread.
+    // The detail lists every question with a field for each.
     assert.deepEqual(
-      [...detail().querySelectorAll('.activity-questions li')].map((item) => item.textContent),
+      [...detail().querySelectorAll('.activity-question')].map((item) => item.textContent),
       ['Which migration order?', 'Keep the old column?'],
     )
     assert.equal(detail().querySelector('.activity-approve'), null)
+    const fields = [...detail().querySelectorAll<HTMLTextAreaElement>('.activity-answer-input')]
+    assert.equal(fields.length, 2)
+    const [first, second] = fields
+    assert.ok(first && second)
+    for (const [input, text] of [
+      [first, 'Schema first'],
+      [second, 'Yes'],
+    ] as const) {
+      input.value = text
+      input.dispatchEvent(new window.Event('input', { bubbles: true }))
+    }
+    // A question new to the pane waits out the same settle window as an approval.
+    time.advance(APPROVAL_SETTLE_MS)
     qsRequired<HTMLButtonElement>(detail(), '.activity-answer').click()
+    assert.deepEqual(askResponses, [{ id: 'ask-1', answers: ['Schema first', 'Yes'] }])
+    assert.equal(panel.isOpen(), true, 'answering does not leave the panel')
+    assert.equal(store.getState().activeThreadId, 'focused', 'nor switch thread')
+  })
+
+  it('still opens the thread of a question from the detail', () => {
+    mount([thread('focused'), thread('schema', { title: 'Schema bump' })])
+    emitAsk({
+      id: 'ask-2',
+      threadId: 'schema',
+      questions: [{ question: 'Which migration order?' }],
+    })
+    panel.open()
+    qsRequired<HTMLButtonElement>(detail(), '.activity-open-thread').click()
     assert.equal(panel.isOpen(), false)
     assert.equal(store.getState().activeThreadId, 'schema')
-    assert.deepEqual(askResponses, [], 'the ask dialog, not the panel, owns the answer')
+    assert.deepEqual(askResponses, [])
   })
 
   it('lists recently finished and failed runs it watched end', () => {

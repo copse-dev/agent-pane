@@ -109,7 +109,9 @@ type Outcome = string
 const UNASKED_SOURCES = new Set(['auto-approval', 'trusted-command', 'read-outside-grant'])
 
 describe('shell gate replay', () => {
+  let fixtureRoot = ''
   let home = ''
+  let outsideWorkspace = ''
   let workspace = ''
   let previousHome: string | undefined
   let previousWorkspace: string | undefined
@@ -120,8 +122,11 @@ describe('shell gate replay', () => {
     // Under the repository, not the OS temp directory: the harm gate treats
     // /tmp and /var/folders specially, which would change what it decides.
     await mkdir(resolve('.tmp'), { recursive: true })
-    home = await realpath(await mkdtemp(resolve('.tmp', 'gate-replay-')))
+    fixtureRoot = await realpath(await mkdtemp(resolve('.tmp', 'gate-replay-')))
+    home = join(fixtureRoot, 'home')
+    outsideWorkspace = join(fixtureRoot, 'outside-workspace')
     workspace = join(home, 'project')
+    await mkdir(outsideWorkspace, { recursive: true })
     await mkdir(join(workspace, '.git'), { recursive: true })
     // A configured remote is what lets the remote-write tier recognise `origin`.
     await writeFile(
@@ -155,7 +160,7 @@ describe('shell gate replay', () => {
     else delete process.env['HOME']
     if (previousWorkspace !== undefined) process.env['COPSE_WORKSPACE_DIR'] = previousWorkspace
     else delete process.env['COPSE_WORKSPACE_DIR']
-    await rm(home, { recursive: true, force: true })
+    await rm(fixtureRoot, { recursive: true, force: true })
   })
 
   async function replay(situation: Situation, testCase: CorpusCase): Promise<Outcome> {
@@ -176,7 +181,13 @@ describe('shell gate replay', () => {
       setActiveRunThread(thread)
       try {
         const permitted = await ensureShellCommandPermitted(
-          testCase.command.replaceAll(ANONYMISED_HOME, home),
+          // Corpus /workspace is an unrelated outside tree, even when the actual
+          // checkout lives below /workspace. One pass prevents rewriting the
+          // physical paths introduced for the anonymised home.
+          testCase.command.replace(
+            /\/Users\/dev(?=$|\/|[\s'";|&<>),])|\/workspace(?=$|\/|[\s'";|&<>),])/g,
+            (path) => (path === ANONYMISED_HOME ? home : outsideWorkspace),
+          ),
           { sandboxEnabled: situation.sandboxEnabled, executionRoot: workspace },
         )
         const log = await readDecisionLog(project)
@@ -233,6 +244,13 @@ describe('shell gate replay', () => {
     assert.deepEqual(problems, [])
 
     const pinned = await readFile(SNAPSHOT, 'utf8')
+    const expectedLines = pinned.trimEnd().split('\n')
+    const actualLines = text.trimEnd().split('\n')
+    assert.deepEqual(
+      actualLines.filter((line, index) => line !== expectedLines[index]),
+      [],
+      'Replay outcomes changed; inspect each differing row against the checked-in snapshot.',
+    )
     assert.equal(
       text,
       pinned,

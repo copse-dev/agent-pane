@@ -77,6 +77,32 @@ afterEach(() => {
 })
 
 describe('projects pane thread PR status (component)', () => {
+  it('uses a conflict X instead of the CI dot when both are known', async () => {
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
+      activeProjectId: 'p1',
+      threads: [
+        thread('conflict', 'Conflicting PR', {
+          messages: [assistant('m-conflict', OPEN_URL)],
+        }),
+      ],
+    })
+    const base = apiWithPrDetails(async () => ({
+      ...details(OPEN_NUMBER, 'OPEN'),
+      mergeable: 'CONFLICTING',
+    }))
+    mount(store, {
+      ...base,
+      gh: { ...base.gh, prChecks: async () => 'failure' },
+    })
+    const icon = await waitForIcon('Conflicting PR', 'open')
+    assert.equal(icon.classList.contains('has-conflicts'), true)
+    assert.equal(icon.classList.contains('has-ci-failure'), false)
+    assert.match(icon.getAttribute('aria-label') ?? '', /merge conflicts/)
+    assert.match(icon.getAttribute('aria-label') ?? '', /checks are failing/)
+    assert.equal(icon.querySelector('svg path:nth-child(2)')?.getAttribute('d'), 'M3 3l6 6m0-6L3 9')
+  })
+
   function mount(store: ReturnType<typeof createStore>, api: ApiClient): HTMLElement {
     const host = document.createElement('div')
     document.body.append(host)

@@ -155,6 +155,85 @@ describe('ask_user dialog (component)', () => {
     // modal methods are shimmed per-mount via mount()
   })
 
+  it('queues Claude reauthentication until Settings and its cleanup confirmation both close', async () => {
+    const { api, harness } = stubApi()
+    const requests = mountAskUserDialog(api, createStore())
+    shimModal(dialog())
+    const settings = document.createElement('dialog')
+    const cleanup = document.createElement('dialog')
+    document.body.append(settings, cleanup)
+    settings.showModal()
+    cleanup.showModal()
+    harness.emit({
+      id: 'claude-login',
+      questions: [{ question: 'Claude’s saved sign-in has expired. Run `claude /login`?' }],
+    })
+    assert.equal(dialog().open, false)
+    assert.deepEqual(
+      requests.pending().map((req) => req.id),
+      ['claude-login'],
+    )
+    cleanup.close()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, false, 'Settings still owns the foreground')
+    assert.deepEqual(harness.responses, [], 'deferral must not answer or decline sign-in')
+    settings.close()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, true)
+    assert.match(
+      document.querySelector('.ask-user-question')?.textContent ?? '',
+      /sign-in has expired/,
+    )
+    at(inputs(), 0).value = 'Not now'
+    submitForm()
+    assert.deepEqual(harness.responses, [{ id: 'claude-login', answers: ['Not now'] }])
+  })
+
+  it('removes a reauthentication request cancelled while another dialog is open', async () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    const blocker = document.createElement('dialog')
+    document.body.append(blocker)
+    blocker.showModal()
+    harness.emit({ id: 'cancelled-login', questions: [{ question: 'Sign in again?' }] })
+    harness.cancel('cancelled-login')
+    blocker.close()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, false)
+    assert.deepEqual(harness.responses, [])
+  })
+
+  it('shows a deferred request after a blocking dialog is removed', async () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    const blocker = document.createElement('dialog')
+    document.body.append(blocker)
+    blocker.showModal()
+    harness.emit({ id: 'deferred', questions: [{ question: 'Still need an answer?' }] })
+    assert.equal(dialog().open, false)
+    blocker.remove()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, true)
+    assert.deepEqual(harness.responses, [])
+  })
+
+  it('waits for Escape release before presenting a deferred question', async () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    const blocker = document.createElement('dialog')
+    document.body.append(blocker)
+    blocker.showModal()
+    harness.emit({ id: 'deferred-login', questions: [{ question: 'Sign in again?' }] })
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }))
+    blocker.close()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, false)
+    document.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'Escape' }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, true)
+    assert.deepEqual(harness.responses, [])
+  })
+
   it('renders a question and returns the typed answer on submit', () => {
     const { api, harness } = stubApi()
     mount(api)
@@ -463,6 +542,25 @@ describe('ask_user dialog thread scoping', () => {
     resetAttention()
   })
 
+  it('rechecks thread focus when a question deferred by Settings becomes eligible', async () => {
+    const { api, harness } = stubApi()
+    mountScoped(api)
+    const settings = document.createElement('dialog')
+    document.body.append(settings)
+    settings.showModal()
+    harness.emit({ id: 'login', threadId: 'focused', questions: [{ question: 'Sign in again?' }] })
+    focusThread('other')
+    settings.close()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, false)
+    assert.equal(isThreadAwaitingAttention('focused'), true)
+    focusThread('focused')
+    assert.equal(dialog().open, true)
+    at(inputs(), 0).value = 'Not now'
+    submitForm()
+    assert.deepEqual(harness.responses, [{ id: 'login', answers: ['Not now'] }])
+  })
+
   it('withdraws the open question when the user switches away from its thread', () => {
     const { api, harness } = stubApi()
     mountScoped(api)
@@ -506,5 +604,100 @@ describe('ask_user dialog thread scoping', () => {
     at(inputs(), 0).value = '2'
     submitForm()
     assert.deepEqual(harness.responses, [{ id: 'q-other', answers: ['2'] }])
+  })
+})
+
+// Another surface (the Activity view) answers through the dialog's own queue, so
+// the dialog stays the one path that releases a blocked agent.
+describe('answering from another surface', () => {
+  let store: AppStore
+
+  function mountHandle(api: ApiClient): ReturnType<typeof mountAskUserDialog> {
+    store = createStore({ activeThreadId: 'focused' })
+    const requests = mountAskUserDialog(api, store)
+    shimModal(dialog())
+    return requests
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    resetAttention()
+  })
+
+  it('reports the options the agent offered, per question', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({
+      id: 'q',
+      threadId: 'other',
+      questions: [{ question: 'Which DB?', options: ['Postgres', 'SQLite'] }, { question: 'Why?' }],
+    })
+
+    assert.deepEqual(requests.pending()[0]?.options, [['Postgres', 'SQLite'], []])
+  })
+
+  it('answers the question on screen, closes the dialog and moves to the next', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({ id: 'first', threadId: 'focused', questions: [{ question: 'First?' }] })
+    harness.emit({ id: 'second', threadId: 'focused', questions: [{ question: 'Second?' }] })
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'First?')
+
+    assert.equal(requests.answer('first', ['yes']), true)
+
+    assert.deepEqual(harness.responses, [{ id: 'first', answers: ['yes'] }])
+    assert.equal(dialog().open, true)
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'Second?')
+  })
+
+  it('answers a question queued for another thread without opening the dialog', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({ id: 'q', threadId: 'other', questions: [{ question: 'Which DB?' }] })
+    assert.equal(dialog().open, false)
+    assert.equal(isThreadAwaitingAttention('other'), true)
+
+    assert.equal(requests.answer('q', ['Postgres']), true)
+
+    assert.deepEqual(harness.responses, [{ id: 'q', answers: ['Postgres'] }])
+    assert.deepEqual(requests.pending(), [])
+    assert.equal(isThreadAwaitingAttention('other'), false)
+    assert.equal(dialog().open, false)
+  })
+
+  it('answers a queued question without disturbing the one on screen', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({ id: 'shown', threadId: 'focused', questions: [{ question: 'On screen?' }] })
+    harness.emit({ id: 'queued', threadId: 'other', questions: [{ question: 'Elsewhere?' }] })
+
+    assert.equal(requests.answer('queued', ['ok']), true)
+
+    assert.deepEqual(harness.responses, [{ id: 'queued', answers: ['ok'] }])
+    assert.equal(dialog().open, true)
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'On screen?')
+    assert.deepEqual(
+      requests.pending().map((request) => request.id),
+      ['shown'],
+    )
+  })
+
+  it('sends nothing for a request that is gone or an answer that does not fit', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({
+      id: 'q',
+      threadId: 'other',
+      questions: [{ question: 'One?' }, { question: 'Two?' }],
+    })
+
+    assert.equal(requests.answer('nope', ['x']), false)
+    assert.equal(requests.answer('q', ['only one']), false)
+    assert.deepEqual(harness.responses, [])
+    assert.equal(requests.pending().length, 1)
+
+    assert.equal(requests.answer('q', ['a', 'b']), true)
+    assert.equal(requests.answer('q', ['a', 'b']), false, 'a second answer finds nothing pending')
+    assert.equal(harness.responses.length, 1)
   })
 })

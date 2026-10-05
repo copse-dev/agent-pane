@@ -319,10 +319,6 @@ describe('CLI entry guard', () => {
     )
   })
 
-  it('guards the entry on argv[1] being this script', () => {
-    assert.match(source, /process\.argv\[1\]\?\.endsWith\('sync-intellect\.mts'\)/)
-  })
-
   it('leaves the generated file alone when merely imported', () => {
     // Compare the file around a fresh import. Comparing with HEAD is invalid in
     // the scheduled workflow because the sync is deliberately uncommitted when
