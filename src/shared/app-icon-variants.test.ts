@@ -4,6 +4,7 @@ import {
   APP_ICON_VARIANTS,
   APP_ICON_VARIANT_LABELS,
   APP_ICON_VARIANT_SCHEMES,
+  AUTOMATION_APP_ICON_VARIANT,
   DEFAULT_APP_ICON_VARIANT,
   isAppIconVariant,
 } from './app-icon-variants.ts'
@@ -38,6 +39,10 @@ describe('app-icon-variants', () => {
 
   it('defaults to rose', () => {
     assert.equal(DEFAULT_APP_ICON_VARIANT, 'rose')
+  })
+
+  it('uses amber for transient automation mode', () => {
+    assert.equal(AUTOMATION_APP_ICON_VARIANT, 'amber')
   })
 
   it('has a label and a colour scheme for every variant', () => {
