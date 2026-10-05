@@ -1,6 +1,8 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
+import { renderMarkdown } from '@copse/streaming-markdown'
+import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 import { patchChildren } from '../dom/patch-children.ts'
 import {
   arrowUpRightIcon,
@@ -217,6 +219,9 @@ export function createActivityView(
   let needsYouSignature: string | null = null
   let cancelSettle: (() => void) | null = null
   let settling = false
+  // Answers typed for a pending question, by request id. The detail pane is
+  // rebuilt on a redraw, so a half-written answer lives here, not in the textarea.
+  const drafts = new Map<string, string[]>()
   // The row whose request or state the detail pane shows, and its place in the
   // list, so a row that leaves (answered, finished) hands selection to the next.
   let selectedKey: string | null = null
@@ -274,6 +279,105 @@ export function createActivityView(
         ? `Approved once for ${row.threadTitle}.`
         : `Rejected for ${row.threadTitle}.`
     scheduleRender()
+  }
+
+  function hasAnswer(requestId: string): boolean {
+    return (drafts.get(requestId) ?? []).some((text) => text.trim() !== '')
+  }
+
+  /**
+   * Answer a question from the panel through the ask dialog's own queue. Every
+   * control goes inert at once, so a second send cannot answer twice; `answer`
+   * reports false when the question was already settled elsewhere.
+   */
+  function sendAnswer(row: ActivityRow): void {
+    const requestId = row.requestId
+    // Not while the pane is settling after a change: a Cmd+Enter must not send a
+    // draft for a request the user has not looked at.
+    if (!requestId || settling || !hasAnswer(requestId)) return
+    const asked = sources.questions.pending().find((request) => request.id === requestId)
+    if (!asked) return
+    const typed = drafts.get(requestId) ?? []
+    for (const control of detail.querySelectorAll<HTMLButtonElement | HTMLTextAreaElement>(
+      '.activity-answer, .activity-option, .activity-answer-input',
+    )) {
+      control.disabled = true
+      control.dataset['answered'] = 'true'
+    }
+    const sent = sources.questions.answer(
+      requestId,
+      asked.questions.map((_, index) => typed[index] ?? ''),
+    )
+    // A draft survives a send that did not go: the controls come back on the next
+    // redraw with the text still in them.
+    if (sent) drafts.delete(requestId)
+    status.textContent = sent
+      ? `Answered ${row.threadTitle}.`
+      : 'That question was already answered.'
+    scheduleRender()
+  }
+
+  function answerField(
+    requestId: string,
+    row: ActivityRow,
+    question: string,
+    index: number,
+    options: readonly string[],
+  ): HTMLElement {
+    const questionId = `${host.idPrefix}-question-${String(index)}`
+    const input = el('textarea', {
+      class: 'activity-answer-input',
+      rows: '2',
+      'data-control': `answer-${String(index)}`,
+      'aria-labelledby': questionId,
+    })
+    input.value = drafts.get(requestId)?.[index] ?? ''
+    const sync = (): void => {
+      const next = [...(drafts.get(requestId) ?? [])]
+      next[index] = input.value
+      drafts.set(requestId, next)
+      const send = detail.querySelector<HTMLButtonElement>('.activity-answer')
+      if (send) send.disabled = !hasAnswer(requestId)
+    }
+    input.addEventListener('input', sync)
+    // Cmd/Ctrl+Enter sends, as in the ask dialog; plain Enter stays a newline.
+    input.addEventListener('keydown', (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return
+      event.stopPropagation()
+      if (event.isComposing || event.repeat) return
+      event.preventDefault()
+      sendAnswer(row)
+    })
+    // Questions are agent-authored, so they get the same sanitized Markdown as the
+    // dialog and chat: a command reads as a command, not as backticks.
+    const asked = el('div', {
+      id: questionId,
+      class: 'activity-question streaming-markdown',
+    })
+    asked.innerHTML = renderMarkdown(question)
+    const field = el('div', { class: 'activity-answer-field' }, asked)
+    if (options.length > 0) {
+      const choices = el('div', { class: 'activity-options' })
+      for (const option of options) {
+        const choice = el('button', {
+          type: 'button',
+          class: 'ui-btn ui-btn-secondary activity-option',
+        })
+        setInlineMarkdown(choice, option)
+        // Fills the answer rather than sending it: a click on a row that moved
+        // under the pointer must not release the agent. It fills the rendered label,
+        // not its Markdown source, as the dialog does.
+        choice.addEventListener('click', () => {
+          input.value = choice.textContent
+          sync()
+          input.focus()
+        })
+        choices.append(choice)
+      }
+      field.append(choices)
+    }
+    field.append(input)
+    return field
   }
 
   function button(
@@ -337,17 +441,24 @@ export function createActivityView(
     }
     if (row.state === 'needs-answer') {
       const asked = sources.questions.pending().find((request) => request.id === row.requestId)
-      const questions = asked?.questions ?? [row.want]
+      if (!asked || !row.requestId) {
+        return [
+          el('p', { class: 'activity-detail-text' }, row.want),
+          el(
+            'p',
+            { class: 'activity-detail-note' },
+            'Answer in the thread, where the question is waiting for you.',
+          ),
+        ]
+      }
+      const requestId = row.requestId
       return [
         el(
-          'ol',
-          { class: 'activity-questions' },
-          ...questions.map((question) => el('li', {}, question)),
-        ),
-        el(
-          'p',
-          { class: 'activity-detail-note' },
-          'Answer in the thread, where the question is waiting for you.',
+          'div',
+          { class: 'activity-answer-form' },
+          ...asked.questions.map((question, index) =>
+            answerField(requestId, row, question, index, asked.options[index] ?? []),
+          ),
         ),
       ]
     }
@@ -386,13 +497,19 @@ export function createActivityView(
       )
       approve.disabled = settling
       actions.push(approve)
-    } else if (row.state === 'needs-answer') {
-      const answer = button('ui-btn-primary activity-answer', 'answer', 'Answer in thread', () => {
-        // A question tied to no run is already on screen behind this panel.
-        if (row.threadId === null) host.close()
-        else openThread(row)
-      })
-      answer.disabled = row.threadId !== null && !canOpen(row)
+    } else if (row.state === 'needs-answer' && row.requestId) {
+      const requestId = row.requestId
+      const answer = button(
+        'ui-btn-primary activity-answer',
+        'answer',
+        'Send answer',
+        () => {
+          sendAnswer(row)
+        },
+        `Send answer: ${row.want} (${row.threadTitle})`,
+      )
+      answer.dataset['requestId'] = requestId
+      answer.disabled = settling || !hasAnswer(requestId)
       actions.push(answer)
     }
     return el('div', { class: 'activity-detail-actions' }, ...actions)
@@ -402,6 +519,17 @@ export function createActivityView(
     if (!row) {
       detail.replaceChildren()
       detail.hidden = true
+      return
+    }
+    // Someone typing an answer keeps their caret, selection and IME composition:
+    // the pane is left as it is until they leave the field.
+    if (
+      row.state === 'needs-answer' &&
+      detail.dataset['rowKey'] === row.key &&
+      detail.dataset['state'] === row.state &&
+      document.activeElement instanceof HTMLTextAreaElement &&
+      detail.contains(document.activeElement)
+    ) {
       return
     }
     detail.hidden = false
@@ -756,7 +884,9 @@ export function createActivityView(
       return
     }
     if (spot.area === 'detail' && spot.key === selectedKey) {
-      const control = detail.querySelector<HTMLButtonElement>(`[data-control="${spot.control}"]`)
+      const control = detail.querySelector<HTMLButtonElement | HTMLTextAreaElement>(
+        `[data-control="${spot.control}"]`,
+      )
       if (control && !control.disabled) {
         control.focus()
         return
@@ -772,15 +902,24 @@ export function createActivityView(
   function armSettle(): void {
     cancelSettle?.()
     settling = true
-    for (const approve of detail.querySelectorAll<HTMLButtonElement>('.activity-approve')) {
-      approve.disabled = true
+    // Approve and Send answer are the two controls that release an agent, so both
+    // wait out a change of what the pane shows.
+    for (const control of detail.querySelectorAll<HTMLButtonElement>(
+      '.activity-approve, .activity-answer',
+    )) {
+      control.disabled = true
     }
     cancelSettle = setTimer(() => {
       cancelSettle = null
       settling = false
-      for (const approve of detail.querySelectorAll<HTMLButtonElement>('.activity-approve')) {
+      for (const control of detail.querySelectorAll<HTMLButtonElement>(
+        '.activity-approve, .activity-answer',
+      )) {
         // A request already answered keeps its inert buttons.
-        if (!approve.dataset['answered']) approve.disabled = false
+        if (control.dataset['answered']) continue
+        // Send answer also needs something to send.
+        const requestId = control.dataset['requestId']
+        control.disabled = requestId !== undefined && !hasAnswer(requestId)
       }
     }, APPROVAL_SETTLE_MS)
   }
@@ -796,6 +935,12 @@ export function createActivityView(
     const allThreads = collectActivityThreads(store)
     const approvals = sources.approvals.pending()
     const questions = sources.questions.pending()
+    // A draft belongs to a question still waiting; once it is answered or
+    // withdrawn the text has nowhere to go.
+    const waiting = new Set(questions.map((request) => request.id))
+    for (const requestId of drafts.keys()) {
+      if (!waiting.has(requestId)) drafts.delete(requestId)
+    }
     const everything = deriveActivity({
       threads: allThreads,
       approvals,
@@ -852,7 +997,8 @@ export function createActivityView(
     }
     selectedIndex = selected ? rows.indexOf(selected) : 0
     // A different request in the detail pane has not been read yet.
-    if (listChanged || (selectedKey !== shownKey && selected?.state === 'needs-approval')) {
+    const releases = selected?.state === 'needs-approval' || selected?.state === 'needs-answer'
+    if (listChanged || (selectedKey !== shownKey && releases)) {
       armSettle()
     }
     shownKey = selectedKey
