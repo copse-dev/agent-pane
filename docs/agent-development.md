@@ -298,7 +298,11 @@ diagnostic and is not part of `pnpm run check`.
 
 Screenshot review blocks merging. The publisher sets a `Screenshot review` commit status on every
 same-repository PR head, which the default-branch ruleset requires beside `CI Passed`. It is pending
-while candidates await a decision and passes when there are none. A maintainer decides with a label,
+while candidates await a decision and passes when there are none. The publisher adds
+`screenshots-need-review` while a decision is pending and removes it when there are no candidates
+or a successful label or checkbox decision is recorded. Failed decisions keep the reminder.
+A push rechecks screenshots for the new head and adds the label again if review is needed.
+A maintainer decides with a label,
 which `.github/workflows/screenshot-review-labels.yml` acts on and then removes:
 `accept-screenshots` fast-forwards the PR branch to the compare commit, after checking that it is
 one commit on the live head that only adds or updates PNGs under `tests/e2e/screenshots/`. It
