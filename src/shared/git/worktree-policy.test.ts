@@ -93,6 +93,25 @@ describe('decideThreadWorktreePolicy', () => {
     assert.equal(deferred({}), false)
   })
 
+  it('honors explicit choices and disabled projects with the global opt-in', () => {
+    for (const choice of ['automatic', 'worktree', 'shared'] as const) {
+      for (const projectMode of [undefined, 'always', 'never'] as const) {
+        const decision = decideThreadWorktreePolicy({
+          ...supported,
+          choice,
+          deferredWorktreesEnabled: true,
+          ...(projectMode ? { projectMode } : {}),
+        })
+        if (choice === 'shared' || (choice === 'automatic' && projectMode === 'never')) {
+          assert.equal(decision.checkoutMode, 'shared')
+        } else {
+          assert.equal(decision.checkoutMode, 'worktree')
+          assert.equal(decision.deferAllocation, choice === 'automatic')
+        }
+      }
+    }
+  })
+
   it('seeds dirty project work from the selected local branch', () => {
     const onDefault = decideThreadWorktreePolicy({ ...supported, isDirty: true })
     assert.equal(onDefault.seededFromDirtyProject, true)

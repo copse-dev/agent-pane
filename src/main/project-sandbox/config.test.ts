@@ -821,6 +821,8 @@ describe('ensureWorkspaceTmpDir', () => {
       const dir = ensureWorkspaceTmpDir()
       assert.equal(dir, join(workspace, 'tmp'))
       assert.equal(dir, workspaceTmpDir())
+      // Callers get the canonical path, so sandbox rules match what the OS reports.
+      assert.equal(dir, realpathSync.native(workspaceTmpDir()))
       accessSync(dir)
       assert.equal(ensureWorkspaceTmpDir(), dir, 'creation is idempotent')
     } finally {

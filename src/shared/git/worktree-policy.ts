@@ -24,6 +24,7 @@ export type WorktreePolicyReason =
 export interface WorktreePolicyInput {
   choice?: ThreadWorktreeChoice
   projectMode?: ProjectWorktreeMode
+  deferredWorktreesEnabled?: boolean
   isLocal: boolean
   isGitRepository: boolean
   currentBranch: string | null
@@ -39,7 +40,7 @@ export type WorktreePolicyDecision =
       seededFromDirtyProject: boolean
       /**
        * Allocate at the first write rather than before the first message
-       * (`on-write` projects). Only an automatic choice defers: a user who
+       * (the global opt-in or `on-write` projects). Only an automatic choice defers: a user who
        * explicitly picked a worktree gets one up front.
        */
       deferAllocation: boolean
@@ -137,7 +138,7 @@ export function decideThreadWorktreePolicy(input: WorktreePolicyInput): Worktree
     checkoutMode: 'worktree',
     reason: 'project-always',
     seededFromDirtyProject: canSeedFromDirtyProject(input),
-    deferAllocation: projectMode === 'on-write',
+    deferAllocation: projectMode === 'on-write' || input.deferredWorktreesEnabled === true,
   }
 }
 

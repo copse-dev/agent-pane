@@ -1,7 +1,11 @@
 # Deferred thread worktrees (prototype)
 
-Status: **Prototype, opt-in per project** (`worktreeMode: "on-write"`). The default
-(`always`) is unchanged. Extends [`thread-worktrees.md`](./thread-worktrees.md): isolation is
+Status: **Prototype, opt-in** through Settings → Experimental → Deferred worktrees
+(`deferredWorktreesEnabled`, off by default). The toggle applies across Copse to eligible new
+threads using automatic checkout, including projects with no explicit mode or `always`.
+Projects with `never` and explicit shared/worktree choices keep their behavior. The existing
+per-project `worktreeMode: "on-write"` opt-in remains supported. Existing threads keep their
+recorded checkout state when the toggle changes. The default (`always`) is unchanged. Extends [`thread-worktrees.md`](./thread-worktrees.md): isolation is
 still decided at the first message, but the checkout is created only when the thread first
 needs to write.
 
@@ -25,7 +29,8 @@ projects). The latency saving applies to every thread, because agents read befor
 
 ## Behaviour
 
-At the first message in an `on-write` project, with an automatic checkout choice and a native
+At the first message with the global setting enabled (or in an `on-write` project),
+with an automatic checkout choice and a native
 (non-ACP) model:
 
 1. The policy decides `worktree` exactly as `always` does. The transaction resolves the base
@@ -128,8 +133,7 @@ allocation) states:
 
 ## Known gaps before this could become the default
 
-- **No setting UI.** The only switch is the project's persisted `worktreeMode`, as for `never`
-  today. The composer chip still previews "worktree" (the eventual truth). While deferred, the
+- **Deferred-state indication.** The composer chip still previews "worktree" (the eventual truth). While deferred, the
   branch chip shows the project checkout's branch, and nothing yet says "reading your
   checkout".
 - **ACP agents allocate eagerly.** Deferring them needs an ACP session to resume in a new cwd

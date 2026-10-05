@@ -322,6 +322,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'conciseThreadsEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
@@ -1533,6 +1534,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 thread shows screenshots and the closing summary. Tool calls, reasoning, and the
                 tool errors the model recovers from stay hidden; while it works, you see what it
                 is doing now. Other models always show the full thread.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Deferred worktrees</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="deferredWorktreesEnabled" />
+                Create a worktree only when the agent needs to write
+              </label>
+              <p class="field-hint">
+                Applies across Copse to new threads using automatic checkout. Eligible agents
+                start by reading your checkout without changing it, then get an isolated worktree
+                before writing. Explicit worktree choices and ACP agents still create one up front.
+                Projects with worktrees disabled and existing threads keep their checkout behavior.
               </p>
             </fieldset>
 

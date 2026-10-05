@@ -12,6 +12,7 @@ import type {
 import { decideThreadWorktreePolicy, settledCheckoutMode } from '@shared/git/worktree-policy.ts'
 import { isRemoteAgentModel } from '@shared/remote-agent.ts'
 import { isAcpModel } from '@shared/acp.ts'
+import { getSetting } from './storage/settings.ts'
 import { storageGet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { getProjectThread, updateMetaOrThrow } from './thread-store.ts'
@@ -107,6 +108,7 @@ async function checkoutBaseBranch(
 }
 
 export interface ThreadCheckoutTransactionDependencies {
+  getDeferredWorktreesEnabled: () => boolean
   getProject: (projectId: string) => Project | null
   getThread: (projectId: string, threadId: string) => Promise<Thread | null>
   updateMeta: (
@@ -272,6 +274,7 @@ export async function recoverUnpersistedWorktree(input: {
 }
 
 const defaultDependencies: ThreadCheckoutTransactionDependencies = {
+  getDeferredWorktreesEnabled: () => getSetting<boolean>('deferredWorktreesEnabled', false),
   getProject: projectById,
   getThread: getProjectThread,
   updateMeta: updateMetaOrThrow,
@@ -365,6 +368,7 @@ export function createThreadCheckoutTransaction(
       const isLocal = !project.sshHost && !(input.model && isRemoteAgentModel(input.model))
       const inspection = await dependencies.inspect(project, isLocal)
       const decision = decideThreadWorktreePolicy({
+        deferredWorktreesEnabled: dependencies.getDeferredWorktreesEnabled(),
         choice: input.choice,
         ...(project.worktreeMode ? { projectMode: project.worktreeMode } : {}),
         isLocal,

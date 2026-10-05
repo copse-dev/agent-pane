@@ -75,6 +75,7 @@ function fixture(
   const allocations: Array<Parameters<ThreadCheckoutTransactionDependencies['allocate']>[0]> = []
   const checkouts: string[] = []
   const dependencies: ThreadCheckoutTransactionDependencies = {
+    getDeferredWorktreesEnabled: () => false,
     getProject: () => ON_WRITE,
     getThread: async () => thread,
     updateMeta: async (_projectId, _threadId, patch) => {
@@ -148,7 +149,10 @@ describe('first message in an on-write project', () => {
       { choice: 'worktree' as const, model: NATIVE_MODEL },
     ]
     for (const { choice, model } of cases) {
-      const { dependencies, allocations, getThread } = fixture()
+      const { dependencies, allocations, getThread } = fixture({
+        getProject: () => ({ id: 'project-1', name: 'Project', path: '/repo' }),
+        getDeferredWorktreesEnabled: () => true,
+      })
       const prepared = await createThreadCheckoutTransaction(dependencies)({
         projectId: 'project-1',
         threadId: 'thread-1',
@@ -160,6 +164,56 @@ describe('first message in an on-write project', () => {
       assert.equal(prepared.checkoutMode, 'worktree')
       assert.equal(getThread().deferredWorktree, undefined)
     }
+  })
+})
+
+describe('Copse-wide deferred worktrees setting', () => {
+  for (const projectMode of [undefined, 'always', 'never'] as const) {
+    for (const enabled of [false, true]) {
+      it(`uses global opt-in ${String(enabled)} with project mode ${String(projectMode)}`, async () => {
+        const project: Project = {
+          id: 'project-1',
+          name: 'Project',
+          path: '/repo',
+          ...(projectMode ? { worktreeMode: projectMode } : {}),
+        }
+        const { dependencies, allocations } = fixture({
+          getProject: () => project,
+          getDeferredWorktreesEnabled: () => enabled,
+        })
+        const prepared = await createThreadCheckoutTransaction(dependencies)({
+          projectId: project.id,
+          threadId: 'thread-1',
+          prompt: 'explain this',
+          choice: 'automatic',
+          model: NATIVE_MODEL,
+        })
+        const deferred = enabled && projectMode !== 'never'
+        assert.equal(prepared.deferredWorktree !== undefined, deferred)
+        assert.equal(allocations.length, !enabled && projectMode !== 'never' ? 1 : 0)
+      })
+    }
+  }
+
+  it('preserves a deferred thread when the setting is turned off', async () => {
+    let enabled = true
+    const { dependencies, allocations } = fixture({
+      getProject: () => ({ id: 'project-1', name: 'Project', path: '/repo' }),
+      getDeferredWorktreesEnabled: () => enabled,
+    })
+    const prepare = createThreadCheckoutTransaction(dependencies)
+    const input = {
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'explain this',
+      choice: 'automatic' as const,
+      model: NATIVE_MODEL,
+    }
+    const first = await prepare(input)
+    enabled = false
+    const second = await prepare(input)
+    assert.deepEqual(second.deferredWorktree, first.deferredWorktree)
+    assert.equal(allocations.length, 0)
   })
 })
 

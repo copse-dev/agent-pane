@@ -52,7 +52,7 @@ async function sendAndAwaitReply(prompt: string, reply: string): Promise<void> {
 }
 
 /**
- * An `on-write` project: the thread reads the user's checkout until its agent
+ * With the Copse-wide opt-in, the thread reads the user's checkout until its agent
  * needs to write, and only then gets a worktree and branch.
  */
 describe('deferred thread worktree', () => {
@@ -87,25 +87,26 @@ describe('deferred thread worktree', () => {
       subagentsEnabled: false,
       nextStepSuggestionEnabled: false,
     })
-    writeSettings({ ...readSeededSettings(), ...server.settings })
+    writeSettings({ ...readSeededSettings(), ...server.settings, deferredWorktreesEnabled: true })
     const now = Date.now()
-    writeSeedConfig({
-      projects: [
-        { id: PROJECT_ID, path: projectRoot, name: 'workspace', worktreeMode: 'on-write' },
-      ],
-      activeProjectId: PROJECT_ID,
-      [`threads:${PROJECT_ID}`]: [
-        {
-          id: THREAD_ID,
-          title: 'New Thread',
-          status: 'idle',
-          messages: [],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-    })
+    writeSeedConfig(
+      {
+        projects: [{ id: PROJECT_ID, path: projectRoot, name: 'workspace' }],
+        activeProjectId: PROJECT_ID,
+        [`threads:${PROJECT_ID}`]: [
+          {
+            id: THREAD_ID,
+            title: 'New Thread',
+            status: 'idle',
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      },
+      { preserveProductWorktreeDefault: true },
+    )
     await browser.reloadSession()
   })
 
