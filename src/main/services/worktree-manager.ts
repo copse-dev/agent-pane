@@ -1332,8 +1332,14 @@ async function validateThreadWorktreeState(
   if (baseCommit.toLowerCase() !== input.worktree.baseCommit.toLowerCase()) {
     throw new Error('Thread worktree base commit does not resolve exactly')
   }
-  const canonicalPath = canonicalPathCheck.status === 'fulfilled' ? canonicalPathCheck.value : null
-  if (!canonicalPath) throw new MissingThreadWorktreeError()
+  // Only an absent directory means the checkout is gone. Any other failure
+  // (permissions, I/O, a symlink loop) leaves it possibly intact, so surface it
+  // rather than let callers treat the checkout as vanished and retire it.
+  if (canonicalPathCheck.status === 'rejected') {
+    if (ownErrorCode(canonicalPathCheck.reason) === 'ENOENT') throw new MissingThreadWorktreeError()
+    throw canonicalPathCheck.reason
+  }
+  const canonicalPath = canonicalPathCheck.value
   const [recordsCheck, liveBranchCheck, executionRootCheck] = await Promise.allSettled([
     listRecords(projectRoot),
     symbolicHeadBranch(canonicalPath),

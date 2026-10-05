@@ -45,6 +45,7 @@ import {
   renameThreadWorktreeBranch,
   restoreRetiredThreadWorktree,
   retireDeletedThreadWorktree,
+  MissingThreadWorktreeError,
   retireThreadWorktree,
   sameWorktreePath,
   ThreadWorktreeDetachedError,
@@ -1178,7 +1179,7 @@ describe('worktree manager', () => {
         projectRoot: repo,
         worktree,
       }),
-      /missing/,
+      MissingThreadWorktreeError,
     )
   })
 
