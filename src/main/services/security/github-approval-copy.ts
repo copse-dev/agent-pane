@@ -4,7 +4,7 @@ import { parse } from 'shell-quote'
 export function githubShellActionAdvice(command: string): string | null {
   if (/[\r\n$`]/.test(command)) return null
   const tokens = parse(command)
-  if (!tokens.every((token): token is string => typeof token === 'string')) return null
+  if (!tokens.every((token) => typeof token === 'string')) return null
   if (tokens[0] !== 'gh' || tokens[1] !== 'pr' || tokens[2] !== 'create') return null
   const values = new Map<string, string>()
   let draft = false
