@@ -323,6 +323,88 @@ describe('input bar running attribution', () => {
   })
 })
 
+describe('input bar selection replies', () => {
+  it('quotes the reply into the current draft and sends through the normal submission path', async () => {
+    const payloads: string[] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('main')],
+    })
+    addMessage(store, 'thread-1', 'assistant', 'Selected context')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onRun: async (_projectId, _threadId, payload) => {
+          payloads.push(payload)
+        },
+      }),
+    )
+    await flush()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(composer && handlers?.sendQuotedReply)
+    composer.textContent = 'Existing draft.'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    handlers.attachFile({ path: 'context.ts', content: 'Existing attachment' })
+    assert.equal(await handlers.sendQuotedReply('Selected context', 'My reply.'), true)
+    await flush()
+    assert.equal(payloads.length, 1)
+    assert.match(payloads[0] ?? '', /Existing draft/)
+    assert.match(payloads[0] ?? '', /> Selected context/)
+    assert.match(payloads[0] ?? '', /My reply/)
+    assert.match(payloads[0] ?? '', /Existing attachment/)
+    const lastUser = getThreadById(store, 'thread-1')
+      ?.messages.slice()
+      .reverse()
+      .find((message) => message.role === 'user')
+    assert.equal(lastUser?.content, 'Existing draft.\n\n> Selected context\n\nMy reply.')
+    assert.equal(composer.textContent, '')
+  })
+
+  it('leaves the quote and reply in the composer when normal sending fails', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('main')],
+    })
+    addMessage(store, 'thread-1', 'assistant', 'Selected context')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        readCurrentBranch: async () => {
+          throw new Error('Git unavailable')
+        },
+      }),
+    )
+    await flush()
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers?.sendQuotedReply)
+    assert.equal(await handlers.sendQuotedReply('Selected context', 'Keep this reply.'), true)
+    assert.equal(
+      host.querySelector('.prompt-input')?.textContent,
+      '> Selected context\n\nKeep this reply.',
+    )
+    assert.equal(
+      getThreadById(store, 'thread-1')?.messages.filter((message) => message.role === 'user')
+        .length,
+      0,
+    )
+  })
+})
+
 describe('input bar first-message checkout', () => {
   for (const switchWhileWaiting of [false, true]) {
     it(`waits for the original default branch on immediate first submit (switch=${String(switchWhileWaiting)})`, async () => {
