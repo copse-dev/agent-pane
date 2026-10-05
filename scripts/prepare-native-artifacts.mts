@@ -1,32 +1,11 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { nativePreparationSteps } from './lib/native-preparation-steps.mts'
 import { recordLifecycleInstall } from './lib/dev-sync.mts'
 
-interface PreparationStep {
-  label: string
-  path: string
-}
-
 const root = process.cwd()
-const steps: PreparationStep[] = [
-  { label: 'Node version check', path: 'scripts/check-node-version.cjs' },
-]
-if (process.platform === 'darwin') {
-  steps.push({
-    label: 'macOS native toolchain check',
-    path: 'scripts/check-macos-native-toolchain.mts',
-  })
-}
-steps.push(
-  {
-    label: 'Electron ChromeDriver download',
-    path: 'node_modules/electron-chromedriver/download-chromedriver.js',
-  },
-  { label: 'Electron runtime preparation', path: 'scripts/patch-dev-name.mts' },
-  { label: 'native module preparation', path: 'scripts/postinstall-native.mts' },
-  { label: 'gortex preparation', path: 'scripts/fetch-gortex.mts' },
-)
+const steps = nativePreparationSteps(process.platform)
 
 for (const step of steps) {
   const absolute = join(root, step.path)

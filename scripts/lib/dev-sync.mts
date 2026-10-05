@@ -33,6 +33,7 @@ export const DEPENDENCY_SENTINELS = [
  */
 export const NATIVE_PREPARATION_INPUTS = [
   'scripts/prepare-native-artifacts.mts',
+  'scripts/lib/native-preparation-steps.mts',
   'scripts/lib/native-artifacts.mts',
   'scripts/check-node-version.cjs',
   'scripts/check-macos-native-toolchain.mts',
