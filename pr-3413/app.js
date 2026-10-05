@@ -22046,7 +22046,7 @@ var init_auto_approval = __esm({
 });
 
 // src/shared/types/state.ts
-var RIGHT_PANEL_POSITIONS, isRightPanelPosition, THREAD_SORT_MODES, isThreadSortMode, THEME_PREFERENCES, DEFAULT_THEME_PREFERENCE, isThemePreference;
+var RIGHT_PANEL_POSITIONS, isRightPanelPosition, THREAD_SORT_MODES, isThreadSortMode, THREAD_GROUP_MODES, isThreadGroupMode, THEME_PREFERENCES, DEFAULT_THEME_PREFERENCE, isThemePreference;
 var init_state = __esm({
   "src/shared/types/state.ts"() {
     init_member_of2();
@@ -22054,6 +22054,8 @@ var init_state = __esm({
     isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS);
     THREAD_SORT_MODES = ["activity", "created", "title"];
     isThreadSortMode = memberOf(THREAD_SORT_MODES);
+    THREAD_GROUP_MODES = ["project", "status", "none"];
+    isThreadGroupMode = memberOf(THREAD_GROUP_MODES);
     THEME_PREFERENCES = ["system", "light", "dark"];
     DEFAULT_THEME_PREFERENCE = "dark";
     isThemePreference = memberOf(THEME_PREFERENCES);
@@ -58893,11 +58895,22 @@ function sidebarPrRefs(thread) {
   }
   return thread.prRefs ?? [];
 }
+function sidebarLastPromptAt(thread) {
+  if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
+  const messages = thread.messages ?? [];
+  for (let i2 = messages.length - 1; i2 >= 0; i2--) {
+    const message2 = messages[i2];
+    if (message2 !== void 0 && isHumanUserPrompt(message2)) return message2.createdAt;
+  }
+  return void 0;
+}
 function compactSidebarThread(thread) {
+  const lastPromptAt = sidebarLastPromptAt(thread);
   return {
     id: thread.id,
     title: thread.title,
     ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
+    ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
     status: thread.status,
     ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
@@ -58910,6 +58923,7 @@ var init_sidebar_thread = __esm({
   "src/renderer/controller/sidebar-thread.ts"() {
     init_github_pr_url2();
     init_thread_pr_status2();
+    init_thread_sort();
   }
 });
 
@@ -67327,6 +67341,16 @@ var init_demo_scenarios = __esm({
             usage: { inputTokens: 0, outputTokens: 0 },
             createdAt: FIXED_TIME - 4,
             updatedAt: FIXED_TIME - 4
+          },
+          {
+            id: "demo-sidebar-sort-e",
+            title: "Run the schema migration",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 5,
+            updatedAt: FIXED_TIME - 5
           }
         ]
       },
@@ -69317,6 +69341,7 @@ function createStore(initial) {
     rightPanelPosition: "auto",
     sidebarThreadSort: "activity",
     sidebarThreadSortReverse: false,
+    sidebarThreadGroup: "project",
     openLinksInBuiltInBrowser: true,
     developerMode: false,
     ...initial
@@ -71712,8 +71737,37 @@ function orderSidebarThreads(threads, mode, reverse) {
   }
   return reverse ? ordered.reverse() : ordered;
 }
+function orderSidebarRows(rows, mode, reverse) {
+  const created = (row2) => row2.thread.createdAt ?? 0;
+  const activity = (row2) => sidebarLastPromptAt(row2.thread) ?? created(row2);
+  const name = (row2) => row2.thread.title || "New Thread";
+  const ordered = [...rows];
+  if (mode === "created") {
+    ordered.sort((a3, b4) => created(b4) - created(a3));
+  } else if (mode === "title") {
+    ordered.sort((a3, b4) => name(a3).localeCompare(name(b4), void 0, { sensitivity: "base" }));
+  } else {
+    ordered.sort((a3, b4) => activity(b4) - activity(a3) || created(b4) - created(a3));
+  }
+  return reverse ? ordered.reverse() : ordered;
+}
+function groupRowsByStatus(rows, needsYou) {
+  const sectionOf = (row2) => needsYou(row2.thread.id) ? "needs-you" : row2.thread.status === "running" ? "working" : "recent";
+  return STATUS_SECTION_LABELS.map(([id, label]) => ({
+    id,
+    label,
+    rows: rows.filter((row2) => sectionOf(row2) === id)
+  })).filter((section) => section.rows.length > 0);
+}
+var STATUS_SECTION_LABELS;
 var init_thread_order = __esm({
   "src/renderer/controller/thread-order.ts"() {
+    init_sidebar_thread();
+    STATUS_SECTION_LABELS = [
+      ["needs-you", "Needs you"],
+      ["working", "Working"],
+      ["recent", "Recent"]
+    ];
   }
 });
 
@@ -74481,6 +74535,11 @@ function mountProjectsPane(root, store2, api2) {
     created: "Created",
     title: "Thread name"
   };
+  const GROUP_LABELS2 = {
+    project: "Project",
+    status: "Status",
+    none: "None"
+  };
   const saveSort = (key, value) => {
     void api2.settings.set(key, value).catch((err2) => {
       showErrorToast("Could not save the thread order", err2);
@@ -74488,8 +74547,18 @@ function mountProjectsPane(root, store2, api2) {
   };
   sortBtn.addEventListener("click", () => {
     const rect = sortBtn.getBoundingClientRect();
-    const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
+    const { sidebarThreadSort, sidebarThreadSortReverse, sidebarThreadGroup } = store2.getState();
     showContextMenu(rect.right - 4, rect.bottom + 4, [
+      { heading: "Group by" },
+      ...THREAD_GROUP_MODES.map((mode) => ({
+        label: GROUP_LABELS2[mode],
+        checked: mode === sidebarThreadGroup,
+        onSelect: () => {
+          store2.setState({ sidebarThreadGroup: mode });
+          saveSort("sidebarThreadGroup", mode);
+          render();
+        }
+      })),
       { heading: "Sort by" },
       ...THREAD_SORT_MODES.map((mode) => ({
         label: SORT_LABELS[mode],
@@ -75748,9 +75817,71 @@ function mountProjectsPane(root, store2, api2) {
     }
     const automationsSection = renderAutomationsSection();
     if (automationsSection) list.append(automationsSection);
-    for (const node2 of buildProjectTree(projects, projectGroups)) {
-      if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
-      else list.append(renderProjectEntry(node2.project));
+    function renderThreadSections(mode) {
+      const owners = /* @__PURE__ */ new Map();
+      const rows = [];
+      for (const project2 of projects) {
+        if (project2.missing) continue;
+        owners.set(project2.id, project2);
+        for (const thread of getSidebarThreads(store2, project2.id)) {
+          if (thread.automation === void 0) rows.push({ projectId: project2.id, thread });
+        }
+      }
+      const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
+      const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse);
+      const sections = mode === "status" ? groupRowsByStatus(ordered, isThreadAwaitingAttention) : [{ id: "all", label: "", rows: ordered }];
+      if (ordered.length === 0) {
+        return [el("div", { class: "sidebar-empty" }, "No threads yet")];
+      }
+      return sections.map((section) => {
+        const block = el("div", { class: "thread-section", "data-section-id": section.id });
+        if (section.label) {
+          block.append(el("div", { class: "thread-section-heading" }, section.label));
+        }
+        const byThread = new Map(section.rows.map((row2) => [row2.thread, row2]));
+        const countKey = `section:${mode}:${section.id}`;
+        const limit = visibleThreadCounts.get(countKey) ?? SIDEBAR_THREADS_PAGE_SIZE;
+        const activeRow = section.rows.find(
+          (row2) => row2.projectId === activeProjectId && row2.thread.id === activeThreadId
+        );
+        const paged = paginateSidebarThreads(
+          section.rows.map((row2) => row2.thread),
+          limit,
+          activeRow?.thread.id
+        );
+        if (paged.visibleCount > limit) visibleThreadCounts.set(countKey, paged.visibleCount);
+        const chats = el("div", { class: "chats-list" });
+        for (const thread of paged.visibleThreads) {
+          const project2 = owners.get(byThread.get(thread)?.projectId ?? "");
+          if (!project2) continue;
+          const row2 = renderThreadRow(project2, thread);
+          row2.querySelector(".chat-title")?.after(el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project2)}`));
+          chats.append(row2);
+        }
+        if (paged.hasMore) {
+          const showMoreBtn = el(
+            "button",
+            { type: "button", class: "chats-show-more" },
+            "Show more"
+          );
+          showMoreBtn.addEventListener("click", () => {
+            visibleThreadCounts.set(countKey, paged.visibleCount + SIDEBAR_THREADS_PAGE_SIZE);
+            render();
+          });
+          chats.append(showMoreBtn);
+        }
+        block.append(chats);
+        return block;
+      });
+    }
+    const groupMode = store2.getState().sidebarThreadGroup;
+    if (groupMode !== "project" && threadFilter.length === 0) {
+      list.append(...renderThreadSections(groupMode));
+    } else {
+      for (const node2 of buildProjectTree(projects, projectGroups)) {
+        if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
+        else list.append(renderProjectEntry(node2.project));
+      }
     }
     if (orphans.length > 0) list.append(renderOrphansSection());
     prBackfillRowsByKey = new Map(
@@ -145418,6 +145549,7 @@ async function loadStartupSettings(settings) {
     rightPanelPosition,
     sidebarThreadSort,
     sidebarThreadSortReverse,
+    sidebarThreadGroup,
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
@@ -145436,6 +145568,7 @@ async function loadStartupSettings(settings) {
     settings.get("rightPanelPosition"),
     settings.get("sidebarThreadSort"),
     settings.get("sidebarThreadSortReverse"),
+    settings.get("sidebarThreadGroup"),
     settings.get("openLinksInBuiltInBrowser"),
     settings.get("theme"),
     settings.get("fontSize"),
@@ -145455,6 +145588,7 @@ async function loadStartupSettings(settings) {
     rightPanelPosition,
     sidebarThreadSort,
     sidebarThreadSortReverse,
+    sidebarThreadGroup,
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
@@ -155094,6 +155228,7 @@ async function boot() {
   const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel;
   const savedRightPanelPosition = startupSettings.rightPanelPosition;
   const savedSidebarThreadSort = startupSettings.sidebarThreadSort;
+  const savedSidebarThreadGroup = startupSettings.sidebarThreadGroup;
   const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser;
   const savedDeveloperMode = startupSettings.developerMode;
   const savedTheme = startupSettings.theme;
@@ -155132,6 +155267,7 @@ async function boot() {
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition) ? savedRightPanelPosition : "auto",
     sidebarThreadSort: isThreadSortMode(savedSidebarThreadSort) ? savedSidebarThreadSort : "activity",
     sidebarThreadSortReverse: startupSettings.sidebarThreadSortReverse === true,
+    sidebarThreadGroup: isThreadGroupMode(savedSidebarThreadGroup) ? savedSidebarThreadGroup : "project",
     openLinksInBuiltInBrowser: typeof savedOpenLinksInBuiltInBrowser === "boolean" ? savedOpenLinksInBuiltInBrowser : true,
     developerMode: typeof savedDeveloperMode === "boolean" ? savedDeveloperMode : false
   });
