@@ -292,6 +292,126 @@ function pluginsFieldset(): HTMLElement {
   return fieldset
 }
 
+it('reveals explainer settings after Manage finishes rebuilding the plugin row', async () => {
+  const spy: StubApiSpy = { lastSetEnabled: null, lastSetSetting: null, addSourceCalls: 0 }
+  const initial: PluginsListResult = {
+    plugins: [{ ...demoPlugin, id: 'copse.mcp-ui-canvas', stability: 'experimental' }],
+  }
+  let release: ((result: PluginsListResult) => void) | undefined
+  let reads = 0
+  const api = stubApi(initial, spy, (current) => {
+    reads++
+    if (reads === 2)
+      return new Promise((resolve) => {
+        release = resolve
+      })
+    return Promise.resolve(current)
+  })
+  document.body.innerHTML = ''
+  mountSettingsDialog(createStore(), api)
+  openSettingsDialog('experimental')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const oldRow = document.querySelector('.plugin-row[data-plugin-id="copse.mcp-ui-canvas"]')
+  assert.ok(oldRow)
+  const manage = document.querySelector<HTMLButtonElement>('#animated-explainers-manage')
+  assert.ok(manage)
+  manage.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(release, 'Customise starts a fresh plugin registry read')
+  release(initial)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const row = document.querySelector('.plugin-row[data-plugin-id="copse.mcp-ui-canvas"]')
+  assert.ok(row)
+  assert.notEqual(row, oldRow, 'the refreshed registry replaces the prior row')
+  const fold = row.querySelector<HTMLDetailsElement>('.plugin-settings-fold')
+  assert.ok(fold)
+  assert.equal(fold.open, true, 'Manage reveals the refreshed row rather than the discarded row')
+})
+
+it('does not reveal a pending explainer target after Settings closes', async () => {
+  const spy: StubApiSpy = { lastSetEnabled: null, lastSetSetting: null, addSourceCalls: 0 }
+  const initial: PluginsListResult = {
+    plugins: [{ ...demoPlugin, id: 'copse.mcp-ui-canvas', stability: 'experimental' }],
+  }
+  let release: ((result: PluginsListResult) => void) | undefined
+  let reads = 0
+  const api = stubApi(initial, spy, (current) => {
+    reads++
+    if (reads === 2)
+      return new Promise((resolve) => {
+        release = resolve
+      })
+    return Promise.resolve(current)
+  })
+  document.body.innerHTML = ''
+  mountSettingsDialog(createStore(), api)
+  openSettingsDialog('experimental')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const oldRow = document.querySelector('.plugin-row[data-plugin-id="copse.mcp-ui-canvas"]')
+  assert.ok(oldRow)
+  const manage = document.querySelector<HTMLButtonElement>('#animated-explainers-manage')
+  assert.ok(manage)
+  manage.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(release, 'Customise starts a fresh plugin registry read')
+  const close = document.querySelector<HTMLButtonElement>('#settings-close')
+  assert.ok(close)
+  close.click()
+  release(initial)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const row = document.querySelector('.plugin-row[data-plugin-id="copse.mcp-ui-canvas"]')
+  assert.ok(row)
+  assert.equal(row, oldRow, 'the canceled refresh must not replace the prior row')
+  const fold = row.querySelector<HTMLDetailsElement>('.plugin-settings-fold')
+  assert.ok(fold)
+  assert.equal(fold.open, false, 'closing Settings cancels the pending detail reveal')
+})
+
+it('reveals explainer settings when search already loaded Customise beside Experimental', async () => {
+  const spy: StubApiSpy = { lastSetEnabled: null, lastSetSetting: null, addSourceCalls: 0 }
+  const initial: PluginsListResult = {
+    plugins: [
+      {
+        ...demoPlugin,
+        id: 'copse.mcp-ui-canvas',
+        stability: 'experimental',
+        settings: [
+          {
+            id: 'animatedExplainers',
+            kind: 'boolean',
+            title: 'Animated explainers',
+            value: false,
+            default: false,
+          },
+        ],
+      },
+    ],
+  }
+  document.body.innerHTML = ''
+  mountSettingsDialog(createStore(), stubApi(initial, spy))
+  openSettingsDialog('customise')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const search = document.querySelector<HTMLInputElement>('#settings-search-input')
+  assert.ok(search)
+  search.value = 'Animated explainers'
+  search.dispatchEvent(new Event('input', { bubbles: true }))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const manage = document.querySelector<HTMLButtonElement>('#animated-explainers-manage')
+  assert.ok(manage)
+  manage.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const fold = document.querySelector<HTMLDetailsElement>(
+    '.plugin-row[data-plugin-id="copse.mcp-ui-canvas"] .plugin-settings-fold',
+  )
+  assert.ok(fold)
+  assert.equal(
+    fold.open,
+    true,
+    'the retained Customise owner must reveal despite aborted Experimental work',
+  )
+  assert.equal(search.value, '', 'Manage exits search so the revealed plugin row is visible')
+})
+
 it('ignores a pre-toggle plugin refresh that completes after the updated list', async () => {
   const spy: StubApiSpy = {
     lastSetEnabled: null,

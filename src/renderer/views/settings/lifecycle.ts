@@ -25,6 +25,10 @@ export class SettingsLifecycle {
     this.onError = onError
   }
 
+  signalFor(id: SettingsSection): AbortSignal | undefined {
+    return this.visible.get(id)?.controller.signal
+  }
+
   reset(): void {
     this.cancel()
     this.loaded.clear()

@@ -54,7 +54,7 @@ it('renders friendly Copse names and Markdown, and moves an open disabled pack b
     },
     createStore(),
     () => 'customise',
-    () => {},
+    () => Promise.resolve(new AbortController().signal),
     () => {},
   )
   await section.refresh(new AbortController().signal)

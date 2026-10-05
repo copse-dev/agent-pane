@@ -163,9 +163,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     api,
     store,
     () => nav.active(),
-    (id) => {
-      nav.show(id)
-      if (snapshot) void lifecycle.show([id], snapshot)
+    async (id): Promise<AbortSignal | undefined> => {
+      nav.reset(id)
+      if (snapshot) await lifecycle.show([id], snapshot)
+      return lifecycle.signalFor(id)
     },
     () => {
       if (nav.active() === 'mcp') void mcp.refreshDeclared()

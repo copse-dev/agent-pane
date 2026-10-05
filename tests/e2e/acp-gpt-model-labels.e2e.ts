@@ -55,7 +55,7 @@ describe('ACP GPT model picker labels', () => {
         ...document.querySelectorAll<HTMLElement>('.model-picker-menu .model-picker-option-label'),
       ].map((element) => element.textContent?.trim() ?? ''),
     )
-    const names = labels.map((label) => label.replace(/\s+— intellect [\d.]+$/, ''))
+    const names = labels.map((label) => label.replace(/: intellect [\d.]+$/, ''))
     for (const expected of ['GPT-5.4 nano', 'GPT-5.1', 'GPT-5 mini', 'GPT-5.6 Sol']) {
       assert.ok(names.includes(expected), `expected ${expected}, saw ${JSON.stringify(labels)}`)
     }

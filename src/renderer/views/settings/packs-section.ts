@@ -69,7 +69,7 @@ export function createPacksSection(
   api: ApiClient,
   store: AppStore,
   getActiveSection: () => SettingsSection,
-  onNavigate: (section: SettingsSection) => void,
+  onNavigate: (section: SettingsSection) => Promise<AbortSignal | undefined>,
   onMcpChanged: () => void,
 ): PacksSection {
   function selectControl(form: HTMLFormElement, name: string): HTMLSelectElement {
@@ -279,9 +279,12 @@ export function createPacksSection(
   qsRequired<HTMLButtonElement>(overlay, '#animated-explainers-manage').addEventListener(
     'click',
     () => {
-      onNavigate('customise')
       pluginDetail = { pluginId: MCP_UI_CANVAS_PLUGIN_ID }
-      void revealPluginDetail()
+      // Navigation can rebuild plugin rows. Reveal only after the active
+      // section refresh settles, so the target cannot be consumed by an old row.
+      void onNavigate('customise').then(async (signal): Promise<void> => {
+        if (signal) await revealPluginDetail(pluginDetail, signal)
+      })
     },
   )
 

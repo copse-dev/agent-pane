@@ -46,7 +46,7 @@ describe('ACP stale model picker label', () => {
       ].map((element) => element.textContent?.trim() ?? ''),
     )
     assert.ok(
-      labels.includes('Cursor — composer-2.5[fast=true] (not currently advertised)'),
+      labels.includes('Cursor: composer-2.5[fast=true] (not currently advertised)'),
       `expected stale-model explanation, saw ${JSON.stringify(labels)}`,
     )
     assert.ok(!labels.some((label) => label.includes('not configured')))
