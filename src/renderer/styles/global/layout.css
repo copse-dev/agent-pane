@@ -164,7 +164,7 @@
   background: var(--bg-hover);
 }
 .projects-activity-btn.has-attention {
-  color: var(--warning);
+  color: var(--text-primary);
 }
 .projects-activity-count {
   font-size: var(--font-size-xs);
@@ -662,7 +662,7 @@
 .chat-attention-bell {
   flex-shrink: 0;
   margin-left: 4px;
-  color: var(--warning, #d29922);
+  color: var(--text-primary);
   animation: chat-attention-pulse 1.8s ease-in-out infinite;
 }
 .project-row .chat-attention-bell {
@@ -837,43 +837,54 @@
       var(--chat-gradient-bottom) 100%
     );
 }
-.pane-chat.composer-centered {
-  --chat-composer-width: min(720px, calc(100% - 2 * var(--spacing-lg)));
-}
 .conversation,
 .conversation-scroll,
 .messages-list {
   background: transparent;
 }
-.pane-chat.composer-centered .conversation {
-  padding-bottom: 0;
+.pane-chat.is-activity-home {
+  /* Narrower than the Activity card above it, as in the prototype; the caption
+     over the composer uses the same width so the two line up. */
+  --chat-composer-width: min(800px, calc(100cqw - 2 * clamp(22px, 5.4cqw, 76px)));
 }
-.pane-chat.composer-centered #input-bar {
+.pane-chat.is-activity-idle {
+  --chat-composer-width: min(720px, calc(100% - 2 * var(--spacing-lg)));
+}
+.pane-chat.is-activity-idle #input-bar {
   top: 50%;
   bottom: auto;
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
-  /* Clear the full docked `#input-bar` border — a leftover `border-top: none`
-     left left/right/bottom borders stacked under the hairline shadow ring. */
+  /* The docked card's real border would stack under the hairline ring. */
   border: none;
   border-radius: var(--radius-lg);
-  /* Floats over the chat gradient: keep the hairline ring, add real depth. */
   box-shadow:
     0 0 0 1px var(--border),
     var(--shadow-lg);
-  /* Centered on both axes rather than pinned to the bottom, so the even margin
-     this variant wants is --spacing-xl top and bottom, not the docked card's
-     --spacing-md (titlebar.css). Same reasoning as #2489 there: cap the whole
-     card so a long draft can't push past the pane's edges. */
+  /* Centred on both axes, so a long draft is capped to the pane. */
   max-height: calc(100% - 2 * var(--spacing-xl));
 }
-.pane-chat.composer-centered .prompt-input {
+.pane-chat.is-activity-idle .prompt-input {
   border-top: none;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
-.pane-chat.composer-centered .input-footer {
+.pane-chat.is-activity-idle .input-footer {
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.pane-chat.is-activity-home .conversation {
+  /* The empty thread has nothing to show; the Activity home (views/activity-home.ts)
+     takes the pane above the docked composer. */
+  display: none;
+}
+.pane-chat.is-activity-home .conversation:has(> .thread-roadmap-origin:not([hidden])) {
+  /* A drafted roadmap thread still needs its back-link above the Activity home. */
+  display: flex;
+  flex: 0 0 auto;
+  padding-bottom: 0;
+}
+.pane-chat.is-activity-home .conversation > :not(.thread-roadmap-origin) {
+  display: none;
 }
 .conversation {
   flex: 1 1 0;

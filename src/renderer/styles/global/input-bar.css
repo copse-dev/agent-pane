@@ -114,9 +114,9 @@
   border-top-left-radius: var(--radius-lg);
   border-top-right-radius: var(--radius-lg);
 }
-/* The docked composer keeps a real 1px border (the centered one draws its ring
-   with a shadow), so its first strip nests one pixel inside it. */
-.pane-chat:not(.composer-centered) #input-bar > .is-composer-top {
+/* The docked composer keeps a real 1px border, so its first strip nests one
+   pixel inside it. */
+.pane-chat:not(.is-activity-idle) #input-bar > .is-composer-top {
   border-top-left-radius: calc(var(--radius-lg) - 1px);
   border-top-right-radius: calc(var(--radius-lg) - 1px);
 }
@@ -579,14 +579,14 @@
 #app.is-portrait-chrome .portrait-panel-bar {
   display: flex;
 }
-#app.is-portrait-chrome .pane-chat:not(.composer-centered) #input-bar {
+#app.is-portrait-chrome .pane-chat:not(.is-activity-idle) #input-bar {
   bottom: calc(var(--chrome-action-band-height) + var(--spacing-md));
   /* The card's bottom offset grows to clear the portrait mode-switch strip, so
      its hard height cap (titlebar.css) has to shrink by the same amount or the
      card could still reach past the pane's top edge. */
   max-height: calc(100% - var(--chrome-action-band-height) - 2 * var(--spacing-md));
 }
-#app.is-portrait-chrome .pane-chat:not(.composer-centered) .conversation {
+#app.is-portrait-chrome .pane-chat .conversation {
   padding-bottom: calc(
     var(--chat-composer-height) + var(--chrome-action-band-height) + var(--spacing-md)
   );

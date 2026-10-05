@@ -60,6 +60,27 @@ describe('roadmap start-thread tracking and reopen', () => {
     const originChip = $('.thread-roadmap-origin')
     await originChip.waitForDisplayed({ timeout: 15_000 })
     await expect($('.thread-roadmap-origin-title')).toHaveText(PROMPT)
+    const originPlacement = await browser.execute(() => {
+      const pane = document.getElementById('pane-chat')
+      const origin = document.querySelector('.thread-roadmap-origin')
+      const input = document.getElementById('input-bar')
+      if (!pane || !origin || !input) return null
+      const chip = origin.getBoundingClientRect()
+      return {
+        activityHome: pane.classList.contains('is-activity-home'),
+        top: chip.top,
+        paneTop: pane.getBoundingClientRect().top,
+        bottom: chip.bottom,
+        composerTop: input.getBoundingClientRect().top,
+      }
+    })
+    assert.ok(originPlacement)
+    assert.equal(originPlacement.activityHome, true, 'the drafted thread keeps the Activity home')
+    assert.ok(originPlacement.top >= originPlacement.paneTop, 'the roadmap link fits in the pane')
+    assert.ok(
+      originPlacement.bottom <= originPlacement.composerTop,
+      'the composer does not cover the roadmap link',
+    )
     await browser.execute(() => {
       const viewer = document.querySelector<HTMLElement>('.memories-viewer-host')
       if (viewer) viewer.scrollTop = viewer.scrollHeight
