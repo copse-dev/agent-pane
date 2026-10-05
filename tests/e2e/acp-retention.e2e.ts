@@ -100,6 +100,14 @@ describe('device-agent route retention qualification', function () {
     )
     const model = $('.acp-agent-card .model-picker-trigger')
     await model.scrollIntoView({ block: 'center' })
-    await expect(model.$('.model-picker-retention')).toHaveText('ZDR not verified')
+    await expect(model.$('.model-picker-retention')).not.toExist()
+    await model.click()
+    const settingsRow = $('.acp-agent-card .model-picker-option[data-value="fixture-sonnet"]')
+    await settingsRow.waitForDisplayed()
+    await expect(settingsRow.$('.model-picker-retention')).toHaveAttribute(
+      'aria-label',
+      'ZDR not verified',
+    )
+    await expect(settingsRow.$('.model-picker-retention svg')).toExist()
   })
 })
