@@ -347,10 +347,18 @@ export async function waitForSettledLayout(
  * settings action bar over whatever is left. Re-centre in that case only; see
  * {@link recentreClippedCapture} for the measurements and for why an element
  * already inside the shell is deliberately left exactly where the spec put it.
+ * Scrolling pages opt into `frame: 'document'`; their spec positions the subject
+ * in the natural document viewport instead of clamping it to the app shell.
  */
-export async function saveElementScreenshot(selector: string, filename: string): Promise<void> {
+export async function saveElementScreenshot(
+  selector: string,
+  filename: string,
+  options: { frame?: 'app' | 'document' } = {},
+): Promise<void> {
   await withCaptureFrame(async () => {
-    await prepareE2eScreenshot()
+    // Scrolling web documents cannot reach subjects below an app-sized clip.
+    // Their owning spec frames the subject in the natural document viewport.
+    if (options.frame !== 'document') await prepareE2eScreenshot()
     const el = await browser.$(selector)
     await el.waitForDisplayed({ timeout: 15_000 })
     // Resolve inside the page: a transcript update can replace `el` between
