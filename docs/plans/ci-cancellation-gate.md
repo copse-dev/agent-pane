@@ -94,3 +94,28 @@ of that specific behavior. They verify the candidate's blocking outcome and live
 Fork/trunk naming, draft and screenshot/zero-shard policy are covered by local
 workflow/decision tests. Retarget-only events, base freshness, independent review,
 and behavior during a GitHub-wide hosted-runner outage remain outside this slice.
+
+## Metadata re-evaluation proposal — 5 October 2026
+
+Read-only investigation of #3532 and #3534 found exact-head successful
+`CI Passed` checks from Actions (15368), followed by later `CI` suites with
+only `CI metadata ignored`; their test-merge commits had no checks, yet GitHub
+reported `BLOCKED` and the signed-in #3534 panel reported `CI Passed` Expected.
+This is consistent with latest-workflow evaluation, but the internal evaluator
+is not exposed by the API and no live probe was authorized. The proposal is
+therefore a conservative removal of the no-work CI path, not a claimed live fix.
+
+Every dispatched CI run, including title/body edits and the feedback label,
+now executes precheck and its candidate-dependent jobs before the aggregate.
+The metadata predicate still isolates concurrency by run ID with cancellation
+disabled, and keeps autoformat off metadata events. A metadata run cannot replace
+queued source CI or cancel it, and cannot authorize skipped or failed candidate
+work. Base retargets and unknown edit keys retain ordinary source routing.
+Fork/trunk context separation and the hosted, permission-free, fail-closed
+cancellation gate stay intact. This spends additional CI runner work on metadata;
+avoiding it would need separately validated event routing outside this proposal.
+
+Local tests evaluate the actual YAML routing and execute the actual aggregate
+shell, including rejected skipped work and successful full/subset/skip controls.
+They cannot prove GitHub merge eligibility. A live authorized positive-control
+probe remains necessary before calling the Expected-check behavior repaired.
