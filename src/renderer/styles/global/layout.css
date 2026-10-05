@@ -877,6 +877,15 @@
      takes the pane above the docked composer. */
   display: none;
 }
+.pane-chat.is-activity-home .conversation:has(> .thread-roadmap-origin:not([hidden])) {
+  /* A drafted roadmap thread still needs its back-link above the Activity home. */
+  display: flex;
+  flex: 0 0 auto;
+  padding-bottom: 0;
+}
+.pane-chat.is-activity-home .conversation > :not(.thread-roadmap-origin) {
+  display: none;
+}
 .conversation {
   flex: 1 1 0;
   min-height: 0;
