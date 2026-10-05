@@ -109,6 +109,14 @@ export interface AllocateWorktreeInput {
   branchTitle?: string
 }
 
+/** The persisted checkout directory no longer exists on disk. */
+export class MissingThreadWorktreeError extends Error {
+  constructor() {
+    super('Thread worktree is missing')
+    this.name = 'MissingThreadWorktreeError'
+  }
+}
+
 export interface ValidateWorktreeInput {
   projectId: string
   threadId: string
@@ -1325,7 +1333,7 @@ async function validateThreadWorktreeState(
     throw new Error('Thread worktree base commit does not resolve exactly')
   }
   const canonicalPath = canonicalPathCheck.status === 'fulfilled' ? canonicalPathCheck.value : null
-  if (!canonicalPath) throw new Error('Thread worktree is missing')
+  if (!canonicalPath) throw new MissingThreadWorktreeError()
   const [recordsCheck, liveBranchCheck, executionRootCheck] = await Promise.allSettled([
     listRecords(projectRoot),
     symbolicHeadBranch(canonicalPath),
@@ -1810,15 +1818,30 @@ export function changedPaths(raw: string): string[] {
   return [...new Set(out)]
 }
 
+export interface RetireThreadWorktreeOptions {
+  /**
+   * Treat git-ignored files (build output, `node_modules`) as disposable. Only
+   * callers whose checkout is regenerable by construction may set this, such as
+   * a fresh-per-run automation; user threads keep the strict default.
+   */
+  ignoreIgnoredFiles?: boolean
+}
+
 /** Remove only a clean worktree whose branch is already contained by its recorded base. */
 export async function retireThreadWorktree(
   input: ValidateWorktreeInput,
+  options: RetireThreadWorktreeOptions = {},
 ): Promise<RetireWorktreeResult> {
   const validated = await validateThreadWorktree(input)
   // `git worktree remove` deletes ignored files without `--force`. Include
   // ignored entries so build output or other local-only content is never
   // silently discarded merely because ordinary `git status` calls it clean.
-  const status = await git(validated.path, ['status', '--porcelain=v1', '-z', '--ignored=matching'])
+  const status = await git(validated.path, [
+    'status',
+    '--porcelain=v1',
+    '-z',
+    ...(options.ignoreIgnoredFiles ? [] : ['--ignored=matching']),
+  ])
   if (status.code !== 0) throw commandFailure('Cannot inspect thread worktree', status)
   if (status.stdout) return { status: 'blocked-dirty', paths: changedPaths(status.stdout) }
 

@@ -4,17 +4,21 @@ import type {
   AutomationPermission,
   AutomationProblem,
   AutomationPermissionOption,
+  AutomationRetainedWorktree,
   AutomationSchedule,
   AutomationScheduleInput,
   AutomationTriggerEvent,
   Thread,
 } from '@shared/types'
-import { automationPermissionKey } from '@shared/types'
+import { AUTOMATION_RETAINED_REASONS, automationPermissionKey } from '@shared/types'
 import { automationRunBlock } from '@shared/automation-run-state.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { createThread, loadProjectThreads } from '../thread-store.ts'
-import { releaseCompletedAutomationWorktree } from '../worktree-parking.ts'
+import {
+  releaseCompletedAutomationWorktree,
+  type AutomationWorktreeRelease,
+} from '../worktree-parking.ts'
 import { listMcpPermissionCandidates } from '../mcp/mcp-registry.ts'
 import { parseMcpToolName } from '../mcp/mcp-config.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -142,12 +146,24 @@ function isAutomationProblem(value: unknown): boolean {
   )
 }
 
+function isRetainedWorktree(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value['threadId'] === 'string' &&
+    typeof value['title'] === 'string' &&
+    AUTOMATION_RETAINED_REASONS.some((reason) => reason === value['reason']) &&
+    (value['paths'] === undefined ||
+      (Array.isArray(value['paths']) && value['paths'].every((path) => typeof path === 'string')))
+  )
+}
+
 function isSchedule(value: unknown): value is AutomationSchedule {
   if (!isRecord(value)) return false
   const maxLiveWorktrees = value['maxLiveWorktrees']
   const lastWorktreeLimitAt = value['lastWorktreeLimitAt']
   const permissions = value['permissions']
   const lastProblem = value['lastProblem']
+  const blockedBy = value['lastWorktreeLimitBlockedBy']
   return (
     typeof value['id'] === 'string' &&
     typeof value['projectId'] === 'string' &&
@@ -162,6 +178,8 @@ function isSchedule(value: unknown): value is AutomationSchedule {
       maxLiveWorktrees === 3) &&
     (lastWorktreeLimitAt === undefined ||
       (typeof lastWorktreeLimitAt === 'number' && Number.isFinite(lastWorktreeLimitAt))) &&
+    (blockedBy === undefined ||
+      (Array.isArray(blockedBy) && blockedBy.every(isRetainedWorktree))) &&
     (permissions === undefined ||
       (Array.isArray(permissions) && permissions.every(isAutomationPermission))) &&
     (lastProblem === undefined || isAutomationProblem(lastProblem)) &&
@@ -247,7 +265,7 @@ export interface AutomationServiceDependencies {
   now(): number
   createProjectThread(projectId: string, thread: Thread): Promise<void>
   loadProjectThreads(projectId: string): Promise<Thread[]>
-  releasePreviousRun(projectId: string, threadId: string): Promise<boolean>
+  releasePreviousRun(projectId: string, threadId: string): Promise<AutomationWorktreeRelease>
   isPluginEnabled(): boolean
   supervisor?: () => AutomationTaskSupervisor
   /** Pause before replacing a scheduler task that died, so a task that dies instantly cannot spin. */
@@ -300,13 +318,14 @@ export function createAutomationService(
     scheduleId: string,
     triggeredAt: number,
     attemptedLimit: number,
+    blockedBy: AutomationRetainedWorktree[],
   ): Promise<void> {
     await updateSchedules((schedules) => {
       return schedules.map((schedule) =>
         schedule.projectId === projectId &&
         schedule.id === scheduleId &&
         (schedule.maxLiveWorktrees ?? 1) === attemptedLimit
-          ? { ...schedule, lastWorktreeLimitAt: triggeredAt }
+          ? { ...schedule, lastWorktreeLimitAt: triggeredAt, lastWorktreeLimitBlockedBy: blockedBy }
           : schedule,
       )
     })
@@ -328,6 +347,7 @@ export function createAutomationService(
           lastCreatedThreadId: threadId,
         }
         delete updated.lastWorktreeLimitAt
+        delete updated.lastWorktreeLimitBlockedBy
         delete updated.lastProblem
         return updated
       })
@@ -423,6 +443,7 @@ export function createAutomationService(
   async function trigger(
     schedule: AutomationSchedule,
     triggeredAt: number,
+    source: 'schedule' | 'manual',
   ): Promise<AutomationTriggerEvent> {
     if (inFlight.has(schedule.id)) throw new Error('This automation is already creating a task')
     inFlight.add(schedule.id)
@@ -455,16 +476,31 @@ export function createAutomationService(
         }
       }
 
-      let retainedWorktrees = 0
+      // Recycle whatever can be recycled first, for both kinds of start.
+      const retained: AutomationRetainedWorktree[] = []
       for (const thread of scheduleThreads) {
         if (!thread.worktree || thread.worktree.retiredAt !== undefined) continue
-        if (!(await dependencies.releasePreviousRun(schedule.projectId, thread.id))) {
-          retainedWorktrees += 1
+        const release = await dependencies.releasePreviousRun(schedule.projectId, thread.id)
+        if (!release.released) {
+          retained.push({
+            threadId: thread.id,
+            title: thread.title,
+            reason: release.reason,
+            ...(release.paths?.length ? { paths: release.paths } : {}),
+          })
         }
       }
+      // The cap stops an unattended schedule leaking checkouts. A person asking
+      // for a run right now is not that, so a manual start is never refused for it.
       const maxLiveWorktrees = schedule.maxLiveWorktrees ?? 1
-      if (retainedWorktrees >= maxLiveWorktrees) {
-        await recordWorktreeLimit(schedule.projectId, schedule.id, triggeredAt, maxLiveWorktrees)
+      if (source === 'schedule' && retained.length >= maxLiveWorktrees) {
+        await recordWorktreeLimit(
+          schedule.projectId,
+          schedule.id,
+          triggeredAt,
+          maxLiveWorktrees,
+          retained,
+        )
         const event: AutomationTriggerEvent = {
           projectId: schedule.projectId,
           scheduleId: schedule.id,
@@ -472,6 +508,7 @@ export function createAutomationService(
           triggeredAt,
           disposition: 'coalesced',
           coalescedReason: 'worktree-limit',
+          blockedBy: retained,
         }
         notify?.(event)
         return event
@@ -602,7 +639,12 @@ export function createAutomationService(
           : {}),
         ...(existing?.lastWorktreeLimitAt !== undefined &&
         maxLiveWorktrees === (existing.maxLiveWorktrees ?? 1)
-          ? { lastWorktreeLimitAt: existing.lastWorktreeLimitAt }
+          ? {
+              lastWorktreeLimitAt: existing.lastWorktreeLimitAt,
+              ...(existing.lastWorktreeLimitBlockedBy
+                ? { lastWorktreeLimitBlockedBy: existing.lastWorktreeLimitBlockedBy }
+                : {}),
+            }
           : {}),
         ...(existing?.lastProblem !== undefined ? { lastProblem: existing.lastProblem } : {}),
       }
@@ -628,7 +670,7 @@ export function createAutomationService(
       if (!dependencies.isPluginEnabled()) throw new Error('Enable the automations plugin first')
       const schedule = service.list(projectId).find((candidate) => candidate.id === scheduleId)
       if (!schedule) throw new Error('Automation schedule not found in this project')
-      return trigger(schedule, dependencies.now())
+      return trigger(schedule, dependencies.now(), 'manual')
     },
     start(sender) {
       notify = sender
@@ -702,7 +744,7 @@ export function createAutomationService(
       await Promise.all(
         due.map(async (schedule) => {
           try {
-            await trigger(schedule, now)
+            await trigger(schedule, now, 'schedule')
           } catch (error) {
             // Isolate failures so one project cannot prevent other matching
             // schedules from running. Do not retry repeatedly in the same minute.

@@ -37,6 +37,14 @@ describe('automation worktree limit in the project modal', function () {
                 updatedAt: 1_786_000_000_000,
                 lastRunAt: 1_786_000_000_000,
                 lastWorktreeLimitAt: 1_790_000_000_000,
+                lastWorktreeLimitBlockedBy: [
+                  {
+                    threadId: 'e2e-held-run',
+                    title: 'Thread proposal from backlog',
+                    reason: 'uncommitted-changes',
+                    paths: ['notes.md', 'src/app.ts'],
+                  },
+                ],
               },
             ],
           },
@@ -64,7 +72,10 @@ describe('automation worktree limit in the project modal', function () {
     )
     const row = dialog.$(`.automation-row[data-schedule-id="${SCHEDULE_ID}"]`)
     await expect(row).toHaveElementClass('automation-row-blocked')
-    assert.match(await row.$('.automation-row-blocked-message').getText(), /Last attempt skipped/)
+    assert.match(
+      await row.$('.automation-row-blocked-message').getText(),
+      /Last attempt skipped.*Held by “Thread proposal from backlog” has uncommitted changes \(notes\.md, src\/app\.ts\)\./,
+    )
     await saveAppScreenshot('automation-worktree-limit-blocked.png')
 
     await row.$('.automation-row-btn=Edit').click()
