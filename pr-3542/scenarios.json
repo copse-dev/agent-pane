@@ -92,6 +92,10 @@
     "label": "Settings scroll + sticky footer geometry"
   },
   {
+    "id": "mcp-sign-in",
+    "label": "MCP servers that sign in with OAuth"
+  },
+  {
     "id": "automation-permissions",
     "label": "Automation permission preferences"
   },
@@ -114,6 +118,10 @@
   {
     "id": "sidebar-automation-fold",
     "label": "Sidebar automation fold"
+  },
+  {
+    "id": "sidebar-empty-project",
+    "label": "Empty unopened project in the sidebar"
   },
   {
     "id": "sidebar-thread-sort",
