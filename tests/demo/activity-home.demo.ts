@@ -115,6 +115,20 @@ describe('browser-hosted Activity home', () => {
   })
 
   it('keeps the selected approval and its heading visible when the list stacks', async () => {
+    // setWindowSize measures the outer window; the reported bug used a renderer
+    // viewport of1280x800, so account for Chromium's toolbar before reproducing.
+    const frame = await browser.execute(() => ({
+      width: window.outerWidth - window.innerWidth,
+      height: window.outerHeight - window.innerHeight,
+    }))
+    await browser.setWindowSize(1280 + frame.width, 800 + frame.height)
+    await browser.url('about:blank')
+    await browser.url('/?scenario=activity-home')
+    await $(
+      '#activity-home .activity-row[data-state="needs-approval"][data-selected="true"]',
+    ).waitForExist({ timeout: 10_000 })
+    await $('#activity-home .activity-approve').waitForEnabled({ timeout: 5_000 })
+    expect(await browser.execute(() => [innerWidth, innerHeight])).toEqual([1280, 800])
     const before = await browser.execute(
       () => document.querySelector('#activity-home .activity-list')?.scrollTop ?? -1,
     )
@@ -154,6 +168,7 @@ describe('browser-hosted Activity home', () => {
       await saveAppScreenshot('activity-home-stacked-selection.png')
     } finally {
       await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
+      await browser.setWindowSize(1280, 800)
     }
   })
 
@@ -273,6 +288,16 @@ describe('browser-hosted Activity home', () => {
     expect(listVisible).toBe(true)
     await saveAppScreenshot('activity-home-narrow.png')
     await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
+  })
+
+  it('caps the card height so a tall window does not stretch it', async () => {
+    const maxHeight = await browser.execute(
+      () =>
+        getComputedStyle(
+          document.querySelector('#activity-home .activity-panel-body') ?? document.body,
+        ).maxHeight,
+    )
+    expect(maxHeight).toBe('920px')
   })
 
   it('shrinks the project tiles and keeps Approve above the composer in a short window', async () => {

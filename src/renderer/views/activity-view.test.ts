@@ -394,6 +394,12 @@ describe('activity view answering a question in place', () => {
       ['Postgres', 'SQLite'],
     )
     assert.equal(body.querySelectorAll('.activity-answer-input').length, 2)
+    assert.equal(
+      body.querySelector('.activity-answer-input')?.getAttribute('placeholder'),
+      'Or type an answer…',
+    )
+    // The decision sits in one group, so a wrapping action bar never parts it.
+    assert.equal(sendButton(harness).closest('.activity-decide')?.children.length, 1)
     assert.equal(sendButton(harness).textContent, 'Send answer')
     assert.equal(sendButton(harness).disabled, true)
   })
@@ -563,5 +569,114 @@ describe('activity view answering a question in place', () => {
     harness.flush()
 
     assert.equal(harness.view.body.querySelectorAll('.activity-answer-input').length, 0)
+  })
+})
+
+describe('activity view folding an automation schedule', () => {
+  const run = (id: string, patch: Partial<Thread> = {}): Thread =>
+    thread(id, {
+      unreadAt: 500,
+      automation: { scheduleId: 'docs', scheduleName: 'Docs freshness', triggeredAt: 1 },
+      ...patch,
+    })
+  const keys = (view: ActivityView): Array<string | undefined> =>
+    Array.from(view.body.querySelectorAll<HTMLElement>('.activity-row')).map(
+      (row) => row.dataset['rowKey'],
+    )
+
+  it("draws a schedule's settled runs as one row that opens out into them", () => {
+    const { view, state } = setup([thread('chat'), run('a'), run('b'), run('c')])
+    state.shown = true
+    view.show()
+    assert.equal(rowCount(view), 1)
+    const toggle = view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')
+    assert.ok(toggle)
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false')
+    assert.match(view.body.querySelector('.activity-fold')?.textContent ?? '', /Docs freshness/)
+    assert.match(toggle.textContent, /Done.*3 runs/)
+
+    toggle.click()
+    assert.equal(rowCount(view), 4)
+    assert.equal(
+      view.body.querySelector('.activity-fold-toggle')?.getAttribute('aria-expanded'),
+      'true',
+    )
+    assert.equal(view.body.querySelectorAll('.activity-fold-run').length, 3)
+
+    view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')?.click()
+    assert.equal(rowCount(view), 1)
+  })
+
+  it('keeps keyboard focus on the fold toggle when it opens and closes', () => {
+    const { view, state } = setup([thread('chat'), run('a'), run('b')])
+    document.body.replaceChildren(view.body)
+    try {
+      state.shown = true
+      view.show()
+      const toggle = view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')
+      assert.ok(toggle)
+      toggle.focus()
+      assert.ok(document.activeElement === toggle)
+      toggle.click()
+      const opened = view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')
+      assert.ok(opened)
+      assert.equal(opened.getAttribute('aria-expanded'), 'true')
+      assert.ok(document.activeElement === opened, 'opening retains keyboard focus')
+      opened.click()
+      const closed = view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')
+      assert.ok(closed)
+      assert.equal(closed.getAttribute('aria-expanded'), 'false')
+      assert.ok(document.activeElement === closed, 'closing retains keyboard focus')
+    } finally {
+      view.hide()
+      document.body.replaceChildren()
+    }
+  })
+
+  it('leaves another Activity host’s fold focused when this host redraws', () => {
+    const first = setup([thread('chat'), run('a'), run('b')])
+    const second = setup([thread('chat'), run('a'), run('b')])
+    document.body.replaceChildren(first.view.body, second.view.body)
+    try {
+      first.state.shown = true
+      second.state.shown = true
+      first.view.show({ focusFirstRow: false })
+      second.view.show({ focusFirstRow: false })
+      const toggle = second.view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')
+      assert.ok(toggle)
+      toggle.focus()
+      assert.ok(document.activeElement === toggle)
+      first.store.emit('threads_changed')
+      first.flush()
+      assert.ok(document.activeElement === toggle, 'redraw preserves focus in the other host')
+    } finally {
+      first.view.hide()
+      second.view.hide()
+      document.body.replaceChildren()
+    }
+  })
+
+  it('keeps the fold out of the arrow-key rows and never selects it', () => {
+    const { view, state } = setup([thread('chat'), run('a'), run('b')])
+    state.shown = true
+    view.show()
+    assert.equal(
+      view.body.querySelector('.activity-fold-toggle')?.getAttribute('aria-current'),
+      null,
+    )
+    assert.equal(keys(view).length, 1)
+    // Nothing is selectable, so the detail pane stays out of the way.
+    assert.equal(view.body.querySelector('.activity-detail')?.hasAttribute('hidden'), true)
+  })
+
+  it('forgets which folds were open on hide()', () => {
+    const { view, state } = setup([thread('chat'), run('a'), run('b')])
+    state.shown = true
+    view.show()
+    view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')?.click()
+    assert.equal(rowCount(view), 3)
+    view.hide()
+    view.show()
+    assert.equal(rowCount(view), 1)
   })
 })

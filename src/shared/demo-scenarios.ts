@@ -2095,6 +2095,74 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'activity-home-automation-fold',
+    label: 'Activity home with automation runs folded',
+    project: project('demo-activity-fold-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first thread is the empty active one. Beside a working thread and one
+    // finished chat, a schedule has settled five clean runs and another three failed
+    // ones: each folds into a single row instead of eight.
+    threads: [
+      {
+        id: 'demo-activity-fold-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-fold-audit',
+        title: 'Dependency audit',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+      {
+        id: 'demo-activity-fold-copy',
+        title: 'Update onboarding copy',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        unreadAt: FIXED_TIME - 60_000,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 2,
+        updatedAt: FIXED_TIME - 2,
+      },
+      ...(
+        [
+          ['docs', 'Docs freshness', 'idle', 5],
+          ['deps', 'Nightly dependency check', 'error', 3],
+        ] as const
+      ).flatMap(([schedule, name, status, count]) =>
+        Array.from({ length: count }, (_, index) => ({
+          id: `demo-activity-fold-${schedule}-${String(index)}`,
+          title: name,
+          status,
+          messages: [],
+          messagesLoaded: false,
+          unreadAt: FIXED_TIME - (index + 2) * 3_600_000,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          automation: {
+            scheduleId: `demo-activity-fold-${schedule}`,
+            scheduleName: name,
+            triggeredAt: FIXED_TIME - (index + 2) * 3_600_000,
+          },
+          createdAt: FIXED_TIME - 10 - index,
+          updatedAt: FIXED_TIME - 10 - index,
+        })),
+      ),
+    ],
+  },
+  {
     id: 'activity-home-question',
     label: 'Activity home with a question waiting',
     project: project('demo-activity-home-question-project'),
