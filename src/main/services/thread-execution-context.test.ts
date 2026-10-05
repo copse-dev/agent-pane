@@ -541,7 +541,7 @@ describe('inspectThreadCheckoutRoot', () => {
   })
   const inspect = (
     meta: Awaited<ReturnType<ThreadExecutionContextDependencies['getThreadMeta']>>,
-  ) =>
+  ): Promise<string | null> =>
     inspectThreadCheckoutRoot('project-1', 'thread-1', {
       getProjectRoot: () => '/project',
       getThreadMeta: async () => meta,
