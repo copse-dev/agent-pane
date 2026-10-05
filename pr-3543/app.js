@@ -58924,6 +58924,12 @@ function sidebarLastPromptAt(thread) {
   }
   return void 0;
 }
+function sidebarHasRun(thread) {
+  if (thread.everRan !== void 0) return thread.everRan;
+  if (thread.lastPromptAt !== void 0) return true;
+  if (thread.workingBrief !== void 0 || thread.autoTitleCount !== void 0) return true;
+  return (thread.usage?.inputTokens ?? 0) + (thread.usage?.outputTokens ?? 0) > 0;
+}
 function compactSidebarThread(thread) {
   const lastPromptAt = sidebarLastPromptAt(thread);
   return {
@@ -58933,6 +58939,7 @@ function compactSidebarThread(thread) {
     ...thread.updatedAt !== void 0 ? { updatedAt: thread.updatedAt } : {},
     ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
     status: thread.status,
+    everRan: sidebarHasRun(thread),
     ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
     ...thread.automation ? { automation: thread.automation } : {},
@@ -67684,6 +67691,8 @@ var init_demo_scenarios = __esm({
             ["refactor", "Refactor auth", "idle", 36e5 * 2],
             ["flaky", "Fix the flaky sandbox test", "error", 36e5 * 30],
             ["copy", "Update onboarding copy", "idle", 36e5 * 24 * 4],
+            // Legacy-shaped: written before lastPromptAt existed, so it only has usage.
+            ["legacy", "Port the settings page", "idle", 36e5 * 24 * 2],
             ["ancient", "Rename the config keys", "idle", 36e5 * 24 * 30]
           ].map(([slug2, title, status, ago], index) => ({
             id: `demo-activity-history-${slug2}`,
@@ -67691,10 +67700,10 @@ var init_demo_scenarios = __esm({
             status,
             messages: [],
             messagesLoaded: false,
-            usage: { inputTokens: 0, outputTokens: 0 },
+            usage: { inputTokens: 1200, outputTokens: 300 },
             createdAt: Date.now() - ago - 6e4,
             updatedAt: Date.now() - ago,
-            lastPromptAt: Date.now() - ago - 3e4 - index
+            ...slug2 === "legacy" ? {} : { lastPromptAt: Date.now() - ago - 3e4 - index }
           }))
         ]
       },
@@ -72158,7 +72167,7 @@ function foldScheduleRuns(recent, scheduleOf) {
   return { folds, rest: recent.filter((row2) => !folded.has(row2)) };
 }
 function settledAtOf(thread) {
-  return thread.updatedAt !== void 0 && thread.lastPromptAt !== void 0 ? { settledAt: thread.updatedAt } : {};
+  return thread.updatedAt !== void 0 && sidebarHasRun(thread) ? { settledAt: thread.updatedAt } : {};
 }
 function collectActivityThreads(store2) {
   const { projects, backgroundThreads } = store2.getState();
@@ -72250,6 +72259,7 @@ var RECENT_ROW_LIMIT, RECENT_WINDOW_MS, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITL
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
     init_projects();
+    init_sidebar_thread();
     RECENT_ROW_LIMIT = 10;
     RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1e3;
     SCHEDULE_FOLD_AT = 2;
