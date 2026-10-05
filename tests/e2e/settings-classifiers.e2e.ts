@@ -12,7 +12,7 @@ import { createServer, type Server } from 'node:http'
 import type { listClassifierProfiles } from '../../src/main/services/classifiers/classifier-service.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 
@@ -66,7 +66,7 @@ describe('classifier connections settings', () => {
     assert.ok(address && typeof address !== 'string')
     baseUrl = `http://127.0.0.1:${String(address.port)}/v1`
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-classifier-settings')
+    seedEmptyProject(seedStableWorkspace(), 'e2e-classifier-settings')
     await browser.reloadSession()
   })
 
