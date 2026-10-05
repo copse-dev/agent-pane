@@ -40,7 +40,9 @@ export interface PromptAttachmentHandlers {
    * editable text, not an attachment chip. Backs "Quote in reply" from the
    * transcript's selection context menu.
    */
-  quoteText(content: string): void
+  quoteText(content: string, reply?: string): void
+  /** Add the quote and reply to the current prompt and hand it to normal Send; false means no handoff. */
+  sendQuotedReply?: (content: string, reply: string) => Promise<boolean>
   /** Move keyboard focus to the chat composer after a selection attachment. */
   focusComposer?: () => void
 }

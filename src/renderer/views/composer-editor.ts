@@ -102,7 +102,7 @@ function visibleText(node: Node): string {
       elNode.classList.contains('inline-thread-chip')
     )
       return CHIP_CHAR
-    if (elNode.tagName === 'BR') return '\n'
+    if (elNode.tagName === 'BR') return elNode.hasAttribute('data-composer-tail') ? '' : '\n'
   }
   let out = ''
   for (const child of Array.from(node.childNodes)) out += visibleText(child)
@@ -232,6 +232,7 @@ export function mountComposerEditor(): ComposerEditor {
   }
 
   function insertChip(chip: HTMLElement): void {
+    root.querySelector('br[data-composer-tail]')?.remove()
     const selection = editor.isFocused() ? selectionInRoot() : null
     if (selection) {
       const range = selection.getRangeAt(0)
@@ -435,6 +436,7 @@ export function mountComposerEditor(): ComposerEditor {
     },
 
     insertText(text: string): void {
+      root.querySelector('br[data-composer-tail]')?.remove()
       const node = document.createTextNode(text)
       const sel = editor.isFocused() ? selectionInRoot() : null
       if (sel) {
@@ -447,6 +449,14 @@ export function mountComposerEditor(): ComposerEditor {
         sel.addRange(range)
       } else {
         root.append(node)
+      }
+      if (visibleText(root).endsWith('\n')) {
+        // Chromium otherwise treats the final newline as its editable tail and
+        // consumes it on the next keystroke. This BR only supplies the caret's
+        // empty line; it is not part of the draft's serialized text.
+        const tail = document.createElement('br')
+        tail.setAttribute('data-composer-tail', '')
+        root.append(tail)
       }
       emitInput()
     },
