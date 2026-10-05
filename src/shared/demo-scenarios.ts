@@ -95,6 +95,13 @@ export interface DemoScenario {
     type: string
     allowRemember?: boolean
   }[]
+  /** Seed `ask_user` questions so a browser spec can answer them from the Activity view. */
+  askUserRequests?: readonly {
+    id: string
+    /** The thread the question belongs to, as on a real ask-user event. */
+    threadId?: string
+    questions: readonly { question: string; options?: readonly string[] }[]
+  }[]
   /** Browser-hosted state for the first-party Apple Development panel. */
   appleDevelopmentState?: AppleProjectState
   /** Seed auto-update prompts so a browser spec can inspect the real dialog. */

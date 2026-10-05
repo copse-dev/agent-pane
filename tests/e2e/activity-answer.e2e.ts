@@ -66,6 +66,7 @@ describe('answering a background question from Activity', function () {
           user: PROMPT,
           responses: [
             {
+              waitFor: 'before-background-question',
               toolCalls: [
                 {
                   name: 'ask_user',
@@ -87,9 +88,15 @@ describe('answering a background question from Activity', function () {
     })
     await setComposerValue(PROMPT)
     await submitComposer()
-    await $('#ask-user-dialog').waitForDisplayed({ timeout: 30_000 })
+    await scenario.waitForHold('before-background-question')
     await $(`.chat-row[data-thread-id="${FOREGROUND_THREAD}"]`).click()
-    await $('#ask-user-dialog').waitForDisplayed({ reverse: true, timeout: 10_000 })
+    await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', FOREGROUND_THREAD)
+    await scenario.release('before-background-question')
+    await expect($('.projects-activity-btn')).toHaveAttribute(
+      'aria-label',
+      'Activity: 1 thread needs you',
+    )
+    await expect($('#ask-user-dialog')).not.toBeDisplayed()
     await $('.projects-activity-btn').click()
     await $('#activity-panel').waitForDisplayed({ timeout: 10_000 })
     const detail = $('#activity-panel .activity-detail')
