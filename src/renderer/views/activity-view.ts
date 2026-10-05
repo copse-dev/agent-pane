@@ -3,7 +3,9 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
 import { patchChildren } from '../dom/patch-children.ts'
 import {
+  arrowUpRightIcon,
   checkIcon,
+  chevronDownIcon,
   messageQuestionIcon,
   runningStatusIcon,
   shieldIcon,
@@ -17,6 +19,7 @@ import {
   formatAgeLong,
   trackRunTimings,
   type ActivityGroup,
+  type ActivityGroupId,
   type ActivityRow,
   type ActivityRowState,
 } from '../controller/activity-model.ts'
@@ -114,6 +117,8 @@ const defaultTimer: ApprovalTimer = (fn, ms) => {
 
 /** What the view needs from wherever it is placed. */
 export interface ActivityViewHost {
+  /** Prefix for the element ids the view sets, so two hosts can mount it on one page. */
+  idPrefix: string
   /** Leave the view (an overlay closes; a host with nothing to dismiss does nothing). */
   close: () => void
   /** Whether the view is on screen: updates and the age tick pause while it is not. */
@@ -122,16 +127,35 @@ export interface ActivityViewHost {
   fallbackFocus: () => void
   /** Called after each draw with the number of rows that need the user. */
   onNeedsYou?: (count: number) => void
+  /**
+   * Called after each draw with whether no thread anywhere has anything to list
+   * (before any project filter). The screen uses it to step aside for the composer.
+   */
+  onIdle?: (idle: boolean) => void
+  /** Group headers fold their rows (Working starts folded); the overlay keeps them static. */
+  collapsibleGroups?: boolean
+  /** Keep a per-project strip current and let it filter the list; the overlay has none. */
+  projectStrip?: boolean
+  /**
+   * Until the user picks a row, selection follows the most urgent one, so a screen
+   * left open shows what needs them when it arrives. The overlay is opened to look
+   * once, so it keeps the row it opened on.
+   */
+  followUrgent?: boolean
+  /** Draw an up-right arrow after "Open thread" (the screen does; the overlay does not). */
+  openThreadArrow?: boolean
 }
 
 export interface ActivityView {
   /** The summary line, list and detail pane; the host places them. */
   summary: HTMLElement
   body: HTMLElement
+  /** The project tiles above the list; kept current only when the host asks for the strip. */
+  strip: HTMLElement
   /** A polite live region for the result of an in-place answer. */
   status: HTMLElement
   /** Start a fresh look: most urgent row selected, drawn, focused, ages ticking. */
-  show: () => void
+  show: (options?: { focusFirstRow?: boolean }) => void
   /** Stop drawing and forget the selection. */
   hide: () => void
 }
@@ -147,11 +171,11 @@ export function createActivityView(
   const setTimer = deps.setTimer ?? defaultTimer
   const timings = trackRunTimings(store, now)
 
-  const summary = el('p', { id: 'activity-panel-summary', class: 'activity-panel-summary' })
+  const summary = el('p', { id: `${host.idPrefix}-summary`, class: 'activity-panel-summary' })
   const list = el('nav', { class: 'activity-list', 'aria-label': 'Threads' })
   const detail = el('section', {
     class: 'activity-detail',
-    'aria-labelledby': 'activity-detail-title',
+    'aria-labelledby': `${host.idPrefix}-detail-title`,
   })
   const body = el('div', { class: 'activity-panel-body' }, list, detail)
   const status = el('p', {
@@ -169,6 +193,22 @@ export function createActivityView(
     { section: HTMLElement; count: HTMLElement; rows: HTMLElement }
   >()
   const quiet = el('p', { class: 'activity-quiet' }, 'Nothing needs you right now.')
+  const strip = el('div', {
+    class: 'activity-strip',
+    role: 'group',
+    'aria-label': 'Projects',
+  })
+  const stripCache = new Map<string | null, { signature: string; node: HTMLElement }>()
+  // Session-only: folded groups and the project filter reset with the selection.
+  const defaultCollapsed = (): Set<ActivityGroupId> =>
+    new Set<ActivityGroupId>(host.collapsibleGroups ? ['working'] : [])
+  let collapsed = defaultCollapsed()
+  // Needs-you keys already shown: a new one unfolds the group, an old one does not
+  // re-open what the user folded.
+  const seenNeedsYou = new Set<string>()
+  let projectFilter: string | null = null
+  // The user has chosen a row (click or arrow key) since the view was shown.
+  let userChose = false
   let renderScheduled = false
   let cancelRender: (() => void) | null = null
   let lastRenderAt = Number.NEGATIVE_INFINITY
@@ -264,6 +304,10 @@ export function createActivityView(
     const node = button('ui-btn-ghost activity-open-thread', 'open-thread', 'Open thread', () => {
       openThread(row)
     })
+    // An icon child also opts the button out of the kit's cap-trim, so only the
+    // host that wants the arrow pays for it.
+    if (host.openThreadArrow)
+      node.append(arrowUpRightIcon('ui-icon ui-icon-sm activity-open-arrow'))
     node.disabled = !canOpen(row)
     return node
   }
@@ -272,7 +316,7 @@ export function createActivityView(
    * What the selected row is about, in full. For an approval that is the
    * request exactly as the approval prompt shows it — full title, advice, the
    * whole body and the footer, rendered by the prompt's own
-   * `approvalRequestDetails` — and this pane is the only place Approve once
+   * `approvalRequestDetails` — and this pane is the only place the Approve action
    * exists, so a request is never approved from a view that shows less.
    */
   function detailContent(row: ActivityRow): HTMLElement[] {
@@ -334,11 +378,11 @@ export function createActivityView(
       const approve = button(
         'ui-btn-primary activity-approve',
         'approve',
-        'Approve once',
+        'Approve',
         () => {
           answerApproval(row, true)
         },
-        `Approve once: ${title} (${row.threadTitle})`,
+        `Approve: ${title} (${row.threadTitle})`,
       )
       approve.disabled = settling
       actions.push(approve)
@@ -374,7 +418,11 @@ export function createActivityView(
           el('span', { class: 'activity-detail-state' }, STATE_LONG[row.state]),
           meta,
         ),
-        el('h3', { id: 'activity-detail-title', class: 'activity-detail-title' }, row.threadTitle),
+        el(
+          'h3',
+          { id: `${host.idPrefix}-detail-title`, class: 'activity-detail-title' },
+          row.threadTitle,
+        ),
       ),
       el('div', { class: 'activity-detail-body' }, ...detailContent(row)),
       detailActions(row),
@@ -470,24 +518,52 @@ export function createActivityView(
     return node
   }
 
+  function toggleGroup(id: ActivityGroupId): void {
+    if (collapsed.has(id)) collapsed.delete(id)
+    else collapsed.add(id)
+    renderNow()
+  }
+
   function groupElement(group: ActivityGroup, at: number): HTMLElement {
     const hidden = group.total - group.rows.length
     const count =
       hidden > 0 ? `${String(group.rows.length)} of ${String(group.total)}` : String(group.total)
+    const folded = host.collapsibleGroups === true && collapsed.has(group.id)
     let entry = groupCache.get(group.id)
     if (!entry) {
-      const titleId = `activity-group-${group.id}`
+      const titleId = `${host.idPrefix}-group-${group.id}`
       const countNode = el('span', { class: 'activity-group-count' }, count)
       const rowsNode = el('ul', {
         class: 'activity-rows',
         role: 'list',
         'aria-labelledby': titleId,
       })
+      let heading: HTMLElement
+      if (host.collapsibleGroups) {
+        const toggle = el(
+          'button',
+          {
+            type: 'button',
+            class: 'activity-group-toggle',
+            'data-group-toggle': group.id,
+            'aria-expanded': 'true',
+          },
+          chevronDownIcon('ui-icon ui-icon-sm activity-group-chevron'),
+          el('span', { class: 'activity-group-label' }, group.label),
+          countNode,
+        )
+        toggle.addEventListener('click', () => {
+          toggleGroup(group.id)
+        })
+        heading = el('h4', { id: titleId, class: 'activity-group-title' }, toggle)
+      } else {
+        heading = el('h4', { id: titleId, class: 'activity-group-title' }, group.label, countNode)
+      }
       entry = {
         section: el(
           'section',
           { class: 'activity-group', 'data-group': group.id },
-          el('h4', { id: titleId, class: 'activity-group-title' }, group.label, countNode),
+          heading,
           rowsNode,
         ),
         count: countNode,
@@ -496,11 +572,94 @@ export function createActivityView(
       groupCache.set(group.id, entry)
     }
     if (entry.count.textContent !== count) entry.count.textContent = count
-    patchChildren(
-      entry.rows,
-      group.rows.map((row) => cachedRow(row, at)),
-    )
+    if (host.collapsibleGroups) {
+      // A folded group says how many rows it holds; an open one shows them.
+      entry.count.hidden = !folded
+      entry.section.dataset['collapsed'] = folded ? 'true' : 'false'
+      entry.section
+        .querySelector('.activity-group-toggle')
+        ?.setAttribute('aria-expanded', folded ? 'false' : 'true')
+    }
+    entry.rows.hidden = folded
+    patchChildren(entry.rows, folded ? [] : group.rows.map((row) => cachedRow(row, at)))
     return entry.section
+  }
+
+  /** Per-project counts for the strip, from the unfiltered groups. */
+  function projectStats(
+    groups: readonly ActivityGroup[],
+  ): Map<string, { name: string; need: number; working: number }> {
+    const stats = new Map<string, { name: string; need: number; working: number }>()
+    for (const group of groups) {
+      if (group.id === 'recent') continue
+      for (const row of group.rows) {
+        if (!row.projectId) continue
+        const entry = stats.get(row.projectId) ?? {
+          name: row.projectName ?? row.projectId,
+          need: 0,
+          working: 0,
+        }
+        if (group.id === 'needs-you') entry.need += 1
+        else entry.working += 1
+        stats.set(row.projectId, entry)
+      }
+    }
+    return stats
+  }
+
+  function stripCard(id: string | null, name: string, need: number, working: number): HTMLElement {
+    const selected = projectFilter === id
+    const signature = JSON.stringify([name, need, working, selected])
+    const hit = stripCache.get(id)
+    if (hit?.signature === signature) return hit.node
+    const stats = el('span', { class: 'activity-strip-stats' })
+    stats.append(
+      need > 0
+        ? el('span', { class: 'activity-strip-need' }, `${String(need)} need you`)
+        : el('span', {}, 'All clear'),
+    )
+    if (working > 0) stats.append(el('span', {}, `${String(working)} working`))
+    const node = el(
+      'button',
+      {
+        type: 'button',
+        class: 'activity-strip-card',
+        'data-project': id ?? 'all',
+        'data-project-key': JSON.stringify(id),
+        'aria-pressed': selected ? 'true' : 'false',
+      },
+      el('span', { class: 'activity-strip-name' }, name),
+      stats,
+    )
+    node.addEventListener('click', () => {
+      projectFilter = id
+      renderNow()
+    })
+    stripCache.set(id, { signature, node })
+    return node
+  }
+
+  /** All projects, then the ones that need you (most waiting first) and the chosen one. */
+  function renderStrip(groups: readonly ActivityGroup[]): void {
+    const stats = projectStats(groups)
+    if (projectFilter !== null && !stats.has(projectFilter)) {
+      const project = store.getState().projects.find((entry) => entry.id === projectFilter)
+      if (project) stats.set(project.id, { name: project.name, need: 0, working: 0 })
+    }
+    // Aggregate counts include requests whose thread has no project association.
+    const need = groups.find((group) => group.id === 'needs-you')?.total ?? 0
+    const working = groups.find((group) => group.id === 'working')?.total ?? 0
+    const cards = [stripCard(null, 'All projects', need, working)]
+    const shown = [...stats.entries()]
+      .filter(([id, entry]) => entry.need > 0 || id === projectFilter)
+      .sort((a, b) => b[1].need - a[1].need || a[1].name.localeCompare(b[1].name))
+    for (const [id, entry] of shown)
+      cards.push(stripCard(id, entry.name, entry.need, entry.working))
+    patchChildren(strip, cards)
+    const live = new Set<string | null>([null, ...shown.map(([id]) => id)])
+    for (const id of stripCache.keys()) {
+      if (!live.has(id)) stripCache.delete(id)
+    }
   }
 
   function emptyState(): HTMLElement {
@@ -560,10 +719,16 @@ export function createActivityView(
   /** Where focus was, so a re-render can put it back: the list, or a detail control. */
   function captureFocus():
     | { area: 'list' }
+    | { area: 'toggle'; group: string }
     | { area: 'detail'; key: string; control: string }
+    | { area: 'strip'; projectKey: string }
     | null {
     const active = document.activeElement
     if (!(active instanceof HTMLElement)) return null
+    const toggled = active.dataset['groupToggle']
+    if (toggled !== undefined) return { area: 'toggle', group: toggled }
+    const projectKey = active.dataset['projectKey']
+    if (projectKey !== undefined && strip.contains(active)) return { area: 'strip', projectKey }
     if (list.contains(active)) return { area: 'list' }
     if (detail.contains(active)) {
       return {
@@ -577,6 +742,19 @@ export function createActivityView(
 
   function restoreFocus(spot: ReturnType<typeof captureFocus>): void {
     if (!spot) return
+    if (spot.area === 'toggle') {
+      list.querySelector<HTMLElement>(`[data-group-toggle="${spot.group}"]`)?.focus({
+        preventScroll: true,
+      })
+      return
+    }
+    if (spot.area === 'strip') {
+      const card = [...strip.querySelectorAll<HTMLElement>('[data-project-key]')].find(
+        (node) => node.dataset['projectKey'] === spot.projectKey,
+      )
+      card?.focus({ preventScroll: true })
+      return
+    }
     if (spot.area === 'detail' && spot.key === selectedKey) {
       const control = detail.querySelector<HTMLButtonElement>(`[data-control="${spot.control}"]`)
       if (control && !control.disabled) {
@@ -615,13 +793,43 @@ export function createActivityView(
     const focus = captureFocus()
     const previousListScrollTop = list.scrollTop
     const listScrollAnchor = captureListScrollAnchor()
-    const groups = deriveActivity({
-      threads: collectActivityThreads(store),
-      approvals: sources.approvals.pending(),
-      questions: sources.questions.pending(),
+    const allThreads = collectActivityThreads(store)
+    const approvals = sources.approvals.pending()
+    const questions = sources.questions.pending()
+    const everything = deriveActivity({
+      threads: allThreads,
+      approvals,
+      questions,
       runs: timings.runs,
     })
+    let groups = everything
+    if (projectFilter !== null) {
+      // Filter the inputs, not the groups: the Recently finished cap then counts
+      // the chosen project's runs, not everyone's. Requests with no thread belong
+      // to no project and only show under All projects.
+      const inProject = allThreads.filter((thread) => thread.projectId === projectFilter)
+      const ids = new Set(inProject.map((thread) => thread.id))
+      groups = deriveActivity({
+        threads: inProject,
+        approvals: approvals.filter((req) => req.threadId !== undefined && ids.has(req.threadId)),
+        questions: questions.filter((req) => req.threadId !== undefined && ids.has(req.threadId)),
+        runs: timings.runs,
+      })
+    }
+    if (host.projectStrip) renderStrip(everything)
     const needsYou = groups.find((group) => group.id === 'needs-you')
+    // A request that is new to this view unfolds Needs you; one the user already
+    // saw and folded stays folded.
+    const currentNeeds = new Set(needsYou?.rows.map((row) => row.key))
+    for (const key of currentNeeds) {
+      if (!seenNeedsYou.has(key)) {
+        seenNeedsYou.add(key)
+        collapsed.delete('needs-you')
+      }
+    }
+    for (const key of seenNeedsYou) {
+      if (!currentNeeds.has(key)) seenNeedsYou.delete(key)
+    }
     const working = groups.find((group) => group.id === 'working')
     const signature = needsYou?.rows.map((row) => row.key).join('\n') ?? ''
     // Rows moving under a pointer are how a click meant for one approval lands
@@ -631,7 +839,12 @@ export function createActivityView(
     const listChanged = needsYouSignature !== null && signature !== needsYouSignature
     needsYouSignature = signature
 
-    const rows = groups.flatMap((group) => group.rows)
+    // Folded groups hold no selectable row: selection moves to the nearest visible one.
+    const rows = groups
+      .filter((group) => !(host.collapsibleGroups && collapsed.has(group.id)))
+      .flatMap((group) => group.rows)
+    const urgent = rows[0]
+    if (host.followUrgent && !userChose && urgent) selectedKey = urgent.key
     let selected = rows.find((row) => row.key === selectedKey)
     if (!selected) {
       selected = rows[Math.min(selectedIndex, rows.length - 1)]
@@ -680,11 +893,13 @@ export function createActivityView(
       renderDetail(selected, at)
     }
     host.onNeedsYou?.(needCount)
+    host.onIdle?.(everything.every((group) => group.rows.length === 0))
     restoreFocus(focus)
   }
 
   /** Show a row in the detail pane (a click, or the arrow keys). */
   function select(rowKey: string): void {
+    userChose = true
     if (rowKey !== selectedKey) {
       selectedKey = rowKey
       renderNow()
@@ -771,9 +986,14 @@ export function createActivityView(
     status.textContent = ''
     for (const entry of groupCache.values()) entry.rows.replaceChildren()
     rowCache.clear()
+    stripCache.clear()
+    collapsed = defaultCollapsed()
+    seenNeedsYou.clear()
+    projectFilter = null
+    userChose = false
   }
 
-  function show(): void {
+  function show({ focusFirstRow = true }: { focusFirstRow?: boolean } = {}): void {
     // A fresh look starts on the most urgent row. If that is an approval, its
     // request has not been read yet: render() arms the settle window, so
     // nothing is approvable until it has been on screen.
@@ -781,12 +1001,17 @@ export function createActivityView(
     selectedKey = null
     selectedIndex = 0
     shownKey = null
+    userChose = false
     render()
-    const first = selectedOpener()
-    if (first) first.focus()
-    else host.fallbackFocus()
+    // A host whose focus already belongs elsewhere (the composer on the new-thread
+    // screen) asks for none: the view then only draws.
+    if (focusFirstRow) {
+      const first = selectedOpener()
+      if (first) first.focus()
+      else host.fallbackFocus()
+    }
     tickAges()
   }
 
-  return { summary, body, status, show, hide }
+  return { summary, body, strip, status, show, hide }
 }

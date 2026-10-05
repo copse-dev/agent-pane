@@ -829,15 +829,25 @@ do not leave a `0/0 done` shell with struck-through or muted ghost rows. Striket
 **completed** work, not cancelled work. Spec:
 [`tests/e2e/todo-display.e2e.ts`](../tests/e2e/todo-display.e2e.ts).
 
-## Centered new-thread composer: one hairline, not two
+## New-thread screen: the Activity home above a docked composer
 
-Empty threads float `#input-bar` via `.pane-chat.composer-centered`. The docked composer keeps a
-real CSS `border: 1px solid var(--border)`; the centered variant must **clear the full border**
-(`border: none`) and paint its perimeter only with `box-shadow: 0 0 0 1px var(--border)`. Clearing
-just `border-top` leaves left/right/bottom borders stacked under that ring — a thicker, uneven
-outline. Specs: `modern-css.test.ts`, `tests/demo/chat-layout-styling.demo.ts`.
+An empty thread is the **Activity home** (`.pane-chat.is-activity-home`,
+[`activity-home.ts`](../src/renderer/views/activity-home.ts)): the Activity list and detail fill
+the chat pane, and `#input-bar` stays **docked** at the bottom exactly as it is in a conversation.
+The one exception is **idle**: when no thread in any project is running, waiting or recently
+finished there is nothing to list, so the strip, card and caption are not drawn (a lone "All
+clear" card is clutter on a first run). The pane gets `.is-activity-idle` and the composer
+centres in it, with its ring drawn by `box-shadow` instead of the docked border; the first run
+that arrives brings the home back. Otherwise the docked card's own
+`border: 1px solid var(--border)` is the only hairline. The home reserves the
+composer's height with the same `padding-bottom` the conversation uses, so a row is never hidden
+behind it. A thread that is still loading its transcript (`messagesLoaded: false`) is **not**
+empty: it keeps the conversation and its "Loading" / "Couldn't load" notice rather than flashing
+the home. Focus goes to the composer once on entering an empty thread, never again on later store
+events, because the list shares the pane. Specs: `modern-css.test.ts`,
+`tests/e2e/titlebar-workspace.e2e.ts`, `tests/demo/chat-layout-styling.demo.ts`.
 
-The docked (and centered) composer must stay **frosted, not opaque**. A solid `--bg-base` fill on
+The docked composer must stay **frosted, not opaque**. A solid `--bg-base` fill on
 `#input-bar` / `.prompt-input` / `.input-footer` reads as a black bounding box clipping the chat
 gradient and any transcript that passes behind the floating card. Clear those fills, paint a
 semi-transparent wash plus `backdrop-filter` on `#input-bar::before`, and lift direct children so
@@ -1391,28 +1401,51 @@ Spec: [`tests/e2e/automation-dialog.e2e.ts`](../tests/e2e/automation-dialog.e2e.
 
 ## Activity panel: attention first, answer in place
 
-The Activity panel ([`activity-panel.ts`](../src/renderer/views/activity-panel.ts),
-[`activity-panel.css`](../src/renderer/styles/global/activity-panel.css)) is a sibling of the
-Process Manager overlay, not a new surface kind.
+One Activity view ([`activity-view.ts`](../src/renderer/views/activity-view.ts),
+[`activity-panel.css`](../src/renderer/styles/global/activity-panel.css)) has two hosts: the
+overlay ([`activity-panel.ts`](../src/renderer/views/activity-panel.ts), a sibling of the
+Process Manager, not a new surface kind) and the new-thread screen
+([`activity-home.ts`](../src/renderer/views/activity-home.ts)), which is the default for an empty
+thread. Both prefix their element ids so they can coexist.
+
+The new-thread screen follows `prototypes/new-thread-activity.html`: a strip of project tiles,
+the list-and-detail card, a "Start a new thread" caption, then the composer, which is narrower
+than the card. Differences from the overlay are listed under each point below.
 
 - **Grouped by claim on attention, not recency.** Needs you → Working → Recently finished.
   An empty Needs you still says so ("Nothing needs you right now.") above the other groups.
 - **State is glyph + word.** Each state has its own outline glyph (hand, question bubble,
   three dots, triangle, check) and a short label beside it. Colour is a third, redundant
-  channel. The running dots are held still here; the sidebar already animates them.
+  channel. The running dots are held still here; the sidebar already animates them. **On the
+  new-thread screen** the word is dropped where the row's own text follows it (approval, question,
+  working), as in the prototype; it stays on Done and Failed, which have nothing else to say, and
+  in every row's accessible name.
 - **List and detail, not a wide table.** Rows are two lines in a narrow list — the thread
   name leads, age on its right; the state word, what it wants and the project beneath — so
   the eye never crosses the panel to connect a thread to its state. The selected row shows
   in full in the pane beside it.
 - **One action bar per selection.** Open thread sits on the left, the answers on the right
-  (Reject, then `ui-btn-primary` Approve once; outlined chips with `--border-strong`). List
-  rows carry no buttons.
-- **Approve once is the only in-place grant, and only beside the full request.** The detail
+  (Reject, then `ui-btn-primary` **Approve**; outlined chips with `--border-strong`). List
+  rows carry no buttons. The button reads "Approve", the prototype's wording, and still answers
+  once: no remembered grant, no task lease. **On the new-thread screen** Open thread is bold with
+  a trailing arrow and Reject / Approve are pills, as in the prototype.
+- **Approve is the only in-place grant, and only beside the full request.** The detail
   renders the request with the prompt's own advice / body / footer classes and never
   truncates. Broader answers stay on the prompt in the thread.
+- **Group headers fold (new-thread screen).** Each header is a button with a chevron and
+  `aria-expanded`. Working starts folded and names how many it holds; Needs you unfolds when a
+  request new to the view arrives, and stays folded if the user folded one they had seen. Folded
+  rows are not selectable, so selection moves to the nearest visible row. State is session-only.
+- **Project strip (new-thread screen).** All projects, then the projects that need you, most
+  waiting first, plus the chosen one; a tile filters the list. Requests tied to no thread belong
+  to no project and show only under All projects.
 - **Nothing moves under a click.** The panel has a fixed height, re-renders are throttled,
   selection and focus are restored to the same row, and Approve pauses whenever a request it
-  has not shown yet takes the detail pane or the waiting list changes.
+  has not shown yet takes the detail pane or the waiting list changes. Unchanged rows are the
+  same DOM nodes across redraws. **On the new-thread screen**, until the user picks a row the
+  selection follows the most urgent one, so a screen left open shows what needs them; once they
+  pick, nothing moves it. A narrow pane stacks the list above the detail and the card scrolls as
+  one column with the action bar stuck to its bottom edge.
 
 Spec: [`tests/e2e/activity-panel.e2e.ts`](../tests/e2e/activity-panel.e2e.ts).
 

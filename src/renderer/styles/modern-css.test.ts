@@ -345,18 +345,29 @@ describe('modern CSS adoptions', () => {
     )
   })
 
-  it('keeps the centered new-thread composer on a single hairline ring', () => {
+  it('docks the composer on the new-thread screen instead of floating it', () => {
     const css = read('layout.css')
-    // Docked `#input-bar` uses a real CSS border; the empty-thread centered
-    // variant paints its perimeter via `box-shadow: 0 0 0 1px`. Clearing only
-    // `border-top` left the other sides doubled under that ring (#912 fallout).
+    // The empty thread used to float a centred composer with a shadow-drawn
+    // hairline. The Activity home takes the pane above a docked composer, so the
+    // docked card's own border is the only ring and no centred variant remains.
     assert.ok(
-      declares(css, '.pane-chat.composer-centered #input-bar', /border:\s*none/),
-      'centered #input-bar must clear the full border so the shadow ring is the only hairline',
+      !css.includes('composer-centered'),
+      'layout.css must not keep a centred-composer variant',
+    )
+    // With nothing to list the home steps aside and the composer is centred; that
+    // variant draws its ring with a shadow, so it must clear the docked border.
+    assert.ok(
+      declares(css, '.pane-chat.is-activity-idle #input-bar', /border:\s*none/) &&
+        declares(
+          css,
+          '.pane-chat.is-activity-idle #input-bar',
+          /0\s+0\s+0\s+1px\s+var\(--border\)/,
+        ),
+      'the idle composer must keep a single hairline ring',
     )
     assert.ok(
-      declares(css, '.pane-chat.composer-centered #input-bar', /0\s+0\s+0\s+1px\s+var\(--border\)/),
-      'centered #input-bar must keep the 1px hairline shadow ring',
+      declares(css, '.pane-chat.is-activity-home .conversation', /display:\s*none/),
+      'the empty conversation must give the pane to the Activity home',
     )
   })
 
@@ -533,7 +544,6 @@ describe('modern CSS adoptions', () => {
   it('caps the whole composer card, not just the draft, so it never escapes the pane (#2489)', () => {
     const titlebar = read('titlebar.css')
     const inputBar = read('input-bar.css')
-    const layout = read('layout.css')
     // #input-bar floats bottom-anchored and grows upward with its content; a
     // cap on `.prompt-input` alone still lets banners/footer push the card's
     // top edge above the pane, where `.pane-chat`'s overflow: hidden clips it.
@@ -568,19 +578,23 @@ describe('modern CSS adoptions', () => {
       declares(inputBar, '.prompt-input', /flex:\s*1 1 auto/),
       '.prompt-input must carry the shrink from .input-row down to the scrollable element',
     )
-    // Portrait mode and the centered (empty-thread) composer both change the
-    // card's margin from the docked --spacing-md, so each needs its own cap.
+    // Portrait mode and the centred idle composer both change the card's margin
+    // from the docked --spacing-md, so each needs its own cap.
     assert.ok(
       declares(
         inputBar,
-        '#app.is-portrait-chrome .pane-chat:not(.composer-centered) #input-bar',
+        '#app.is-portrait-chrome .pane-chat:not(.is-activity-idle) #input-bar',
         /max-height:\s*calc\(100%/,
       ),
       'the portrait composer must re-derive its cap for the taller bottom offset',
     )
     assert.ok(
-      declares(layout, '.pane-chat.composer-centered #input-bar', /max-height:\s*calc\(100%/),
-      'the centered (empty-thread) composer must cap itself too',
+      declares(
+        read('layout.css'),
+        '.pane-chat.is-activity-idle #input-bar',
+        /max-height:\s*calc\(100%/,
+      ),
+      'the centred idle composer must cap itself too',
     )
   })
 
