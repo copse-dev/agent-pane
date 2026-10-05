@@ -12198,6 +12198,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 
 /* src/renderer/styles/global/image-expand.css */
+.image-expand-photo,
 .image-expand-image {
   display: block;
   max-width: min(94vw - 32px, 1280px);
@@ -12205,6 +12206,47 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   width: auto;
   height: auto;
   object-fit: contain;
+}
+.image-expand-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+.image-expand-frame[hidden] {
+  display: none;
+}
+.image-expand-single {
+  position: relative;
+  display: flex;
+  width: min(80vw, 800px);
+  height: min(60vh, 480px);
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.image-expand-single .image-expand-frame {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+.image-expand-single .image-expand-photo {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+.image-expand-single .image-expand-annotate {
+  flex: 0 0 auto;
+  align-self: flex-end;
+}
+.image-expand-annotate[aria-pressed=true] {
+  background: var(--bg-selected);
+  color: var(--accent);
 }
 .attachment-preview-dialog[data-preview-kind=image-gallery] {
   position: relative;
@@ -12260,12 +12302,20 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   overflow: hidden;
   padding: 64px 72px 28px;
 }
-.image-expand-stage .image-expand-image {
+.image-expand-stage .image-expand-photo {
   width: 100%;
   height: 100%;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+.image-expand-stage .image-expand-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.image-expand-stage .annotation-toolstrip {
+  width: max-content;
 }
 .image-expand-nav-zone {
   position: absolute;
@@ -12301,6 +12351,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   opacity: 0.25;
 }
 .image-expand-gallery-footer {
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 76px;
@@ -12309,6 +12360,13 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   justify-content: center;
   padding: var(--spacing-xs) var(--spacing-md);
   border-top: 1px solid var(--border);
+}
+.image-expand-gallery-footer .image-expand-thumbnails {
+  max-width: calc(100% - 112px);
+}
+.image-expand-gallery-action {
+  position: absolute;
+  right: var(--spacing-md);
 }
 .image-expand-thumbnails {
   display: flex;
@@ -16177,13 +16235,13 @@ dialog.activity-panel-overlay {
 .roadmap-filter {
   display: flex;
   flex: 1;
-  min-width: 120px;
+  min-width: min(200px, 100%);
   max-width: 320px;
   gap: 4px;
 }
 .roadmap-search-input {
   flex: 1;
-  min-width: 80px;
+  min-width: 0;
 }
 .roadmap-filter-toggle {
   flex: none;
@@ -16918,6 +16976,36 @@ h3 {
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.14);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.2);
   --shadow-composer: 0 -6px 18px rgba(0, 0, 0, 0.05);
+}
+[data-automation-active] {
+  --tint-hue: #9b6d00 !important;
+  --tint-amount: 12% !important;
+  --accent-color: #f3bd4d !important;
+  --text-on-accent: #2d2208 !important;
+  --warning: #e4aa20;
+  --highlight-current-bg: #f3bd4d;
+  --highlight-current-text: #2d2208;
+}
+[data-theme=dark][data-automation-active],
+[data-theme=dark][data-automation-active][data-tint-palette=copse][data-tint-strength=strong] {
+  --bg-base: color-mix(in srgb, #9b6d00 12%, #1e1e1e);
+  --bg-elevated: color-mix(in srgb, #9b6d00 12%, #252526);
+  --bg-hover: color-mix(in srgb, #9b6d00 15%, #2a2d2e);
+  --bg-muted: color-mix(in srgb, #9b6d00 14%, #2d2d2d);
+  --bg-subtle: color-mix(in srgb, #9b6d00 11%, #232324);
+  --border: color-mix(in srgb, #d99b24 45%, #414141);
+  --border-subtle: color-mix(in srgb, #d99b24 28%, #333333);
+  --border-strong: color-mix(in srgb, #f3bd4d 58%, #565656);
+}
+[data-theme=light][data-automation-active] {
+  --bg-base: color-mix(in srgb, #f3bd4d 10%, #ffffff);
+  --bg-elevated: color-mix(in srgb, #f3bd4d 10%, #f3f3f3);
+  --bg-hover: color-mix(in srgb, #f3bd4d 14%, #e8e8e8);
+  --bg-muted: color-mix(in srgb, #f3bd4d 12%, #ececec);
+  --bg-subtle: color-mix(in srgb, #f3bd4d 8%, #f7f7f7);
+  --border: color-mix(in srgb, #9b6d00 28%, #d4d4d4);
+  --border-subtle: color-mix(in srgb, #9b6d00 18%, #e4e4e4);
+  --border-strong: color-mix(in srgb, #9b6d00 42%, #ababab);
 }
 
 /* src/renderer/styles/global/popout.css */
