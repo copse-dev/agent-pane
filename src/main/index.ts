@@ -9,7 +9,6 @@ import { registerProfileVaultIpc } from './ipc/profile-vault.ts'
 import { getSshConnectionManager } from './services/ssh-workspace/connection-manager.ts'
 import { clearSshCredentialCache } from './services/ssh-workspace/ssh-credential-cache.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
-import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import {
   armPerfTrace,
