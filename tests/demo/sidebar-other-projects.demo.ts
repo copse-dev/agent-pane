@@ -45,4 +45,12 @@ describe('sidebar listing projects not opened yet', () => {
     expect(labels.some((label) => label.includes('docs-site') && label.includes('2'))).toBe(true)
     await browser.keys('Escape')
   })
+  for (const width of [800, 1600]) {
+    it(`lists unopened threads at ${width}px`, async () => {
+      await browser.setWindowSize(width, 900)
+      expect(await titles()).toHaveLength(4)
+      await expect($('.projects-filter-btn')).toBeDisplayed()
+      await saveAppScreenshot(`sidebar-other-projects-${width}.png`)
+    })
+  }
 })
