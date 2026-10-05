@@ -2565,7 +2565,10 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
 
   async function withRoot<T>(fn: (root: string, readDir: string) => Promise<T>): Promise<T> {
     const root = mkdtempSync(join(tmpdir(), 'copse-read-outside-'))
-    const readDir = mkdtempSync(join(tmpdir(), 'copse-read-target-'))
+    // On macOS the per-user temp tree is already exempt from read prompts.
+    // Exercise explicit grants outside that tree, while keeping all fixtures disposable.
+    const readTargetRoot = process.platform === 'darwin' ? '/private/tmp' : tmpdir()
+    const readDir = mkdtempSync(join(readTargetRoot, 'copse-read-target-'))
     writeFileSync(join(readDir, 'note.txt'), 'ordinary note')
     writeFileSync(join(readDir, 'other.txt'), 'another note')
     mkdirSync(join(readDir, 'nested'))
@@ -2752,7 +2755,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       )
       assert.equal(other.permitted, false)
       assert.ok(other.prompt)
-      assert.equal(other.prompt.title, 'Read outside the project?')
+      assert.equal(other.prompt.title, 'Allow read access outside of the project?')
     })
   })
 
@@ -2768,7 +2771,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       )
       assert.equal(later.permitted, false)
       assert.ok(later.prompt)
-      assert.equal(later.prompt.title, 'Read outside the project?')
+      assert.equal(later.prompt.title, 'Allow read access outside of the project?')
     })
   })
 
@@ -2782,7 +2785,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       )
       assert.equal(secret.permitted, false)
       assert.ok(secret.prompt, 'a credential read must still be asked about')
-      assert.notEqual(secret.prompt.title, 'Read outside the project?')
+      assert.notEqual(secret.prompt.title, 'Allow read access outside of the project?')
     })
   })
 
@@ -2946,7 +2949,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         root,
       )
       assert.ok(prompt)
-      assert.notEqual(prompt.title, 'Read outside the project?')
+      assert.notEqual(prompt.title, 'Allow read access outside of the project?')
       assert.equal(prompt.approveOnceLabel, '')
     })
   })
