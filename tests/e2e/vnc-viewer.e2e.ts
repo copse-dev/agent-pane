@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server, type Socket } from 'node:net'
 import { $, browser } from '@wdio/globals'
+import { seedStableWorkspace } from './helpers/seed-config.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { assertCheckboxBesideLabel } from './helpers/checkbox-row.ts'
 import {
@@ -324,7 +325,7 @@ describe('VNC viewer', function () {
         },
       ])
       await e2e.openWorkspace(workspaceRoot)
-    }, process.cwd())
+    }, seedStableWorkspace())
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const onboardingClose = $('#onboarding-close')
     if (await onboardingClose.isDisplayed()) await onboardingClose.click()
