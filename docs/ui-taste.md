@@ -1456,8 +1456,10 @@ than the card. Differences from the overlay are listed under each point below.
 - **Recently finished includes what ended before launch.** A settled thread is listed when
   this session watched it end, it finished unread while another thread was open, or its
   persisted last write (`updatedAt`) is within the last 7 days (`RECENT_WINDOW_MS`), read or
-  not; the cap of ten still applies. A thread nobody has prompted (a draft, the empty active
-  thread) never lists. A stored `error` status survives restarts, so it shows as Failed only
+  not; the cap of ten still applies. A thread that never ran (a draft, the empty active
+  thread) never lists; "ran" is read from metadata alone (`lastPromptAt`, else recorded token
+  usage, a working brief or an auto-title pass), so threads written before `lastPromptAt`
+  existed list without being opened. A stored `error` status survives restarts, so it shows as Failed only
   when seen this session or inside that same window — an older one is simply left out, never
   shown as a fresh failure. Otherwise a user whose threads are all complete would see an empty
   Activity home.
