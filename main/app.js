@@ -21931,6 +21931,24 @@ var init_sources_section = __esm({
   }
 });
 
+// src/renderer/ipc-error-message.ts
+function unwrapIpcErrorText(text2) {
+  let message2 = text2;
+  for (; ; ) {
+    const next = message2.trimStart().replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
+    if (next === message2) return message2.trim();
+    message2 = next;
+  }
+}
+function ipcErrorMessage(err2, fallback) {
+  if (!(err2 instanceof Error)) return fallback;
+  return unwrapIpcErrorText(err2.message) || fallback;
+}
+var init_ipc_error_message = __esm({
+  "src/renderer/ipc-error-message.ts"() {
+  }
+});
+
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
   const canonical2 = CANONICAL_WORDS.get(word);
@@ -47211,24 +47229,6 @@ var init_presets = __esm({
   }
 });
 
-// src/renderer/ipc-error-message.ts
-function unwrapIpcErrorText(text2) {
-  let message2 = text2;
-  for (; ; ) {
-    const next = message2.trimStart().replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
-    if (next === message2) return message2.trim();
-    message2 = next;
-  }
-}
-function ipcErrorMessage(err2, fallback) {
-  if (!(err2 instanceof Error)) return fallback;
-  return unwrapIpcErrorText(err2.message) || fallback;
-}
-var init_ipc_error_message = __esm({
-  "src/renderer/ipc-error-message.ts"() {
-  }
-});
-
 // src/renderer/views/setup/classifiers-section.ts
 function classifierErrorMessage(error62) {
   let message2 = unwrapIpcErrorText(errorMessage(error62));
@@ -63106,6 +63106,54 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     if (fold) fold.open = true;
     row2.scrollIntoView({ block: "start" });
   }
+  const mcpSignInPending = /* @__PURE__ */ new Set();
+  const mcpSignInErrors = /* @__PURE__ */ new Map();
+  function mcpSignInButton(s16) {
+    if (s16.auth === void 0) return null;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ui-btn ui-btn-compact mcp-auth-btn";
+    if (mcpSignInPending.has(s16.name)) {
+      button.classList.add("ui-btn-secondary");
+      button.textContent = "Cancel sign-in";
+      button.addEventListener("click", () => {
+        void api2.mcp.cancelSignIn(s16.name);
+      });
+      return button;
+    }
+    if (s16.auth === "signed-in") {
+      button.classList.add("ui-btn-secondary");
+      button.textContent = "Sign out";
+      button.setAttribute("aria-label", `Sign out of ${s16.name}`);
+      button.addEventListener("click", () => {
+        button.disabled = true;
+        mcpSignInErrors.delete(s16.name);
+        void api2.mcp.signOut(s16.name).then(renderMcpServers).catch((error62) => {
+          mcpSignInErrors.set(s16.name, ipcErrorMessage(error62, "Sign-out failed."));
+          void refreshMcpServers();
+        });
+      });
+      return button;
+    }
+    button.classList.add("ui-btn-primary");
+    button.textContent = "Sign in";
+    button.setAttribute("aria-label", `Sign in to ${s16.name}`);
+    button.addEventListener("click", () => {
+      mcpSignInPending.add(s16.name);
+      mcpSignInErrors.delete(s16.name);
+      void refreshMcpServers();
+      void api2.mcp.signIn(s16.name).then((next) => {
+        mcpSignInPending.delete(s16.name);
+        renderMcpServers(next);
+      }).catch((error62) => {
+        mcpSignInPending.delete(s16.name);
+        const message2 = ipcErrorMessage(error62, "Sign-in failed.");
+        if (message2 !== "Sign-in cancelled.") mcpSignInErrors.set(s16.name, message2);
+        void refreshMcpServers();
+      });
+    });
+    return button;
+  }
   function renderMcpServers(allStatuses) {
     const listEl = qsRequired(overlay, "#mcp-server-list");
     const statuses = allStatuses.filter((s16) => !s16.curated);
@@ -63162,7 +63210,7 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
       });
     }
     for (const s16 of statuses) {
-      const badge = s16.state === "connected" ? inlineStatus("filled", "connected") : s16.state === "error" ? inlineStatus("error", "error") : s16.state === "disabled" ? inlineStatus("idle", "disabled") : s16.state === "untrusted" ? inlineStatus("warn", "not trusted") : document.createTextNode("\u2026 connecting");
+      const badge = s16.state === "connected" ? inlineStatus("filled", "connected") : s16.auth === "required" ? inlineStatus("warn", "sign-in required") : s16.state === "error" ? inlineStatus("error", "error") : s16.state === "disabled" ? inlineStatus("idle", "disabled") : s16.state === "untrusted" ? inlineStatus("warn", "not trusted") : document.createTextNode("\u2026 connecting");
       const row2 = document.createElement("div");
       row2.className = `mcp-server-row mcp-state-${s16.state}`;
       const header = document.createElement("div");
@@ -63204,9 +63252,12 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
           qsRequired(overlay, "#tool-permissions-fieldset").scrollIntoView({ block: "start" });
         });
       });
+      const authButton = mcpSignInButton(s16);
+      if (authButton) header.append(authButton);
       header.append(permissionsButton);
       row2.append(header);
-      let detailText = s16.state === "connected" ? `${String(s16.toolCount)} tool(s)${s16.tools.length ? `: ${s16.tools.join(", ")}` : ""}` : s16.error ?? "";
+      const statusDetail = s16.state === "connected" ? `${String(s16.toolCount)} tool(s)${s16.tools.length ? `: ${s16.tools.join(", ")}` : ""}` : s16.auth === "required" ? "Sign in to use this server's tools." : s16.error ?? "";
+      let detailText = mcpSignInPending.has(s16.name) ? "Continue in your browser to finish signing in." : mcpSignInErrors.get(s16.name) ?? statusDetail;
       if (s16.configDisabled) {
         detailText = detailText ? `${detailText} \xB7 disabled in MCP config` : 'Disabled in MCP config ("disabled": true)';
       } else if (!s16.userEnabled && s16.state === "disabled") {
@@ -63223,6 +63274,9 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
       listEl.append(row2);
     }
   }
+  api2.mcp.onStatusChanged((statuses) => {
+    renderMcpServers(statuses);
+  });
   async function refreshMcpServers() {
     try {
       renderMcpServers(await api2.mcp.list());
@@ -63752,6 +63806,7 @@ var init_settings_dialog = __esm({
     init_sources_section();
     init_source_row();
     init_errors4();
+    init_ipc_error_message();
     init_humanize_identifier();
     init_auto_approval();
     init_state();
@@ -67072,6 +67127,56 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "mcp-sign-in",
+        label: "MCP servers that sign in with OAuth",
+        project: project("demo-mcp-sign-in-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-mcp-sign-in-thread",
+            title: "MCP sign-in",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        mcpServers: [
+          {
+            name: "design-system",
+            transport: "http",
+            state: "error",
+            error: "Sign-in required",
+            auth: "required",
+            toolCount: 0,
+            tools: [],
+            origin: "user",
+            source: "/Users/demo/.cursor/mcp.json",
+            originDetail: "mcp.json",
+            userEnabled: true,
+            configDisabled: false
+          },
+          {
+            name: "issues",
+            transport: "http",
+            state: "connected",
+            auth: "signed-in",
+            toolCount: 3,
+            tools: ["list_issues", "get_issue", "create_issue"],
+            origin: "user",
+            source: "/Users/demo/.cursor/mcp.json",
+            originDetail: "mcp.json",
+            userEnabled: true,
+            configDisabled: false
+          }
+        ]
+      },
+      {
         id: "automation-permissions",
         label: "Automation permission preferences",
         project: project("demo-automation-permissions-project", "Copse", "/demo/copse"),
@@ -67884,7 +67989,8 @@ function unsupported() {
 function createDemoApi(scenario, options = {}) {
   const settings = new Map(Object.entries(scenario.settings));
   let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS);
-  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
+  let mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
+  const pendingMcpSignIns = /* @__PURE__ */ new Map();
   const storage = /* @__PURE__ */ new Map([
     ["projects", [scenario.project]],
     ["activeProjectId", scenario.project.id]
@@ -68264,6 +68370,31 @@ function createDemoApi(scenario, options = {}) {
       listCurated: emptyArray,
       listDeclared: emptyArray,
       setCuratedEnabled: emptyArray,
+      // The demo has no browser to finish a sign-in, so it waits like the real
+      // flow does until the visitor cancels.
+      signIn: (name) => new Promise((_resolve, reject) => {
+        pendingMcpSignIns.set(name, () => {
+          reject(new Error("Sign-in cancelled."));
+        });
+      }),
+      cancelSignIn: (name) => {
+        pendingMcpSignIns.get(name)?.();
+        pendingMcpSignIns.delete(name);
+        return resolvedVoid();
+      },
+      signOut: (name) => {
+        mcpStatuses = mcpStatuses.map(
+          (status) => status.name === name ? {
+            ...status,
+            state: "error",
+            error: "Sign-in required",
+            auth: "required",
+            toolCount: 0,
+            tools: []
+          } : status
+        );
+        return resolved2(structuredClone([...mcpStatuses]));
+      },
       onStatusChanged: subscribe
     },
     toolPermissions: {
