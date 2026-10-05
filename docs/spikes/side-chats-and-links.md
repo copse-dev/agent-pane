@@ -21,19 +21,22 @@ Acceptance criteria for this spike:
 
 ## What the design asks for, against the app today
 
-| Design element (#3538)                                                                                           | The app today                                                                      | Needs building                                                                                                           | In this spike                                                                                                                  |
-| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| Side chat as a thread branched from a message, own model                                                         | Forks copy the transcript; no anchored, hidden, child thread                       | `sideChat` link on thread metadata, creation, history seeding                                                            | **Yes.** `sideChat: {parentThreadId, anchorMessageId}`; history seeded once through the existing `threads:fork` path           |
-| Hidden by default, archived rather than deleted, unread dot                                                      | Archive exists; no hidden threads; unread dot per row                              | Browser filters, archive/delete cascade, roll-up dot                                                                     | **Yes.** Hidden from sidebar and Activity; archive and delete cascade; unread rolls up to the parent row; orphans stay visible |
-| Per-thread Context panel: repos, links and references, subagents                                                 | Seven right-panel modes, none per-thread context                                   | A `context` mode, a thread-context model, link recording                                                                 | **Yes** as a new mode (not yet the default opener)                                                                             |
-| "Mentioned in" and other thread-to-thread references                                                             | `@`-thread chips record only a label; PRs have the #3502 relation model            | Recorded links, a backlink index                                                                                         | **Yes** for `copse://thread/<id>` and `copse.dev/open` links in message text, plus web URLs, indexed in SQLite                 |
-| Side chat shown beside the main thread (drawer, margin, tray, or rail slot)                                      | One conversation view bound to the active thread                                   | A second conversation host, or a panel slot that can host a chat. Placement is undecided (`side-chats.html` avenues A-E) | **No.** A side chat opens as the main thread; the Context panel banner links back                                              |
-| Hover "Side chat" on a message, `⌘/`                                                                             | No message action                                                                  | Message action and shortcut calling `startSideChat(anchor)`                                                              | **Partly.** `startSideChat` takes an anchor; the only trigger is the Context panel button (latest settled message)             |
-| "Send summary to main", "Promote to thread", re-sync                                                             | None                                                                               | Summary generation (model call), a promote transform, re-seed                                                            | **No**                                                                                                                         |
-| Per-thread panel instances: several browsers/terminals/side chats, at most two slots, pinning, reuse rules, rail | One `rightPanelMode`; instances exist only inside a mode (browser tabs, terminals) | A thread-scoped instance registry and slot layout (`side-chats-instances.html`), replacing mode-per-button               | **No.** The biggest piece; see slices below                                                                                    |
-| Panel switcher variants (top bar, right rail, C/n strips) with a gutter for thread actions                       | Titlebar text-button cluster with portrait overflow                                | Chosen variant, rail component, gutter                                                                                   | **No.** The prototype notes the C-shape side panel was not working at last review                                              |
-| Narrow and portrait layouts, sidebar dot instead of bell                                                         | Portrait chrome exists                                                             | Dot-for-bell in narrow mode                                                                                              | **Partly.** The roll-up dot exists; the bell swap does not                                                                     |
-| Activity screen: wide multi-repo PR list, full PR mode hiding menu and gutter                                    | Activity stack is open as #3467, #3475, #3484, #3488, #3489 (milestone 5)          | Multi-repo PR list, PR mode                                                                                              | **No.** Depends on the milestone 5 stack                                                                                       |
+| Design element (#3538)                                                                                            | The app today                                                           | In this spike                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Side chat as a thread branched from a message, own model                                                          | Forks copy the transcript; nothing anchored, hidden or child            | **Yes.** `sideChat: {parentThreadId, anchorMessageId}`; agent history seeded once through the existing `threads:fork` path; model stored and inherited          |
+| Side chat shown **beside** the main thread, with its own composer                                                 | One conversation view bound to the active thread                        | **Yes**, as a `side-chat` right-panel mode: chips list, read-only context line, transcript with streaming, composer, suggestions. The main thread stays active  |
+| Hidden by default, archived rather than deleted, unread dot                                                       | Archive exists; no hidden threads                                       | **Yes.** Hidden from the sidebar and Activity; archive and delete cascade from the parent; restore; unread rolls up to the parent row                           |
+| Hover "Side chat" on a message, anchor chip under the branched message                                            | No message action                                                       | **Yes** on prompts and replies, plus a chip (with an unread dot) that reopens the chat. **`⌘/` is not bound**: the app already uses it for the shortcuts dialog |
+| Promote to thread                                                                                                 | None                                                                    | **Yes.** A new thread of the parent slice plus the side chat's turns, history copied, the side chat archived                                                    |
+| Send summary to main                                                                                              | None                                                                    | **No.** The parent's agent history is rebuilt from run payloads, so a posted note would not reach the agent; this needs a design decision                       |
+| Per-thread Context panel: repos, links and references, subagents                                                  | Seven right-panel modes, none per-thread                                | **Yes** as a `context` mode; not yet the default opener                                                                                                         |
+| "Mentioned in" and thread-to-thread references                                                                    | `@`-thread chips record only a label; PRs have the #3502 model          | **Yes** for `copse://thread/<id>` and `copse.dev/open` links in message text, plus web URLs, indexed in SQLite                                                  |
+| Titlebar entry with a count badge                                                                                 | Text-button cluster                                                     | **Yes**: Context and Side chat controls; Side chat shows the live count and highlights while one is unread                                                      |
+| Per-thread panel instances (several browsers/terminals/side chats, at most two slots, pinning, reuse rules, rail) | One `rightPanelMode`; instances exist only inside a mode                | **No.** The biggest remaining piece (`side-chats-instances.html`); it supersedes mode-per-button                                                                |
+| Panel switcher variants (top bar, right rail, C/n strips) and the gutter for thread actions                       | Titlebar cluster with portrait overflow                                 | **No.** The prototype notes the C-shape panel was not working at last review                                                                                    |
+| Side chat identity colour (the prototype's purple)                                                                | No such token; `ui-taste.md` forbids new colour tokens without a reason | **No.** The accent is used                                                                                                                                      |
+| Narrow and portrait layouts, sidebar dot instead of bell                                                          | Portrait chrome exists                                                  | **Partly.** The roll-up dot exists; the bell swap does not                                                                                                      |
+| Activity screen: wide multi-repo PR list, full PR mode hiding menu and gutter                                     | Milestone 5 stack is merged on main                                     | **No**                                                                                                                                                          |
 
 ## Should this build on the SQLite change?
 
@@ -71,11 +74,20 @@ Data layer (`packages/thread-store`):
 
 App:
 
-- `threads:backlinks` IPC (`API_PROTOCOL_VERSION` 42 to 43, manifest regenerated).
-- `controller/side-chat.ts` `startSideChat`; store helpers for archive/delete cascade and `restoreThread`.
-- `context` right-panel mode: `thread-context-model.ts` (pure), `thread-context-panel.ts` (DOM and
-  mount), `thread-context.css`, titlebar control, pop-out plumbing (window title and IPC allow-list; not exercised in a real pop-out).
+- `threads:backlinks` IPC (`API_PROTOCOL_VERSION` 44, manifest regenerated).
+- `controller/side-chat.ts`: `startSideChat` (opens beside the thread by default, or as the thread),
+  `sendSideChatMessage` (drives the side chat through its own id, queueing behind a running turn),
+  `promoteSideChat`. Store helpers for archive and delete cascade and `restoreThread`.
+- **`side-chat` right-panel mode** (`side-chat-panel.ts`): the thread's side chats as a list, one chat
+  with its read-only context line, a transcript rendered through the app's markdown pipeline and
+  redrawn once per frame while streaming, suggestions for an empty chat, a composer, Archive/Restore and
+  Promote. Showing a chat counts as reading it.
+- **`context` right-panel mode** (`thread-context-model.ts`, `thread-context-panel.ts`): repos, side
+  chats, links and references, subagents, "mentioned in". Side chat rows open the Side chat panel.
+- Conversation: a hover "Side chat" action on prompts and replies, and a chip under a branched message
+  that reopens the chat. Titlebar controls for both modes, Side chat with a count badge.
 - Sidebar and Activity hide side chats; unread rolls up to the parent row.
+- Pop-out plumbing for both modes (window title and IPC allow-list; not exercised in a real pop-out).
 - Demo scenario `side-chats-context` and the spec `tests/demo/side-chats-context.demo.ts`.
 - `scripts/prototypes/side-chats-links/bench-links.mts`, the synthetic benchmark behind the numbers below.
 
@@ -86,64 +98,78 @@ App:
 2. **No nesting.** A side chat cannot start a side chat (the builder returns null).
 3. **Context is a snapshot.** History is seeded once from the parent through the anchor, via
    `threads:fork`. Later parent edits are not seen. This matches the prototype's "reads up to here".
-4. **Archive and delete cascade from the parent.** Archiving a side chat alone returns focus to the
-   parent. Without the delete cascade a hidden side chat would be unreachable once its parent was gone.
-5. **Orphans stay visible.** A side chat whose parent is not in the list is shown like any thread.
-6. **An empty side chat is never "blank".** The store prunes blank threads and the autosave reconciler
-   then deletes them from disk, which would delete a fresh side chat on the first switch away. A test
-   guards this.
-7. **Links are recorded, append-only and capped** (200 per thread). PR URLs are excluded because the PR
+4. **The side chat panel drives its thread directly.** It is a small view, not the conversation view:
+   plain text for the user's turns, the app's markdown for replies, tool calls as names only. No
+   attachments, slash commands, approvals UI or model picker. Reusing the full conversation view for a
+   second thread is the larger refactor the placement decision needs.
+5. **Archive and delete cascade from the parent.** Archiving a side chat alone leaves the parent alone.
+   Without the delete cascade a hidden side chat would be unreachable once its parent was gone.
+6. **Orphans stay visible.** A side chat whose parent is not in the list is shown like any thread.
+7. **An empty side chat is never "blank".** The store prunes blank threads and the autosave reconciler
+   then deletes them from disk, which would delete a fresh side chat on the first switch away.
+8. **Promote builds a new thread and archives the side chat**, rather than detaching it in place,
+   because persistence writes new messages only as they are appended.
+9. **Links are recorded, append-only and capped** (200 per thread). PR URLs are excluded because the PR
    model owns them. Only message text is read; `@`-thread chips cannot be indexed because they store
    only a label.
-8. **The Context button is always visible and the mode is not the default opener.** Making it the
-   default opener changes what the existing panel button does and would churn existing e2e specs.
+10. **`⌘/` is not bound.** The prototype uses it to branch from the last reply, but the app already
+    binds it to the keyboard-shortcuts dialog. Pick another binding or a command-palette entry.
+11. **The accent colour marks side chats**, not the prototype's purple.
+12. **The Context and Side chat buttons are always visible and Context is not the default opener**, so
+    existing panel e2e specs are unchanged. The titlebar reference screenshot changes by design (two
+    more icons) and needs a CI re-render.
 
 ## Findings from reviewing the screenshots
 
-The assertions passed before the screenshots were viewed. Viewing them found a real defect: the
-side-chat banner and the disabled "New side chat" button were clipped at the right edge because the
-banner reused a `nowrap` class and widened its grid track. Fixed with `minmax(0, 1fr)` and a wrapping
-note class, then re-captured. Two further observations remain open: while a side chat is the open
-thread, no sidebar row is highlighted (the prototype shows it as a sub-row of its parent), and the
-side chat's own conversation area is empty because it opens in the main view.
+The assertions passed before the screenshots were viewed. Viewing them found real defects: the context
+banner and its button clipped at the right edge (a `nowrap` class widening a grid track), a side chat row
+overflowing the panel horizontally, and a spec that archived the wrong side chat. Two style tests also
+caught an accent rail on a non-nesting element and a hard-coded line-height. A conversation test
+asserted "replies have no `.msg-actions`", which the new hover action intentionally changes, and was
+rewritten to say what it meant (no fork or resend on replies).
 
 ## Validation
 
-Code head `e11c8a7` (this report and the benchmark script are the only later changes). Linux sandbox,
-Node 24.20.0, Chromium 141 with a matching chromedriver (the repo's default driver download is blocked
-here). **Not validated on macOS, and no real Electron run:** the Electron native rebuild needs headers the
+Code head `5d844f4`; later changes are this report and the deletion of one obsolete reference
+screenshot (the `screenshot-producers` test caught it and passes afterwards). Linux sandbox, Node
+24.20.0, Chromium 141 with a matching chromedriver (the repo's default driver download is blocked here).
+**Not validated on macOS, and no real Electron run:** the Electron native rebuild needs headers the
 sandbox proxy blocks, so there is no native e2e and no real main-process IPC test of `threads:backlinks`
 beyond the handler's typecheck and the store-level tests.
 
-- **New and changed focused tests: 41 added, all passing.** `side-chat` (7), `thread-links` (6),
-  store and index integration (7), `startSideChat` (5), Context model (5), Context panel DOM and mount (4),
-  store helpers for archive/delete/restore/blank-prune (6), sidebar and Activity hiding (1). The focused
-  run over every touched test file: 145 passed, 0 failed.
-- **Browser demo, `tests/demo/side-chats-context.demo.ts`: 4 passed.** Steps: hidden side chats and the
-  parent roll-up dot; every Context section with its counts; opening a side chat and returning;
-  create, archive and restore, including a horizontal-overflow guard. The existing
-  `pr-thread-relationships` demo spec still passes (2). One cold-start hook timeout (90 s) occurred right
-  after a demo rebuild and the retry passed; later runs of the finished spec passed on the first attempt.
-- **`pnpm run check:local`: exit 0** (e2e syntax, typecheck, type coverage, lint in all four shards,
-  format, demo-site sync, dead code, oracle, e2e exclusions).
-- **Full unit tier (`pnpm test`): 13,043 tests, 13,000 passed, 12 failed, 9 cancelled, 22 skipped.**
-  Every failure is a sandbox or toolchain test (bubblewrap and socat missing, uv/pip/Go/Cargo
-  preparation, SSH transport, commit signing, semantic-index quit timing). The Python preparation file
-  hangs in this sandbox, so its worker was terminated to let the run finish; its cancelled tests are
-  counted above. None are in thread storage, the renderer, shared code or IPC. **The full gate is not
-  green.**
-- **Same failures on the untouched #3502 head.** Re-running the 173 tests in the failing files on that
-  head (in an isolated worktree, so it ran its own `@copse` packages): 155 passed, 9 failed, 9 cancelled,
-  against 156 passed, 8 failed, 9 cancelled here.
-- **API protocol: v42 to v43.** `gen-api-protocol --compare-ref` exits 0 and classifies 2 additive and 16
-  changes as breaking, caused by widening `RightPanelMode` and the optional `sideChat` and `links` fields on
-  `Thread`. The manifest is current.
+Both branches were rebased onto main (`26f9cf4`, which now contains the whole milestone 5 stack).
+Conflicts were in the API protocol version, `demo-scenarios.ts`, the PR pane (main's new list and
+overflow-menu layout), the archive path (main now persists a worktree retirement) and some tests. The
+SQLite branch needed v43 and this one v44.
+
+- **52 new tests, all passing.** `side-chat` (7), `thread-links` (6), store and index integration (7),
+  the side chat controller (10: start, send, queue, promote), the Side chat panel (5), the Context
+  model (5) and panel (4), store helpers for archive, delete, restore and blank-prune (6), sidebar and
+  Activity hiding (1), conversation action and chip (1 new, 1 rewritten). Renderer, shared and
+  thread-store: 3,918 passed, 0 failed.
+- **Browser demo `tests/demo/side-chats-context.demo.ts`: 7 passed.** It covers the anchor chip and
+  roll-up dot; the Context sections; opening a side chat beside the main thread; asking in it and
+  getting the reply there; the hover action and suggestions; promote; and archive and restore, with a
+  horizontal-overflow guard. The titlebar and VNC demo specs still pass (5). On the SQLite branch both
+  PR relationship demo specs pass (4) after the rebase.
+- **`pnpm run check:local`: exit 0** on both branches (e2e syntax, typecheck, type coverage, lint in
+  all four shards, format, demo-site sync, dead code, oracle, e2e exclusions).
+- **Full unit tier (`pnpm test`) on this branch: 13,411 tests, 13,368 passed, 12 failed, 9 cancelled,
+  22 skipped. The full gate is not green.** Eleven of the failures are sandbox or toolchain tests
+  (bubblewrap and socat missing, uv/pip/Go/Cargo preparation, SSH transport, commit signing,
+  semantic-index quit timing), the same files as before the rebase. The twelfth was
+  `screenshot-producers`, which I fixed. The earlier comparison of those files against the then-#3502
+  head (155 passed, 9 failed, 9 cancelled there, 156 / 8 / 9 here) was not repeated after the rebase.
+- **API protocol: v43 to v44.** `gen-api-protocol --compare-ref` against the rebased SQLite branch
+  exits 0 and classifies 2 additive and 16 changes as breaking, caused by widening `RightPanelMode`
+  and the optional `sideChat` and `links` fields on `Thread`. The manifest is current.
 - **Oracle:** `HIGH` is not claimed. It reported broad coverage (shared types, IPC, persisted data), so
   the full-check rule applies and the fast path was not used.
 
 ### Measurements
 
-Synthetic and single-run; they exclude IPC and rendering. Treat them as orders of magnitude.
+Synthetic and single-run, taken before the rebase on the then-current index code, which the rebase
+did not change. They exclude IPC and rendering. Treat them as orders of magnitude.
 
 - **Cost when the features are unused**, #3502's profiler, schema v1 against v2, 1,000 / 10,000 threads:
   full rebuild 502 / 4,104 ms against 512 / 4,339 ms (+2% / +6%), reopen 37 / 223 ms against 45 / 254 ms,
@@ -156,44 +182,45 @@ Synthetic and single-run; they exclude IPC and rendering. Treat them as orders o
 
 ### Visual evidence
 
-Reviewed after capture. Reviewing them found and fixed three defects the assertions had missed: the
-clipped banner and button, a horizontally overflowing side chat row, and a spec that archived the wrong
-side chat. Two style tests also caught an accent rail on a non-nesting element and a hard-coded
-line-height, both fixed.
+Reviewed after capture.
 
-- `tests/e2e/screenshots/side-chats-context-panel.png`: the Context panel for a thread with side chats,
-  links and a subagent.
-- `tests/e2e/screenshots/side-chat-open-with-context.png`: an open side chat and its banner.
+- `tests/e2e/screenshots/side-chat-beside-main-thread.png`: a side chat open beside the main thread,
+  with the chips list, read-only context line, transcript and composer.
+- `tests/e2e/screenshots/side-chat-anchor-chip.png`: the chip under the branched message, with an
+  unread dot.
+- `tests/e2e/screenshots/side-chat-new-with-suggestions.png`: a new side chat from the hover action.
+- `tests/e2e/screenshots/side-chat-promoted-to-thread.png`: after Promote to thread.
+- `tests/e2e/screenshots/side-chats-context-panel.png`: the Context panel.
 - `tests/e2e/screenshots/side-chat-unread-rollup-sidebar.png`: the unread dot on the parent row.
-- `tests/e2e/screenshots/side-chats-archive-restore.png`: after archiving the new side chat and
-  restoring an old one.
+- `tests/e2e/screenshots/side-chats-archive-restore.png`: archive and restore in the Context panel.
 
 ## Remaining work
 
-- Decide the side chat placement (drawer, margin, tray or rail slot) and build the host. This is the
-  main blocker to the design and needs the instance registry below.
-- Per-thread panel instance registry and slot layout; the panel switcher variant; gutter.
-- Message hover action and `⌘/`; per-side-chat model picker in the UI (the field is stored and
-  inherited, but nothing lets the user choose it).
-- "Send summary to main", "Promote to thread".
-- A hidden side chat can need approval or ask a question. Today nothing surfaces it. Decide whether
-  Activity's "Needs you" lists hidden side chats.
+- **Per-thread panel instance registry and slot layout** (design first); the panel switcher variant and
+  gutter. These decide how side chats, browsers and terminals share the right panel.
+- A hidden side chat can need approval or ask a question and nothing surfaces it today. Decide whether
+  Activity's "Needs you" lists them. A side chat also runs tools in the same checkout as its parent.
+- "Send summary to main" (needs a way for the note to reach the parent's agent), a per-side-chat model
+  picker, re-sync, `⌘/` or another binding.
+- Reuse the full conversation view (attachments, approvals, tool cards) in the side chat panel.
 - Usage attribution: side chat spend is on its own thread, not the parent's footer.
 - Legacy threads have no recorded links, so backlinks are incomplete until they are backfilled. #3502
   measured 1.5 s per 1,000 unscanned chats for the PR equivalent; the same cost applies here.
-- Unread roll-up covers the active project only; other projects' rows are compacted.
+- Unread roll-up covers the active project only.
 - Make the Context panel the default right-panel opener and gate it appropriately.
 - The `lookupSideChats` decision above.
+- Validate on macOS and in real Electron.
 
 ## Suggested slices for the milestone
 
 1. Land #3502 (or its rework), then this data layer: `sideChat`, `links`, index v2, cascade and
    blank-prune guard. Low UI risk, high persistence risk.
-2. Side chat creation and the hidden/unread/archive behaviour in the sidebar and Activity.
-3. Context panel as a mode (this spike's panel), then as the default opener.
-4. Per-thread instance registry and slot layout. Design first: it supersedes mode-per-button.
-5. Side chat host in a slot, then summary and promote.
-6. Switcher variant, gutter, narrow-layout dot, then the Activity PR list and PR mode.
+2. Side chat creation and the hidden, unread and archive behaviour in the sidebar and Activity.
+3. The Side chat panel and the message action and chip (this spike's panel), then reuse of the full
+   conversation view.
+4. Context panel as a mode, then as the default opener.
+5. Per-thread instance registry and slot layout, then the switcher variant and gutter.
+6. Summary, the narrow-layout dot, then the Activity PR list and PR mode.
 
 ## How to run it
 
