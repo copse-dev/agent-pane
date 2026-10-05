@@ -304,6 +304,26 @@ export interface ThreadReviewReport {
   error?: string
 }
 
+/** Which parent message a side chat branched from, and whether it reported back. */
+export interface SideChatLink {
+  parentThreadId: string
+  /**
+   * The parent message the side chat branched from. The side chat's agent
+   * history is seeded from the parent transcript up to and including it, once,
+   * at creation; the parent never sees the side chat unless a summary is sent.
+   */
+  anchorMessageId: string
+  /** Set when "Send summary to main" posted a note back to the parent. */
+  summarySentAt?: number
+}
+
+/** One non-PR reference recorded for the Context panel. */
+export interface ThreadLink {
+  kind: 'url' | 'thread'
+  /** Normalized URL for `url`; thread id for `thread`. */
+  target: string
+}
+
 export interface Thread {
   id: string
   title: string
@@ -342,6 +362,18 @@ export interface Thread {
    * (on append, and on hydration).
    */
   prRefs?: GithubPrRef[]
+  /**
+   * Set when this thread is a side chat: a hidden, anchored conversation branched
+   * from a message of another thread. Side chats are ordinary threads on disk
+   * (own model, own usage, archivable); this link is all that marks them.
+   */
+  sideChat?: SideChatLink
+  /**
+   * Non-PR links this thread has mentioned (web pages and other Copse threads),
+   * cached on metadata like {@link prRefs} so the index can answer "which threads
+   * link here" without reading transcripts. Append-only. Absent means unscanned.
+   */
+  links?: ThreadLink[]
   /** Successful native PR-create results; mentions and legacy links cannot populate this. */
   prProductions?: PrProduction[]
   /** Exact successful git_commit object identities, independent of attribution preference. */

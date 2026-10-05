@@ -17,9 +17,14 @@ import {
   type ThreadPrRelationship,
 } from './thread-pr-relations.ts'
 import type { GithubPrRef } from './github-pr-url.ts'
+import { toSideChatRow, type SideChatRow } from './side-chat.ts'
+import type { ThreadBacklink } from './thread-links.ts'
+import type { ThreadLink } from './thread-types.ts'
 
 export const THREAD_INDEX_FILE = '.thread-index.sqlite'
-const SCHEMA_VERSION = 1
+// v2 adds the side_chats and links tables. An older index is incompatible, so the
+// store discards and rebuilds it from the authoritative thread files.
+const SCHEMA_VERSION = 2
 const BATCH_SIZE = 128
 const kindsSchema = z.array(z.enum(['produced', 'referenced', 'agent-linked']))
 const threadRelationSchema = z.object({ pr: prRefSchema, kinds: kindsSchema })
@@ -62,6 +67,11 @@ export class SqliteThreadIndex {
   #readCommit
   #readUnscanned
   #readUnscannedThread
+  #putSideChat
+  #putLink
+  #readSideChats
+  #readThreadLinks
+  #readBacklinks
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
@@ -95,6 +105,17 @@ export class SqliteThreadIndex {
           PRIMARY KEY(thread_id, repository, sha)
         );
         CREATE INDEX IF NOT EXISTS commit_lookup ON commit_links(repository, sha, thread_id);
+        CREATE TABLE IF NOT EXISTS side_chats (
+          thread_id TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+          parent_id TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS side_chat_parent ON side_chats(parent_id, thread_id);
+        CREATE TABLE IF NOT EXISTS links (
+          thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL, target TEXT NOT NULL, ordinal INTEGER NOT NULL,
+          PRIMARY KEY(thread_id, kind, target)
+        );
+        CREATE INDEX IF NOT EXISTS link_lookup ON links(kind, target, thread_id);
         CREATE TABLE IF NOT EXISTS pending (thread_id TEXT PRIMARY KEY);
         PRAGMA user_version=${String(SCHEMA_VERSION)};
       `)
@@ -127,6 +148,17 @@ export class SqliteThreadIndex {
       this.#readCommit = this.#db.prepare(
         'SELECT payload FROM commit_links WHERE repository=? AND sha=? ORDER BY thread_id',
       )
+      this.#putSideChat = this.#db.prepare('INSERT INTO side_chats VALUES(?,?)')
+      this.#putLink = this.#db.prepare('INSERT INTO links VALUES(?,?,?,?)')
+      this.#readSideChats = this.#db.prepare(`SELECT t.meta AS meta FROM side_chats s
+        JOIN threads t ON t.id=s.thread_id WHERE s.parent_id=? AND (? OR t.archived=0)
+        ORDER BY s.thread_id`)
+      this.#readThreadLinks = this.#db.prepare(
+        'SELECT kind,target FROM links WHERE thread_id=? ORDER BY ordinal',
+      )
+      this.#readBacklinks = this.#db.prepare(`SELECT l.thread_id AS id, t.meta AS meta FROM links l
+        JOIN threads t ON t.id=l.thread_id WHERE l.kind=? AND l.target=? AND t.archived=0
+        ORDER BY l.thread_id`)
       const unscanned = "archived=0 AND json_type(meta,'$.prRefs') IS NULL"
       this.#readUnscanned = this.#db.prepare(`SELECT id FROM threads WHERE ${unscanned}`)
       this.#readUnscannedThread = this.#db.prepare(
@@ -181,7 +213,14 @@ export class SqliteThreadIndex {
     )
     this.#db.prepare('DELETE FROM pr_links WHERE thread_id=?').run(thread.id)
     this.#db.prepare('DELETE FROM commit_links WHERE thread_id=?').run(thread.id)
+    this.#db.prepare('DELETE FROM side_chats WHERE thread_id=?').run(thread.id)
+    this.#db.prepare('DELETE FROM links WHERE thread_id=?').run(thread.id)
+    // Archived side chats stay listed (archived, not deleted); only PR/commit/link
+    // claims are withheld from archived threads.
+    if (thread.sideChat) this.#putSideChat.run(thread.id, thread.sideChat.parentThreadId)
     if (thread.archivedAt != null) return
+    for (const [ordinal, link] of (thread.links ?? []).entries())
+      this.#putLink.run(thread.id, link.kind, link.target, ordinal)
     for (const [ordinal, relation] of threadPrRelationships(thread).entries()) {
       const key = prRelationKey(relation.pr)
       const prPayload: PrThreadRelationship = {
@@ -262,6 +301,38 @@ export class SqliteThreadIndex {
       await setImmediate()
     }
     return sortThreadsNewestFirst(threads)
+  }
+
+  /** Side chats of a thread, oldest first; archived ones are opt-in. */
+  sideChatsOf(parentId: string, includeArchived = false): SideChatRow[] {
+    return this.#readSideChats
+      .all(parentId, includeArchived ? 1 : 0)
+      .map((row) => {
+        const meta = decode(row['meta'], parseThreadMetaValue)
+        const sideChat = toSideChatRow({ ...meta, messages: [] })
+        if (!sideChat) throw new Error('Invalid side chat row')
+        return sideChat
+      })
+      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+  }
+
+  /** Links one thread has mentioned, in order of first appearance. */
+  linksOf(threadId: string): ThreadLink[] {
+    return this.#readThreadLinks.all(threadId).map((row) => {
+      const kind = row['kind']
+      const target = row['target']
+      if ((kind !== 'url' && kind !== 'thread') || typeof target !== 'string')
+        throw new Error('Invalid thread link row')
+      return { kind, target }
+    })
+  }
+
+  /** Active threads that mention `target`. */
+  backlinks(kind: ThreadLink['kind'], target: string): ThreadBacklink[] {
+    return this.#readBacklinks.all(kind, target).map((row) => {
+      const meta = decode(row['meta'], parseThreadMetaValue)
+      return { threadId: meta.id, title: meta.title }
+    })
   }
 
   forPr(pr: GithubPrRef): PrThreadRelationship[] {
