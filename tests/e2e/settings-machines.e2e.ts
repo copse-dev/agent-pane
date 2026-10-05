@@ -14,7 +14,7 @@ import {
 } from '../../src/main/services/machines/machine-store.ts'
 import { createKeyringCipher } from '../../src/main/services/storage/keyring-cipher.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 /** Actual Electron IPC + OS credentials + a separate production TLS host with fixture inference. */
@@ -88,7 +88,7 @@ describe('Machines settings', function () {
     await host.share({ enabled: true, address: '127.0.0.1', port: 0, profileIds: [profile.id] })
     invitation = host.invitation()
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-machines')
+    seedEmptyProject(seedStableWorkspace(), 'e2e-machines')
     await browser.reloadSession()
   })
   after(async () => {
