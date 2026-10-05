@@ -139,4 +139,30 @@ describe('sidebar thread sort', () => {
     await choose('Project')
     await $('.project-row').waitForExist({ timeout: 5_000 })
   })
+
+  it('keeps owner labels readable after widening the sidebar', async () => {
+    const divider = await $('#resizer-projects').getLocation()
+    await browser.performActions([
+      {
+        type: 'pointer',
+        id: 'sidebar-width',
+        parameters: { pointerType: 'mouse' },
+        actions: [
+          { type: 'pointerMove', duration: 0, x: Math.round(divider.x), y: 300 },
+          { type: 'pointerDown', button: 0 },
+          { type: 'pointerMove', duration: 200, x: 380, y: 300 },
+          { type: 'pointerUp', button: 0 },
+        ],
+      },
+    ])
+    await browser.releaseActions()
+    const width = await $('#pane-projects').getSize('width')
+    expect(width).toBeGreaterThan(350)
+    for (const group of ['Status', 'None']) {
+      await openMenu()
+      await choose(group)
+      await expectOwnerLabelsFit()
+      await saveAppScreenshot(`sidebar-thread-group-${group.toLowerCase()}-wide.png`)
+    }
+  })
 })
