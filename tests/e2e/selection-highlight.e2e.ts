@@ -3,6 +3,7 @@ import {
   resetUserData,
   seedConversationVisualHierarchyFixture,
   seedE2eViewport,
+  seedStableWorkspace,
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -17,6 +18,7 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 interface HighlightSnapshot {
   /** `background` / `color` as authored on the ::selection rule. */
   rule: { background: string; color: string } | null
+  replyRule: { background: string; color: string } | null
   selectionBackground: string
   selectionText: string
   selectionContrast: number
@@ -32,13 +34,16 @@ async function highlightSnapshot(): Promise<HighlightSnapshot | null> {
     // getComputedStyle cannot resolve highlight pseudos, so read the rule the
     // stylesheet actually carries and resolve its var() through the tokens.
     let rule: { background: string; color: string } | null = null
+    let replyRule: { background: string; color: string } | null = null
     for (const sheet of Array.from(document.styleSheets)) {
       for (const cssRule of Array.from(sheet.cssRules)) {
-        if (!(cssRule instanceof CSSStyleRule) || cssRule.selectorText !== '::selection') continue
-        rule = {
+        if (!(cssRule instanceof CSSStyleRule)) continue
+        const colors = {
           background: cssRule.style.getPropertyValue('background').trim(),
           color: cssRule.style.getPropertyValue('color').trim(),
         }
+        if (cssRule.selectorText === '::selection') rule = colors
+        if (cssRule.selectorText === '::highlight(transcript-reply-selection)') replyRule = colors
       }
     }
     const luminance = (hex: string): number => {
@@ -57,6 +62,7 @@ async function highlightSnapshot(): Promise<HighlightSnapshot | null> {
     }
     return {
       rule,
+      replyRule,
       selectionBackground: token('--selection-bg'),
       selectionText: token('--selection-text'),
       selectionContrast: contrast(token('--selection-bg'), token('--selection-text')),
@@ -64,24 +70,34 @@ async function highlightSnapshot(): Promise<HighlightSnapshot | null> {
         token('--highlight-current-bg'),
         token('--highlight-current-text'),
       ),
-      selectedText: (window.getSelection()?.toString() ?? '').trim(),
+      // Autofocus moves the native selection into the reply textarea. The
+      // passage is now painted by the captured CSS Highlight instead.
+      selectedText: (
+        window.getSelection()?.toString() ||
+        [...(CSS.highlights.get('transcript-reply-selection') ?? [])]
+          .map((range) => (range instanceof Range ? range.toString() : ''))
+          .join('')
+      ).trim(),
     }
   })
 }
 
 /** Drag-select the assistant's rendered markdown, the way a user copying it would. */
-async function selectAssistantText(): Promise<void> {
-  await browser.execute(() => {
+async function selectAssistantText(): Promise<string> {
+  const text = await browser.execute(() => {
     const paragraph = document.querySelector<HTMLElement>(
       '[data-message-id="msg-assistant-result"] .message-text p',
     )
     const selection = window.getSelection()
-    if (!paragraph || !selection) return
+    if (!paragraph || !selection) throw new Error('assistant paragraph or selection missing')
     const range = document.createRange()
     range.selectNodeContents(paragraph)
     selection.removeAllRanges()
     selection.addRange(range)
+    return paragraph.textContent?.trim() ?? ''
   })
+  await $('.transcript-selection-reply').waitForDisplayed({ timeout: 5_000 })
+  return text
 }
 
 async function switchTheme(theme: 'light' | 'dark'): Promise<void> {
@@ -109,7 +125,7 @@ describe('selected text stays visible', () => {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
-    seedConversationVisualHierarchyFixture(process.cwd())
+    seedConversationVisualHierarchyFixture(seedStableWorkspace())
     seedE2eViewport({ width: 1280, height: 800 })
     await browser.reloadSession()
     await $('[data-message-id="msg-assistant-result"] .message-text').waitForExist({
@@ -122,7 +138,7 @@ describe('selected text stays visible', () => {
   })
 
   it('highlights selected prose with a readable pair in both themes', async () => {
-    await selectAssistantText()
+    const darkText = await selectAssistantText()
     const dark = await highlightSnapshot()
     expect(dark).not.toBeNull()
     // The rule must set both halves: a background alone leaves the text its own
@@ -131,19 +147,23 @@ describe('selected text stays visible', () => {
       background: 'var(--selection-bg)',
       color: 'var(--selection-text)',
     })
+    expect(dark?.replyRule).toEqual(dark?.rule)
     expect(dark?.selectionBackground).toBe('#2f6fd0')
     expect(dark?.selectionText).toBe('#ffffff')
     expect(dark?.selectionContrast).toBeGreaterThanOrEqual(4.5)
     expect(dark?.currentMatchContrast).toBeGreaterThanOrEqual(4.5)
-    expect(dark?.selectedText.length).toBeGreaterThan(0)
+    expect(darkText.length).toBeGreaterThan(0)
+    expect(dark?.selectedText).toBe(darkText)
     await saveAppScreenshot('selection-highlight-dark.png')
 
     await switchTheme('light')
-    await selectAssistantText()
+    const lightText = await selectAssistantText()
     const light = await highlightSnapshot()
     expect(light?.selectionBackground).toBe('#b0d3ff')
     expect(light?.selectionText).toBe('#10243b')
     expect(light?.selectionContrast).toBeGreaterThanOrEqual(4.5)
+    expect(light?.replyRule).toEqual(light?.rule)
+    expect(light?.selectedText).toBe(lightText)
     // The light theme darkens --accent while --text-on-accent tracks the raw
     // accent, so the current search match must not be built from that pair.
     expect(light?.currentMatchContrast).toBeGreaterThanOrEqual(4.5)
