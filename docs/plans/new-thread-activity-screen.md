@@ -21,7 +21,9 @@ Decided during the build; the slice text below is the original plan and is super
   centred vertically as well as horizontally; it docks when the first row arrives. This replaces
   the top-anchored zero-row state.
 - **Strips (slice 3).** One project strip carries the need-you counts; there is no separate
-  attention strip.
+  attention strip. The prototype lists only projects that need you (plus the chosen one); the
+  product lists every project, sorted by attention, and omits the per-project tiles when there is
+  a single project.
 - **Approve and state words (slice 3).** The home uses the prototype's pill Approve and drops the
   state word for active rows; `ui-taste.md` was amended to allow both.
 - **Sort (slice 4).** Sorting runs at render time over the sidebar rows and leaves the store's
