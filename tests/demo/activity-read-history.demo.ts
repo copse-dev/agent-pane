@@ -14,7 +14,7 @@ describe('Activity home recent history', () => {
 
   it('lists completed threads from before launch, newest first, within the window', async () => {
     const rows = await $$('#activity-home .activity-row')
-    const text = await Promise.all(rows.map((row) => row.getText()))
+    const text = await rows.map((row) => row.getText())
     // The stored failure sits inside the window, so it still shows; failures lead.
     expect(text).toHaveLength(4)
     expect(text[0]).toContain('Fix the flaky sandbox test')
@@ -25,4 +25,20 @@ describe('Activity home recent history', () => {
     expect(text.join('\n')).not.toContain('Rename the config keys')
     await saveAppScreenshot('activity-read-history.png')
   })
+  for (const width of [800, 1600]) {
+    it(`keeps recent history visible at ${width}px`, async () => {
+      await browser.setWindowSize(width, 900)
+      const rows = await $$('#activity-home .activity-row')
+      expect(rows).toHaveLength(4)
+      const geometry = await browser.execute(() => {
+        const pane = document.querySelector('#pane-chat')?.getBoundingClientRect()
+        const home = document.querySelector('#activity-home')?.getBoundingClientRect()
+        return pane && home ? { left: home.left - pane.left, right: pane.right - home.right } : null
+      })
+      expect(geometry).not.toBeNull()
+      expect(geometry?.left).toBeGreaterThanOrEqual(0)
+      expect(geometry?.right).toBeGreaterThanOrEqual(0)
+      await saveAppScreenshot(`activity-read-history-${width}.png`)
+    })
+  }
 })
