@@ -11,6 +11,7 @@ import {
   getSidebarThreads,
   isProjectSwitchInFlight,
   paginateSidebarThreads,
+  preloadSidebarThreads,
   dismissOrphanProject,
   listOrphanProjects,
   parseDismissedOrphanStores,
@@ -1318,4 +1319,77 @@ test('paginateSidebarThreads hides Show more when all threads fit', () => {
   const result = paginateSidebarThreads(threads, SIDEBAR_THREADS_PAGE_SIZE, null)
   assert.equal(result.visibleThreads.length, 8)
   assert.equal(result.hasMore, false)
+})
+
+test('preloadSidebarThreads lists the thread titles of projects not opened this session', async () => {
+  resetProjectSwitchStateForTest()
+  const loadedFor: string[] = []
+  const api = makeApi({
+    loadProjectThreads: async (projectId) => {
+      loadedFor.push(projectId)
+      if (projectId === 'broken') throw new Error('unreadable')
+      return [thread(`${projectId}-t`, `${projectId} thread`)]
+    },
+  })
+  const store = createStore({
+    projects: [
+      { id: 'active', path: '/a', name: 'a' },
+      { id: 'other', path: '/b', name: 'b' },
+      { id: 'broken', path: '/c', name: 'c' },
+      { id: 'later', path: '/d', name: 'd' },
+      { id: 'remote', path: '/e', name: 'e', sshHost: 'host' },
+      { id: 'gone', path: '/f', name: 'f', missing: true },
+    ],
+    activeProjectId: 'active',
+    threads: [thread('live')],
+  })
+  let loadedEvents = 0
+  store.on('sidebar_threads_loaded', () => {
+    loadedEvents += 1
+  })
+  assert.deepEqual(getSidebarThreads(store, 'other'), [], 'nothing is read before the preload')
+
+  await preloadSidebarThreads(store, api)
+
+  assert.deepEqual(
+    getSidebarThreads(store, 'other').map((t) => t.title),
+    ['other thread'],
+  )
+  assert.deepEqual(
+    getSidebarThreads(store, 'later').map((t) => t.title),
+    ['later thread'],
+    'a project after an unreadable one still loads',
+  )
+  assert.equal(getSidebarThreads(store, 'other')[0]?.messages, undefined, 'transcripts are dropped')
+  assert.deepEqual(loadedFor, ['other', 'broken', 'later'], 'active, SSH and missing are skipped')
+  assert.equal(loadedEvents, 2)
+  assert.deepEqual(
+    getSidebarThreads(store, 'active').map((t) => t.id),
+    ['live'],
+  )
+})
+
+test('preloadSidebarThreads leaves a project that was cached meanwhile alone', async () => {
+  resetProjectSwitchStateForTest()
+  setThreadCacheForTest('other', [thread('fresh', 'Fresh')])
+  let reads = 0
+  const api = makeApi({
+    loadProjectThreads: async () => {
+      reads += 1
+      return [thread('stale', 'Stale')]
+    },
+  })
+  const store = createStore({
+    projects: [
+      { id: 'active', path: '/a', name: 'a' },
+      { id: 'other', path: '/b', name: 'b' },
+    ],
+    activeProjectId: 'active',
+  })
+  await preloadSidebarThreads(store, api)
+  assert.equal(reads, 0)
+  assert.deepEqual(
+    getSidebarThreads(store, 'other').map((t) => t.title),
+    ['Fresh'],
+  )
 })

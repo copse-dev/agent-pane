@@ -1210,6 +1210,7 @@ export function createActivityView(
   store.on('threads_changed', onChange)
   store.on('thread_status_changed', onChange)
   store.on('projects_changed', onChange)
+  store.on('sidebar_threads_loaded', onChange)
   store.on('agent_activity', onChange)
 
   function hide(): void {

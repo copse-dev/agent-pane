@@ -2409,6 +2409,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store.on('threads_changed', render),
+    store.on('sidebar_threads_loaded', render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store.on('thread_status_changed', () => {

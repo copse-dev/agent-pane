@@ -236,6 +236,34 @@ function cacheThreads(projectId: string, threads: Thread[]): void {
   threadCache.set(projectId, threads)
 }
 
+/**
+ * Read the thread titles of every project the session has not opened, so the
+ * sidebar and Activity can list them without a switch. Metadata only (the same
+ * rows a switch would cache, compacted), one project at a time so a large
+ * profile never competes with the active project's own load. Skips the active
+ * project, SSH projects (reading them needs a connection) and anything already
+ * cached, and never replaces an entry a switch filled in meanwhile.
+ */
+export async function preloadSidebarThreads(store: AppStore, api: ApiClient): Promise<void> {
+  const pending = store
+    .getState()
+    .projects.filter((project) => !project.sshHost && !project.missing)
+    .map((project) => project.id)
+  for (const id of pending) {
+    if (id === store.getState().activeProjectId || threadCache.has(id)) continue
+    let loaded: Thread[]
+    try {
+      loaded = await loadThreads(api, id)
+    } catch {
+      // One unreadable project must not hide the rest; a switch still loads it.
+      continue
+    }
+    if (id === store.getState().activeProjectId || threadCache.has(id)) continue
+    threadCache.set(id, loaded.map(compactSidebarThread))
+    store.emit('sidebar_threads_loaded')
+  }
+}
+
 /** Keep the sidebar cache aligned with the active workspace thread list. */
 export function attachProjectThreadCache(store: AppStore): () => void {
   return store.on('threads_changed', () => {
