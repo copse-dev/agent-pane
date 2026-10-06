@@ -76,6 +76,7 @@ function fixture(
   const checkouts: string[] = []
   const dependencies: ThreadCheckoutTransactionDependencies = {
     getDeferredWorktreesEnabled: () => false,
+    canDeferAcpModel: () => false,
     getProject: () => ON_WRITE,
     getThread: async () => thread,
     updateMeta: async (_projectId, _threadId, patch) => {
@@ -164,6 +165,61 @@ describe('first message in an on-write project', () => {
       assert.equal(prepared.checkoutMode, 'worktree')
       assert.equal(getThread().deferredWorktree, undefined)
     }
+  })
+})
+
+describe('ACP agents that can start read-only', () => {
+  const input = {
+    projectId: 'project-1',
+    threadId: 'thread-1',
+    prompt: 'explain this',
+    choice: 'automatic' as const,
+    model: 'acp:claude-code',
+  }
+  const eligible =
+    (calls: Array<{ model: string; remote: boolean }>) =>
+    (model: string, options: { remote: boolean }): boolean => {
+      calls.push({ model, remote: options.remote })
+      return true
+    }
+
+  it('defers when the agent can be contained, and allocates up front when it cannot', async () => {
+    for (const canDefer of [true, false]) {
+      const { dependencies, allocations } = fixture({
+        getProject: () => ({ id: 'project-1', name: 'Project', path: '/repo' }),
+        getDeferredWorktreesEnabled: () => true,
+        canDeferAcpModel: () => canDefer,
+      })
+      const prepared = await createThreadCheckoutTransaction(dependencies)(input)
+      assert.equal(
+        prepared.deferredWorktree !== undefined,
+        canDefer,
+        `canDefer ${String(canDefer)}`,
+      )
+      assert.equal(prepared.checkoutMode, canDefer ? 'shared' : 'worktree')
+      assert.equal(allocations.length, canDefer ? 0 : 1)
+    }
+  })
+
+  it('asks the policy about the model', async () => {
+    const calls: Array<{ model: string; remote: boolean }> = []
+    const { dependencies } = fixture({
+      getDeferredWorktreesEnabled: () => true,
+      canDeferAcpModel: eligible(calls),
+    })
+    await createThreadCheckoutTransaction(dependencies)(input)
+    assert.deepEqual(calls, [{ model: 'acp:claude-code', remote: false }])
+  })
+
+  it('never defers on a remote project, whatever the agent can do', async () => {
+    const calls: Array<{ model: string; remote: boolean }> = []
+    const { dependencies } = fixture({
+      getProject: () => ({ ...ON_WRITE, sshHost: 'dev' }),
+      canDeferAcpModel: eligible(calls),
+    })
+    const prepared = await createThreadCheckoutTransaction(dependencies)(input)
+    assert.equal(prepared.deferredWorktree, undefined)
+    assert.deepEqual(calls, [], 'a remote project is refused without asking the agent policy')
   })
 })
 

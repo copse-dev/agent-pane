@@ -204,6 +204,22 @@ describe('parseSessionHostRequest', () => {
     }
   })
 
+  it('carries a read-only checkout across to the host, and only when it is exactly true', () => {
+    for (const value of [true, false, 'true', 1, null]) {
+      const request = parseSessionHostRequest(
+        JSON.stringify({
+          config: {
+            command: 'codex-acp',
+            cwd: '/workspace',
+            sandbox: { allowedDomains: ['chatgpt.com'] },
+            readonlyCheckout: value,
+          },
+        }),
+      )
+      assert.equal(request?.config.readonlyCheckout, value === true ? true : undefined)
+    }
+  })
+
   it('decodes only the spawn and confinement fields', () => {
     assert.deepEqual(
       parseSessionHostRequest(

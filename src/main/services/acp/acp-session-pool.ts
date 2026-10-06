@@ -141,6 +141,7 @@ export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
     sandbox: config.sandbox ?? null,
     mcpServers: config.mcpServers ?? [],
     permissionMode: config.permissionMode ?? null,
+    readonlyCheckout: config.readonlyCheckout === true,
   })
 }
 
@@ -325,6 +326,7 @@ async function acquireAcpSessionUnlocked(
     ? await perfSpan('ttft:acp-bridge-start', () =>
         startAcpNativeBridge(registry, bridgeAbort.signal, {
           networkScopeAlreadyApplies: shareNetworkScope,
+          offerWriteAccess: opts.config.readonlyCheckout === true,
           ...(opts.projectId ? { projectId: opts.projectId } : {}),
           threadId: opts.threadId,
         }).catch((err: unknown) => {

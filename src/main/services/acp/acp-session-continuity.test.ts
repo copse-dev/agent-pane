@@ -16,6 +16,8 @@ import {
   type AcpTransport,
 } from './acp-client.ts'
 import {
+  acpSessionFingerprint,
+  acpSessionLineage,
   acquireAcpSession,
   disposeAllAcpSessions,
   reapIdleAcpSessions,
@@ -151,7 +153,12 @@ function fakeAgent(storage: Storage, caps: { load: boolean; resume: boolean }): 
 
 const PROJECT = '/tmp/continuity/project'
 const WORKTREE = '/tmp/continuity/worktree'
-const READ_ONLY: AcpAgentSpawnConfig = { command: 'fake', cwd: PROJECT, permissionMode: 'plan' }
+const READ_ONLY: AcpAgentSpawnConfig = {
+  command: 'fake',
+  cwd: PROJECT,
+  permissionMode: 'plan',
+  readonlyCheckout: true,
+}
 const WRITABLE: AcpAgentSpawnConfig = {
   command: 'fake',
   cwd: WORKTREE,
@@ -206,6 +213,25 @@ describe('ACP session continuity across a new agent process', () => {
       moved.acquired.entry.open.availableCommands.map((command) => command.name),
       ['review'],
     )
+  })
+
+  it('respawns, and keeps the session, when only the read-only checkout flag changes', async () => {
+    const fake = fakeAgent('global', { load: true, resume: true })
+    await prompt(fake, READ_ONLY, 'plan the fix')
+    const { readonlyCheckout: _readonly, ...writableInPlace } = READ_ONLY
+
+    const next = await prompt(fake, writableInPlace, 'now make the fix')
+
+    assert.equal(fake.spawns, 2, 'a read-only process must never serve a writable turn')
+    assert.equal(next.acquired.fresh, false)
+    assert.equal(next.acquired.handover, null)
+    assert.equal(next.acquired.entry.open.restoredBy, 'resume')
+  })
+
+  it('fingerprints a read-only checkout apart from a writable one', () => {
+    const { readonlyCheckout: _readonly, ...writable } = READ_ONLY
+    assert.notEqual(acpSessionFingerprint(READ_ONLY), acpSessionFingerprint(writable))
+    assert.equal(acpSessionLineage(READ_ONLY), acpSessionLineage(writable))
   })
 
   it('stays in the moved session across a later idle reap', async () => {
