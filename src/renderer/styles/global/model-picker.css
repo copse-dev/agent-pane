@@ -195,7 +195,8 @@
   font-size: var(--font-size-2xs);
   font-variant-numeric: tabular-nums;
 }
-.model-picker-cost {
+.model-picker-cost,
+.model-picker-retention {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -451,8 +452,8 @@
   }
 }
 
-/* Keep the route privacy qualification legible beside a truncated model name. */
-.model-picker-retention {
-  flex-shrink: 0;
-  color: var(--text-muted);
+/* History mark in the same tile as the $ marker; the tooltip says retention is unverified. */
+.model-picker-retention .ui-icon {
+  width: 11px;
+  height: 11px;
 }

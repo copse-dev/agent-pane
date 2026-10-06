@@ -150,6 +150,13 @@ describe('coverage in the real composer model picker', () => {
     await browser.keys('Escape')
     await browser.keys('Escape')
     await expect($(MENU)).not.toBeDisplayed()
+    // Screenshot framing pins #app to 800px tall. Release that capture frame
+    // before shrinking the window so the composer follows the real viewport.
+    await browser.execute(() => {
+      const app = document.getElementById('app')!
+      app.style.removeProperty('width')
+      app.style.removeProperty('height')
+    })
     await browser.setWindowSize(800, 700)
     await $(TRIGGER).click()
     await $(MENU + ' .model-picker-browse').click()

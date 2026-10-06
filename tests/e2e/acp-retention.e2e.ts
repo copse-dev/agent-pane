@@ -68,14 +68,12 @@ describe('device-agent route retention qualification', function () {
 
   it('qualifies the selected route, its picker row, and the agent settings without claiming local or ZDR', async () => {
     const composer = $('.footer-model-host .model-picker')
-    await composer
-      .$('.model-picker-trigger .model-picker-retention')
-      .waitForDisplayed({ timeout: 30_000 })
-    await expect(composer.$('.model-picker-retention')).toHaveText('ZDR not verified')
+    await composer.$('.model-picker-trigger').waitForDisplayed({ timeout: 30_000 })
+    await expect(composer.$('.model-picker-trigger .model-picker-retention')).not.toExist()
     await composer.$('.model-picker-trigger').click()
     const row = composer.$(`.model-picker-option[data-value="${ROUTE}"]`)
     await row.waitForDisplayed()
-    await expect(row.$('.model-picker-retention')).toHaveText('ZDR not verified')
+    await expect(row.$('.model-picker-retention')).toHaveAttribute('aria-label', 'ZDR not verified')
     const tooltip = await row.$('.model-picker-retention').getAttribute('title')
     assert.match(tooltip ?? '', /signed-in account and upstream model provider/)
     await saveElementScreenshot(
@@ -102,6 +100,14 @@ describe('device-agent route retention qualification', function () {
     )
     const model = $('.acp-agent-card .model-picker-trigger')
     await model.scrollIntoView({ block: 'center' })
-    await expect(model.$('.model-picker-retention')).toHaveText('ZDR not verified')
+    await expect(model.$('.model-picker-retention')).not.toExist()
+    await model.click()
+    const settingsRow = $('.acp-agent-card .model-picker-option[data-value="fixture-sonnet"]')
+    await settingsRow.waitForDisplayed()
+    await expect(settingsRow.$('.model-picker-retention')).toHaveAttribute(
+      'aria-label',
+      'ZDR not verified',
+    )
+    await expect(settingsRow.$('.model-picker-retention svg')).toExist()
   })
 })

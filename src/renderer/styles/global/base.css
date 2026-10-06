@@ -24,7 +24,10 @@
 html,
 body {
   height: 100%;
-  overflow: hidden;
+  /* The outer frame must never scroll, including through focus or
+     scrollIntoView while controls briefly overflow during a monitor resize.
+     hidden still creates a scroll container and can pan the entire app. */
+  overflow: clip;
   font-family: var(--font-family);
   font-size: var(--font-size-base);
   line-height: var(--line-height-base);
