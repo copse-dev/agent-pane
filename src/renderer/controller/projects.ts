@@ -32,7 +32,7 @@ import {
   carryRunningThreads,
   dropProjectBackgroundThreads,
 } from './background-threads.ts'
-import { begin as perfBegin, mark as perfMark } from '../perf.ts'
+import { begin as perfBegin, mark as perfMark, perfOn } from '../perf.ts'
 
 const uuid = (): string => globalThis.crypto.randomUUID()
 const basename = (p: string): string => p.split('/').pop() ?? p
@@ -605,6 +605,12 @@ async function finishActivate(
   void resumePendingQueues(store, api)
 }
 
+/** Function names (no paths) of the frames that led to `activate`, for the perf trace. */
+function dispatchCallers(): string {
+  const frames = (new Error().stack ?? '').split('\n').slice(3, 8)
+  return frames.map((frame) => /at (?:async )?([^\s(]+)/.exec(frame)?.[1] ?? '?').join(' < ')
+}
+
 // Core project switch: expand the sidebar immediately, then persist threads,
 // point the workspace at the new path, and load threads in the background.
 function activate(
@@ -626,6 +632,14 @@ function activate(
 
   expandProject(store, id)
 
+  if (perfOn) {
+    // Which caller asked, and whether it restarts a switch to the very same
+    // project: a second dispatch for one click shows up as `restarts=true`.
+    perfMark('switch:dispatch', {
+      callers: dispatchCallers(),
+      restarts: pendingSwitch?.projectId === id,
+    })
+  }
   supersedePendingSwitch()
   const gen = ++switchGeneration
   pendingSwitch = { gen, projectId: id, dispatched: false }

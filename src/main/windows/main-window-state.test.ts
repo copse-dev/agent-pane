@@ -8,20 +8,34 @@ import {
 } from './main-window-state.ts'
 import { MAX_RESTORED_BROWSER_TABS } from '@shared/types/main-window.ts'
 
-function memoryStorage(initial?: unknown): { storage: MainWindowStateStorage; writes: unknown[] } {
+function memoryStorage(
+  initial?: unknown,
+  options: { batched?: boolean } = {},
+): { storage: MainWindowStateStorage; writes: unknown[]; batches: string[][] } {
   const values = new Map<string, unknown>()
   if (initial !== undefined) values.set(MAIN_WINDOW_STATE_KEY, initial)
   const writes: unknown[] = []
-  return {
-    storage: {
-      get: (key) => values.get(key),
-      set: (key, value): void => {
-        values.set(key, structuredClone(value))
-        writes.push(structuredClone(value))
-      },
+  /** The keys written together by each backing rewrite. */
+  const batches: string[][] = []
+  const storage: MainWindowStateStorage = {
+    get: (key) => values.get(key),
+    set: (key, value): void => {
+      values.set(key, structuredClone(value))
+      writes.push(structuredClone(value))
+      batches.push([key])
     },
-    writes,
+    ...(options.batched
+      ? {
+          setMany: (patch: Readonly<Record<string, unknown>>): void => {
+            for (const [key, value] of Object.entries(patch))
+              values.set(key, structuredClone(value))
+            writes.push(structuredClone(patch))
+            batches.push(Object.keys(patch))
+          },
+        }
+      : {}),
   }
+  return { storage, writes, batches }
 }
 
 const defaults = {
@@ -253,5 +267,93 @@ describe('MainWindowStateRepository', () => {
       }).success,
       true,
     )
+  })
+})
+
+describe('MainWindowStateRepository.update writes', () => {
+  const navigation = { activeProjectId: 'project-b', activeThreadId: 'thread-b' }
+
+  function seeded(options: { batched?: boolean } = {}): {
+    repository: MainWindowStateRepository
+    writes: unknown[]
+    batches: string[][]
+  } {
+    const memory = memoryStorage(undefined, options)
+    const repository = new MainWindowStateRepository(
+      memory.storage,
+      () => 'window-a',
+      () => 42,
+    )
+    repository.loadOrMigrate(defaults)
+    memory.writes.length = 0
+    memory.batches.length = 0
+    return { repository, writes: memory.writes, batches: memory.batches }
+  }
+
+  it('writes nothing when the patch changes nothing', () => {
+    const { repository, writes } = seeded()
+    const before = repository.get('window-a')
+
+    const result = repository.update('window-a', {
+      activeProjectId: defaults.activeProjectId,
+      activeThreadId: defaults.activeThreadId,
+    })
+
+    assert.deepEqual(writes, [])
+    assert.deepEqual(result, before)
+  })
+
+  it('writes the window record once when the navigation changes', () => {
+    const { repository, writes } = seeded()
+
+    repository.update('window-a', navigation)
+
+    assert.equal(writes.length, 1)
+    assert.equal(repository.get('window-a')?.activeProjectId, 'project-b')
+  })
+
+  it('writes the record and the extra keys in one rewrite when the store can batch', () => {
+    const { repository, batches } = seeded({ batched: true })
+
+    repository.update('window-a', navigation, {
+      activeProjectId: 'project-b',
+      activeThreadId: 'thread-b',
+    })
+
+    assert.equal(batches.length, 1)
+    assert.deepEqual(batches[0]?.slice().sort(), [
+      'activeProjectId',
+      'activeThreadId',
+      MAIN_WINDOW_STATE_KEY,
+    ])
+  })
+
+  it('writes only the extra keys when the record itself is unchanged', () => {
+    const { repository, batches } = seeded({ batched: true })
+
+    repository.update(
+      'window-a',
+      { activeProjectId: defaults.activeProjectId, activeThreadId: defaults.activeThreadId },
+      { activeThreadId: 'thread-a' },
+    )
+
+    assert.deepEqual(batches, [['activeThreadId']])
+  })
+
+  it('falls back to one write per key when the store cannot batch', () => {
+    const { repository, batches } = seeded()
+
+    repository.update('window-a', navigation, { activeProjectId: 'project-b' })
+
+    assert.equal(batches.length, 2)
+  })
+
+  it('still writes the extra keys after freeze, but not the window records', () => {
+    const { repository, batches } = seeded({ batched: true })
+    repository.freeze()
+
+    repository.update('window-a', navigation, { activeProjectId: 'project-b' })
+
+    assert.deepEqual(batches, [['activeProjectId']])
   })
 })
