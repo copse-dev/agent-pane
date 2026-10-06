@@ -472,6 +472,9 @@ export function resolveSshHostForWorkspaceRoot(
 
 export function setWorkspaceRoot(root: string | null): void {
   workspaceRoot = root
+  // Re-selecting the root that is already stored is common (a switch can be
+  // issued twice) and each write rewrites the whole config.json synchronously.
+  if (storageGet(WORKSPACE_KEY) === root) return
   storageSet(WORKSPACE_KEY, root)
 }
 

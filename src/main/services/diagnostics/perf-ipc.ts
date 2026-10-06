@@ -34,6 +34,14 @@ const HIGH_FREQUENCY = new Set(['settings:get', 'storage:get', 'index:query'])
 /** A handler slower than this gets its own span rather than only a counter. */
 const SPAN_THRESHOLD_MS = 1
 
+/**
+ * A handler whose synchronous part (the time before it first yields, or all of it
+ * for a plain function) exceeds this is recorded as `ipc-sync:<channel>`. Only
+ * that part holds the main event loop; the rest of an async handler is waiting.
+ * Lines up against `loop:stall` to name what blocked it.
+ */
+const SYNC_BLOCK_THRESHOLD_MS = 20
+
 let patched = false
 
 /**
@@ -50,7 +58,12 @@ export function installIpcPerfTracing(): void {
     const timed: InvokeListener = async (event, ...args) => {
       const start = process.hrtime.bigint()
       try {
-        return await listener(event, ...args)
+        const pending = listener(event, ...args)
+        const syncMs = Number(process.hrtime.bigint() - start) / 1e6
+        if (syncMs >= SYNC_BLOCK_THRESHOLD_MS) {
+          perfMark(`ipc-sync:${channel}`, { ms: Math.round(syncMs * 100) / 100 })
+        }
+        return await pending
       } finally {
         const ms = Number(process.hrtime.bigint() - start) / 1e6
         perfCount(`ipc:${channel}`, ms)

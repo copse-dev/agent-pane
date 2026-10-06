@@ -2,7 +2,7 @@ import { app, BrowserWindow, globalShortcut, screen, type WebContents } from 'el
 import { join } from 'node:path'
 import { getAppIcon } from '../app-icon.ts'
 import { getSetting, setSetting } from '../services/storage/settings.ts'
-import { storageGet, storageSet } from '../services/storage/storage.ts'
+import { storageGet, storageSet, storageSetMany } from '../services/storage/storage.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
@@ -26,6 +26,7 @@ const mainWindowRegistry = new MainWindowRegistry<BrowserWindow>()
 const mainWindowState = new MainWindowStateRepository({
   get: storageGet,
   set: storageSet,
+  setMany: storageSetMany,
 })
 let quitting = false
 
@@ -115,13 +116,22 @@ export function setMainWindowNavigation(
 ): void {
   const context = mainWindowRegistry.fromWebContents(webContents)
   if (!context) throw new Error('Window navigation rejected: sender is not a full main window')
-  mainWindowState.update(context.id, navigation)
   // Keep the primary window mirrored into the legacy keys while singleton
   // services are migrated. Secondary windows must never overwrite this bridge.
+  // Only the keys that differ are written, and they go out with the window
+  // record in one config.json rewrite: a project switch reports navigation
+  // several times, and each separate write used to cost a full synchronous
+  // rewrite on the main thread.
+  const mirror: Record<string, unknown> = {}
   if (mainWindowRegistry.isPrimary(webContents)) {
-    storageSet('activeProjectId', navigation.activeProjectId)
-    storageSet('activeThreadId', navigation.activeThreadId)
+    if (storageGet('activeProjectId') !== navigation.activeProjectId) {
+      mirror['activeProjectId'] = navigation.activeProjectId
+    }
+    if (storageGet('activeThreadId') !== navigation.activeThreadId) {
+      mirror['activeThreadId'] = navigation.activeThreadId
+    }
   }
+  mainWindowState.update(context.id, navigation, mirror)
 }
 
 /**
