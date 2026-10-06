@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { getCopseUserDataDir } from './helpers.ts'
@@ -97,10 +97,17 @@ describe('settings usage panel', function () {
     assert.equal(plan.providers.length, 4)
     assert.ok(plan.providers.every((p) => p.status === 'ok'))
 
+    // The ledger is its own files, and stays out of config.json.
+    const ledgerDir = join(getCopseUserDataDir(), 'usage-events')
+    const ledgerRecords = readdirSync(ledgerDir)
+      .filter((name) => name.endsWith('.jsonl'))
+      .flatMap((name) => readFileSync(join(ledgerDir, name), 'utf8').split('\n'))
+      .filter((line) => line.trim() !== '')
+    assert.equal(ledgerRecords.length, 5)
     const config = JSON.parse(readFileSync(join(getCopseUserDataDir(), 'config.json'), 'utf8')) as {
-      usageEvents?: unknown[]
+      usageEvents?: unknown
     }
-    assert.equal(config.usageEvents?.length, 5)
+    assert.equal(config.usageEvents, undefined)
 
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
