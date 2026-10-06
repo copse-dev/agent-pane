@@ -35,6 +35,7 @@ import {
   scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
   setWorkspaceRootForTest,
+  workspaceProjectsToSeed,
 } from './workspace.ts'
 
 describe('workspace path containment', () => {
@@ -445,6 +446,49 @@ describe('allowed workspace roots', () => {
       () => assertAllowedWorkspaceRoot('/var/www/other', 'dev'),
       /not an allowed/,
     )
+  })
+
+  it('workspaceProjectsToSeed seeds only the project being opened', () => {
+    const projects = [
+      { path: '/Users/me/a' },
+      { path: '/Users/me/b' },
+      { path: '/srv/app', sshHost: 'dev' },
+    ]
+    assert.deepEqual(workspaceProjectsToSeed(projects, '/Users/me/b'), [{ path: '/Users/me/b' }])
+    assert.deepEqual(workspaceProjectsToSeed(projects, '/Users/me/b/'), [{ path: '/Users/me/b' }])
+    assert.deepEqual(workspaceProjectsToSeed(projects, '/srv/app/', 'dev'), [
+      { path: '/srv/app', sshHost: 'dev' },
+    ])
+  })
+
+  it('workspaceProjectsToSeed does not match a local path to an SSH project or the reverse', () => {
+    const projects = [{ path: '/srv/app', sshHost: 'dev' }, { path: '/srv/app' }]
+    assert.deepEqual(workspaceProjectsToSeed(projects, '/srv/app'), [{ path: '/srv/app' }])
+    assert.deepEqual(workspaceProjectsToSeed(projects, '/srv/app', 'dev'), [
+      { path: '/srv/app', sshHost: 'dev' },
+    ])
+  })
+
+  it('workspaceProjectsToSeed falls back to every project when none names the root', () => {
+    // A symlinked spelling of a project path only resolves to its project once
+    // each is canonicalised, so the caller must still seed them all.
+    const projects = [{ path: '/Users/me/a' }, { path: '/Users/me/b' }]
+    assert.deepEqual(workspaceProjectsToSeed(projects, '/tmp/link-to-b'), projects)
+  })
+
+  it('a seeded switch target still passes the allowlist while other projects stay unseeded', async () => {
+    const target = mkdtempSync(join(tmpdir(), 'ws-seed-target-'))
+    const other = mkdtempSync(join(tmpdir(), 'ws-seed-other-'))
+    try {
+      clearAllowedWorkspaceRootsForTest()
+      const projects = [{ path: target }, { path: other }]
+      await seedAllowedWorkspaceRoots(workspaceProjectsToSeed(projects, target))
+      assert.equal(await assertAllowedWorkspaceRoot(target), realpathSync(target))
+      await assert.rejects(() => assertAllowedWorkspaceRoot(other), /not an allowed project/)
+    } finally {
+      rmSync(target, { recursive: true, force: true })
+      rmSync(other, { recursive: true, force: true })
+    }
   })
 
   it('resolveSshHostForWorkspaceRoot prefers explicit host then matching project path', () => {

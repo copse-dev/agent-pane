@@ -314,6 +314,19 @@ export async function saveProjects(
 }
 
 /**
+ * Persist only the window's navigation (active project + thread). For callers
+ * that have just written the projects list and would otherwise rewrite it
+ * unchanged through {@link saveProjects}. An unchanged navigation is a no-op.
+ */
+export function saveNavigation(
+  api: ApiClient,
+  activeProjectId: string | null,
+  activeThreadId: string | null,
+): Promise<void> {
+  return serializedNavigation(api, { activeProjectId, activeThreadId })
+}
+
+/**
  * Persist the sidebar's group list. Kept off {@link saveProjects} because groups
  * only change through group actions (create / rename / delete / collapse / a
  * drag), while `saveProjects` runs on every project switch and autosave tick.
