@@ -21389,6 +21389,9 @@ function trashIcon(className = DEFAULT) {
     className
   );
 }
+function historyIcon(className = DEFAULT) {
+  return outlineIcon("history", ["M3 12a9 9 0 1 0 3-6.7L3 8", "M3 3v5h5", "M12 7v5l3 2"], className);
+}
 var DEFAULT;
 var init_icons = __esm({
   "src/renderer/dom/icons.ts"() {
@@ -43993,8 +43996,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     },
     "$"
   );
-  const triggerRetention = el("span", { class: "ui-badge model-picker-retention", hidden: true });
-  trigger.append(labelEl, triggerRetention, triggerCost, chevron);
+  trigger.append(labelEl, triggerCost, chevron);
   const menu = el("div", {
     class: "model-picker-menu",
     hidden: "",
@@ -44324,8 +44326,13 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         ...opt.retention ? [
           el(
             "span",
-            { class: "ui-badge model-picker-retention", title: opt.retention.detail },
-            opt.retention.label
+            {
+              class: "model-picker-retention",
+              title: opt.retention.detail,
+              "aria-label": opt.retention.label,
+              role: "img"
+            },
+            historyIcon()
           )
         ] : [],
         ...opt.coverage ? [
@@ -44392,9 +44399,6 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     labelEl.textContent = label;
     labelEl.title = current;
     triggerCost.hidden = match?.coverage !== "paid";
-    triggerRetention.hidden = !match?.retention;
-    triggerRetention.textContent = match?.retention?.label ?? "";
-    triggerRetention.title = match?.retention?.detail ?? "";
   }
   async function refresh() {
     const generation = ++refreshGeneration;
