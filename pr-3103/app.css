@@ -3920,7 +3920,8 @@ label {
   font-size: var(--font-size-2xs);
   font-variant-numeric: tabular-nums;
 }
-.model-picker-cost {
+.model-picker-cost,
+.model-picker-retention {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4145,9 +4146,9 @@ label {
     min-width: 100%;
   }
 }
-.model-picker-retention {
-  flex-shrink: 0;
-  color: var(--text-muted);
+.model-picker-retention .ui-icon {
+  width: 11px;
+  height: 11px;
 }
 
 /* src/renderer/styles/global/conversation.css */
