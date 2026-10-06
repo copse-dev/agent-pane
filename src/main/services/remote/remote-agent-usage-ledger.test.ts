@@ -6,7 +6,7 @@ import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createAgentChunkSink } from '../agent-chunk-sink.ts'
 import { getUsageSummary } from '../storage/usage-ledger.ts'
 import { storageSet } from '../storage/storage.ts'
-import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
+import { clearUsageLedger } from '../storage/usage-ledger.test-support.ts'
 import { runRemoteAgentFromSettings, clearRemoteAgentSession } from './remote-agent-client.ts'
 import { runManagedAgentFromSettings, clearManagedAgentSession } from './managed-agents-client.ts'
 
@@ -26,7 +26,7 @@ afterEach(() => {
 
 describe('cloud agent runs reach the usage ledger', () => {
   it('records a ledger row for a Cursor Cloud Agent follow-up run', async () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
     storageSet('remote-agent-session:thread-cursor-usage', {
       v: 1,
       provider: 'cursor',
@@ -108,7 +108,7 @@ describe('cloud agent runs reach the usage ledger', () => {
   })
 
   it('counts Cursor cache reads and writes as input on the ledger row', async () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
     storageSet('remote-agent-session:thread-cursor-cache-usage', {
       v: 1,
       provider: 'cursor',
@@ -204,7 +204,7 @@ describe('cloud agent runs reach the usage ledger', () => {
   })
 
   it('records a ledger row for a Claude Managed Agents (Anthropic) follow-up run', async () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
     storageSet('managed-agent-session:thread-managed-usage', {
       v: 1,
       provider: 'anthropic',
@@ -279,7 +279,7 @@ describe('cloud agent runs reach the usage ledger', () => {
   })
 
   it('still records a ledger row when a Cursor run is cancelled mid-stream (Stop / Send now)', async () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
     storageSet('remote-agent-session:thread-cursor-cancel-usage', {
       v: 1,
       provider: 'cursor',
@@ -369,7 +369,7 @@ describe('cloud agent runs reach the usage ledger', () => {
   })
 
   it('still records a ledger row when a Claude Managed Agents run is interrupted mid-stream', async () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
     storageSet('managed-agent-session:thread-managed-cancel-usage', {
       v: 1,
       provider: 'anthropic',
