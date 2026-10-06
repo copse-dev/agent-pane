@@ -5,7 +5,15 @@ import type {
   SupervisedTaskAuditEvent,
   SupervisedTaskMeta,
 } from '@shared/supervisor/task-schema.ts'
-import { storageDelete, storageSet } from '../storage/storage.ts'
+import {
+  storageDelete,
+  storageGet,
+  storageListFiles,
+  storageReadFile,
+  storageRemoveFile,
+  storageSet,
+  storageWriteFile,
+} from '../storage/storage.ts'
 import type { LoadedSupervisedTasks, SupervisedTaskStore } from '../supervisor/task-store.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
@@ -296,16 +304,16 @@ describe('AppleDevelopmentService enrollment', () => {
     assert.equal(authority['authority'], 'direct-user-action')
     assert.equal(typeof authority['authorityEpoch'], 'string')
     assert.equal(enqueued.meta.reapproveOnWake, true)
-    assert.equal(service.operation(invocation, queued.id).operation.status, 'succeeded')
+    assert.equal((await service.operation(invocation, queued.id)).operation.status, 'succeeded')
     assert.equal(
-      service.operation(invocation, queued.id).operation.outcome?.appSessionId,
+      (await service.operation(invocation, queued.id)).operation.outcome?.appSessionId,
       'app-session-1',
     )
     assert.deepEqual(presentedSimulators, ['SIMULATOR-17'])
 
     assert.equal(await service.stopApp(invocation, 'app-session-1'), true)
     assert.equal(stoppedSession, 'app-session-1')
-    const stopped = service.operation(invocation, queued.id).operation
+    const stopped = (await service.operation(invocation, queued.id)).operation
     assert.equal(stopped.outcome?.appSessionId, undefined)
     assert.equal(stopped.outcome?.reason, 'App stopped.')
   })
@@ -469,13 +477,15 @@ describe('AppleDevelopmentService enrollment', () => {
     assert.equal(executions, 0, 'Generic Resume cannot renew process-scoped Apple authority')
     assert.equal(supervisor.get('project-1', operation.id)?.state, 'blocked')
     assert.equal(
-      service.operation(
-        {
-          owner: { projectId: 'project-1', threadId: 'thread-1' },
-          source: 'user',
-          signal: new AbortController().signal,
-        },
-        operation.id,
+      (
+        await service.operation(
+          {
+            owner: { projectId: 'project-1', threadId: 'thread-1' },
+            source: 'user',
+            signal: new AbortController().signal,
+          },
+          operation.id,
+        )
       ).operation.outcome?.reason,
       'Apple operation requires approval again after Copse restarted.',
     )
@@ -607,5 +617,246 @@ describe('AppleDevelopmentService on a host without Xcode', () => {
     const state = await service.setEnrolled(invocation, false)
     assert.equal(state.enrolled, false)
     assert.equal(service.isProjectEnrolled(owner.projectId), false)
+  })
+})
+
+describe('AppleDevelopmentService build output', () => {
+  const owner = { projectId: 'project-1', threadId: 'thread-1' }
+  const context: ThreadExecutionContext = {
+    ...owner,
+    projectRoot: '/project',
+    root: '/project',
+    checkoutMode: 'shared',
+    branch: null,
+  }
+  const discovery: AppleDriverDiscovery = {
+    toolchain: { developerDir: '/Applications/Xcode.app/Contents/Developer', version: 'Xcode 18' },
+    candidates: [
+      { id: 'DemoApp.xcodeproj', name: 'DemoApp', kind: 'project', schemes: ['DemoApp'] },
+    ],
+    destinations: [
+      {
+        id: 'platform=iOS Simulator,id=SIMULATOR-17',
+        name: 'iPhone 17 Pro',
+        platform: 'iOS Simulator',
+        supported: true,
+        booted: true,
+      },
+    ],
+    metadataRequiresExecution: false,
+    setupMessage: null,
+  }
+  const invocation: AppleInvocation = {
+    owner,
+    source: 'user',
+    signal: new AbortController().signal,
+  }
+  const LOG_DIR = 'apple-development/logs'
+  const logFile = (operationId: string): string => `${LOG_DIR}/${operationId}.log`
+  const selection = {
+    candidateId: 'DemoApp.xcodeproj',
+    schemeId: 'DemoApp',
+    configuration: 'Debug',
+    destinationId: 'platform=iOS Simulator,id=SIMULATOR-17',
+    revision: 1,
+  }
+  const storedOperation = (id: string, logs?: string): Record<string, unknown> => ({
+    operation: {
+      id,
+      action: 'build',
+      status: 'queued',
+      target: selection,
+      createdAt: 1,
+      updatedAt: 1,
+      outcome: null,
+    },
+    ...(logs === undefined ? {} : { logs }),
+    requestId: `request-${id}`,
+    payloadHash: 'hash',
+  })
+  const seedStore = (operations: Array<Record<string, unknown>>): void => {
+    storageSet(STORE_KEY, {
+      version: 1,
+      projects: {
+        [owner.projectId]: {
+          enrolled: true,
+          threads: { [owner.threadId]: { selection, operations } },
+        },
+      },
+    })
+  }
+
+  async function clearLogFiles(): Promise<void> {
+    for (const name of await storageListFiles(LOG_DIR)) {
+      await storageRemoveFile(`${LOG_DIR}/${name}`)
+    }
+  }
+
+  beforeEach(async () => {
+    storageDelete(STORE_KEY)
+    await clearLogFiles()
+  })
+
+  afterEach(async () => {
+    storageDelete(STORE_KEY)
+    await clearLogFiles()
+  })
+
+  function newService(output = '', createId?: () => string): AppleDevelopmentService {
+    const driver = new InstalledXcodeDriver()
+    driver.discover = (): Promise<AppleDriverDiscovery> => Promise.resolve(discovery)
+    driver.destinations = (): Promise<AppleDriverDiscovery['destinations']> =>
+      Promise.resolve(discovery.destinations)
+    driver.execute = (): Promise<AppleDriverResult> =>
+      Promise.resolve({
+        exitCode: 0,
+        logs: output,
+        outputTruncated: false,
+        diagnostics: [],
+        testSummary: null,
+      })
+    return new AppleDevelopmentService({
+      driver,
+      supervisor: new TaskSupervisor({
+        store: new EmptyTaskStore(),
+        ...(createId ? { createId } : {}),
+      }),
+      resolveContext: (): Promise<ThreadExecutionContext> => Promise.resolve(context),
+      pluginEnabled: (): boolean => true,
+      platform: 'darwin',
+    })
+  }
+
+  async function configure(service: AppleDevelopmentService): Promise<{ revision: number }> {
+    await service.setEnrolled(invocation, true)
+    await service.discover(invocation, true)
+    return service.configure(invocation, {
+      candidateId: 'DemoApp.xcodeproj',
+      schemeId: 'DemoApp',
+      configuration: 'Debug',
+      destinationId: 'platform=iOS Simulator,id=SIMULATOR-17',
+      expectedRevision: 0,
+    })
+  }
+
+  it("keeps a finished operation's output in a file, not in config.json", async () => {
+    const output = 'Compiling DemoApp\nBuild succeeded'
+    const service = newService(output, () => 'operation-1')
+    const configured = await configure(service)
+
+    const queued = await service.execute(invocation, {
+      action: 'build',
+      expectedRevision: configured.revision,
+      requestId: 'build-1',
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    assert.equal((await service.operation(invocation, queued.id)).operation.status, 'succeeded')
+    assert.equal(await storageReadFile(logFile(queued.id)), output)
+    assert.equal((await service.operation(invocation, queued.id)).text, output)
+    assert.equal(
+      JSON.stringify(storageGet(STORE_KEY)).includes('Compiling DemoApp'),
+      false,
+      'the stored operation must not carry its output',
+    )
+  })
+
+  it('pages output from the file by cursor', async () => {
+    const output = 'x'.repeat(70_000)
+    seedStore([storedOperation('operation-1')])
+    await storageWriteFile(logFile('operation-1'), output)
+    const service = newService()
+
+    const first = await service.operation(invocation, 'operation-1')
+    assert.equal(first.text.length, 64_000)
+    assert.equal(first.truncated, true)
+    const second = await service.operation(invocation, 'operation-1', first.nextCursor)
+    assert.equal(second.text.length, 6_000)
+    assert.equal(second.truncated, false)
+  })
+
+  it('moves output a profile still holds inline into files, once', async () => {
+    seedStore([
+      storedOperation('legacy-1', 'old build output'),
+      storedOperation('legacy-empty', ''),
+    ])
+
+    const service = newService()
+
+    assert.equal((await service.operation(invocation, 'legacy-1')).text, 'old build output')
+    assert.equal(await storageReadFile(logFile('legacy-1')), 'old build output')
+    assert.equal(
+      JSON.stringify(storageGet(STORE_KEY)).includes('old build output'),
+      false,
+      'the config copy is gone once it is in a file',
+    )
+    assert.equal((await service.operation(invocation, 'legacy-empty')).text, '')
+  })
+
+  it('keeps an existing output file rather than overwriting it with a stale inline copy', async () => {
+    seedStore([storedOperation('operation-1', 'stale inline copy')])
+    await storageWriteFile(logFile('operation-1'), 'the newer file')
+
+    const service = newService()
+
+    assert.equal((await service.operation(invocation, 'operation-1')).text, 'the newer file')
+  })
+
+  it('removes output files that no stored operation refers to when it starts', async () => {
+    seedStore([storedOperation('operation-1')])
+    await storageWriteFile(logFile('operation-1'), 'referenced')
+    await storageWriteFile(logFile('orphan'), 'nothing points here')
+    await storageWriteFile(`${LOG_DIR}/leftover.log.1234.tmp`, 'a write in progress elsewhere')
+
+    const service = newService()
+    // Reading output waits for the start-up tidy to finish.
+    await service.operation(invocation, 'operation-1')
+
+    assert.deepEqual((await storageListFiles(LOG_DIR)).sort(), [
+      'leftover.log.1234.tmp',
+      'operation-1.log',
+    ])
+  })
+
+  it('deletes the output of an operation that falls off the end of a thread list', async () => {
+    const ids = Array.from({ length: 50 }, (_, index) => `old-${String(index)}`)
+    const service = newService('fresh output', () => 'operation-new')
+    const configured = await configure(service)
+    // Fifty operations are already on the thread; the next one evicts the oldest.
+    storageSet(STORE_KEY, {
+      version: 1,
+      projects: {
+        [owner.projectId]: {
+          enrolled: true,
+          threads: {
+            [owner.threadId]: {
+              selection: { ...selection, revision: configured.revision },
+              operations: ids.map((id) => storedOperation(id)),
+            },
+          },
+        },
+      },
+    })
+    for (const id of ids) await storageWriteFile(logFile(id), `output of ${id}`)
+
+    await service.execute(invocation, {
+      action: 'build',
+      expectedRevision: configured.revision,
+      requestId: 'build-new',
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const files = await storageListFiles(LOG_DIR)
+    assert.equal(files.includes('old-0.log'), false, 'the evicted operation loses its file')
+    assert.equal(files.includes('old-1.log'), true)
+    assert.equal(files.includes('operation-new.log'), true)
+  })
+
+  it('refuses an operation id that is not a plain identifier when reading output', async () => {
+    seedStore([storedOperation('../../config')])
+    await storageWriteFile(logFile('real'), 'secret')
+    const service = newService()
+
+    assert.equal((await service.operation(invocation, '../../config')).text, '')
   })
 })
