@@ -65720,10 +65720,11 @@ function begin(name) {
     bridge.span(name, Math.round((performance.now() - start) * 100) / 100, detail);
   };
 }
-var bridge, autopilotOn;
+var bridge, perfOn, autopilotOn;
 var init_perf = __esm({
   "src/renderer/perf.ts"() {
     bridge = readBridge();
+    perfOn = bridge !== null;
     autopilotOn = bridge?.autopilot === true;
   }
 });
@@ -67611,6 +67612,10 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
   endActivate({ outcome: "ok", threads: merged.length });
   void resumePendingQueues(store2, api2);
 }
+function dispatchCallers() {
+  const frames = (new Error().stack ?? "").split("\n").slice(3, 8);
+  return frames.map((frame) => /at (?:async )?([^\s(]+)/.exec(frame)?.[1] ?? "?").join(" < ");
+}
 function activate(store2, api2, id, path, sshHost, pendingThreadId) {
   const { activeProjectId, threads, expandedProjectId } = store2.getState();
   if (activeProjectId === id) {
@@ -67619,6 +67624,12 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
     return;
   }
   expandProject(store2, id);
+  if (perfOn) {
+    mark("switch:dispatch", {
+      callers: dispatchCallers(),
+      restarts: pendingSwitch?.projectId === id
+    });
+  }
   supersedePendingSwitch();
   const gen = ++switchGeneration;
   pendingSwitch = { gen, projectId: id, dispatched: false };
