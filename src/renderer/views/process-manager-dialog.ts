@@ -137,6 +137,7 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
   )
   activity.hidden = true
   const status = el('p', { class: 'process-manager-status', role: 'status' }, 'Loading processes…')
+  const summary = el('p', { class: 'process-manager-summary', role: 'status' })
   const updated = el('span', { class: 'process-manager-updated', 'aria-hidden': 'true' })
   dialog.append(
     el(
@@ -155,6 +156,7 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
       ),
       activity,
       el('div', { class: 'process-manager-scroll' }, table),
+      summary,
       el(
         'footer',
         { class: 'process-manager-footer' },
@@ -171,8 +173,8 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
   let timer: ReturnType<typeof setInterval> | null = null
   let generation = 0
   let refreshing = false
-  /** Thread groups the user collapsed (`''` is Shared); every group starts expanded. */
-  const collapsedGroups = new Set<string>()
+  /** Thread groups the user expanded (`''` is Shared); every group starts collapsed. */
+  const expandedGroups = new Set<string>()
   // Each time a thread joins the active-run list it starts a new run
   // generation, so a chip menu opened on one run can never stop the next one
   // in the same thread.
@@ -412,9 +414,15 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
       closeButton.focus({ preventScroll: true })
     }
     const state = store.getState()
-    for (const group of groupedRows(snapshot.processes, column, ascending)) {
+    const groups = groupedRows(snapshot.processes, column, ascending)
+    const threadGroups = groups.filter((group) => group.threadId !== null).length
+    summary.textContent =
+      snapshot.processes.length === 0
+        ? ''
+        : `${String(threadGroups)} ${threadGroups === 1 ? 'thread' : 'threads'} · ${String(snapshot.processes.length)} ${snapshot.processes.length === 1 ? 'process' : 'processes'} · CPU ${formatCpu(total(snapshot.processes.map((row) => row.cpuPercent)))} · Memory ${formatMemory(total(snapshot.processes.map((row) => row.memoryMiB)))}`
+    for (const group of groups) {
       const groupKey = group.threadId ?? ''
-      const expanded = !collapsedGroups.has(groupKey)
+      const expanded = expandedGroups.has(groupKey)
       const label = threadLabel(group.threadId)
       const count = `${String(group.rows.length)} ${group.rows.length === 1 ? 'process' : 'processes'}`
       const toggle = el(
@@ -430,8 +438,8 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
         el('span', { class: 'process-manager-group-count' }, count),
       )
       toggle.addEventListener('click', () => {
-        if (collapsedGroups.has(groupKey)) collapsedGroups.delete(groupKey)
-        else collapsedGroups.add(groupKey)
+        if (expandedGroups.has(groupKey)) expandedGroups.delete(groupKey)
+        else expandedGroups.add(groupKey)
         if (current) render(current)
       })
       const groupEntries = (): ContextMenuEntry[] => threadEntries(group.threadId)

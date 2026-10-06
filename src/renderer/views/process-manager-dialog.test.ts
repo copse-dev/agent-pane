@@ -248,7 +248,7 @@ test('activity refresh preserves keyboard focus and hands it back when a run fin
   document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
 })
 
-test('processes group under their thread, expanded by default, with shared processes last', async (t) => {
+test('processes group under their thread, collapsed by default, with shared processes last', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] })
   const store = createStore({
     projects: [{ id: 'project-a', path: '/a', name: 'A' }],
@@ -292,21 +292,25 @@ test('processes group under their thread, expanded by default, with shared proce
     )
   assert.deepEqual(layout(), [
     'thread-b:1 process',
-    '3',
+    '3 hidden',
     'thread-a:2 processes',
-    '4',
-    '2',
+    '4 hidden',
+    '2 hidden',
     'shared:1 process',
-    '1',
+    '1 hidden',
   ])
+  assert.equal(
+    document.querySelector('.process-manager-summary')?.textContent,
+    '2 threads · 4 processes · CPU 57.0% · Memory 4.0 MiB',
+  )
   const toggle = document.querySelector<HTMLButtonElement>(
     '.process-manager-group-toggle[data-group-key="thread-a"]',
   )
   assert.ok(toggle)
-  assert.equal(toggle.getAttribute('aria-expanded'), 'true')
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false')
   toggle.focus()
   toggle.click()
-  assert.deepEqual(layout().slice(2, 5), ['thread-a:2 processes', '4 hidden', '2 hidden'])
+  assert.deepEqual(layout().slice(2, 5), ['thread-a:2 processes', '4', '2'])
   assert.equal(
     document.activeElement?.getAttribute('data-group-key'),
     'thread-a',
@@ -318,7 +322,7 @@ test('processes group under their thread, expanded by default, with shared proce
   const refreshed = document.querySelector<HTMLButtonElement>(
     '.process-manager-group-toggle[data-group-key="thread-a"]',
   )
-  assert.equal(refreshed?.getAttribute('aria-expanded'), 'false', 'collapse survives refresh')
+  assert.equal(refreshed?.getAttribute('aria-expanded'), 'true', 'expansion survives refresh')
   assert.ok(document.activeElement === refreshed, 'refresh keeps focus on the group toggle')
   document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
 })

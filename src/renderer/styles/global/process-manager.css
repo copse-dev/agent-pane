@@ -35,6 +35,7 @@ dialog.process-manager-overlay {
 }
 .process-manager-subtitle,
 .process-manager-footer,
+.process-manager-summary,
 .process-manager-status {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
@@ -295,4 +296,14 @@ dialog.process-manager-overlay {
 }
 .process-manager-status:not(:empty) {
   padding-block: var(--spacing-sm);
+}
+
+.process-manager-summary {
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-top: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+.process-manager-summary:empty {
+  display: none;
 }
