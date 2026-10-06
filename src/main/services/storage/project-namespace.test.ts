@@ -11,6 +11,8 @@ import {
   threadProjectStoreScope,
 } from './project-namespace.ts'
 import {
+  adoptUpgradedThreadExecutionContext,
+  releaseUpgradedThreadExecutionContext,
   resolveThreadExecutionContext,
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
@@ -292,6 +294,48 @@ describe('projectStoreNamespaceDir', () => {
     )
 
     assert.equal(readFileSync(join(legacyOther, 'notes.txt'), 'utf8'), 'not yours')
+  })
+
+  it('keeps a deferred turn on its own store after it is upgraded to a worktree', async () => {
+    const base = tempBase()
+    const projectRoot = '/repos/deferred-upgrade'
+    const legacy = join(base, legacyName(projectRoot))
+    mkdirSync(legacy, { recursive: true })
+    writeFileSync(join(legacy, 'notes.txt'), 'deferred notes')
+    storageSet('projects', [
+      { id: 'project-deferred', path: projectRoot, name: 'deferred' },
+      { id: 'project-b', path: '/repos/beta', name: 'beta' },
+    ])
+    storageSet('activeProjectId', 'project-b')
+    cleanups.push(setWorkspaceRootForTest('/repos/beta'))
+    const resolved = await resolveThreadExecutionContext('project-deferred', 'thread-1', {
+      getProjectRoot,
+      getThreadMeta: () => Promise.resolve({ id: 'thread-1' }),
+    })
+    // The turn starts on the shared checkout, deferring its worktree (#3241)…
+    const deferred: ThreadExecutionContext = {
+      ...resolved,
+      deferredWorktree: { baseBranch: 'main', requestedAt: 0 },
+    }
+    try {
+      const dir = runWithThreadExecutionContext(deferred, () => {
+        // …and its first write moves it onto a worktree with a different root.
+        adoptUpgradedThreadExecutionContext({
+          projectId: 'project-deferred',
+          threadId: 'thread-1',
+          projectRoot,
+          root: '/worktrees/project-deferred/thread-1',
+          checkoutMode: 'worktree',
+          branch: 'copse/thread-1',
+        })
+        return projectStoreNamespaceDir(base)
+      })
+
+      assert.equal(dir, join(base, 'project-deferred'))
+      assert.equal(readFileSync(join(dir, 'notes.txt'), 'utf8'), 'deferred notes')
+    } finally {
+      releaseUpgradedThreadExecutionContext({ projectId: 'project-deferred', threadId: 'thread-1' })
+    }
   })
 
   it("migrates a background turn's own legacy directory under its own id", () => {
