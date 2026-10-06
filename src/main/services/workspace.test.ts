@@ -15,7 +15,7 @@ import { rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import type { PathBackend } from './workspace-fs/path-backend.ts'
 import { setSetting } from './storage/settings.ts'
-import { storageSet } from './storage/storage.ts'
+import { storageBackingWrites, storageSet } from './storage/storage.ts'
 import {
   assertAllowedWorkspaceRoot,
   assertWorkspaceWriteTarget,
@@ -23,6 +23,7 @@ import {
   getChatStoreRoot,
   getInternalWorkspaceRootRegistration,
   getProjectRoot,
+  getWorkspaceRoot,
   isResolvedPathInsideWorkspace,
   registerAllowedWorkspaceRoot,
   registerInternalWorkspaceRoot,
@@ -34,6 +35,7 @@ import {
   runOptionalLinkedWorktreeRegistration,
   scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
+  setWorkspaceRoot,
   setWorkspaceRootForTest,
   workspaceProjectsToSeed,
 } from './workspace.ts'
@@ -561,5 +563,24 @@ describe('allowed workspace roots', () => {
 
     assert.equal(getProjectRoot('p2'), '/projects/two')
     assert.equal(getProjectRoot('missing'), null)
+  })
+})
+
+describe('setWorkspaceRoot', () => {
+  it('rewrites the config only when the root actually changes', () => {
+    const restore = setWorkspaceRootForTest(null)
+    try {
+      setWorkspaceRoot('/tmp/copse-root-a')
+      const afterFirst = storageBackingWrites()
+
+      setWorkspaceRoot('/tmp/copse-root-a')
+      assert.equal(storageBackingWrites(), afterFirst, 're-selecting the same root writes nothing')
+
+      setWorkspaceRoot('/tmp/copse-root-b')
+      assert.equal(storageBackingWrites(), afterFirst + 1)
+      assert.equal(getWorkspaceRoot(), '/tmp/copse-root-b')
+    } finally {
+      restore()
+    }
   })
 })

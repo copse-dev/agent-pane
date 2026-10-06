@@ -33,6 +33,17 @@ export const storageSet = (key: string, value: unknown): void => {
   perfCount('storage:set', Number(process.hrtime.bigint() - start) / 1e6)
 }
 
+/**
+ * Set several keys in a single config.json rewrite. Each `storageSet` re-serialises
+ * and rewrites the whole file synchronously on the main thread, so a caller that
+ * changes related keys together must use this rather than looping `storageSet`.
+ */
+export const storageSetMany = (values: Readonly<Record<string, unknown>>): void => {
+  const start = process.hrtime.bigint()
+  cached.setMany(values)
+  perfCount('storage:set', Number(process.hrtime.bigint() - start) / 1e6)
+}
+
 export const storageDelete = (key: string): void => {
   cached.delete(key)
 }
