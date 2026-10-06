@@ -9,7 +9,13 @@ import {
   setThreadDraftPrompt,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
-import { loadThreads, flushProjectThreads, saveProjects, serializedSet } from './persistence.ts'
+import {
+  loadThreads,
+  flushProjectThreads,
+  saveNavigation,
+  saveProjects,
+  serializedSet,
+} from './persistence.ts'
 import type { RendererStorageKey } from '@shared/storage-keys.ts'
 import { resumePendingQueues } from './message-queue.ts'
 import {
@@ -491,7 +497,8 @@ async function finishActivate(
   // flight has to know main and config were pointed at `id`, and put them back
   // (see cancelPendingSwitch).
   if (pendingSwitch?.gen === gen) pendingSwitch.dispatched = true
-  const persistSelection = saveProjects(api, store.getState().projects, id, pendingThreadId)
+  const projectsAtDispatch = store.getState().projects
+  const persistSelection = saveProjects(api, projectsAtDispatch, id, pendingThreadId)
   const endWorkspace = perfBegin('switch:workspace-set')
   const workspaceOpened = setWorkspaceInOrder(api, path, sshHost)
   const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened])
@@ -576,13 +583,23 @@ async function finishActivate(
   if (merged.length === 0) createThread(store)
   else normalizeBlankThreads(store)
 
-  await saveProjects(api, store.getState().projects, id, store.getState().activeThreadId)
+  // Tell the UI first. The selection was already persisted before the open, so
+  // this second write only records what the apply changed — and the store, which
+  // everything renders from, is already updated. Awaiting it ahead of the emits
+  // held the whole project switch behind two config writes (~0.5 s each on a
+  // large profile).
   store.emit('projects_changed')
   store.emit('workspace_changed')
   store.emit('threads_changed')
   store.emit('panel_changed')
   store.emit('files_pane_changed')
   endApply({ threads: merged.length })
+  const { projects, activeThreadId: appliedThreadId } = store.getState()
+  // Rewrite the projects list only if the apply changed it (a cleared `missing`
+  // flag, or an edit that landed mid-switch); otherwise record just the thread.
+  await (projects === projectsAtDispatch
+    ? saveNavigation(api, id, appliedThreadId)
+    : saveProjects(api, projects, id, appliedThreadId))
   endSwitch(gen, id)
   endActivate({ outcome: 'ok', threads: merged.length })
   void resumePendingQueues(store, api)
