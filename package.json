@@ -219,7 +219,7 @@
     "electron-updater": "^6.8.9",
     "jsdom": "^30.1.1",
     "node-pty": "^1.1.0",
-    "shell-quote": "^1.10.0",
+    "shell-quote": "^1.11.0",
     "turndown": "^7.2.0",
     "xcodebuildmcp": "2.7.0"
   },
