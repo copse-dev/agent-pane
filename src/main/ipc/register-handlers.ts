@@ -64,6 +64,7 @@ import {
   resolveSshHostForWorkspaceRoot,
   scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
+  workspaceProjectsToSeed,
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
@@ -849,8 +850,8 @@ export function registerAllHandlers(
     const parsedRoot = parseIpcArgs(zPathString, [root])
     const explicitSshHost = parseIpcArgs(z.string().max(128).optional(), [sshHostArg])
     const projects = storedWorkspaceProjects()
-    await seedAllowedWorkspaceRoots(projects)
     const sshHost = resolveSshHostForWorkspaceRoot(parsedRoot, explicitSshHost)
+    await seedAllowedWorkspaceRoots(workspaceProjectsToSeed(projects, parsedRoot, sshHost))
     const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
     setWorkspaceRoot(canonical)
     reloadMcpForWorkspace()
