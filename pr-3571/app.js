@@ -64615,8 +64615,17 @@ function serializedSet(api2, key, value) {
   writeChains.set(key, next);
   void next.finally(() => {
     if (writeChains.get(key) === next) writeChains.delete(key);
-  });
+  }).catch(() => void 0);
   return next;
+}
+function persistProjects(api2, projects) {
+  const json3 = JSON.stringify(projects);
+  if (json3 === persistedProjectsJson) return Promise.resolve();
+  persistedProjectsJson = json3;
+  return serializedSet(api2, KEY_PROJECTS, projects).catch((error62) => {
+    if (persistedProjectsJson === json3) persistedProjectsJson = null;
+    throw error62;
+  });
 }
 function serializedWrite(key, write) {
   const prev = writeChains.get(key);
@@ -64733,9 +64742,12 @@ async function loadProjects(api2) {
 }
 async function saveProjects(api2, projects, activeProjectId, activeThreadId) {
   await Promise.all([
-    serializedSet(api2, KEY_PROJECTS, projects),
+    persistProjects(api2, projects),
     serializedNavigation(api2, { activeProjectId, activeThreadId })
   ]);
+}
+function saveNavigation(api2, activeProjectId, activeThreadId) {
+  return serializedNavigation(api2, { activeProjectId, activeThreadId });
 }
 function saveProjectGroups(api2, groups) {
   return serializedSet(api2, KEY_PROJECT_GROUPS, groups);
@@ -64786,7 +64798,7 @@ function attachAutosave(store2, api2) {
     const writes = [];
     if (projectsDirty) {
       projectsDirty = false;
-      writes.push(serializedSet(api2, KEY_PROJECTS, projects));
+      writes.push(persistProjects(api2, projects));
     }
     writes.push(serializedNavigation(api2, { activeProjectId, activeThreadId }));
     if (activeProjectId) writes.push(reconcile(activeProjectId));
@@ -64946,7 +64958,7 @@ function attachAutosave(store2, api2) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, ownsNavigation, navigationRestored, lastNavigation, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -64955,6 +64967,7 @@ var init_persistence = __esm({
     KEY_PROJECTS = "projects";
     KEY_PROJECT_GROUPS = "projectGroups";
     writeChains = /* @__PURE__ */ new Map();
+    persistedProjectsJson = null;
     ownsNavigation = true;
     navigationRestored = true;
     lastNavigation = null;
@@ -67527,7 +67540,8 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
   }
   const flushOutgoing = outgoingId && outgoingId !== id ? flushProjectThreads(api2, outgoingId, outgoingThreads) : Promise.resolve();
   if (pendingSwitch?.gen === gen) pendingSwitch.dispatched = true;
-  const persistSelection = saveProjects(api2, store2.getState().projects, id, pendingThreadId);
+  const projectsAtDispatch = store2.getState().projects;
+  const persistSelection = saveProjects(api2, projectsAtDispatch, id, pendingThreadId);
   const endWorkspace = begin("switch:workspace-set");
   const workspaceOpened = setWorkspaceInOrder(api2, path, sshHost);
   const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened]);
@@ -67585,13 +67599,14 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
   if (activeThreadId) markThreadRead(store2, activeThreadId);
   if (merged.length === 0) createThread(store2);
   else normalizeBlankThreads(store2);
-  await saveProjects(api2, store2.getState().projects, id, store2.getState().activeThreadId);
   store2.emit("projects_changed");
   store2.emit("workspace_changed");
   store2.emit("threads_changed");
   store2.emit("panel_changed");
   store2.emit("files_pane_changed");
   endApply({ threads: merged.length });
+  const { projects, activeThreadId: appliedThreadId } = store2.getState();
+  await (projects === projectsAtDispatch ? saveNavigation(api2, id, appliedThreadId) : saveProjects(api2, projects, id, appliedThreadId));
   endSwitch(gen, id);
   endActivate({ outcome: "ok", threads: merged.length });
   void resumePendingQueues(store2, api2);
