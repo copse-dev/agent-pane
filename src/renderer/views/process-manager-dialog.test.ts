@@ -275,4 +275,3 @@ test('processes group under their thread, collapsed by default, with shared proc
   assert.ok(document.activeElement === refreshed, 'refresh keeps focus on the group toggle')
   document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
 })
-
