@@ -114,7 +114,11 @@ retained for diagnosis. The explicit `--bundle-only` / `--test-only` coverage
 pair continues to use shared `dist-test` bundles and must remain sequential.
 Its test phase also writes a private report and publishes it only on completion,
 so nested runners cannot replace an in-progress coverage report. Fixed bundles
-remain available for c8's source-map processing after the tests exit.
+remain available for c8's source-map processing after the tests exit. c8 uses
+`merge-async` to read and merge raw process coverage incrementally; the default
+bulk read retains every worker's report and can exhaust the 8GB CI heap after
+a successful unit run. Source-map remapping, uncovered-file inclusion and the
+coverage ratchet remain unchanged.
 The CI `unit-tests-tap` artifact contains the canonical TAP plus only the
 per-run TAP and metadata files under `.tmp/test-run-*`.
 
