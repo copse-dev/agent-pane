@@ -78266,7 +78266,7 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     processManager: {
-      snapshot: () => resolved2({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
+      snapshot: () => resolved2({ sampledAt: Date.now(), processes: [] }),
       stopBackground: () => resolved2(false)
     },
     menu: {
@@ -151932,20 +151932,6 @@ function mountProcessManagerDialog(api2, store2) {
     ),
     body
   );
-  const activityCount = el("span", { class: "process-manager-activity-count" });
-  const activityList = el("div", { class: "process-manager-activity-list" });
-  const activity = el(
-    "section",
-    { class: "process-manager-activity", "aria-label": "Agent activity" },
-    el(
-      "div",
-      { class: "process-manager-activity-heading" },
-      el("strong", {}, "Agent activity"),
-      activityCount
-    ),
-    activityList
-  );
-  activity.hidden = true;
   const status = el("p", { class: "process-manager-status", role: "status" }, "Loading processes\u2026");
   const summary = el("p", { class: "process-manager-summary", role: "status" });
   const updated = el("span", { class: "process-manager-updated", "aria-hidden": "true" });
@@ -151964,7 +151950,6 @@ function mountProcessManagerDialog(api2, store2) {
         ),
         closeButton
       ),
-      activity,
       el("div", { class: "process-manager-scroll" }, table),
       summary,
       el(
@@ -151983,16 +151968,6 @@ function mountProcessManagerDialog(api2, store2) {
   let generation = 0;
   let refreshing = false;
   const expandedGroups = /* @__PURE__ */ new Set();
-  const runGenerations = /* @__PURE__ */ new Map();
-  let sampledRuns = /* @__PURE__ */ new Set();
-  function trackRuns(snapshot) {
-    for (const threadId of snapshot.activeRunThreadIds) {
-      if (!sampledRuns.has(threadId)) {
-        runGenerations.set(threadId, (runGenerations.get(threadId) ?? 0) + 1);
-      }
-    }
-    sampledRuns = new Set(snapshot.activeRunThreadIds);
-  }
   function projectForThread(threadId, projectId) {
     return projectId ?? getThreadProjectId(store2, threadId);
   }
@@ -152036,7 +152011,7 @@ function mountProcessManagerDialog(api2, store2) {
       showErrorToast(`Could not stop the ${label}`, error62);
     }
   }
-  function threadMenuEntries(threadId, projectId, running, stillSameRun) {
+  function threadMenuEntries(threadId, projectId, running) {
     const entries2 = [];
     if (projectId && store2.getState().projects.some((project2) => project2.id === projectId)) {
       entries2.push({
@@ -152050,10 +152025,6 @@ function mountProcessManagerDialog(api2, store2) {
       entries2.push({
         label: "Stop agent run",
         onSelect: () => {
-          if (stillSameRun && !stillSameRun()) {
-            showToast("That agent run has already finished.");
-            return;
-          }
           stopAgentRun(threadId);
         }
       });
@@ -152091,15 +152062,6 @@ function mountProcessManagerDialog(api2, store2) {
     cell.append(button);
     return cell;
   }
-  function activityMenuEntries(threadId, projectId) {
-    const run2 = runGenerations.get(threadId);
-    return threadMenuEntries(
-      threadId,
-      projectId,
-      true,
-      () => current?.activeRunThreadIds.includes(threadId) === true && runGenerations.get(threadId) === run2
-    );
-  }
   function menuEntries(row2) {
     const entries2 = row2.threadId ? threadMenuEntries(
       row2.threadId,
@@ -152117,7 +152079,6 @@ function mountProcessManagerDialog(api2, store2) {
     return entries2;
   }
   function render(snapshot) {
-    const focusedActivityThread = document.activeElement instanceof HTMLElement && activityList.contains(document.activeElement) ? document.activeElement.dataset["threadId"] : void 0;
     const focusedGroup = document.activeElement instanceof HTMLElement && body.contains(document.activeElement) && document.activeElement.classList.contains("process-manager-group-toggle") ? document.activeElement.dataset["groupKey"] : void 0;
     cpuHeading.setAttribute(
       "aria-sort",
@@ -152128,56 +152089,6 @@ function mountProcessManagerDialog(api2, store2) {
       column === "memory" ? ascending ? "ascending" : "descending" : "none"
     );
     clear(body);
-    clear(activityList);
-    activity.hidden = snapshot.activeRunThreadIds.length === 0;
-    activityCount.textContent = `${String(snapshot.activeRunThreadIds.length)} working`;
-    for (const threadId of snapshot.activeRunThreadIds) {
-      const title = getThreadById(store2, threadId)?.title.trim();
-      const label = title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
-      const projectId = projectForThread(threadId);
-      const canNavigate = Boolean(
-        projectId && store2.getState().projects.some((project2) => project2.id === projectId)
-      );
-      const item = el(
-        "button",
-        {
-          type: "button",
-          class: "process-manager-activity-item",
-          "data-thread-id": threadId,
-          "aria-label": canNavigate ? `Working ${label}: open thread` : `Working ${label}`
-        },
-        el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
-        el("span", { class: "process-manager-activity-state" }, "Working"),
-        el("span", { class: "process-manager-activity-thread", title: label }, label)
-      );
-      if (projectId && canNavigate) {
-        item.addEventListener("click", () => {
-          jumpToThread(projectId, threadId);
-        });
-      } else {
-        item.setAttribute("aria-disabled", "true");
-      }
-      item.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        showContextMenu(
-          event.clientX,
-          event.clientY,
-          activityMenuEntries(threadId, projectId),
-          dialog2
-        );
-      });
-      item.addEventListener("keydown", (event) => {
-        if (event.key !== "F10" || !event.shiftKey) return;
-        event.preventDefault();
-        const rect = item.getBoundingClientRect();
-        showContextMenu(rect.left, rect.bottom, activityMenuEntries(threadId, projectId), dialog2);
-      });
-      activityList.append(item);
-      if (threadId === focusedActivityThread) item.focus({ preventScroll: true });
-    }
-    if (focusedActivityThread && !snapshot.activeRunThreadIds.includes(focusedActivityThread)) {
-      closeButton.focus({ preventScroll: true });
-    }
     const state = store2.getState();
     const groups = groupedRows(snapshot.processes, column, ascending);
     const threadGroups = groups.filter((group) => group.threadId !== null).length;
@@ -152274,7 +152185,6 @@ function mountProcessManagerDialog(api2, store2) {
       const snapshot = await api2.processManager.snapshot();
       if (isRequestCurrent(requestGeneration)) {
         current = snapshot;
-        trackRuns(snapshot);
         render(snapshot);
       }
     } catch {
@@ -152304,8 +152214,6 @@ function mountProcessManagerDialog(api2, store2) {
     if (timer !== null) clearInterval(timer);
     timer = null;
     refreshing = false;
-    runGenerations.clear();
-    sampledRuns = /* @__PURE__ */ new Set();
   });
   return () => {
     if (dialog2.open) return;
