@@ -24,7 +24,7 @@ function stubRect(el: Element, rect: { top: number; bottom: number }): void {
 
 /**
  * The shape `prepareE2eScreenshot` leaves behind: `#app` pinned to 800px with
- * `overflow: hidden`, and the subject inside a scrollport inside it.
+ * `overflow: clip`, and the subject inside a scrollport inside it.
  */
 function build(): { shell: HTMLElement; scroller: HTMLElement; subject: HTMLElement } {
   document.body.innerHTML = `
@@ -86,6 +86,30 @@ describe('recentreClippedCapture', () => {
 
     assert.ok(recentreClippedCapture(subject, '#app'))
     assert.deepEqual(scrolls, [{ block: 'center', inline: 'nearest' }])
+  })
+
+  it('re-centres a subject inside the shell but behind reserved footer space', () => {
+    const { scroller, subject } = build()
+    scroller.style.overflowY = 'auto'
+    scroller.style.scrollPaddingBottom = '100px'
+    stubRect(scroller, { top: 60, bottom: 800 })
+    stubRect(subject, { top: 650, bottom: 750 })
+    const scrolls = captureScrolls(subject)
+
+    assert.ok(recentreClippedCapture(subject, '#app'))
+    assert.deepEqual(scrolls, [{ block: 'center', inline: 'nearest' }])
+  })
+
+  it('preserves framing inside the nested usable scrollport', () => {
+    const { scroller, subject } = build()
+    scroller.style.overflowY = 'auto'
+    scroller.style.scrollPaddingBottom = '100px'
+    stubRect(scroller, { top: 60, bottom: 800 })
+    stubRect(subject, { top: 300, bottom: 519 })
+    const scrolls = captureScrolls(subject)
+
+    assert.equal(recentreClippedCapture(subject, '#app'), null)
+    assert.deepEqual(scrolls, [])
   })
 
   it('resolves a replacement node by selector instead of retaining a detached handle', () => {

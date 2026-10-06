@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { $, browser } from '@wdio/globals'
-import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { prepareE2eScreenshot, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import {
+  recentreClippedCapture,
+  restoreScrollAfterCapture,
+} from '../e2e/helpers/capture-framing.ts'
 
 async function scrollSettingsContent(top: number): Promise<void> {
   await browser.execute((scrollTop) => {
@@ -15,6 +19,56 @@ describe('browser-hosted settings footer geometry', () => {
     await $('.prompt-input').waitForExist()
     await $('[aria-label="Settings"]').click()
     await $('.settings-section[data-section="general"]').waitForDisplayed()
+  })
+
+  it('reframes a capture target obscured by the footer and restores the scroll', async () => {
+    await prepareE2eScreenshot()
+    const before = await browser.execute(() => {
+      const content = document.querySelector<HTMLElement>('.settings-content')!
+      const footer = document.querySelector<HTMLElement>('.settings-buttons')!
+      const controls = [
+        ...document.querySelectorAll<HTMLElement>(
+          '.settings-section.active input, .settings-section.active button',
+        ),
+      ]
+      const target = controls.reverse().find((control) => control.checkVisibility())!
+      target.setAttribute('data-capture-target', '')
+      // Deliberately reproduce a stale position underneath the sticky bar.
+      content.scrollTop +=
+        target.getBoundingClientRect().bottom - footer.getBoundingClientRect().top - 20
+      const rect = target.getBoundingClientRect()
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        footerTop: footer.getBoundingClientRect().top,
+        shellBottom: document.getElementById('app')!.getBoundingClientRect().bottom,
+        scrollTop: content.scrollTop,
+      }
+    })
+    assert.ok(before.bottom > before.footerTop, 'target must initially overlap the footer')
+    assert.ok(before.bottom <= before.shellBottom, 'target must still fit inside the app shell')
+    const saved = await browser.execute(recentreClippedCapture, '[data-capture-target]', '#app')
+    assert.ok(saved, 'nested clipping must trigger reframing')
+    const framed = await browser.execute(() => {
+      const rect = document.querySelector('[data-capture-target]')!.getBoundingClientRect()
+      const footer = document.querySelector('.settings-buttons')!.getBoundingClientRect()
+      const atCentre = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      )
+      return {
+        clearsFooter: rect.bottom <= footer.top,
+        ownsCentre: Boolean(atCentre?.closest('[data-capture-target]')),
+      }
+    })
+    assert.equal(framed.clearsFooter, true)
+    assert.equal(framed.ownsCentre, true)
+    await saveElementScreenshot('#settings-dialog', 'settings-capture-footer-reframed.png')
+    await browser.execute(restoreScrollAfterCapture, '[data-capture-target]', saved)
+    const restored = await browser.execute(
+      () => document.querySelector<HTMLElement>('.settings-content')!.scrollTop,
+    )
+    assert.equal(restored, before.scrollTop)
   })
 
   it('keeps the browser-demo traffic lights in the settings titlebar', async () => {
