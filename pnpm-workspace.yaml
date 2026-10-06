@@ -46,6 +46,7 @@ overrides:
   extract-zip: file:packages/extract-zip
   undici@6: 6.28.1
   undici@7: 7.29.1
+  source-map-js@<1.2.2: 1.2.2
 
 # Dependabot's `cooldown.default-days: 7` (.github/dependabot.yml) runs pnpm
 # with --config.minimumReleaseAge=10080, which makes pnpm refuse to resolve
@@ -74,6 +75,7 @@ minimumReleaseAgeExclude:
   - hono
   - ip-address
   - undici
+  - source-map-js
 
 # adm-zip 0.6.1 fixes the declared-size allocation advisory and includes the
 # destination-symlink protections previously carried as a local patch. The
