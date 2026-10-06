@@ -41,8 +41,17 @@ describe('Process manager', function () {
       timeout: 10_000,
     })
     await expect(dialog.$('h2')).toHaveText('Process Manager')
-    await expect(dialog.$('.process-manager-rows')).toHaveText(
-      expect.stringContaining('Copse main'),
+    // Thread groups start collapsed, so the Shared group's rows are in the DOM
+    // but hidden; `toHaveText` only sees visible text.
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(() =>
+          (
+            document.querySelector('#process-manager-dialog .process-manager-rows')?.textContent ??
+            ''
+          ).includes('Copse main'),
+        ),
+      { timeout: 10_000, timeoutMsg: 'expected the Copse main process row' },
     )
     const ownedSelector = `.process-manager-rows tr[data-thread-id="${originalThreadId}"][data-kind="Terminal"]`
     const ownedRow = dialog.$(ownedSelector)
