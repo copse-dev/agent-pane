@@ -73,4 +73,5 @@
 // v45 conservatively versions deferred thread worktrees: the optional `deferredWorktree` on
 // threads and prepared checkouts, the `on-write` project mode, and the `thread_checkout`
 // agent chunk.
-export const API_PROTOCOL_VERSION = 45 as const
+// v46 versions the removal of `activeRunThreadIds` from the process-manager snapshot.
+export const API_PROTOCOL_VERSION = 46 as const
