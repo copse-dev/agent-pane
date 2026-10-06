@@ -10,6 +10,20 @@
  * respawns the agent and reattaches the same agent session.
  */
 
+/**
+ * A session that must start read-only cannot be offered `request_write_access`:
+ * its native bridge did not start. Its own tools cannot write the checkout and
+ * nothing else reaches the worktree allocator, so spawning it would strand the
+ * thread. The pool throws this before spawning; the caller allocates the
+ * worktree and runs the turn again, writable.
+ */
+export class AcpReadonlyCheckoutUnavailableError extends Error {
+  constructor() {
+    super('The native bridge is unavailable, so a read-only agent could not ask for write access.')
+    this.name = 'AcpReadonlyCheckoutUnavailableError'
+  }
+}
+
 /** Appended to the `request_write_access` result the bridge returns to the agent. */
 export const ACP_WRITE_ACCESS_HANDOFF_NOTE =
   'Your own file, git, and shell tools are still read-only in this process, so do not try to edit with them yet. ' +

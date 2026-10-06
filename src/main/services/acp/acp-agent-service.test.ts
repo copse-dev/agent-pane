@@ -39,6 +39,7 @@ import {
   sliceLines,
 } from './acp-agent-service.ts'
 import { resolveAcpPermissionMode } from './acp-agent-registry.ts'
+import { AcpReadonlyCheckoutUnavailableError } from './acp-write-access.ts'
 
 const ALLOW_ONCE: PermissionOption = { optionId: 'a1', name: 'Allow once', kind: 'allow_once' }
 const ALLOW_ALWAYS: PermissionOption = {
@@ -1013,8 +1014,10 @@ describe('continuing into a granted worktree', () => {
     seen: RunAcpAgentOptions[]
     dependencies: AcpContinuationDependencies
     keepDeferred: () => void
+    allocations: () => number
   } {
     const seen: RunAcpAgentOptions[] = []
+    let allocations = 0
     let deferred = true
     const dependencies: AcpContinuationDependencies = {
       runTurn: (turnOptions) => {
@@ -1031,8 +1034,18 @@ describe('continuing into a granted worktree', () => {
       },
       isCheckoutDeferred: () => deferred,
       executionRoot: () => WORKTREE,
+      allocateCheckout: () => {
+        allocations++
+        deferred = false
+        return Promise.resolve()
+      },
     }
-    return { seen, dependencies, keepDeferred: () => void (deferred = true) }
+    return {
+      seen,
+      dependencies,
+      keepDeferred: () => void (deferred = true),
+      allocations: () => allocations,
+    }
   }
 
   it('starts a second turn in the worktree once the first allocated one', async () => {
@@ -1061,6 +1074,49 @@ describe('continuing into a granted worktree', () => {
       { role: 'assistant', content: 'Done.' },
     ])
     assert.deepEqual(result.usage, { inputTokens: 20, outputTokens: 2 })
+  })
+
+  it('allocates and reruns the turn writable when the read-only agent cannot start', async () => {
+    const { seen, dependencies, allocations } = harness([{ readonly: false, text: 'Done.' }])
+    const runTurn = dependencies.runTurn
+    let unavailable = true
+    dependencies.runTurn = (turnOptions): Promise<TurnResult> => {
+      if (unavailable) {
+        unavailable = false
+        return Promise.reject(new AcpReadonlyCheckoutUnavailableError())
+      }
+      return runTurn(turnOptions)
+    }
+    const result = await runAcpTurnWithContinuation(options(), dependencies)
+
+    assert.equal(allocations(), 1, 'the worktree is taken up front')
+    assert.equal(seen.length, 1, 'the same turn runs once more, writable')
+    assert.equal(seen[0]?.userPrompt, 'fix the redirect')
+    assert.deepEqual(result.messages, [{ role: 'assistant', content: 'Done.' }])
+  })
+
+  it('does not allocate for any other turn failure', async () => {
+    const { dependencies, allocations } = harness([])
+    dependencies.runTurn = (): Promise<TurnResult> =>
+      Promise.reject(
+        new AcpTurnFailure(new Error('agent died'), {
+          assistantText: '',
+          usage: { inputTokens: 0, outputTokens: 0 },
+        }),
+      )
+    await assert.rejects(() => runAcpTurnWithContinuation(options(), dependencies), AcpTurnFailure)
+    assert.equal(allocations(), 0)
+  })
+
+  it('surfaces a second failure to start instead of looping', async () => {
+    const { dependencies, allocations } = harness([])
+    dependencies.runTurn = (): Promise<TurnResult> =>
+      Promise.reject(new AcpReadonlyCheckoutUnavailableError())
+    await assert.rejects(
+      () => runAcpTurnWithContinuation(options(), dependencies),
+      AcpReadonlyCheckoutUnavailableError,
+    )
+    assert.equal(allocations(), 1)
   })
 
   it('does nothing extra when the thread was never read-only', async () => {

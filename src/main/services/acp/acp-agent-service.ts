@@ -105,6 +105,7 @@ import { ensureWritableThreadCheckout } from '../deferred-worktree.ts'
 import { acpAgentCanDeferCheckout } from './acp-deferred-checkout.ts'
 import {
   ACP_READONLY_CHECKOUT_PROMPT_NOTE,
+  AcpReadonlyCheckoutUnavailableError,
   acpWriteAccessContinuationPrompt,
 } from './acp-write-access.ts'
 
@@ -434,6 +435,7 @@ export function runAcpAgentFromSettings(options: RunAcpAgentOptions): Promise<Ru
     runTurn: runAcpAgentTurn,
     isCheckoutDeferred: isThreadCheckoutDeferred,
     executionRoot: getAgentExecutionRoot,
+    allocateCheckout: ensureWritableThreadCheckout,
   })
 }
 
@@ -446,13 +448,24 @@ export interface AcpContinuationDependencies {
   isCheckoutDeferred: () => boolean
   /** The root the next turn's agent runs in; the worktree once one is granted. */
   executionRoot: () => string | null
+  /** Give the thread its worktree now, for a read-only start that cannot proceed. */
+  allocateCheckout: () => Promise<unknown>
 }
 
 export async function runAcpTurnWithContinuation(
   options: RunAcpAgentOptions,
   dependencies: AcpContinuationDependencies,
 ): Promise<RunAcpAgentResult> {
-  const first = await dependencies.runTurn(options)
+  let first: Awaited<ReturnType<AcpContinuationDependencies['runTurn']>>
+  try {
+    first = await dependencies.runTurn(options)
+  } catch (err) {
+    if (!(err instanceof AcpReadonlyCheckoutUnavailableError)) throw err
+    // The agent never started, so nothing ran or streamed: take the worktree up
+    // front, as an agent that cannot defer does, and run the same turn writable.
+    await dependencies.allocateCheckout()
+    first = await dependencies.runTurn(options)
+  }
   const { startedReadonly, ...result } = first
   // Continue only from a turn that ended on its own. A stop, an error, or a
   // refusal leaves the next user message to open the session in the worktree.
@@ -791,6 +804,8 @@ async function runAcpAgentTurn(
       hasProgress,
     }))
   } catch (err) {
+    // Not a failed turn: the read-only agent could not start. The caller recovers.
+    if (err instanceof AcpReadonlyCheckoutUnavailableError) throw err
     flushHeldText()
     // The turn died mid-flight. Attribute what it visibly consumed (estimated —
     // the agent never got to report usage) and hand the partial transcript to

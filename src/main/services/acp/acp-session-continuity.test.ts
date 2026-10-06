@@ -7,7 +7,10 @@ import {
   PROTOCOL_VERSION,
   RequestError,
 } from '@agentclientprotocol/sdk'
+import { z } from 'zod'
 import type { StreamChunk } from '@shared/types'
+import { ToolRegistry } from '../tool-registry.ts'
+import { AcpReadonlyCheckoutUnavailableError } from './acp-write-access.ts'
 import {
   openAcpSession,
   runAcpSessionPrompt,
@@ -165,6 +168,23 @@ const WRITABLE: AcpAgentSpawnConfig = {
   permissionMode: 'acceptEdits',
 }
 
+/**
+ * The registry behind a read-only session's native bridge. The pool refuses to
+ * spawn a read-only agent with no bridge, since `request_write_access` is its
+ * only way to a worktree.
+ */
+function bridgeRegistry(config: AcpAgentSpawnConfig): { registry?: ToolRegistry } {
+  if (!config.readonlyCheckout) return {}
+  const registry = new ToolRegistry()
+  registry.register({
+    name: 'request_write_access',
+    description: 'Give this thread its own worktree',
+    parameters: z.object({ branch_name: z.string().optional() }),
+    execute: () => Promise.resolve('granted'),
+  })
+  return { registry }
+}
+
 async function prompt(
   fake: FakeAgent,
   config: AcpAgentSpawnConfig,
@@ -173,6 +193,7 @@ async function prompt(
   const acquired = await acquireAcpSession({
     threadId: 'thread',
     config,
+    ...bridgeRegistry(config),
     createTransport: fake.createTransport,
   })
   const chunks: StreamChunk[] = []
@@ -226,6 +247,22 @@ describe('ACP session continuity across a new agent process', () => {
     assert.equal(next.acquired.fresh, false)
     assert.equal(next.acquired.handover, null)
     assert.equal(next.acquired.entry.open.restoredBy, 'resume')
+  })
+
+  it('refuses to spawn a read-only agent that has no bridge to ask for write access', async () => {
+    const fake = fakeAgent('global', { load: true, resume: true })
+    await assert.rejects(
+      acquireAcpSession({
+        threadId: 'thread',
+        config: READ_ONLY,
+        createTransport: fake.createTransport,
+      }),
+      AcpReadonlyCheckoutUnavailableError,
+    )
+    assert.equal(fake.spawns, 0, 'nothing was spawned')
+    // The same thread then gets a writable agent as normal.
+    const next = await prompt(fake, WRITABLE, 'now make the fix')
+    assert.equal(next.acquired.fresh, true)
   })
 
   it('fingerprints a read-only checkout apart from a writable one', () => {
@@ -333,6 +370,7 @@ describe('ACP session continuity across a new agent process', () => {
     await acquireAcpSession({
       threadId: 'thread',
       config: READ_ONLY,
+      ...bridgeRegistry(READ_ONLY),
       createTransport: fake.createTransport,
     })
 

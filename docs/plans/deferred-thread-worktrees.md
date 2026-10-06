@@ -118,7 +118,10 @@ When it holds, the turn runs like this:
    the lineage, so the transition costs a process and not the session. The first prompt says the
    workspace is read-only and to call `request_write_access` before changing anything.
 2. **Ask.** `request_write_access` is offered through the bridge to that session alone (a bridge
-   is started per session, and the flag is fixed for it). Its result carries the usual
+   is started per session, and the flag is fixed for it). If the bridge does not start, the pool
+   refuses to spawn the read-only agent (`AcpReadonlyCheckoutUnavailableError`): nothing else
+   reaches the worktree allocator, so it could neither write nor ask. The turn then allocates the
+   worktree up front and runs again writable, as an agent that cannot defer does. Its result carries the usual
    allocation note plus an instruction to end the turn: the agent's own tools stay read-only
    until it is restarted. A bridged write tool still allocates on its own, as on the native
    loop, and the agent's bridged edits land in the worktree at once.
