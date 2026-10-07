@@ -102,6 +102,8 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --text-secondary: #a6a6a6;
   --text-muted: #808080;
   --text: var(--text-primary);
+  --text-prose: #e6e6e6;
+  --text-prose-strong: #ffffff;
   --text-tertiary: var(--text-muted);
   --border: #414141;
   --border-subtle: #333333;
@@ -152,6 +154,12 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
     "Averia Serif Libre",
     Georgia,
     serif;
+  --font-prose:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    system-ui,
+    sans-serif;
   --font-mono:
     "SFMono-Regular",
     Consolas,
@@ -4934,13 +4942,22 @@ label {
   padding-block: var(--spacing-xs);
 }
 .msg-assistant > .message-body > .message-text {
-  --sm-line-height: 1.65;
+  --sm-line-height: 1.6;
   --sm-space-xs: var(--spacing-sm);
   --sm-space-sm: var(--spacing-lg);
   --sm-space-md: var(--spacing-xl);
-  max-width: 720px;
-  font-size: var(--font-size-lg);
+  max-width: 680px;
+  font-family: var(--font-prose);
+  font-size: var(--font-size-md);
   line-height: var(--sm-line-height);
+  color: var(--text-prose);
+}
+.msg-assistant > .message-body > .message-text :is(strong, b) {
+  font-weight: 600;
+  color: var(--text-prose-strong);
+}
+.msg-assistant > .message-body > .message-text a :is(strong, b) {
+  color: inherit;
 }
 .msg-assistant > .message-body > .message-text pre {
   font-size: var(--sm-font-size-sm);
@@ -17131,6 +17148,7 @@ h3 {
   --bg-muted: #123f3b;
   --bg-subtle: #043431;
   --text-primary: #f9fcff;
+  --text-prose: var(--text-primary);
   --text-secondary: #b8cbc8;
   --text-muted: #829e9a;
   --border: #28534f;
@@ -17153,6 +17171,8 @@ h3 {
   --highlight-current-bg: #ffcc33;
   --highlight-current-text: #241a00;
   --text-primary: #333333;
+  --text-prose: #333333;
+  --text-prose-strong: #111111;
   --text-secondary: #5f5f5f;
   --text-muted: #767676;
   --select-chevron: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23707070'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E");
