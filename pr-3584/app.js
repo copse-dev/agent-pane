@@ -90213,9 +90213,10 @@ function bindBrowserLinkClicks(root, store2, api2) {
     const artifact = remoteArtifactFromHref(href);
     if (artifact && api2) {
       void api2.remoteAgent.downloadArtifact(artifact.agentId, artifact.path).then((url2) => {
-        openBrowserUrl(store2, url2);
+        if (url2) openBrowserUrl(store2, url2);
       }).catch((err2) => {
         console.warn("[remote-agent] artifact download failed:", err2);
+        showErrorToast("Failed to download agent artifact", err2);
       });
       return;
     }
@@ -90247,6 +90248,7 @@ var init_browser_links = __esm({
     init_panels();
     init_github_pr_url2();
     init_pr_link_preview();
+    init_toast();
   }
 });
 
@@ -90288,6 +90290,17 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
     if (link.dataset["fileReferencePath"]) return;
     const href = workspaceHrefFromLink(link);
     if (!href) return;
+    const artifact = /\/([^/]+)\/blobs\/openai-artifacts\/([a-f0-9]{64}\/[a-f0-9]{64}\.[a-zA-Z0-9]{1,10})$/.exec(
+      href
+    );
+    if (artifact?.[1] && artifact[2]) {
+      event.preventDefault();
+      event.stopPropagation();
+      void api2.remoteAgent.downloadArtifact(`openai:${artifact[1]}`, artifact[2]).catch((error62) => {
+        showErrorToast("Failed to save agent artifact", error62);
+      });
+      return;
+    }
     const parsed2 = workspaceLinkTargetFromHref(href);
     if (!parsed2) return;
     const owner = getActiveThreadOwner(store2);
