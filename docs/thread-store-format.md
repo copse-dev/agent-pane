@@ -24,12 +24,31 @@ installs the profile and tracing environment first.
   writes stay workspace-only (`resolveWorkspacePath` + `assertWorkspaceWriteTarget`),
   so every write tool rejects the store by construction.
 
+## Rebuildable SQLite projection
+
+Metadata-only project loads and PR/thread/commit relationships use a per-project
+SQLite projection. It stores no conversation bodies. `meta.json`, `events.jsonl`,
+and referenced content files remain authoritative. Native writes persist pending
+thread IDs before changing a source file, then repair those rows after the queued
+operation. A restart repairs pending rows before queries. Missing, incompatible,
+copied-to-another-project, and corrupt indexes rebuild from files. The existing
+decoded metadata LRU remains above SQLite for fast project switches.
+
+SQLite may create `-wal`, `-shm`, or `-journal` sidecars beside the index. All are
+disposable and guarded by the same store path/symlink rules. The cache assumes one
+process writes the store through its API. After manual edits or an external
+restore, stop the app and remove the index and its sidecars to force a rebuild.
+The spike does not add an external-file watcher or migrate `catalog.jsonl` and the
+legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-index.md).
+
 ## Layout
 
 ```
 ~/.copse/workspace/<projectId>/
   catalog.jsonl                      # 1 line/thread index (rebuildable): {id, title,
                                      #   createdAt, updatedAt, digest, path}
+  agent-pr-index-v2.jsonl            # rebuildable legacy agent/PR links; all matching threads
+  .thread-index.sqlite              # disposable metadata / PR / commit projection
   stream-stats.jsonl                 # append-only stream-cut eval records
   reasoning-checkpoints.jsonl        # append-only reasoning checkpoint records
   tasks/<taskId>/                    # supervised background tasks (#1081); not a thread
@@ -132,6 +151,15 @@ installs the profile and tracing environment first.
   discard confirmation; cancellation keeps the chat and checkout. The branch
   is retained, and `worktree.retiredAt` records that the checkout can be rebuilt.
   Shared project checkouts are never removed by archiving.
+  Optional `prRefs` are cached references, not ownership. `prProductions` records
+  successful non-noop native PR creation (`pr`, `eventId`, `source: "pr-create"`,
+  `createdAt`); `commitProductions` records native commit creation (`repository`,
+  full `sha`, `eventId`, `source: "git-commit"`, `createdAt`). Native writes preserve
+  this evidence across stale renderer updates. Forking copies references but not
+  production evidence. Project-scoped relationship indexes are rebuildable from
+  metadata and keep all matching nonarchived threads. See the
+  [relationship spike](spikes/thread-pr-relations.md) for evidence limits and
+  measured storage tradeoffs.
 - **`agent-history.json`** is a versioned snapshot of the provider-format
   `LLMMessage[]` used to resume the agent loop after a restart (issue #993).
   Shape: `{ "v": 1, "messages": [ … ] }`. It is **not** append-only — context

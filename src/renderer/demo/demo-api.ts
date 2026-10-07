@@ -1,5 +1,6 @@
 import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
+import { ThreadPrRelationshipIndex } from '@shared/git/thread-pr-relations.ts'
 import type { AutomationPermissionOption, AutomationSchedule } from '@shared/types/automations.ts'
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
 import type { AppleProjectState } from '@shared/types/apple-development.ts'
@@ -1507,8 +1508,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     gh: {
       status: () =>
         resolved({
-          installed: false,
-          authenticated: false,
+          installed: Boolean(scenario.pullRequests),
+          authenticated: Boolean(scenario.pullRequests),
           username: null,
           message: 'Unavailable in browser demo',
         }),
@@ -1516,12 +1517,20 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       setListWatch: resolvedVoid,
       onListsTick: subscribe,
       listMyOpenPrs: () => resolved([]),
-      listWorkspaceOpenPrs: emptyArray,
+      listWorkspaceOpenPrs: () => resolved(scenario.pullRequests ?? []),
       prChecks: () => resolved<'no_checks'>('no_checks'),
-      prDetails: () => resolved(null),
+      prDetails: (owner, repo, number) =>
+        resolved(
+          scenario.pullRequests?.find(
+            (pr) => pr.owner === owner && pr.repo === repo && pr.number === number,
+          ) ?? null,
+        ),
       prFileDiff: () => resolved(null),
       resolvePrUrl: () => resolved(null),
       agentPrLinks: emptyArray,
+      prThreadRelationships: (pr) => resolved(new ThreadPrRelationshipIndex(threads).forPr(pr)),
+      threadPrRelationships: (threadId) =>
+        resolved(new ThreadPrRelationshipIndex(threads).forThread(threadId)),
       createPrForThread: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       rerunFailedRuns: () =>

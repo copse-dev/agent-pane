@@ -49,8 +49,8 @@ describe('PR panel (mock gh)', () => {
       timeoutMsg: 'expected linked and workspace PR rows',
     })
 
-    await expect(await $('.git-changes-section-title*=From chat')).toHaveText(
-      expect.stringMatching(/from chat \(1\)/i),
+    await expect(await $('.git-changes-section-title*=Related PRs')).toHaveText(
+      expect.stringMatching(/related PRs · this thread \(1\)/i),
     )
     // Repo-scoped header drops the "In " prefix to save horizontal space.
     await expect(await $('.git-changes-section-title*=copse-panel')).toHaveText(
@@ -76,7 +76,7 @@ describe('PR panel (mock gh)', () => {
       timeoutMsg: 'expected the filter to narrow to a single matching row',
     })
     await expect(await $('.pr-list-title*=Tidy up workspace status polling')).toBeDisplayed()
-    await expect(await $('.git-changes-section-title*=From chat')).not.toBeExisting()
+    await expect(await $('.git-changes-section-title*=Related PRs')).not.toBeExisting()
     await saveElementScreenshot('#pane-files', 'pr-panel-filter-match.png')
 
     // A query matching nothing shows the empty state instead of any group.
