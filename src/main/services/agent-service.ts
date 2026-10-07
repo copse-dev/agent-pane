@@ -19,6 +19,8 @@ import {
   DEFAULT_MAX_LLM_CALLS,
   isAgentRunTimeoutAbort,
 } from '@copse/agent/agent-loop-limits.ts'
+import { withClassifierToolOffer } from '../tools/classifier-tool.ts'
+import { configuredClassifierProfiles } from './classifiers/classifier-service.ts'
 import {
   PRODUCT_REASONING_CHECKPOINT_POLICY,
   PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
@@ -442,6 +444,8 @@ function parentTools(
   // is gated the same way, on attached archives.
   tools = applyVideoToolAvailability(tools, threadVideos)
   tools = applyArchiveToolAvailability(tools, threadArchives)
+  // classify_text is offered once a classifier connection is saved.
+  tools = withClassifierToolOffer(tools, configuredClassifierProfiles())
   return tools
 }
 

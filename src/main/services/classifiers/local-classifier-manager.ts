@@ -12,9 +12,11 @@ import {
   LOCAL_CLASSIFIER_SERVERS,
   cacheEnvironment,
   cachePaths,
+  cacheRoot,
   isClassifierInstalled,
   localClassifierEntry,
   prepareClassifierCache,
+  removeClassifierInstall,
   type CachePaths,
   type CatalogEntry,
 } from './local-server.mts'
@@ -25,6 +27,9 @@ const START_TIMEOUT_MS = 10 * 60_000
 const POLL_MS = 1_000
 const STOP_GRACE_MS = 5_000
 const OUTPUT_TAIL_LINES = 12
+/** Weights unpack, and the virtual environment and checkout add to them: ask for headroom. */
+const DISK_HEADROOM = 1.25
+const GB = 1e9
 
 /** Everything the manager touches outside itself, so tests can run it without Python or a network. */
 export interface LocalClassifierDeps {
@@ -32,6 +37,9 @@ export interface LocalClassifierDeps {
   isInstalled: typeof isClassifierInstalled
   portListening: (port: number) => Promise<boolean>
   programAvailable: (program: string) => Promise<boolean>
+  /** Free bytes on the volume that will hold the cache; null when unknown. */
+  freeBytes: (path: string) => Promise<number | null>
+  uninstall: typeof removeClassifierInstall
   spawnServer: (command: readonly string[], paths: CachePaths) => ChildProcess
   listProfiles: () => ClassifierProfile[]
   saveProfile: (profile: ClassifierProfile) => Promise<unknown>
@@ -68,6 +76,33 @@ export function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
       { once: true },
     )
   })
+}
+
+/**
+ * A setup command's failure in words a person can act on. The recognised
+ * causes (no network, no disk space, a pinned commit that cannot be fetched)
+ * name what to do; anything else keeps the command's own message.
+ */
+export function describeInstallFailure(error: unknown, entry: CatalogEntry): string {
+  const message = errorMessage(error)
+  if (/no space left on device|ENOSPC|disk quota exceeded/i.test(message)) {
+    return `${entry.label} ran out of disk space during setup. Free some space or set COPSE_CLASSIFIER_CACHE to another disk, then try again. (${message})`
+  }
+  if (
+    /could not resolve host|temporary failure in name resolution|network is unreachable|connection (timed out|refused|reset)|failed to connect|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|offline/i.test(
+      message,
+    )
+  ) {
+    return `Could not reach the network to download ${entry.label}. Check your connection, then try again. (${message})`
+  }
+  if (
+    /couldn't find remote ref|not our ref|unable to read tree|reference is not a tree|bad object|invalid reference|did not match any/i.test(
+      message,
+    )
+  ) {
+    return `Could not fetch the pinned version of ${entry.label} (${entry.revision.slice(0, 12)}) from ${entry.repository}. The commit may have been removed upstream; nothing was installed. (${message})`
+  }
+  return message
 }
 
 function presetProfile(presetId: string): ClassifierProfile | undefined {
@@ -134,6 +169,27 @@ export class LocalClassifierManager {
     return this.overview()
   }
 
+  /**
+   * Delete what this app installed for `id`. Refused while the server runs or
+   * is being installed. The saved connection stays, so removing it is a
+   * separate choice; the shared uv package cache stays too.
+   */
+  async uninstall(id: string): Promise<LocalClassifierOverview> {
+    const entry = this.entry(id)
+    const current = this.managed.get(id)
+    if (current?.installing || current?.alive) {
+      throw new Error(`Stop ${entry.label} before uninstalling it.`)
+    }
+    if (await this.deps.portListening(entry.port)) {
+      throw new Error(
+        `${entry.label} is running on port ${String(entry.port)}. Stop it before uninstalling.`,
+      )
+    }
+    await this.deps.uninstall(id, entry)
+    this.managed.delete(id)
+    return this.overview()
+  }
+
   /** Save the preset connection for a server that is already running. */
   async connect(id: string): Promise<LocalClassifierOverview> {
     const entry = this.entry(id)
@@ -175,6 +231,12 @@ export class LocalClassifierManager {
       if (missing.length > 0) {
         throw new Error(`Install ${missing.join(' and ')} first, then try again.`)
       }
+      if (await this.deps.portListening(entry.port)) {
+        throw new Error(
+          `Port ${String(entry.port)} is already in use. Stop whatever is listening there first; nothing was downloaded.`,
+        )
+      }
+      await this.assertDiskSpace(id, entry)
       state.progress = 'Starting setup…'
       await this.deps.prepare(id, entry, {
         signal: state.controller.signal,
@@ -183,7 +245,7 @@ export class LocalClassifierManager {
         },
       })
     } catch (error) {
-      this.fail(state, error)
+      this.fail(state, describeInstallFailure(error, entry))
       state.installing = false
       return
     }
@@ -265,6 +327,18 @@ export class LocalClassifierManager {
     delete state.progress
     if (state.controller.signal.aborted) return
     state.error = errorMessage(error)
+  }
+
+  private async assertDiskSpace(id: string, entry: CatalogEntry): Promise<void> {
+    // A finished earlier setup downloads nothing more.
+    if (await this.deps.isInstalled(id, entry)) return
+    const root = cacheRoot()
+    const free = await this.deps.freeBytes(root)
+    const needed = entry.downloadGb * GB * DISK_HEADROOM
+    if (free === null || free >= needed) return
+    throw new Error(
+      `Not enough free disk space for ${entry.label}: about ${(needed / GB).toFixed(1)} GB is needed and ${(free / GB).toFixed(1)} GB is free at ${root}. Free some space or set COPSE_CLASSIFIER_CACHE to another disk, then try again. Nothing was downloaded.`,
+    )
   }
 
   private async missingPrograms(entry: CatalogEntry): Promise<string[]> {

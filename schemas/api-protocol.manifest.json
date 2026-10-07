@@ -1207,6 +1207,13 @@
           1
         ]
       },
+      "local-classifiers:uninstall": {
+        "api": "localClassifiers.uninstall",
+        "args": [
+          1,
+          1
+        ]
+      },
       "main-window:get-browser-session": {
         "api": "windowState.getBrowserSession",
         "args": [
