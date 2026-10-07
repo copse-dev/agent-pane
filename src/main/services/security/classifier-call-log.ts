@@ -1,4 +1,5 @@
 import { CLASSIFIER_CALL_KIND, type ClassifierSubject } from '@shared/usage/classifier-use.ts'
+import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { getActiveProjectId } from '../workspace.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { recordDecision } from './decision-log-store.ts'
@@ -31,8 +32,16 @@ function wholeNumber(value: number): number {
  * classifier can be asked outside any thread.
  */
 export function recordClassifierCall(call: ClassifierCall): void {
-  const threadId = call.threadId ?? getActiveRunThread()
-  const projectId = call.projectId ?? getActiveProjectId()
+  const context = currentThreadExecutionContext()
+  const threadId = call.threadId ?? context?.threadId ?? getActiveRunThread()
+  // A supplied thread must not borrow the project of an unrelated active run.
+  const projectId =
+    call.projectId ??
+    (context?.threadId === threadId
+      ? context.projectId
+      : call.threadId === undefined
+        ? getActiveProjectId()
+        : undefined)
   if (!threadId || !projectId) return
   recordDecision({
     kind: CLASSIFIER_CALL_KIND,
