@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { gitCommitTool } from './git-tools.ts'
+import { createThread, getThreadMeta } from '../services/thread-store.ts'
 import { setApprovalHandler } from '../services/approval.ts'
 import { clearDiffQueueForTest } from '../services/diff-queue.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
@@ -100,6 +101,38 @@ describe('git_commit configured helpers', () => {
     assert.equal(git('diff', '--cached'), '')
     assert.equal(git('rev-list', '--count', 'HEAD').trim(), '1')
     assert.equal(existsSync(join(repo, 'hook-ran')), false)
+  })
+
+  it('records the exact commit made in the executing thread even when attribution trailers are disabled', async () => {
+    const { repo, git } = await fixture()
+    const store = await mkdtemp(join(tmpdir(), 'copse-commit-provenance-'))
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = store
+    cleanups.push(async () => {
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+      await rm(store, { recursive: true, force: true })
+    })
+    await createThread('git-commit-test', {
+      id: 'commit-thread',
+      title: 'Commit work',
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    git('remote', 'add', 'origin', 'https://github.com/acme/widgets.git')
+    await setSetting('gitAttributionEnabled', false)
+    setApprovalHandler(async () => ({ approved: true, remember: false }))
+    const output = await commit(repo, 'Record native evidence', true)
+    assert.equal(typeof output, 'string')
+    const evidence = (await getThreadMeta('git-commit-test', 'commit-thread'))?.commitProductions
+    assert.equal(evidence?.length, 1)
+    assert.equal(evidence[0]?.sha, git('rev-parse', 'HEAD').trim())
+    assert.equal(evidence[0].repository, 'github.com/acme/widgets')
+    assert.equal(evidence[0].source, 'git-commit')
+    assert.doesNotMatch(git('log', '-1', '--format=%B'), /Co-authored-by:/i)
   })
 
   it('honors approved hooks and safely quotes the attributed commit message', async () => {

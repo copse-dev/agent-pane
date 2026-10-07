@@ -39,7 +39,7 @@ export const ghPrViewTool = defineTool({
   name: 'gh_pr_view',
   provenance: 'external',
   description:
-    'Show details for one pull request via GitHub CLI (read-only). Omit number for the PR on the current branch.',
+    'Show details for one pull request via GitHub CLI (read-only), plus local producing/related threads and exact recorded commit provenance. Missing commit evidence is unknown. Omit number for the PR on the current branch.',
   parameters: z.object({
     number: z
       .number()

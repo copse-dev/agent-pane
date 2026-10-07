@@ -1614,6 +1614,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('gh:pr-file-diff', owner, repo, number, path),
     resolvePrUrl: (url: string) => ipcRenderer.invoke('gh:resolve-pr-url', url),
     agentPrLinks: () => ipcRenderer.invoke('gh:agent-pr-links'),
+    prThreadRelationships: (pr: import('@shared/git/github-pr-url.ts').GithubPrRef) =>
+      ipcRenderer.invoke('gh:pr-thread-relationships', pr),
+    threadPrRelationships: (threadId: string) =>
+      ipcRenderer.invoke('gh:thread-pr-relationships', threadId),
     rerunFailedRuns: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:rerun-failed-runs', owner, repo, number),
     createPrForThread: (projectId: string, threadId: string, request: PrComposerCreateRequest) =>

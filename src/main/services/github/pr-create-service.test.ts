@@ -71,6 +71,7 @@ function deps(over: Partial<PrCreateDependencies> = {}): Recorded {
     broadcast: (channel, ...args) => {
       broadcasts.push({ channel, args })
     },
+    recordProduction: async () => {},
     ...over,
   }
   return { deps: base, created, slugRoots, branchRoots, pushed, broadcasts }
@@ -98,6 +99,30 @@ describe('createPrForThread', () => {
     assert.equal(recorded.created[0]?.body, 'Details')
   })
 
+  it('records only newly created PRs as production, never a rediscovery noop', async () => {
+    const productions: Array<Parameters<PrCreateDependencies['recordProduction']>[2]> = []
+    for (const noop of [false, true]) {
+      const recorded = deps({
+        createPullRequest: async () => ({
+          ok: true,
+          backend: 'cli',
+          number: 7,
+          url: 'https://github.com/copse-dev/agent-pane/pull/7',
+          message: 'PR result',
+          noop,
+        }),
+        recordProduction: async (projectId, threadId, event) => {
+          assert.equal(projectId, WORKTREE_CONTEXT.projectId)
+          assert.equal(threadId, WORKTREE_CONTEXT.threadId)
+          productions.push(event)
+        },
+      })
+      await createPrForThread({ title: 'Widget' }, WORKTREE_CONTEXT, recorded.deps)
+    }
+    assert.equal(productions.length, 1)
+    assert.equal(productions[0]?.source, 'pr-create')
+    assert.equal(productions[0].pr.number, 7)
+  })
   it("reads branches from the thread's own checkout, not the ambient root", async () => {
     // The whole point of threading context through: a worktree thread that
     // resolved the shared tree's branch would open the PR from the wrong place.

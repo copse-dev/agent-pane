@@ -25,7 +25,7 @@ function thread(id: string, title: string, number: number): Thread {
   }
 }
 
-test('indexes persisted PR references to their producing threads', () => {
+test('indexes persisted PR references as related threads', () => {
   const store = createStore({
     activeProjectId: 'project-1',
     activeThreadId: 'thread-1',
@@ -36,8 +36,8 @@ test('indexes persisted PR references to their producing threads', () => {
   assert.deepEqual(
     [...links.values()],
     [
-      { threadId: 'thread-1', title: 'First thread' },
-      { threadId: 'thread-2', title: 'Fix widget' },
+      [{ threadId: 'thread-1', title: 'First thread', kinds: ['referenced'], productions: [] }],
+      [{ threadId: 'thread-2', title: 'Fix widget', kinds: ['referenced'], productions: [] }],
     ],
   )
 })

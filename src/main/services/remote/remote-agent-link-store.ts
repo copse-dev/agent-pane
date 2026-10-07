@@ -72,7 +72,7 @@ export async function recordRemoteAgentLaunch(input: {
 }
 
 /**
- * Attach the PR the agent opened once its reply reveals it. Write-once and
+ * Attach a PR association once the agent's reply reveals it. Write-once and
  * repo-filtered (see thread-store `attachThreadPrUrl`), so a reply that also
  * references an unrelated PR — or a follow-up turn — can't repoint the link.
  */
@@ -91,7 +91,7 @@ export async function attachRemoteAgentPrFromText(
   }
 }
 
-/** Which thread/agent owns a given PR URL, from the active project's reverse index. */
+/** One legacy association, or null when absent/ambiguous; never ownership proof. */
 export async function findThreadForPrUrl(prUrl: string): Promise<RemoteAgentPrIndexEntry | null> {
   const projectId = getActiveProjectId()
   if (!projectId) return null
@@ -103,7 +103,7 @@ export async function findThreadForPrUrl(prUrl: string): Promise<RemoteAgentPrIn
   }
 }
 
-/** Every agent-owned PR in the active project, for the PR pane to annotate rows. */
+/** Every agent/PR association in the active project, for PR pane annotations. */
 export async function listActiveProjectAgentPrLinks(): Promise<RemoteAgentPrIndexEntry[]> {
   const projectId = getActiveProjectId()
   if (!projectId) return []

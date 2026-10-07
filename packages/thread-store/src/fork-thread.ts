@@ -1,4 +1,5 @@
 import type { Message, Thread } from './thread-types.ts'
+import { collectThreadPrRefs } from './thread-pr-status.ts'
 
 /**
  * Forking a thread (issue: thread forking). A fork is a *new* thread seeded with
@@ -101,6 +102,9 @@ export function buildForkedThread(source: Thread, options: ForkThreadOptions = {
     title: forkThreadTitle(source.title),
     status: 'idle',
     messages,
+    // References follow only the copied transcript; native production belongs
+    // to the source thread and is never inherited or inferred from tool text.
+    prRefs: collectThreadPrRefs({ messages }),
     // Usage is a ledger of what a thread spent. The fork has spent nothing yet;
     // the source keeps its own totals.
     usage: { inputTokens: 0, outputTokens: 0 },

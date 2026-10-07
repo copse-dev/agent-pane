@@ -142,6 +142,7 @@ import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
   clearAgentHistory,
+  closeThreadStoreIndexes,
   getProjectThread,
   getThreadMeta,
   loadAgentHistory,
@@ -1294,6 +1295,10 @@ app.on('before-quit', (event) => {
     if (outcome === 'timed-out') app.exit(0)
     else app.quit()
   })
+})
+
+app.on('will-quit', () => {
+  closeThreadStoreIndexes()
 })
 
 function quitFromSignal(signal: NodeJS.Signals): void {

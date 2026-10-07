@@ -3,6 +3,7 @@ import type { ThreadMeta } from './spine-schema.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 import { isNonNull } from '@copse/std/nullish.ts'
 import { repairLegacyAcpTotalInputTokens } from '@copse/llm/model-usage.ts'
+import { prProductionSchema, commitProductionSchema } from './thread-pr-relations.ts'
 
 /**
  * Raise legacy ACP `byModel` entries recorded with fresh-only input to their
@@ -98,12 +99,22 @@ export function parseThreadMetaValue(value: unknown): ThreadMeta | null {
   }
   const usage = parseUsage(value['usage'])
   if (usage === null) return null
+  const prProductions = prProductionSchema.array().safeParse(value['prProductions'] ?? [])
+  const commitProductions = commitProductionSchema
+    .array()
+    .safeParse(value['commitProductions'] ?? [])
   return {
     ...value,
     id: value['id'],
     title: value['title'],
     status: value['status'],
     usage,
+    ...(value['prProductions'] === undefined
+      ? {}
+      : { prProductions: prProductions.success ? prProductions.data : [] }),
+    ...(value['commitProductions'] === undefined
+      ? {}
+      : { commitProductions: commitProductions.success ? commitProductions.data : [] }),
     createdAt: value['createdAt'],
     updatedAt: value['updatedAt'],
   }

@@ -1,0 +1,195 @@
+{
+  "node": "v24.19.0",
+  "platform": "linux",
+  "cpu": "AMD EPYC 9V74 80-Core Processor",
+  "design": "Synthetic 3 references and 1 commit per thread; 10% PR creation events; ~30 threads per PR. Separate workers, same payloads, semantic parity asserted. OS page cache is warm, not an evicted-disk benchmark.",
+  "budgets": {
+    "warmLookupP95Ms": 1,
+    "updateP95Ms": 16,
+    "cachedMetadataFirstQueryMs": 100,
+    "indexHeapMiBAt10000": 20
+  },
+  "notes": "Files: actual native metadata load/first lookup plus pure map cache. Recovery also evaluates an optional JSONL projection checkpoint; the app currently has no persisted relationship checkpoint. SQLite is a rebuildable projection candidate with cached prepared statements. Memory is the incremental cache after metadata/native index load, not total app memory; RSS deltas depend on allocator reuse. Source writes, provider latency, renderer paint and IPC are excluded from lookup metrics. Heap alone is not total SQLite memory.",
+  "results": [
+    {
+      "threads": 100,
+      "backend": "files",
+      "sourceMetadataLoadMs": 30.706461999999988,
+      "firstNativePrQueryMs": 8.91060299999998,
+      "cacheBuildMs": 1.4227450000000204,
+      "recovery": {
+        "medianMs": 2.4006089999999745,
+        "p95Ms": 4.946506999999997
+      },
+      "warmPr": {
+        "medianMs": 0.05391200000002527,
+        "p95Ms": 0.11467300000003888
+      },
+      "warmThread": {
+        "medianMs": 0.00045999999997548,
+        "p95Ms": 0.0009709999999927277
+      },
+      "warmCommit": {
+        "medianMs": 0.0008310000000051332,
+        "p95Ms": 0.0015020000000163236
+      },
+      "incrementalUpdate": {
+        "medianMs": 0.01325000000002774,
+        "p95Ms": 0.043355999999960204
+      },
+      "heapMiB": 0.116485595703125,
+      "rssMiB": 0,
+      "indexBytes": 57688
+    },
+    {
+      "threads": 100,
+      "backend": "sqlite",
+      "sourceMetadataLoadMs": 30.006776000000002,
+      "firstNativePrQueryMs": 9.077514999999948,
+      "cacheBuildMs": 1.1306849999999713,
+      "recovery": {
+        "medianMs": 0.8842429999999695,
+        "p95Ms": 1.241380999999933
+      },
+      "warmPr": {
+        "medianMs": 0.43440499999996973,
+        "p95Ms": 0.7727950000000305
+      },
+      "warmThread": {
+        "medianMs": 0.018016999999986183,
+        "p95Ms": 0.05800700000008874
+      },
+      "warmCommit": {
+        "medianMs": 0.010425000000054752,
+        "p95Ms": 0.02172300000006544
+      },
+      "incrementalUpdate": {
+        "medianMs": 0.04731200000003355,
+        "p95Ms": 0.11501299999997627
+      },
+      "heapMiB": -0.00099945068359375,
+      "rssMiB": 0.75,
+      "indexBytes": 172032
+    },
+    {
+      "threads": 1000,
+      "backend": "files",
+      "sourceMetadataLoadMs": 170.75725900000003,
+      "firstNativePrQueryMs": 19.008827999999994,
+      "cacheBuildMs": 9.536817000000042,
+      "recovery": {
+        "medianMs": 17.083905000000073,
+        "p95Ms": 22.663946999999894
+      },
+      "warmPr": {
+        "medianMs": 0.05348100000003342,
+        "p95Ms": 0.07523300000002564
+      },
+      "warmThread": {
+        "medianMs": 0.00043099999993501115,
+        "p95Ms": 0.0015519999999469292
+      },
+      "warmCommit": {
+        "medianMs": 0.000841000000036729,
+        "p95Ms": 0.0020729999999957727
+      },
+      "incrementalUpdate": {
+        "medianMs": 0.013058999999998377,
+        "p95Ms": 0.03059599999994589
+      },
+      "heapMiB": 0.997039794921875,
+      "rssMiB": 1.75,
+      "indexBytes": 584068
+    },
+    {
+      "threads": 1000,
+      "backend": "sqlite",
+      "sourceMetadataLoadMs": 151.05666000000002,
+      "firstNativePrQueryMs": 23.45558099999994,
+      "cacheBuildMs": 0.6689689999999473,
+      "recovery": {
+        "medianMs": 0.7328650000000607,
+        "p95Ms": 0.9761010000000852
+      },
+      "warmPr": {
+        "medianMs": 0.4934139999999161,
+        "p95Ms": 0.8872769999999264
+      },
+      "warmThread": {
+        "medianMs": 0.01478199999996832,
+        "p95Ms": 0.03345000000001619
+      },
+      "warmCommit": {
+        "medianMs": 0.010536000000001877,
+        "p95Ms": 0.014222000000017943
+      },
+      "incrementalUpdate": {
+        "medianMs": 0.047141000000010536,
+        "p95Ms": 0.13745700000004035
+      },
+      "heapMiB": -0.0818939208984375,
+      "rssMiB": 0.875,
+      "indexBytes": 1331200
+    },
+    {
+      "threads": 10000,
+      "backend": "files",
+      "sourceMetadataLoadMs": 1280.3398940000002,
+      "firstNativePrQueryMs": 129.5848890000002,
+      "cacheBuildMs": 112.68918499999972,
+      "recovery": {
+        "medianMs": 166.3927349999999,
+        "p95Ms": 194.89375800000016
+      },
+      "warmPr": {
+        "medianMs": 0.0531700000001365,
+        "p95Ms": 0.061471999999866966
+      },
+      "warmThread": {
+        "medianMs": 0.0004210000001876324,
+        "p95Ms": 0.001623000000108732
+      },
+      "warmCommit": {
+        "medianMs": 0.000841000000036729,
+        "p95Ms": 0.0019519999996191473
+      },
+      "incrementalUpdate": {
+        "medianMs": 0.014803000000028987,
+        "p95Ms": 0.018567999999959284
+      },
+      "heapMiB": 11.134719848632812,
+      "rssMiB": 1.44140625,
+      "indexBytes": 5922028
+    },
+    {
+      "threads": 10000,
+      "backend": "sqlite",
+      "sourceMetadataLoadMs": 1224.253962,
+      "firstNativePrQueryMs": 135.11529299999984,
+      "cacheBuildMs": 0.7263049999996838,
+      "recovery": {
+        "medianMs": 0.6675660000000789,
+        "p95Ms": 1.1349810000001526
+      },
+      "warmPr": {
+        "medianMs": 0.4027769999997872,
+        "p95Ms": 0.6653230000001713
+      },
+      "warmThread": {
+        "medianMs": 0.014632000000347034,
+        "p95Ms": 0.0410119999996823
+      },
+      "warmCommit": {
+        "medianMs": 0.010536000000229251,
+        "p95Ms": 0.012679000000389351
+      },
+      "incrementalUpdate": {
+        "medianMs": 0.049254000000019005,
+        "p95Ms": 0.10922500000015134
+      },
+      "heapMiB": -0.0840911865234375,
+      "rssMiB": 0.875,
+      "indexBytes": 13008896
+    }
+  ]
+}
