@@ -136,6 +136,32 @@ export async function seedAllowedWorkspaceRoots(
 }
 
 /**
+ * The persisted projects `workspace:set` has to seed before it can validate
+ * `root`: the ones that name it.
+ *
+ * Every persisted project is already seeded once at startup, so a switch only
+ * needs the target. Re-seeding all of them on every switch ran `exists`,
+ * `realpath` and `stat` plus a linked-worktree sibling scan for each project one
+ * after another — seconds of main-process filesystem work with a few dozen
+ * projects, in front of the reply the renderer is waiting on. Falls back to every
+ * project when none names `root` verbatim (a symlinked or differently spelled
+ * path), because only canonicalising each one can tell which it resolves to.
+ */
+export function workspaceProjectsToSeed(
+  projects: readonly WorkspaceProjectRef[],
+  root: string,
+  sshHost?: string,
+): readonly WorkspaceProjectRef[] {
+  const matching = projects.filter((project) =>
+    sshHost
+      ? project.sshHost === sshHost &&
+        normalizeRemoteWorkspacePath(project.path) === normalizeRemoteWorkspacePath(root)
+      : !project.sshHost && resolve(project.path) === resolve(root),
+  )
+  return matching.length > 0 ? matching : projects
+}
+
+/**
  * Run best-effort linked-worktree discovery without letting slow or blocked Git
  * metadata prevent an otherwise valid project folder from opening.
  */
@@ -446,6 +472,9 @@ export function resolveSshHostForWorkspaceRoot(
 
 export function setWorkspaceRoot(root: string | null): void {
   workspaceRoot = root
+  // Re-selecting the root that is already stored is common (a switch can be
+  // issued twice) and each write rewrites the whole config.json synchronously.
+  if (storageGet(WORKSPACE_KEY) === root) return
   storageSet(WORKSPACE_KEY, root)
 }
 
