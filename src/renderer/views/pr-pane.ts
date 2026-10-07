@@ -195,7 +195,8 @@ export function mountPrPane(
   let ghStatus: GhCliStatus | null = null
   // Legacy agent links in this project, keyed by `owner/repo#number`.
   let agentLinks = new Map<string, RemoteAgentPrIndexEntry[]>()
-  let threadLinks = indexThreadLinks(store)
+  // Built by `refresh()` whenever the pane is shown; indexing every thread is wasted work while hidden.
+  let threadLinks = new Map<string, PrThreadRelationship[]>()
   let prRelationships: PrThreadRelationship[] | null = null
   let relationshipError = false
   let relationshipRequest = 0
@@ -1345,10 +1346,14 @@ export function mountPrPane(
 
     const gen = ++agentLinksGen
     threadLinks = indexThreadLinks(store)
-    await loadThreadRelationships()
-    ghStatus = await api.gh.status()
-    // Agent links are local (no gh needed), so load them regardless of gh auth.
-    const entries = await api.gh.agentPrLinks().catch(() => [] as RemoteAgentPrIndexEntry[])
+    // Independent IPCs: run them together instead of paying a serial round trip each.
+    const [, status, entries] = await Promise.all([
+      loadThreadRelationships(),
+      api.gh.status(),
+      // Agent links are local (no gh needed), so load them regardless of gh auth.
+      api.gh.agentPrLinks().catch(() => [] as RemoteAgentPrIndexEntry[]),
+    ])
+    ghStatus = status
     if (gen !== agentLinksGen) return
     agentLinks = indexAgentLinksByPrKey(entries)
     linkedRefs = collectLinkedPrs(store)
@@ -1480,7 +1485,7 @@ export function mountPrPane(
       workspacePrs = []
       prList = []
       agentLinks = new Map()
-      threadLinks = indexThreadLinks(store)
+      threadLinks = prsModeActive(store) ? indexThreadLinks(store) : new Map()
       agentLinksGen++
       titleGen++
       titleInFlight.clear()
