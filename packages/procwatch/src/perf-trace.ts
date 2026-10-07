@@ -85,6 +85,33 @@ export function armPerfTrace(): void {
     }
   }
   emit({ t: 0, kind: 'mark', src: 'main', name: 'perf:armed' })
+  startLoopStallProbe()
+}
+
+/** Tick period of the stall probe. */
+const LOOP_PROBE_INTERVAL_MS = 25
+/** A tick later than this beyond its period is recorded as a stall. */
+const LOOP_STALL_MIN_MS = 75
+
+/**
+ * Record every stretch where the main event loop was blocked, as a
+ * `loop:stall` span whose start is when the tick was due. The existing
+ * `event-loop-watchdog` only logs to the console, in 500 ms ticks with a
+ * cooldown, so it cannot be lined up against `workspace:set` phases. Spans that
+ * overlap a `loop:stall` are the ones holding the loop; those that do not are
+ * only waiting. Active only under `COPSE_PERF=1`.
+ */
+function startLoopStallProbe(): void {
+  let due = nowMs() + LOOP_PROBE_INTERVAL_MS
+  const probe = setInterval(() => {
+    const now = nowMs()
+    const lateBy = now - due
+    if (lateBy >= LOOP_STALL_MIN_MS) {
+      emit({ t: due, kind: 'span', src: 'main', name: 'loop:stall', ms: lateBy })
+    }
+    due = now + LOOP_PROBE_INTERVAL_MS
+  }, LOOP_PROBE_INTERVAL_MS)
+  probe.unref()
 }
 
 function flush(): void {
@@ -138,6 +165,28 @@ export function perfMark(name: string, detail?: PerfDetail): void {
 export function perfRecord(record: PerfRecord): void {
   if (!ENABLED) return
   emit(record)
+}
+
+/**
+ * Time a synchronous function. Unlike wrapping it in {@link perfSpan}, this adds
+ * no await, so the call keeps its exact ordering relative to surrounding code —
+ * and the recorded duration is time the main event loop was blocked.
+ */
+export function perfSyncSpan<T>(name: string, fn: () => T, detail?: PerfDetail): T {
+  if (!ENABLED) return fn()
+  const start = nowMs()
+  try {
+    return fn()
+  } finally {
+    emit({
+      t: start,
+      kind: 'span',
+      src: 'main',
+      name,
+      ms: nowMs() - start,
+      ...(detail ? { detail } : {}),
+    })
+  }
 }
 
 /**
