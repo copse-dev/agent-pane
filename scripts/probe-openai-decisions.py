@@ -8,6 +8,7 @@ Use --responses to check public Responses, or --codex-responses for Codex OAuth.
 Optional --model selects the Responses model (default: gpt-5.4).
 Codex mode optionally uses OPENAI_CHATGPT_ACCOUNT_ID.
 Use --check-token for a read-only Codex usage request (no inference).
+Use --list-models for GET /v1/models; add --oauth to test the OAuth credential.
 OAuth mode ignores API-key, organization, and project environment variables.
 Exit codes: 0 = valid decision, 1 = failed/inconclusive probe, 2 = missing key.
 Docs: https://developers.openai.com/api/docs/guides/decisions
@@ -58,6 +59,7 @@ def main():
     modes.add_argument("--responses", action="store_true")
     modes.add_argument("--codex-responses", action="store_true")
     modes.add_argument("--check-token", action="store_true")
+    modes.add_argument("--list-models", action="store_true")
     parser.add_argument("--model", default="gpt-5.4")
     args = parser.parse_args()
     oauth = args.oauth or args.codex_responses or args.check_token
@@ -105,11 +107,15 @@ def main():
         headers["Accept"] = "application/json"
         if os.environ.get("OPENAI_CHATGPT_ACCOUNT_ID"):
             headers["ChatGPT-Account-Id"] = os.environ["OPENAI_CHATGPT_ACCOUNT_ID"]
+    if args.list_models:
+        endpoint = "https://api.openai.com/v1/models"
+        headers["Accept"] = "application/json"
+    read_only = args.check_token or args.list_models
     request = urllib.request.Request(
         endpoint,
-        data=None if args.check_token else json.dumps(payload).encode("utf-8"),
+        data=None if read_only else json.dumps(payload).encode("utf-8"),
         headers=headers,
-        method="GET" if args.check_token else "POST",
+        method="GET" if read_only else "POST",
     )
 
     # Never forward authorization to a redirect destination.
@@ -117,7 +123,9 @@ def main():
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             return None
 
-    if args.check_token:
+    if args.list_models:
+        print(f"Listing models via GET {endpoint} (no inference)...")
+    elif args.check_token:
         print(f"Checking OAuth token via GET {endpoint} (no inference)...")
     else:
         print(f"Checking {payload['model']} via POST {endpoint} (one small request)...")
@@ -149,6 +157,21 @@ def main():
                 print("No completed Responses event received; control check is inconclusive.")
                 return 1
             body = json.load(response)
+            if args.list_models:
+                models = body.get("data") if isinstance(body, dict) else None
+                if not isinstance(models, list) or not all(
+                    isinstance(model, dict) and isinstance(model.get("id"), str)
+                    and model["id"] and len(model["id"]) <= 256
+                    and re.fullmatch(r"[A-Za-z0-9_.:/-]+", model["id"])
+                    for model in models
+                ):
+                    print("Unexpected model-list response; listing failed.")
+                    return 1
+                print(f"MODELS LISTED: {len(models)} available to this credential.")
+                for model_id in sorted({model["id"] for model in models}):
+                    print(model_id.replace(key, "[redacted]"))
+                print("Listing does not establish Responses or Decisions compatibility.")
+                return 0
             if args.check_token:
                 if isinstance(body, dict) and any(
                     field in body for field in ("plan_type", "rate_limit", "credits")
