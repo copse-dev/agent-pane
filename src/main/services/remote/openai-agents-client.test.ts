@@ -68,6 +68,7 @@ describe('OpenAI cloud adapter', () => {
   })
 
   it('dispatches OpenAI, saves its checkpoint in the thread, projects tools, and downloads a safely named artifact', async () => {
+    const imagePrompt = [{ type: 'image' as const, dataUrl: 'data:image/png;base64,aGVsbG8=' }]
     let submitted = false
     let failDownload = true
     let submissions = 0
@@ -104,6 +105,11 @@ describe('OpenAI cloud adapter', () => {
       if (url.pathname.endsWith('/events') && init?.method === 'GET')
         return new Response('', { headers: { 'Content-Type': 'text/event-stream' } })
       if (url.pathname.endsWith('/events')) {
+        assert.ok(
+          typeof init?.body === 'string' &&
+            init.body.includes('input_image') &&
+            init.body.includes('data:image/png;base64,aGVsbG8='),
+        )
         submitted = true
         submissions++
         return new Response(null, { status: 202 })
@@ -169,7 +175,7 @@ describe('OpenAI cloud adapter', () => {
       runRemoteAgentFromSettings({
         threadId: 'thread',
         provider: 'openai',
-        userPrompt: 'Run a script',
+        userPrompt: imagePrompt,
         signal: AbortSignal.timeout(10_000),
         fetchImpl,
         onChunk: (chunk) => {
@@ -178,10 +184,21 @@ describe('OpenAI cloud adapter', () => {
       }),
       /503/,
     )
+    await assert.rejects(
+      runRemoteAgentFromSettings({
+        threadId: 'thread',
+        provider: 'openai',
+        userPrompt: [{ type: 'image', dataUrl: 'data:image/png;base64,Ynl0ZXM=' }],
+        signal: AbortSignal.timeout(10_000),
+        fetchImpl,
+        onChunk: () => {},
+      }),
+      /previous hosted task/,
+    )
     const result = await runRemoteAgentFromSettings({
       threadId: 'thread',
       provider: 'openai',
-      userPrompt: 'Run a script',
+      userPrompt: imagePrompt,
       signal: AbortSignal.timeout(10_000),
       fetchImpl,
       onChunk: (chunk) => {
@@ -281,7 +298,7 @@ describe('OpenAI cloud adapter', () => {
         turn = 0
         guest = join(root, `guest-${String(session)}`)
         mkdirSync(join(guest, 'inputs'), { recursive: true })
-        writeFileSync(join(guest, 'inputs/source.bundle'), uploaded)
+        writeFileSync(join(guest, 'inputs/source.part-0'), uploaded)
         assert.ok(typeof init?.body === 'string')
         const request = safeJsonParse(
           init.body,
@@ -293,7 +310,7 @@ describe('OpenAI cloud adapter', () => {
         )
         const args = request?.environment.setup_commands[0]?.command.split(' ')
         base = args?.[3] ?? ''
-        runHostedGitTransfer(guest, 'setup', base, args?.[4])
+        runHostedGitTransfer(guest, 'setup', base, args?.[4], Number(args?.[5]))
         if (session === 2)
           assert.equal(readFileSync(join(guest, 'repo/local.txt'), 'utf8'), 'fresh local code')
       }

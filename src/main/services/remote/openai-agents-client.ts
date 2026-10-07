@@ -1,18 +1,21 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
-import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdir, readFile, realpath, stat, writeFile, rename } from 'node:fs/promises'
+import { rmSync } from 'node:fs'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { threadDirectoryPath } from '../thread-store.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
 import { join, extname, sep } from 'node:path'
 import { z } from 'zod'
 import { DEFAULT_OPENAI_AGENT_MODEL } from '@shared/openai-cloud-agent.ts'
+import { uploadSourceBundle } from './openai-source-upload.ts'
+import { openAiImageUrls } from './openai-image-input.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 import { ensureWritableThreadCheckout } from '../deferred-worktree.ts'
 import { prepareGitTransfer, importGitTransfer, gitTransferSchema } from './openai-git-transfer.ts'
 import {
   buildRemoteAgentContextPreamble,
+  collectPriorPromptImages,
   promptPayloadFromUserContent,
 } from '@shared/remote-agent-stream.ts'
 import { resolveApiKey } from '../storage/settings.ts'
@@ -38,7 +41,8 @@ const savedSchema = z.object({
   transfer: gitTransferSchema.optional(),
   result: openAiAgentResultSchema.optional(),
   exportResult: openAiAgentResultSchema.optional(),
-  sourceFileId: z.string().optional(),
+  sourceFileId: z.string().optional(), // Legacy single-file setup recovery.
+  sourceFileIds: z.array(z.string()).optional(),
   usageReported: z.boolean().default(false),
   exportUsageReported: z.boolean().default(false),
 })
@@ -91,9 +95,12 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       'Add an OpenAI Platform API key in Settings. ChatGPT sign-in does not authorize this cloud agent.',
     )
   const payload = promptPayloadFromUserContent(options.userPrompt)
-  if (payload.images?.length)
-    throw new Error('The OpenAI Cloud Agent prototype currently accepts text only.')
-  if (!payload.text.trim()) throw new Error('OpenAI Cloud Agent prompt cannot be empty.')
+  const imageUrls = openAiImageUrls(
+    payload.images ?? [],
+    collectPriorPromptImages(options.priorMessages ?? []),
+  )
+  if (!payload.text.trim() && !payload.images?.length)
+    throw new Error('OpenAI Cloud Agent prompt cannot be empty.')
   const model = firstNonEmptyString(options.model?.trim()) ?? DEFAULT_OPENAI_AGENT_MODEL
   const projectId = resolveRemoteAgentProjectId()
   if (!projectId) throw new Error('Open a project before starting an OpenAI cloud agent.')
@@ -128,14 +135,17 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
     ? prior.data.transfer
     : await prepareGitTransfer(root, transferDirectory)
   if (!transfer) throw new Error('Hosted snapshot is unavailable.')
-  let sourceFileId = recovering ? prior.data.sourceFileId : undefined
+  let sourceFileIds = recovering
+    ? (prior.data.sourceFileIds ?? (prior.data.sourceFileId ? [prior.data.sourceFileId] : []))
+    : []
   const exportCommand = `node /workspace/inputs/copse-git.cjs export ${transfer.base}`
   let state: OpenAiAgentState
   if (recovering) state = prior.data.state
   else {
     const worker = await fs.readFile(join(__dirname, 'openai-git-worker.cjs'))
-    sourceFileId = await client.uploadSource(
-      await readFile(join(transferDirectory, 'source.bundle')),
+    sourceFileIds = await uploadSourceBundle(
+      client,
+      join(transferDirectory, 'source.bundle'),
       options.signal,
     )
     try {
@@ -143,7 +153,11 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
         type: 'openai_hosted',
         network: { access: 'enabled' },
         files: [
-          { type: 'file_id', file_id: sourceFileId, path: '/workspace/inputs/source.bundle' },
+          ...sourceFileIds.map((file_id, index) => ({
+            type: 'file_id' as const,
+            file_id,
+            path: `/workspace/inputs/source.part-${String(index)}`,
+          })),
           {
             type: 'inline',
             data: worker.toString('base64'),
@@ -152,16 +166,20 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
         ],
         setup_commands: [
           {
-            command: `node /workspace/inputs/copse-git.cjs setup ${transfer.base} ${transfer.ref}`,
+            command: `node /workspace/inputs/copse-git.cjs setup ${transfer.base} ${transfer.ref} ${String(sourceFileIds.length)}`,
           },
         ],
       })
     } catch (error) {
-      await client.deleteSource(sourceFileId, AbortSignal.timeout(20_000)).catch(() => {})
+      await Promise.all(
+        sourceFileIds.map((id) =>
+          client.deleteSource(id, AbortSignal.timeout(20_000)).catch(() => {}),
+        ),
+      )
       throw error
     }
   }
-  const promptHash = hash(payload.text)
+  const promptHash = hash(payload.images?.length ? JSON.stringify(payload) : payload.text)
   let terminalResult: OpenAiAgentResult | undefined = recovering ? prior.data.result : undefined
   let usageReported = recovering ? prior.data.usageReported : false
   let exportUsageReported = recovering ? prior.data.exportUsageReported : false
@@ -173,9 +191,9 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       'The previous hosted task needs recovery. Resend its message to import its commits before starting another task.',
     )
   }
-  const save = (): void => {
-    mkdirSync(directory, { recursive: true })
-    writeFileSync(
+  const save = async (): Promise<void> => {
+    await mkdir(directory, { recursive: true })
+    await writeFile(
       `${path}.tmp`,
       JSON.stringify({
         state,
@@ -184,16 +202,16 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
         transfer,
         result: terminalResult,
         exportResult,
-        sourceFileId,
+        sourceFileIds,
         usageReported,
         exportUsageReported,
       }),
       { mode: 0o600 },
     )
-    renameSync(`${path}.tmp`, path)
+    await rename(`${path}.tmp`, path)
     storageSet(storageKey(options.threadId), projectId)
   }
-  save()
+  await save()
   if (!recovering) {
     await recordRemoteAgentLaunch({
       projectId,
@@ -206,10 +224,10 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   }
   if (!terminalResult) {
     await client.waitForEnvironment(state, options.signal)
-    if (sourceFileId) {
-      await client.deleteSource(sourceFileId, options.signal)
-      sourceFileId = undefined
-      save()
+    if (sourceFileIds.length) {
+      for (const id of sourceFileIds) await client.deleteSource(id, options.signal)
+      sourceFileIds = []
+      await save()
     }
   }
   const prompt =
@@ -220,9 +238,10 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   const result =
     terminalResult ??
     (await client.run(state, prompt, {
-      onResult: (completed) => {
+      images: state.pending?.images ?? imageUrls,
+      onResult: async (completed) => {
         terminalResult = completed
-        save()
+        await save()
       },
       signal: options.signal,
       save,
@@ -270,18 +289,18 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   }
   if (!usageReported) {
     usageReported = true
-    save()
+    await save()
     reportUsage(result)
   }
-  const reportExportUsage = (): void => {
+  const reportExportUsage = async (): Promise<void> => {
     if (exportResult && !exportUsageReported) {
       exportUsageReported = true
-      save()
+      await save()
       reportUsage(exportResult)
     }
   }
   if (!transfer.imported) {
-    reportExportUsage()
+    await reportExportUsage()
     const isManifest = (artifact: { path: string }): boolean =>
       artifact.path === '/workspace/outputs/copse-result.json' ||
       artifact.path === 'copse-result.json'
@@ -298,14 +317,14 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
           signal: options.signal,
           save,
           onText: () => {},
-          onResult: (completed) => {
+          onResult: async (completed) => {
             exportResult = completed
-            save()
+            await save()
           },
         },
       )
     }
-    reportExportUsage()
+    await reportExportUsage()
     const returnedArtifacts = exportResult?.artifacts ?? result.artifacts
     const manifest = returnedArtifacts.find(
       (a) => a.path === '/workspace/outputs/copse-result.json' || a.path === 'copse-result.json',
@@ -329,7 +348,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
         { mode: 0o600 },
       )
     await importGitTransfer(transfer, root, transferDirectory)
-    save()
+    await save()
   }
   let artifactText = ''
   // Remote paths never select local destinations. Limit automatic transfer per turn.

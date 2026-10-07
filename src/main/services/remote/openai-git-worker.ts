@@ -1,6 +1,6 @@
 /** Runs only inside the hosted workspace; no host credentials or dependencies. */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, openSync, closeSync, readSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { bundleCarryOut } from '../container-runtime/guest-carry-out.ts'
 
@@ -15,12 +15,36 @@ export function runHostedGitTransfer(
   mode: string | undefined,
   base: string | undefined,
   ref?: string,
+  parts?: number,
 ): void {
   if (!base || !/^[a-f0-9]{40,64}$/.test(base)) throw new Error('Invalid snapshot base')
   const root = join(workspace, 'repo')
   if (mode === 'setup') {
     if (!ref || !/^refs\/copse\/carry-in\/[a-f0-9-]+$/.test(ref))
       throw new Error('Invalid input ref')
+    if (parts !== undefined) {
+      if (!Number.isInteger(parts) || parts < 1 || parts > 49)
+        throw new Error('Invalid source part count')
+      const output = openSync(join(workspace, 'inputs/source.bundle'), 'w')
+      try {
+        const buffer = Buffer.alloc(1024 * 1024)
+        for (let part = 0; part < parts; part++) {
+          const input = openSync(join(workspace, `inputs/source.part-${String(part)}`), 'r')
+          try {
+            for (;;) {
+              const count = readSync(input, buffer)
+              if (!count) break
+              let written = 0
+              while (written < count) written += writeSync(output, buffer, written, count - written)
+            }
+          } finally {
+            closeSync(input)
+          }
+        }
+      } finally {
+        closeSync(output)
+      }
+    }
     mkdirSync(root, { recursive: true })
     git(root, ['init'])
     git(root, ['fetch', '--no-tags', join(workspace, 'inputs/source.bundle'), ref])

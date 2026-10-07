@@ -365,7 +365,7 @@ async function remoteAgentOptions(
       value: remoteAgentModelValue('openai', DEFAULT_OPENAI_AGENT_MODEL),
       label: 'GPT-6.1 Sol',
       group: OPENAI_AGENT_GROUP,
-      supportsImages: false,
+      supportsImages: true,
     })
     const selected = parseRemoteAgentModelSelection(current)
     if (

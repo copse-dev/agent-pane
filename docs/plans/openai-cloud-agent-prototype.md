@@ -113,3 +113,44 @@ required; submodules and LFS object contents are unsupported. Dirty original inp
 must be committed locally before adoption. Unrelated/merged guest history is
 retained but not automatically applied. Export-only recovery may incur an extra
 model turn. The draft is not promoted by this implementation.
+
+## Image-input follow-up brief
+
+Acceptance: the default hosted model accepts composer images without the text-only
+warning; submit native `input_image` blocks, including image-only messages. Bound
+and validate inline image data before provisioning, persist pending image inputs
+for exact recovery, and reject a resend with different images. Carry recent prior
+images into fresh sessions within the attachment budget. Verify transport and
+recovery with fixtures and the composer with a focused browser screenshot.
+
+The reported 50 MiB snapshot failure is a separate implementation limit: the
+provider's per-file copy cap was applied to the entire project. Replace the single
+file with 32 MiB parts and deterministic reassembly before the existing Git-base
+check. Respect the 50-file provisioning count (49 parts plus the worker), clean up
+partial uploads, and test an actual Git bundle exceeding 50 MiB without dropping
+files. This is a transport change, not an increase to the provider's per-file cap.
+
+### Image and multipart completion evidence
+
+Native image inputs now replace the prototype's text-only restriction for the
+default GPT-6.1 Sol route. Pending images use asynchronous atomic checkpoints;
+changed-image resends are rejected and admitted turns recover without replay.
+Recent prior attachments fill unused slots on fresh sessions. The five-image /
+20 MiB attachment budget is Copse's bound, not an API capability claim.
+
+Source bundles now stream into 32 MiB uploads (up to 49 parts plus the worker),
+then reassemble before the existing commit verification. Partial-upload failures
+clean up completed parts, and source-file deletion tolerates an already-deleted
+file. The real-Git regression provisions a 51 MiB incompressible working tree;
+files are not excluded to fit the old limit.
+
+- Focused OpenAI API/adapter/image/upload/Git transfer/cancellation, model-option
+  and main-process read-invariant tests: **79 passed, no failures or skips**.
+- Focused browser composer spec: **1 passed** on Chromium 151. Inspected
+  `tests/e2e/screenshots/openai-cloud-agent-image-input.png`: attachment thumbnail,
+  selected GPT-6.1 Sol and Send button visible; no image-incompatibility banner.
+  The unchanged picker reference was retained rather than accepting caret drift.
+- Production and demo builds pass; focused type-aware lint passes. Full
+  `pnpm run check` still stops at the unchanged LM Studio TS2554 error noted above.
+- Live API vision/provisioning remains unverified without a Platform key. The
+  larger whole-project budget is 1568 MiB; each API file stays below its 50 MiB cap.

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
+import { OpenAiAgentsApi } from './openai-agents-api.ts'
+import { uploadSourceBundle, SOURCE_PART_BYTES } from './openai-source-upload.ts'
 import { it } from 'node:test'
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
@@ -156,6 +159,41 @@ it('does not overwrite ignored local files when the guest force-adds the same pa
     await assert.rejects(importGitTransfer(f.transfer, f.host, f.files), /ignored local files/)
     assert.equal(readFileSync(join(f.host, 'secret'), 'utf8'), 'never upload')
     assert.equal(git(f.host, ['status', '--porcelain']), '')
+  } finally {
+    rmSync(f.directory, { recursive: true, force: true })
+  }
+})
+
+it('provisions a Git snapshot larger than 50 MiB using bounded uploaded parts', async () => {
+  const f = await fixture()
+  try {
+    writeFileSync(join(f.host, 'large.bin'), randomBytes(51 * 1024 * 1024))
+    const transfer = await prepareGitTransfer(f.host, f.files)
+    const workspace = join(f.directory, 'large-hosted')
+    mkdirSync(join(workspace, 'inputs'), { recursive: true })
+    let parts = 0
+    const client = new OpenAiAgentsApi('mock-key', async (_input, init) => {
+      assert.ok(init?.body instanceof FormData)
+      const file = init.body.get('file')
+      assert.ok(file instanceof Blob)
+      assert.ok(file.size <= SOURCE_PART_BYTES)
+      writeFileSync(
+        join(workspace, `inputs/source.part-${String(parts)}`),
+        new Uint8Array(await file.arrayBuffer()),
+      )
+      parts++
+      return Response.json({ id: `part-${String(parts)}` })
+    })
+    const ids = await uploadSourceBundle(
+      client,
+      join(f.files, 'source.bundle'),
+      AbortSignal.timeout(30_000),
+    )
+    assert.equal(ids.length, 2)
+    runHostedGitTransfer(workspace, 'setup', transfer.base, transfer.ref, parts)
+    assert.equal(git(join(workspace, 'repo'), ['rev-parse', 'HEAD']), transfer.base)
+    assert.equal(readFileSync(join(workspace, 'repo/large.bin')).length, 51 * 1024 * 1024)
+    assert.equal(git(f.host, ['status', '--porcelain']), '?? large.bin')
   } finally {
     rmSync(f.directory, { recursive: true, force: true })
   }

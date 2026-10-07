@@ -189,6 +189,35 @@ describe('OpenAI Agents API prototype', () => {
     )
   })
 
+  it('persists image inputs before submission and recovers them without replay', async () => {
+    const { api, requests } = fixture({ lostSubmit: true })
+    const state = await api.create('gpt-6.1-sol', signal())
+    const images = ['data:image/png;base64,aGVsbG8=']
+    let checkpoint: OpenAiAgentState | undefined
+    const options = {
+      signal: signal(),
+      images,
+      save: async (value: OpenAiAgentState): Promise<void> => {
+        await Promise.resolve()
+        checkpoint = structuredClone(value)
+      },
+      onText: (): void => {},
+    }
+    await assert.rejects(api.run(state, 'Inspect the image', options), /connection lost/)
+    assert.deepEqual(checkpoint?.pending?.images, images)
+    assert.ok(checkpoint)
+    const restored = openAiAgentStateSchema.parse(checkpoint)
+    await assert.rejects(
+      api.run(restored, 'Inspect the image', { ...options, images: [] }),
+      /still pending/,
+    )
+    await api.run(restored, 'Inspect the image', options)
+    assert.equal(
+      requests.filter((r) => r.method === 'POST' && r.path.endsWith('/events')).length,
+      1,
+    )
+  })
+
   it('confirms cancellation independently of the aborted stream and records usage', async () => {
     const controller = new AbortController()
     const { api, requests } = fixture({ abort: controller })

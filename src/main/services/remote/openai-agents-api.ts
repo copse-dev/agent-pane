@@ -52,6 +52,7 @@ export const openAiAgentStateSchema = z.object({
     .object({
       key: z.string(),
       prompt: z.string(),
+      images: z.array(z.string()).optional(),
       previousTurnIds: z.array(z.string()),
     })
     .nullable(),
@@ -118,7 +119,7 @@ export class OpenAiAgentsApi {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
-    if (!response.ok) {
+    if (!response.ok && !(method === 'DELETE' && response.status === 404)) {
       // Do not echo arbitrary upstream bodies, which can contain prompts or credentials.
       await response.body?.cancel()
       throw new Error(
@@ -315,15 +316,20 @@ export class OpenAiAgentsApi {
     prompt: string,
     options: {
       signal: AbortSignal
-      save: (state: OpenAiAgentState) => void
+      save: (state: OpenAiAgentState) => void | Promise<void>
+      images?: string[]
       onText: (text: string) => void
       onProgress?: (type: string) => void
       onItem?: (item: OpenAiAgentItem) => void
-      onResult?: (result: OpenAiAgentResult) => void
+      onResult?: (result: OpenAiAgentResult) => void | Promise<void>
     },
   ): Promise<OpenAiAgentResult> {
     if (!prompt.trim()) throw new Error('OpenAI Cloud Agent prompt cannot be empty.')
-    if (state.pending && state.pending.prompt !== prompt) {
+    if (
+      state.pending &&
+      (state.pending.prompt !== prompt ||
+        JSON.stringify(state.pending.images ?? []) !== JSON.stringify(options.images ?? []))
+    ) {
       throw new Error(
         'An OpenAI task is still pending. Resend the previous message to recover it before starting another task.',
       )
@@ -367,9 +373,9 @@ export class OpenAiAgentsApi {
         outputTokens,
         cacheReadTokens,
       }
-      options.onResult?.(result)
+      await options.onResult?.(result)
       state.pending = null
-      options.save(state)
+      await options.save(state)
       return result
     }
     try {
@@ -380,9 +386,10 @@ export class OpenAiAgentsApi {
         state.pending = {
           key: randomUUID(),
           prompt,
+          ...(options.images?.length ? { images: options.images } : {}),
           previousTurnIds: existing.map((turn) => turn.id),
         }
-        options.save(state)
+        await options.save(state)
       }
       const pending = state.pending
       // Subscribe BEFORE submitting. On loss, saved items/turns are authoritative.
@@ -418,7 +425,18 @@ export class OpenAiAgentsApi {
             events: [
               {
                 type: 'agent.session.input.message',
-                input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }],
+                input: [
+                  {
+                    role: 'user',
+                    content: [
+                      { type: 'input_text', text: prompt },
+                      ...(pending.images ?? []).map((image_url) => ({
+                        type: 'input_image',
+                        image_url,
+                      })),
+                    ],
+                  },
+                ],
               },
             ],
           },

@@ -27,7 +27,10 @@ Copse snapshots the chat's current Git working tree, including staged, unstaged,
 and nonignored untracked files. A history-free Git bundle provisions `/workspace/repo`
 through `environment.files` and a deterministic `setup_commands` script. The script
 verifies the snapshot commit before inference starts. No GitHub credentials or Git
-configuration enter the hosted workspace. Snapshot uploads are limited to 50 MiB;
+configuration enter the hosted workspace. Snapshots upload in 32 MiB parts, reassembled before checkout verification.
+Copse supports up to 49 parts (1568 MiB), reserving the 50th provisioning file for
+the worker; this avoids applying the provider’s 50 MiB per-file copy cap to the
+entire project.
 An initial Git commit is required; Git submodules are currently unsupported. Ignored files and Git LFS object contents
 are not transferred.
 
@@ -46,7 +49,13 @@ and import progress. Resend the **same message** after an interruption to recove
 without repeating the task or counting its usage again. If the agent omitted export,
 Copse runs a separate export-only turn (also billable and checkpointed). Failure to
 produce a valid export is an error, never reported as successful synchronization.
-Keys/models cannot change within an existing chat. Images, approval-required tool
+The default GPT-6.1 Sol hosted model accepts native image inputs, including image-only
+messages. Copse's attachment budget is five PNG/JPEG/WebP/GIF images and 20 MiB of
+decoded image data per message. Recent prior images fill unused capacity when a
+follow-up gets a fresh session. Pending attachments are saved asynchronously with
+the submission; recovery requires the same current message and images.
+
+Keys/models cannot change within an existing chat. Approval-required tool
 flows and automatic background recovery remain outside this prototype.
 
 The client subscribes before submission but uses saved turns

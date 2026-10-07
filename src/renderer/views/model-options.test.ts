@@ -1164,6 +1164,6 @@ describe('OpenAI cloud agent prototype picker', () => {
     assert.ok(cloud)
     assert.match(cloud.group ?? '', /API billed/)
     assert.match(cloud.group ?? '', /no ZDR/)
-    assert.equal(cloud.supportsImages, false)
+    assert.equal(cloud.supportsImages, true)
   })
 })

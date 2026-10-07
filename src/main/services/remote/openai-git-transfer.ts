@@ -1,3 +1,4 @@
+import { MAX_SOURCE_PARTS, SOURCE_PART_BYTES } from './openai-source-upload.ts'
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -62,8 +63,8 @@ export async function prepareGitTransfer(root: string, directory: string): Promi
   const id = randomUUID()
   const bundle = join(directory, 'source.bundle')
   const { ref } = await writeCarryInBundle(root, id, bundle, base)
-  if ((await stat(bundle)).size > 50 * 1024 * 1024)
-    throw new Error('Project snapshot exceeds the 50 MiB hosted file limit.')
+  if ((await stat(bundle)).size > SOURCE_PART_BYTES * MAX_SOURCE_PARTS)
+    throw new Error('Project snapshot exceeds the 49-part hosted transfer budget (1568 MiB).')
   await git(root, ['update-ref', `refs/copse/openai/${id}`, base])
   return { id, root, base, tree, sourceHead, branch, ref, imported: false }
 }

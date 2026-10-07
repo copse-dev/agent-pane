@@ -18,5 +18,25 @@ describe('OpenAI cloud agent prototype picker', () => {
     )
     await option.click()
     await expect(picker.$('.model-picker-trigger')).toHaveText(/GPT-6.1 Sol/)
+    await browser.execute(() => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 64
+      canvas.height = 32
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('Canvas unavailable')
+      context.fillStyle = '#ec4899'
+      context.fillRect(0, 0, 64, 32)
+      const bytes = Uint8Array.from(atob(canvas.toDataURL('image/png').split(',')[1] ?? ''), (c) =>
+        c.charCodeAt(0),
+      )
+      const transfer = new DataTransfer()
+      transfer.items.add(new File([bytes], 'screenshot.png', { type: 'image/png' }))
+      document.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true }),
+      )
+    })
+    await expect($('.attachment-chips .image-chip')).toBeDisplayed()
+    await expect($('.composer-image-warning')).not.toBeDisplayed()
+    await saveElementScreenshot('#input-bar', 'openai-cloud-agent-image-input.png')
   })
 })
