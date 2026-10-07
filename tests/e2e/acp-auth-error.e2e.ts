@@ -83,7 +83,7 @@ describe('ACP authentication error presentation', () => {
     expect(layout.warningBeforeSteps).toBe(true)
     expect(layout.stepsBeforeDiagnostic).toBe(true)
     expect(layout.diagnosticContained).toBe(true)
-    // Fenced diagnostics use code density, not the 16px/1.65 prose line box
+    // Fenced diagnostics use code density, not the 15px/1.6 prose line box
     // (~26px per 12px line before #3065).
     expect(layout.diagnosticLines).toBe(2)
     expect(layout.diagnosticFontSize).toBe(12)
