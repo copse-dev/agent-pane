@@ -1,4 +1,5 @@
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
+import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
@@ -64,6 +65,7 @@ import {
   resolveSshHostForWorkspaceRoot,
   scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
+  workspaceProjectsToSeed,
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
@@ -249,6 +251,7 @@ import {
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { readHookRunDetail } from '../services/hooks/run-detail.ts'
 import { getPluginService } from '../services/plugins/plugin-service.ts'
+import { getPluginInstallService } from '../services/plugins/plugin-install-service.ts'
 import {
   setPluginToolRuntimeController,
   ToolingPluginToolRuntimeController,
@@ -416,7 +419,7 @@ import {
   mockScenarioStatus,
   parseMockScenario,
 } from '@copse/llm/mock-script.ts'
-import { applyAppIcon } from '../app-icon.ts'
+import { applyAppIcon, setAutomationAppIconMode } from '../app-icon.ts'
 import {
   createMainWindow,
   freezeMainWindowStateForQuit,
@@ -848,13 +851,27 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
     const explicitSshHost = parseIpcArgs(z.string().max(128).optional(), [sshHostArg])
-    const projects = storedWorkspaceProjects()
-    await seedAllowedWorkspaceRoots(projects)
-    const sshHost = resolveSshHostForWorkspaceRoot(parsedRoot, explicitSshHost)
-    const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
-    setWorkspaceRoot(canonical)
-    reloadMcpForWorkspace()
-    startWorkspaceIndexing(canonical)
+    // Each phase is timed separately (COPSE_PERF=1) so a slow switch names the
+    // phase, and `loop:stall` records show which of them held the event loop.
+    const projects = perfSyncSpan('workspace-set:read-projects', storedWorkspaceProjects)
+    const sshHost = perfSyncSpan('workspace-set:resolve-ssh', () =>
+      resolveSshHostForWorkspaceRoot(parsedRoot, explicitSshHost),
+    )
+    await perfSpan(
+      'workspace-set:seed',
+      () => seedAllowedWorkspaceRoots(workspaceProjectsToSeed(projects, parsedRoot, sshHost)),
+      { projects: projects.length },
+    )
+    const canonical = await perfSpan('workspace-set:assert', () =>
+      assertAllowedWorkspaceRoot(parsedRoot, sshHost),
+    )
+    perfSyncSpan('workspace-set:set-root', () => {
+      setWorkspaceRoot(canonical)
+    })
+    perfSyncSpan('workspace-set:mcp-reload', reloadMcpForWorkspace)
+    perfSyncSpan('workspace-set:start-indexing', () => {
+      startWorkspaceIndexing(canonical)
+    })
     // Do NOT block the IPC response (and therefore the renderer's boot / first
     // paint) on the skills scan. It re-scans user + bundled + workspace skill
     // roots and, when the workspace index build is churning the event loop, can
@@ -1683,6 +1700,12 @@ export function registerAllHandlers(
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
+  ipcMain.handle('app-icon:set-automation-mode', (event, active: unknown) => {
+    assertMainFrameSender(event, win)
+    const enabled = parseIpcArgs(z.boolean(), [active])
+    const mainWin = getMainWindow()
+    setAutomationAppIconMode(enabled, mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
+  })
   ipcMain.handle('usage:get-summary', () => getUsageSummary())
   ipcMain.handle('usage:get-plan-usage', async () => loadPlanUsageSnapshotAndSample())
   ipcMain.handle('usage:get-plan-worth-it', () => getPlanWorthItPayload())
@@ -2286,6 +2309,74 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     await getPluginService().refreshInstalledPlugins()
     return { plugins: getPluginService().list() }
+  })
+  ipcMain.handle('plugins:list-installs', async (event) => {
+    assertMainFrameSender(event, win)
+    return getPluginInstallService().records()
+  })
+  ipcMain.handle('plugins:prepare-install', async (event, rawCatalogId: unknown) => {
+    assertMainFrameSender(event, win)
+    const catalogId = parseIpcArgs(zNonEmptyString.max(2048), [rawCatalogId])
+    return getPluginInstallService().prepare(catalogId)
+  })
+  ipcMain.handle('plugins:cancel-install', async (event, rawToken: unknown) => {
+    assertMainFrameSender(event, win)
+    const token = parseIpcArgs(zNonEmptyString.max(128), [rawToken])
+    await getPluginInstallService().cancel(token)
+  })
+  ipcMain.handle('plugins:commit-install', async (event, rawToken: unknown) => {
+    assertMainFrameSender(event, win)
+    const token = parseIpcArgs(zNonEmptyString.max(128), [rawToken])
+    const result = await getPluginInstallService().commit(token)
+    const service = getPluginService()
+    const { pluginId } = result.record
+    // The review the user just confirmed is the consent, so a first install
+    // enables exactly what it showed. An update keeps the user's own toggle;
+    // the registry still holds the previous revision until the refresh below.
+    const enable =
+      result.record.previousPin === undefined ||
+      (service.registry.has(pluginId) && service.registry.isEnabled(pluginId))
+    await service.refreshInstalledPlugins()
+    if (service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, enable)
+    await initSkillsRegistry()
+    registerSkillTools(registry)
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status-changed', statuses)
+    return result
+  })
+  ipcMain.handle(
+    'plugins:uninstall',
+    async (event, rawPluginId: unknown, rawDeleteData: unknown) => {
+      assertMainFrameSender(event, win)
+      const pluginId = parseIpcArgs(zNonEmptyString.max(128), [rawPluginId])
+      const deleteData = parseIpcArgs(z.boolean(), [rawDeleteData])
+      const service = getPluginService()
+      if (service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, false)
+      const result = await getPluginInstallService().uninstall(pluginId, deleteData)
+      await service.refreshInstalledPlugins()
+      await initSkillsRegistry()
+      registerSkillTools(registry)
+      const statuses = await reloadMcpServers(registry)
+      win.webContents.send('mcp:status-changed', statuses)
+      return result
+    },
+  )
+  ipcMain.handle('plugins:rollback', async (event, rawPluginId: unknown) => {
+    assertMainFrameSender(event, win)
+    const pluginId = parseIpcArgs(zNonEmptyString.max(128), [rawPluginId])
+    const service = getPluginService()
+    // Rolling back returns to a revision the user already reviewed, so the
+    // plugin is only paused for the switch and keeps the user's toggle after it.
+    const wasEnabled = service.registry.has(pluginId) && service.registry.isEnabled(pluginId)
+    if (service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, false)
+    const result = await getPluginInstallService().rollback(pluginId)
+    await service.refreshInstalledPlugins()
+    if (wasEnabled && service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, true)
+    await initSkillsRegistry()
+    registerSkillTools(registry)
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status-changed', statuses)
+    return result
   })
   ipcMain.handle('supervisor:list', async (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)

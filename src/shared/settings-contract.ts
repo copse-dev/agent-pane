@@ -138,6 +138,7 @@ export interface SettingsValues {
   modelClassifierEnabled: boolean
   nextStepSuggestionEnabled: boolean
   conciseThreadsEnabled: boolean
+  deferredWorktreesEnabled: boolean
   containerRunsEnabled: boolean
   advisorModel: string
   orchestrationStrategyEnabled: boolean

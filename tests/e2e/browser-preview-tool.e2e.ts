@@ -10,6 +10,30 @@ import { waitForAgentIdle } from './helpers.ts'
 const PROJECT_ID = 'e2e-browser-preview-project'
 let projectRoot = ''
 
+interface PreviewWebview extends HTMLElement {
+  executeJavaScript(code: string): Promise<unknown>
+}
+
+async function waitForPreviewViewport(): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(async () => {
+        const view = document.querySelector<PreviewWebview>('.browser-tab-panel.is-active webview')
+        if (!view) return false
+        const width = await view.executeJavaScript(
+          'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(window.innerWidth))))',
+        )
+        return (
+          typeof width === 'number' && Math.abs(width - view.getBoundingClientRect().width) <= 1
+        )
+      }),
+    {
+      timeout: 10_000,
+      timeoutMsg: 'preview guest viewport must match its framed element before capture',
+    },
+  )
+}
+
 describe('browser preview tool', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
@@ -24,6 +48,7 @@ describe('browser preview tool', () => {
       model: 'claude-sonnet-4-6',
       // Hook chips are a developer-mode surface; the chip-sizing check below needs them.
       developerMode: true,
+      windowBounds: { width: 1600, height: 900 },
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -83,6 +108,7 @@ describe('browser preview tool', () => {
     await scenario.assertComplete()
     // The server correctly chooses a fresh random port; mask only the displayed
     // value after validating it so the visual reference is deterministic.
+    const previewAddress = await input.getValue()
     await browser.execute(() => {
       const address = document.querySelector<HTMLInputElement>(
         '.browser-tab-panel.is-active .browser-url-input',
@@ -92,7 +118,17 @@ describe('browser preview tool', () => {
         address.blur()
       }
     })
-    await saveThreePaneScreenshot('browser-preview-tool-visible.png', { filesPaneWidth: 1_040 })
+    await saveThreePaneScreenshot('browser-preview-tool-visible.png', {
+      filesPaneWidth: 1_040,
+      beforeCapture: waitForPreviewViewport,
+      captureFromViewport: true,
+    })
+    await browser.execute((url) => {
+      const address = document.querySelector<HTMLInputElement>(
+        '.browser-tab-panel.is-active .browser-url-input',
+      )
+      if (address) address.value = url
+    }, previewAddress)
     // The wide Browser leaves the chat column narrow, which caps each hook
     // chip. The chip's name (`Hook`/`Hooks`) keeps its width; only the counts
     // beside it may ellipsize, and nothing spills past the status glyph.
@@ -120,6 +156,9 @@ describe('browser preview tool', () => {
   it('shows actionable missing-entry guidance without opening or navigating a tab', async () => {
     const panelsBefore = await $$('.browser-tab-panel')
     const addressBefore = await $('.browser-tab-panel.is-active .browser-url-input').getValue()
+    // Return to the composer through the visible Browser control before sending another turn.
+    await $('[data-panel-control="browser"]').click()
+    await $('.submit-btn').waitForClickable({ timeout: 10_000 })
     const scenario = await prepareMockToolTurn(
       'Preview the build output before it has been written.',
       { name: 'browser_preview', args: { path: 'dist/other/index.html' } },
@@ -141,6 +180,20 @@ describe('browser preview tool', () => {
     await expectAssistantReply('Finish the build before previewing its output.')
     await waitForAgentIdle(15_000)
     await scenario.assertComplete()
-    await saveThreePaneScreenshot('browser-preview-missing-entry.png', { filesPaneWidth: 480 })
+    await expect($('#pane-files')).not.toBeDisplayed()
+    await $('[data-panel-control="browser"]').click()
+    await $('#browser-viewer-host').waitForDisplayed({ timeout: 10_000 })
+    await expect($('.browser-tab-panel.is-active .browser-url-input')).toHaveValue(addressBefore)
+    await browser.execute(() => {
+      const address = document.querySelector<HTMLInputElement>(
+        '.browser-tab-panel.is-active .browser-url-input',
+      )
+      if (address) address.value = 'http://localhost:4321/'
+    })
+    await saveThreePaneScreenshot('browser-preview-missing-entry.png', {
+      filesPaneWidth: 480,
+      beforeCapture: waitForPreviewViewport,
+      captureFromViewport: true,
+    })
   })
 })

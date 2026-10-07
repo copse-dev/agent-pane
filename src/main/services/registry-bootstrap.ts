@@ -27,6 +27,7 @@ import {
 } from '../tools/github-ci-tools.ts'
 import { runShellTool } from '../tools/shell-tool.ts'
 import { preflightWorktreeTool, prepareWorktreeTool } from '../tools/worktree-preparation-tool.ts'
+import { requestWriteAccessTool } from '../tools/request-write-access-tool.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
 import { strReplaceTool } from '../tools/str-replace-tool.ts'
 import { applyPatchTool } from '../tools/apply-patch-tool.ts'
@@ -122,6 +123,8 @@ export function createRegistry(): ToolRegistry {
   registry.register(launchGuiAppTool)
   registry.register(preflightWorktreeTool)
   registry.register(prepareWorktreeTool)
+  // Offered only while a deferred-worktree thread is still read-only (parentTools).
+  registry.register(requestWriteAccessTool)
   registry.register(exploreTool)
   // Experimental CI investigator subagent (off by default). Gated by the
   // `copse.ci-investigator` first-party plugin — the plugin toggle in Settings >
