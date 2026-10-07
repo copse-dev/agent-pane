@@ -49,8 +49,10 @@ export interface AutomationWorktreeReuse {
   }): Promise<ThreadWorktree | null>
 }
 
-function holdsLiveCheckout(thread: Thread): thread is Thread & { worktree: ThreadWorktree } {
-  return thread.worktree !== undefined && thread.worktree.retiredAt === undefined
+/** A run and the checkout it still holds. */
+interface HeldCheckout {
+  thread: Thread
+  worktree: ThreadWorktree
 }
 
 /** The schedule's most recent other run that still holds a checkout. */
@@ -58,17 +60,21 @@ function previousRun(
   threads: readonly Thread[],
   scheduleId: string,
   excluding: string,
-): (Thread & { worktree: ThreadWorktree }) | null {
-  const candidates = threads
-    .filter(
-      (thread) =>
-        thread.id !== excluding &&
-        thread.automation?.scheduleId === scheduleId &&
-        holdsLiveCheckout(thread),
+): HeldCheckout | null {
+  const held: HeldCheckout[] = []
+  for (const thread of threads) {
+    const worktree = thread.worktree
+    if (
+      thread.id === excluding ||
+      thread.automation?.scheduleId !== scheduleId ||
+      worktree === undefined ||
+      worktree.retiredAt !== undefined
     )
-    .sort((a, b) => b.createdAt - a.createdAt)
-  const latest = candidates[0]
-  return latest && holdsLiveCheckout(latest) ? latest : null
+      continue
+    held.push({ thread, worktree })
+  }
+  held.sort((a, b) => b.thread.createdAt - a.thread.createdAt)
+  return held[0] ?? null
 }
 
 function settled(thread: Thread): boolean {
@@ -87,12 +93,12 @@ export function createAutomationWorktreeReuse(
       const scheduleId = subject?.automation?.scheduleId
       if (!subject || scheduleId === undefined) return false
       const previous = previousRun(threads, scheduleId, '')
-      if (previous?.id !== threadId) return false
-      if (!settled(previous) || deps.isLive(projectId, previous.id)) return false
+      if (previous?.thread.id !== threadId) return false
+      if (!settled(previous.thread) || deps.isLive(projectId, threadId)) return false
       return deps.canAdopt({
         projectId,
         projectRoot: root,
-        fromThreadId: previous.id,
+        fromThreadId: threadId,
         from: previous.worktree,
         baseBranch: previous.worktree.baseBranch,
       })
@@ -107,13 +113,13 @@ export function createAutomationWorktreeReuse(
         input.threadId,
       )
       if (!previous) return null
-      if (!settled(previous) || deps.isLive(input.projectId, previous.id)) return null
+      if (!settled(previous.thread) || deps.isLive(input.projectId, previous.thread.id)) return null
 
-      await deps.disposeSession(previous.id)
+      await deps.disposeSession(previous.thread.id)
       const result = await deps.adopt({
         projectId: input.projectId,
         projectRoot: input.projectRoot,
-        fromThreadId: previous.id,
+        fromThreadId: previous.thread.id,
         toThreadId: input.threadId,
         from: previous.worktree,
         baseBranch: input.baseBranch,
@@ -131,9 +137,9 @@ export function createAutomationWorktreeReuse(
         },
       }
       try {
-        await deps.updateMeta(input.projectId, previous.id, retired)
+        await deps.updateMeta(input.projectId, previous.thread.id, retired)
       } catch {
-        await deps.updateMeta(input.projectId, previous.id, retired)
+        await deps.updateMeta(input.projectId, previous.thread.id, retired)
       }
       return result.worktree
     },
