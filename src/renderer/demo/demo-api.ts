@@ -1097,7 +1097,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     processManager: {
-      snapshot: () => resolved({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
+      snapshot: () => resolved({ sampledAt: Date.now(), processes: [] }),
       stopBackground: () => resolved(false),
     },
     menu: {
