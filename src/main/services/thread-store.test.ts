@@ -22,6 +22,7 @@ import {
   appendMessage,
   appendImportedRemoteAgentRunResult,
   updateMeta,
+  updateMetaIf,
   getThreadMeta,
   recordThreadAgentLink,
   attachThreadPrUrl,
@@ -1152,6 +1153,56 @@ describe('thread-store', () => {
       assert.ok(loaded)
       assert.equal('pendingMessages' in loaded, false)
       assert.equal('queuePaused' in loaded, false)
+    })
+
+    it('conditional metadata writes see queued activity and preserve the visible catalog', async () => {
+      await createThread('proj-1', thread('t1'))
+      const activity = updateMeta('proj-1', 't1', { status: 'running', updatedAt: 50 })
+      const archive = updateMetaIf(
+        'proj-1',
+        't1',
+        { archivedAt: 99 },
+        (current) => current.status === 'idle' && current.updatedAt === 1,
+      )
+      await activity
+      assert.equal(await archive, false)
+      assert.equal((await getThreadMeta('proj-1', 't1'))?.archivedAt, undefined)
+      assert.deepEqual(
+        (await loadProjectCatalog('proj-1')).map((entry) => entry.id),
+        ['t1'],
+      )
+      await updateMeta('proj-1', 't1', { status: 'idle' })
+      assert.equal(
+        await updateMetaIf(
+          'proj-1',
+          't1',
+          { archivedAt: 99 },
+          (current) => current.status === 'idle',
+        ),
+        true,
+      )
+      assert.deepEqual(await loadProjectCatalog('proj-1'), [])
+      assert.equal(await updateMetaIf('proj-1', 'missing', { archivedAt: 99 }, () => true), false)
+    })
+
+    it('checks live state after waiting for the metadata queue', async () => {
+      await createThread('proj-1', thread('t1'))
+      let release = (): void => {}
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const hold = runSerialized('thread-store:proj-1', () => gate)
+      let running = false
+      const archive = updateMetaIf('proj-1', 't1', { archivedAt: 99 }, () => !running)
+      running = true
+      release()
+      await hold
+      assert.equal(await archive, false)
+      assert.equal((await getThreadMeta('proj-1', 't1'))?.archivedAt, undefined)
+      assert.deepEqual(
+        (await loadProjectCatalog('proj-1')).map((entry) => entry.id),
+        ['t1'],
+      )
     })
 
     it('updateMeta on a never-created thread is a no-op', async () => {

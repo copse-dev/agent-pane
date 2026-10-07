@@ -1890,6 +1890,26 @@ export function updateMeta(
   })
 }
 
+/** Check current metadata and commit its patch in the same serialized operation.
+ * The condition must be synchronous: no other task can run between it and the write.
+ */
+export function updateMetaIf(
+  projectId: string,
+  threadId: string,
+  patch: Partial<ThreadMeta>,
+  condition: (current: ThreadMeta) => boolean,
+): Promise<boolean> {
+  return runStoreWrite(projectId, () => {
+    const dir = threadDir(projectId, threadId)
+    const current = readMeta(dir)
+    if (current === null || !condition(current)) return false
+    const merged: ThreadMeta = { ...current, ...patch, id: threadId }
+    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
+    refreshCatalogLine(projectId, threadId)
+    return true
+  })
+}
+
 /** Patch metadata, failing if the renderer has not persisted the thread yet. */
 export function updateMetaOrThrow(
   projectId: string,

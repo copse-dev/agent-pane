@@ -20,6 +20,7 @@ import {
   type AutoArchiveCandidate,
 } from '@shared/store/auto-archive.ts'
 import type { Thread } from '@shared/types'
+import type { ThreadMeta } from '@shared/threads/spine-schema.ts'
 
 /** Ceiling on GitHub lookups per sweep; the local checks run first and cull most threads. */
 const MAX_PR_LOOKUPS_PER_SWEEP = 40
@@ -47,10 +48,17 @@ export interface AutoArchiveDeps {
   projects: () => AutoArchiveProject[]
   loadThreads: (projectId: string) => Promise<Thread[]>
   runningThreadIds: () => ReadonlySet<string>
+  isActive: (projectId: string, threadId: string) => boolean
   stagedDiffCount: (projectId: string, threadId: string) => number
   prSnapshot: (ref: GithubPrRef) => Promise<PrSnapshot>
   worktreeFacts: (project: AutoArchiveProject, thread: Thread) => Promise<WorktreeFacts>
-  archive: (projectId: string, threadId: string, now: number) => Promise<void>
+  /** Evaluate the synchronous condition against current metadata inside the write queue. */
+  archive: (
+    projectId: string,
+    threadId: string,
+    now: number,
+    condition: (current: ThreadMeta) => boolean,
+  ) => Promise<boolean>
   now: () => number
 }
 
@@ -66,7 +74,7 @@ export interface AutoArchiveSweepResult {
  * attributed to the thread.
  */
 function isWorthInspecting(
-  thread: Thread,
+  thread: ThreadMeta,
   running: ReadonlySet<string>,
   now: number,
   afterMs: number,
@@ -105,14 +113,32 @@ export async function runAutoArchiveSweep(deps: AutoArchiveDeps): Promise<AutoAr
     if (project.sshHost !== undefined) continue
     const threads = await deps.loadThreads(project.id).catch((): Thread[] => [])
     const candidates: AutoArchiveCandidate[] = []
+    const conditions = new Map<string, (current: ThreadMeta) => boolean>()
     for (const thread of threads) {
-      if (!isWorthInspecting(thread, running, now, afterMs)) continue
+      if (!isWorthInspecting(thread, running, now, afterMs) || deps.isActive(project.id, thread.id))
+        continue
+      // Capture the inspected identity before any awaits. Cached thread objects can
+      // also change in place; facts for an old checkout or PR set cannot authorize it.
+      const updatedAt = thread.updatedAt
+      const checkout = JSON.stringify(thread.worktree)
       const refs = thread.prRefs ?? []
+      const refKeys = refs.map(githubPrKey).join('\n')
       if (lookups + refs.length > MAX_PR_LOOKUPS_PER_SWEEP) continue
       const snapshots = await Promise.all(refs.map(snapshot))
       // Cheapest remaining gate first: don't shell out to git for an open PR.
       if (snapshots.some((s) => s.state !== 'merged')) continue
       const facts = await deps.worktreeFacts(project, thread)
+      conditions.set(
+        thread.id,
+        (current) =>
+          deps.afterDays() === days &&
+          !deps.isActive(project.id, current.id) &&
+          isWorthInspecting(current, deps.runningThreadIds(), deps.now(), afterMs) &&
+          current.updatedAt === updatedAt &&
+          JSON.stringify(current.worktree) === checkout &&
+          (current.prRefs ?? []).map(githubPrKey).join('\n') === refKeys &&
+          deps.stagedDiffCount(project.id, current.id) === 0,
+      )
       candidates.push({
         id: thread.id,
         prStates: snapshots.map((s) => s.state),
@@ -126,8 +152,12 @@ export async function runAutoArchiveSweep(deps: AutoArchiveDeps): Promise<AutoAr
       })
     }
     const ids = selectAutoArchivable(candidates, { now, afterMs })
-    for (const id of ids) await deps.archive(project.id, id, now)
-    if (ids.length > 0) result.archived.push({ projectId: project.id, threadIds: ids })
+    const archived: string[] = []
+    for (const id of ids) {
+      const condition = conditions.get(id)
+      if (condition && (await deps.archive(project.id, id, now, condition))) archived.push(id)
+    }
+    if (archived.length > 0) result.archived.push({ projectId: project.id, threadIds: archived })
   }
   return result
 }

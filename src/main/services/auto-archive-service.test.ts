@@ -56,14 +56,18 @@ function harness(
     projects: () => [{ id: 'p1', path: '/repo' }],
     loadThreads: async () => threads,
     runningThreadIds: () => new Set(),
+    isActive: () => false,
     stagedDiffCount: () => 0,
     prSnapshot: async (ref): Promise<PrSnapshot> => {
       prLookups.push(ref.number)
       return { state: 'merged', updatedAt: NOW - 9 * DAY_MS }
     },
     worktreeFacts: async () => ({ changedFiles: 0, unpushedCommits: 0 }),
-    archive: async (_p, id) => {
+    archive: async (_p, id, _now, condition) => {
+      const current = threads.find((entry) => entry.id === id)
+      if (!current || !condition(current)) return false
       archived.push(id)
+      return true
     },
     now: () => NOW,
     ...overrides,
@@ -78,6 +82,89 @@ describe('runAutoArchiveSweep', () => {
     assert.deepEqual(archived, ['t1'])
     assert.deepEqual(result.archived, [{ projectId: 'p1', threadIds: ['t1'] }])
   })
+
+  it('does not archive a candidate that starts running while another archive awaits', async () => {
+    const second = thread({ id: 'b' })
+    const { deps, archived } = harness([thread({ id: 'a' }), second])
+    const archive = deps.archive
+    deps.archive = async (...args): Promise<boolean> => {
+      if (args[1] === 'a') {
+        await Promise.resolve()
+        second.status = 'running'
+      }
+      return archive(...args)
+    }
+    const result = await runAutoArchiveSweep(deps)
+    assert.deepEqual(archived, ['a'])
+    assert.deepEqual(result.archived, [{ projectId: 'p1', threadIds: ['a'] }])
+  })
+
+  for (const pauseAt of ['PR lookup', 'checkout inspection']) {
+    for (const change of [
+      'running set',
+      'dispatch preparation',
+      'unread',
+      'recent activity',
+      'checkout',
+      'PR refs',
+      'staged diffs',
+      'disabled',
+    ]) {
+      it(`leaves a candidate visible when ${change} changes during ${pauseAt}`, async () => {
+        const threads = [thread()]
+        let running = new Set<string>()
+        let active = false
+        let staged = 0
+        let days = 7
+        const changeState = (): void => {
+          switch (change) {
+            case 'dispatch preparation':
+              active = true
+              break
+            case 'running set':
+              running = new Set(['t1'])
+              break
+            case 'unread':
+              threads[0] = thread({ unreadAt: NOW })
+              break
+            case 'recent activity':
+              threads[0] = thread({ updatedAt: NOW })
+              break
+            case 'checkout':
+              threads[0] = thread({ worktree: worktree('/wt/replacement') })
+              break
+            case 'PR refs':
+              threads[0] = thread({ prRefs: [{ ...REF, number: 2 }] })
+              break
+            case 'staged diffs':
+              staged = 1
+              break
+            case 'disabled':
+              days = 0
+              break
+          }
+        }
+        const { deps, archived } = harness(threads, {
+          afterDays: () => days,
+          isActive: () => active,
+          runningThreadIds: () => running,
+          stagedDiffCount: () => staged,
+          prSnapshot: async () => {
+            await Promise.resolve()
+            if (pauseAt === 'PR lookup') changeState()
+            return { state: 'merged', updatedAt: NOW - 9 * DAY_MS }
+          },
+          worktreeFacts: async () => {
+            await Promise.resolve()
+            if (pauseAt === 'checkout inspection') changeState()
+            return { changedFiles: 0, unpushedCommits: 0 }
+          },
+        })
+        assert.deepEqual(await runAutoArchiveSweep(deps), { archived: [] })
+        assert.deepEqual(archived, [])
+      })
+    }
+  }
 
   it('does nothing when the setting is off', async () => {
     const { deps, archived, prLookups } = harness([thread()], { afterDays: () => 0 })

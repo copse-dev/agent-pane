@@ -556,7 +556,6 @@ app
       developerMode,
     )
     void resumeMobileCompanion()
-    startAutoArchive()
     initUpdatePrompt(win)
     initCloseConfirm(win)
     guardWindowClose(win)
@@ -642,6 +641,7 @@ app
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
+    startAutoArchive((projectId, threadId) => agentDispatcher.isActive(projectId, threadId))
     registerAllHandlers(
       win,
       registry,

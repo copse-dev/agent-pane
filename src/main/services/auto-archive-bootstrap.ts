@@ -2,7 +2,7 @@ import { getSetting } from './storage/settings.ts'
 import { storageGet } from './storage/storage.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
-import { loadProjectThreadMetas, updateMeta } from './thread-store.ts'
+import { loadProjectThreadMetas, updateMetaIf } from './thread-store.ts'
 import { listRunningThreadIds } from './agent-service.ts'
 import { countStagedDiffs } from './diff-queue.ts'
 import { getGhPrDetails } from './github/gh-pr-service.ts'
@@ -33,25 +33,26 @@ function configuredProjects(): AutoArchiveProject[] {
   return projects
 }
 
-function liveDeps(): AutoArchiveDeps {
+function liveDeps(isActive: AutoArchiveDeps['isActive']): AutoArchiveDeps {
   return {
     afterDays: () => getSetting('autoArchiveAfterDays', 0),
     projects: configuredProjects,
+    isActive,
     loadThreads: (projectId) => loadProjectThreadMetas(projectId, { includeArchived: false }),
     runningThreadIds: () => new Set(listRunningThreadIds()),
     stagedDiffCount: (projectId, threadId) => countStagedDiffs({ projectId, threadId }),
     prSnapshot: async (ref) => snapshotFromDetails(await getGhPrDetails(ref)),
     worktreeFacts: (_project, thread) =>
       inspectThreadWorktree(thread, (cwd, args) => runWorktreeGit(cwd, args)),
-    archive: (projectId, threadId, now) =>
-      updateMeta(projectId, threadId, { archivedAt: now, updatedAt: now }),
+    archive: (projectId, threadId, now, condition) =>
+      updateMetaIf(projectId, threadId, { archivedAt: now, updatedAt: now }, condition),
     now: Date.now,
   }
 }
 
-async function sweepOnce(): Promise<void> {
+async function sweepOnce(isActive: AutoArchiveDeps['isActive']): Promise<void> {
   try {
-    const { archived } = await runAutoArchiveSweep(liveDeps())
+    const { archived } = await runAutoArchiveSweep(liveDeps(isActive))
     for (const { projectId, threadIds } of archived) {
       console.log(
         `[auto-archive] archived ${String(threadIds.length)} merged thread(s) in ${projectId}`,
@@ -64,12 +65,12 @@ async function sweepOnce(): Promise<void> {
 }
 
 /** Start the periodic sweep. The timers are unref'd so they never hold the app open. */
-export function startAutoArchive(): () => void {
+export function startAutoArchive(isActive: AutoArchiveDeps['isActive']): () => void {
   const first = setTimeout(() => {
-    void sweepOnce()
+    void sweepOnce(isActive)
   }, FIRST_SWEEP_DELAY_MS)
   const every = setInterval(() => {
-    void sweepOnce()
+    void sweepOnce(isActive)
   }, SWEEP_INTERVAL_MS)
   first.unref()
   every.unref()
