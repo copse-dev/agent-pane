@@ -19,24 +19,37 @@ retention.
 Save an OpenAI **Platform API key** in Settings, open a project, and select
 **OpenAI Cloud Agent (prototype · API billed · no ZDR)** in the model picker.
 ChatGPT OAuth does not authorize this integration. The key needs Agents read/write
-and Responses write permissions. Hosted sessions retain data in the US and are
+Responses write, and Files upload/delete permissions. Hosted sessions retain data in the US and are
 not eligible for Zero Data Retention. Model usage appears in the chat; container
 and tool charges are additional, so that display is not the complete invoice.
 
-The provider runs a separate OpenAI-hosted workspace. Local files and credentials
-are not mounted or uploaded. Copse supplies the current project's GitHub URL,
-branch, and commit on each new turn, directing the agent to clone that revision
-and return a patch under `/workspace/outputs`. Existing sessions receive this
-context too. Local uncommitted edits and unpushed commits are unavailable; the
-agent must report an unavailable revision rather than silently changing bases.
-Private repositories,
-automatic PR creation, images, approval-required tool flows, and automatic
-background recovery are outside this prototype.
+Copse snapshots the chat's current Git working tree, including staged, unstaged,
+and nonignored untracked files. A history-free Git bundle provisions `/workspace/repo`
+through `environment.files` and a deterministic `setup_commands` script. The script
+verifies the snapshot commit before inference starts. No GitHub credentials or Git
+configuration enter the hosted workspace. Snapshot uploads are limited to 50 MiB;
+Git submodules are currently unsupported. Ignored files and Git LFS object contents
+are not transferred.
 
-Follow-ups reuse the same hosted session. A private checkpoint lives alongside the
-native thread. After an interrupted request, resend the **same message** to recover
-the pending turn before sending a different task. Keys/models cannot change within
-an existing session. The client subscribes before submission but uses saved turns
+The hosted exporter commits remaining edits and publishes a Git bundle. Copse checks
+the recorded base, exported ref and ancestry, then uses the container adoption path
+to cherry-pick the commits into the chat checkout. On `main`, `master` or detached
+HEAD it creates a `copse/openai-…` branch. The existing **Create PR** flow pushes from
+the host using its GitHub authentication. No manual patch download is needed.
+If local edits or a changed base prevent adoption, the result stays checkpointed:
+commit the original input edits and resend the same message to retry. Copse never
+stashes or overwrites those edits. Merge commits require manual recovery.
+
+Each subsequent task gets a fresh local snapshot and hosted session, with chat
+context carried forward. A private checkpoint saves pending input, terminal results
+and import progress. Resend the **same message** after an interruption to recover
+without repeating the task or counting its usage again. If the agent omitted export,
+Copse runs a separate export-only turn (also billable and checkpointed). Failure to
+produce a valid export is an error, never reported as successful synchronization.
+Keys/models cannot change within an existing chat. Images, approval-required tool
+flows and automatic background recovery remain outside this prototype.
+
+The client subscribes before submission but uses saved turns
 and items as the recovery authority: OpenAI event streams do not replay. Progress
 currently displays polled command output and completed messages, not token deltas.
 Stop requests remote cancellation and checks that work has ended; an unconfirmed
@@ -46,15 +59,10 @@ pending checkpoint. Resend the previous message to recover it before starting a
 different task. Runs have a ten-minute prototype limit.
 
 Artifacts download into the thread's blob directory (10 MiB per file, 20 files,
-50 MiB per turn). Artifact links open a Save dialog rather than the workspace
+50 MiB per turn). Repository return bundles have a separate 200 MiB cap and are
+imported rather than shown as download links. Artifact links open a Save dialog rather than the workspace
 index, including links in older messages. Remote paths never choose local filenames. Deleting local chat
 state does not delete its hosted session. Manage remote retention separately.
-
-The supplied commit belongs to the local chat checkout; it is not necessarily
-the latest remote branch tip. The hosted agent is instructed to refresh and
-compare both revisions on every turn, and ask before editing if they differ.
-This remains agent-enforced rather than a verified checkout synchronization
-protocol. Patches are exported deliverables, not automatically applied edits.
 
 For a standalone billable smoke test, configure `OPENAI_API_KEY` in the process
 environment, then run:

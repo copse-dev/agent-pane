@@ -15,6 +15,7 @@ const sessionSchema = z.object({
   status: z.enum(['idle', 'in_progress', 'requires_action', 'failed']),
   error: z.string().nullish(),
   usage: usageSchema.nullish(),
+  environment: z.object({ id: z.string() }).nullish(),
 })
 const turnSchema = z.object({
   id: z.string().min(1),
@@ -45,6 +46,7 @@ export const openAiAgentStateSchema = z.object({
   v: z.literal(1),
   sessionId: z.string().min(1),
   model: z.string().min(1),
+  environmentId: z.string().optional(),
   // A pending submission is written BEFORE sending input. Never blindly replay a task.
   pending: z
     .object({
@@ -62,15 +64,20 @@ export type OpenAiAgentArtifact = z.infer<typeof artifactSchema>
 export type OpenAiAgentItem = z.infer<typeof itemSchema>
 type AgentTurn = z.infer<typeof turnSchema>
 
-export interface OpenAiAgentResult {
-  status: 'completed' | 'failed' | 'cancelled'
-  text: string
-  error: string | undefined
-  artifacts: OpenAiAgentArtifact[]
-  inputTokens: number
-  outputTokens: number
-  cacheReadTokens: number
-}
+export const openAiAgentResultSchema = z.object({
+  status: z.enum(['completed', 'failed', 'cancelled']),
+  text: z.string(),
+  error: z.string().optional(),
+  artifacts: z.array(artifactSchema),
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  cacheReadTokens: z.number(),
+})
+export type OpenAiAgentResult = z.infer<typeof openAiAgentResultSchema>
+export type OpenAiHostedEnvironment = Extract<
+  NonNullable<SessionCreateParamsNonStreaming['environment']>,
+  { type: 'openai_hosted' }
+>
 
 export class OpenAiCancellationError extends Error {}
 export class OpenAiCancellationUnconfirmedError extends OpenAiCancellationError {}
@@ -96,8 +103,9 @@ export class OpenAiAgentsApi {
     method = 'GET',
     key?: string,
     stream = false,
+    resource = '/agents/sessions',
   ): Promise<Response> {
-    const response = await this.fetchImpl(`https://api.openai.com/v1/agents/sessions${path}`, {
+    const response = await this.fetchImpl(`https://api.openai.com/v1${resource}${path}`, {
       method,
       redirect: 'error',
       signal: AbortSignal.any([signal, AbortSignal.timeout(stream ? 30_000 : 20_000)]),
@@ -126,20 +134,79 @@ export class OpenAiAgentsApi {
     return parsed
   }
 
-  async create(model: string, signal: AbortSignal): Promise<OpenAiAgentState> {
+  async uploadSource(content: Uint8Array, signal: AbortSignal): Promise<string> {
+    if (content.byteLength > 50 * 1024 * 1024) throw new Error('Project snapshot exceeds 50 MiB.')
+    const form = new FormData()
+    form.set('purpose', 'user_data')
+    form.set('file', new Blob([new Uint8Array(content)]), 'source.bundle')
+    const response = await this.fetchImpl('https://api.openai.com/v1/files', {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
+      headers: { Authorization: `Bearer ${this.apiKey}` },
+      body: form,
+    })
+    if (!response.ok) {
+      await response.body?.cancel()
+      throw new Error(`OpenAI file upload HTTP ${String(response.status)}.`)
+    }
+    return (await this.json(response, z.object({ id: z.string().min(1) }))).id
+  }
+
+  async deleteSource(id: string, signal: AbortSignal): Promise<void> {
+    await this.request(
+      `/${encodeURIComponent(id)}`,
+      signal,
+      undefined,
+      'DELETE',
+      undefined,
+      false,
+      '/files',
+    )
+  }
+
+  async waitForEnvironment(state: OpenAiAgentState, signal: AbortSignal): Promise<void> {
+    if (!state.environmentId) throw new Error('Hosted environment ID is missing.')
+    const bounded = AbortSignal.any([signal, AbortSignal.timeout(5 * 60_000)])
+    for (;;) {
+      const environment = await this.json(
+        await this.request(
+          `/${encodeURIComponent(state.environmentId)}`,
+          bounded,
+          undefined,
+          'GET',
+          undefined,
+          false,
+          '/agents/environments',
+        ),
+        z.object({ status: z.string() }),
+      )
+      if (environment.status === 'connected') return
+      if (environment.status !== 'pending' && environment.status !== 'provisioning')
+        throw new Error('Hosted repository setup failed or expired.')
+      await delay(1000, undefined, { signal: bounded })
+    }
+  }
+
+  async create(
+    model: string,
+    signal: AbortSignal,
+    environment?: OpenAiHostedEnvironment,
+  ): Promise<OpenAiAgentState> {
     const body = {
       agent: {
         model,
         instructions:
-          "You are working in an OpenAI-hosted workspace, not the user's local checkout. No local files or credentials are mounted. Work only on the requested task. For repository tasks, clone the public repository the user specifies and report the exact base commit. Put deliverables, including a git diff patch when requested, under /workspace/outputs. Do not claim local files were modified or a PR was created without evidence.",
+          'Work only on the requested task. When a repository is provisioned, use /workspace/repo and follow the supplied export command before finishing. The host imports your Git commits and handles GitHub authentication. Never claim a push or PR without evidence. Put other deliverables under /workspace/outputs.',
       },
-      environment: { type: 'openai_hosted', network: { access: 'enabled' } },
+      environment: environment ?? { type: 'openai_hosted', network: { access: 'enabled' } },
     } satisfies SessionCreateParamsNonStreaming
     // No initial task: persist the session ID before starting billable model work.
     const session = await this.json(await this.request('', signal, body, 'POST'), sessionSchema)
     return {
       v: 1,
       sessionId: session.id,
+      ...(session.environment ? { environmentId: session.environment.id } : {}),
       model,
       pending: null,
       usageInput: 0,
@@ -210,7 +277,10 @@ export class OpenAiAgentsApi {
     artifact: OpenAiAgentArtifact,
     signal: AbortSignal,
   ): Promise<Uint8Array> {
-    const maxBytes = 10 * 1024 * 1024
+    const maxBytes =
+      artifact.path === '/workspace/outputs/copse.bundle' || artifact.path === 'copse.bundle'
+        ? 200 * 1024 * 1024
+        : 10 * 1024 * 1024
     if (artifact.size_bytes > maxBytes)
       throw new Error('Artifact exceeds the prototype 10 MiB download limit.')
     const response = await this.request(
@@ -247,6 +317,7 @@ export class OpenAiAgentsApi {
       onText: (text: string) => void
       onProgress?: (type: string) => void
       onItem?: (item: OpenAiAgentItem) => void
+      onResult?: (result: OpenAiAgentResult) => void
     },
   ): Promise<OpenAiAgentResult> {
     if (!prompt.trim()) throw new Error('OpenAI Cloud Agent prompt cannot be empty.')
@@ -285,9 +356,7 @@ export class OpenAiAgentsApi {
         state.usageOutput = usage.output_tokens
         state.usageCacheRead = usage.input_tokens_details?.cached_tokens ?? 0
       }
-      state.pending = null
-      options.save(state)
-      return {
+      const result: OpenAiAgentResult = {
         status: turn.status,
         text: items.map(messageText).filter(Boolean).join('\n\n'),
         error: turn.error?.message,
@@ -296,6 +365,10 @@ export class OpenAiAgentsApi {
         outputTokens,
         cacheReadTokens,
       }
+      options.onResult?.(result)
+      state.pending = null
+      options.save(state)
+      return result
     }
     try {
       const existing = await this.turns(state, signal)

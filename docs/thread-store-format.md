@@ -62,7 +62,8 @@ legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-inde
     meta.json                        # mutable thread metadata (everything except messages)
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
-    openai-agent-session.json        # private hosted OpenAI session + pending input checkpoint
+    openai-agent-session.json        # private hosted session, pending input, terminal result + Git import checkpoint
+    blobs/openai-git/                # bounded source/return Git bundles and result manifest
     acp-session.json                 # private external ACP session binding (optional)
     history-edit-transaction.json    # pending edit rollback journal (temporary, private)
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)
@@ -577,3 +578,15 @@ full-fidelity copy for debugging or moving a thread between machines.
 ```
 
 ```
+
+### OpenAI hosted Git transfer checkpoint
+
+`openai-agent-session.json` records the key hash (never the key), model, environment,
+pending submission, terminal result, usage reporting and local Git transfer state.
+Terminal artifacts are checkpointed before pending input is cleared. Retrying an
+import therefore downloads/adopts the recorded output without replaying inference.
+The transfer binds an absolute thread checkout to a snapshot tree and synthetic
+transport base; `refs/copse/openai/<id>` pins that base and
+`refs/copse/runs/openai-<id>` retains returned commits. Guest refs, ancestry and the
+current local tree are checked before adoption. Completed transfers are replaced
+by a fresh snapshot on the next task. These private sidecars are not chat messages.

@@ -285,3 +285,51 @@ describe('OpenAI Agents API prototype', () => {
     )
   })
 })
+
+it('uploads a bounded source file and passes deterministic setup to a verified environment', async () => {
+  let connected = true
+  const api = new OpenAiAgentsApi('test-key', async (input, init) => {
+    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+    assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer test-key')
+    assert.ok(init)
+    assert.equal(init.redirect, 'error')
+    if (url.pathname === '/v1/files') {
+      assert.ok(init.body instanceof FormData)
+      assert.equal(init.body.get('purpose'), 'user_data')
+      const file = init.body.get('file')
+      assert.ok(file instanceof Blob)
+      assert.equal(await file.text(), 'bundle')
+      return json({ id: 'uploaded-file' })
+    }
+    if (url.pathname === '/v1/agents/sessions') {
+      assert.ok(typeof init.body === 'string')
+      const request = safeJsonParse(
+        init.body,
+        decodeWithSchema(
+          z.object({
+            environment: z.object({
+              files: z.array(z.object({ file_id: z.string(), path: z.string() })),
+              setup_commands: z.array(z.object({ command: z.string() })),
+            }),
+          }),
+        ),
+      )
+      assert.equal(request?.environment.files[0]?.file_id, 'uploaded-file')
+      assert.equal(request.environment.setup_commands[0]?.command, 'verify-snapshot')
+      return json({ id: 'session', status: 'idle', environment: { id: 'env' } })
+    }
+    assert.equal(url.pathname, '/v1/agents/environments/env')
+    return json({ status: connected ? 'connected' : 'failed' })
+  })
+  const file = await api.uploadSource(Buffer.from('bundle'), signal())
+  const state = await api.create('gpt-6.1-sol', signal(), {
+    type: 'openai_hosted',
+    files: [{ type: 'file_id', file_id: file, path: '/workspace/inputs/source.bundle' }],
+    setup_commands: [{ command: 'verify-snapshot' }],
+  })
+  assert.equal(state.environmentId, 'env')
+  await api.waitForEnvironment(state, signal())
+  connected = false
+  await assert.rejects(api.waitForEnvironment(state, signal()), /setup failed/)
+  await assert.rejects(api.uploadSource(new Uint8Array(50 * 1024 * 1024 + 1), signal()), /50 MiB/)
+})

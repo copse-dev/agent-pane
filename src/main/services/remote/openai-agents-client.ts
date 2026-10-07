@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import fs from 'node:fs/promises'
 import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
@@ -7,19 +8,25 @@ import { firstNonEmptyString } from '@shared/unknown-value.ts'
 import { join, extname, sep } from 'node:path'
 import { z } from 'zod'
 import { DEFAULT_OPENAI_AGENT_MODEL } from '@shared/openai-cloud-agent.ts'
-import { openAiAgentProjectContext } from '@shared/openai-agent-project.ts'
-import { getCurrentBranchName, getCurrentCommitHash } from '../github/git-service.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
+import { ensureWritableThreadCheckout } from '../deferred-worktree.ts'
+import { prepareGitTransfer, importGitTransfer, gitTransferSchema } from './openai-git-transfer.ts'
 import {
   buildRemoteAgentContextPreamble,
   promptPayloadFromUserContent,
 } from '@shared/remote-agent-stream.ts'
 import { resolveApiKey } from '../storage/settings.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
-import { OpenAiAgentsApi, openAiAgentStateSchema } from './openai-agents-api.ts'
+import {
+  OpenAiAgentsApi,
+  openAiAgentStateSchema,
+  openAiAgentResultSchema,
+  type OpenAiAgentResult,
+  type OpenAiAgentState,
+} from './openai-agents-api.ts'
 import { recordRemoteAgentLaunch } from './remote-agent-link-store.ts'
 import {
   resolveRemoteAgentProjectId,
-  resolveRemoteAgentRepository,
   type RemoteAgentRunOptions,
   type RemoteAgentRunResult,
 } from './remote-agent-shared.ts'
@@ -28,6 +35,12 @@ const savedSchema = z.object({
   state: openAiAgentStateSchema,
   keyHash: z.string(),
   promptHash: z.string(),
+  transfer: gitTransferSchema.optional(),
+  result: openAiAgentResultSchema.optional(),
+  exportResult: openAiAgentResultSchema.optional(),
+  sourceFileId: z.string().optional(),
+  usageReported: z.boolean().default(false),
+  exportUsageReported: z.boolean().default(false),
 })
 const active = new Set<string>()
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
@@ -102,21 +115,86 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       'This cloud thread belongs to a different OpenAI key or model. Restore that selection or start a new chat.',
     )
   }
-  const state = prior.success ? prior.data.state : await client.create(model, options.signal)
-  const promptHash = hash(payload.text)
-  if (state.pending && prior.success && prior.data.promptHash !== promptHash) {
+  await ensureWritableThreadCheckout()
+  const root = getAgentExecutionRoot()
+  if (!root) throw new Error('Open a Git checkout before starting a hosted task.')
+  if (prior.success && !prior.data.transfer && prior.data.state.pending)
     throw new Error(
-      'The previous OpenAI task needs recovery. Resend its message before submitting a different task.',
+      'This older cloud session has a pending task. Recover it with the previous prototype before starting a provisioned chat.',
+    )
+  const recovering = prior.success && prior.data.transfer && !prior.data.transfer.imported
+  const transferDirectory = join(directory, 'blobs', 'openai-git')
+  const transfer = recovering
+    ? prior.data.transfer
+    : await prepareGitTransfer(root, transferDirectory)
+  if (!transfer) throw new Error('Hosted snapshot is unavailable.')
+  let sourceFileId = recovering ? prior.data.sourceFileId : undefined
+  const exportCommand = `node /workspace/inputs/copse-git.cjs export ${transfer.base}`
+  let state: OpenAiAgentState
+  if (recovering) state = prior.data.state
+  else {
+    const worker = await fs.readFile(join(__dirname, 'openai-git-worker.cjs'))
+    sourceFileId = await client.uploadSource(
+      await readFile(join(transferDirectory, 'source.bundle')),
+      options.signal,
+    )
+    try {
+      state = await client.create(model, options.signal, {
+        type: 'openai_hosted',
+        network: { access: 'enabled' },
+        files: [
+          { type: 'file_id', file_id: sourceFileId, path: '/workspace/inputs/source.bundle' },
+          {
+            type: 'inline',
+            data: worker.toString('base64'),
+            path: '/workspace/inputs/copse-git.cjs',
+          },
+        ],
+        setup_commands: [
+          {
+            command: `node /workspace/inputs/copse-git.cjs setup ${transfer.base} ${transfer.ref}`,
+          },
+        ],
+      })
+    } catch (error) {
+      await client.deleteSource(sourceFileId, AbortSignal.timeout(20_000)).catch(() => {})
+      throw error
+    }
+  }
+  const promptHash = hash(payload.text)
+  let terminalResult: OpenAiAgentResult | undefined = recovering ? prior.data.result : undefined
+  let usageReported = recovering ? prior.data.usageReported : false
+  let exportUsageReported = recovering ? prior.data.exportUsageReported : false
+  let reportedInput = 0
+  let reportedOutput = 0
+  let exportResult = recovering ? prior.data.exportResult : undefined
+  if (recovering && prior.data.promptHash !== promptHash) {
+    throw new Error(
+      'The previous hosted task needs recovery. Resend its message to import its commits before starting another task.',
     )
   }
   const save = (): void => {
     mkdirSync(directory, { recursive: true })
-    writeFileSync(`${path}.tmp`, JSON.stringify({ state, keyHash, promptHash }), { mode: 0o600 })
+    writeFileSync(
+      `${path}.tmp`,
+      JSON.stringify({
+        state,
+        keyHash,
+        promptHash,
+        transfer,
+        result: terminalResult,
+        exportResult,
+        sourceFileId,
+        usageReported,
+        exportUsageReported,
+      }),
+      { mode: 0o600 },
+    )
     renameSync(`${path}.tmp`, path)
     storageSet(storageKey(options.threadId), projectId)
   }
   save()
-  if (!prior.success) {
+  if (!recovering) {
     await recordRemoteAgentLaunch({
       projectId,
       threadId: options.threadId,
@@ -126,62 +204,144 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       createdAt: Date.now(),
     })
   }
-  const projectContext = state.pending
-    ? ''
-    : openAiAgentProjectContext(
-        await resolveRemoteAgentRepository(),
-        await getCurrentBranchName(),
-        await getCurrentCommitHash(),
-      )
+  if (!terminalResult) {
+    await client.waitForEnvironment(state, options.signal)
+    if (sourceFileId) {
+      await client.deleteSource(sourceFileId, options.signal)
+      sourceFileId = undefined
+      save()
+    }
+  }
   const prompt =
     state.pending?.prompt ??
-    `${projectContext}\n\n${prior.success ? '' : buildRemoteAgentContextPreamble({ priorMessages: options.priorMessages ?? [] })}\n\n${payload.text}`
+    `The exact local working tree is provisioned at /workspace/repo (snapshot ${transfer.base}). Original checkout HEAD: ${transfer.sourceHead}, branch: ${transfer.branch || 'detached'}. This is a history-free snapshot with a synthetic transport commit; do not clone or replace it with a remote branch. Work there. Before finishing, run this exact export command, even if no files changed: ${exportCommand}. Do not offer a patch for manual application; Copse imports the resulting commits locally. Do not push to GitHub.\n\n${buildRemoteAgentContextPreamble({ priorMessages: options.priorMessages ?? [] })}\n\n${payload.text}`
   const tools = new Set<string>()
   const completedTools = new Set<string>()
-  const result = await client.run(state, prompt, {
-    signal: options.signal,
-    save,
-    onText: (text) => {
-      options.onChunk({ type: 'text', text })
-    },
-    onItem: (item) => {
-      if (item.type !== 'command_execution' || !item.id || !item.command) return
-      const id = `openai-${item.id}`
-      if (!tools.has(id)) {
-        tools.add(id)
-        options.onChunk({
-          type: 'tool_call',
-          toolCall: { id, name: 'run_shell', args: { command: item.command } },
-        })
-      }
-      if (
-        (item.status === 'completed' || item.status === 'failed' || item.status === 'incomplete') &&
-        !completedTools.has(id)
-      ) {
-        completedTools.add(id)
-        options.onChunk({
-          type: 'tool_result',
-          toolCallId: id,
-          result: typeof item.output === 'string' ? item.output : 'Command output unavailable.',
-          isError:
+  const result =
+    terminalResult ??
+    (await client.run(state, prompt, {
+      onResult: (completed) => {
+        terminalResult = completed
+        save()
+      },
+      signal: options.signal,
+      save,
+      onText: (text) => {
+        options.onChunk({ type: 'text', text })
+      },
+      onItem: (item) => {
+        if (item.type !== 'command_execution' || !item.id || !item.command) return
+        const id = `openai-${item.id}`
+        if (!tools.has(id)) {
+          tools.add(id)
+          options.onChunk({
+            type: 'tool_call',
+            toolCall: { id, name: 'run_shell', args: { command: item.command } },
+          })
+        }
+        if (
+          (item.status === 'completed' ||
             item.status === 'failed' ||
-            (item.exit_code !== null && item.exit_code !== undefined && item.exit_code !== 0),
-        })
-      }
-    },
-  })
-  options.onChunk({
-    type: 'usage',
-    model: `remote-agent:openai#${model}`,
-    inputTokens: result.inputTokens,
-    outputTokens: result.outputTokens,
-    cacheReadTokens: result.cacheReadTokens,
-  })
+            item.status === 'incomplete') &&
+          !completedTools.has(id)
+        ) {
+          completedTools.add(id)
+          options.onChunk({
+            type: 'tool_result',
+            toolCallId: id,
+            result: typeof item.output === 'string' ? item.output : 'Command output unavailable.',
+            isError:
+              item.status === 'failed' ||
+              (item.exit_code !== null && item.exit_code !== undefined && item.exit_code !== 0),
+          })
+        }
+      },
+    }))
+  const reportUsage = (usage: OpenAiAgentResult): void => {
+    reportedInput += usage.inputTokens
+    reportedOutput += usage.outputTokens
+    options.onChunk({
+      type: 'usage',
+      model: `remote-agent:openai#${model}`,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheReadTokens: usage.cacheReadTokens,
+    })
+  }
+  if (!usageReported) {
+    usageReported = true
+    save()
+    reportUsage(result)
+  }
+  if (!transfer.imported) {
+    const isManifest = (artifact: { path: string }): boolean =>
+      artifact.path === '/workspace/outputs/copse-result.json' ||
+      artifact.path === 'copse-result.json'
+    // The API has no host-exec endpoint. Recover a missing export in a separate,
+    // checkpointed turn which is never allowed to rerun the user's task.
+    if (!result.artifacts.some(isManifest) && !exportResult?.artifacts.some(isManifest)) {
+      options.signal.throwIfAborted()
+      exportUsageReported = false
+      exportResult = await client.run(
+        state,
+        state.pending?.prompt ??
+          `Do not change code or repeat the previous task. Run only: ${exportCommand}. This publishes the repository result for Copse.`,
+        {
+          signal: options.signal,
+          save,
+          onText: () => {},
+          onResult: (completed) => {
+            exportResult = completed
+            save()
+          },
+        },
+      )
+    }
+    const returnedArtifacts = exportResult?.artifacts ?? result.artifacts
+    const manifest = returnedArtifacts.find(
+      (a) => a.path === '/workspace/outputs/copse-result.json' || a.path === 'copse-result.json',
+    )
+    const bundle = returnedArtifacts.find(
+      (a) => a.path === '/workspace/outputs/copse.bundle' || a.path === 'copse.bundle',
+    )
+    if (!manifest)
+      throw new Error(
+        'The hosted task did not export its repository. Its session and output are retained; no local changes were applied.',
+      )
+    await writeFile(
+      join(transferDirectory, 'copse-result.json'),
+      await client.download(state, manifest, options.signal),
+      { mode: 0o600 },
+    )
+    if (bundle)
+      await writeFile(
+        join(transferDirectory, 'copse.bundle'),
+        await client.download(state, bundle, options.signal),
+        { mode: 0o600 },
+      )
+    if (exportResult && !exportUsageReported) {
+      exportUsageReported = true
+      save()
+      reportUsage(exportResult)
+    }
+    await importGitTransfer(transfer, root, transferDirectory)
+    save()
+  }
   let artifactText = ''
   // Remote paths never select local destinations. Limit automatic transfer per turn.
   const artifactDirectory = join(directory, 'blobs', 'openai-artifacts', hash(state.sessionId))
   let bytes = 0
-  for (const artifact of result.artifacts.slice(0, 20)) {
+  for (const artifact of result.artifacts
+    .filter(
+      (a) =>
+        ![
+          'copse.bundle',
+          'copse-result.json',
+          '/workspace/outputs/copse.bundle',
+          '/workspace/outputs/copse-result.json',
+        ].includes(a.path),
+    )
+    .slice(0, 20)) {
     bytes += artifact.size_bytes
     if (bytes > 50 * 1024 * 1024 || artifact.size_bytes > 10 * 1024 * 1024) {
       artifactText +=
@@ -213,8 +373,8 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   const assistantText = result.text + artifactText
   return {
     assistantText,
-    inputTokens: result.inputTokens,
-    outputTokens: result.outputTokens,
+    inputTokens: reportedInput,
+    outputTokens: reportedOutput,
     messages: [{ role: 'assistant', content: assistantText }],
   }
 }

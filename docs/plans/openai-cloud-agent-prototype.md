@@ -9,10 +9,11 @@ create a hosted session, show progress/results, continue it after reopening Cops
 recover saved output after stream loss, confirm cancellation, and retrieve artifacts.
 The first coding probe uses a public fixture repository and returns a patch.
 
-Use the existing OpenAI key setting, never ChatGPT OAuth. The prototype does not
-upload the local checkout or credentials. Private repository provisioning, automatic
-PR creation, computer use, self-hosted execution, and automatic background import
-are excluded. Hosted work can access public repositories when explicitly requested.
+Use the existing OpenAI key setting, never ChatGPT OAuth. The initial patch-only implementation is superseded by the Git transport brief below.
+The current implementation uploads an exact working-tree snapshot, imports returned
+commits locally, and leaves authenticated push/PR creation to the existing host flow.
+Credentials, Git configuration and history are not uploaded. Computer use and
+self-hosted execution remain excluded.
 
 Auth, persisted state, remote cancellation, artifact paths, and usage accounting are
 the critical boundaries. API sessions retain data in the US and do not support ZDR.
@@ -75,3 +76,7 @@ streaming, approval-required tools, or automatic background recovery. Recovery
 after reopening currently requires resending the pending message. Local deletion
 does not delete the remote session; the standalone probe supports explicit remote
 deletion of its own checkpointed session.
+
+## Git transport implementation brief
+
+Acceptance: provision the exact thread working-tree snapshot through a bounded Git bundle and deterministic setup; verify the base before inference; export committed and uncommitted guest changes with the container carry-out helper; validate ancestry and import on the host without GitHub credentials in the guest. Persist terminal output before downloading so retry never repeats inference. Refuse adoption into a changed or dirty checkout and retain output for retry. Existing Create PR performs authenticated host push. Follow-up tasks provision fresh snapshots. Validate with real Git round trips, mocked API transport and the full local check; live API testing requires credentials unavailable on this host.

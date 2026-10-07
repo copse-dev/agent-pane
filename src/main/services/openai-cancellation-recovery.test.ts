@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { it, mock } from 'node:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import fs from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { abortAgent, runAgent } from './agent-service.ts'
@@ -20,6 +22,29 @@ import { z } from 'zod'
 for (const endpoint of ['/turns', '/session', '/items', '/artifacts']) {
   it(`reports post-cancellation ${endpoint} failure through the agent host`, async () => {
     const root = await mkdtemp(join(tmpdir(), 'copse-cancel-recovery-'))
+    const repo = join(root, 'repo')
+    await mkdir(repo)
+    execFileSync('git', ['init', '-b', 'feature'], { cwd: repo })
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.name=Test',
+        '-c',
+        'user.email=test@example.com',
+        'commit',
+        '--allow-empty',
+        '-m',
+        'initial',
+      ],
+      { cwd: repo },
+    )
+    const originalRead = fs.readFile
+    const workerMock = mock.method(fs, 'readFile', (...args: Parameters<typeof fs.readFile>) =>
+      typeof args[0] === 'string' && args[0].endsWith('openai-git-worker.cjs')
+        ? Promise.resolve(Buffer.from('// hosted helper fixture'))
+        : originalRead(...args),
+    )
     const previousRoot = process.env['COPSE_WORKSPACE_DIR']
     const previousModel = getSetting('model', 'auto:balanced')
     const previousKey = process.env['OPENAI_API_KEY']
@@ -37,6 +62,10 @@ for (const endpoint of ['/turns', '/session', '/items', '/artifacts']) {
     const fetchImpl: typeof fetch = async (input, init) => {
       const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
       assert.equal(url.origin, 'https://api.openai.com')
+      if (url.pathname === '/v1/files') return Response.json({ id: 'source' })
+      if (url.pathname === '/v1/files/source') return Response.json({ deleted: true })
+      if (url.pathname === '/v1/agents/environments/env')
+        return Response.json({ status: 'connected' })
       if (confirmed && url.pathname.endsWith(endpoint)) return new Response('', { status: 503 })
       if (url.pathname.endsWith('/events')) {
         if (init?.method === 'GET') return new Response('')
@@ -62,7 +91,12 @@ for (const endpoint of ['/turns', '/session', '/items', '/artifacts']) {
         )
       if (url.pathname.endsWith('/items') || url.pathname.endsWith('/artifacts')) return page([])
       if (cancelled) confirmed = true
-      return Response.json({ id: 'session', status: 'idle', usage: null })
+      return Response.json({
+        id: 'session',
+        status: 'idle',
+        usage: null,
+        environment: { id: 'env' },
+      })
     }
     const fetchMock = mock.method(globalThis, 'fetch', fetchImpl)
     try {
@@ -70,8 +104,8 @@ for (const endpoint of ['/turns', '/session', '/items', '/artifacts']) {
         {
           projectId: 'project',
           threadId: 'thread',
-          projectRoot: root,
-          root,
+          projectRoot: repo,
+          root: repo,
           checkoutMode: 'shared',
           branch: null,
         },
@@ -102,6 +136,7 @@ for (const endpoint of ['/turns', '/session', '/items', '/artifacts']) {
       assert.equal(checkpoint?.state.pending?.prompt.includes('task'), true)
     } finally {
       fetchMock.mock.restore()
+      workerMock.mock.restore()
       deleteApiKey('openai')
       invalidateProviderKeyStatus('openai')
       await setSetting('model', previousModel)
