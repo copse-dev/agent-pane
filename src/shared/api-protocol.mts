@@ -79,4 +79,6 @@
 // v49 versions saved-model invalidation reports and guarded recovery IPC.
 // v50 versions skill-source diagnostics and validated extra-root updates.
 // v51 versions the context_compacted agent chunk (OpenAI server-side compaction).
+// v52 versions event automation shapes.
+export const API_PROTOCOL_VERSION = 52 as const
 export const API_PROTOCOL_VERSION = 51 as const
