@@ -183,6 +183,43 @@ describe('transcript selection reply', () => {
     assert.deepEqual(quotes, [{ text: 'Selected text', reply: 'My reply' }])
   })
 
+  it('copies the captured passage after autofocus without changing the draft', () => {
+    const { transcript, popup, input } = fixture()
+    select(transcript, 0, 14)
+    document.getSelection()?.removeAllRanges()
+    for (const draft of ['', 'Keep my reply.']) {
+      input.value = draft
+      input.setSelectionRange(draft.length, draft.length)
+      input.dispatchEvent(new Event('input'))
+      const clipboardData = new window.DataTransfer()
+      const event = new window.ClipboardEvent('copy', { clipboardData, cancelable: true })
+      input.dispatchEvent(event)
+      assert.equal(event.defaultPrevented, true)
+      assert.equal(clipboardData.getData('text/plain'), 'Selected text ')
+      assert.equal(input.value, draft)
+      assert.equal(popup.hidden, false)
+      assert.equal(document.activeElement, input)
+    }
+  })
+
+  it('leaves selected reply text to native copy and ignores copy after dismissal', () => {
+    const { transcript, input } = fixture()
+    select(transcript, 0, 13)
+    input.value = 'My reply'
+    input.setSelectionRange(0, 2)
+    const copy = (): ClipboardEvent => {
+      const event = new window.ClipboardEvent('copy', {
+        clipboardData: new window.DataTransfer(),
+        cancelable: true,
+      })
+      input.dispatchEvent(event)
+      return event
+    }
+    assert.equal(copy().defaultPrevented, false)
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }))
+    assert.equal(copy().defaultPrevented, false)
+  })
+
   it('restores the captured passage for a right-click after textarea focus clears it', () => {
     const { transcript, popup } = fixture()
     select(transcript, 0, 13)

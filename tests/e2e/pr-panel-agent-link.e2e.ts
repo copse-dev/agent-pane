@@ -49,15 +49,18 @@ describe('PR panel agent-owned PR (mock gh)', () => {
     // the agent badge with a provider-named tooltip.
     const badge = await $('.pr-list-row[data-pr-section="linked"] .pr-list-agent-badge')
     await badge.waitForDisplayed({ timeout: 15_000 })
-    expect(await badge.getAttribute('data-tooltip')).toMatch(/opened by a cursor agent/i)
+    expect(await badge.getAttribute('data-tooltip')).toMatch(/linked to 1 agent thread: cursor/i)
 
     // Selecting the PR surfaces the "open agent thread" jump in the viewer meta.
     // This is the only intentional thread handoff for a Cursor agent run —
     // browser/chat navigation to cursor.com/agents stays on the web page.
     await $('.pr-list-row[data-pr-section="linked"]').click()
-    const openThreadBtn = await $('.pr-open-thread-btn')
+    const openThreadBtn = await $('.pr-open-thread-btn[data-thread-id="e2e-pr-agent-link-thread"]')
     await openThreadBtn.waitForDisplayed({ timeout: 15_000 })
-    expect(await openThreadBtn.getText()).toMatch(/open cursor agent thread/i)
+    expect(await openThreadBtn.getText()).toMatch(/agent-linked/i)
+    await expect($('.pr-thread-group[data-relationship-group="produced"]')).toHaveText(
+      'Producing threads\nNo recorded producing thread.',
+    )
 
     await openThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('Agent PR chat')

@@ -7,6 +7,7 @@ import type { McpServerStatus } from './types/mcp.ts'
 import type { DemoTrace } from './demo-traces.ts'
 import type { FollowUpSuggestion } from './follow-ups/types.ts'
 import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
+import type { GhPrDetails } from './types/git.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
 
@@ -29,6 +30,8 @@ export interface DemoScenario {
   project: Project
   threads: Thread[]
   settings: Readonly<Record<string, unknown>>
+  /** Optional read-only PR showcase data for the browser demo's PR panel. */
+  pullRequests?: GhPrDetails[]
   /**
    * A recorded turn the demo can replay when its prompt is submitted. Scenarios
    * without one are static fixtures for visual tests; a scenario with one is a
@@ -638,6 +641,7 @@ function conciseThreadScenario(
 }
 
 export const DEMO_SCENARIOS: readonly DemoScenario[] = [
+  // The first scenario remains the marketing landing walkthrough.
   {
     // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
     // visual-test fixture. It is also what the marketing hero iframe embeds.
@@ -2421,6 +2425,108 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         updatedAt: FIXED_TIME,
       },
     ],
+  },
+  {
+    id: 'pr-relations',
+    label: 'PR producing and related threads',
+    project: project('demo-pr-relations', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      filesPaneOpen: true,
+      rightPanelMode: 'prs',
+      layout: {
+        projectsPaneWidth: 220,
+        filesPaneWidth: 660,
+        filesPaneHeight: 360,
+        fileTreeWidth: 220,
+      },
+    },
+    threads: [
+      {
+        id: 'pr-producer',
+        title: 'Implement widget',
+        status: 'idle',
+        messages: [],
+        prProductions: [
+          {
+            pr: {
+              owner: 'acme',
+              repo: 'widgets',
+              number: 42,
+              url: 'https://github.com/acme/widgets/pull/42',
+            },
+            source: 'pr-create',
+            eventId: 'demo-create-42',
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'pr-reviewer',
+        title: 'Review widget',
+        status: 'idle',
+        messages: [
+          {
+            id: 'review-refs',
+            role: 'user',
+            content:
+              'Review https://github.com/acme/widgets/pull/42 and https://github.com/acme/widgets/pull/43',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        prRefs: [42, 43].map((number) => ({
+          owner: 'acme',
+          repo: 'widgets',
+          number,
+          url: `https://github.com/acme/widgets/pull/${String(number)}`,
+        })),
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'pr-mentioned',
+        title: 'Release planning',
+        status: 'idle',
+        messages: [
+          {
+            id: 'release-ref',
+            role: 'user',
+            content: 'Include https://github.com/acme/widgets/pull/42 in the release.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        prRefs: [
+          {
+            owner: 'acme',
+            repo: 'widgets',
+            number: 42,
+            url: 'https://github.com/acme/widgets/pull/42',
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    pullRequests: [42, 43].map((number) => ({
+      owner: 'acme',
+      repo: 'widgets',
+      number,
+      url: `https://github.com/acme/widgets/pull/${String(number)}`,
+      title: number === 42 ? 'Add widget support' : 'Follow up on widget review',
+      state: 'OPEN',
+      body: '',
+      files: [],
+      checks: 'success',
+    })),
   },
   {
     id: 'chat-layout-styling',

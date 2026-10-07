@@ -1,5 +1,7 @@
 import { runCommand } from '../exec/command-runner.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { getWorkspaceRoot, getActiveProjectId } from '../workspace.ts'
+import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
+import { getPrThreadProvenanceText } from './pr-thread-provenance.ts'
 import { isGhAvailable } from '../tool-availability.ts'
 import { decodeWithSchema, safeJsonParse, type JsonDecoder } from '@shared/safe-json.ts'
 import { z } from 'zod'
@@ -20,6 +22,9 @@ const ghPrListSchema = z.array(ghPrListEntrySchema)
 export type GhPrListEntry = z.infer<typeof ghPrListEntrySchema>
 
 const ghPrViewDetailsSchema = z.object({
+  commits: z
+    .array(z.object({ oid: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/iu) }))
+    .optional(),
   state: optionalString,
   number: optionalNumber,
   title: optionalString,
@@ -390,6 +395,8 @@ export async function getGhPrViewText(opts: {
   includeChecks: boolean
 }): Promise<string> {
   if (!isGhAvailable()) return 'gh is not available on this system.'
+  const context = currentThreadExecutionContext()
+  const projectId = context?.projectId ?? getActiveProjectId()
   const jsonFields = [
     'state',
     'number',
@@ -404,15 +411,23 @@ export async function getGhPrViewText(opts: {
     'additions',
     'deletions',
     'changedFiles',
+    'commits',
   ]
   if (opts.includeChecks) jsonFields.push('statusCheckRollup')
   const args = ['pr', 'view', '--json', jsonFields.join(',')]
   if (opts.number !== undefined) args.push(String(opts.number))
-  const { stdout, stderr, code } = await runGh(args)
+  const { stdout, stderr, code } = await runGh(args, context ? { cwd: context.root } : {})
   if (code !== 0) return formatGhError(stderr, code)
   const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewDetailsSchema))
   if (!pr) return stdout.trim() || '(no output)'
-  return formatGhPrView(pr)
+  const provenance = pr.url
+    ? await getPrThreadProvenanceText(
+        projectId,
+        pr.url,
+        pr.commits?.map((commit) => commit.oid),
+      )
+    : 'Thread provenance unavailable: missing PR URL.'
+  return `${formatGhPrView(pr)}\n\n${provenance}`
 }
 
 export function formatGhPrFiles(pr: GhPrViewDetails): string {

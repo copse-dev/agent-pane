@@ -463,6 +463,11 @@ import {
 } from '../services/remote/cursor-cloud-models.ts'
 import { createBestEffortExternalCursorAgentDiscovery } from '../services/remote/cursor-agent-discovery.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
+import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
+import {
+  lookupPrThreadRelationships,
+  lookupThreadPrRelationships,
+} from '../services/thread-store.ts'
 
 import {
   gatewayListDir,
@@ -3095,9 +3100,20 @@ export function registerAllHandlers(
     const parsedUrl = parseIpcArgs(z.url().max(2048), [url])
     return resolveGithubPrRef(parsedUrl)
   })
-  // Local-only: which PRs in the active project were opened by an agent this app
-  // launched (issue #690, Q6). No network, no user input — reads the thread metas.
+  // Local-only legacy agent/PR associations; reads thread metadata.
   ipcMain.handle('gh:agent-pr-links', () => listActiveProjectAgentPrLinks())
+  ipcMain.handle('gh:pr-thread-relationships', (event, input: unknown) => {
+    assertMainFrameSender(event, win)
+    const pr = parseIpcArgs(prRefSchema, [input])
+    const projectId = getActiveProjectId()
+    return projectId ? lookupPrThreadRelationships(projectId, pr) : []
+  })
+  ipcMain.handle('gh:thread-pr-relationships', (event, input: unknown) => {
+    assertMainFrameSender(event, win)
+    const threadId = parseIpcArgs(z.string().min(1), [input])
+    const projectId = getActiveProjectId()
+    return projectId ? lookupThreadPrRelationships(projectId, threadId) : []
+  })
   // PR lifecycle write actions. Unlike the read handlers above, these mutate
   // GitHub state, so each asserts a main-frame sender before acting.
   const parsePrRef = (

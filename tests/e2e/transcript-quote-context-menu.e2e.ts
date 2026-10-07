@@ -174,6 +174,35 @@ describe('transcript selection: quote into the reply', () => {
     await saveAppScreenshot(COMPOSER_SHOT)
   })
 
+  it('copies the highlighted passage after autofocus and prefers selected reply text', async () => {
+    await setComposerValue('')
+    await dragSelectText(SELECTED_PHRASE)
+    const reply = $('.transcript-selection-reply')
+    await reply.waitForDisplayed({ timeout: 5_000 })
+    const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+    for (const draft of ['', 'Keep this reply.']) {
+      if (draft) await browser.keys(draft)
+      await browser.execute(async () => navigator.clipboard.writeText('clipboard sentinel'))
+      await browser.keys([modifier, 'c'])
+      expect(await browser.execute(async () => navigator.clipboard.readText())).toBe(
+        SELECTED_PHRASE,
+      )
+      expect(await reply.getValue()).toBe(draft)
+      expect(
+        await browser.execute(
+          () => document.activeElement === document.querySelector('.transcript-selection-reply'),
+        ),
+      ).toBe(true)
+    }
+    await browser.keys([modifier, 'a'])
+    await browser.keys([modifier, 'c'])
+    expect(await browser.execute(async () => navigator.clipboard.readText())).toBe(
+      'Keep this reply.',
+    )
+    await saveAppScreenshot('transcript-quote-copy-shortcut.png')
+    await browser.keys('Escape')
+  })
+
   it('keeps selected-text menu actions after inline reply autofocus', async () => {
     for (const draft of ['', 'Keep this reply.']) {
       await setComposerValue('')

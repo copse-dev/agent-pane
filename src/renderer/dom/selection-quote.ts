@@ -233,6 +233,15 @@ export function bindSelectionQuote(
       updateControls()
     }
   })
+  input.addEventListener('copy', (event) => {
+    // Autofocus replaces the native passage selection with a textarea caret.
+    // Let selected reply text copy normally; otherwise copy the highlighted passage.
+    if (popup.hidden || input.selectionStart !== input.selectionEnd || !event.clipboardData) return
+    const text = selectedRange?.toString()
+    if (!text) return
+    event.clipboardData.setData('text/plain', text)
+    event.preventDefault()
+  })
   input.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || event.isComposing || event.shiftKey) return
     event.preventDefault()

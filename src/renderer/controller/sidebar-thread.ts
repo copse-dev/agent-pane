@@ -37,6 +37,7 @@ export interface SidebarThread {
    * thread's metadata by the loader, or computed at compaction time.
    */
   prRefs?: GithubPrRef[]
+  prProductions?: Thread['prProductions']
 }
 
 /**
@@ -52,16 +53,22 @@ export interface SidebarThread {
  * disk (`messagesLoaded: false`) — the cache stands alone.
  */
 export function sidebarPrRefs(thread: SidebarThread): GithubPrRef[] {
+  const cached = [...(thread.prRefs ?? []), ...(thread.prProductions ?? []).map((item) => item.pr)]
   if (thread.messages && thread.messagesLoaded !== false) {
     const scraped = collectThreadPrRefs({
       messages: thread.messages,
       ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
     })
     const seen = new Set(scraped.map(githubPrKey))
-    const cachedOnly = (thread.prRefs ?? []).filter((ref) => !seen.has(githubPrKey(ref)))
+    const cachedOnly = cached.filter((ref) => {
+      const key = githubPrKey(ref)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
     return [...scraped, ...cachedOnly]
   }
-  return thread.prRefs ?? []
+  return [...new Map(cached.map((ref) => [githubPrKey(ref), ref])).values()]
 }
 
 /**
@@ -95,5 +102,6 @@ export function compactSidebarThread(thread: SidebarThread): SidebarThread {
     ...(thread.automation ? { automation: thread.automation } : {}),
     ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
     prRefs: sidebarPrRefs(thread),
+    ...(thread.prProductions ? { prProductions: thread.prProductions } : {}),
   }
 }
