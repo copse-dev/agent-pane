@@ -102,6 +102,12 @@ import {
 import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import { getThreadExecutionContext, isThreadCheckoutDeferred } from '../thread-execution-context.ts'
 import { ensureWritableThreadCheckout } from '../deferred-worktree.ts'
+import { acpAgentCanDeferCheckout } from './acp-deferred-checkout.ts'
+import {
+  ACP_READONLY_CHECKOUT_PROMPT_NOTE,
+  AcpReadonlyCheckoutUnavailableError,
+  acpWriteAccessContinuationPrompt,
+} from './acp-write-access.ts'
 
 /**
  * Run a turn against an external ACP agent selected as `acp:<id>` in the model
@@ -415,9 +421,111 @@ export async function runWithAcpRetry<T>(
   }
 }
 
-export async function runAcpAgentFromSettings(
+/**
+ * Run one ACP turn. A turn that starts on a read-only view of the user's
+ * checkout (a deferred worktree) may end with the thread owning a worktree: the
+ * agent called `request_write_access`, or a bridged write tool allocated. Its
+ * process cannot follow, so a continuation turn follows immediately under the
+ * worktree. The pool respawns the agent there and reattaches the same agent
+ * session; when it cannot, the continuation opens with the handover note and the
+ * agent works from Copse's transcript (docs/plans/acp-session-continuity.md).
+ */
+export function runAcpAgentFromSettings(options: RunAcpAgentOptions): Promise<RunAcpAgentResult> {
+  return runAcpTurnWithContinuation(options, {
+    runTurn: runAcpAgentTurn,
+    isCheckoutDeferred: isThreadCheckoutDeferred,
+    executionRoot: getAgentExecutionRoot,
+    allocateCheckout: ensureWritableThreadCheckout,
+  })
+}
+
+/** What {@link runAcpTurnWithContinuation} needs from the live thread and the agent. */
+export interface AcpContinuationDependencies {
+  runTurn: (
+    options: RunAcpAgentOptions,
+  ) => Promise<RunAcpAgentResult & { startedReadonly: boolean }>
+  /** The thread is still a read-only view of the user's checkout. */
+  isCheckoutDeferred: () => boolean
+  /** The root the next turn's agent runs in; the worktree once one is granted. */
+  executionRoot: () => string | null
+  /** Give the thread its worktree now, for a read-only start that cannot proceed. */
+  allocateCheckout: () => Promise<unknown>
+}
+
+export async function runAcpTurnWithContinuation(
   options: RunAcpAgentOptions,
+  dependencies: AcpContinuationDependencies,
 ): Promise<RunAcpAgentResult> {
+  let first: Awaited<ReturnType<AcpContinuationDependencies['runTurn']>>
+  try {
+    first = await dependencies.runTurn(options)
+  } catch (err) {
+    if (!(err instanceof AcpReadonlyCheckoutUnavailableError)) throw err
+    // The agent never started, so nothing ran or streamed: take the worktree up
+    // front, as an agent that cannot defer does, and run the same turn writable.
+    await dependencies.allocateCheckout()
+    first = await dependencies.runTurn(options)
+  }
+  const { startedReadonly, ...result } = first
+  // Continue only from a turn that ended on its own. A stop, an error, or a
+  // refusal leaves the next user message to open the session in the worktree.
+  if (
+    !startedReadonly ||
+    dependencies.isCheckoutDeferred() ||
+    result.stopReason !== 'end_turn' ||
+    options.signal.aborted
+  ) {
+    return result
+  }
+  const root = dependencies.executionRoot()
+  if (!root) return result
+  let second: RunAcpAgentResult
+  try {
+    second = await dependencies.runTurn({
+      ...options,
+      userPrompt: acpWriteAccessContinuationPrompt(root),
+      // Read only if the agent could not carry its session over: it then starts
+      // fresh and needs the conversation, including this turn.
+      priorMessages: [
+        ...options.priorMessages,
+        { role: 'user', content: options.userPrompt },
+        ...result.messages,
+      ],
+      // The first turn already ran the skills and operator guidance.
+      invokedSkills: [],
+    })
+  } catch (err) {
+    if (!(err instanceof AcpTurnFailure)) throw err
+    // Keep what the first turn streamed: the caller records `partial` as the
+    // whole turn, and the user already saw it.
+    const earlier = result.messages
+      .flatMap((message) =>
+        message.role === 'assistant' && typeof message.content === 'string'
+          ? [message.content]
+          : [],
+      )
+      .join('')
+    throw new AcpTurnFailure(err.cause, {
+      assistantText: `${earlier}${err.partial.assistantText}`,
+      usage: {
+        inputTokens: result.usage.inputTokens + err.partial.usage.inputTokens,
+        outputTokens: result.usage.outputTokens + err.partial.usage.outputTokens,
+      },
+    })
+  }
+  return {
+    stopReason: second.stopReason,
+    messages: [...result.messages, ...second.messages],
+    usage: {
+      inputTokens: result.usage.inputTokens + second.usage.inputTokens,
+      outputTokens: result.usage.outputTokens + second.usage.outputTokens,
+    },
+  }
+}
+
+async function runAcpAgentTurn(
+  options: RunAcpAgentOptions,
+): Promise<RunAcpAgentResult & { startedReadonly: boolean }> {
   perfMark('ttft:acp-preflight-start')
   // On an SSH workspace, ACP is blocked unless the user opted into remote ACP
   // (docs/plans/acp-over-ssh.md), in which case the agent spawns on the remote
@@ -437,7 +545,17 @@ export async function runAcpAgentFromSettings(
   // fixed when the session starts, so Copse cannot intercept its first write.
   // A thread that deferred its worktree under a native model and then switched
   // to an ACP agent gets the worktree now, before the session sees any root.
-  if (isThreadCheckoutDeferred()) await ensureWritableThreadCheckout()
+  // The exception is an agent that can start read-only and be restarted in the
+  // worktree it asks for (see `acp-write-access.ts`). That needs the sandbox to
+  // contain the agent's own writes, which is decided here from the turn's real
+  // spawn, not from when the thread deferred: the setting may have moved since.
+  if (
+    isThreadCheckoutDeferred() &&
+    !acpAgentCanDeferCheckout(agent.id, { remote: isActiveSshWorkspace() })
+  ) {
+    await ensureWritableThreadCheckout()
+  }
+  const readonlyCheckout = isThreadCheckoutDeferred()
   const cwd = getAgentExecutionRoot()
   if (!cwd) {
     throw new Error('Open a folder before running an ACP agent so it has a workspace to act in.')
@@ -507,6 +625,7 @@ export async function runAcpAgentFromSettings(
     ...(sandbox ? { sandbox } : {}),
     ...(permissionMode ? { permissionMode } : {}),
     ...(configOptions ? { configOptions } : {}),
+    ...(readonlyCheckout ? { readonlyCheckout: true } : {}),
   }
   // Provider keys configured for this agent cross to a remote SSH host only
   // with the user's consent; on denial the agent runs with whatever
@@ -650,6 +769,7 @@ export async function runAcpAgentFromSettings(
       fresh ? options.priorMessages : [],
       {
         sandboxed,
+        readonlyCheckout,
         includeNotes: fresh,
         includeImages,
         ...(options.operatorInstructions
@@ -684,6 +804,8 @@ export async function runAcpAgentFromSettings(
       hasProgress,
     }))
   } catch (err) {
+    // Not a failed turn: the read-only agent could not start. The caller recovers.
+    if (err instanceof AcpReadonlyCheckoutUnavailableError) throw err
     flushHeldText()
     // The turn died mid-flight. Attribute what it visibly consumed (estimated —
     // the agent never got to report usage) and hand the partial transcript to
@@ -745,6 +867,7 @@ export async function runAcpAgentFromSettings(
       ? [{ role: 'assistant', content: stripCursorAcpTransportNoise(assistantText) }]
       : [],
     usage: { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens },
+    startedReadonly: readonlyCheckout,
   }
 }
 
@@ -1325,6 +1448,8 @@ export function buildAcpPrompt(
   priorMessages: LLMMessage[],
   opts?: {
     sandboxed?: boolean
+    /** The session starts on a read-only view of the user's checkout. */
+    readonlyCheckout?: boolean
     includeNotes?: boolean
     operatorInstructions?: string
     skills?: string
@@ -1332,7 +1457,10 @@ export function buildAcpPrompt(
 ): string {
   const includeNotes = opts?.includeNotes ?? true
   const note = includeNotes
-    ? ACP_TURN_PROMPT_NOTE + (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '') + '\n\n'
+    ? ACP_TURN_PROMPT_NOTE +
+      (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '') +
+      (opts?.readonlyCheckout ? `\n\n${ACP_READONLY_CHECKOUT_PROMPT_NOTE}` : '') +
+      '\n\n'
     : ''
   const operatorBlock = opts?.operatorInstructions
     ? `\n\n---\n\n## Copse guidance\n\n${opts.operatorInstructions}`
@@ -1365,6 +1493,7 @@ export function buildAcpPromptContent(
   priorMessages: LLMMessage[],
   opts?: {
     sandboxed?: boolean
+    readonlyCheckout?: boolean
     includeNotes?: boolean
     operatorInstructions?: string
     skills?: string
@@ -1373,6 +1502,7 @@ export function buildAcpPromptContent(
 ): ContentBlock[] {
   const text = buildAcpPrompt(userPrompt, priorMessages, {
     ...(opts?.sandboxed !== undefined ? { sandboxed: opts.sandboxed } : {}),
+    ...(opts?.readonlyCheckout ? { readonlyCheckout: true } : {}),
     ...(opts?.includeNotes !== undefined ? { includeNotes: opts.includeNotes } : {}),
     ...(opts?.operatorInstructions !== undefined
       ? { operatorInstructions: opts.operatorInstructions }

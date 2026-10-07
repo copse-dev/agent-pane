@@ -8,6 +8,8 @@ import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@sh
 import { mountPrPane } from './pr-pane.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import type { GitDiffMonaco } from '../monaco/git-diff-viewer.ts'
+import type { AppStore } from '@shared/store/store.ts'
+import type { PrThreadRelationship } from '@shared/git/thread-pr-relations.ts'
 
 const noopUnsub = (): (() => void) => () => {}
 
@@ -79,10 +81,13 @@ function mount(
     workspacePrs?: readonly GhPrSummary[]
     prDetails?: ApiClient['gh']['prDetails']
     prChecks?: ApiClient['gh']['prChecks']
+    gh?: Partial<ApiClient['gh']>
   } = {},
 ): {
   listRoot: HTMLElement
   viewerRoot: HTMLElement
+  store: AppStore
+  dispose: () => void
 } {
   const store = createStore({
     activeProjectId: 'project-1',
@@ -105,13 +110,14 @@ function mount(
       listMyOpenPrs: async () => [...otherPrs],
       prChecks: options.prChecks ?? (async (): Promise<GhPrChecksState> => 'no_checks'),
       prDetails: options.prDetails ?? (async (): Promise<GhPrDetails | null> => null),
+      ...options.gh,
     },
   }
   const listRoot = document.createElement('div')
   const viewerRoot = document.createElement('div')
   document.body.append(listRoot, viewerRoot)
-  mountPrPane(listRoot, viewerRoot, store, api, MONACO_STUB)
-  return { listRoot, viewerRoot }
+  const dispose = mountPrPane(listRoot, viewerRoot, store, api, MONACO_STUB)
+  return { listRoot, viewerRoot, store, dispose }
 }
 
 async function settle(): Promise<void> {
@@ -142,6 +148,16 @@ afterEach(() => {
 })
 
 describe('pr pane filter (issue #2482)', () => {
+  it('keeps relationship labels with repository and CI metadata in the current row layout', async () => {
+    const { listRoot } = mount()
+    await settle()
+    const row = listRoot.querySelector('.pr-list-row[data-pr-section="linked"]')
+    assert.ok(row)
+    assert.equal(row.querySelector('.pr-list-meta .pr-list-relationship')?.textContent, 'Related')
+    assert.ok(row.querySelector('.pr-list-meta .pr-list-status'))
+    assert.equal(row.querySelectorAll('.pr-list-status').length, 1)
+  })
+
   it('loads conflict metadata for titled unselected rows in every visible group', async () => {
     const linked = { ...LINKED_PR, number: 801, url: 'https://github.com/acme/widgets/pull/801' }
     const secondLinked = {
@@ -233,6 +249,33 @@ describe('pr pane filter (issue #2482)', () => {
     assert.equal(files.hidden, true)
     assert.equal(description.hidden, false)
     assert.equal(viewerRoot.querySelector('.git-diff-editor-wrap')?.hasAttribute('hidden'), true)
+  })
+
+  it('keeps relationships on Overview and New thread available as a primary action', async () => {
+    const { viewerRoot, dispose } = mount([], {
+      workspacePrs: [],
+      prDetails: async (_owner, _repo, number) =>
+        number === LINKED_PR.number ? { ...LINKED_PR, body: 'Summary', files: [] } : null,
+    })
+    await settle()
+    const relationships = (): HTMLElement => {
+      const host = viewerRoot.querySelector<HTMLElement>('.pr-thread-relationships')
+      assert.ok(host)
+      return host
+    }
+    assert.equal(relationships().hidden, false)
+    const menu = viewerRoot.querySelector<HTMLDetailsElement>('.pr-more-actions')
+    assert.ok(menu)
+    assert.equal(menu.open, false)
+    assert.equal(menu.querySelector('.pr-new-thread-btn'), null)
+    assert.ok(viewerRoot.querySelector('.pr-viewer-actions > .pr-new-thread-btn'))
+    for (const section of ['comments', 'checks', 'files']) {
+      viewerRoot.querySelector<HTMLButtonElement>(`[data-section="${section}"]`)?.click()
+      assert.equal(relationships().hidden, true, section)
+    }
+    viewerRoot.querySelector<HTMLButtonElement>('[data-section="overview"]')?.click()
+    assert.equal(relationships().hidden, false)
+    dispose()
   })
 
   it('shows known conflicts as an X while retaining the failing CI label', async () => {
@@ -327,6 +370,99 @@ describe('pr pane filter (issue #2482)', () => {
     assert.ok(linked.querySelector('.pr-list-status.is-merged svg[data-icon="git-merge"]'))
     assert.match(linked.textContent, /Already shipped/)
   })
+  for (const change of ['pr', 'project', 'dispose']) {
+    it(`discards a delayed selection after switching ${change}`, async () => {
+      let complete: (rows: PrThreadRelationship[]) => void = () => {
+        throw new Error('relationship request was not started')
+      }
+      const pending = new Promise<PrThreadRelationship[]>((resolve) => {
+        complete = resolve
+      })
+      const details: number[] = []
+      let projectChanged = false
+      const { listRoot, viewerRoot, store, dispose } = mount([], {
+        gh: {
+          prThreadRelationships: async (pr) => (pr.number === 42 && !projectChanged ? pending : []),
+        },
+        prDetails: async (_owner, _repo, number) => {
+          details.push(number)
+          return null
+        },
+      })
+      try {
+        await settle()
+        if (change === 'pr') {
+          const row = [...listRoot.querySelectorAll<HTMLElement>('.pr-list-row')].find((element) =>
+            element.textContent.includes(WORKSPACE_PR.title),
+          )
+          assert.ok(row)
+          row.click()
+        } else if (change === 'project') {
+          projectChanged = true
+          store.getState().activeProjectId = 'project-2'
+          store.emit('workspace_changed')
+        } else dispose()
+        await settle()
+        const before = viewerRoot.textContent
+        const callsBefore = [...details]
+        complete([
+          { threadId: 'stale', title: 'Stale producer', kinds: ['produced'], productions: [] },
+        ])
+        await settle()
+        assert.deepEqual(details, callsBefore, 'obsolete selection must not request GitHub details')
+        assert.equal(
+          viewerRoot.textContent,
+          before,
+          'obsolete selection must not repaint the viewer',
+        )
+        assert.ok(!viewerRoot.textContent.includes('Stale producer'))
+      } finally {
+        dispose()
+      }
+    })
+  }
+
+  for (const installed of [false, true]) {
+    it(`refreshes selected local relationships with ${installed ? 'unauthenticated' : 'missing'} GitHub CLI`, async () => {
+      let rows: PrThreadRelationship[] = []
+      const { listRoot, viewerRoot, store, dispose } = mount([], {
+        gh: {
+          status: async () => ({ installed, authenticated: false, username: null, message: null }),
+          prThreadRelationships: async () => rows,
+        },
+      })
+      try {
+        await settle()
+        listRoot.querySelector<HTMLElement>('.pr-list-row')?.click()
+        await settle()
+        assert.match(viewerRoot.textContent, /No recorded producing thread/)
+        rows = [
+          {
+            threadId: 'producer',
+            title: 'Newly recorded producer',
+            kinds: ['produced'],
+            productions: [],
+          },
+        ]
+        store.emit('threads_changed')
+        await settle()
+        assert.equal(
+          viewerRoot.querySelector('[data-thread-id="producer"] .pr-thread-title')?.textContent,
+          'Newly recorded producer',
+        )
+        assert.match(
+          viewerRoot.querySelector('.pr-viewer-title')?.textContent ?? '',
+          /#42 acme\/widgets/,
+        )
+        assert.match(
+          viewerRoot.textContent,
+          installed ? /Sign in with GitHub CLI/ : /Install GitHub CLI/,
+        )
+      } finally {
+        dispose()
+      }
+    })
+  }
 
   it('renders a filter input and all three groups unfiltered', async () => {
     const { listRoot } = mount()
@@ -336,7 +472,7 @@ describe('pr pane filter (issue #2482)', () => {
     assert.ok(filter, 'expected a .pr-pane-filter input')
     assert.equal(filter.placeholder, 'Filter pull requests')
     assert.deepEqual(rowTitles(listRoot), ['Fix login flow', 'Improve documentation'])
-    assert.ok(sectionTitles(listRoot).some((t) => /from chat/i.test(t)))
+    assert.ok(sectionTitles(listRoot).some((t) => /related prs/i.test(t)))
     assert.ok(sectionTitles(listRoot).some((t) => /acme\/widgets/i.test(t)))
   })
 

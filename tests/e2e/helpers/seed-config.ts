@@ -241,6 +241,11 @@ export function writeSeedConfig(
   // seed so the replacement process rebuilds from the thread directories.
   for (const projectId of seededProjectIds) {
     invalidateThreadCatalog(projectId)
+    // Do not unlink a SQLite database while the outgoing app still has it open.
+    // The e2e launcher consumes this marker after shutdown, before opening stores.
+    const projectDir = join(e2eWorkspaceDir(), projectId)
+    mkdirSync(projectDir, { recursive: true })
+    writeFileSync(join(projectDir, '.e2e-reset-thread-index'), '')
   }
 }
 

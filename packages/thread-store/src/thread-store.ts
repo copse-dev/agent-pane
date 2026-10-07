@@ -13,7 +13,7 @@ import {
   closeSync,
 } from 'node:fs'
 import { promises as fsPromises } from 'node:fs'
-import { dirname, join, relative, resolve as resolvePath, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve as resolvePath, sep } from 'node:path'
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import type {
   Message,
@@ -70,6 +70,14 @@ import { isRecord, parseJsonUnknown } from '@copse/std/unknown-value.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
 import {
+  ThreadPrRelationshipIndex,
+  prProductionSchema,
+  commitProductionSchema,
+  type PrProduction,
+  type CommitProduction,
+  type PrThreadRelationship,
+} from './thread-pr-relations.ts'
+import {
   resolveProjectDir,
   resolveStrictlyInside,
   resolveInsideWithoutSymlinks,
@@ -77,6 +85,7 @@ import {
 } from './environment.ts'
 import { runSerialized } from './write-queue.ts'
 import { isNonNull } from '@copse/std/nullish.ts'
+import { SqliteThreadIndex, THREAD_INDEX_FILE } from './sqlite-thread-index.ts'
 
 /**
  * Filesystem-native thread store (issue #644). Each thread is a self-contained
@@ -110,7 +119,7 @@ const HISTORY_EDIT_TRANSACTION_FILE = 'history-edit-transaction.json'
 const HISTORY_EDIT_UNDO_FILE = 'history-edit-undo.json'
 const HISTORY_EDIT_VERSION = 1
 const CATALOG_FILE = 'catalog.jsonl'
-const AGENT_PR_INDEX_FILE = 'agent-pr-index.jsonl'
+const AGENT_PR_INDEX_FILE = 'agent-pr-index-v2.jsonl'
 const STREAM_STATS_FILE = 'stream-stats.jsonl'
 const REASONING_CHECKPOINTS_FILE = 'reasoning-checkpoints.jsonl'
 const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
@@ -201,6 +210,7 @@ function assertStorePath(path: string): void {
 
 function writeStoreFileSync(path: string, data: string, mode?: number): void {
   assertStorePath(path)
+  markIndexSourceWrite(path)
   const fd = openSync(
     path,
     constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
@@ -215,6 +225,7 @@ function writeStoreFileSync(path: string, data: string, mode?: number): void {
 
 async function writeStoreFileAsync(path: string, data: string, mode?: number): Promise<void> {
   assertStorePath(path)
+  markIndexSourceWrite(path)
   await fsPromises.writeFile(path, data, {
     flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
     ...(mode === undefined ? {} : { mode }),
@@ -242,6 +253,7 @@ async function appendJsonlLine(path: string, line: string): Promise<void> {
   assertStorePath(path)
   await fsPromises.mkdir(dirname(path), { recursive: true })
   assertStorePath(path)
+  markIndexSourceWrite(path)
   const handle = await fsPromises.open(
     path,
     constants.O_RDWR | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW,
@@ -266,6 +278,7 @@ function atomicWriteFile(path: string, data: string, mode?: number): void {
   const tmp = `${path}.copse-${String(process.pid)}.tmp`
   if (mode === undefined) writeStoreFileSync(tmp, data)
   else writeStoreFileSync(tmp, data, mode)
+  markIndexSourceWrite(path)
   renameSync(tmp, path)
 }
 
@@ -276,6 +289,7 @@ async function atomicWriteFileAsync(path: string, data: string, mode?: number): 
   try {
     if (mode === undefined) await writeStoreFileAsync(tmp, data)
     else await writeStoreFileAsync(tmp, data, mode)
+    markIndexSourceWrite(path)
     await fsPromises.rename(tmp, path)
   } catch (error) {
     await fsPromises.rm(tmp, { force: true }).catch(() => undefined)
@@ -445,7 +459,15 @@ function writeThread(projectId: string, thread: Thread): void {
   const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
   const { body, preservedRefs } = rebuildSpinePreservingNonMessageLines(existingRaw, spine)
   writeStoreFileSync(join(dir, EVENTS_FILE), body)
-  writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(metaOf(thread))}\n`)
+  const previous = readMeta(dir)
+  writeStoreFileSync(
+    join(dir, META_FILE),
+    `${JSON.stringify({
+      ...metaOf(thread),
+      ...(previous?.prProductions ? { prProductions: previous.prProductions } : {}),
+      ...(previous?.commitProductions ? { commitProductions: previous.commitProductions } : {}),
+    })}\n`,
+  )
   invalidateKnownMessageIds(dir)
 
   pruneStaleFiles(dir, files, preservedRefs)
@@ -513,7 +535,7 @@ async function mapConcurrent<T, R>(
   return results
 }
 
-async function readOrNull(path: string): Promise<string | null> {
+async function readOrNull(path: string, strict = false): Promise<string | null> {
   try {
     assertStorePath(path)
     const handle = await fsPromises.open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
@@ -522,7 +544,8 @@ async function readOrNull(path: string): Promise<string | null> {
     } finally {
       await handle.close()
     }
-  } catch {
+  } catch (error) {
+    if (strict && !(isRecord(error) && error['code'] === 'ENOENT')) throw error
     return null
   }
 }
@@ -599,12 +622,13 @@ async function readThread(
   projectId: string,
   threadId: string,
   options: ThreadLoadOptions = {},
+  strict = false,
 ): Promise<Thread | null> {
   recoverPendingHistoryEdit(projectId, threadId)
   const dir = threadDir(projectId, threadId)
   const [metaRaw, eventsRaw] = await Promise.all([
-    readOrNull(join(dir, META_FILE)),
-    readOrNull(join(dir, EVENTS_FILE)),
+    readOrNull(join(dir, META_FILE), strict),
+    readOrNull(join(dir, EVENTS_FILE), strict),
   ])
   const meta = parseMeta(metaRaw)
   if (meta === null) return null
@@ -689,15 +713,17 @@ async function readThreadMetaOnly(
   projectId: string,
   threadId: string,
   options: ThreadLoadOptions = {},
+  strict = false,
 ): Promise<Thread | null> {
   const dir = threadDir(projectId, threadId)
-  const meta = parseMeta(await readOrNull(join(dir, META_FILE)))
+  const meta = parseMeta(await readOrNull(join(dir, META_FILE), strict))
   if (meta === null) return null
   if (options.includeArchived === false && meta.archivedAt != null) return null
   let spineBytes = 0
   try {
     spineBytes = (await fsPromises.stat(join(dir, EVENTS_FILE))).size
-  } catch {
+  } catch (error) {
+    if (strict && !(isRecord(error) && error['code'] === 'ENOENT')) throw error
     // No spine file at all — a brand-new thread with nothing written yet.
   }
   // An empty spine means the transcript really is empty, and saying so lets
@@ -810,7 +836,7 @@ async function backfillSelectedThreadPrRefs(
 ): Promise<void> {
   const pending: string[] = []
   for (const threadId of new Set(threadIds)) {
-    const meta = parseMeta(await readOrNull(join(threadDir(projectId, threadId), META_FILE)))
+    const meta = parseMeta(await readOrNull(join(threadDir(projectId, threadId), META_FILE), true))
     if (meta === null || meta.prRefs !== undefined || meta.archivedAt != null) continue
     pending.push(threadId)
   }
@@ -828,7 +854,7 @@ async function backfillSelectedThreadPrRefs(
     pending,
     async (threadId) => {
       try {
-        const thread = await readThread(projectId, threadId)
+        const thread = await readThread(projectId, threadId, {}, true)
         if (!thread) throw new Error(`Could not read thread ${threadId}`)
         const prRefs = collectThreadPrRefs(thread)
         // Transcript scanning stays concurrent and outside the foreground queue,
@@ -837,7 +863,7 @@ async function backfillSelectedThreadPrRefs(
         // update that landed during the scan cannot be overwritten.
         const committedRefs = await runStoreWrite(projectId, async () => {
           const path = join(threadDir(projectId, threadId), META_FILE)
-          const meta = parseMeta(await readOrNull(path))
+          const meta = parseMeta(await readOrNull(path, true))
           if (meta === null) return null
           const merged = mergeGithubPrRefs(meta.prRefs ?? [], prRefs)
           // Write even an empty list: `undefined` means "never scanned", `[]`
@@ -923,13 +949,14 @@ async function readProjectThreads(
 async function readProjectThreadMetas(
   projectId: string,
   options: ThreadLoadOptions = {},
+  strict = false,
 ): Promise<Thread[]> {
   const threadIds = listThreadIds(projectId)
   return threadStoreEnvironment().perf.span(
     'store:read-project-metas',
     async () => {
       const loaded = await mapConcurrent(threadIds, (threadId) =>
-        readThreadMetaOnly(projectId, threadId, options),
+        readThreadMetaOnly(projectId, threadId, options, strict),
       )
       return sortThreadsNewestFirst(loaded.filter(isNonNull))
     },
@@ -1198,7 +1225,7 @@ function readAgentPrIndex(projectId: string): Map<string, RemoteAgentPrIndexEntr
         provider: value['provider'],
       }
       const key = remoteAgentPrIndexKey(entry.prUrl)
-      if (key && typeof entry.threadId === 'string') map.set(key, entry)
+      if (key && typeof entry.threadId === 'string') map.set(`${key}\0${entry.threadId}`, entry)
     } catch {
       // Skip malformed line; the index is rebuildable.
     }
@@ -1221,7 +1248,7 @@ function indexAgentLink(
   if (!link.prUrl) return
   const key = remoteAgentPrIndexKey(link.prUrl)
   if (!key) return
-  map.set(key, {
+  map.set(`${key}\0${threadId}`, {
     prUrl: link.prUrl,
     threadId,
     agentId: link.agentId,
@@ -1284,17 +1311,296 @@ function pickPrUrlForRepo(refs: GithubPrRef[], repo: string | undefined): string
 
 const queueKey = (projectId: string): string => `thread-store:${projectId}`
 
-// --- In-memory per-project meta cache (issue #1872, finding 1) --------------
+// SQLite is a disposable, project-scoped projection. The existing decoded-meta
+// LRU remains above it for project switches; relationship queries go straight to
+// SQL and do not build a second all-project relationship map.
+const threadIndexes = new Map<string, SqliteThreadIndex>()
+const activeIndexDirs = new Set<string>()
+
+function trimThreadIndexes(protectedDir?: string): void {
+  while (threadIndexes.size > 16) {
+    const oldest = [...threadIndexes.keys()].find(
+      (dir) => dir !== protectedDir && !activeIndexDirs.has(dir),
+    )
+    if (oldest === undefined) return // Concurrent rebuilds are pinned until they settle.
+    threadIndexes.get(oldest)?.close()
+    threadIndexes.delete(oldest)
+  }
+}
+
+function indexPaths(dir: string): string[] {
+  const path = join(dir, THREAD_INDEX_FILE)
+  return [path, `${path}-wal`, `${path}-shm`, `${path}-journal`]
+}
+
+function discardThreadIndex(dir: string): void {
+  threadIndexes.get(dir)?.close()
+  threadIndexes.delete(dir)
+  // Validate every path before removing any artifact. Never follow cache symlinks.
+  const paths = indexPaths(dir)
+  for (const path of paths) assertStorePath(path)
+  for (const path of paths) rmSync(path, { force: true })
+}
+
+function openThreadIndex(dir: string): SqliteThreadIndex {
+  for (const path of indexPaths(dir)) assertStorePath(path)
+  const cached = threadIndexes.get(dir)
+  if (cached && existsSync(join(dir, THREAD_INDEX_FILE))) {
+    threadIndexes.delete(dir)
+    threadIndexes.set(dir, cached)
+    return cached
+  }
+  if (cached) {
+    cached.close()
+    threadIndexes.delete(dir)
+  }
+  let index: SqliteThreadIndex
+  try {
+    index = new SqliteThreadIndex(join(dir, THREAD_INDEX_FILE))
+  } catch {
+    discardThreadIndex(dir)
+    index = new SqliteThreadIndex(join(dir, THREAD_INDEX_FILE))
+  }
+  threadIndexes.set(dir, index)
+  trimThreadIndexes(dir)
+  return index
+}
+
+function markIndexSourceWrite(path: string): void {
+  if (basename(path) !== META_FILE && basename(path) !== EVENTS_FILE) return
+  const parts = relative(resolvePath(workspaceRoot()), resolvePath(path)).split(sep)
+  if (parts.length < 3) return
+  const dir = dirname(dirname(path))
+  if (!existsSync(join(dir, THREAD_INDEX_FILE))) return // No projection to stale yet.
+  const threadId = basename(dirname(path))
+  try {
+    openThreadIndex(dir).markPending(threadId)
+  } catch (error) {
+    // If journaling fails, remove the projection BEFORE allowing the file write.
+    // Failure to safely invalidate it aborts the write instead of hiding changes.
+    discardThreadIndex(dir)
+    console.warn('[thread-index] Invalidated failed cache before source write', error)
+  }
+}
+
+async function flushThreadIndex(projectId: string): Promise<void> {
+  const dir = projectDir(projectId)
+  if (!existsSync(join(dir, THREAD_INDEX_FILE))) return
+  activeIndexDirs.add(dir)
+  try {
+    const index = openThreadIndex(dir)
+    if (index.ready) await index.repair((id) => readThreadMetaOnly(projectId, id, {}, true))
+  } catch (error) {
+    discardThreadIndex(dir)
+    console.warn('[thread-index] Invalidated failed projection after source write', error)
+  } finally {
+    activeIndexDirs.delete(dir)
+    trimThreadIndexes()
+  }
+}
+
+async function withThreadIndex<T>(
+  projectId: string,
+  query: (index: SqliteThreadIndex) => T | Promise<T>,
+  fallback: () => T | Promise<T>,
+): Promise<T> {
+  const dir = projectDir(projectId)
+  if (!existsSync(dir)) return fallback()
+  activeIndexDirs.add(dir)
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const index = openThreadIndex(dir)
+        if (!index.ready) {
+          threadStoreEnvironment().perf.count('store:sqlite-rebuild')
+          await index.replaceAll(await readProjectThreadMetas(projectId, {}, true))
+        } else {
+          await index.repair((id) => readThreadMetaOnly(projectId, id, {}, true))
+        }
+        return await query(index)
+      } catch (error) {
+        try {
+          discardThreadIndex(dir)
+        } catch {
+          // Unsafe/unwritable cache artifacts stay untouched; reads use source files.
+          console.warn('[thread-index] Using authoritative files; cache unavailable', error)
+          return await fallback()
+        }
+        if (attempt === 1) {
+          console.warn('[thread-index] Using authoritative files; cache rebuild failed', error)
+        }
+      }
+    }
+    return await fallback()
+  } finally {
+    activeIndexDirs.delete(dir)
+    trimThreadIndexes()
+  }
+}
+
+type CompletePrReferenceRead<T> = { kind: 'unscanned'; ids: string[] } | { kind: 'ready'; value: T }
+
+/**
+ * Metadata-only project opening stays lazy. Relationship queries, however, must
+ * account for legacy transcripts even if their sidebar rows have never appeared.
+ * Release the project queue before backfill: its commits join that same queue.
+ * Recheck and query together so an intervening write cannot publish an unscanned
+ * thread as a complete result. Persisted empty lists make the warm check cheap.
+ */
+async function withCompletePrReferences<T>(
+  projectId: string,
+  threadId: string | undefined,
+  query: (index: SqliteThreadIndex) => T,
+  fallback: (index: ThreadPrRelationshipIndex) => T,
+): Promise<T> {
+  const attempted = new Set<string>()
+  for (;;) {
+    const result = await runSerialized(queueKey(projectId), () =>
+      withThreadIndex<CompletePrReferenceRead<T>>(
+        projectId,
+        (index) => {
+          const ids = index.unscannedPrRefIds(threadId)
+          return ids.length ? { kind: 'unscanned', ids } : { kind: 'ready', value: query(index) }
+        },
+        async () => {
+          const threads = await readProjectThreadMetas(projectId, { includeArchived: false })
+          const ids = threads
+            .filter(
+              (thread) =>
+                thread.prRefs === undefined && (threadId === undefined || thread.id === threadId),
+            )
+            .map((thread) => thread.id)
+          return ids.length
+            ? { kind: 'unscanned', ids }
+            : { kind: 'ready', value: fallback(new ThreadPrRelationshipIndex(threads)) }
+        },
+      ),
+    )
+    if (result.kind === 'ready') return result.value
+    if (result.ids.some((id) => attempted.has(id))) {
+      throw new Error('Could not complete PR reference backfill; source metadata is unavailable')
+    }
+    for (const id of result.ids) attempted.add(id)
+    await backfillThreadPrRefs(projectId, result.ids, () => {})
+  }
+}
+
+export function lookupPrThreadRelationships(
+  projectId: string,
+  pr: GithubPrRef,
+): Promise<PrThreadRelationship[]> {
+  return withCompletePrReferences(
+    projectId,
+    undefined,
+    (index) => index.forPr(pr),
+    (index) => index.forPr(pr),
+  )
+}
+
+export function lookupCommitThreadProductions(
+  projectId: string,
+  repository: string,
+  sha: string,
+): Promise<ReturnType<ThreadPrRelationshipIndex['forCommit']>> {
+  return runSerialized(queueKey(projectId), () =>
+    withThreadIndex(
+      projectId,
+      (index) => index.forCommit(repository, sha),
+      async () =>
+        new ThreadPrRelationshipIndex(await readProjectThreadMetas(projectId)).forCommit(
+          repository,
+          sha,
+        ),
+    ),
+  )
+}
+
+export function lookupThreadPrRelationships(
+  projectId: string,
+  threadId: string,
+): Promise<ReturnType<ThreadPrRelationshipIndex['forThread']>> {
+  return withCompletePrReferences(
+    projectId,
+    threadId,
+    (index) => index.forThread(threadId),
+    (index) => index.forThread(threadId),
+  )
+}
+
+/** Direct source reader for diagnostics/rebuilds; deliberately bypasses the projection. */
+export function loadProjectThreadMetasFromFiles(
+  projectId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread[]> {
+  return runSerialized(queueKey(projectId), () => readProjectThreadMetas(projectId, options))
+}
+
+/** Release native cache handles on shutdown; the next read is a persistent-index restart. */
+export function closeThreadStoreIndexes(): void {
+  for (const index of threadIndexes.values()) index.close()
+  threadIndexes.clear()
+  activeIndexDirs.clear()
+  metaCacheByDir.clear()
+  metaCacheVersionsByDir.clear()
+}
+
+/** Native structured results only; source evidence survives later renderer metadata writes. */
+export function recordThreadPrProduction(
+  projectId: string,
+  threadId: string,
+  input: PrProduction,
+): Promise<void> {
+  const production = prProductionSchema.parse(input)
+  return runStoreWrite(projectId, async () => {
+    const path = join(threadDir(projectId, threadId), META_FILE)
+    const meta = readMeta(threadDir(projectId, threadId))
+    if (!meta) throw new Error('Cannot record PR production for a missing thread')
+    const entries = meta.prProductions ?? []
+    const previous = entries.find((item) => item.eventId === production.eventId)
+    if (previous && JSON.stringify(previous) !== JSON.stringify(production))
+      throw new Error('Conflicting PR production event')
+    if (previous) return
+    const { refs } = mergeGithubPrRefs(meta.prRefs ?? [], [production.pr])
+    await atomicWriteFileAsync(
+      path,
+      JSON.stringify({ ...meta, prRefs: refs, prProductions: [...entries, production] }),
+    )
+    refreshCatalogLine(projectId, threadId)
+  })
+}
+
+export function recordThreadCommitProduction(
+  projectId: string,
+  threadId: string,
+  input: CommitProduction,
+): Promise<void> {
+  const production = commitProductionSchema.parse(input)
+  return runStoreWrite(projectId, async () => {
+    const path = join(threadDir(projectId, threadId), META_FILE)
+    const meta = readMeta(threadDir(projectId, threadId))
+    if (!meta) throw new Error('Cannot record commit production for a missing thread')
+    const entries = meta.commitProductions ?? []
+    const previous = entries.find((item) => item.eventId === production.eventId)
+    if (previous && JSON.stringify(previous) !== JSON.stringify(production))
+      throw new Error('Conflicting commit production event')
+    if (previous) return
+    await atomicWriteFileAsync(
+      path,
+      JSON.stringify({ ...meta, commitProductions: [...entries, production] }),
+    )
+  })
+}
+
+// --- Decoded per-project meta cache above the persistent projection --------
 //
-// `threads:load-project` re-reads every thread's `meta.json` on every project
-// open, so switching back to a large profile costs the same as arriving cold
-// (docs/perf-open-profiling.md). These snapshots survive project switches; the
+// SQLite removes per-thread file reads on a restart. These decoded snapshots
+// additionally avoid JSON parsing on project switches; the
 // per-project write queue is the invalidation hook: every entry point that
 // writes `meta.json` or the spine goes through {@link runStoreWrite}, which
 // drops the project's snapshots when the queued op settles. The version check
 // additionally prevents any future unqueued writer from publishing an in-flight
-// stale read. As with the spine's known-message-id cache, a `meta.json` rewritten
-// by another *process* stays invisible until this process next writes the project.
+// stale read. The index assumes one store-writing process. Out-of-band edits
+// require removing the SQLite cache (including sidecars) with the app stopped.
 
 interface CachedMetas {
   /** {@link metaCacheVersionsByDir} value the snapshot was read at. */
@@ -1326,6 +1632,7 @@ function runStoreWrite<T>(projectId: string, op: () => T | Promise<T>): Promise<
       return await op()
     } finally {
       invalidateProjectMetaCache(projectId)
+      await flushThreadIndex(projectId)
     }
   })
 }
@@ -1352,7 +1659,11 @@ async function readProjectThreadMetasCached(
     return hit.threads
   }
   threadStoreEnvironment().perf.count('store:meta-cache-miss')
-  const threads = await readProjectThreadMetas(projectId, options)
+  const threads = await withThreadIndex(
+    projectId,
+    (index) => index.metas(includeArchived),
+    () => readProjectThreadMetas(projectId, options),
+  )
   // Cache only if nothing wrote the project while the read was in flight;
   // otherwise let the next read retry.
   if ((metaCacheVersionsByDir.get(dir) ?? 0) === version) {
@@ -1566,7 +1877,10 @@ export function lookupThreadByPrUrl(
   return runSerialized(queueKey(projectId), () => {
     const key = remoteAgentPrIndexKey(prUrl)
     if (!key) return null
-    return loadOrRebuildAgentPrIndex(projectId).get(key) ?? null
+    const matches = [...loadOrRebuildAgentPrIndex(projectId).values()].filter(
+      (entry) => remoteAgentPrIndexKey(entry.prUrl) === key,
+    )
+    return matches.length === 1 ? (matches[0] ?? null) : null
   })
 }
 
@@ -1622,6 +1936,7 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
     for (const threadId of listThreadIds(projectId)) {
       if (!keepIds.has(threadId)) {
         const dir = threadDir(projectId, threadId)
+        markIndexSourceWrite(join(dir, META_FILE))
         rmSync(dir, { recursive: true, force: true })
         invalidateKnownMessageIds(dir)
       }
@@ -1696,6 +2011,7 @@ async function appendMessageUnqueued(
   }
   if (!knownIds.has(message.id)) {
     assertStorePath(join(dir, EVENTS_FILE))
+    markIndexSourceWrite(join(dir, EVENTS_FILE))
     await fsPromises.appendFile(join(dir, EVENTS_FILE), `${raw}\n`, {
       flag: constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW,
     })
@@ -1917,7 +2233,13 @@ export function updateMeta(
     // updateMeta only patches an existing thread; `createThread` writes the
     // initial meta.json, so a missing base means there is nothing to patch.
     if (current === null) return
-    const merged: ThreadMeta = { ...current, ...patch, id: threadId }
+    const merged: ThreadMeta = {
+      ...current,
+      ...patch,
+      id: threadId,
+      ...(current.prProductions ? { prProductions: current.prProductions } : {}),
+      ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
+    }
     writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
     refreshCatalogLine(projectId, threadId)
   })
@@ -1933,7 +2255,13 @@ export function updateMetaOrThrow(
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
     if (current === null) throw new Error('Thread is not persisted yet; retry sending the message')
-    const merged: ThreadMeta = { ...current, ...patch, id: threadId }
+    const merged: ThreadMeta = {
+      ...current,
+      ...patch,
+      id: threadId,
+      ...(current.prProductions ? { prProductions: current.prProductions } : {}),
+      ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
+    }
     writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
     refreshCatalogLine(projectId, threadId)
   })
@@ -1964,6 +2292,7 @@ export function clearThreadWorktree(projectId: string, threadId: string): Promis
 export function deleteProjectThread(projectId: string, threadId: string): Promise<void> {
   return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)
+    markIndexSourceWrite(join(dir, META_FILE))
     rmSync(dir, { recursive: true, force: true })
     invalidateKnownMessageIds(dir)
     // Same rebuild-on-read invariant as the other catalog writers: a stale

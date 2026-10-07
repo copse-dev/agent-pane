@@ -87,6 +87,7 @@ export function parseSessionHostRequest(raw: string): SessionHostRequest | null 
       sandbox,
       ...(args ? { args } : {}),
       ...(env ? { env } : {}),
+      ...(input['readonlyCheckout'] === true ? { readonlyCheckout: true } : {}),
     },
     allowLocalhost: parsed['allowLocalhost'] === true,
   }

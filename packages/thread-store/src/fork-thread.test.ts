@@ -43,6 +43,30 @@ describe('forkThreadTitle', () => {
 })
 
 describe('buildForkedThread', () => {
+  it('derives PR references only from the copied slice and excludes queued and later mentions', () => {
+    const url = (number: number): string => `https://github.com/acme/widgets/pull/${String(number)}`
+    const source = thread(
+      [
+        userMessage('m1', url(42)),
+        userMessage('queued', url(43)),
+        assistantMessage('m2', url(44)),
+        assistantMessage('later', url(45)),
+      ],
+      { prRefs: [{ owner: 'acme', repo: 'widgets', number: 99, url: url(99) }] },
+    )
+    const fork = buildForkedThread(source, {
+      throughMessageId: 'm2',
+      excludeMessageIds: new Set(['queued']),
+    })
+    assert.ok(fork)
+    assert.deepEqual(
+      fork.prRefs?.map((ref) => ref.number),
+      [42, 44],
+    )
+    assert.equal(source.prRefs?.[0]?.number, 99)
+    assert.deepEqual(buildForkedThread(thread([userMessage('m', 'No PR here')]))?.prRefs, [])
+  })
+
   it('copies the whole conversation into an idle thread with a fresh id', () => {
     const source = thread([userMessage('m1', 'Hello'), assistantMessage('m2', 'Hi')])
 

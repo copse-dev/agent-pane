@@ -13,6 +13,7 @@ import { decideThreadWorktreePolicy, settledCheckoutMode } from '@shared/git/wor
 import { isRemoteAgentModel } from '@shared/remote-agent.ts'
 import { isAcpModel } from '@shared/acp.ts'
 import { getSetting } from './storage/settings.ts'
+import { acpModelCanDeferCheckout } from './acp/acp-deferred-checkout.ts'
 import { storageGet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { getProjectThread, updateMetaOrThrow } from './thread-store.ts'
@@ -109,6 +110,8 @@ async function checkoutBaseBranch(
 
 export interface ThreadCheckoutTransactionDependencies {
   getDeferredWorktreesEnabled: () => boolean
+  /** Whether this ACP model's agent can start read-only and move into a worktree later. */
+  canDeferAcpModel: (model: string, options: { remote: boolean }) => boolean
   getProject: (projectId: string) => Project | null
   getThread: (projectId: string, threadId: string) => Promise<Thread | null>
   updateMeta: (
@@ -184,13 +187,22 @@ function persistedResult(
 }
 
 /**
- * Whether this run's agent can honour a deferred checkout. Deferral relies on
- * Copse's own tool registry to allocate before the first write; an ACP agent
- * edits through its own process whose cwd is fixed at session creation, so it
- * keeps the eager worktree. An unknown model is treated the same way.
+ * Whether this run's agent can honour a deferred checkout. A native model
+ * relies on Copse's own tool registry to allocate before the first write. An
+ * ACP agent edits through its own process whose cwd is fixed at session
+ * creation, so it defers only when it can be started read-only and restarted
+ * in the worktree (`canDeferAcpModel`); otherwise it keeps the eager worktree.
+ * An unknown model is treated the same way.
  */
-function canDeferAllocation(model: string | undefined): boolean {
-  return model !== undefined && !isAcpModel(model)
+function canDeferAllocation(
+  model: string | undefined,
+  canDeferAcpModel: ThreadCheckoutTransactionDependencies['canDeferAcpModel'],
+  isLocal: boolean,
+): boolean {
+  if (model === undefined) return false
+  if (!isAcpModel(model)) return true
+  // A remote agent never sees the local sandbox that makes a read-only start safe.
+  return isLocal && canDeferAcpModel(model, { remote: false })
 }
 
 export async function inspectProject(
@@ -275,6 +287,7 @@ export async function recoverUnpersistedWorktree(input: {
 
 const defaultDependencies: ThreadCheckoutTransactionDependencies = {
   getDeferredWorktreesEnabled: () => getSetting<boolean>('deferredWorktreesEnabled', false),
+  canDeferAcpModel: acpModelCanDeferCheckout,
   getProject: projectById,
   getThread: getProjectThread,
   updateMeta: updateMetaOrThrow,
@@ -439,7 +452,10 @@ export function createThreadCheckoutTransaction(
         inspection,
         input.baseBranch,
       )
-      if (decision.deferAllocation && canDeferAllocation(input.model)) {
+      if (
+        decision.deferAllocation &&
+        canDeferAllocation(input.model, dependencies.canDeferAcpModel, isLocal)
+      ) {
         // Isolation is decided now; only the checkout waits. The base is
         // resolved (and a picked branch validated) here so the eventual
         // allocation starts where the user asked even if the project checkout

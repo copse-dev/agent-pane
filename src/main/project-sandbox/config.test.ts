@@ -93,6 +93,30 @@ describe('acpAgentSandboxOverlay', () => {
     }
   })
 
+  it('keeps the agent home dirs writable but strips every checkout write for a read-only checkout', () => {
+    const writable = acpAgentSandboxOverlay(workspace, sandbox, { allowLocalhost: true })
+    const readonly = acpAgentSandboxOverlay(workspace, sandbox, {
+      allowLocalhost: true,
+      readonlyCheckout: true,
+    })
+    const root = workspaceSandboxOverlay(workspace).filesystem?.allowWrite[0]
+    assert.ok(root, 'the ordinary profile grants the checkout first')
+    assert.ok(writable.filesystem?.allowWrite.includes(root))
+    assert.ok(
+      readonly.filesystem?.allowWrite.every(
+        (path) => path !== root && !path.startsWith(`${root}/`),
+      ),
+      `checkout writes survived: ${JSON.stringify(readonly.filesystem?.allowWrite)}`,
+    )
+    // The agent's session files live under its home dir, outside the checkout.
+    const claudeDir = join(homedir(), '.claude')
+    assert.ok(readonly.filesystem?.allowWrite.includes(claudeDir))
+    assert.ok(readonly.filesystem?.allowWrite.includes(`${claudeDir}/**`))
+    // Reads and the bridge's loopback are unchanged.
+    assert.deepEqual(readonly.filesystem?.allowRead, writable.filesystem?.allowRead)
+    assert.deepEqual(readonly.network, writable.network)
+  })
+
   it('adds trustd only on opt-in without changing network or filesystem policy', () => {
     const strict = acpAgentSandboxOverlay(workspace, sandbox)
     const trusted = acpAgentSandboxOverlay(workspace, { ...sandbox, allowMacOsTrustd: true })

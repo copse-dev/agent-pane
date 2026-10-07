@@ -1,0 +1,34 @@
+{
+  "node": "24.19.0",
+  "platform": "linux",
+  "cpu": "AMD EPYC 9V74 80-Core Processor",
+  "methodology": "Real native store APIs; unscanned transcript files, including empty references and offscreen matches. One first lookup and 30 warm samples per size; reopened handles in the same process and warm OS cache. A 1ms timer measures main-module event-loop delay; IPC, renderer, networking and full process restart are excluded. Fixture persistence is excluded.",
+  "results": [
+    {
+      "threads": 1000,
+      "transcriptBytesPerChat": 1180,
+      "references": 100,
+      "openingMs": 125.13822400000004,
+      "firstLookupMs": 1542.63654,
+      "firstLookupMaxLoopDelayMs": 10.118302000000085,
+      "firstLookupTimerTicks": 1509,
+      "warmMedianMs": 0.2739929999997912,
+      "warmP95Ms": 0.41682799999989584,
+      "reopenedLookupMs": 0.7660550000000512,
+      "reopenedMaxLoopDelayMs": 0.8674059999998462
+    },
+    {
+      "threads": 5000,
+      "transcriptBytesPerChat": 1180,
+      "references": 500,
+      "openingMs": 527.2029129999996,
+      "firstLookupMs": 8541.629385,
+      "firstLookupMaxLoopDelayMs": 16.952322000001004,
+      "firstLookupTimerTicks": 7397,
+      "warmMedianMs": 0.8851049999993847,
+      "warmP95Ms": 2.724528000000646,
+      "reopenedLookupMs": 1.4212029999998776,
+      "reopenedMaxLoopDelayMs": 0.442815000000337
+    }
+  ]
+}

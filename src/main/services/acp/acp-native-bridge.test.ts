@@ -95,6 +95,15 @@ function testRegistry(executed: string[]): ToolRegistry {
     },
   })
   registry.register({
+    name: 'request_write_access',
+    description: 'Give this thread its own worktree',
+    parameters: z.object({ branch_name: z.string().optional() }),
+    execute: () => {
+      executed.push('request_write_access')
+      return Promise.resolve('This thread now has its own worktree at /worktrees/t.')
+    },
+  })
+  registry.register({
     name: 'ask_user',
     description: 'Native-loop orchestration tool; not bridgeable',
     parameters: z.object({ question: z.string() }),
@@ -232,6 +241,68 @@ describe('startAcpNativeBridge', () => {
     method: 'tools/call',
     params: { name: 'run_shell', arguments: { command: 'git worktree list --porcelain' } },
   }
+
+  it('offers request_write_access only to a bridge started for a deferred thread', async () => {
+    const executed: string[] = []
+    const listed = async (offerWriteAccess: boolean): Promise<string[]> => {
+      const started = await startAcpNativeBridge(
+        testRegistry(executed),
+        new AbortController().signal,
+        {
+          threadId: `bridge-write-access-${String(offerWriteAccess)}`,
+          offerWriteAccess,
+        },
+      )
+      assert.ok(started)
+      bridge = started
+      for (const init of initialized()) await rpc(started, init)
+      const tools = recordArrayOrEmpty(rpcResult(await rpc(started, LIST_TOOLS))['tools'])
+      const refused = await rpc(started, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'request_write_access', arguments: {} },
+      })
+      const names = tools.map((tool) => String(tool['name']))
+      // No turn is bound, so an offered call still fails, but not as unoffered.
+      assert.equal(
+        /not offered by this bridge/.test(contentText(refused) ?? ''),
+        !offerWriteAccess,
+        'a bridge that does not list the tool must also refuse to run it',
+      )
+      assert.deepEqual(started.toolNames.includes('request_write_access'), offerWriteAccess)
+      await started.close()
+      bridge = null
+      return names
+    }
+    assert.ok(!(await listed(false)).includes('request_write_access'))
+    assert.ok((await listed(true)).includes('request_write_access'))
+  })
+
+  it('tells the agent to end its turn after request_write_access, and no other tool', async () => {
+    const executed: string[] = []
+    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+      threadId: 'bridge-write-access-note',
+      offerWriteAccess: true,
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-write-access-note', '/worktrees/t'))
+    for (const init of initialized()) await rpc(bridge, init)
+    const started = bridge
+    const call = (name: string, args: unknown, id: number): ReturnType<typeof rpc> =>
+      rpc(started, {
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { name, arguments: args },
+      })
+
+    const granted = contentText(await call('request_write_access', { branch_name: 'fix it' }, 3))
+    assert.match(granted ?? '', /own worktree at \/worktrees\/t/)
+    assert.match(granted ?? '', /End your turn now/)
+    const ordinary = contentText(await call('run_shell', { command: 'pwd' }, 4))
+    assert.doesNotMatch(ordinary ?? '', /End your turn now/)
+  })
 
   it('parks the approval when the client drops the HTTP call, and replays it to the retry', async () => {
     const executed: string[] = []
