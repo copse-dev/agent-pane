@@ -14,7 +14,7 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
-import type { UsageEvent } from '../../../src/shared/usage/usage-event.ts'
+import { USAGE_EVENTS_DIR, type UsageEvent } from '../../../src/shared/usage/usage-event.ts'
 import {
   supervisedTaskMetaSchema,
   type SupervisedTaskMeta,
@@ -249,8 +249,12 @@ export function resetUserData(): void {
   rmSync(PENDING_CONFIG_PATH, { force: true })
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
+  rmSync(USAGE_EVENTS_PATH, { force: true, recursive: true })
   writeSettings({})
 }
+
+/** The usage ledger directory under userData; see `USAGE_EVENTS_DIR`. */
+const USAGE_EVENTS_PATH = join(USER_DATA, USAGE_EVENTS_DIR)
 
 /** Copse's own `mcp.json` under userData — a *user* MCP source, not a project one. */
 const USER_MCP_PATH = join(USER_DATA, 'mcp.json')
@@ -636,7 +640,14 @@ export function seedEmptyProject(
     seedConfig.pluginSources = [...options.pluginSources]
   }
   if (options?.usageEvents) {
-    seedConfig.usageEvents = [...options.usageEvents]
+    // The ledger is a directory of `.jsonl` files, one record per line, not a
+    // config.json key; the reader takes every file in it.
+    mkdirSync(USAGE_EVENTS_PATH, { recursive: true })
+    writeFileSync(
+      join(USAGE_EVENTS_PATH, 'seeded.jsonl'),
+      options.usageEvents.map((event) => `\n${JSON.stringify(event)}`).join(''),
+      'utf8',
+    )
   }
   writeSeedConfig(seedConfig, {
     preserveProductWorktreeDefault: options?.worktreeMode === 'default',
