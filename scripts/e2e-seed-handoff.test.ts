@@ -4,10 +4,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import {
-  SqliteThreadIndex,
-  THREAD_INDEX_FILE,
-} from '../packages/thread-store/src/sqlite-thread-index.ts'
+import { SqliteThreadIndex, THREAD_INDEX_FILE } from '@copse/thread-store/sqlite-thread-index.ts'
+import type { Thread } from '@copse/thread-store/thread-types.ts'
 
 it('restores the pending fixture after an old app overwrites config, then preserves later app writes', () => {
   const root = mkdtempSync(join(tmpdir(), 'copse-e2e-seed-'))
@@ -68,7 +66,7 @@ it('resets only reseeded projections after shutdown and preserves them on ordina
     usage: { inputTokens: 0, outputTokens: 0 },
     createdAt: 1,
     updatedAt: 1,
-  } satisfies import('../packages/thread-store/src/thread-types.ts').Thread
+  } satisfies Thread
   try {
     const old = new SqliteThreadIndex(dbPath)
     try {
