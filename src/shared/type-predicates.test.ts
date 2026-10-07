@@ -3,8 +3,10 @@ import assert from 'node:assert/strict'
 import {
   RIGHT_PANEL_POSITIONS,
   THEME_PREFERENCES,
+  THREAD_GROUP_MODES,
   THREAD_SORT_MODES,
   isRightPanelPosition,
+  isThreadGroupMode,
   isThreadSortMode,
   isThemePreference,
 } from './types/state.ts'
@@ -82,6 +84,7 @@ const MEMBERSHIP_PREDICATES: ReadonlyArray<{
     members: RIGHT_PANEL_POSITIONS,
   },
   { label: 'isThreadSortMode', predicate: isThreadSortMode, members: THREAD_SORT_MODES },
+  { label: 'isThreadGroupMode', predicate: isThreadGroupMode, members: THREAD_GROUP_MODES },
   { label: 'isThemePreference', predicate: isThemePreference, members: THEME_PREFERENCES },
   {
     label: 'isRemoteAgentProvider',

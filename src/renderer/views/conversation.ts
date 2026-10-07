@@ -181,6 +181,7 @@ import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.t
 import { normalizeSearchText, openConversationSearch } from './conversation-search.ts'
 import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { trimSelectionText } from '../dom/markdown-quote.ts'
+import { bindSelectionQuote } from '../dom/selection-quote.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import type { QueuedUserMessage, TurnOutcome } from '@shared/types'
 
@@ -2750,6 +2751,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     navigateToChange(store, path)
   })
 
+  const selectionQuote = bindSelectionQuote(list, {
+    quote: quoteTranscriptSelection,
+    send: (text, reply) =>
+      getPromptAttachmentHandlers()?.sendQuotedReply?.(text, reply) ?? Promise.resolve(false),
+  })
+
   // Right-click in the transcript: a non-empty text selection offers quoting
   // it into the reply, filing it on the roadmap, or searching the thread for
   // it; with no selection, right-clicking a message still offers to copy its
@@ -3127,6 +3134,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   let lastProgrammaticScrollTop = -1
   let userScrolledUpAt = 0
   let renderedThreadId: string | null = null
+  let stickyImagePrompt: HTMLElement | null = null
   // Bumped on every rebuildForThread (and on unmount) so a backward-fill step
   // scheduled by a since-superseded rebuild recognizes it's stale and bails
   // instead of touching a list that has since been cleared/rebuilt again.
@@ -3271,8 +3279,41 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottomBtn.hidden = isNearBottom()
   }
 
+  function syncStickyImagePreview(): void {
+    const prompt = stickyImagePrompt
+    if (!prompt?.isConnected) return
+    const promptStyle = window.getComputedStyle(prompt)
+    if (promptStyle.position !== 'sticky') {
+      prompt.classList.remove('is-preview-compact')
+      return
+    }
+    const listRect = list.getBoundingClientRect()
+    const listStyle = window.getComputedStyle(list)
+    const previous = prompt.previousElementSibling
+    // The previous row stays in normal flow while this prompt sticks. Its
+    // bottom tells us where the prompt would be without the sticky offset.
+    const naturalTop = previous
+      ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap)
+      : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop
+    const stickyTop =
+      listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top)
+    prompt.classList.toggle('is-preview-compact', naturalTop < stickyTop - 1)
+  }
+
+  function refreshStickyImagePrompt(): void {
+    const prompts = list.querySelectorAll<HTMLElement>(
+      ':scope > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)',
+    )
+    const latest = prompts[prompts.length - 1]
+    const next = latest?.querySelector('.message-images') ? latest : null
+    if (stickyImagePrompt !== next) stickyImagePrompt?.classList.remove('is-preview-compact')
+    stickyImagePrompt = next
+    syncStickyImagePreview()
+  }
+
   function handleUserScroll(): void {
     const scrollTop = list.scrollTop
+    syncStickyImagePreview()
     // Ignore the scroll event emitted by our own scrollToBottom(): it lands on
     // an exact, known position. Everything else is a real user scroll. Matching
     // the position (rather than suppressing for a time window) means a user
@@ -3308,6 +3349,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   list.addEventListener('scroll', handleUserScroll, { passive: true })
+  const listResizeObserver =
+    typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncStickyImagePreview)
+  listResizeObserver?.observe(list)
   list.addEventListener(
     'wheel',
     (event) => {
@@ -3444,6 +3488,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const before = list.scrollTop
     list.scrollTop = top
     const landed = list.scrollTop
+    syncStickyImagePreview()
     lastScrollTop = landed
     if (landed !== before) {
       // Remember exactly where we landed so the resulting scroll event is
@@ -4057,6 +4102,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null)
     finalizeMessageEl(threadId, msgId)
     if (batched) return
+    if (msg.role === 'user') refreshStickyImagePrompt()
     // Model labels appear only once the primary chat has used more than one
     // model, and only at model-segment boundaries (first assistant turn of
     // each contiguous model run). Syncing after each append also backfills
@@ -4600,9 +4646,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       lastScrollTop = 0
     }
     disclosureElements.clear()
+    if (!rebuildingSameThread) selectionQuote.dismiss()
     disposeInlineArtefacts(list)
     avatarMotion.setActive(null)
     clear(list)
+    stickyImagePrompt = null
     backfillGeneration++
     renderedThreadId = thread?.id ?? null
     if (!thread) {
@@ -4643,6 +4691,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncUserActions()
     syncAcpResourceReferences(list, api, store)
     finishThreadChrome(thread)
+    refreshStickyImagePrompt()
     if (preservedScrollTop === null) {
       scrollToBottom(true)
     } else {
@@ -4987,10 +5036,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   reviewerInput.sync()
   return () => {
     disposed = true
+    selectionQuote.destroy()
     avatarMotion.dispose()
     // Invalidate any backfillOlderMessages step still queued via
     // requestAnimationFrame so it no-ops instead of touching a torn-down list.
     backfillGeneration++
+    listResizeObserver?.disconnect()
     showAcpTransportNoiseDisclosure = (): boolean => false
     revealTimers.forEach((timer) => {
       clearTimeout(timer)
@@ -5022,10 +5073,10 @@ function messageContentById(store: AppStore, msgId: string): string | undefined 
 }
 
 /** "Quote in reply": insert the transcript selection into the composer as a blockquote. */
-function quoteTranscriptSelection(text: string): void {
+function quoteTranscriptSelection(text: string, reply?: string): void {
   const handlers = getPromptAttachmentHandlers()
   if (!handlers) return
-  handlers.quoteText(text)
+  handlers.quoteText(text, reply)
   handlers.focusComposer?.()
 }
 

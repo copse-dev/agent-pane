@@ -68,4 +68,10 @@
 // v39 versions the automation lastProblem ledger and startFailedAt provenance.
 // v40 versions the queued-message model snapshot in thread payloads.
 // v41 versions container-run consent fields and terminal state.
-export const API_PROTOCOL_VERSION = 41 as const
+// v42 conservatively versions the persisted sidebar grouping in settings payloads.
+// v43 versions the optional OAuth `auth` state on MCP server statuses.
+// v45 conservatively versions deferred thread worktrees: the optional `deferredWorktree` on
+// threads and prepared checkouts, the `on-write` project mode, and the `thread_checkout`
+// agent chunk.
+// v46 versions the removal of `activeRunThreadIds` from the process-manager snapshot.
+export const API_PROTOCOL_VERSION = 46 as const

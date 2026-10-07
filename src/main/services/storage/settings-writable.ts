@@ -200,6 +200,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
   sidebarThreadSort: z.enum(['activity', 'created', 'title']),
   sidebarThreadSortReverse: z.boolean(),
+  sidebarThreadGroup: z.enum(['project', 'status', 'none']),
   // Interaction colour for links, primary actions, selections, and chat
   // emphasis. Theme CSS derives accessible link/hover shades from this hue.
   uiAccentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
@@ -382,6 +383,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Experimental unattended container runs: a thread's turn in a hardened
   // Docker container, started from the composer. Off by default; needs Docker.
   // See docs/plans/thread-in-container.md and container-run-service.ts.
+  // Defer eligible new threads across projects until their first write. Off by default.
+  deferredWorktreesEnabled: z.boolean(),
   containerRunsEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a

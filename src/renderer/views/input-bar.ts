@@ -1887,7 +1887,9 @@ export function mountInputBar(
     const prefetchedPromptState = prefetchedGitState?.[1]
     let preparedPromptState: GitPromptState | undefined
     const threadBranch = thread.gitBranch
-    const isolatedWorktree = thread.worktree !== undefined
+    // A deferred thread is isolated too: its worktree is cut from the recorded
+    // base when it first writes, so the project checkout's HEAD may move.
+    const isolatedWorktree = thread.worktree !== undefined || thread.deferredWorktree !== undefined
     // Worktree threads keep the project checkout on its original branch; the
     // bound `gitBranch` names the isolated checkout, not a required HEAD move.
     if (
@@ -2436,12 +2438,23 @@ export function mountInputBar(
     // Unlike attachTextBlock, a quote lands as literal editable text so the
     // user can trim or edit it inline before sending, matching how a reply
     // quote behaves everywhere else.
-    quoteText: (content: string): void => {
+    quoteText: (content: string, reply = ''): void => {
       const quote = formatMarkdownQuote(content)
       const caret = composer.selectionStart
       const prevChar = caret > 0 ? composer.value[caret - 1] : undefined
       const needsLeadingBreak = prevChar !== undefined && prevChar !== '\n'
-      composer.insertText(`${needsLeadingBreak ? '\n\n' : ''}${quote}\n\n`)
+      composer.insertText(`${needsLeadingBreak ? '\n\n' : ''}${quote}\n\n${reply}`)
+      const quoteEnd = composer.selectionStart
+      composer.focus()
+      composer.setSelectionRange(quoteEnd, quoteEnd)
+      composer.el.scrollTop = composer.el.scrollHeight
+    },
+    sendQuotedReply: async (content: string, reply: string): Promise<boolean> => {
+      if (!getActiveThreadId() || imageDescriptionInProgress) return false
+      attachmentHandlers.quoteText(content, reply)
+      await submit()
+      // The normal composer now owns any warning, retry or failed-send recovery.
+      return true
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
@@ -2632,6 +2645,9 @@ export function mountInputBar(
     }),
     store.on('message_queued', (tid) => {
       if (tid === getActiveThreadId()) updateQueueIndicator()
+    }),
+    store.on('thread_model_resolved', (tid) => {
+      if (tid === getActiveThreadId()) modelPicker.sync()
     }),
     store.on('message_added', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()

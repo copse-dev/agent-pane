@@ -25,6 +25,15 @@ export function chevronDownIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('chevron-down', ['m6 9 6 6 6-6'], className)
 }
 
+/** Clock face — a schedule, or something that ran at a set time. */
+export function clockIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'clock',
+    ['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z', 'M12 6v6l4 2'],
+    className,
+  )
+}
+
 export function chevronUpIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('chevron-up', ['m18 15-6-6-6 6'], className)
 }
@@ -39,14 +48,6 @@ export function arrowRightIcon(className = DEFAULT): SVGSVGElement {
 
 export function arrowDownIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('arrow-down', ['M12 5v14', 'm19 12-7 7-7-7'], className)
-}
-
-export function arrowUpDownIcon(className = DEFAULT): SVGSVGElement {
-  return outlineIcon(
-    'arrow-up-down',
-    ['m21 16-4 4-4-4', 'M17 20V4', 'm3 8 4-4 4 4', 'M7 4v16'],
-    className,
-  )
 }
 
 export function refreshIcon(className = DEFAULT): SVGSVGElement {
@@ -376,4 +377,9 @@ export function trashIcon(className = DEFAULT): SVGSVGElement {
     ],
     className,
   )
+}
+
+/** Clock with a back-arrow — past data is kept (routes whose retention is unverified). */
+export function historyIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('history', ['M3 12a9 9 0 1 0 3-6.7L3 8', 'M3 3v5h5', 'M12 7v5l3 2'], className)
 }

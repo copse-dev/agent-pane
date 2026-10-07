@@ -10,6 +10,7 @@ export interface SettingsValues {
   updateChannel: ReleaseChannel
   sidebarThreadSort: 'activity' | 'created' | 'title'
   sidebarThreadSortReverse: boolean
+  sidebarThreadGroup: 'project' | 'status' | 'none'
   fontSize: number
   uiScale: number
   animateAgentAvatars: boolean
@@ -137,6 +138,7 @@ export interface SettingsValues {
   modelClassifierEnabled: boolean
   nextStepSuggestionEnabled: boolean
   conciseThreadsEnabled: boolean
+  deferredWorktreesEnabled: boolean
   containerRunsEnabled: boolean
   advisorModel: string
   orchestrationStrategyEnabled: boolean

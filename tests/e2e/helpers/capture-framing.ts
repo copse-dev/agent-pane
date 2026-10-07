@@ -1,6 +1,6 @@
 /**
  * `prepareE2eScreenshot` pins `#app` to `min(800, window.innerHeight)` with
- * `overflow: hidden` so reference shots are a fixed size whatever window the
+ * `overflow: clip` so reference shots are a fixed size whatever window the
  * runner gives us. That clamp runs *after* a spec has scrolled its subject into
  * view, and nothing re-scrolls afterwards — so on a runner whose window is
  * taller than the pinned shell, the clamp cuts away the part of the scrollport
@@ -47,8 +47,27 @@ export function recentreClippedCapture(
   if (shellRect.height === 0) return null
 
   const rect = element.getBoundingClientRect()
-  // Wholly inside the pinned shell: the spec's own framing stands.
-  if (rect.top >= shellRect.top && rect.bottom <= shellRect.bottom) return null
+  // A subject may fit the shell but still sit outside a nested scrollport,
+  // including the space it reserves for sticky controls via scroll-padding.
+  let top = shellRect.top
+  let bottom = shellRect.bottom
+  let left = shellRect.left
+  let right = shellRect.right
+  for (let node = element.parentElement; node && node !== shell; node = node.parentElement) {
+    const style = window.getComputedStyle(node)
+    const bounds = node.getBoundingClientRect()
+    if (bounds.height > 0 && /^(auto|scroll|hidden|clip)$/.test(style.overflowY)) {
+      top = Math.max(top, bounds.top + (Number.parseFloat(style.scrollPaddingTop) || 0))
+      bottom = Math.min(bottom, bounds.bottom - (Number.parseFloat(style.scrollPaddingBottom) || 0))
+    }
+    if (bounds.width > 0 && /^(auto|scroll|hidden|clip)$/.test(style.overflowX)) {
+      left = Math.max(left, bounds.left + (Number.parseFloat(style.scrollPaddingLeft) || 0))
+      right = Math.min(right, bounds.right - (Number.parseFloat(style.scrollPaddingRight) || 0))
+    }
+  }
+  if (rect.top >= top && rect.bottom <= bottom && rect.left >= left && rect.right <= right) {
+    return null
+  }
 
   // Every offset `scrollIntoView` could move, so the page can be handed back
   // exactly as the spec left it. Each element's own scrollLeft/scrollTop is

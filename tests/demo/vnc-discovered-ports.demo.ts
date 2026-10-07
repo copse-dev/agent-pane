@@ -14,9 +14,19 @@ const PORTS = [5900, 5901, 5902]
 describe('remote desktop discovered ports', () => {
   before(async () => {
     await browser.url('/?scenario=vnc-discovered-ports')
+    // Supply a saved remote machine at the IPC boundary; the local device is intentionally absent.
+    await browser.execute(() => {
+      window.api.sshWorkspace.listHosts = async () => [
+        { id: 'demo-studio', label: 'Studio', host: 'studio.local' },
+      ]
+    })
     const control = $('[data-panel-control="vnc"]')
     await control.waitForDisplayed({ timeout: 20_000 })
     await control.click()
+    const machine = $('.vnc-device-header[data-machine="ssh:demo-studio"]')
+    await machine.waitForDisplayed({ timeout: 20_000 })
+    await machine.click()
+    await expect($('.vnc-machine-select option[value="local"]')).not.toExist()
     // Opening the pane scans the selected machine on its own; the retry button
     // ("Try again") only appears when that scan comes back empty.
     await $('.vnc-discovered-port.selected').waitForDisplayed({ timeout: 20_000 })

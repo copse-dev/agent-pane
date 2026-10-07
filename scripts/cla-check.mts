@@ -143,6 +143,9 @@ export interface ClaOctokit {
       updateComment: (p: RepoParams & { comment_id: number; body: string }) => Promise<unknown>
     }
     repos: {
+      compareCommitsWithBasehead: (
+        p: RepoParams & { basehead: string },
+      ) => Promise<{ data: { status: string } }>
       getContent: (p: RepoParams & { path: string; ref: string }) => Promise<{ data: unknown }>
       getCollaboratorPermissionLevel: (
         p: RepoParams & { username: string },
@@ -352,15 +355,34 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
     const { number } = pr
     // A promotion (main -> release, opened by copse-release-bot) carries only
     // commits already on the default branch, each of which merged there
-    // through this check. The `release` ruleset does not require CLA, and a
-    // promotion regularly exceeds the 250 commits the API will list.
-    if (sameRepository(pr) && pr.head.ref === pr.base.repo.default_branch) {
+    // through this check. A promotion can exceed the 250 commits the API lists.
+    // The promotion workflow pins promote/main so later trunk merges cannot
+    // cancel its CI. A branch name alone is no proof: verify that its exact
+    // head is already on the default branch, including after trunk advances.
+    const source = pr.base.repo.default_branch
+    let promotion = sameRepository(pr) && pr.head.ref === source
+    if (
+      !promotion &&
+      sameRepository(pr) &&
+      pr.head.ref === `promote/${source}` &&
+      pr.base.ref === 'release' &&
+      pr.user &&
+      isTrustedAutomation(pr.user)
+    ) {
+      const { data } = await github.rest.repos.compareCommitsWithBasehead({
+        owner,
+        repo,
+        basehead: `${source}...${pr.head.sha}`,
+      })
+      promotion = data.status === 'identical' || data.status === 'behind'
+    }
+    if (promotion) {
       return {
         kind: 'evaluated',
         number,
         sha: pr.head.sha,
         state: 'success',
-        description: `Promotes ${pr.head.ref}, whose commits pass CLA before they merge there`,
+        description: `Promotes ${source}, whose commits pass CLA before they merge there`,
         unsigned: [],
         unresolved: [],
       }

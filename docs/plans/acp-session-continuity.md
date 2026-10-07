@@ -115,8 +115,12 @@ same from Copse's point of view.
 
 ### What the deferred-worktree flow must do
 
+Implemented behind the deferred-worktrees opt-in; see
+[deferred thread worktrees](./deferred-thread-worktrees.md#acp-agents) for the
+eligibility rules and the read-only start.
+
 The carry-over happens when the pool acquires a session at a turn boundary. The
-`request_write_access` tool should therefore:
+`request_write_access` tool therefore:
 
 1. create the worktree and return a tool result telling the agent it will
    continue in that directory with write access;
@@ -320,6 +324,8 @@ client-name branch.
 - Drop the load replay before the update pump sees it.
 - Report `AcpSessionHandover` to the turn, and open the turn with a note that
   says what did not carry over.
+- Start a deferred ACP thread read-only and continue it in the worktree it asks
+  for (`runAcpTurnWithContinuation`, `acp-write-access.ts`).
 - `npm run probe:acp -- --continuity`, which adds the observed _Resume in new
   cwd_ capability to the support matrix.
 
@@ -381,7 +387,15 @@ Changed-directory carry-over (Phase 0.5) is covered by:
   later idle reap in the new cwd; a mode-only change resuming in place;
   load-only reattach after a reap; the move without load, refused load, and
   empty-replay handovers; nothing reported when the old session was never
-  prompted; and no session crossing to another agent.
+  prompted; and no session crossing to another agent. It also covers a
+  read-only checkout becoming writable in the same directory (new process, same
+  session) and the fingerprint/lineage split for the flag.
+- `acp-agent-service.test.ts` for the continuation turn: it starts only after a
+  read-only turn that ended on its own and gained a worktree, extends the
+  transcript, drops skills already run, and keeps the first turn's text and
+  usage when it fails.
+- `acp-native-bridge.test.ts` for `request_write_access` being offered, and
+  refused, per session, and for its end-your-turn note.
 - `acp-session-reattach.test.ts` for the method order, the replay split, and
   the note copy.
 - `acp-continuity-probe.test.ts` for the probe against global, per-cwd, and

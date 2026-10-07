@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { estimateContextBreakdown } from './context-estimate.ts'
 import { createRegistry } from './registry-bootstrap.ts'
+import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
+import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { refreshSkillsRegistry } from './skills/skills-registry.ts'
 import { setSetting } from './storage/settings.test-shim.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
@@ -15,6 +17,10 @@ import {
 
 function skillsTokens(breakdown: Awaited<ReturnType<typeof estimateContextBreakdown>>): number {
   return breakdown.segments.find((segment) => segment.key === 'skills')?.tokens ?? 0
+}
+
+function toolsTokens(breakdown: Awaited<ReturnType<typeof estimateContextBreakdown>>): number {
+  return breakdown.segments.find((segment) => segment.key === 'tools')?.tokens ?? 0
 }
 
 describe('estimateContextBreakdown', () => {
@@ -93,5 +99,29 @@ description: Bundled skill for tests
     )
 
     await rm(bundledRoot, { recursive: true, force: true })
+  })
+
+  it('counts request_write_access only for a deferred thread, which is the only one offered it', async () => {
+    const registry = createRegistry()
+    const tool = registry
+      .toLLMTools()
+      .find((candidate) => candidate.name === REQUEST_WRITE_ACCESS_TOOL)
+    assert.ok(tool, 'the registry should hold request_write_access')
+    const toolTokens =
+      JSON.stringify({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      }).length / CHARS_PER_TOKEN
+    const input = { draftText: '', invokedSkills: [], imageCount: 0, priorMessages: [] }
+
+    const ordinary = await estimateContextBreakdown(registry, input)
+    const deferred = await estimateContextBreakdown(registry, { ...input, deferredWorktree: true })
+
+    // Segments are rounded independently, so allow one token either way.
+    assert.ok(
+      Math.abs(toolsTokens(deferred) - toolsTokens(ordinary) - toolTokens) <= 1,
+      `only a deferred thread should count the ~${String(Math.round(toolTokens))}-token tool`,
+    )
   })
 })

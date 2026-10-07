@@ -52,22 +52,28 @@ What is in:
   command is truncated — so it carries no answer at all. The detail pane shows the selected
   request exactly as the approval prompt presents it, rendered by the prompt's own
   `approvalRequestDetails`: full title, advice, the whole untruncated body (monospaced for
-  shell, wrapping and scrolling, never cut) and the footer. **Approve once** and **Reject**
+  shell, wrapping and scrolling, never cut) and the footer. **Approve** (a once-only response) and **Reject**
   exist only in that pane's action bar, beside **Open thread**, so a request cannot be
   approved from a view that shows less than the prompt would.
 - The approval dialog's clickjack guard carries over: Approve pauses for
   `APPROVAL_SETTLE_MS` whenever a request it has not shown yet takes the detail pane (on
   open, on selecting another request, or when an answered one hands over to the next) and
   when the Needs-you list changes while the panel is open; Reject stays live.
-- **Questions go to their thread.** `mountAskUserDialog` returns a read-only
-  `AskUserRequests` handle. The detail lists every question, and **Answer in thread** opens
-  its thread, where the existing ask dialog surfaces it — the dialog stays the only thing
-  that answers.
+- **Questions are answered in place, through the dialog's queue.** `mountAskUserDialog`
+  returns an `AskUserRequests` handle with the pending questions (and the quick answers the
+  agent offered) and `answer(id, answers)`. The detail renders each question with a field and
+  **Send answer**; the send goes through the dialog's `settle` function, the same one its own
+  buttons use, for a question on screen or one still queued for another thread, so there is a
+  single path that releases a blocked agent, and `answer` reports false for a question already
+  settled elsewhere or answers that do not match its questions. Quick answers fill the field rather than send, so a click on a row that
+  moved under the pointer cannot answer. Drafts live in the view (the detail pane rebuilds on a
+  redraw) and the pane is left alone while someone is typing in it. **Open thread** is still
+  there for a question that wants the transcript.
 - Re-rendering is throttled to one pass per 250ms, ages refresh every 30s while open, and
   the selection and focus stay on the same row (or its place in the list) across
   re-renders. The panel has a fixed height, so a new selection never resizes it.
 - Keyboard: arrows/Home/End move the selection (roving tab stop) and the detail follows,
-  Tab reaches the detail's Open thread / Reject / Approve once, Esc closes. Each list is
+  Tab reaches the detail's Open thread / Reject / Approve, Esc closes. Each list is
   labelled by its group heading and each row's accessible name leads with its state.
 - The empty state explains what the panel will show.
 

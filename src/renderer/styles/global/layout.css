@@ -94,14 +94,13 @@
 .pane-projects-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-sm) var(--projects-action-inset) var(--spacing-sm) var(--spacing-md);
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md) var(--projects-action-inset) 0 var(--spacing-md);
   font-size: var(--group-header-font-size);
   font-weight: var(--group-header-font-weight);
   text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 /* Header add, project add, and thread close share one trailing action column. */
@@ -122,34 +121,6 @@
   color: var(--text-primary);
   background: var(--bg-hover);
 }
-/* Thread-filter toggle in the projects header; `.active` while its row is open. */
-.projects-search-btn {
-  display: inline-flex;
-  align-items: center;
-  margin-left: auto;
-  padding: 2px;
-  color: var(--text-muted);
-  border-radius: var(--radius);
-}
-.projects-search-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-.projects-search-btn.active {
-  color: var(--accent);
-}
-/* Sort menu entry beside the thread filter. */
-.projects-sort-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  color: var(--text-muted);
-  border-radius: var(--radius);
-}
-.projects-sort-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
 /* Activity panel entry: a bell, with a count of waiting threads beside it. */
 .projects-activity-btn {
   display: inline-flex;
@@ -164,32 +135,83 @@
   background: var(--bg-hover);
 }
 .projects-activity-btn.has-attention {
-  color: var(--warning);
+  color: var(--text-primary);
 }
 .projects-activity-count {
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
 }
-.projects-search-row {
-  padding: var(--spacing-xs) var(--spacing-md);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.projects-search-input {
-  width: 100%;
+/* The search field sits in the header row, always visible, with the bell and "+"
+   beside it; the project filter and the sort sit on the row under it. */
+.projects-search {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: row;
+  min-width: 0;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: 0;
   padding: 4px var(--spacing-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-input, var(--bg-elevated));
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+.projects-search:focus-within {
+  border-color: var(--accent);
+}
+.projects-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--text-primary);
+  font: inherit;
   font-size: var(--font-size-sm);
   outline: none;
 }
-.projects-search-input:focus {
-  border-color: var(--accent);
-}
 .projects-search-input::placeholder {
   color: var(--text-muted);
+}
+.projects-filters {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.projects-filter-btn {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 2px 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.projects-filter-btn:hover,
+.projects-filter-btn.is-filtering {
+  color: var(--text-primary);
+}
+.projects-sort-dir {
+  color: var(--text-muted);
+}
+.projects-filter-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.projects-list.is-compact .chat-thread-owner {
+  display: none;
+}
+.projects-list.is-compact .chat-row {
+  padding-block: calc(var(--list-row-padding-block) / 2);
 }
 .projects-list {
   flex: 1;
@@ -279,6 +301,41 @@
 .context-menu-item-label {
   flex: 1 1 auto;
 }
+.context-menu-item-detail {
+  flex: 0 0 auto;
+  margin-left: var(--spacing-md);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.context-menu-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 16px;
+  margin-left: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-hover);
+}
+.context-menu-switch i {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.12s;
+}
+.context-menu-switch.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.context-menu-switch.is-on i {
+  background: var(--bg-elevated);
+  transform: translateX(12px);
+}
 .context-menu-item-check {
   flex: 0 0 auto;
   color: var(--accent, var(--text-primary));
@@ -290,6 +347,11 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   white-space: nowrap;
+}
+.context-menu-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
 }
 .context-menu-heading:not(:first-child) {
   margin-top: 2px;
@@ -503,6 +565,13 @@
   font-size: var(--font-size-xs);
   white-space: nowrap;
 }
+/* A heading over one status section of the sidebar's thread list (Group by ▸ Status). */
+.thread-section-heading {
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
 /* The label takes the free space instead of the title, so it sits right
    after the title rather than being pushed to the row's far end. */
 .chat-row .chat-title:has(+ .chat-thread-owner) {
@@ -510,6 +579,22 @@
 }
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
+}
+/* One row standing for several runs of a schedule: "N need you" or "N failed". */
+.automation-fold-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-xs) var(--projects-nested-title-indent);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  text-align: left;
+}
+.automation-fold-row:hover {
+  color: var(--text-primary);
+}
+.automation-fold-row.is-failed .automation-fold-label {
+  color: var(--error);
 }
 .automation-schedule-runs .chat-row {
   padding-left: var(--projects-nested-title-indent);
@@ -662,7 +747,7 @@
 .chat-attention-bell {
   flex-shrink: 0;
   margin-left: 4px;
-  color: var(--warning, #d29922);
+  color: var(--text-primary);
   animation: chat-attention-pulse 1.8s ease-in-out infinite;
 }
 .project-row .chat-attention-bell {
@@ -837,43 +922,54 @@
       var(--chat-gradient-bottom) 100%
     );
 }
-.pane-chat.composer-centered {
-  --chat-composer-width: min(720px, calc(100% - 2 * var(--spacing-lg)));
-}
 .conversation,
 .conversation-scroll,
 .messages-list {
   background: transparent;
 }
-.pane-chat.composer-centered .conversation {
-  padding-bottom: 0;
+.pane-chat.is-activity-home {
+  /* Narrower than the Activity card above it, as in the prototype; the caption
+     over the composer uses the same width so the two line up. */
+  --chat-composer-width: min(800px, calc(100cqw - 2 * clamp(22px, 5.4cqw, 76px)));
 }
-.pane-chat.composer-centered #input-bar {
+.pane-chat.is-activity-idle {
+  --chat-composer-width: min(720px, calc(100% - 2 * var(--spacing-lg)));
+}
+.pane-chat.is-activity-idle #input-bar {
   top: 50%;
   bottom: auto;
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
-  /* Clear the full docked `#input-bar` border — a leftover `border-top: none`
-     left left/right/bottom borders stacked under the hairline shadow ring. */
+  /* The docked card's real border would stack under the hairline ring. */
   border: none;
   border-radius: var(--radius-lg);
-  /* Floats over the chat gradient: keep the hairline ring, add real depth. */
   box-shadow:
     0 0 0 1px var(--border),
     var(--shadow-lg);
-  /* Centered on both axes rather than pinned to the bottom, so the even margin
-     this variant wants is --spacing-xl top and bottom, not the docked card's
-     --spacing-md (titlebar.css). Same reasoning as #2489 there: cap the whole
-     card so a long draft can't push past the pane's edges. */
+  /* Centred on both axes, so a long draft is capped to the pane. */
   max-height: calc(100% - 2 * var(--spacing-xl));
 }
-.pane-chat.composer-centered .prompt-input {
+.pane-chat.is-activity-idle .prompt-input {
   border-top: none;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
-.pane-chat.composer-centered .input-footer {
+.pane-chat.is-activity-idle .input-footer {
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.pane-chat.is-activity-home .conversation {
+  /* The empty thread has nothing to show; the Activity home (views/activity-home.ts)
+     takes the pane above the docked composer. */
+  display: none;
+}
+.pane-chat.is-activity-home .conversation:has(> .thread-roadmap-origin:not([hidden])) {
+  /* A drafted roadmap thread still needs its back-link above the Activity home. */
+  display: flex;
+  flex: 0 0 auto;
+  padding-bottom: 0;
+}
+.pane-chat.is-activity-home .conversation > :not(.thread-roadmap-origin) {
+  display: none;
 }
 .conversation {
   flex: 1 1 0;

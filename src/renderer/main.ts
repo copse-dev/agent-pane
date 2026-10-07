@@ -95,10 +95,13 @@ import {
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
 import { mountProcessManagerDialog } from './views/process-manager-dialog.ts'
+import { mountActivityHome } from './views/activity-home.ts'
 import { mountActivityPanel, openActivityPanel } from './views/activity-panel.ts'
+import type { ActivitySources } from './views/activity-view.ts'
 import { startAgentController } from './controller/agent.ts'
 import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
+import { attachAutomationAppearance } from './controller/automation-appearance.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import {
   loadProjects,
@@ -152,6 +155,7 @@ import { mountPopoutTitlebar } from './popout/popout-titlebar.ts'
 import { applyPopoutSeed } from './popout/pane-popout-seed.ts'
 import {
   isRightPanelPosition,
+  isThreadGroupMode,
   isThreadSortMode,
   isThemePreference,
   DEFAULT_THEME_PREFERENCE,
@@ -242,6 +246,8 @@ let layoutMounted = false
 let unmountPopoutTitlebar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
 let openProcessManager: (() => void) | null = null
+// The two request queues the Activity views read; set once the dialogs are mounted.
+let activitySources: ActivitySources | null = null
 
 async function boot(): Promise<void> {
   // DEBUG BRANCH: the outermost span a user would call "opening the app" —
@@ -275,7 +281,8 @@ async function boot(): Promise<void> {
   openProcessManager = mountProcessManagerDialog(api, store)
   // Lists every pending request the two dialogs above hold, and answers
   // approvals back through the approval dialog's own queue.
-  mountActivityPanel(api, store, { approvals: approvalRequests, questions: askUserRequests })
+  activitySources = { approvals: approvalRequests, questions: askUserRequests }
+  mountActivityPanel(api, store, activitySources)
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
@@ -288,6 +295,7 @@ async function boot(): Promise<void> {
   const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel
   const savedRightPanelPosition = startupSettings.rightPanelPosition
   const savedSidebarThreadSort = startupSettings.sidebarThreadSort
+  const savedSidebarThreadGroup = startupSettings.sidebarThreadGroup
   const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser
   const savedDeveloperMode = startupSettings.developerMode
   // Theme and editor font size persist too. Restore them here (the store
@@ -346,6 +354,9 @@ async function boot(): Promise<void> {
       ? savedSidebarThreadSort
       : 'activity',
     sidebarThreadSortReverse: startupSettings.sidebarThreadSortReverse === true,
+    sidebarThreadGroup: isThreadGroupMode(savedSidebarThreadGroup)
+      ? savedSidebarThreadGroup
+      : 'project',
     openLinksInBuiltInBrowser:
       typeof savedOpenLinksInBuiltInBrowser === 'boolean' ? savedOpenLinksInBuiltInBrowser : true,
     developerMode: typeof savedDeveloperMode === 'boolean' ? savedDeveloperMode : false,
@@ -372,6 +383,7 @@ async function boot(): Promise<void> {
     attachMobileChat(store, api, mobileReady)
     attachBestValueDefaultResolver(store, api)
     attachAutomationController(store, api)
+    attachAutomationAppearance(store, api.appIcon)
     // When `gh_pr_create` turns the diff you're reading into a PR, move the
     // Changes panel on to it. Only the main window: a pop-out is pinned to the
     // one pane it was opened for.
@@ -633,7 +645,12 @@ function mountFullLayout(): void {
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
   }
-  bindChatComposerLayout(store)
+  // The Activity view is the new-thread screen: shown above the docked composer
+  // while the active thread is empty.
+  const activityHome = activitySources
+    ? mountActivityHome(requireElement('pane-chat'), api, store, activitySources)
+    : null
+  bindChatComposerLayout(store, activityHome?.setShown)
   mountFileTree(requireElement('file-tree-host'), store, api)
   mountRightPanelLayout(store)
   mountTerminalsPane(

@@ -61,7 +61,13 @@ describe('SSH remote project entry point', () => {
     const menu = await $('.context-menu')
     await expect(menu).toBeDisplayed()
     const labels = await $$('.context-menu-item').map((item) => item.getText())
-    assert.deepEqual(labels, ['New project', 'Open folder', 'Open remote project', 'New group'])
+    assert.deepEqual(labels, [
+      'New thread',
+      'New project',
+      'Open folder',
+      'Open remote project',
+      'New group',
+    ])
     await saveAppScreenshot('ssh-project-add-menu.png')
   })
 })

@@ -1,6 +1,12 @@
 import { showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { el, clear, on } from '../dom/helpers.ts'
-import { arrowLeftIcon, checkIcon, chevronDownIcon, chevronRightIcon } from '../dom/icons.ts'
+import {
+  arrowLeftIcon,
+  checkIcon,
+  chevronDownIcon,
+  chevronRightIcon,
+  historyIcon,
+} from '../dom/icons.ts'
 import { modelDisplayLabel, type ModelOption } from './model-options.ts'
 import type { ModelCoverage } from './model-coverage.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
@@ -164,8 +170,7 @@ export function mountModelPicker(
     },
     '$',
   )
-  const triggerRetention = el('span', { class: 'ui-badge model-picker-retention', hidden: true })
-  trigger.append(labelEl, triggerRetention, triggerCost, chevron)
+  trigger.append(labelEl, triggerCost, chevron)
   const menu = el('div', {
     class: 'model-picker-menu',
     hidden: '',
@@ -538,8 +543,13 @@ export function mountModelPicker(
           ? [
               el(
                 'span',
-                { class: 'ui-badge model-picker-retention', title: opt.retention.detail },
-                opt.retention.label,
+                {
+                  class: 'model-picker-retention',
+                  title: opt.retention.detail,
+                  'aria-label': opt.retention.label,
+                  role: 'img',
+                },
+                historyIcon(),
               ),
             ]
           : []),
@@ -631,9 +641,6 @@ export function mountModelPicker(
     labelEl.textContent = label
     labelEl.title = current
     triggerCost.hidden = match?.coverage !== 'paid'
-    triggerRetention.hidden = !match?.retention
-    triggerRetention.textContent = match?.retention?.label ?? ''
-    triggerRetention.title = match?.retention?.detail ?? ''
   }
 
   async function refresh(): Promise<void> {

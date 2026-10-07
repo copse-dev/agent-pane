@@ -4,13 +4,29 @@
  * Lives next to the spec (not under `tests/e2e/helpers/`) so the e2e oracle does
  * not treat the change as a broad helpers edit and force a full suite.
  */
-import { mkdirSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeSeedConfig } from './helpers/seed-config.ts'
 import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
 
 const userDataDir = copseUserDataDir
+
+/**
+ * A small fixed workspace for shots that list the Explorer. Seeding the repo root instead makes
+ * every new root file (a licence, a code of conduct) shift the list and drift the screenshot.
+ * The caller removes `parent`; `root` keeps a fixed name under it.
+ */
+export function createTodoWorkspace(): { parent: string; root: string } {
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), 'copse-todo-workspace-')))
+  const root = join(parent, 'workspace')
+  mkdirSync(join(root, 'src'), { recursive: true })
+  mkdirSync(join(root, 'docs'))
+  writeFileSync(join(root, 'README.md'), '# Workspace\n')
+  writeFileSync(join(root, 'package.json'), '{}\n')
+  writeFileSync(join(root, 'src', 'index.ts'), 'export {}\n')
+  return { parent, root }
+}
 
 export function seedTodoPlanFixtures(workspaceRoot: string): {
   planThreadTitle: string

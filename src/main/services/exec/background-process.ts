@@ -249,7 +249,7 @@ export async function startBackgroundProcess(
       cwd,
       proc,
       startedAt: Date.now(),
-      output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES),
+      output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES, { evidence: true }),
       portBinding,
       unsandboxed,
       url: null,

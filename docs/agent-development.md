@@ -178,17 +178,22 @@ the regex script bridge are retired; the fixture source guard rejects them in ex
 
 ## App data and seeded state
 
-Everything Copse persists lives under one root, `~/.copse/` (`COPSE_DIR` moves the whole profile):
+Everything Copse persists lives under one root, `~/.copse/` (`COPSE_DIR` moves the whole profile).
+Keep `config.json` small: every `storage:set` makes the main process rewrite the whole file
+synchronously, so large or append-only data (logs, ledgers) belongs in its own file next to it —
+see `storageAppendFile` / `storageWriteFile` in `src/main/services/storage/storage.ts`.
 
-| Path                                                                                 | Contents                                                                   |
-| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| `user-data/config.json`                                                              | projects, `activeProjectId`, workspace root, plugin settings, usage ledger |
-| `user-data/settings.json`                                                            | settings, including encrypted API keys                                     |
-| `user-data/` (rest)                                                                  | `mcp.json`, `tools/`, browser profiles, `gortex/` semantic index           |
-| `workspace/<projectId>/<threadId>/`                                                  | threads, tasks, decision log, deferred approvals                           |
-| `workspace/<projectId>/terminal-history`                                             | shared HISTFILE for the project's interactive Shells-tab PTYs (#2433)      |
-| `worktrees/`                                                                         | Copse-managed Git worktrees                                                |
-| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | per-feature stores                                                         |
+| Path                                                                                 | Contents                                                              |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `user-data/config.json`                                                              | projects, `activeProjectId`, workspace root, plugin settings          |
+| `user-data/settings.json`                                                            | settings, including encrypted API keys                                |
+| `user-data/` (rest)                                                                  | `mcp.json`, `tools/`, browser profiles, `gortex/` semantic index      |
+| `user-data/usage-events.jsonl`                                                       | usage ledger, one JSON event per line (90 days; Settings → Usage)     |
+| `user-data/apple-development/logs/<operationId>.log`                                 | build output of Apple Development operations                          |
+| `workspace/<projectId>/<threadId>/`                                                  | threads, tasks, decision log, deferred approvals                      |
+| `workspace/<projectId>/terminal-history`                                             | shared HISTFILE for the project's interactive Shells-tab PTYs (#2433) |
+| `worktrees/`                                                                         | Copse-managed Git worktrees                                           |
+| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | per-feature stores                                                    |
 
 Electron's `userData` used to default to `<appData>/copse-panel` (`~/Library/Application Support/`
 on macOS), which split the profile across two unrelated directories. `app-init.ts` now points it at
@@ -298,7 +303,11 @@ diagnostic and is not part of `pnpm run check`.
 
 Screenshot review blocks merging. The publisher sets a `Screenshot review` commit status on every
 same-repository PR head, which the default-branch ruleset requires beside `CI Passed`. It is pending
-while candidates await a decision and passes when there are none. A maintainer decides with a label,
+while candidates await a decision and passes when there are none. The publisher adds
+`screenshots-need-review` while a decision is pending and removes it when there are no candidates
+or a successful label or checkbox decision is recorded. Failed decisions keep the reminder.
+A push rechecks screenshots for the new head and adds the label again if review is needed.
+A maintainer decides with a label,
 which `.github/workflows/screenshot-review-labels.yml` acts on and then removes:
 `accept-screenshots` fast-forwards the PR branch to the compare commit, after checking that it is
 one commit on the live head that only adds or updates PNGs under `tests/e2e/screenshots/`. It

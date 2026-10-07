@@ -258,6 +258,71 @@ test('a window that does not own navigation persists projects but never navigati
   autosave.detach()
 })
 
+test('does not rewrite a projects list that has not changed', async () => {
+  // Each `storage:set` rewrites the whole config.json synchronously on the main
+  // thread, and a project switch emits `projects_changed` several times. An
+  // unchanged list is only ever written once.
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const projects = [{ id: 'p1', path: '/p1', name: 'P1' }]
+
+  await saveProjects(api, projects, 'p1', null)
+  await saveProjects(api, projects, 'p1', 't1')
+  await saveProjects(api, structuredClone(projects), 'p1', 't1')
+  assert.deepEqual(
+    calls.storageSets.map((call) => call[0]),
+    ['projects'],
+    'an identical list is written once, however many times it is saved',
+  )
+
+  const renamed = [{ id: 'p1', path: '/p1', name: 'Renamed' }]
+  await saveProjects(api, renamed, 'p1', 't1')
+  assert.equal(calls.storageSets.length, 2, 'a changed list is still written')
+  assert.deepEqual(calls.storageSets.at(-1), ['projects', renamed])
+})
+
+test('autosave does not rewrite projects on a projects_changed that changed nothing', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const projects = [{ id: 'p1', path: '/p1', name: 'P1' }]
+  const store = createStore({ activeProjectId: 'p1', threads: [], projects })
+  markNavigationRestored({ activeProjectId: 'p1', activeThreadId: null })
+  const autosave = attachAutosave(store, api)
+
+  // `projects_changed` is also the sidebar's re-render signal.
+  store.emit('projects_changed')
+  await waitDebounce()
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.equal(calls.storageSets.filter((call) => call[0] === 'projects').length, 1)
+
+  store.setState({ projects: [{ id: 'p1', path: '/p1', name: 'Renamed' }] })
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.equal(calls.storageSets.filter((call) => call[0] === 'projects').length, 2)
+  autosave.detach()
+})
+
+test('a failed projects write is retried instead of skipped as already persisted', async () => {
+  __resetPersistenceForTest()
+  let failNext = true
+  const attempts: unknown[] = []
+  const { api } = fakeApi({
+    set: async (_key, value): Promise<void> => {
+      attempts.push(value)
+      if (failNext) {
+        failNext = false
+        throw new Error('disk full')
+      }
+    },
+  })
+  const projects = [{ id: 'p1', path: '/p1', name: 'P1' }]
+
+  await assert.rejects(() => saveProjects(api, projects, 'p1', null), /disk full/)
+  await saveProjects(api, projects, 'p1', null)
+  assert.equal(attempts.length, 2, 'the retry reaches storage')
+})
+
 test('does not persist navigation before boot has restored it', async () => {
   // `attachAutosave` is attached long before `loadProjects` resolves. Until the
   // restored value is in the store, `activeProjectId` reads as null, and writing

@@ -57,6 +57,24 @@ function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
+function drawMark(surface: Element): void {
+  const pointer = (type: string, x: number, y: number): PointerEvent =>
+    new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX: x,
+      clientY: y,
+      pointerId: 1,
+      pointerType: 'mouse',
+      pressure: 0.5,
+    })
+  surface.dispatchEvent(pointer('pointerdown', 20, 20))
+  for (let offset = 30; offset <= 100; offset += 10) {
+    window.dispatchEvent(pointer('pointermove', offset, offset))
+  }
+  window.dispatchEvent(pointer('pointerup', 110, 110))
+}
+
 describe('image expand lightbox', () => {
   before(() => {
     patchPreviewDialog()
@@ -85,11 +103,51 @@ describe('image expand lightbox', () => {
     attachImageExpand(img, 'prompt-shot.png')
     mouseClick(img)
 
-    const dialog = qsRequired(document, '.attachment-preview-dialog')
+    const dialog = qsRequired<HTMLDialogElement>(document, '.attachment-preview-dialog')
     const expanded = qsRequired<HTMLImageElement>(dialog, '.image-expand-image')
     assert.equal(expanded.src, PNG)
     assert.equal(expanded.alt, 'prompt-shot.png')
     assert.ok(qs(dialog, '.attachment-preview-close'))
+    const annotate = qsRequired<HTMLButtonElement>(dialog, '.image-expand-annotate')
+    annotate.click()
+    assert.equal(annotate.getAttribute('aria-pressed'), 'true')
+    assert.ok(qs(dialog, '.annotation-layer-svg'))
+    dialog.close()
+  })
+
+  it('keeps marks with their image while navigating the gallery', () => {
+    openImageGallery(
+      [
+        { src: PNG, alt: 'first' },
+        { src: PNG, alt: 'second' },
+      ],
+      0,
+    )
+    const dialog = qsRequired<HTMLDialogElement>(document, '.attachment-preview-dialog')
+    const annotate = qsRequired<HTMLButtonElement>(dialog, '.image-expand-annotate')
+    annotate.click()
+    const surface = qsRequired(dialog, '.image-expand-frame:not([hidden]) .annotation-layer-svg')
+    drawMark(surface)
+    assert.equal(surface.childElementCount, 1)
+    assert.equal(qsRequired<HTMLButtonElement>(dialog, '.annotation-send').disabled, false)
+
+    qsRequired<HTMLButtonElement>(dialog, '.image-expand-thumbnail:first-child').click()
+    assert.equal(annotate.getAttribute('aria-pressed'), 'true')
+
+    qsRequired<HTMLButtonElement>(dialog, '.image-expand-thumbnail:nth-child(2)').click()
+    assert.equal(qsRequired(dialog, '.image-expand-annotate').getAttribute('aria-pressed'), 'false')
+    assert.equal(
+      dialog.querySelectorAll('.image-expand-gallery-footer .image-expand-annotate').length,
+      1,
+    )
+    assert.equal(qs(dialog, '.image-expand-frame:not([hidden]) .annotation-layer-svg'), null)
+    qsRequired<HTMLButtonElement>(dialog, '.image-expand-thumbnail:first-child').click()
+    assert.equal(
+      qsRequired(dialog, '.image-expand-frame:not([hidden]) .annotation-layer-svg')
+        .childElementCount,
+      1,
+    )
+    dialog.close()
   })
 
   it('opens on Enter/Space and ignores other keys', () => {
@@ -130,23 +188,35 @@ describe('image expand lightbox', () => {
     assert.equal(next.disabled, false)
 
     next.click()
-    assert.equal(image.dataset['imageIndex'], '1')
+    assert.equal(
+      qsRequired<HTMLImageElement>(viewer, '.image-expand-image').dataset['imageIndex'],
+      '1',
+    )
     assert.equal(thumbnails[1]?.getAttribute('aria-selected'), 'true')
 
     next.focus()
     next.dispatchEvent(
       new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
     )
-    assert.equal(image.dataset['imageIndex'], '2')
+    assert.equal(
+      qsRequired<HTMLImageElement>(viewer, '.image-expand-image').dataset['imageIndex'],
+      '2',
+    )
     assert.equal(document.activeElement, viewer)
 
     viewer.dispatchEvent(
       new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
     )
-    assert.equal(image.dataset['imageIndex'], '1')
+    assert.equal(
+      qsRequired<HTMLImageElement>(viewer, '.image-expand-image').dataset['imageIndex'],
+      '1',
+    )
 
     thumbnails[0].click()
-    assert.equal(image.dataset['imageIndex'], '0')
+    assert.equal(
+      qsRequired<HTMLImageElement>(viewer, '.image-expand-image').dataset['imageIndex'],
+      '0',
+    )
     dialog.close()
   })
 

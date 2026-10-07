@@ -8,10 +8,11 @@ import {
   setThreadDraftPrompt,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
-import type { ContextBreakdown, Thread, ThreadCatalogHit } from '@shared/types'
+import type { ContextBreakdown, Thread, ThreadCatalogHit, StreamChunk } from '@shared/types'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import { containerRunToolCall } from '@shared/store/container-run-card.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { startAgentController } from '../controller/agent.ts'
 import { mountInputBar } from './input-bar.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import { carryRunningThreads, adoptBackgroundThreads } from '../controller/background-threads.ts'
@@ -293,6 +294,64 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
+describe('input bar resolved model label', () => {
+  it('updates before the first token, replaces an older resolution, and ignores other threads', async () => {
+    const active = { ...thread(), model: 'auto:balanced', resolvedModel: 'gpt-5.6-sol' }
+    const other = { ...thread(), id: 'thread-2', model: 'auto:balanced' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: active.id,
+      threads: [active, other],
+    })
+    let send: (threadId: string, chunk: StreamChunk) => void = () => {
+      throw new Error('chunk handler not installed')
+    }
+    const base = createApi({ currentBranch: 'main' })
+    const api: ApiClient = {
+      ...base,
+      agent: {
+        ...base.agent,
+        onChunk: (handler) => {
+          send = handler
+          return () => {}
+        },
+      },
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    const bar = mountInputBar(host, store, api)
+    const stop = startAgentController(store, api)
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const label = host.querySelector('.model-picker-label')
+      assert.ok(label)
+      assert.equal(label.textContent, 'GPT-5.6 Sol')
+      send(active.id, {
+        type: 'turn_parameters',
+        model: 'claude-sonnet-4-6',
+        parameters: {},
+        requestedModel: 'auto:balanced',
+      })
+      assert.equal(label.textContent, 'Claude Sonnet 4.6')
+      assert.equal(getThreadById(store, active.id)?.resolvedModel, 'claude-sonnet-4-6')
+      assert.equal(getThreadById(store, active.id)?.model, 'auto:balanced')
+      assert.equal(getThreadById(store, active.id)?.messages.length, 0)
+      send(other.id, { type: 'turn_parameters', model: 'gpt-5.6-sol', parameters: {} })
+      assert.equal(label.textContent, 'Claude Sonnet 4.6')
+      send(active.id, { type: 'turn_parameters', model: 'gpt-5.6-sol', parameters: {} })
+      assert.equal(label.textContent, 'GPT-5.6 Sol')
+      assert.equal(store.getState().activeThreadId, active.id)
+      send(active.id, { type: 'text', text: 'Hello' })
+      assert.equal(getThreadById(store, active.id)?.messages[0]?.model, 'gpt-5.6-sol')
+    } finally {
+      stop()
+      bar.unmount()
+    }
+  })
+})
+
 describe('input bar running attribution', () => {
   it('uses the submit action alone to show queueing while a turn is running', async () => {
     const running = thread()
@@ -315,6 +374,88 @@ describe('input bar running attribution', () => {
     assert.ok(submit)
     assert.equal(submit.textContent, 'Queue')
     assert.equal(submit.getAttribute('aria-label'), 'Queue message')
+  })
+})
+
+describe('input bar selection replies', () => {
+  it('quotes the reply into the current draft and sends through the normal submission path', async () => {
+    const payloads: string[] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('main')],
+    })
+    addMessage(store, 'thread-1', 'assistant', 'Selected context')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onRun: async (_projectId, _threadId, payload) => {
+          payloads.push(payload)
+        },
+      }),
+    )
+    await flush()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(composer && handlers?.sendQuotedReply)
+    composer.textContent = 'Existing draft.'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    handlers.attachFile({ path: 'context.ts', content: 'Existing attachment' })
+    assert.equal(await handlers.sendQuotedReply('Selected context', 'My reply.'), true)
+    await flush()
+    assert.equal(payloads.length, 1)
+    assert.match(payloads[0] ?? '', /Existing draft/)
+    assert.match(payloads[0] ?? '', /> Selected context/)
+    assert.match(payloads[0] ?? '', /My reply/)
+    assert.match(payloads[0] ?? '', /Existing attachment/)
+    const lastUser = getThreadById(store, 'thread-1')
+      ?.messages.slice()
+      .reverse()
+      .find((message) => message.role === 'user')
+    assert.equal(lastUser?.content, 'Existing draft.\n\n> Selected context\n\nMy reply.')
+    assert.equal(composer.textContent, '')
+  })
+
+  it('leaves the quote and reply in the composer when normal sending fails', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('main')],
+    })
+    addMessage(store, 'thread-1', 'assistant', 'Selected context')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        readCurrentBranch: async () => {
+          throw new Error('Git unavailable')
+        },
+      }),
+    )
+    await flush()
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers?.sendQuotedReply)
+    assert.equal(await handlers.sendQuotedReply('Selected context', 'Keep this reply.'), true)
+    assert.equal(
+      host.querySelector('.prompt-input')?.textContent,
+      '> Selected context\n\nKeep this reply.',
+    )
+    assert.equal(
+      getThreadById(store, 'thread-1')?.messages.filter((message) => message.role === 'user')
+        .length,
+      0,
+    )
   })
 })
 

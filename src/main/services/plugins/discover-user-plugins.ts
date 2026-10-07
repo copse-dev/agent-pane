@@ -17,7 +17,7 @@
 //   │   └── mcp.json
 //   └── broken/            ← skipped, with a reason; neighbours still load
 //
-// **Four properties this module owes the follow-up list**, each pinned by a test
+// **Five properties this module owes the follow-up list**, each pinned by a test
 // in `discover-user-plugins.test.ts`:
 //
 //  1. *A stable root with an override.* `COPSE_PLUGINS_DIR` relocates it so
@@ -31,6 +31,9 @@
 //     seam in a manifest declares an intent to request it; the registry and
 //     permission-gate still decide. The parse layer additionally strips
 //     native tools, ACP exposure, level-3 UI, and trusted prompt.
+//  5. *Managed payload integrity.* Catalogue installs are content-addressed and
+//     re-hashed here before discovery, so editing their immutable payload fails
+//     closed before skills or MCP servers can register.
 import * as fsp from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { copseDataRoot } from '../storage/copse-paths.ts'
@@ -52,7 +55,9 @@ import {
   type PluginManifest,
   type RegisteredPlugin,
 } from '@copse/agent/plugins/plugin-manifest.ts'
+import { hashPluginToolSource } from '@copse/plugin-sdk/plugin-tool-source.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /** Environment override for the plugin root (tests, relocation). */
 export const COPSE_PLUGINS_DIR_ENV = 'COPSE_PLUGINS_DIR'
@@ -305,6 +310,56 @@ async function readMcpServers(
   }
 }
 
+function isMissingPathError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    Object.hasOwn(error, 'code') &&
+    Reflect.get(error, 'code') === 'ENOENT'
+  )
+}
+
+async function verifyManagedPluginIntegrity(
+  root: string,
+  directoryName: string,
+  pluginPath: string,
+): Promise<void> {
+  const recordPath = join(root, '.managed', 'records', `${directoryName}.json`)
+  let text: string
+  try {
+    text = await fsp.readFile(recordPath, 'utf8')
+  } catch (error) {
+    if (isMissingPathError(error)) return
+    throw error
+  }
+  const record = safeJsonParse(text)
+  if (!isRecord(record)) throw new Error('Managed plugin install record is invalid.')
+  const pluginId = record['pluginId']
+  const contentHash = record['contentHash']
+  if (
+    pluginId !== directoryName ||
+    typeof contentHash !== 'string' ||
+    !/^sha256:[a-f0-9]{64}$/.test(contentHash)
+  ) {
+    throw new Error('Managed plugin install record is invalid.')
+  }
+  const activation = await fsp.lstat(pluginPath)
+  if (!activation.isSymbolicLink()) {
+    throw new Error('Managed plugin activation path is not a symlink.')
+  }
+  const expectedPath = join(root, '.managed', 'payloads', contentHash.slice('sha256:'.length))
+  const [actualTarget, expectedTarget] = await Promise.all([
+    fsp.realpath(pluginPath),
+    fsp.realpath(expectedPath),
+  ])
+  if (resolve(actualTarget) !== resolve(expectedTarget)) {
+    throw new Error('Managed plugin activation path does not match its install record.')
+  }
+  const actualHash = await hashPluginToolSource(pluginPath)
+  if (actualHash !== contentHash) {
+    throw new Error('Managed plugin content failed its integrity check.')
+  }
+}
+
 /**
  * Walk the plugin root, returning every directory that validated plus a reason
  * for each that did not.
@@ -336,6 +391,7 @@ export async function discoverUserPlugins(root = userPluginsRoot()): Promise<Use
 
     const pluginPath = join(root, entry.name)
     try {
+      await verifyManagedPluginIntegrity(root, entry.name, pluginPath)
       const candidate = await loadUserPlugin(pluginPath)
       // A duplicate id would throw at registration and take the *first* plugin
       // down with it. Refuse the later one here, where the reason is knowable.

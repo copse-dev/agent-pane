@@ -113,3 +113,17 @@ describe('ACP client against a spawned agent process', () => {
     )
   })
 })
+
+describe('a read-only checkout', () => {
+  it('refuses to spawn an agent that would run outside the project sandbox', async () => {
+    await assert.rejects(
+      spawnAcpAgentProcess({
+        command: process.execPath,
+        args: [MOCK_AGENT],
+        cwd: process.cwd(),
+        readonlyCheckout: true,
+      }),
+      /read-only checkout cannot run an ACP agent outside the project sandbox/,
+    )
+  })
+})

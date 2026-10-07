@@ -13,7 +13,7 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
-import type { UsageEvent } from '../../../src/shared/usage/usage-event.ts'
+import { USAGE_EVENTS_DIR, type UsageEvent } from '../../../src/shared/usage/usage-event.ts'
 import {
   supervisedTaskMetaSchema,
   type SupervisedTaskMeta,
@@ -248,8 +248,12 @@ export function resetUserData(): void {
   rmSync(PENDING_CONFIG_PATH, { force: true })
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
+  rmSync(USAGE_EVENTS_PATH, { force: true, recursive: true })
   writeSettings({})
 }
+
+/** The usage ledger directory under userData; see `USAGE_EVENTS_DIR`. */
+const USAGE_EVENTS_PATH = join(USER_DATA, USAGE_EVENTS_DIR)
 
 /** Copse's own `mcp.json` under userData — a *user* MCP source, not a project one. */
 const USER_MCP_PATH = join(USER_DATA, 'mcp.json')
@@ -635,7 +639,14 @@ export function seedEmptyProject(
     seedConfig.pluginSources = [...options.pluginSources]
   }
   if (options?.usageEvents) {
-    seedConfig.usageEvents = [...options.usageEvents]
+    // The ledger is a directory of `.jsonl` files, one record per line, not a
+    // config.json key; the reader takes every file in it.
+    mkdirSync(USAGE_EVENTS_PATH, { recursive: true })
+    writeFileSync(
+      join(USAGE_EVENTS_PATH, 'seeded.jsonl'),
+      options.usageEvents.map((event) => `\n${JSON.stringify(event)}`).join(''),
+      'utf8',
+    )
   }
   writeSeedConfig(seedConfig, {
     preserveProductWorktreeDefault: options?.worktreeMode === 'default',
@@ -2018,6 +2029,10 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
   const projectId = 'e2e-sticky-user-prompt-project'
   const threadId = 'e2e-sticky-user-prompt-thread'
   const now = Date.now()
+  const previewImages = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="#375b68"/><rect x="32" y="32" width="576" height="48" rx="8" fill="#a9c5c6"/><rect x="32" y="104" width="260" height="264" rx="8" fill="#789da1"/><rect x="316" y="104" width="292" height="264" rx="8" fill="#1d3540"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="640"><rect width="400" height="640" fill="#584766"/><rect x="28" y="28" width="344" height="72" rx="8" fill="#af8db8"/><rect x="28" y="124" width="344" height="488" rx="8" fill="#392c48"/></svg>',
+  ].map((svg) => `data:image/svg+xml,${encodeURIComponent(svg)}`)
   const firstResult = [
     'The initial pass is complete.',
     '',
@@ -2075,6 +2090,7 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
             id: 'msg-user-sticky-latest',
             role: 'user',
             content: 'Follow-up: keep this latest request visible while the response grows.',
+            images: previewImages,
             toolCalls: [],
             createdAt: now + 2,
           },

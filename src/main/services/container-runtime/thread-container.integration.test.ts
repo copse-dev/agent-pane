@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { isRecord } from '@shared/unknown-value.ts'
 import {
   appleContainerAvailable,
   buildWorkerImage,
@@ -44,6 +45,39 @@ const MODEL_HOST = 'model.copse.internal'
 const GUEST_MODEL_ORIGIN = `${MODEL_HOST}:443`
 const EGRESS_WILDCARD = '*.copse.internal:443'
 
+/**
+ * Runs inside the guest as an ordinary shell child of the agent: tries every
+ * way a same-uid process could recover the run's egress token (decision A7)
+ * and then uses whatever it recovered against the guest proxy.
+ */
+const TOKEN_PROBE = `
+import fs from 'node:fs'
+import net from 'node:net'
+const read = (p) => { try { return fs.readFileSync(p) } catch { return null } }
+const TOKEN = /\\/\\/run:([^@\\s]+)@127\\.0\\.0\\.1:3128/
+let token = null
+const readable = []
+for (const pid of fs.readdirSync('/proc').filter((d) => /^\\d+$/.test(d))) {
+  for (const file of ['environ', 'cmdline']) {
+    const buf = read('/proc/' + pid + '/' + file)
+    if (buf === null) continue
+    const m = TOKEN.exec(buf.toString('latin1').replace(/\\0/g, ' '))
+    if (m) { token ??= decodeURIComponent(m[1]); readable.push(pid + '/' + file) }
+  }
+}
+const connect = (auth) => new Promise((resolve) => {
+  const s = net.connect(3128, '127.0.0.1')
+  let buf = ''
+  s.setTimeout(8000, () => { s.destroy(); resolve('timeout') })
+  s.on('error', (e) => resolve(e.code ?? 'error'))
+  s.on('connect', () => s.write('CONNECT model.copse.internal:443 HTTP/1.1\\r\\nHost: model.copse.internal:443\\r\\n' + (auth ? 'Proxy-Authorization: ' + auth + '\\r\\n' : '') + '\\r\\n'))
+  s.on('data', (d) => { buf += d; if (buf.includes('\\r\\n\\r\\n')) { s.destroy(); resolve(buf.split('\\r\\n')[0]) } })
+})
+const out = { uid: process.getuid(), recoveredFrom: readable, noAuth: await connect(null) }
+if (token) out.withRecoveredToken = await connect('Basic ' + Buffer.from('run:' + token).toString('base64'))
+console.log(JSON.stringify(out))
+`
+
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
@@ -65,6 +99,78 @@ describe('thread in a container (end to end)', { skip: E2E !== '1' }, () => {
   it('runs a thread with no prompts, defers the outward effect, and brings the work back', async () => {
     assert.equal(await dockerAvailable(), true, 'docker daemon required')
     await endToEnd('docker')
+  })
+  it('keeps the run token out of reach of a shell command in the guest', async () => {
+    assert.equal(await dockerAvailable(), true, 'docker daemon required')
+    const workerBundle = await bundleThreadContainerWorker(
+      join(tmpdir(), 'copse-thread-container-worker.e2e.cjs'),
+    )
+    await buildWorkerImage({ image: IMAGE, workerBundle })
+    const model = await startScriptedModelServer([
+      {
+        kind: 'shell',
+        command:
+          'node probe.mjs > probe-out.json 2>&1; git add -f probe-out.json && git commit -q -m probe',
+      },
+      { kind: 'text', text: 'done' },
+    ])
+    const repo = seedRepo()
+    writeFileSync(join(repo, 'probe.mjs'), TOKEN_PROBE)
+    const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-tc-runtimes-'))
+    const logs: string[] = []
+    try {
+      const record = await runThreadInContainer(
+        {
+          workspace: repo,
+          prompt: 'probe',
+          model: 'scripted',
+          provider: {
+            kind: 'openai-compatible',
+            model: 'scripted',
+            apiKeySlug: 'scripted',
+            url: `http://${GUEST_MODEL_ORIGIN}/v1`,
+            label: 'the scripted model',
+            local: true,
+            includeUsage: true,
+            apiStyle: null,
+            extraBody: null,
+            params: {},
+          },
+          budgets: { wallClockMs: 4 * 60_000, tokenCeiling: 1_000_000 },
+          egressAllowlist: [EGRESS_WILDCARD],
+          egressResolve: { [MODEL_HOST]: `127.0.0.1:${String(model.port)}` },
+          image: IMAGE,
+          runtimesDir,
+          maxSteps: 4,
+        },
+        { canary: 'copse-canary-probe-0123456789', onLog: (line) => logs.push(line) },
+      )
+      assert.equal(record.result?.stopReason, 'completed', logs.join('\n'))
+      const ref = record.carryOut.ref
+      assert.ok(ref, record.carryOut.error ?? 'no carry-out ref')
+      const probe: unknown = JSON.parse(git(repo, ['show', `${ref}:probe-out.json`]))
+      assert.ok(isRecord(probe))
+      // The shell child ran as the worker's uid, the case that mattered.
+      assert.equal(probe['uid'], 1001)
+      // 1. No process's environ or cmdline the child can read holds the token.
+      assert.deepEqual(probe['recoveredFrom'], [])
+      // 2. Without it the proxy refuses the child; the proxy still refuses
+      //    by token, and it never had to be switched off to prove that.
+      assert.equal(probe['noAuth'], 'HTTP/1.1 407 Proxy Authentication Required')
+      assert.equal(probe['withRecoveredToken'], undefined)
+      // 3. The worker verified its own protection rather than assuming it.
+      assert.ok(
+        logs.some((l) => l.includes('token isolation: on')),
+        logs.filter((l) => l.includes('token isolation')).join('\n'),
+      )
+      // 4. The worker itself still reached the model through the proxy.
+      assert.ok(model.requests >= 2)
+      assert.ok(record.egress.some((e) => e.event === 'connect'))
+    } finally {
+      await model.stop()
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(runtimesDir, { recursive: true, force: true })
+    }
   })
 })
 

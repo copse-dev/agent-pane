@@ -115,6 +115,7 @@ function fakeGitHub(
         },
       },
       repos: {
+        compareCommitsWithBasehead: async () => ({ data: { status: 'ahead' } }),
         getContent: async ({ ref }) => {
           assert.equal(ref, 'main', 'signatures must come from the default branch')
           if (options.signatures === undefined) throw notFound()
@@ -201,6 +202,85 @@ describe('CLA evaluation', () => {
     assert.equal(stateOf(result), 'success')
     assert.deepEqual(written.commitListings, [], 'a promotion is decided without listing commits')
     assert.match(written.statuses[0]?.description ?? '', /^Promotes main/)
+  })
+
+  it('passes pinned promotions already on main, including after main advances', async () => {
+    for (const status of ['identical', 'behind']) {
+      const commits = Array.from({ length: 300 }, () => commit(null, 'old@unlinked.example'))
+      const pr = pull(4000, releaseBot, commits, { headRef: 'promote/main', base: 'release' })
+      const { github, written } = fakeGitHub([{ pr, commits }])
+      github.rest.repos.compareCommitsWithBasehead = async (
+        params,
+      ): Promise<{ data: { status: string } }> => {
+        assert.deepEqual(params, {
+          owner: 'copse-dev',
+          repo: 'agent-pane',
+          basehead: `main...${pr.head.sha}`,
+        })
+        return { data: { status } }
+      }
+      const result = await evaluatePullRequest(
+        { github, owner: 'copse-dev', repo: 'agent-pane', log: () => {} },
+        pr.number,
+      )
+      assert.equal(stateOf(result), 'success', status)
+      assert.deepEqual(written.commitListings, [], 'do not recheck already merged authors')
+    }
+  })
+
+  it('does not publish success when promotion ancestry cannot be verified', async () => {
+    const commits = [commit(null, 'old@unlinked.example')]
+    const pr = pull(4000, releaseBot, commits, { headRef: 'promote/main', base: 'release' })
+    const { github, written } = fakeGitHub([{ pr, commits }])
+    github.rest.repos.compareCommitsWithBasehead = async (): Promise<never> => {
+      throw notFound()
+    }
+    await assert.rejects(
+      evaluatePullRequest(
+        { github, owner: 'copse-dev', repo: 'agent-pane', log: () => {} },
+        pr.number,
+      ),
+      /Not Found/,
+    )
+    assert.deepEqual(written.statuses, [])
+  })
+
+  it('checks authors when a pinned promotion contains commits outside main', async () => {
+    for (const status of ['ahead', 'diverged', 'unknown']) {
+      const commits = [commit(outsider, 'eve@example.com')]
+      const pr = pull(4000, releaseBot, commits, { headRef: 'promote/main', base: 'release' })
+      const { github, written } = fakeGitHub([{ pr, commits }])
+      github.rest.repos.compareCommitsWithBasehead = async (): Promise<{
+        data: { status: string }
+      }> => ({ data: { status } })
+      const result = await evaluatePullRequest(
+        { github, owner: 'copse-dev', repo: 'agent-pane', log: () => {} },
+        pr.number,
+      )
+      assert.equal(stateOf(result), 'failure', status)
+      assert.deepEqual(written.commitListings, [pr.number])
+    }
+  })
+
+  it('does not grant the pinned promotion exemption to forks, other bases or outside openers', async () => {
+    const commits = [commit(outsider, 'eve@example.com')]
+    const pulls = [
+      pull(4000, releaseBot, commits, { headRef: 'promote/main', base: 'release', fork: true }),
+      pull(4001, releaseBot, commits, { headRef: 'promote/main' }),
+      pull(4002, outsider, commits, { headRef: 'promote/main', base: 'release' }),
+      pull(4003, actionsBot, commits, { headRef: 'promote/main', base: 'release' }),
+    ]
+    for (const pr of pulls) {
+      const { github } = fakeGitHub([{ pr, commits }])
+      github.rest.repos.compareCommitsWithBasehead = async (): Promise<never> => {
+        assert.fail('ineligible pull requests must use normal author checks')
+      }
+      const result = await evaluatePullRequest(
+        { github, owner: 'copse-dev', repo: 'agent-pane', log: () => {} },
+        pr.number,
+      )
+      assert.equal(stateOf(result), 'failure')
+    }
   })
 
   it('passes the pull requests the repository automation Apps open', async () => {
