@@ -7,6 +7,8 @@ import { firstNonEmptyString } from '@shared/unknown-value.ts'
 import { join, extname } from 'node:path'
 import { z } from 'zod'
 import { DEFAULT_OPENAI_AGENT_MODEL } from '@shared/openai-cloud-agent.ts'
+import { openAiAgentProjectContext } from '@shared/openai-agent-project.ts'
+import { getCurrentBranchName, getCurrentCommitHash } from '../github/git-service.ts'
 import {
   buildRemoteAgentContextPreamble,
   promptPayloadFromUserContent,
@@ -17,6 +19,7 @@ import { OpenAiAgentsApi, openAiAgentStateSchema } from './openai-agents-api.ts'
 import { recordRemoteAgentLaunch } from './remote-agent-link-store.ts'
 import {
   resolveRemoteAgentProjectId,
+  resolveRemoteAgentRepository,
   type RemoteAgentRunOptions,
   type RemoteAgentRunResult,
 } from './remote-agent-shared.ts'
@@ -106,14 +109,16 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       createdAt: Date.now(),
     })
   }
-  const notice =
-    '_OpenAI hosted workspace · billed to your API key · US session retention, no ZDR. Local files are not mounted. Container and tool charges are additional._\n\n'
-  options.onChunk({ type: 'text', text: notice })
+  const projectContext = state.pending
+    ? ''
+    : openAiAgentProjectContext(
+        await resolveRemoteAgentRepository(),
+        await getCurrentBranchName(),
+        await getCurrentCommitHash(),
+      )
   const prompt =
     state.pending?.prompt ??
-    (prior.success
-      ? payload.text
-      : `${buildRemoteAgentContextPreamble({ priorMessages: options.priorMessages ?? [] })}\n\n${payload.text}`)
+    `${projectContext}\n\n${prior.success ? '' : buildRemoteAgentContextPreamble({ priorMessages: options.priorMessages ?? [] })}\n\n${payload.text}`
   const tools = new Set<string>()
   const completedTools = new Set<string>()
   const result = await client.run(state, prompt, {
@@ -186,7 +191,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
     type: 'done',
     stopReason: result.status === 'cancelled' ? 'CANCELLED' : 'END_TURN',
   })
-  const assistantText = notice + result.text + artifactText
+  const assistantText = result.text + artifactText
   return {
     assistantText,
     inputTokens: result.inputTokens,

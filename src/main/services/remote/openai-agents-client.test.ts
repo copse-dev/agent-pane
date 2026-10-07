@@ -99,6 +99,7 @@ describe('OpenAI cloud adapter', () => {
       },
     })
     assert.match(result.assistantText, /printed 4/)
+    assert.doesNotMatch(result.assistantText, /billed to your API key|US session retention/)
     assert.equal(result.inputTokens, 12)
     assert.ok(
       chunks.some((chunk) => chunk.type === 'tool_call' && chunk.toolCall.name === 'run_shell'),

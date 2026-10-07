@@ -24,8 +24,12 @@ not eligible for Zero Data Retention. Model usage appears in the chat; container
 and tool charges are additional, so that display is not the complete invoice.
 
 The provider runs a separate OpenAI-hosted workspace. Local files and credentials
-are not mounted or uploaded. Explicitly name a public repository and request a
-patch under `/workspace/outputs` for repository work. Private repositories,
+are not mounted or uploaded. Copse supplies the current project's GitHub URL,
+branch, and commit on each new turn, directing the agent to clone that revision
+and return a patch under `/workspace/outputs`. Existing sessions receive this
+context too. Local uncommitted edits and unpushed commits are unavailable; the
+agent must report an unavailable revision rather than silently changing bases.
+Private repositories,
 automatic PR creation, images, approval-required tool flows, and automatic
 background recovery are outside this prototype.
 
