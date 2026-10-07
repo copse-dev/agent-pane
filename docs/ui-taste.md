@@ -130,8 +130,11 @@ output, and content density.
 
 ## Assistant reading rhythm
 
-Primary assistant prose uses a 720px maximum width, the scaled 16px type token,
-and 1.65 line-height inside the existing chat column. Paragraph and section
+Primary assistant prose uses a 680px maximum width, the platform text face
+(`--font-prose`, not Pliant, whose tight word gaps make paragraphs run together),
+the scaled 15px type token, and 1.6 line-height inside the existing chat column.
+Body text takes `--text-prose` and bold is weight 600 in `--text-prose-strong`;
+leave letter- and word-spacing at `normal`. Paragraph and section
 spacing use the markdown package's tokens so pending and committed text share
 the same rhythm. Keep this treatment on text that shares a message with tools
 as well; adding a tool must not change the prose size or wrapping. Tool output
