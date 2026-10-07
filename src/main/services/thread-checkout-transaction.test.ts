@@ -57,6 +57,7 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
   const checkouts: Array<{ branch: string; root: string }> = []
   const dependencies: ThreadCheckoutTransactionDependencies = {
     getDeferredWorktreesEnabled: () => false,
+    canDeferAcpModel: () => false,
     getProject: () => project,
     getThread: async () => thread,
     updateMeta: async (_projectId, _threadId, patch) => {

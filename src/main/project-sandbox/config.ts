@@ -805,7 +805,23 @@ export function acpAgentSandboxOverlay(
      * MCP bridge (#602), which the agent reaches at `http://127.0.0.1:<port>`.
      */
     allowLocalhost?: boolean
+    /**
+     * `workspaceRoot` is the user's own checkout, which a deferred-worktree
+     * thread must not modify: strip every write grant at or under it (see
+     * {@link withoutCheckoutWrites}). The agent's home-scoped state and scratch
+     * paths stay writable, so its session files still persist.
+     */
+    readonlyCheckout?: boolean
   },
+): Partial<SandboxRuntimeConfig> {
+  const overlay = acpAgentSandboxOverlayWithCheckoutWrites(workspaceRoot, sandbox, opts)
+  return opts?.readonlyCheckout ? withoutCheckoutWrites(overlay, workspaceRoot) : overlay
+}
+
+function acpAgentSandboxOverlayWithCheckoutWrites(
+  workspaceRoot: string,
+  sandbox: AcpAgentSandboxConfig,
+  opts: { allowLocalhost?: boolean } | undefined,
 ): Partial<SandboxRuntimeConfig> {
   const base = workspaceSandboxOverlay(workspaceRoot)
   const fs = base.filesystem
