@@ -15,12 +15,18 @@ function intellectHint(modelId: string): string {
 
 describe('cloudModelIntellectHint', () => {
   it('shows intellect, blended price, and frontier for a scored tracked model', () => {
+    const sonnetHint = cloudModelIntellectHint('claude-sonnet-5-5')
+    assert.ok(sonnetHint)
+    assert.match(sonnetHint, new RegExp(`^${intellectHint('claude-sonnet-5-5')} · \\$3\\.60/MTok`))
+    assert.match(sonnetHint, /frontier/)
+
+    // GPT-6.1 Sol costs the same as Sonnet 5.5 but scores lower, so it is dominated.
     const solHint = cloudModelIntellectHint('gpt-6.1-sol')
     assert.ok(solHint)
     assert.match(solHint, new RegExp(`^${intellectHint('gpt-6.1-sol')} · \\$3\\.60/MTok`))
-    assert.match(solHint, /frontier/)
+    assert.doesNotMatch(solHint, /frontier/)
 
-    // GPT-6.1 Sol scores higher at a lower price, so it dominates Opus 5.
+    // Opus 5.5 scores higher at a lower price, so it dominates Opus 5.
     const opus5Hint = cloudModelIntellectHint('claude-opus-5')
     assert.ok(opus5Hint)
     assert.match(opus5Hint, new RegExp(`^${intellectHint('claude-opus-5')} · \\$9/MTok`))
