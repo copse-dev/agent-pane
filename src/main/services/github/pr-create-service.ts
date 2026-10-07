@@ -20,7 +20,8 @@ import {
   GIT_THREAD_LINK_SETTING,
 } from '@shared/git/thread-link.ts'
 import { getThreadModels } from '../thread-models.ts'
-import { recordThreadPrRefs } from '../thread-store.ts'
+import { recordThreadPrRefs, recordThreadPrProduction } from '../thread-store.ts'
+import { randomUUID } from 'node:crypto'
 import { broadcastToAppWindows } from '../../windows/app-window-broadcast.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import type { PrCreateRequest, PrCreateResult } from '@shared/types/git.ts'
@@ -54,6 +55,7 @@ export interface PrCreateDependencies {
    * that opens a PR and tells nobody.
    */
   broadcast: typeof broadcastToAppWindows
+  recordProduction: typeof recordThreadPrProduction
 }
 
 const defaultDependencies: PrCreateDependencies = {
@@ -72,6 +74,7 @@ const defaultDependencies: PrCreateDependencies = {
     getSetting<boolean>(GIT_THREAD_LINK_SETTING, DEFAULT_GIT_THREAD_LINK_ENABLED),
   backendKind: () => resolveGitHubBackend().kind,
   broadcast: broadcastToAppWindows,
+  recordProduction: recordThreadPrProduction,
 }
 
 /**
@@ -204,6 +207,18 @@ export async function createPrForThread(
   if (result.ok && result.url && result.number !== undefined && context) {
     const ref = { url: result.url, owner: targetOwner, repo: targetRepo, number: result.number }
     await linkPrToThread(ref, context, deps.broadcast)
+    if (!result.noop) {
+      try {
+        await deps.recordProduction(context.projectId, context.threadId, {
+          pr: ref,
+          eventId: randomUUID(),
+          source: 'pr-create',
+          createdAt: Date.now(),
+        })
+      } catch (error) {
+        console.warn('[pr-create] recording PR creation failed:', error)
+      }
+    }
     announcePrCreated(ref, context, deps.broadcast)
   }
 

@@ -1,0 +1,31 @@
+{
+  "electron": "44.4.2",
+  "chromium": "152.0.7977.130",
+  "methodology": "One first and warm native IPC lookup per run, after 1000 offscreen legacy chats are created. requestAnimationFrame observes the actual renderer while main scans. Fixture creation excluded. Local Linux test environment, not a production guarantee.",
+  "samples": [
+    {
+      "base": "343ad4399ea2e8e8eab3bcfdd3156f33000c827b",
+      "firstLookupMs": 1634.1000000089407,
+      "frames": 99,
+      "lastOffscreenFound": true,
+      "matches": 100,
+      "maxFrameGapMs": 16.700000000004366,
+      "produced": 0,
+      "unscanned": 1000,
+      "warmLookupMs": 1,
+      "warmMatches": 100
+    },
+    {
+      "base": "94660a7f9e61863f0c0f49a1b5402debb355e5cf",
+      "firstLookupMs": 1894.199999988079,
+      "frames": 114,
+      "lastOffscreenFound": true,
+      "matches": 100,
+      "maxFrameGapMs": 16.80000000000291,
+      "produced": 0,
+      "unscanned": 1000,
+      "warmLookupMs": 2.2000000029802322,
+      "warmMatches": 100
+    }
+  ]
+}

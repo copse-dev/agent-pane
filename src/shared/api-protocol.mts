@@ -74,4 +74,5 @@
 // threads and prepared checkouts, the `on-write` project mode, and the `thread_checkout`
 // agent chunk.
 // v46 versions the removal of `activeRunThreadIds` from the process-manager snapshot.
-export const API_PROTOCOL_VERSION = 46 as const
+// v47 conservatively versions optional PR/commit production evidence on thread payloads.
+export const API_PROTOCOL_VERSION = 47 as const

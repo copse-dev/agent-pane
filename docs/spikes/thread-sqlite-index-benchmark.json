@@ -1,0 +1,1316 @@
+{
+  "node": "24.19.0",
+  "platform": "linux",
+  "cpu": "AMD EPYC 9V74 80-Core Processor",
+  "methodology": "One initial build and three fresh-process restarts per backend/size; warm OS page cache. Actual native APIs; file baseline uses the same source reader plus the preceding Map index. File warm metadata uses its retained array. Loop delay is a 1ms timer; IPC/render/network excluded. Timings are local container measurements, not end-user guarantees.",
+  "results": [
+    {
+      "threads": 100,
+      "backend": "files",
+      "mode": "main",
+      "opening": {
+        "ms": 35.87755199999998,
+        "maxLoopDelayMs": 7.963110999999998
+      },
+      "build": null,
+      "reopened": {
+        "ms": 36.250328000000025,
+        "maxLoopDelayMs": 5.825585999999987
+      },
+      "warmMetadata": {
+        "medianMs": 0.000279999999975189,
+        "p95Ms": 0.002423999999962234,
+        "maxLoopDelayMs": 0.22762199999999666
+      },
+      "warmPr": {
+        "medianMs": 0.07195899999999256,
+        "p95Ms": 0.12031200000001263,
+        "maxLoopDelayMs": 3.3839340000000107
+      },
+      "warmThread": {
+        "medianMs": 0.0005310000000235959,
+        "p95Ms": 0.001282000000003336,
+        "maxLoopDelayMs": 0.1644770000000335
+      },
+      "warmCommit": {
+        "medianMs": 0.002032999999983076,
+        "p95Ms": 0.01377100000001974,
+        "maxLoopDelayMs": 0.34936500000003434
+      },
+      "firstWrite": {
+        "ms": 2.9093280000000163,
+        "maxLoopDelayMs": 1.937421000000029
+      },
+      "update": {
+        "medianMs": 0.7883990000000267,
+        "p95Ms": 1.0619820000000004,
+        "maxLoopDelayMs": 15.791810999999996
+      },
+      "metadataAfterWrite": {
+        "ms": 11.060756000000026,
+        "maxLoopDelayMs": 0.8988340000000221
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 14.3272705078125,
+      "rssMiB": 90.08203125
+    },
+    {
+      "threads": 100,
+      "backend": "files",
+      "mode": "restart",
+      "opening": {
+        "ms": 35.27751700000002,
+        "maxLoopDelayMs": 8.020547000000022
+      },
+      "build": null,
+      "reopened": {
+        "ms": 20.547611000000018,
+        "maxLoopDelayMs": 2.5519780000000196
+      },
+      "warmMetadata": {
+        "medianMs": 0.00029000000000678483,
+        "p95Ms": 0.002373999999974785,
+        "maxLoopDelayMs": 0.22638999999998077
+      },
+      "warmPr": {
+        "medianMs": 0.0745420000000081,
+        "p95Ms": 0.13947999999999183,
+        "maxLoopDelayMs": 4.000803000000019
+      },
+      "warmThread": {
+        "medianMs": 0.0005899999999883221,
+        "p95Ms": 0.001282000000003336,
+        "maxLoopDelayMs": 0.16218300000002728
+      },
+      "warmCommit": {
+        "medianMs": 0.0011520000000473374,
+        "p95Ms": 0.012238999999965472,
+        "maxLoopDelayMs": 0.30359700000002476
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 14.331871032714844,
+      "rssMiB": 89.73046875
+    },
+    {
+      "threads": 100,
+      "backend": "files",
+      "mode": "restart",
+      "opening": {
+        "ms": 34.76032599999999,
+        "maxLoopDelayMs": 7.824882000000002
+      },
+      "build": null,
+      "reopened": {
+        "ms": 19.373204999999984,
+        "maxLoopDelayMs": 2.4867189999999937
+      },
+      "warmMetadata": {
+        "medianMs": 0.0002709999999979118,
+        "p95Ms": 0.0026939999999910924,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.07278999999999769,
+        "p95Ms": 0.16509999999999536,
+        "maxLoopDelayMs": 3.7459690000000023
+      },
+      "warmThread": {
+        "medianMs": 0.0005299999999692773,
+        "p95Ms": 0.0013620000000287291,
+        "maxLoopDelayMs": 0.14910299999996823
+      },
+      "warmCommit": {
+        "medianMs": 0.0010419999999840002,
+        "p95Ms": 0.013510999999994056,
+        "maxLoopDelayMs": 0.274312000000009
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 14.325302124023438,
+      "rssMiB": 90.30859375
+    },
+    {
+      "threads": 100,
+      "backend": "files",
+      "mode": "restart",
+      "opening": {
+        "ms": 31.061275999999992,
+        "maxLoopDelayMs": 7.383355999999992
+      },
+      "build": null,
+      "reopened": {
+        "ms": 15.929495000000003,
+        "maxLoopDelayMs": 1.7909600000000125
+      },
+      "warmMetadata": {
+        "medianMs": 0.00029000000000678483,
+        "p95Ms": 0.0024229999999931806,
+        "maxLoopDelayMs": 0.23677599999999188
+      },
+      "warmPr": {
+        "medianMs": 0.0742219999999918,
+        "p95Ms": 0.1345929999999953,
+        "maxLoopDelayMs": 3.700250000000011
+      },
+      "warmThread": {
+        "medianMs": 0.0005400000000008731,
+        "p95Ms": 0.0021329999999863958,
+        "maxLoopDelayMs": 0
+      },
+      "warmCommit": {
+        "medianMs": 0.0019430000000113523,
+        "p95Ms": 0.013008999999982507,
+        "maxLoopDelayMs": 0.3525210000000243
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 14.332786560058594,
+      "rssMiB": 90.6015625
+    },
+    {
+      "threads": 100,
+      "backend": "sqlite",
+      "mode": "main",
+      "opening": {
+        "ms": 40.46792099999999,
+        "maxLoopDelayMs": 8.199217000000004
+      },
+      "build": {
+        "ms": 40.46792099999999,
+        "maxLoopDelayMs": 8.199217000000004
+      },
+      "reopened": {
+        "ms": 2.878062,
+        "maxLoopDelayMs": 1.9079169999999976
+      },
+      "warmMetadata": {
+        "medianMs": 0.00974500000000944,
+        "p95Ms": 0.028433000000006814,
+        "maxLoopDelayMs": 0.8212880000000098
+      },
+      "warmPr": {
+        "medianMs": 0.30522999999999456,
+        "p95Ms": 0.5938060000000007,
+        "maxLoopDelayMs": 15.484126000000003
+      },
+      "warmThread": {
+        "medianMs": 0.11310100000000034,
+        "p95Ms": 0.2515199999999993,
+        "maxLoopDelayMs": 6.585913000000005
+      },
+      "warmCommit": {
+        "medianMs": 0.10302500000000236,
+        "p95Ms": 0.29054800000000114,
+        "maxLoopDelayMs": 7.089373999999964
+      },
+      "firstWrite": {
+        "ms": 5.1202539999999885,
+        "maxLoopDelayMs": 3.4971239999999852
+      },
+      "update": {
+        "medianMs": 1.5742050000000063,
+        "p95Ms": 2.8352669999999875,
+        "maxLoopDelayMs": 1.6450600000000009
+      },
+      "metadataAfterWrite": {
+        "ms": 1.6936249999999973,
+        "maxLoopDelayMs": 0.7639910000000327
+      },
+      "pendingRecovery": {
+        "ms": 1.1944019999999682,
+        "maxLoopDelayMs": 0.7158990000000358
+      },
+      "missingRebuild": {
+        "ms": 17.001967000000036,
+        "maxLoopDelayMs": 4.928533000000016
+      },
+      "corruptRebuild": {
+        "ms": 16.872371999999984,
+        "maxLoopDelayMs": 4.427608000000021
+      },
+      "indexBytes": 444776,
+      "heapMiB": 14.388175964355469,
+      "rssMiB": 92.2109375
+    },
+    {
+      "threads": 100,
+      "backend": "sqlite",
+      "mode": "restart",
+      "opening": {
+        "ms": 8.808457000000004,
+        "maxLoopDelayMs": 7.908998999999994
+      },
+      "build": null,
+      "reopened": {
+        "ms": 7.179470000000009,
+        "maxLoopDelayMs": 6.218178999999992
+      },
+      "warmMetadata": {
+        "medianMs": 0.010345999999998412,
+        "p95Ms": 0.03265900000002375,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.26780400000001237,
+        "p95Ms": 0.41347399999997947,
+        "maxLoopDelayMs": 13.344729000000001
+      },
+      "warmThread": {
+        "medianMs": 0.13156900000001315,
+        "p95Ms": 0.21052799999998228,
+        "maxLoopDelayMs": 6.2904880000000105
+      },
+      "warmCommit": {
+        "medianMs": 0.11166800000000876,
+        "p95Ms": 0.17252999999999474,
+        "maxLoopDelayMs": 5.575718999999992
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 14.249893188476562,
+      "rssMiB": 92.8203125
+    },
+    {
+      "threads": 100,
+      "backend": "sqlite",
+      "mode": "restart",
+      "opening": {
+        "ms": 9.806604000000021,
+        "maxLoopDelayMs": 8.891451999999987
+      },
+      "build": null,
+      "reopened": {
+        "ms": 3.434540999999996,
+        "maxLoopDelayMs": 2.475472999999994
+      },
+      "warmMetadata": {
+        "medianMs": 0.010235999999991918,
+        "p95Ms": 0.03936899999999355,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.31141999999999825,
+        "p95Ms": 0.6402160000000094,
+        "maxLoopDelayMs": 16.839091000000025
+      },
+      "warmThread": {
+        "medianMs": 0.1475719999999967,
+        "p95Ms": 0.2504979999999932,
+        "maxLoopDelayMs": 7.417168000000004
+      },
+      "warmCommit": {
+        "medianMs": 0.18515899999999874,
+        "p95Ms": 0.2545740000000194,
+        "maxLoopDelayMs": 8.135941000000003
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 14.242027282714844,
+      "rssMiB": 93.16796875
+    },
+    {
+      "threads": 100,
+      "backend": "sqlite",
+      "mode": "restart",
+      "opening": {
+        "ms": 9.344346999999999,
+        "maxLoopDelayMs": 8.420470999999992
+      },
+      "build": null,
+      "reopened": {
+        "ms": 2.915748000000008,
+        "maxLoopDelayMs": 1.9524140000000045
+      },
+      "warmMetadata": {
+        "medianMs": 0.010446000000001732,
+        "p95Ms": 0.03664599999999041,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.2862010000000055,
+        "p95Ms": 0.4722019999999816,
+        "maxLoopDelayMs": 14.455804999999998
+      },
+      "warmThread": {
+        "medianMs": 0.14303599999999506,
+        "p95Ms": 0.22922499999998536,
+        "maxLoopDelayMs": 6.966116999999997
+      },
+      "warmCommit": {
+        "medianMs": 0.11579400000002238,
+        "p95Ms": 0.21790900000002011,
+        "maxLoopDelayMs": 6.001852999999983
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 14.241493225097656,
+      "rssMiB": 93.00390625
+    },
+    {
+      "threads": 1000,
+      "backend": "files",
+      "mode": "main",
+      "opening": {
+        "ms": 164.48941299999998,
+        "maxLoopDelayMs": 17.851087000000007
+      },
+      "build": null,
+      "reopened": {
+        "ms": 110.11934600000001,
+        "maxLoopDelayMs": 10.426176999999996
+      },
+      "warmMetadata": {
+        "medianMs": 0.0002709999999979118,
+        "p95Ms": 0.0020830000000273685,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.04808300000001964,
+        "p95Ms": 0.07532400000002326,
+        "maxLoopDelayMs": 1.5627470000000017
+      },
+      "warmThread": {
+        "medianMs": 0.0004910000000108994,
+        "p95Ms": 0.001251999999965392,
+        "maxLoopDelayMs": 0.1522380000000112
+      },
+      "warmCommit": {
+        "medianMs": 0.00098099999996748,
+        "p95Ms": 0.01107600000000275,
+        "maxLoopDelayMs": 0.20076099999999997
+      },
+      "firstWrite": {
+        "ms": 6.468808000000024,
+        "maxLoopDelayMs": 5.503601000000003
+      },
+      "update": {
+        "medianMs": 4.357443999999987,
+        "p95Ms": 8.840776000000005,
+        "maxLoopDelayMs": 98.77821700000004
+      },
+      "metadataAfterWrite": {
+        "ms": 129.34155799999996,
+        "maxLoopDelayMs": 1.7414560000000847
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 16.581565856933594,
+      "rssMiB": 111.11328125
+    },
+    {
+      "threads": 1000,
+      "backend": "files",
+      "mode": "restart",
+      "opening": {
+        "ms": 139.54142,
+        "maxLoopDelayMs": 18.579987000000017
+      },
+      "build": null,
+      "reopened": {
+        "ms": 119.43081699999999,
+        "maxLoopDelayMs": 9.288049
+      },
+      "warmMetadata": {
+        "medianMs": 0.0002709999999979118,
+        "p95Ms": 0.0045769999999834,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.04607999999996082,
+        "p95Ms": 0.07130800000004456,
+        "maxLoopDelayMs": 1.504417999999987
+      },
+      "warmThread": {
+        "medianMs": 0.0006000000000199179,
+        "p95Ms": 0.0034160000000156288,
+        "maxLoopDelayMs": 0.22793199999995295
+      },
+      "warmCommit": {
+        "medianMs": 0.0009610000000179753,
+        "p95Ms": 0.01298900000000458,
+        "maxLoopDelayMs": 0.21529400000002852
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 16.581443786621094,
+      "rssMiB": 111.45703125
+    },
+    {
+      "threads": 1000,
+      "backend": "files",
+      "mode": "restart",
+      "opening": {
+        "ms": 174.000552,
+        "maxLoopDelayMs": 18.165189999999996
+      },
+      "build": null,
+      "reopened": {
+        "ms": 144.679731,
+        "maxLoopDelayMs": 11.418843999999979
+      },
+      "warmMetadata": {
+        "medianMs": 0.00027000000000043656,
+        "p95Ms": 0.0027140000000258624,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.04782199999999648,
+        "p95Ms": 0.08427699999998595,
+        "maxLoopDelayMs": 1.6681450000000382
+      },
+      "warmThread": {
+        "medianMs": 0.0005110000000740911,
+        "p95Ms": 0.00345500000003085,
+        "maxLoopDelayMs": 0.22242400000004636
+      },
+      "warmCommit": {
+        "medianMs": 0.0009709999999358843,
+        "p95Ms": 0.010996999999974832,
+        "maxLoopDelayMs": 0.20059100000003127
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 16.580642700195312,
+      "rssMiB": 110.578125
+    },
+    {
+      "threads": 1000,
+      "backend": "files",
+      "mode": "restart",
+      "opening": {
+        "ms": 172.869805,
+        "maxLoopDelayMs": 17.911718000000008
+      },
+      "build": null,
+      "reopened": {
+        "ms": 133.08302700000002,
+        "maxLoopDelayMs": 11.277891000000011
+      },
+      "warmMetadata": {
+        "medianMs": 0.0002709999999979118,
+        "p95Ms": 0.0030349999999543797,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.048844000000030974,
+        "p95Ms": 0.0973669999999629,
+        "maxLoopDelayMs": 1.9044809999999757
+      },
+      "warmThread": {
+        "medianMs": 0.000509999999962929,
+        "p95Ms": 0.0014520000000288746,
+        "maxLoopDelayMs": 0
+      },
+      "warmCommit": {
+        "medianMs": 0.0018729999999891334,
+        "p95Ms": 0.014282000000036987,
+        "maxLoopDelayMs": 0.267532000000017
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 16.581642150878906,
+      "rssMiB": 112.2890625
+    },
+    {
+      "threads": 1000,
+      "backend": "sqlite",
+      "mode": "main",
+      "opening": {
+        "ms": 172.738468,
+        "maxLoopDelayMs": 10.622292000000016
+      },
+      "build": {
+        "ms": 172.738468,
+        "maxLoopDelayMs": 10.622292000000016
+      },
+      "reopened": {
+        "ms": 17.79652600000003,
+        "maxLoopDelayMs": 3.0754980000000387
+      },
+      "warmMetadata": {
+        "medianMs": 0.0070200000000113505,
+        "p95Ms": 0.02701099999995904,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.20494899999999916,
+        "p95Ms": 0.256766999999968,
+        "maxLoopDelayMs": 9.48934300000002
+      },
+      "warmThread": {
+        "medianMs": 0.11353200000002062,
+        "p95Ms": 0.18024199999996426,
+        "maxLoopDelayMs": 5.299864000000014
+      },
+      "warmCommit": {
+        "medianMs": 0.08175299999999197,
+        "p95Ms": 0.15264000000001943,
+        "maxLoopDelayMs": 3.9021450000000186
+      },
+      "firstWrite": {
+        "ms": 8.989916999999991,
+        "maxLoopDelayMs": 6.128975000000025
+      },
+      "update": {
+        "medianMs": 4.7730510000000095,
+        "p95Ms": 6.768235000000004,
+        "maxLoopDelayMs": 5.468217999999979
+      },
+      "metadataAfterWrite": {
+        "ms": 13.623280999999906,
+        "maxLoopDelayMs": 2.0762509999999565
+      },
+      "pendingRecovery": {
+        "ms": 1.552842999999939,
+        "maxLoopDelayMs": 0
+      },
+      "missingRebuild": {
+        "ms": 188.812901,
+        "maxLoopDelayMs": 7.672632000000021
+      },
+      "corruptRebuild": {
+        "ms": 164.98588199999995,
+        "maxLoopDelayMs": 8.457867999999962
+      },
+      "indexBytes": 3085696,
+      "heapMiB": 15.790786743164062,
+      "rssMiB": 114.45703125
+    },
+    {
+      "threads": 1000,
+      "backend": "sqlite",
+      "mode": "restart",
+      "opening": {
+        "ms": 25.631364999999988,
+        "maxLoopDelayMs": 12.209507000000002
+      },
+      "build": null,
+      "reopened": {
+        "ms": 16.564407999999986,
+        "maxLoopDelayMs": 3.3044040000000052
+      },
+      "warmMetadata": {
+        "medianMs": 0.010525999999998703,
+        "p95Ms": 0.029104000000018004,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.24198499999999967,
+        "p95Ms": 0.33258200000000215,
+        "maxLoopDelayMs": 11.989685000000009
+      },
+      "warmThread": {
+        "medianMs": 0.19056799999998475,
+        "p95Ms": 0.3455510000000004,
+        "maxLoopDelayMs": 11.815722999999991
+      },
+      "warmCommit": {
+        "medianMs": 0.091116999999997,
+        "p95Ms": 0.19449299999999425,
+        "maxLoopDelayMs": 4.586847999999975
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 15.38848876953125,
+      "rssMiB": 100.96484375
+    },
+    {
+      "threads": 1000,
+      "backend": "sqlite",
+      "mode": "restart",
+      "opening": {
+        "ms": 27.564041000000003,
+        "maxLoopDelayMs": 13.350257
+      },
+      "build": null,
+      "reopened": {
+        "ms": 18.815403000000003,
+        "maxLoopDelayMs": 4.7824039999999854
+      },
+      "warmMetadata": {
+        "medianMs": 0.00979499999999689,
+        "p95Ms": 0.036595000000005484,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.2541530000000023,
+        "p95Ms": 0.408647000000002,
+        "maxLoopDelayMs": 12.773718000000002
+      },
+      "warmThread": {
+        "medianMs": 0.18046300000000315,
+        "p95Ms": 0.2925809999999842,
+        "maxLoopDelayMs": 10.024500999999987
+      },
+      "warmCommit": {
+        "medianMs": 0.09033600000003617,
+        "p95Ms": 0.23613699999998516,
+        "maxLoopDelayMs": 4.694469999999967
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 15.388763427734375,
+      "rssMiB": 101.046875
+    },
+    {
+      "threads": 1000,
+      "backend": "sqlite",
+      "mode": "restart",
+      "opening": {
+        "ms": 29.746683999999988,
+        "maxLoopDelayMs": 14.698892999999998
+      },
+      "build": null,
+      "reopened": {
+        "ms": 18.009066999999988,
+        "maxLoopDelayMs": 3.468550999999991
+      },
+      "warmMetadata": {
+        "medianMs": 0.010205000000013342,
+        "p95Ms": 0.03185799999999972,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.2552350000000274,
+        "p95Ms": 0.3395620000000008,
+        "maxLoopDelayMs": 12.242546000000004
+      },
+      "warmThread": {
+        "medianMs": 0.1431360000000268,
+        "p95Ms": 0.2552549999999769,
+        "maxLoopDelayMs": 8.423896000000013
+      },
+      "warmCommit": {
+        "medianMs": 0.09114800000003243,
+        "p95Ms": 0.19977099999999837,
+        "maxLoopDelayMs": 4.726398000000017
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 15.388648986816406,
+      "rssMiB": 100.09765625
+    },
+    {
+      "threads": 10000,
+      "backend": "files",
+      "mode": "main",
+      "opening": {
+        "ms": 1328.8529780000001,
+        "maxLoopDelayMs": 134.99298700000008
+      },
+      "build": null,
+      "reopened": {
+        "ms": 1179.1961440000002,
+        "maxLoopDelayMs": 110.03990500000009
+      },
+      "warmMetadata": {
+        "medianMs": 0.00023000000010142685,
+        "p95Ms": 0.0020529999997052073,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.04869299999973009,
+        "p95Ms": 0.09770699999990029,
+        "maxLoopDelayMs": 2.016360000000077
+      },
+      "warmThread": {
+        "medianMs": 0.0005200000000513683,
+        "p95Ms": 0.001261999999769614,
+        "maxLoopDelayMs": 0.16406600000027538
+      },
+      "warmCommit": {
+        "medianMs": 0.001772999999957392,
+        "p95Ms": 0.021692999999686435,
+        "maxLoopDelayMs": 0
+      },
+      "firstWrite": {
+        "ms": 52.622491999999966,
+        "maxLoopDelayMs": 51.683414000000084
+      },
+      "update": {
+        "medianMs": 42.053468000000066,
+        "p95Ms": 49.961337000000185,
+        "maxLoopDelayMs": 867.2827530000004
+      },
+      "metadataAfterWrite": {
+        "ms": 1118.1587990000003,
+        "maxLoopDelayMs": 7.395955999999842
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 36.72477722167969,
+      "rssMiB": 239.8125
+    },
+    {
+      "threads": 10000,
+      "backend": "files",
+      "mode": "restart",
+      "opening": {
+        "ms": 1272.79224,
+        "maxLoopDelayMs": 113.81087400000001
+      },
+      "build": null,
+      "reopened": {
+        "ms": 1292.2303269999998,
+        "maxLoopDelayMs": 99.09219399999984
+      },
+      "warmMetadata": {
+        "medianMs": 0.00024100000018734136,
+        "p95Ms": 0.0016919999998208368,
+        "maxLoopDelayMs": 0.22084200000017518
+      },
+      "warmPr": {
+        "medianMs": 0.047080999999707274,
+        "p95Ms": 0.10542900000018562,
+        "maxLoopDelayMs": 1.743138999999701
+      },
+      "warmThread": {
+        "medianMs": 0.0005110000001877779,
+        "p95Ms": 0.0012219999998706044,
+        "maxLoopDelayMs": 0.1615719999999783
+      },
+      "warmCommit": {
+        "medianMs": 0.0009820000000217988,
+        "p95Ms": 0.01101699999981065,
+        "maxLoopDelayMs": 0.1978369999997085
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 36.71996307373047,
+      "rssMiB": 239.52734375
+    },
+    {
+      "threads": 10000,
+      "backend": "files",
+      "mode": "restart",
+      "opening": {
+        "ms": 1257.930995,
+        "maxLoopDelayMs": 121.54272700000001
+      },
+      "build": null,
+      "reopened": {
+        "ms": 1212.4950019999999,
+        "maxLoopDelayMs": 114.58097999999973
+      },
+      "warmMetadata": {
+        "medianMs": 0.0002210000002378365,
+        "p95Ms": 0.001573000000007596,
+        "maxLoopDelayMs": 0.20467699999971956
+      },
+      "warmPr": {
+        "medianMs": 0.04688099999975748,
+        "p95Ms": 0.12045200000011391,
+        "maxLoopDelayMs": 1.8830889999999272
+      },
+      "warmThread": {
+        "medianMs": 0.0005009999999856518,
+        "p95Ms": 0.0033749999997780833,
+        "maxLoopDelayMs": 0.15648499999997512
+      },
+      "warmCommit": {
+        "medianMs": 0.0009820000000217988,
+        "p95Ms": 0.01086699999996199,
+        "maxLoopDelayMs": 0.19664499999998952
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 36.72093200683594,
+      "rssMiB": 241.19140625
+    },
+    {
+      "threads": 10000,
+      "backend": "files",
+      "mode": "restart",
+      "opening": {
+        "ms": 1127.861545,
+        "maxLoopDelayMs": 109.6244529999999
+      },
+      "build": null,
+      "reopened": {
+        "ms": 1035.092342,
+        "maxLoopDelayMs": 94.15778999999975
+      },
+      "warmMetadata": {
+        "medianMs": 0.00024000000030355295,
+        "p95Ms": 0.0018319999999221181,
+        "maxLoopDelayMs": 0.20620999999982814
+      },
+      "warmPr": {
+        "medianMs": 0.049214000000119995,
+        "p95Ms": 0.12011100000017905,
+        "maxLoopDelayMs": 2.206938000000264
+      },
+      "warmThread": {
+        "medianMs": 0.0005099999998492422,
+        "p95Ms": 0.0012719999999717402,
+        "maxLoopDelayMs": 0.196114000000307
+      },
+      "warmCommit": {
+        "medianMs": 0.0018230000000585278,
+        "p95Ms": 0.013380000000324799,
+        "maxLoopDelayMs": 0.2551640000001498
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 36.710060119628906,
+      "rssMiB": 239.29296875
+    },
+    {
+      "threads": 10000,
+      "backend": "sqlite",
+      "mode": "main",
+      "opening": {
+        "ms": 1584.3149440000002,
+        "maxLoopDelayMs": 23.36604299999999
+      },
+      "build": {
+        "ms": 1584.3149440000002,
+        "maxLoopDelayMs": 23.36604299999999
+      },
+      "reopened": {
+        "ms": 108.34531600000014,
+        "maxLoopDelayMs": 5.94716799999992
+      },
+      "warmMetadata": {
+        "medianMs": 0.00867300000004434,
+        "p95Ms": 0.032570000000077926,
+        "maxLoopDelayMs": 0.8329149999999572
+      },
+      "warmPr": {
+        "medianMs": 0.23606600000016442,
+        "p95Ms": 0.4345650000000205,
+        "maxLoopDelayMs": 11.669329999999945
+      },
+      "warmThread": {
+        "medianMs": 0.10608000000001994,
+        "p95Ms": 0.17355200000019977,
+        "maxLoopDelayMs": 10.603922999999895
+      },
+      "warmCommit": {
+        "medianMs": 0.07474299999989853,
+        "p95Ms": 0.14633099999991828,
+        "maxLoopDelayMs": 3.6830640000000585
+      },
+      "firstWrite": {
+        "ms": 48.160394,
+        "maxLoopDelayMs": 46.22339099999999
+      },
+      "update": {
+        "medianMs": 39.81886200000008,
+        "p95Ms": 42.85792599999968,
+        "maxLoopDelayMs": 41.86805099999992
+      },
+      "metadataAfterWrite": {
+        "ms": 97.81739500000003,
+        "maxLoopDelayMs": 6.700475999999981
+      },
+      "pendingRecovery": {
+        "ms": 1.4376579999998285,
+        "maxLoopDelayMs": 0
+      },
+      "missingRebuild": {
+        "ms": 1466.6102930000002,
+        "maxLoopDelayMs": 22.02833499999997
+      },
+      "corruptRebuild": {
+        "ms": 1333.624081,
+        "maxLoopDelayMs": 20.528823999999986
+      },
+      "indexBytes": 59705752,
+      "heapMiB": 25.599876403808594,
+      "rssMiB": 234.67578125
+    },
+    {
+      "threads": 10000,
+      "backend": "sqlite",
+      "mode": "restart",
+      "opening": {
+        "ms": 135.069906,
+        "maxLoopDelayMs": 11.278470999999996
+      },
+      "build": null,
+      "reopened": {
+        "ms": 110.279744,
+        "maxLoopDelayMs": 9.244282999999996
+      },
+      "warmMetadata": {
+        "medianMs": 0.01031599999998889,
+        "p95Ms": 0.030815999999958876,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.23733800000002248,
+        "p95Ms": 0.31125900000000684,
+        "maxLoopDelayMs": 22.700309000000004
+      },
+      "warmThread": {
+        "medianMs": 0.14748200000002498,
+        "p95Ms": 0.20230500000002394,
+        "maxLoopDelayMs": 9.968514999999968
+      },
+      "warmCommit": {
+        "medianMs": 0.08860299999997778,
+        "p95Ms": 0.14731199999999944,
+        "maxLoopDelayMs": 4.084058999999968
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 25.279953002929688,
+      "rssMiB": 177.0703125
+    },
+    {
+      "threads": 10000,
+      "backend": "sqlite",
+      "mode": "restart",
+      "opening": {
+        "ms": 136.83730200000002,
+        "maxLoopDelayMs": 8.451515999999998
+      },
+      "build": null,
+      "reopened": {
+        "ms": 110.15688800000004,
+        "maxLoopDelayMs": 7.796317999999985
+      },
+      "warmMetadata": {
+        "medianMs": 0.010144999999965876,
+        "p95Ms": 0.029625000000010004,
+        "maxLoopDelayMs": 0.77100200000001
+      },
+      "warmPr": {
+        "medianMs": 0.19911000000001877,
+        "p95Ms": 0.2893659999999727,
+        "maxLoopDelayMs": 9.599888999999962
+      },
+      "warmThread": {
+        "medianMs": 0.11777799999998706,
+        "p95Ms": 0.1771669999999972,
+        "maxLoopDelayMs": 5.456549999999993
+      },
+      "warmCommit": {
+        "medianMs": 0.0831649999999513,
+        "p95Ms": 0.15386200000000372,
+        "maxLoopDelayMs": 3.8305560000000014
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 25.27936553955078,
+      "rssMiB": 169.2265625
+    },
+    {
+      "threads": 10000,
+      "backend": "sqlite",
+      "mode": "restart",
+      "opening": {
+        "ms": 148.40131,
+        "maxLoopDelayMs": 9.696022999999997
+      },
+      "build": null,
+      "reopened": {
+        "ms": 123.00106199999999,
+        "maxLoopDelayMs": 11.571422000000041
+      },
+      "warmMetadata": {
+        "medianMs": 0.010154999999997472,
+        "p95Ms": 0.031567999999992935,
+        "maxLoopDelayMs": 0
+      },
+      "warmPr": {
+        "medianMs": 0.2218740000000139,
+        "p95Ms": 0.3083450000000312,
+        "maxLoopDelayMs": 10.459925999999996
+      },
+      "warmThread": {
+        "medianMs": 0.11603500000001077,
+        "p95Ms": 0.21105799999997998,
+        "maxLoopDelayMs": 5.814899000000025
+      },
+      "warmCommit": {
+        "medianMs": 0.08611999999993714,
+        "p95Ms": 0.2077840000000606,
+        "maxLoopDelayMs": 4.34801600000003
+      },
+      "firstWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "update": {
+        "medianMs": 0,
+        "p95Ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "metadataAfterWrite": {
+        "ms": 0,
+        "maxLoopDelayMs": 0
+      },
+      "pendingRecovery": null,
+      "missingRebuild": null,
+      "corruptRebuild": null,
+      "indexBytes": 0,
+      "heapMiB": 25.27722930908203,
+      "rssMiB": 169.79296875
+    }
+  ]
+}

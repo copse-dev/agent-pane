@@ -16,6 +16,7 @@ import {
   getGitLogText,
   getGitShowText,
   getGitStatusText,
+  getGithubRepoSlug,
 } from '../services/github/git-service.ts'
 import { resolvePathWithinRoot } from '../services/workspace.ts'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
@@ -32,6 +33,9 @@ import { runCommand } from '../services/exec/command-runner.ts'
 import { leaseGitSigningBroker } from '../services/security/git-signing-broker.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { scopedSshCommitSigningAdvice } from './git-commit-signing-advice.ts'
+import { currentThreadExecutionContext } from '../services/thread-execution-context-store.ts'
+import { recordThreadCommitProduction } from '../services/thread-store.ts'
+import { recordSuccessfulCommit } from '../services/github/commit-production.ts'
 
 /** Reject paths that escape the workspace (absolute, `..`, symlink-out) before handing them to git. */
 async function validateGitPath(
@@ -97,6 +101,7 @@ export const gitCommitTool = defineTool({
       ),
   }),
   execute: async ({ message, stage_all }, signal) => {
+    const context = currentThreadExecutionContext()
     const root = getAgentExecutionRoot()
     if (!root) return 'No workspace open.'
     if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
@@ -120,6 +125,7 @@ export const gitCommitTool = defineTool({
     const sandboxEnabled = isProjectSandboxEnabled() && !remote
     const permitted = await ensureGitCommitPermitted(command, root, sandboxEnabled, signal)
     if (!permitted) return 'User rejected git commit.'
+    const slug = context ? await getGithubRepoSlug(root).catch(() => null) : null
     const steps = stage_all
       ? [
           ['add', '-A'],
@@ -153,6 +159,20 @@ export const gitCommitTool = defineTool({
           throw new Error(advice ? `${failure}\n\n${advice}` : failure)
         }
         output = result.stdout.trim()
+      }
+      try {
+        await recordSuccessfulCommit(output, context, {
+          repository: slug ? `github.com/${slug}` : null,
+          readGit: (args) =>
+            runCommand('git', args, {
+              cwd: root,
+              signal,
+              requireSandbox: sandboxEnabled,
+            }),
+          record: recordThreadCommitProduction,
+        })
+      } catch (error) {
+        console.warn('[git-commit] recording commit production failed:', error)
       }
       return output || '(committed)'
     } finally {

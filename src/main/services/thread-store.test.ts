@@ -1577,7 +1577,7 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     await createThread('proj-1', thread('t2'))
     await recordThreadAgentLink('proj-1', 't2', { ...CURSOR_LAUNCH, agentId: 'a2', repo: 'o/r' })
     // Drop the derived index; listAgentPrLinks must rebuild it from the metas.
-    rmSync(join(root, 'proj-1', 'agent-pr-index.jsonl'), { force: true })
+    rmSync(join(root, 'proj-1', 'agent-pr-index-v2.jsonl'), { force: true })
 
     const links = await listAgentPrLinks('proj-1')
     assert.deepEqual(links, [

@@ -58,9 +58,9 @@ describe('PR panel new thread (mock gh)', () => {
     )
 
     const newThreadBtn = await $('.pr-new-thread-btn')
-    await expect(newThreadBtn).not.toBeDisplayed()
-    await $('.pr-more-toggle').click()
-    await expect(await $('.pr-more-actions')).toHaveAttribute('open')
+    // New thread is a primary action beside the relationship overview; only
+    // the additional lifecycle actions require opening More.
+    await expect(await $('.pr-more-actions')).not.toHaveAttribute('open')
     await newThreadBtn.waitForDisplayed({ timeout: 10_000 })
     await expect(newThreadBtn).toHaveText('New thread')
     await saveElementScreenshot('#pane-files', 'pr-panel-new-thread-action.png')

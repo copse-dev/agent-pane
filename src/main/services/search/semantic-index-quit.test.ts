@@ -1,6 +1,14 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -68,9 +76,9 @@ void (async () => {
     return startDaemon()
   }
   if (verb === 'daemon' && sub === 'start') {
-    log('start')
     if (running()) process.exit(1)
     if (process.argv.includes('--detach')) {
+      log('start')
       if (timing.forkBeforeReady) {
         const child = spawn(process.execPath, [process.argv[1], 'daemon', 'run'], { detached: true, stdio: 'ignore' })
         child.unref()
@@ -83,7 +91,10 @@ void (async () => {
       await sleep(timing.startMs)
       return startDaemon()
     }
-    log('daemon ' + process.pid)
+    // Publish accounting and the startup handshake in one write: quit can kill
+    // this process as soon as the parent sees start.
+    log('daemon ' + process.pid + '\\nstart')
+    if (timing.holdReadiness) return void setInterval(() => {}, 1000)
     await sleep(timing.startMs)
     fs.mkdirSync(path.dirname(pidfile), { recursive: true })
     fs.writeFileSync(pidfile, String(process.pid))
@@ -186,6 +197,7 @@ describe(
       stopMs?: number
       forkBeforeReady?: boolean
       ignoreTerm?: boolean
+      holdReadiness?: boolean
     }): Promise<string> {
       rmSync(join(userData, 'gortex'), { recursive: true, force: true })
       mkdirSync(join(userData, 'gortex', '.gortex'), { recursive: true })
@@ -201,13 +213,22 @@ describe(
     }
 
     it('reaps a daemon whose `daemon start` was still running at quit', async () => {
-      const workspace = await startSession({ startMs: 500, connectMs: 0, waitMs: 0 })
+      const workspace = await startSession({
+        startMs: 0,
+        connectMs: 0,
+        waitMs: 0,
+        holdReadiness: true,
+      })
       const indexing = ensureSemanticIndex(workspace)
       await waitFor(() => readEvents(binDir).includes('start'), '`daemon start`')
+
+      const pidfile = join(userData, 'gortex', '.gortex', 'cache', 'daemon.pid')
+      assert.equal(existsSync(pidfile), false, 'startup has not published readiness')
 
       await stopGortexDaemon()
       await indexing
 
+      assert.equal(existsSync(pidfile), false, 'quit killed startup before readiness')
       assert.equal(daemonPids(binDir).length, 1, 'the owned startup process was accounted for')
       assert.deepEqual(await survivingDaemons(binDir), [])
     })

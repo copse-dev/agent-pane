@@ -39,7 +39,7 @@ describe('PR panel gh unavailable (mock)', () => {
     await $('[aria-label="Open pull requests"]').click()
     await browser.pause(800)
 
-    await (await $('.git-changes-section-title*=From chat')).waitForDisplayed({ timeout: 10_000 })
+    await (await $('.git-changes-section-title*=Related PRs')).waitForDisplayed({ timeout: 10_000 })
 
     const bannerText = await browser.execute(
       () => document.querySelector('.pr-empty-state')?.textContent?.trim() ?? '',
