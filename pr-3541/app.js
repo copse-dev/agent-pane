@@ -67384,15 +67384,16 @@ function cacheThreads(projectId, threads) {
 }
 async function preloadSidebarThreads(store2, api2) {
   const pending = store2.getState().projects.filter((project2) => !project2.sshHost && !project2.missing).map((project2) => project2.id);
+  const unwanted = (id) => id === store2.getState().activeProjectId || threadCache.has(id) || !store2.getState().projects.some((project2) => project2.id === id);
   for (const id of pending) {
-    if (id === store2.getState().activeProjectId || threadCache.has(id)) continue;
+    if (unwanted(id)) continue;
     let loaded;
     try {
       loaded = await loadThreads(api2, id);
     } catch {
       continue;
     }
-    if (id === store2.getState().activeProjectId || threadCache.has(id)) continue;
+    if (unwanted(id)) continue;
     threadCache.set(id, loaded.map(compactSidebarThread));
     store2.emit("sidebar_threads_loaded");
   }
