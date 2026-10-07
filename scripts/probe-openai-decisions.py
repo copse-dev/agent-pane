@@ -4,12 +4,15 @@
 Run: python3 scripts/probe-openai-decisions.py
 Requires OPENAI_API_KEY; optionally uses OPENAI_ORG_ID and OPENAI_PROJECT_ID.
 OAuth experiment: add --oauth and set OPENAI_OAUTH_ACCESS_TOKEN instead.
-This tests the public API endpoint only, not an undocumented ChatGPT endpoint.
+Use --responses to check public Responses, or --codex-responses for Codex OAuth.
+Optional --model selects the Responses model (default: gpt-5.4).
+Codex mode optionally uses OPENAI_CHATGPT_ACCOUNT_ID.
 OAuth mode ignores API-key, organization, and project environment variables.
 Exit codes: 0 = valid decision, 1 = failed/inconclusive probe, 2 = missing key.
 Docs: https://developers.openai.com/api/docs/guides/decisions
 """
 
+import argparse
 import json
 import os
 import sys
@@ -19,13 +22,15 @@ import urllib.request
 
 
 def main():
-    if sys.argv[1:] == ["--help"]:
-        print(__doc__)
-        return 0
-    oauth = sys.argv[1:] == ["--oauth"]
-    if sys.argv[1:] and not oauth:
-        print("Usage: python3 scripts/probe-openai-decisions.py [--help | --oauth]")
-        return 2
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--oauth", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--responses", action="store_true")
+    modes.add_argument("--codex-responses", action="store_true")
+    parser.add_argument("--model", default="gpt-5.4")
+    args = parser.parse_args()
+    oauth = args.oauth or args.codex_responses
+    responses = args.responses or args.codex_responses
     variable = "OPENAI_OAUTH_ACCESS_TOKEN" if oauth else "OPENAI_API_KEY"
     key = os.environ.get(variable, "").strip()
     if not key:
@@ -48,8 +53,24 @@ def main():
             "instructions": "Is the bicycle red?",
         }],
     }
+    endpoint = "https://api.openai.com/v1/decisions"
+    if responses:
+        endpoint = (
+            "https://chatgpt.com/backend-api/codex/responses"
+            if args.codex_responses else "https://api.openai.com/v1/responses"
+        )
+        payload = {
+            "model": args.model,
+            "instructions": "Reply with only OK.",
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": "Say OK."}]}],
+            "store": False,
+            "stream": True,
+        }
+        headers["Accept"] = "text/event-stream"
+        if args.codex_responses and os.environ.get("OPENAI_CHATGPT_ACCOUNT_ID"):
+            headers["ChatGPT-Account-Id"] = os.environ["OPENAI_CHATGPT_ACCOUNT_ID"]
     request = urllib.request.Request(
-        "https://api.openai.com/v1/decisions",
+        endpoint,
         data=json.dumps(payload).encode("utf-8"),
         headers=headers,
         method="POST",
@@ -60,11 +81,33 @@ def main():
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             return None
 
-    print("Checking gpt-6-luna via POST /v1/decisions (one small API request)...")
+    print(f"Checking {payload['model']} via POST {endpoint} (one small request)...")
     print("Authentication: " + ("OAuth access token (experimental)" if oauth else "API key"))
     started = time.monotonic()
     try:
         with urllib.request.build_opener(NoRedirect).open(request, timeout=30) as response:
+            if responses:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    event = json.loads(data)
+                    if not isinstance(event, dict):
+                        continue
+                    if event.get("type") == "response.completed":
+                        result = event.get("response")
+                        if isinstance(result, dict) and result.get("status") == "completed":
+                            print(f"RESPONSES CONFIRMED: completed in {time.monotonic() - started:.2f}s.")
+                            print("This confirms this credential works at the endpoint shown above.")
+                            return 0
+                    if event.get("type") in ("error", "response.failed", "response.incomplete"):
+                        print("Responses stream reported failure/incomplete; control check is inconclusive.")
+                        return 1
+                print("No completed Responses event received; control check is inconclusive.")
+                return 1
             body = json.load(response)
     except urllib.error.HTTPError as error:
         explanations = {
@@ -78,7 +121,7 @@ def main():
             error.code, "Request failed; access is not confirmed. Try again later."
         ))
         if oauth:
-            print("This result applies only to this token at api.openai.com/v1/decisions.")
+            print(f"This result applies only to this token at {endpoint}.")
         # Provider bodies can echo credentials; do not print them.
         error.close()
         return 1
