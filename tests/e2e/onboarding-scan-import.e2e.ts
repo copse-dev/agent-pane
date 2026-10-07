@@ -120,6 +120,10 @@ describe('onboarding: scan finds keys and local servers', () => {
     expect(await cursorRow.getText()).toContain('cursor-agent')
     expect(await cursorRow.getText()).not.toContain(agentBinDir)
 
+    // The whole checklist reads as "coding agents", never as a protocol name.
+    // (The row's `data-kind="acp-agent"` is an identifier, not copy.)
+    expect(await overlay.getText()).not.toMatch(/\b(?:ACP|JSON-RPC|stdio|harness)\b/)
+
     await saveAppScreenshot('onboarding-scan-results.png')
   })
 

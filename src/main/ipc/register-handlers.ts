@@ -3554,7 +3554,7 @@ export function registerAllHandlers(
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event, rawScenario: unknown) => {
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
-      if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
+      if (!codex) throw new IpcValidationError('The Codex agent preset is missing')
       // Fixture at the detection boundary; no global package mutation runs here.
       const scenario = parseIpcArgs(
         z.enum(['install', 'firewall-bootstrap', 'mixed-bootstrap']).default('install'),
@@ -3562,7 +3562,7 @@ export function registerAllHandlers(
       )
       if (scenario === 'mixed-bootstrap') {
         const claude = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'claude-acp')
-        if (!claude) throw new IpcValidationError('Claude ACP preset is missing')
+        if (!claude) throw new IpcValidationError('The Claude agent preset is missing')
         return requestAcpPackageInstallApproval(
           [
             { agent: claude, action: 'install' },

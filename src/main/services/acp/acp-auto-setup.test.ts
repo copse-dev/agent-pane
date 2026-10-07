@@ -262,7 +262,7 @@ describe('ACP package install approval', () => {
       { agent: claude, action: 'install' },
     ]
     assert.equal(await requestAcpPackageInstallApproval(changes), false)
-    assert.equal(title, 'Install ACP adapters globally?')
+    assert.equal(title, 'Install coding-agent adapters globally?')
     assert.match(body, /@agentclientprotocol\/codex-acp/)
     assert.match(body, /@agentclientprotocol\/claude-agent-acp/)
     assert.match(body, /Socket Firewall \(sfw\).*first install it globally/)
@@ -311,7 +311,10 @@ describe('ACP package install approval', () => {
     assert.equal(await requestAcpPackageInstallApproval(changes, true), false)
     assert.match(body, /claude-agent-acp/)
     assert.doesNotMatch(body, /codex-acp/)
-    assert.equal(formatAcpPackageApproval(changes, true).title, 'Install ACP adapters globally?')
+    assert.equal(
+      formatAcpPackageApproval(changes, true).title,
+      'Install coding-agent adapters globally?',
+    )
   })
 })
 

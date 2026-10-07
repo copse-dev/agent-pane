@@ -367,12 +367,12 @@ export function formatAcpPackageApproval(
     return {
       title: 'Install Socket Firewall globally?',
       body:
-        'Copse needs to install Socket Firewall (sfw) globally before updating your installed ACP adapters. ' +
+        'Copse needs to install Socket Firewall (sfw) globally before updating your installed coding-agent adapters. ' +
         'The adapter updates then run through Socket Firewall with lifecycle scripts disabled.',
     }
   }
   const lines = [
-    'Copse found missing ACP adapters and wants to install these global npm packages:',
+    'Copse found missing coding-agent adapters and wants to install these global npm packages:',
     '',
   ]
   for (const change of installs) {
@@ -400,7 +400,7 @@ export function formatAcpPackageApproval(
     'If Socket Firewall (sfw) is not installed, Copse will first install it globally. ' +
       'The adapter packages are then installed through Socket Firewall with lifecycle scripts disabled.',
   )
-  return { title: 'Install ACP adapters globally?', body: lines.join('\n') }
+  return { title: 'Install coding-agent adapters globally?', body: lines.join('\n') }
 }
 
 /** Ask before a fresh global install, including SFW needed by an adapter update. */

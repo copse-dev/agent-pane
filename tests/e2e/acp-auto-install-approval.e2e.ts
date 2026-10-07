@@ -46,7 +46,9 @@ describe('ACP adapter auto-install approval', () => {
 
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
-    await expect(dialog.$('.approval-heading')).toHaveText('Install ACP adapters globally?')
+    await expect(dialog.$('.approval-heading')).toHaveText(
+      'Install coding-agent adapters globally?',
+    )
 
     const body = await dialog.$('.approval-body').getText()
     expect(body).toContain('@agentclientprotocol/codex-acp')
@@ -78,7 +80,7 @@ describe('ACP adapter auto-install approval', () => {
     const body = await dialog.$('.approval-body').getText()
     expect(body).toContain('install Socket Firewall (sfw) globally before updating')
     expect(body).toContain('lifecycle scripts disabled')
-    expect(body).not.toContain('missing ACP adapters')
+    expect(body).not.toContain('missing coding-agent adapters')
     expect(
       await browser.execute(() =>
         document.querySelector<HTMLDialogElement>('#approval-dialog')?.matches(':modal'),

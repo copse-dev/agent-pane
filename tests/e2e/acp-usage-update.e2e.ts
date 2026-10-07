@@ -37,7 +37,7 @@ describe('ACP usage_update context wheel', () => {
     await expect(popover.$('.context-wheel-popover-header')).toHaveText(
       'Context · 80.0k / 200.0k (40%)',
     )
-    await expect(popover.$('.context-wheel-popover-note')).toHaveText('Reported by ACP agent')
+    await expect(popover.$('.context-wheel-popover-note')).toHaveText('Reported by the agent')
     await expect(popover.$$('.context-wheel-popover-row')).toBeElementsArrayOfSize(0)
     await expect(popover.$('.footer-usage-popover-header')).toHaveText('Usage · 829 tokens')
 

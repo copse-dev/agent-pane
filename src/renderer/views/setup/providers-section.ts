@@ -238,7 +238,7 @@ export function createProvidersPanel(
       el(
         'p',
         { class: 'field-hint openai-service-tier-scope' },
-        'Applies to OpenAI API-key requests. ChatGPT plan and Codex ACP use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost.',
+        'Applies to OpenAI API-key requests. ChatGPT plan and the Codex agent use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost.',
       ),
     )
     tierBlock.dataset['testid'] = 'openai-service-tier-block'
@@ -446,12 +446,12 @@ export function createProvidersPanel(
     ]
     if (agentIds.length) {
       entries.push({
-        title: 'Codex ACP',
+        title: 'Codex agent',
         configured: agentIds.some((id) => agentsPanel.isConfigured(id)),
-        description: 'Codex’s agent, running on this machine through ACP.',
+        description: 'Codex’s agent, running on this machine.',
         content: connectionDetails(
           'openai-codex-details',
-          'Configure Codex ACP',
+          'Configure Codex agent',
           agentBlock(agentIds),
         ),
         id: 'codex',

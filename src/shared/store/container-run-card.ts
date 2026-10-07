@@ -172,7 +172,7 @@ export function containerRunResultMarkdown(progress: ContainerRunProgress): stri
   const facts: string[] = [`model ${progress.model}`]
   if (result) {
     facts.push(
-      result.harness === 'copse' ? 'Copse harness' : `${result.harness.acp} agent`,
+      result.harness === 'copse' ? 'Copse agent' : `${result.harness.acp} agent`,
       `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`,
     )
   }

@@ -1868,7 +1868,7 @@ async function runThreadInContainerLeased(
   const runDir = join(runtimesDir, runtimeId)
   const egress = request.egressAllowlist.map(parseEgressRule)
   if (request.provider === undefined && request.acp === undefined) {
-    throw new Error('A run needs a provider description or an ACP agent')
+    throw new Error('A run needs a provider description or a coding agent')
   }
   if (request.provider !== undefined) {
     const provider = providerOrigin(providerEndpointUrl(request.provider))

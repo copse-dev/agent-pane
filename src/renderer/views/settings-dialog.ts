@@ -1581,7 +1581,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="field-hint">
                 Applies across Copse to new threads using automatic checkout. Eligible agents
                 start by reading your checkout without changing it, then get an isolated worktree
-                before writing. Explicit worktree choices and ACP agents still create one up front.
+                before writing. Explicit worktree choices and agents installed on this device still create one up front.
                 Projects with worktrees disabled and existing threads keep their checkout behavior.
               </p>
             </fieldset>

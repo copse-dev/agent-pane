@@ -193,7 +193,7 @@ export function dynamicModelChoices(): DynamicModelChoice[] {
     {
       value: BALANCED_MODEL_SELECTOR,
       label: 'Balanced',
-      description: 'Strong capability at a fair price; favors plans',
+      description: 'Strong results at a fair price; favors plans',
       group: AUTOMATIC_GROUP,
     },
     {
