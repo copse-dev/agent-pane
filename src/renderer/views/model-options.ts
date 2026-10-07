@@ -67,6 +67,7 @@ import {
 } from '@shared/lm-studio-defaults.ts'
 import {
   AUTO_MODEL_PREFIX,
+  MATCH_PROMPT_MODEL_SELECTOR,
   dynamicModelChoices,
   dynamicModelLabel,
 } from '@copse/llm/dynamic-model.ts'
@@ -468,6 +469,13 @@ export async function fetchModelOptions(
   opts: FetchModelOptionsOpts = {},
 ): Promise<ModelOption[]> {
   const options: ModelOption[] = []
+  if (opts.includeAgentModels !== false) {
+    options.push({
+      value: MATCH_PROMPT_MODEL_SELECTOR,
+      label: 'Auto — match prompt',
+      group: 'Automatic',
+    })
+  }
   if (opts.includeBestValue === true) {
     options.push({
       value: BEST_VALUE_CHAT_MODEL,

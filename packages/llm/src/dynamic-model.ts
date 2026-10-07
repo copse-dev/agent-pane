@@ -32,6 +32,8 @@ export { AUTO_MODEL_PREFIX }
  * evaluates against the routes the user can actually reach right now.
  */
 export type DynamicModelSelector =
+  /** Primary agent: assess the first ask, then pin the chosen route for the chat. */
+  | { kind: 'match-prompt' }
   /** Best intellect-per-price on the plan-aware Pareto frontier (plan/local first). */
   | { kind: 'best-value' }
   /** Highest Intelligence Index score among routable models. */
@@ -50,6 +52,7 @@ export type DynamicModelSelector =
   | { kind: 'role'; role: AgentRoleId }
 
 export const BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`
+export const MATCH_PROMPT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}match-prompt`
 export const BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`
 export const BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`
 export const CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`
@@ -97,6 +100,7 @@ export function parseDynamicModel(value: string | null | undefined): DynamicMode
   const selection = parseModelSelection(value)
   if (selection.namespace !== 'auto') return null
   const body = selection.id
+  if (body === 'match-prompt') return { kind: 'match-prompt' }
   if (body === 'best-value') return { kind: 'best-value' }
   if (body === 'best-intellect') return { kind: 'best-intellect' }
   if (body === 'best-local') return { kind: 'best-local' }
@@ -120,6 +124,8 @@ export function dynamicModelLabel(value: string): string | null {
   const selector = parseDynamicModel(value)
   if (!selector) return null
   switch (selector.kind) {
+    case 'match-prompt':
+      return 'Auto — match prompt'
     case 'best-value':
       return 'Best value'
     case 'best-intellect':

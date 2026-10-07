@@ -30,6 +30,7 @@ import { buildAcpAgentApp, type AcpTurnRunner } from './acp/acp-agent-server.ts'
 import { acquireAcpSession, disposeAllAcpSessions } from './acp/acp-session-pool.ts'
 import { ACP_CANCELLED_TOOL_CALL_RESULT } from './acp/acp-turn-recovery.ts'
 import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
+import { createThread, getThreadMeta, deleteProjectThread } from './thread-store.ts'
 
 async function runSilentAcpToolTurn(continuationBudgetUsed: number): Promise<{
   chunks: StreamChunk[]
@@ -152,6 +153,129 @@ describe('agent-service public surface', () => {
 // its output through an injected AgentHost<StreamChunk> rather than a BrowserWindow. This proves
 // a full turn can be driven with a mock host and no Electron present.
 describe('runAgent AgentHost decoupling', () => {
+  it('routes the first ask and pins the selected primary model', async () => {
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const root = await mkdtemp(join(tmpdir(), 'copse-first-ask-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    const previousMock = process.env['COPSE_PANEL_MOCK_LLM']
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    const chunks: StreamChunk[] = []
+    try {
+      await createThread('project-routing', {
+        id: 'thread-routing',
+        title: 'Routing',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: 1,
+        updatedAt: 1,
+        model: 'auto:match-prompt',
+      })
+      await runWithThreadExecutionContext(
+        {
+          projectId: 'project-routing',
+          threadId: 'thread-routing',
+          projectRoot: '/workspace',
+          root: '/workspace',
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity('thread-routing', () =>
+            agentService.runAgent(
+              'thread-routing',
+              'Hello',
+              [],
+              { emit: (_id, chunk) => chunks.push(chunk) },
+              new ToolRegistry(),
+              { model: 'auto:match-prompt', maxLlmCalls: 1 },
+            ),
+          ),
+      )
+      assert.ok(
+        chunks.some(
+          (chunk) => chunk.type === 'text' && chunk.text.includes('Auto — match prompt:'),
+        ),
+      )
+      const parameters = chunks.find((chunk) => chunk.type === 'turn_parameters')
+      assert.ok(parameters?.type === 'turn_parameters')
+      assert.equal(parameters.requestedModel, 'auto:match-prompt')
+      assert.ok(!parameters.model.startsWith('auto:'))
+      assert.equal(
+        (await getThreadMeta('project-routing', 'thread-routing'))?.model,
+        parameters.model,
+      )
+      assert.ok(chunks.some((chunk) => chunk.type === 'done'))
+    } finally {
+      await deleteProjectThread('project-routing', 'thread-routing')
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      await rm(root, { recursive: true, force: true })
+      if (previousMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
+      else process.env['COPSE_PANEL_MOCK_LLM'] = previousMock
+    }
+  })
+  it('reuses the persisted model on a later ask without another assessment', async () => {
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const root = await mkdtemp(join(tmpdir(), 'copse-later-ask-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    const previousMock = process.env['COPSE_PANEL_MOCK_LLM']
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    const chunks: StreamChunk[] = []
+    try {
+      await createThread('project-routing', {
+        id: 'thread-routing-followup',
+        title: 'Routing',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: 1,
+        updatedAt: 1,
+        model: 'claude-sonnet-4-6',
+        resolvedModel: 'claude-sonnet-4-6',
+      })
+      await runWithThreadExecutionContext(
+        {
+          projectId: 'project-routing',
+          threadId: 'thread-routing-followup',
+          projectRoot: '/workspace',
+          root: '/workspace',
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity('thread-routing-followup', () =>
+            agentService.runAgent(
+              'thread-routing-followup',
+              'Now redesign the whole architecture',
+              [
+                { role: 'user', content: 'Fix a typo' },
+                { role: 'assistant', content: 'Done' },
+              ],
+              { emit: (_id, chunk) => chunks.push(chunk) },
+              new ToolRegistry(),
+              { model: 'auto:match-prompt', maxLlmCalls: 1 },
+            ),
+          ),
+      )
+      const parameters = chunks.find((chunk) => chunk.type === 'turn_parameters')
+      assert.ok(parameters?.type === 'turn_parameters')
+      assert.equal(parameters.model, 'claude-sonnet-4-6')
+      assert.equal(
+        chunks.some(
+          (chunk) => chunk.type === 'text' && chunk.text.includes('Auto — match prompt:'),
+        ),
+        false,
+      )
+    } finally {
+      await deleteProjectThread('project-routing', 'thread-routing-followup')
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      await rm(root, { recursive: true, force: true })
+      if (previousMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
+      else process.env['COPSE_PANEL_MOCK_LLM'] = previousMock
+    }
+  })
   it('settles an ACP tool call left open when a successful turn ends', async () => {
     const root = await mkdtemp(join(tmpdir(), 'copse-agent-acp-open-tool-'))
     const threadId = 'thread-acp-open-tool'

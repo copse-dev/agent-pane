@@ -9,7 +9,7 @@ import {
   isBlankThread,
   hasUnsubmittedPrompt,
 } from '@shared/store/thread-helpers.ts'
-import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
+import { isDynamicModel, MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { commitThreadModelSelection } from './model-selection.ts'
 
 /** The only `ApiClient` slice this module calls. */
@@ -36,6 +36,7 @@ export async function resolveBestValueForActiveBlankThread(
   // blank thread pinned by rule resolves to a concrete routable model. A pinned
   // id is already concrete and is left alone.
   if (typeof current !== 'string' || !isDynamicModel(current)) return
+  if (current === MATCH_PROMPT_MODEL_SELECTOR) return
 
   let resolved: string
   try {
@@ -51,6 +52,7 @@ export async function resolveBestValueForActiveBlankThread(
   if (!isBlankThread(latest) || hasUnsubmittedPrompt(latest)) return
   const latestModel = latest.model ?? store.getState().settings?.model
   if (typeof latestModel !== 'string' || !isDynamicModel(latestModel)) return
+  if (latestModel === MATCH_PROMPT_MODEL_SELECTOR) return
 
   commitThreadModelSelection(store, api, thread.id, 'auto', latestModel, resolved)
 }
