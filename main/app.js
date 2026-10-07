@@ -114460,6 +114460,9 @@ ${description}
     queueIndicator.hidden = false;
     queueIndicator.textContent = count === 1 ? "1 queued" : `${String(count)} queued`;
   }
+  function currentBreakdown() {
+    return breakdownModel === footerChatModel() ? lastBreakdown : null;
+  }
   function usageViews() {
     const thread = getActiveThread(store2);
     if (!thread) return null;
@@ -114469,7 +114472,7 @@ ${description}
       running: thread.status === "running",
       messages: thread.messages,
       contextSnapshot: thread.contextSnapshot,
-      breakdown: lastBreakdown
+      breakdown: currentBreakdown()
     });
     if (!display) return null;
     const priced = { model, measuredUsage: thread.usage, pricing: modelPricing };
@@ -114481,10 +114484,10 @@ ${description}
   }
   function updateContextFitWarning() {
     const model = footerChatModel();
-    const advice = breakdownModel === model ? contextFitAdvice(lastBreakdown, {
+    const advice = contextFitAdvice(currentBreakdown(), {
       modelLabel: modelDisplayLabel(model),
       lmStudioModel: isLocalModel(model)
-    }) : null;
+    });
     if (!advice) {
       contextFitWarning.hidden = true;
       return;
@@ -114497,12 +114500,14 @@ ${description}
     const thread = getActiveThread(store2);
     const running = thread?.status === "running";
     const acpContext = isAcpModel(footerChatModel());
+    const breakdown = currentBreakdown();
+    if (lastBreakdown && !breakdown) scheduleContextEstimate(0);
     const usage = usageViews();
     const snapshot = thread?.contextSnapshot;
     const snapshotUsable = !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01;
     const draftNonEmpty = composer.value.trim().length > 0 || attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0 || attachedArchives.length > 0 || attachedThreads.length > 0 || attachedShells.length > 0;
-    const showBreakdown = !acpContext && !running && !!lastBreakdown && lastBreakdown.totalTokens > 0 && (!snapshotUsable || draftNonEmpty);
-    const hoverBreakdown = !running && !acpContext ? lastBreakdown : null;
+    const showBreakdown = !acpContext && !running && !!breakdown && breakdown.totalTokens > 0 && (!snapshotUsable || draftNonEmpty);
+    const hoverBreakdown = !running && !acpContext ? breakdown : null;
     contextWheel.update(snapshot, running, {
       usageLine: usage?.detail ?? null,
       usage: usage?.tooltip ?? null,
@@ -114553,6 +114558,7 @@ ${description}
   async function runContextEstimate() {
     if (!estimateEnabled) return;
     if (isAcpModel(footerChatModel())) {
+      estimateSeq++;
       if (lastBreakdown !== null) {
         lastBreakdown = null;
         breakdownModel = null;
@@ -114562,6 +114568,7 @@ ${description}
     }
     const id = getActiveThreadId();
     if (!id) {
+      estimateSeq++;
       if (lastBreakdown !== null) {
         lastBreakdown = null;
         breakdownModel = null;
