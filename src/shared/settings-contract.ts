@@ -20,6 +20,7 @@ export interface SettingsValues {
   uiTintColor: string
   uiTintStrength: 'off' | 'subtle' | 'medium' | 'strong'
   appearanceDefaultsMigrationVersion: 1
+  conciseThreadsDefaultMigrated: true
   appIconVariant:
     | 'rose'
     | 'pink-lady'

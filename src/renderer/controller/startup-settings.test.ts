@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { loadStartupSettings } from './startup-settings.ts'
+import {
+  CONCISE_THREADS_DEFAULT_MIGRATION_SETTING,
+  loadStartupSettings,
+} from './startup-settings.ts'
 
 test('loads every first-paint setting concurrently', async () => {
   const calls: string[] = []
@@ -39,6 +42,7 @@ test('loads every first-paint setting concurrently', async () => {
     'uiTintStrength',
     'developerMode',
     'appearanceDefaultsMigrationVersion',
+    'conciseThreadsDefaultMigrated',
   ])
 
   for (const release of releases) release()
@@ -57,6 +61,7 @@ test('persists and applies the exact legacy Appearance default migration', async
     uiTintColor: '#002E2B',
     uiTintStrength: 'subtle',
     appearanceDefaultsMigrationVersion: null,
+    conciseThreadsDefaultMigrated: true,
   }
   const writes = new Map<string, unknown>()
   const settings = {
@@ -89,6 +94,7 @@ test('marks a customised Appearance combination as evaluated without rewriting i
     uiTintColor: '#002E2B',
     uiTintStrength: 'subtle',
     appearanceDefaultsMigrationVersion: null,
+    conciseThreadsDefaultMigrated: true,
   }
   const writes = new Map<string, unknown>()
   const settings = {
@@ -113,6 +119,7 @@ test('does not migrate an exact legacy tuple after the one-time marker is set', 
     uiTintColor: '#002E2B',
     uiTintStrength: 'subtle',
     appearanceDefaultsMigrationVersion: 1,
+    conciseThreadsDefaultMigrated: true,
   }
   const writes: string[] = []
   const settings = {
@@ -128,4 +135,63 @@ test('does not migrate an exact legacy tuple after the one-time marker is set', 
   assert.deepEqual(writes, [])
   assert.equal(loaded.theme, 'system')
   assert.equal(loaded.uiAccentColor, '#20FD85')
+})
+
+function recordingSettings(values: Record<string, unknown>): {
+  settings: Pick<ApiClient['settings'], 'get' | 'set'>
+  writes: Map<string, unknown>
+} {
+  const writes = new Map<string, unknown>()
+  return {
+    writes,
+    settings: {
+      get: (key: string): Promise<unknown> => Promise.resolve(values[key] ?? null),
+      set: (key: string, value: unknown): Promise<void> => {
+        writes.set(key, value)
+        return Promise.resolve()
+      },
+    },
+  }
+}
+
+// Appearance is marked migrated in these so only the concise writes show.
+const APPEARANCE_DONE = { appearanceDefaultsMigrationVersion: 1 }
+
+test('clears a stored concise-threads false once when the default turns on', async () => {
+  const { settings, writes } = recordingSettings({
+    ...APPEARANCE_DONE,
+    conciseThreadsEnabled: false,
+  })
+
+  const loaded = await loadStartupSettings(settings)
+
+  assert.deepEqual(Object.fromEntries(writes), {
+    conciseThreadsEnabled: true,
+    [CONCISE_THREADS_DEFAULT_MIGRATION_SETTING]: true,
+  })
+  assert.equal(loaded.conciseThreadsEnabled, true)
+})
+
+test('only marks a fresh profile as evaluated, leaving concise threads on the default', async () => {
+  const { settings, writes } = recordingSettings(APPEARANCE_DONE)
+
+  const loaded = await loadStartupSettings(settings)
+
+  assert.deepEqual(Object.fromEntries(writes), {
+    [CONCISE_THREADS_DEFAULT_MIGRATION_SETTING]: true,
+  })
+  assert.equal(loaded.conciseThreadsEnabled, null)
+})
+
+test('keeps a concise-threads opt-out made after the migration', async () => {
+  const { settings, writes } = recordingSettings({
+    ...APPEARANCE_DONE,
+    conciseThreadsEnabled: false,
+    [CONCISE_THREADS_DEFAULT_MIGRATION_SETTING]: true,
+  })
+
+  const loaded = await loadStartupSettings(settings)
+
+  assert.equal(writes.size, 0)
+  assert.equal(loaded.conciseThreadsEnabled, false)
 })

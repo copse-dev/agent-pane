@@ -333,6 +333,12 @@ export function writeSettings(settings: Record<string, unknown>): void {
       theme: 'dark',
       uiTintStrength: 'off',
       localServerUrl: E2E_UNREACHABLE_LM_STUDIO_URL,
+      // Concise threads is on by default, but most specs assert on the tool cards
+      // and reasoning it hides for models above its gate. Seed the user's opt-out
+      // with its migration marker set, so launch keeps it; a spec that wants the
+      // concise view passes `conciseThreadsEnabled: true`.
+      conciseThreadsEnabled: false,
+      conciseThreadsDefaultMigrated: true,
       ...settings,
     }),
     'utf8',

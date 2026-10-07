@@ -482,6 +482,88 @@
 ) {
   display: none;
 }
+/* Footer under a finished concise turn: says what a Stop left unsaid and opens
+   the turn in full. Quiet by design — it is the exit hatch, not the content. */
+.messages-list > .concise-turn-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-xs) var(--spacing-md);
+  width: min(100%, var(--chat-content-max));
+  margin-inline: auto;
+  padding: 0 var(--spacing-md) var(--spacing-sm);
+  box-sizing: border-box;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.concise-turn-note[hidden],
+.concise-turn-toggle[hidden],
+.concise-turn-count[hidden],
+.concise-turn-edits[hidden] {
+  display: none;
+}
+.concise-turn-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-xs);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.concise-turn-toggle:hover {
+  color: var(--text-primary);
+}
+.concise-turn-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.concise-turn-toggle-label::after {
+  content: '›';
+  display: inline-block;
+  margin-inline-start: var(--spacing-xs);
+  transition: transform 0.15s ease;
+}
+.concise-turn-toggle[aria-expanded='true'] .concise-turn-toggle-label::after {
+  transform: rotate(90deg);
+}
+.concise-turn-count {
+  color: var(--text-tertiary);
+}
+.concise-turn-edits {
+  display: inline-flex;
+  gap: var(--spacing-xs);
+  font-family: var(--font-mono);
+}
+.concise-turn-added {
+  color: var(--change-added);
+}
+.concise-turn-deleted {
+  color: var(--change-deleted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .concise-turn-toggle-label::after {
+    transition: none;
+  }
+}
+/* The turn's last bubble keeps its text, but when it has none (a turn stopped
+   mid-work, or one that ended on tool calls alone) and no produced output, it
+   takes no room either: the footer below carries the note. */
+.msg-concise-steps:not(
+  :has(
+    .message-text:not(:empty),
+    > .tool-result-content > :not([hidden], .acp-terminal-reference),
+    > .thread-proposal,
+    > .reviewer-input-card,
+    > .message-body > .message-visual-evidence,
+    > .message-body > .message-canvas-previews
+  )
+) {
+  display: none;
+}
 /* Reasoning ("thinking") disclosure, shown above the answer. Keep the hatch
    that marks commentary, but fade it toward the center over a solid etched
    surface so longer text remains easy to read. The surface is scoped to [open]: a <details>

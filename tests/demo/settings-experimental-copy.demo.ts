@@ -6,7 +6,8 @@ const EXPERIMENTAL = '.settings-section[data-section="experimental"]'
 const MOBILE_FIELDSET = `${EXPERIMENTAL} fieldset:has(#mobile-companion-manage)`
 const VNC_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="vncEnabled"])`
 const DEVELOPER_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="developerMode"])`
-const CONCISE_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="conciseThreadsEnabled"])`
+const APPEARANCE = '.settings-section[data-section="appearance"]'
+const CONCISE_FIELDSET = `${APPEARANCE} fieldset:has(input[name="conciseThreadsEnabled"])`
 const SSH_AGENT_FIELDSET =
   '.settings-section[data-section="ssh"] fieldset:has(input[name="acpOverSshEnabled"])'
 
@@ -47,16 +48,8 @@ describe('browser-hosted Experimental settings copy', () => {
     await saveElementScreenshot(VNC_FIELDSET, 'settings-experimental-desktop-copy.png')
   })
 
-  it('offers concise threads off by default and says which models it affects', async () => {
-    const fieldset = $(CONCISE_FIELDSET)
-    await fieldset.scrollIntoView()
-    await expect(fieldset).toBeDisplayed()
-    await expect(fieldset.$('input[name="conciseThreadsEnabled"]')).not.toBeSelected()
-    const hint = await fieldset.$('.field-hint').getText()
-    assert.match(hint, /above 50 on the Artificial Analysis Intelligence Index/)
-    assert.match(hint, /Other models always show the full thread/)
-
-    await saveElementScreenshot(CONCISE_FIELDSET, 'settings-experimental-concise-threads.png')
+  it('no longer lists concise threads as experimental', async () => {
+    await expect($(`${EXPERIMENTAL} input[name="conciseThreadsEnabled"]`)).not.toBeExisting()
   })
 
   it('names the Developer Tools menu item that Developer mode adds', async () => {
@@ -136,5 +129,27 @@ describe('browser-hosted Experimental settings copy', () => {
       await expect($(`#plugins-list .plugin-row[data-plugin-id="${id}"]`)).toExist()
     }
     assert.equal(await $$('#advisorModel').length, 1)
+  })
+})
+
+describe('browser-hosted Concise threads setting', () => {
+  it('is on by default under Appearance, and says how to turn it off', async () => {
+    await browser.url('/?scenario=settings-footer')
+    await $('.prompt-input').waitForExist()
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').$('button[data-section="appearance"]').click()
+    await $(APPEARANCE).waitForDisplayed()
+
+    const fieldset = $(CONCISE_FIELDSET)
+    await fieldset.scrollIntoView()
+    await expect(fieldset).toBeDisplayed()
+    await expect(fieldset.$('input[name="conciseThreadsEnabled"]')).toBeSelected()
+    const hint = await fieldset.$('.field-hint').getText()
+    assert.match(hint, /above 50 on the Artificial Analysis Intelligence Index/)
+    assert.match(hint, /Show steps button/)
+    assert.match(hint, /Turn off to always show the full thread/)
+    assert.doesNotMatch(await fieldset.getText(), /experimental/i)
+
+    await saveElementScreenshot(CONCISE_FIELDSET, 'settings-appearance-concise-threads.png')
   })
 })
