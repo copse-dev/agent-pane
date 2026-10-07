@@ -312,8 +312,9 @@ same list-and-detail design with real tokens. What differs and where it goes:
     part of this slice's 4-5.5 days.
   - The settings link, **Run now** and **Automation setup** row actions need a home on the fold
     row; the prototype only shows a header menu entry (Automations, New automation).
-  - Unvisited projects contribute nothing (`getSidebarThreads` limit), so folds only cover
-    visited projects.
+  - A project's threads reach `getSidebarThreads` when it is opened or when the background
+    preload after startup (`preloadSidebarThreads`) has read it, so folds cover those projects;
+    SSH projects are not preloaded.
 - Specs that this slice can break and must be re-run: `thread-sidebar-live-sort.e2e.ts`,
   `projects-remove-sidebar.e2e.ts`, `ssh-projects-pane.e2e.ts`, `projects-drag-*.e2e.ts`,
   `thread-sidebar-*.e2e.ts`, `views/projects-pane-*.test.ts`.
