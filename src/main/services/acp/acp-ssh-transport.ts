@@ -274,7 +274,7 @@ export function formatRemoteAcpInstallApproval(input: {
   npmBinDir: string | null
 }): { title: string; body: string } {
   const lines = [
-    `Copse could not find the coding agent on ${input.hostLabel}, and wants to install this global npm package on that host:`,
+    `Copse could not find the coding agent on ${input.hostLabel}. It wants to install this npm package on that host so Copse can communicate with the agent, outside any project:`,
     '',
     `• ${input.pkg}`,
     '',
@@ -284,7 +284,10 @@ export function formatRemoteAcpInstallApproval(input: {
     '',
     'Lifecycle scripts are disabled (`--ignore-scripts`). Unlike a local install, this one does NOT go through Socket Firewall — it runs on the remote host, where Socket Firewall is not available.',
   ]
-  return { title: `Install coding-agent adapter on ${input.hostLabel}?`, body: lines.join('\n') }
+  return {
+    title: `Install software to connect your coding agent on ${input.hostLabel}?`,
+    body: lines.join('\n'),
+  }
 }
 
 /**

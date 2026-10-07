@@ -10,7 +10,9 @@ async function rejectFreshAcpBootstrap(): Promise<void> {
   // through its consent UI rather than letting ambient CLIs change the run.
   const dialog = $('#approval-dialog')
   await dialog.waitForDisplayed({ timeout: 10_000 })
-  await expect(dialog.$('.approval-heading')).toHaveText('Install coding-agent adapters globally?')
+  await expect(dialog.$('.approval-heading')).toHaveText(
+    'Install software to connect your coding agents?',
+  )
   await expect(dialog.$('.approval-body')).toHaveText('@agentclientprotocol/codex-acp', {
     containing: true,
   })

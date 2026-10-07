@@ -72,7 +72,7 @@ describe('plain-language copy: Settings and the install approval', () => {
     resetUserData()
   })
 
-  it('asks to install “coding-agent adapters” and names the Codex card for what it is', async () => {
+  it('asks to install “software to connect your coding agents” and names the Codex card for what it is', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await $('#settings-providers-host .provider-chip[data-provider="openai"]').click()
@@ -80,9 +80,9 @@ describe('plain-language copy: Settings and the install approval', () => {
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 10_000 })
     await expect(dialog.$('.approval-heading')).toHaveText(
-      'Install coding-agent adapters globally?',
+      'Install software to connect your coding agents?',
     )
-    await expect(dialog.$('.approval-body')).toHaveText('missing coding-agent adapters', {
+    await expect(dialog.$('.approval-body')).toHaveText('communicate with your coding agents', {
       containing: true,
     })
     await expectPlainLanguage('#approval-dialog')

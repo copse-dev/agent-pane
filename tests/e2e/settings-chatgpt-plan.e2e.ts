@@ -9,7 +9,9 @@ async function rejectFreshAcpBootstrap(): Promise<void> {
   // Exercise and reject its genuine fresh-install consent before continuing.
   const dialog = $('#approval-dialog')
   await dialog.waitForDisplayed({ timeout: 10_000 })
-  await expect(dialog.$('.approval-heading')).toHaveText('Install coding-agent adapters globally?')
+  await expect(dialog.$('.approval-heading')).toHaveText(
+    'Install software to connect your coding agents?',
+  )
   await expect(dialog.$('.approval-body')).toHaveText('@agentclientprotocol/codex-acp', {
     containing: true,
   })
