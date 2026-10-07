@@ -21389,6 +21389,9 @@ function trashIcon(className = DEFAULT) {
     className
   );
 }
+function historyIcon(className = DEFAULT) {
+  return outlineIcon("history", ["M3 12a9 9 0 1 0 3-6.7L3 8", "M3 3v5h5", "M12 7v5l3 2"], className);
+}
 var DEFAULT;
 var init_icons = __esm({
   "src/renderer/dom/icons.ts"() {
@@ -24413,10 +24416,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.7,
+          value: 21.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'a-x-k2', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'a-x-k2', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "agnes-2-5-pro-alpha": [
@@ -24491,10 +24494,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 30.4,
+          value: 26.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'apodex-1-1', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'apodex-1-1', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "apriel-v1-5-15b-thinker": [
@@ -25179,6 +25182,46 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "claude-sonnet-5-5": [
+        {
+          value: 56,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "claude-sonnet-5-5-high": [
+        {
+          value: 46.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-high', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "claude-sonnet-5-5-low": [
+        {
+          value: 35.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "claude-sonnet-5-5-medium": [
+        {
+          value: 40.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-medium', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "claude-sonnet-5-5-xhigh": [
+        {
+          value: 51.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-xhigh', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "claude-sonnet-5-high": [
         {
           value: 31.7,
@@ -25667,6 +25710,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "deepseek-v4-1-flash-non-reasoning": [
+        {
+          value: 24.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash-non-reasoning', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "deepseek-v4-flash": [
         {
           value: 51.8,
@@ -25703,10 +25754,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26,
+          value: 24.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420-high', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420-high', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "deepseek-v4-flash-0420-non-reasoning": [
@@ -25799,6 +25850,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424-non-reasoning', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "deepseek-v4-pro-non-reasoning": [
+        {
+          value: 20.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-non-reasoning', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "deepseek/deepseek-coder-v2-lite": [
@@ -26651,6 +26710,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "gemini-4-argon": [
+        {
+          value: 52.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-4-argon', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "gemma-3-1b": [
         {
           value: 1,
@@ -26813,10 +26880,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19,
+          value: 14.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gemma-4-31b-non-reasoning": [
@@ -27125,6 +27192,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'glm-5-3-flash', fetched 2026-09-22",
           asOf: "2026-09-22"
+        }
+      ],
+      "glm-5-3-low": [
+        {
+          value: 34.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-3-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "glm-5-non-reasoning": [
@@ -28269,74 +28344,74 @@ var init_model_intellect_generated = __esm({
       ],
       "gpt-6-luna": [
         {
-          value: 37.3,
+          value: 38.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-luna-high": [
         {
-          value: 32.1,
+          value: 32.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-high', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-high', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-luna-low": [
         {
-          value: 20.9,
+          value: 21.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-low', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-luna-medium": [
         {
-          value: 29.5,
+          value: 29.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-medium', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-medium', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-luna-non-reasoning": [
         {
-          value: 18.3,
+          value: 18.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-non-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-non-reasoning', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-luna-xhigh": [
         {
-          value: 33.9,
+          value: 34.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-xhigh', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-xhigh', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-sol": [
         {
-          value: 47.5,
+          value: 47.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-sol-high": [
         {
-          value: 42.8,
+          value: 42.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-high', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-high', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-sol-low": [
         {
-          value: 33.9,
+          value: 34.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-low', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-sol-medium": [
@@ -28349,18 +28424,18 @@ var init_model_intellect_generated = __esm({
       ],
       "gpt-6-sol-non-reasoning": [
         {
-          value: 28.1,
+          value: 28.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-non-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-non-reasoning', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-sol-xhigh": [
         {
-          value: 44.1,
+          value: 44.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-xhigh', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-xhigh', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-oss-120b": [
@@ -28897,6 +28972,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "grok-4-7-low": [
+        {
+          value: 42.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-7-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "grok-4-fast": [
         {
           value: 16.6,
@@ -29143,10 +29226,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.8,
+          value: 25.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'inkling-small', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'inkling-small', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "intellect-3": [
@@ -29283,10 +29366,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
+          value: 33.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "jt-4-1-flash-236b-a21b-non-reasoning": [
+        {
           value: 27.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b-non-reasoning', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "jt-mini": [
@@ -29557,6 +29648,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "kimi-k2-6": [
+        {
+          value: 27,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-6', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "kimi-k2-6-non-reasoning": [
         {
           value: 35.4,
@@ -29607,10 +29706,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 34.5,
+          value: 30.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "kimi-linear-48b-a3b-instruct": [
@@ -29817,10 +29916,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.9,
+          value: 20.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "ling-3-0-flash-fin": [
@@ -29847,10 +29946,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.3,
+          value: 11.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-tiny', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-tiny', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "ling-3-1-flash": [
+        {
+          value: 41.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-1-flash', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "ling-flash-2-0": [
@@ -30301,6 +30408,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "mercury-2-5": [
+        {
+          value: 12.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mercury-2-5', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "mi-dm-k-2-5-pro-dec28": [
         {
           value: 16.6,
@@ -30383,6 +30498,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-pro-non-reasoning', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "mimo-v2-6-flash": [
+        {
+          value: 37.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-6-flash', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "mimo-v2-6-pro": [
@@ -30723,6 +30846,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "mistral-large-4": [
+        {
+          value: 38.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-large-4', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "mistral-medium": [
         {
           value: 3.2,
@@ -30873,8 +31004,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -31383,10 +31514,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.4,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-4b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-4b', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "nvidia-nemotron-3-super-120b-a12b": [
@@ -32427,10 +32558,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.7,
+          value: 11.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-9b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-9b', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "qwen3-5-9b-non-reasoning": [
@@ -33167,6 +33298,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'solar-mini', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "solar-mini4": [
+        {
+          value: 24.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'solar-mini4', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "solar-open-100b-reasoning": [
@@ -43989,8 +44128,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     },
     "$"
   );
-  const triggerRetention = el("span", { class: "ui-badge model-picker-retention", hidden: true });
-  trigger.append(labelEl, triggerRetention, triggerCost, chevron);
+  trigger.append(labelEl, triggerCost, chevron);
   const menu = el("div", {
     class: "model-picker-menu",
     hidden: "",
@@ -44320,8 +44458,13 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         ...opt.retention ? [
           el(
             "span",
-            { class: "ui-badge model-picker-retention", title: opt.retention.detail },
-            opt.retention.label
+            {
+              class: "model-picker-retention",
+              title: opt.retention.detail,
+              "aria-label": opt.retention.label,
+              role: "img"
+            },
+            historyIcon()
           )
         ] : [],
         ...opt.coverage ? [
@@ -44388,9 +44531,6 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     labelEl.textContent = label;
     labelEl.title = current;
     triggerCost.hidden = match?.coverage !== "paid";
-    triggerRetention.hidden = !match?.retention;
-    triggerRetention.textContent = match?.retention?.label ?? "";
-    triggerRetention.title = match?.retention?.detail ?? "";
   }
   async function refresh() {
     const generation = ++refreshGeneration;
@@ -55590,6 +55730,7748 @@ var init_apple_development_panel = __esm({
   }
 });
 
+// src/shared/plugin-catalog.generated.ts
+var BUNDLED_PLUGIN_CATALOG;
+var init_plugin_catalog_generated = __esm({
+  "src/shared/plugin-catalog.generated.ts"() {
+    BUNDLED_PLUGIN_CATALOG = {
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "claude-plugins-official",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          format: "claude",
+          manifestPath: ".claude-plugin/marketplace.json"
+        },
+        {
+          id: "cursor-plugins",
+          repository: "https://github.com/cursor/plugins",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          format: "cursor",
+          manifestPath: ".cursor-plugin/marketplace.json"
+        }
+      ],
+      entries: [
+        {
+          id: "https://github.com/42crunch-ai/claude-plugins#plugins/api-security-testing",
+          repository: "https://github.com/42crunch-ai/claude-plugins",
+          path: "plugins/api-security-testing",
+          revision: "faf5305385de8afed9468904e8639be737aff39e",
+          names: ["42crunch-api-security-testing"],
+          description: "Automate API security directly in Claude Code with 42Crunch - automatically audit OpenAPI specs, detect vulnerabilities aligned with OWASP API Security risks (including BOLA/BFLA), and apply AI-powered fixes. Designed for AI-assisted development workflows, it provides continuous guardrails through an audit->scan->remediate->validate loop, ensuring APIs meet enterprise security standards before deployment.",
+          publisher: "42Crunch",
+          keywords: ["security"],
+          homepage: "https://42crunch.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "42crunch-api-security-testing"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/activecampaign/activecampaign-plugin#",
+          repository: "https://github.com/activecampaign/activecampaign-plugin",
+          path: "",
+          revision: "0ff858728bc52aee335d5475b0d4eb5f3a9589b0",
+          names: ["ActiveCampaign", "activecampaign"],
+          description: "Marketing automation, CRM, and email marketing powered by ActiveCampaign. Manage contacts, campaigns, automations, deals, and get AI-powered marketing insights \u2014 all from Claude.",
+          publisher: "ActiveCampaign",
+          keywords: ["productivity"],
+          homepage: "https://www.activecampaign.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "activecampaign"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/adobe/skills#plugins/creative-cloud/adobe-for-creativity",
+          repository: "https://github.com/adobe/skills",
+          path: "plugins/creative-cloud/adobe-for-creativity",
+          revision: "acb6d76475e6c522a5b109d2df7c8a794ee74ea7",
+          names: ["adobe-for-creativity"],
+          description: "Harness Adobe's creative AI-powered tools to edit images, automate design workflows, and bring creative visions to life \u2014 from background removal to vectorization and professional retouching.",
+          publisher: "Adobe",
+          keywords: ["design"],
+          homepage: "https://github.com/adobe/skills/tree/main/plugins/creative-cloud/adobe-for-creativity",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "adobe-for-creativity"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/aikidosec/aikido-claude-plugin#",
+          repository: "https://github.com/aikidosec/aikido-claude-plugin",
+          path: "",
+          revision: "02f018ad4da175a2a5ad6ca9451c3d309d105fab",
+          names: ["aikido"],
+          description: "Aikido Security scanning for Claude Code \u2014 SAST, secrets, and IaC vulnerability detection powered by the Aikido MCP server.",
+          publisher: null,
+          keywords: [],
+          homepage: "https://github.com/AikidoSec/aikido-claude-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "aikido"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/airtable/skills#plugins/airtable",
+          repository: "https://github.com/airtable/skills",
+          path: "plugins/airtable",
+          revision: "812ee67f1fd3d76fb45ff8df40afaa0448602ba8",
+          names: ["airtable"],
+          description: "Airtable is the database and operations layer for your agents \u2014 whether running product, marketing, sales, ops, HR, or a custom business app. It combines structured data with multiplayer visual surfaces (grid, kanban, calendar, gallery, timeline) humans and agents share \u2014 plus sync integrations to Jira, Salesforce, Zendesk, Google Drive, Databricks, and the rest of your stack, all backed by enterprise governance. This plugin makes Claude fluent in Airtable: creating bases and schema, working with records, and sharing UI for collaboration. Bundles the official Airtable MCP server.",
+          publisher: "Airtable",
+          keywords: ["productivity"],
+          homepage: "https://www.airtable.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "airtable"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/airwallex/airwallex-marketplace#plugins/airwallex-agentos",
+          repository: "https://github.com/airwallex/airwallex-marketplace",
+          path: "plugins/airwallex-agentos",
+          revision: "b418b9913e4919f85257aa1e25319e59464e8fae",
+          names: ["Airwallex", "airwallex-agentos"],
+          description: "Bring Airwallex's global financial infrastructure to Claude. Orchestrate actions across your account in plain language, e.g., set up invoices from a PO, onboard suppliers from invoices, and check current cash position across currencies. AgentOS bundles pre-built finance Skills with MCP servers. A public CLI connects your agent to Airwallex's capabilities.",
+          publisher: "Airwallex",
+          keywords: ["productivity"],
+          homepage: "https://www.airwallex.com/docs",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "airwallex-agentos"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/airwallex/airwallex-marketplace#plugins/airwallex-dev",
+          repository: "https://github.com/airwallex/airwallex-marketplace",
+          path: "plugins/airwallex-dev",
+          revision: "b418b9913e4919f85257aa1e25319e59464e8fae",
+          names: ["airwallex-dev"],
+          description: "Build Airwallex payment integrations in your own codebase. Generates the checkout, card-element, onboarding, and subscription-billing code for an Airwallex integration and wires it into your project: Hosted Payment Page, Drop-in and Split Card elements, connected-account KYC onboarding, and Billing Hosted Checkout for subscriptions and card-saving. Also plans card-on-file merchant-initiated flows for AI providers such as top-ups and auto-recharge.",
+          publisher: "Airwallex",
+          keywords: ["development"],
+          homepage: "https://www.airwallex.com/docs",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "airwallex-dev"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/aiven/aiven-ai-plugins#",
+          repository: "https://github.com/aiven/aiven-ai-plugins",
+          path: "",
+          revision: "634f41d6852957cb9280e9245f2ea6f74645b4f1",
+          names: ["aiven"],
+          description: "Easily deploy managed PostgreSQL (pg), Kafka, OpenSearch, Clickhouse and other databases, streaming and apps. Free tier available, up and running in minutes.",
+          publisher: "Aiven",
+          keywords: ["database"],
+          homepage: "https://aiven.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "aiven"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/altimateai/altimate-claude-plugin#plugins/altimate-code",
+          repository: "https://github.com/altimateai/altimate-claude-plugin",
+          path: "plugins/altimate-code",
+          revision: "b7c8f68b3dfd303ab3ccf2f43934098811dfe2aa",
+          names: ["altimate-code"],
+          description: "Delegates dbt and warehouse work to altimate-code, a specialized CLI agent with 100+ purpose-built data tools (SQL analysis, column-level lineage, dbt build/test/run, warehouse profiling, FinOps, connectivity to Snowflake, BigQuery, Redshift, Databricks, Postgres, MySQL, DuckDB).",
+          publisher: "AltimateAI",
+          keywords: ["database"],
+          homepage: "https://www.altimate.ai",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "altimate-code"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/amd/skills#skills",
+          repository: "https://github.com/amd/skills",
+          path: "skills",
+          revision: "6916fb371d1cba40757b223cf16b4cd4912b202f",
+          names: ["amd-skills"],
+          description: "AMD's verified Agent Skills in one plugin: route image/audio through local AI on Ryzen AI, serve LLMs on AMD Instinct GPUs with vLLM, optimize inference throughput with Hyperloom, and analyze GPU kernel and PyTorch trace performance.",
+          publisher: "AMD",
+          keywords: ["development"],
+          homepage: "https://developer.amd.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "amd-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/amplitude/mcp-marketplace#plugins/amplitude",
+          repository: "https://github.com/amplitude/mcp-marketplace",
+          path: "plugins/amplitude",
+          revision: "96fc7d4c58bb33b4e60c334d34ad944c8a246869",
+          names: ["amplitude"],
+          description: "Use Amplitude as an expert analyst \u2014 instrument Amplitude, discover product opportunities, analyze charts, create dashboards, manage experiments, and understand users and accounts.",
+          publisher: null,
+          keywords: ["monitoring"],
+          homepage: "https://github.com/amplitude/mcp-marketplace",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "amplitude"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/amzn/selling-partner-agentic-toolkit#",
+          repository: "https://github.com/amzn/selling-partner-agentic-toolkit",
+          path: "",
+          revision: "10573bac239b7062a476667eaa574d400335c70e",
+          names: ["Amazon Selling Partner", "amazon-selling-partner"],
+          description: "Connect your Amazon Seller Central account to Claude. Ask about sales, inventory, and listing performance and get recommendations grounded in your own data, then review and approve every listing, inventory or FBA action before it runs. Bundles the Amazon Selling Partner MCP server (Seller Central OAuth on first use). Currently in beta.",
+          publisher: "Amazon",
+          keywords: ["productivity"],
+          homepage: "https://github.com/amzn/selling-partner-agentic-toolkit",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "amazon-selling-partner"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/asana",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/asana",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["asana"],
+          description: "Asana project management integration. Connects Claude Code to Asana's V2 MCP server to create and manage tasks, search projects, update assignments, and track progress. Requires a one-time Asana OAuth app setup \u2014 run /asana-setup after installing.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/asana",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "asana"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/context7",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/context7",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["context7"],
+          description: "Upstash Context7 MCP server for up-to-date documentation lookup. Connects to Context7's hosted remote MCP server (https://mcp.context7.com/mcp) \u2014 no local Node.js or npx required \u2014 to pull version-specific documentation and code examples directly from source repositories into your LLM context. Works anonymously out of the box; set CONTEXT7_API_KEY for higher rate limits.",
+          publisher: "Upstash",
+          keywords: ["community-managed", "development"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "context7"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/discord",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/discord",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["discord"],
+          description: "Discord messaging bridge with built-in access control. Manage pairing, allowlists, and policy via /discord:access.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "discord"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/fakechat",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/fakechat",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["fakechat"],
+          description: "Localhost web chat for testing the channel notification flow. No tokens, no access control, no third-party service.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "fakechat"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/firebase",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/firebase",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["firebase"],
+          description: "Google Firebase MCP integration. Manage Firestore databases, authentication, cloud functions, hosting, and storage. Build and manage your Firebase backend directly from your development workflow.",
+          publisher: null,
+          keywords: ["database"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/firebase",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "firebase"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/github",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/github",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["github"],
+          description: "Official GitHub MCP server for repository management. Create issues, manage pull requests, review code, search repositories, and interact with GitHub's full API directly from Claude Code.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/github",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "github"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/gitlab",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/gitlab",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["gitlab"],
+          description: "GitLab DevOps platform integration. Manage repositories, merge requests, CI/CD pipelines, issues, and wikis. Full access to GitLab's comprehensive DevOps lifecycle tools.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/gitlab",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "gitlab"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/imessage",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/imessage",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["imessage"],
+          description: "iMessage messaging bridge with built-in access control. Reads chat.db directly, sends via AppleScript. Manage pairing, allowlists, and policy via /imessage:access.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "imessage"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/laravel-boost",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/laravel-boost",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["laravel-boost"],
+          description: "Laravel development toolkit MCP server. Provides intelligent assistance for Laravel applications including Artisan commands, Eloquent queries, routing, migrations, and framework-specific code generation.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/laravel-boost",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "laravel-boost"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/linear",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/linear",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["linear"],
+          description: "Linear issue tracking integration. Create issues, manage projects, update statuses, search across workspaces, and streamline your software development workflow with Linear's modern issue tracker.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/linear",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "linear"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/playwright",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/playwright",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["playwright"],
+          description: "Browser automation and end-to-end testing MCP server by Microsoft. Enables Claude to interact with web pages, take screenshots, fill forms, click elements, and perform automated browser testing workflows.",
+          publisher: null,
+          keywords: ["testing"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/playwright",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "playwright"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/serena",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/serena",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["serena"],
+          description: "Semantic code analysis MCP server providing intelligent code understanding, refactoring suggestions, and codebase navigation through language server protocol integration.",
+          publisher: null,
+          keywords: ["community-managed", "development"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/serena",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "serena"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/telegram",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/telegram",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["telegram"],
+          description: "Telegram messaging bridge with built-in access control. Manage pairing, allowlists, and policy via /telegram:access.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "telegram"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#external_plugins/terraform",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "external_plugins/terraform",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["terraform"],
+          description: "The Terraform MCP Server provides seamless integration with Terraform ecosystem, enabling advanced automation and interaction capabilities for Infrastructure as Code (IaC) development.",
+          publisher: "HashiCorp",
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/terraform",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "terraform"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/agent-sdk-dev",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/agent-sdk-dev",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["agent-sdk-dev"],
+          description: "Development kit for working with the Claude Agent SDK",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/agent-sdk-dev",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "agent-sdk-dev"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/clangd-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/clangd-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["clangd-lsp"],
+          description: "C/C++ language server (clangd) for code intelligence",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "clangd-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/claude-code-setup",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/claude-code-setup",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["claude-code-setup"],
+          description: "Analyze codebases and recommend tailored Claude Code automations such as hooks, skills, MCP servers, and subagents.",
+          publisher: "Anthropic",
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-code-setup",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "claude-code-setup"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/claude-md-management",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/claude-md-management",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["claude-md-management"],
+          description: "Tools to maintain and improve CLAUDE.md files - audit quality, capture session learnings, and keep project memory current.",
+          publisher: "Anthropic",
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-md-management",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "claude-md-management"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/claude-security",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/claude-security",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["claude-security"],
+          description: "Deep vulnerability scanning of your own code, run entirely inside your Claude Code session at a chosen effort tier, with every finding challenged before it is reported and the verification tally computed in code. Turns surviving findings into targeted patches, each verified by a panel of agents, that you apply when you choose.",
+          publisher: "Anthropic",
+          keywords: ["security"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-security",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "claude-security"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/code-modernization",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/code-modernization",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["code-modernization"],
+          description: "Guided modernization for any legacy codebase: start with /modernize, get an assessment, an interactive map, the business rules mined from the code, and a plan you approve, then an upgrade, a rewrite or a rebuild with independent proof that the new code behaves like the old. Includes security hardening, a one-page report, specialist agents, and an optional live progress pane (early access).",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/code-modernization",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "code-modernization"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/code-review",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/code-review",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["code-review"],
+          description: "Automated code review for pull requests using multiple specialized agents with confidence-based scoring to filter false positives",
+          publisher: "Anthropic",
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/code-review",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "code-review"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/code-simplifier",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/code-simplifier",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["code-simplifier"],
+          description: "Agent that simplifies and refines code for clarity, consistency, and maintainability while preserving functionality. Focuses on recently modified code.",
+          publisher: "Anthropic",
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/code-simplifier",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "code-simplifier"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/commit-commands",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/commit-commands",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["commit-commands"],
+          description: "Commands for git commit workflows including commit, push, and PR creation",
+          publisher: "Anthropic",
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/commit-commands",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "commit-commands"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/csharp-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/csharp-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["csharp-lsp"],
+          description: "C# language server for code intelligence",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "csharp-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/cwc-makers",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/cwc-makers",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["cwc-makers"],
+          description: "Onboard a Code-with-Claude Makers Cardputer with one /maker-setup command \u2014 clones the build-with-claude repo, flashes UIFlow firmware, and installs the Claude Buddy app bundle.",
+          publisher: "Anthropic",
+          keywords: ["productivity"],
+          homepage: "https://claude.com/cwc-makers",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "cwc-makers"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/explanatory-output-style",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/explanatory-output-style",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["explanatory-output-style"],
+          description: "Adds educational insights about implementation choices and codebase patterns (mimics the deprecated Explanatory output style)",
+          publisher: "Anthropic",
+          keywords: ["learning"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/explanatory-output-style",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "explanatory-output-style"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/feature-dev",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/feature-dev",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["feature-dev"],
+          description: "Comprehensive feature development workflow with specialized agents for codebase exploration, architecture design, and quality review",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/feature-dev",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "feature-dev"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/frontend-design",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/frontend-design",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["frontend-design"],
+          description: "Create distinctive, production-grade frontend interfaces with high design quality. Generates creative, polished code that avoids generic AI aesthetics.",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/frontend-design",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "frontend-design"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/gopls-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/gopls-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["gopls-lsp"],
+          description: "Go language server for code intelligence and refactoring",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "gopls-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/hookify",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/hookify",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["hookify"],
+          description: "Easily create custom hooks to prevent unwanted behaviors by analyzing conversation patterns or from explicit instructions. Define rules via simple markdown files.",
+          publisher: "Anthropic",
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/hookify",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "hookify"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/jdtls-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/jdtls-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["jdtls-lsp"],
+          description: "Java language server (Eclipse JDT.LS) for code intelligence",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "jdtls-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/kotlin-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/kotlin-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["kotlin-lsp"],
+          description: "Kotlin language server for code intelligence",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "kotlin-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/learning-output-style",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/learning-output-style",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["learning-output-style"],
+          description: "Interactive learning mode that requests meaningful code contributions at decision points (mimics the unshipped Learning output style)",
+          publisher: "Anthropic",
+          keywords: ["learning"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/learning-output-style",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "learning-output-style"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/lua-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/lua-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["lua-lsp"],
+          description: "Lua language server for code intelligence",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "lua-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/math-olympiad",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/math-olympiad",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["math-olympiad"],
+          description: "Solve competition math (IMO, Putnam, USAMO) with adversarial verification that catches what self-verification misses. Fresh-context verifiers attack proofs with specific failure patterns. Calibrated abstention over bluffing.",
+          publisher: "Anthropic",
+          keywords: ["math"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/math-olympiad",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "math-olympiad"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/math-proof",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/math-proof",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["math-proof"],
+          description: "Two skills for hard mathematics problems, each ending in a self-contained proof.md: /math-proof:solo has the session work the problem itself in stages with a notes file; /math-proof:siege works on it for hours in rounds of judge and worker sub-agents and says plainly what is and is not proved.",
+          publisher: "Anthropic",
+          keywords: ["math"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/math-proof",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "math-proof"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/mcp-server-dev",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/mcp-server-dev",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["mcp-server-dev"],
+          description: "Skills for designing and building MCP servers that work seamlessly with Claude. Guides you through deployment models (remote HTTP, MCPB, local), tool design patterns, auth, and interactive MCP apps.",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/mcp-server-dev",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "mcp-server-dev"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/mcp-tunnels",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/mcp-tunnels",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["mcp-tunnels"],
+          description: "Connect Claude to a private MCP server through an Anthropic MCP tunnel. The /create-docker-mcp-tunnel command drives the Docker Compose quickstart end to end: certificates, proxy config, cloudflared, and a verifiable sample server.",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/mcp-tunnels",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "mcp-tunnels"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/php-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/php-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["php-lsp"],
+          description: "PHP language server (Intelephense) for code intelligence",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "php-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/playground",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/playground",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["playground"],
+          description: "Creates interactive HTML playgrounds \u2014 self-contained single-file explorers with visual controls, live preview, and prompt output with copy button. Includes templates for design playgrounds, data explorers, concept maps, and document critique.",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/playground",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "playground"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/plugin-dev",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/plugin-dev",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["plugin-dev"],
+          description: "Comprehensive toolkit for developing Claude Code plugins. Includes 7 expert skills covering hooks, MCP integration, commands, agents, and best practices. AI-assisted plugin creation and validation.",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/plugin-dev",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "plugin-dev"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/pr-review-toolkit",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/pr-review-toolkit",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["pr-review-toolkit"],
+          description: "Comprehensive PR review agents specializing in comments, tests, error handling, type design, code quality, and code simplification",
+          publisher: "Anthropic",
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/pr-review-toolkit",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "pr-review-toolkit"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/project-artifact",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/project-artifact",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["project-artifact"],
+          description: "Generate and publish a living project status page \u2014 overview & success criteria, the workstream sequence, and next steps \u2014 as a shareable claude.ai artifact backed by a per-project config, so refreshes re-gather live state, redeploy the same URL, and report only the delta.",
+          publisher: "Anthropic",
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/project-artifact",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "project-artifact"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/pyright-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/pyright-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["pyright-lsp"],
+          description: "Python language server (Pyright) for type checking and code intelligence",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "pyright-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/ralph-loop",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/ralph-loop",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["ralph-loop"],
+          description: "Interactive self-referential AI loops for iterative development, implementing the Ralph Wiggum technique. Claude works on the same task repeatedly, seeing its previous work, until completion.",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/ralph-loop",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "ralph-loop"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/receipts",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/receipts",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["receipts"],
+          description: "A personal Claude Code impact report for justifying your usage to a manager or a self-review: what you shipped, which projects it went to, and each project's share of your usage. Reads your ~/.claude/projects transcripts and runs read-only git locally; only counts and project names are sent to write it up, and the report stays on your machine.",
+          publisher: "Anthropic",
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/receipts",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "receipts"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/ruby-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/ruby-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["ruby-lsp"],
+          description: "Ruby language server for code intelligence and analysis",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "ruby-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/rust-analyzer-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/rust-analyzer-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["rust-analyzer-lsp"],
+          description: "Rust language server for code intelligence and analysis",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "rust-analyzer-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/security-guidance",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/security-guidance",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["security-guidance"],
+          description: "Security review for Claude-generated code. Pattern-based warnings on edits, LLM-powered diff review on Stop, and an agentic commit reviewer that catches injection, XSS, SSRF, hardcoded secrets, and 25+ other vulnerability classes.",
+          publisher: "Anthropic",
+          keywords: ["security"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/security-guidance",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "security-guidance"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/session-report",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/session-report",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["session-report"],
+          description: "Generate an explorable HTML report of Claude Code session usage \u2014 tokens, cache efficiency, subagents, skills, and the most expensive prompts \u2014 from local ~/.claude/projects transcripts.",
+          publisher: "Anthropic",
+          keywords: ["productivity"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/session-report",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "session-report"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/skill-creator",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/skill-creator",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["skill-creator"],
+          description: "Create new skills, improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, update or optimize an existing skill, run evals to test a skill, or benchmark skill performance with variance analysis.",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/skill-creator",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "skill-creator"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/swift-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/swift-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["swift-lsp"],
+          description: "Swift language server (SourceKit-LSP) for code intelligence",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "swift-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/anthropics/claude-plugins-official#plugins/typescript-lsp",
+          repository: "https://github.com/anthropics/claude-plugins-official",
+          path: "plugins/typescript-lsp",
+          revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+          names: ["typescript-lsp"],
+          description: "TypeScript/JavaScript language server for enhanced code intelligence",
+          publisher: "Anthropic",
+          keywords: ["development"],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "typescript-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/apollographql/skills#",
+          repository: "https://github.com/apollographql/skills",
+          path: "",
+          revision: "c288eb80629dd2309eed81f23d693f66a452d043",
+          names: ["apollo-skills"],
+          description: "Apollo GraphQL agent skills for Claude Code \u2014 Apollo Client, Server, Federation, Connectors, Router, Rover CLI, iOS, Kotlin, and the Apollo MCP server. Covers schema design, query optimization, and GraphQL best practices.",
+          publisher: "Apollo GraphQL",
+          keywords: ["development"],
+          homepage: "https://www.apollographql.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "apollo-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/apolloio/apollo-mcp-plugin#",
+          repository: "https://github.com/apolloio/apollo-mcp-plugin",
+          path: "",
+          revision: "bd0513c961f02105492fcff0d7d29c9cccf1ed23",
+          names: ["apollo"],
+          description: "Prospect, enrich leads, load outreach sequences, and query sales analytics with Apollo.io \u2014 one-click MCP server integration for Claude Code and Cowork.",
+          publisher: "Apollo.io",
+          keywords: ["productivity"],
+          homepage: "https://www.apollo.io/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "apollo"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/appwrite/claude-plugin#",
+          repository: "https://github.com/appwrite/claude-plugin",
+          path: "",
+          revision: "ab3c90b37c95b7068f0c064dc562cf21958e8e19",
+          names: ["appwrite"],
+          description: "Appwrite tools for Claude Code, including SDK skills, Appwrite MCP servers, and deployment commands.",
+          publisher: "Appwrite",
+          keywords: ["development"],
+          homepage: "https://appwrite.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "appwrite"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/astronomer/agents#",
+          repository: "https://github.com/astronomer/agents",
+          path: "",
+          revision: "cbe1141f547bcf0506babb9778a7696bf15eff66",
+          names: ["astronomer-data-agents", "data", "data-engineering"],
+          description: "Data engineering for Apache Airflow and Astronomer. Author DAGs with best practices, debug pipeline failures, trace data lineage, profile tables, migrate Airflow 2 to 3, and manage local and cloud deployments.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/astronomer/agents",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "astronomer-data-agents"
+            },
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "data-engineering"
+            },
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "data"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/atlanhq/agent-toolkit#",
+          repository: "https://github.com/atlanhq/agent-toolkit",
+          path: "",
+          revision: "86bb1ad27f80e189b328333d2271b360ae579f2b",
+          names: ["atlan"],
+          description: "Atlan data catalog plugin for Claude Code. Search, explore, govern, and manage your data assets through natural language. Powered by the Atlan MCP server with semantic search, lineage traversal, glossary management, data quality rules, and more.",
+          publisher: null,
+          keywords: [],
+          homepage: "https://docs.atlan.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "atlan"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/atlassian-labs/twg-plugins#",
+          repository: "https://github.com/atlassian-labs/twg-plugins",
+          path: "",
+          revision: "b3336ef63d45e2636ff411a922ed602244e0f3db",
+          names: ["atlassian-twg-cli"],
+          description: `Teamwork Graph CLI is Atlassian's agent-first interface to your entire work context: Jira issues, Confluence pages, Bitbucket PRs, along with your connected third-party data sources. Purpose-built for coding agents like Claude Code (terminal or desktop), and powered by Atlassian's context graph. Try: "draft a Jira issue from this PR and link it to the epic." Using Claude Code in the browser? Install the Atlassian Rovo MCP plugin instead. Run /twg-setup after install to connect Atlassian Teamwork Graph CLI to Claude Code.`,
+          publisher: "Atlassian",
+          keywords: ["productivity"],
+          homepage: "https://developer.atlassian.com/cloud/twg-cli/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "atlassian-twg-cli"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/atlassian/atlassian-mcp-server#",
+          repository: "https://github.com/atlassian/atlassian-mcp-server",
+          path: "",
+          revision: "eb9a5956a7ac6380c731c725a8382da53ad6d980",
+          names: ["atlassian"],
+          description: "Connect to Atlassian products including Jira and Confluence. Search and create issues, access documentation, manage sprints, and integrate your development workflow with Atlassian's collaboration tools.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/atlassian/atlassian-mcp-server",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "atlassian"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/atlassian/forge-skills#",
+          repository: "https://github.com/atlassian/forge-skills",
+          path: "",
+          revision: "4f04ae02879435f23808a4798da28f75d3ab74c3",
+          names: ["forge-skills"],
+          description: "Forge-focused skills and MCP configuration for Atlassian Forge: scaffold and deploy apps (forge create, templates, dev spaces), build Teamwork Graph connectors for Rovo Search/Rovo Chat, pre-deploy review, systematic debugging, plus Forge docs and Atlassian Design System lookups via MCP.",
+          publisher: "Atlassian",
+          keywords: ["development"],
+          homepage: "https://developer.atlassian.com/platform/forge/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "forge-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/auth0/agent-skills#plugins/auth0",
+          repository: "https://github.com/auth0/agent-skills",
+          path: "plugins/auth0",
+          revision: "ec201528bf24a84afeaa06f2aaa9829d29c47d85",
+          names: ["auth0"],
+          description: "Enterprise-grade auth, easy to implement. Add login, SSO, MFA, and access control to any app with framework-aware guidance.",
+          publisher: "Auth0",
+          keywords: ["security"],
+          homepage: "https://auth0.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "auth0"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/automattic/claude-code-wordpress.com#",
+          repository: "https://github.com/automattic/claude-code-wordpress.com",
+          path: "",
+          revision: "052ca970df2c577d7c651e784935186ff93e6779",
+          names: ["build-with-wordpress"],
+          description: "Craft production-grade WordPress sites and applications. Everything from themes and plugins to commerce and deployment.",
+          publisher: null,
+          keywords: [],
+          homepage: "https://developer.wordpress.com/wordpress-com-claude-code-plugin/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "build-with-wordpress"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/aws/agent-toolkit-for-aws#plugins/aws-agents-for-devsecops",
+          repository: "https://github.com/aws/agent-toolkit-for-aws",
+          path: "plugins/aws-agents-for-devsecops",
+          revision: "7bde20faede49dd5764c02b54f5e306849f7e3ca",
+          names: ["aws-agents-for-devsecops"],
+          description: "Investigate incidents, review code and execute UAT for release readiness, scan code for vulnerabilities, and run penetration tests with AWS DevOps Agent and AWS Security Agent.",
+          publisher: "Amazon Web Services",
+          keywords: ["development"],
+          homepage: "https://github.com/aws/agent-toolkit-for-aws",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "aws-agents-for-devsecops"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/aws/agent-toolkit-for-aws#plugins/aws-agents",
+          repository: "https://github.com/aws/agent-toolkit-for-aws",
+          path: "plugins/aws-agents",
+          revision: "7bde20faede49dd5764c02b54f5e306849f7e3ca",
+          names: ["aws-agents"],
+          description: "Build, deploy, and operate AI agents on AWS. Skills for scaffolding agents with Amazon Bedrock AgentCore, connecting tools, memory, policies, evaluation, debugging, and production hardening.",
+          publisher: "Amazon Web Services",
+          keywords: ["development"],
+          homepage: "https://github.com/aws/agent-toolkit-for-aws",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "aws-agents"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/aws/agent-toolkit-for-aws#plugins/aws-core",
+          repository: "https://github.com/aws/agent-toolkit-for-aws",
+          path: "plugins/aws-core",
+          revision: "7bde20faede49dd5764c02b54f5e306849f7e3ca",
+          names: ["aws-core"],
+          description: "Build, deploy, and operate applications on AWS. Skills to author infrastructure-as-code, use core services, and complete common tasks.",
+          publisher: "Amazon Web Services",
+          keywords: ["development"],
+          homepage: "https://github.com/aws/agent-toolkit-for-aws",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "aws-core"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/aws/agent-toolkit-for-aws#plugins/aws-data-analytics",
+          repository: "https://github.com/aws/agent-toolkit-for-aws",
+          path: "plugins/aws-data-analytics",
+          revision: "7bde20faede49dd5764c02b54f5e306849f7e3ca",
+          names: ["aws-data-analytics"],
+          description: "Data lake, analytics, and ETL workflows with S3 Tables, AWS Glue, and Athena.",
+          publisher: "Amazon Web Services",
+          keywords: ["development"],
+          homepage: "https://github.com/aws/agent-toolkit-for-aws",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "aws-data-analytics"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/aws/agent-toolkit-for-aws#plugins/aws-startup-advisor",
+          repository: "https://github.com/aws/agent-toolkit-for-aws",
+          path: "plugins/aws-startup-advisor",
+          revision: "613dc216a1cf0836b81a28d7f3a81f2b72034394",
+          names: ["aws-startup-advisor"],
+          description: "Personalized AWS guidance built on patterns from 350,000+ startups. Get architecture, cost, and security recommendations matched to your stage, from day-one account setup to production-ready infrastructure. Migrate to AWS from Azure, GCP, or Heroku with resource discovery, cost estimates, and generated Terraform. Move OpenAI, Azure OpenAI, and Gemini code to Amazon Bedrock, and plan and prototype AI agents on AgentCore and other AWS runtimes. Includes AWS Activate credits eligibility, 60+ exclusive startup offers, and multi-account, multi-region support. Built by AWS Startup Solutions Architects.",
+          publisher: "Amazon Web Services",
+          keywords: ["development"],
+          homepage: "https://github.com/aws/agent-toolkit-for-aws",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "aws-startup-advisor"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/awslabs/agent-plugins#plugins/amazon-location-service",
+          repository: "https://github.com/awslabs/agent-plugins",
+          path: "plugins/amazon-location-service",
+          revision: "097fe8ad56d8a1d5e2c81d7880adf145553cf244",
+          names: ["amazon-location-service"],
+          description: "Guide developers through adding maps, places search, geocoding, routing, and other geospatial features with Amazon Location Service, including authentication setup, SDK integration, and best practices.",
+          publisher: null,
+          keywords: ["location"],
+          homepage: "https://github.com/awslabs/agent-plugins",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "amazon-location-service"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/awslabs/agent-plugins#plugins/aws-amplify",
+          repository: "https://github.com/awslabs/agent-plugins",
+          path: "plugins/aws-amplify",
+          revision: "097fe8ad56d8a1d5e2c81d7880adf145553cf244",
+          names: ["aws-amplify"],
+          description: "Build full-stack apps with AWS Amplify Gen 2 using guided workflows for authentication, data models, storage, GraphQL APIs, and Lambda functions.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/awslabs/agent-plugins",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "aws-amplify"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/awslabs/agent-plugins#plugins/aws-serverless",
+          repository: "https://github.com/awslabs/agent-plugins",
+          path: "plugins/aws-serverless",
+          revision: "097fe8ad56d8a1d5e2c81d7880adf145553cf244",
+          names: ["aws-serverless"],
+          description: "Design, build, deploy, test, and debug serverless applications with AWS Serverless services.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/awslabs/agent-plugins",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "aws-serverless"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/awslabs/agent-plugins#plugins/aws-transform",
+          repository: "https://github.com/awslabs/agent-plugins",
+          path: "plugins/aws-transform",
+          revision: "097fe8ad56d8a1d5e2c81d7880adf145553cf244",
+          names: ["aws-transform"],
+          description: "Migrate, modernize, and upgrade codebases to AWS. Transforms .NET Framework to .NET 8/10, mainframe COBOL to Java, VMware VMs to EC2, SQL Server to Aurora, and upgrades Java/Python/Node.js versions and AWS SDKs. AWS Transform - continuous modernization analyzes codebases for tech debt, security issues, and upgrade opportunities, then remediates them.",
+          publisher: "Amazon Web Services",
+          keywords: ["migration"],
+          homepage: "https://github.com/awslabs/agent-plugins",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "aws-transform"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/awslabs/agent-plugins#plugins/databases-on-aws",
+          repository: "https://github.com/awslabs/agent-plugins",
+          path: "plugins/databases-on-aws",
+          revision: "097fe8ad56d8a1d5e2c81d7880adf145553cf244",
+          names: ["databases-on-aws"],
+          description: "Expert database guidance for the AWS database portfolio. Design schemas, execute queries, handle migrations, and choose the right database for your workload.",
+          publisher: null,
+          keywords: ["database"],
+          homepage: "https://github.com/awslabs/agent-plugins",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "databases-on-aws"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/awslabs/agent-plugins#plugins/deploy-on-aws",
+          repository: "https://github.com/awslabs/agent-plugins",
+          path: "plugins/deploy-on-aws",
+          revision: "097fe8ad56d8a1d5e2c81d7880adf145553cf244",
+          names: ["deploy-on-aws"],
+          description: "Deploy applications to AWS with architecture recommendations, cost estimates, and IaC deployment.",
+          publisher: null,
+          keywords: ["deployment"],
+          homepage: "https://github.com/awslabs/agent-plugins",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "deploy-on-aws"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/awslabs/agent-plugins#plugins/sagemaker-ai",
+          repository: "https://github.com/awslabs/agent-plugins",
+          path: "plugins/sagemaker-ai",
+          revision: "097fe8ad56d8a1d5e2c81d7880adf145553cf244",
+          names: ["sagemaker-ai"],
+          description: "Build, train, and deploy AI models with deep AWS AI/ML expertise brought directly into your coding assistants, covering the surface area of Amazon SageMaker AI.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/awslabs/agent-plugins",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sagemaker-ai"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/awslabs/startups#migrate/plugins/migration-to-aws",
+          repository: "https://github.com/awslabs/startups",
+          path: "migrate/plugins/migration-to-aws",
+          revision: "ec681ba5d49b039dbf1ef9d87d3304205b824f3d",
+          names: ["migration-to-aws"],
+          description: "Plan a migration from Google Cloud Platform (and OpenAI/Gemini AI workloads) to AWS. Analyzes your Infrastructure-as-Code files, app code, and GCP billing data to discover resources, design an AWS architecture, estimate costs, and generate migration artifacts \u2014 including AI-provider mapping to Amazon Bedrock. Processing is local; your data stays in your environment.",
+          publisher: "Amazon Web Services",
+          keywords: ["development"],
+          homepage: "https://github.com/awslabs/startups",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "migration-to-aws"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/azurecosmosdb/cosmosdb-claude-code-plugin#",
+          repository: "https://github.com/azurecosmosdb/cosmosdb-claude-code-plugin",
+          path: "",
+          revision: "f1e0498579a9251e5f3179b92d25d6ce3409bae5",
+          names: ["azure-cosmos-db-assistant"],
+          description: "Expert assistant for Azure Cosmos DB \u2014 data modeling, query optimization, performance tuning, and best practices.",
+          publisher: null,
+          keywords: ["database"],
+          homepage: "https://github.com/AzureCosmosDB/cosmosdb-claude-code-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "azure-cosmos-db-assistant"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/base44/skills#",
+          repository: "https://github.com/base44/skills",
+          path: "",
+          revision: "8548a482f606751c55dcdb1365398fbec2fcb64d",
+          names: ["base44"],
+          description: "Build and deploy Base44 full-stack apps with CLI project management and JavaScript/TypeScript SDK development skills",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://docs.base44.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "base44"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/bigdata-com/bigdata-plugins-marketplace#plugins/bigdata-com",
+          repository: "https://github.com/bigdata-com/bigdata-plugins-marketplace",
+          path: "plugins/bigdata-com",
+          revision: "2a52a001366227e205cfa7565d78e8198dc42fa8",
+          names: ["bigdata-com"],
+          description: "Official Bigdata.com plugin providing financial research, analytics, and intelligence tools powered by Bigdata MCP.",
+          publisher: "RavenPack",
+          keywords: ["database"],
+          homepage: "https://docs.bigdata.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "bigdata-com"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/blackrock/advisor-center-agent-skills#",
+          repository: "https://github.com/blackrock/advisor-center-agent-skills",
+          path: "",
+          revision: "591c758960c18c26fe8342ddb8ad3ba4dcfac6fe",
+          names: ["blackrock-advisor-center-plugin"],
+          description: "BlackRock Advisor Center 360\xB0 skills for financial advisors: portfolio review, opportunity and fund-health checks, guided benchmark selection, guided portfolio building, wealth projections, and routing to Advisor Center web workflows. Requires the BlackRock Advisor Center connector and an Advisor Center account.",
+          publisher: "BlackRock Advisor Center",
+          keywords: ["productivity"],
+          homepage: "https://github.com/blackrock/advisor-center-agent-skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "blackrock-advisor-center-plugin"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/boltz-bio/boltz-api-skills#plugins/boltz",
+          repository: "https://github.com/boltz-bio/boltz-api-skills",
+          path: "plugins/boltz",
+          revision: "beafb3c16236347ab10fb54f78a5da49cbf7c7bb",
+          names: ["boltz"],
+          description: "Predict structures, screen molecules and proteins, and design binders with Boltz from Claude Code.",
+          publisher: "Boltz",
+          keywords: ["development"],
+          homepage: "https://boltz.bio",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "boltz"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/box/skills#",
+          repository: "https://github.com/box/skills",
+          path: "",
+          revision: "35567f913a2bfd7f8b59367c9df3ae14b5ad4cfe",
+          names: ["box"],
+          description: "Work with your Box content directly from Claude Code \u2014 search files, organize folders, collaborate with your team, and use Box AI to answer questions, summarize documents, and extract data without leaving your workflow.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/box/skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "box"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/brainblend-ai/atomic-agents#claude-plugin/atomic-agents",
+          repository: "https://github.com/brainblend-ai/atomic-agents",
+          path: "claude-plugin/atomic-agents",
+          revision: "33d2ec94f42d4a65393a336e35edf21ee5700303",
+          names: ["atomic-agents"],
+          description: "Comprehensive development workflow for building AI agents with the Atomic Agents framework. Includes specialized agents for schema design, architecture planning, code review, and tool development. Features guided workflows, progressive-disclosure skills, and best practice validation.",
+          publisher: null,
+          keywords: ["community-managed", "development"],
+          homepage: "https://github.com/BrainBlend-AI/atomic-agents",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "atomic-agents"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/brightdata/skills#",
+          repository: "https://github.com/brightdata/skills",
+          path: "",
+          revision: "e825f02fbcd7a89087fd1053a57ddcd45113370f",
+          names: ["brightdata-plugin"],
+          description: "Web scraping, Google search, structured data extraction, and MCP server integration powered by Bright Data. Includes 7 skills: scrape any webpage as markdown (with bot detection/CAPTCHA bypass), search Google with structured JSON results, extract data from 40+ websites (Amazon, LinkedIn, Instagram, TikTok, YouTube, and more), orchestrate Bright Data's 60+ MCP tools, built-in best practices for Web Unlocker, SERP API, Web Scraper API, and Browser API, Python SDK best practices for the brightda...",
+          publisher: null,
+          keywords: [],
+          homepage: "https://docs.brightdata.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "brightdata-plugin"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/browser-use/plugins#browser-use",
+          repository: "https://github.com/browser-use/plugins",
+          path: "browser-use",
+          revision: "4749bcbfe456e5384b98281a8a66119352197f59",
+          names: ["browser-use"],
+          description: "Give Claude a real browser \u2014 your Chrome or a Browser Use Cloud browser. Use it whenever a task involves a website or web app: browsing, scraping and data extraction, filling forms, testing sites, taking screenshots, automating web workflows.",
+          publisher: "Browser Use",
+          keywords: ["automation"],
+          homepage: "https://browser-use.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "browser-use"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/buildkite/skills#",
+          repository: "https://github.com/buildkite/skills",
+          path: "",
+          revision: "50c85f20d409485b1445888983116b2f130e1630",
+          names: ["buildkite"],
+          description: "Official Buildkite skills for Claude Code, Cursor, and other AI coding agents \u2014 pipelines, migration, preflight, agent runtime, CLI, and API",
+          publisher: "Buildkite",
+          keywords: ["development"],
+          homepage: "https://buildkite.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "buildkite"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/canva-sdks/canva-skills#plugins/canva",
+          repository: "https://github.com/canva-sdks/canva-skills",
+          path: "plugins/canva",
+          revision: "b56291ea0a36d0a941e1478b47959be5f1771dee",
+          names: ["canva"],
+          description: "Create, edit, review, resize, and brand-check Canva designs with the Canva MCP server.",
+          publisher: "Canva",
+          keywords: ["design"],
+          homepage: "https://www.canva.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "canva"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cap-js/mcp-server#",
+          repository: "https://github.com/cap-js/mcp-server",
+          path: "",
+          revision: "129236ccdfe252fffa276ec0bad9ff7db91b2c89",
+          names: ["cds-mcp", "sap-cds-mcp"],
+          description: "AI-assisted development of SAP Cloud Application Programming Model (CAP) projects. Search CDS models and CAP documentation.",
+          publisher: "SAP SE",
+          keywords: ["development"],
+          homepage: "https://cap.cloud.sap/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "cds-mcp"
+            },
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sap-cds-mcp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/carboneio/carbone-skill#",
+          repository: "https://github.com/carboneio/carbone-skill",
+          path: "",
+          revision: "25207b3f52b97872312eab997ee5c62cc5c9542d",
+          names: ["carbone-skill"],
+          description: "Official Carbone skill \u2014 complete templating language reference covering tags, loops, conditions, formatters, aggregators, and all output formats (DOCX, XLSX, PPTX, ODT, HTML, Markdown, PDF)",
+          publisher: "Carbone",
+          keywords: ["productivity"],
+          homepage: "https://carbone.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "carbone-skill"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/carta/plugins#plugins/carta-cap-table",
+          repository: "https://github.com/carta/plugins",
+          path: "plugins/carta-cap-table",
+          revision: "6ab81016389cac69e03ed79114d75f31bc8e7bfd",
+          names: ["carta-cap-table"],
+          description: "Carta Cap Table plugin \u2014 skills and hooks for querying cap tables, grants, SAFEs, 409A valuations, waterfall scenarios, and more",
+          publisher: "Carta Engineering",
+          keywords: ["productivity"],
+          homepage: "https://carta.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "carta-cap-table"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/carta/plugins#plugins/carta-crm",
+          repository: "https://github.com/carta/plugins",
+          path: "plugins/carta-crm",
+          revision: "6ab81016389cac69e03ed79114d75f31bc8e7bfd",
+          names: ["carta-crm"],
+          description: "Manage the Carta CRM conversationally \u2014 search, add, update, and enrich investors, companies, contacts, deals, notes, and fundraisings via the Carta CRM MCP Server.",
+          publisher: "Carta Engineering",
+          keywords: ["productivity"],
+          homepage: "https://carta.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "carta-crm"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/carta/plugins#plugins/carta-investors",
+          repository: "https://github.com/carta/plugins",
+          path: "plugins/carta-investors",
+          revision: "6ab81016389cac69e03ed79114d75f31bc8e7bfd",
+          names: ["carta-investors"],
+          description: "Carta Investors plugin \u2014 skills for querying investor data, performance benchmarks, regulatory reporting, AGM deck generation, brand extraction, and more via the Carta MCP Server.",
+          publisher: "Carta Engineering",
+          keywords: ["productivity"],
+          homepage: "https://carta.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "carta-investors"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/catalystbyzoho/claude-plugin#",
+          repository: "https://github.com/catalystbyzoho/claude-plugin",
+          path: "",
+          revision: "9670b79d72fe4923cc845ca0414d009ef3684ccb",
+          names: ["catalyst-by-zoho"],
+          description: "Official Claude Code plugin for Catalyst by Zoho \u2014 full-stack serverless cloud platform. With Skills that covers all services, SDKs, CLI, architecture patterns, pricing, migration guides, and Zoho MCP tool-based resource management.",
+          publisher: "Catalyst by Zoho",
+          keywords: ["development"],
+          homepage: "https://catalyst.zoho.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "catalyst-by-zoho"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/chromedevtools/chrome-devtools-mcp#",
+          repository: "https://github.com/chromedevtools/chrome-devtools-mcp",
+          path: "",
+          revision: "1cec9cd1a3bbf1895c98fa4b4e0e2da5a36e4075",
+          names: ["chrome-devtools-mcp"],
+          description: "Control and inspect a live Chrome browser from your coding agent. Record performance traces, analyze network requests, check console messages with source-mapped stack traces, and automate browser actions with Puppeteer.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "chrome-devtools-mcp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/chronograph-pe/chronograph-gp-claude-plugin#",
+          repository: "https://github.com/chronograph-pe/chronograph-gp-claude-plugin",
+          path: "",
+          revision: "35cb3d12cf4e24823c0efca4abe6f13c2fd0e5f5",
+          names: ["chronograph-gp"],
+          description: "Portfolio monitoring, valuations and analytics for private-capital GP teams using the Chronograph connector: portfolio-company one-pagers, fund quarterly review packs, markup/markdown briefs, TVPI attribution and budget-vs-actuals. Requires a Chronograph account and the Chronograph connector.",
+          publisher: "Chronograph",
+          keywords: ["productivity"],
+          homepage: "https://www.chronograph.pe/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "chronograph-gp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/chronograph-pe/chronograph-lp-claude-plugin#",
+          repository: "https://github.com/chronograph-pe/chronograph-lp-claude-plugin",
+          path: "",
+          revision: "322b2d3fbd4db0a2eeed117e3b3c31522408ae6f",
+          names: ["chronograph-lp"],
+          description: "Portfolio monitoring and analytics for private-capital LP teams using the Chronograph connector: cashflow forecasting, commitment pacing, look-through exposure scans and GP-meeting prep. Requires a Chronograph account and the Chronograph connector.",
+          publisher: "Chronograph",
+          keywords: ["productivity"],
+          homepage: "https://www.chronograph.pe/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "chronograph-lp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/circlebackai/claude-code-plugin#",
+          repository: "https://github.com/circlebackai/claude-code-plugin",
+          path: "",
+          revision: "a610634c95ab310accf20a0cabdf0fa7ab784fa3",
+          names: ["circleback"],
+          description: "Circleback conversational context integration. Search and access meetings, emails, calendar events, and more.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/circlebackai/claude-code-plugin.git",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "circleback"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/circlefin/skills#plugins/circle",
+          repository: "https://github.com/circlefin/skills",
+          path: "plugins/circle",
+          revision: "58ab8648bb1ae9d037a3bf5197ad3bb01262f5b1",
+          names: ["circle-skills"],
+          description: "Ship stablecoin apps faster. Best-practice skills for USDC payments, cross-chain transfers, wallets, and smart contracts \u2014 plus Circle's MCP server for real-time SDK and documentation guidance.",
+          publisher: "Circle",
+          keywords: ["development"],
+          homepage: "https://www.circle.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "circle-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/ckeditor/skills#",
+          repository: "https://github.com/ckeditor/skills",
+          path: "",
+          revision: "261766a0d70fe88c34d34336acbd293c69048a62",
+          names: ["ckeditor"],
+          description: "Install, configure, and integrate CKEditor 5 (free and premium) in any JavaScript project.",
+          publisher: "CKEditor (CKSource)",
+          keywords: ["development"],
+          homepage: "https://ckeditor.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "ckeditor"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/clay-run/agent-plugins#clay",
+          repository: "https://github.com/clay-run/agent-plugins",
+          path: "clay",
+          revision: "769514a3a23683fcc7cbbf32067538d17e465381",
+          names: ["clay"],
+          description: "Work with Clay from Claude Code: set up and sign in to the clay CLI, query and analyze Clay tables, search Clay's GTM database for people and companies, manage audiences, signals, routines and workflows, and draft and review Sequencer campaigns. Includes hooks that auto-approve the plugin's own clay CLI calls and Clay skills; requires a Clay account.",
+          publisher: "Clay",
+          keywords: ["productivity"],
+          homepage: "https://github.com/clay-run/agent-plugins/tree/main/clay",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "clay"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/clickhouse/agent-skills#",
+          repository: "https://github.com/clickhouse/agent-skills",
+          path: "",
+          revision: "2f6ec4b17a81a435dd116f9ac19d7b45d44dbd61",
+          names: ["clickhouse-best-practices"],
+          description: "28 best practice rules for ClickHouse schema design, query optimization, and data ingestion \u2014 prioritized by impact",
+          publisher: "ClickHouse Inc",
+          keywords: ["database"],
+          homepage: "https://clickhouse.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "clickhouse-best-practices"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/clickhouse/clickhouse-claude-code-plugin#",
+          repository: "https://github.com/clickhouse/clickhouse-claude-code-plugin",
+          path: "",
+          revision: "e3229ed4aafbe94e90dd91699e05eee4263d5efe",
+          names: ["clickhouse"],
+          description: "Connect Claude to your ClickHouse Cloud databases. Browse organizations, services, databases, and table schemas. Run read-only SQL queries against your data and get instant analytical answers. Monitor service backups, review billing costs, and inspect ClickPipe configurations - all through natural conversation.",
+          publisher: "ClickHouse",
+          keywords: ["database"],
+          homepage: "https://github.com/ClickHouse/clickhouse-claude-code-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "clickhouse"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cloudflare/skills#",
+          repository: "https://github.com/cloudflare/skills",
+          path: "",
+          revision: "b052c32bab7dd493513260228a36c88294f343f1",
+          names: ["cloudflare"],
+          description: "Skills for the Cloudflare developer platform: Workers, Durable Objects, Agents SDK, MCP servers, Wrangler CLI, and web performance.",
+          publisher: null,
+          keywords: ["deployment"],
+          homepage: "https://github.com/cloudflare/skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "cloudflare"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cloudinary-devs/cloudinary-plugin#",
+          repository: "https://github.com/cloudinary-devs/cloudinary-plugin",
+          path: "",
+          revision: "86be53409e3fb1c465cd5ff4d1dc937a2860f45c",
+          names: ["cloudinary"],
+          description: "Use Cloudinary directly in Claude. Manage assets, apply transformations, optimize media, and more through natural conversation.",
+          publisher: null,
+          keywords: [],
+          homepage: "https://cloudinary.com/documentation",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "cloudinary"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cockroachdb/claude-plugin#",
+          repository: "https://github.com/cockroachdb/claude-plugin",
+          path: "",
+          revision: "6c96c6394a61f366e8ec1b7cec2281e97507cbff",
+          names: ["cockroachdb"],
+          description: "Connect Claude Code directly to your CockroachDB clusters for hands-on database work \u2014 explore schemas, write optimized SQL, debug queries, and manage distributed database clusters. This plugin provides 14 tools across two active MCP backends (self-hosted MCP Toolbox and managed CockroachDB Cloud MCP Server), three specialized agents (DBA, Developer, Operator), 32 skills across 6 operational domains, and built-in safety hooks.",
+          publisher: "Cockroach Labs",
+          keywords: ["database"],
+          homepage: "https://github.com/cockroachdb/claude-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "cockroachdb"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/coderabbitai/skills#",
+          repository: "https://github.com/coderabbitai/skills",
+          path: "",
+          revision: "3e8763d24d543b48615b82535d02288de3ddae40",
+          names: ["coderabbit"],
+          description: "Your code review partner. CodeRabbit provides external validation using a specialized AI architecture and 40+ integrated static analyzers\u2014offering a different perspective that catches bugs, security vulnerabilities, logic errors, and edge cases. Context-aware analysis via AST parsing and codegraph relationships. Automatically incorporates CLAUDE.md and project coding guidelines into reviews. Useful after writing or modifying code, before commits, when implementing complex or security-sensitive logic, or when a second opinion would increase confidence in the changes. Returns specific findings with suggested fixes that can be applied immediately. Free to use.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/coderabbitai/skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "coderabbit"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/codspeedhq/codspeed#",
+          repository: "https://github.com/codspeedhq/codspeed",
+          path: "",
+          revision: "59cfc90540bb3717d8acf4ad03f7b5531c8e1a3d",
+          names: ["codspeed"],
+          description: "CodSpeed is the all-in-one performance testing toolkit. Dive into benchmarking results, flamegraphs, and performance comparisons \u2014 give Claude granular profiling context to pinpoint bottlenecks and autonomously iterate on performance via the CodSpeed MCP server.",
+          publisher: "CodSpeed",
+          keywords: ["development"],
+          homepage: "https://codspeed.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "codspeed"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/confident-ai/deepeval#",
+          repository: "https://github.com/confident-ai/deepeval",
+          path: "",
+          revision: "c144abbce848a6dfbd35bbdaaab49a62bb3fb7b6",
+          names: ["deepeval"],
+          description: "Skills for adding DeepEval evaluations, tracing, datasets, Confident AI reports, and iterative improvement loops to AI applications.",
+          publisher: "Confident AI",
+          keywords: ["development"],
+          homepage: "https://github.com/confident-ai/deepeval",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "deepeval"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/confluentinc/agent-skills#",
+          repository: "https://github.com/confluentinc/agent-skills",
+          path: "",
+          revision: "914d95eff7ff50513b34bfb9ac97eda7c7fce899",
+          names: ["streaming-skills-plugin"],
+          description: "Skills for streaming application developers, covering Kafka and Flink client libraries and Schema Registry",
+          publisher: "Confluent",
+          keywords: ["development"],
+          homepage: "https://www.confluent.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "streaming-skills-plugin"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/coursera/skills#skills",
+          repository: "https://github.com/coursera/skills",
+          path: "skills",
+          revision: "ac28fd6ebf8584e3ee196159bd6d4514fa07de0f",
+          names: ["learn-with-coursera"],
+          description: "Turn any learning intent into a personalized Coursera experience. Asks three quick questions (topic, familiarity, preferred format), searches Coursera's catalog, and delivers the right next step \u2014 a course, hands-on project, short video, or live roleplay \u2014 then maps a path forward. Requires the Coursera connector for catalog tools.",
+          publisher: "Coursera",
+          keywords: ["learning"],
+          homepage: "https://github.com/coursera/skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "learn-with-coursera"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/crowdsecurity/crowdsec-skill#",
+          repository: "https://github.com/crowdsecurity/crowdsec-skill",
+          path: "",
+          revision: "24488e03c9c0b34596de3e21004b24d4d05a6df7",
+          names: ["crowdsec"],
+          description: "Operational skill for installing, configuring, operating, and debugging CrowdSec (cscli, LAPI/CAPI, hub, bouncers, WAF/AppSec) across bare-metal, Docker, and Kubernetes.",
+          publisher: "CrowdSec",
+          keywords: ["security"],
+          homepage: "https://www.crowdsec.net",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "crowdsec"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/crowdstrike/foundry-skills#",
+          repository: "https://github.com/crowdstrike/foundry-skills",
+          path: "",
+          revision: "7f7d46687c16a9a37c9b08ad58ad58999aabe497",
+          names: ["crowdstrike-falcon-foundry"],
+          description: "CrowdStrike Falcon Foundry development skills for building cybersecurity applications on the Falcon platform. Includes UI development, collections, functions, workflows, API integration, security patterns, and debugging workflows.",
+          publisher: "CrowdStrike",
+          keywords: ["security"],
+          homepage: "https://github.com/CrowdStrike/foundry-skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "crowdstrike-falcon-foundry"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/crowdstrike/fusion-skills#",
+          repository: "https://github.com/crowdstrike/fusion-skills",
+          path: "",
+          revision: "3e15710a94b712473e87ce7cd7c43d026156a3f3",
+          names: ["crowdstrike-falcon-fusion"],
+          description: "CrowdStrike Falcon Fusion skills for authoring, deploying, and executing Fusion workflows. Includes live action discovery, YAML authoring with schema validation, workflow import and release, execution monitoring, and Falcon Next-Gen SIEM lookup files.",
+          publisher: "CrowdStrike",
+          keywords: ["security"],
+          homepage: "https://github.com/CrowdStrike/fusion-skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "crowdstrike-falcon-fusion"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#agent-compatibility",
+          repository: "https://github.com/cursor/plugins",
+          path: "agent-compatibility",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["agent-compatibility"],
+          description: "CLI-backed repo compatibility scans plus Cursor agents that audit startup, validation, and docs against reality.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "agent-compatibility"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#cli-for-agent",
+          repository: "https://github.com/cursor/plugins",
+          path: "cli-for-agent",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["cli-for-agent"],
+          description: "Patterns for designing CLIs that coding agents can run reliably: flags, help with examples, pipelines, errors, idempotency, dry-run.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "cli-for-agent"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#continual-learning",
+          repository: "https://github.com/cursor/plugins",
+          path: "continual-learning",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["continual-learning"],
+          description: "Incremental transcript-driven memory updates for AGENTS.md using high-signal bullet points only.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "continual-learning"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#create-plugin",
+          repository: "https://github.com/cursor/plugins",
+          path: "create-plugin",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["create-plugin"],
+          description: "Scaffold and validate new Cursor plugins.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "create-plugin"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#cursor-sdk",
+          repository: "https://github.com/cursor/plugins",
+          path: "cursor-sdk",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["cursor-sdk"],
+          description: "Build apps, scripts, CI pipelines, and automations on top of the Cursor TypeScript SDK (@cursor/sdk) \u2014 runtime selection, auth, streaming, MCP, error handling, and ready-to-extend integration patterns.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "cursor-sdk"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#cursor-team-kit",
+          repository: "https://github.com/cursor/plugins",
+          path: "cursor-team-kit",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["cursor-team-kit"],
+          description: "Internal team workflows used by Cursor developers for CI, code review, shipping, local automation, and verification.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "cursor-team-kit"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#docs-canvas",
+          repository: "https://github.com/cursor/plugins",
+          path: "docs-canvas",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["docs-canvas"],
+          description: "Render documentation \u2014 architecture notes, API references, runbooks, and codebase walkthroughs \u2014 as a navigable Cursor Canvas with sections, table of contents, diagrams, and cross-references.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "docs-canvas"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#orchestrate",
+          repository: "https://github.com/cursor/plugins",
+          path: "orchestrate",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["orchestrate"],
+          description: "Fan large tasks out across parallel Cursor cloud agents with planners, workers, verifiers, and structured handoffs.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "orchestrate"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#pr-review-canvas",
+          repository: "https://github.com/cursor/plugins",
+          path: "pr-review-canvas",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["pr-review-canvas"],
+          description: "Render PR diffs as interactive Cursor Canvases organized for reviewer comprehension \u2014 groups changes by importance, separates boilerplate from core logic, and highlights tricky or unexpected code.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "pr-review-canvas"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#pstack",
+          repository: "https://github.com/cursor/plugins",
+          path: "pstack",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["pstack"],
+          description: "if you want to go fast, go deep first. pstack helps you write less, but higher quality code. rigorous agent workflows you can parallelize with confidence.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "pstack"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#ralph-loop",
+          repository: "https://github.com/cursor/plugins",
+          path: "ralph-loop",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["ralph-loop"],
+          description: "Iterative self-referential AI loops using the Ralph Wiggum technique.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "ralph-loop"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#teaching",
+          repository: "https://github.com/cursor/plugins",
+          path: "teaching",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["teaching"],
+          description: "Skill mapping, practice plans, and learning retrospectives.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "teaching"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/cursor/plugins#thermos",
+          repository: "https://github.com/cursor/plugins",
+          path: "thermos",
+          revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+          names: ["thermos"],
+          description: "Thermo-nuclear branch review: deep security/correctness audits, harsh code-quality rubrics, parallel subagents, thermos orchestration, and optional merge-ready PR flows.",
+          publisher: null,
+          keywords: [],
+          homepage: null,
+          license: null,
+          listings: [
+            {
+              id: "cursor-plugins",
+              repository: "https://github.com/cursor/plugins",
+              revision: "e46364b8be46000b7df0f260550cd712afbb8d36",
+              format: "cursor",
+              name: "thermos"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/dash0hq/dash0-agent-plugin#",
+          repository: "https://github.com/dash0hq/dash0-agent-plugin",
+          path: "",
+          revision: "72a84179e6c64871ad5b6fceb09e00f502de415a",
+          names: ["dash0"],
+          description: "OpenTelemetry observability for Claude Code sessions. Captures tool calls, LLM invocations, token usage, and errors as OTel traces. Send telemetry to Dash0 or any OpenTelemetry-compatible backend.",
+          publisher: "Dash0",
+          keywords: ["monitoring"],
+          homepage: "https://dash0.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "dash0"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/databricks/databricks-agent-skills#plugins/databricks/claude",
+          repository: "https://github.com/databricks/databricks-agent-skills",
+          path: "plugins/databricks/claude",
+          revision: "e77e37e8a4dabbe2662b680c180bb72a05eca48d",
+          names: ["databricks"],
+          description: "Databricks skills for the CLI, Apps, Lakebase, Model Serving, Lakeflow Jobs, Spark Declarative Pipelines, Declarative Automation Bundles (DABs), and classic-to-serverless migration.",
+          publisher: "Databricks",
+          keywords: ["database"],
+          homepage: "https://developers.databricks.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "databricks"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/datadog-labs/claude-code-plugin#",
+          repository: "https://github.com/datadog-labs/claude-code-plugin",
+          path: "",
+          revision: "195f570c002beab3d7bd342739034d0019aa4863",
+          names: ["datadog"],
+          description: "Use Datadog directly in Claude Code through a preconfigured Datadog MCP server. Query logs, metrics, traces, dashboards, and more through natural conversation. This plugin is in preview.",
+          publisher: "Datadog",
+          keywords: ["monitoring"],
+          homepage: "https://www.datadoghq.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "datadog"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/datahub-project/datahub-skills#",
+          repository: "https://github.com/datahub-project/datahub-skills",
+          path: "",
+          revision: "c6d0ded76eca4c649276e39ab376ad6c66142eb7",
+          names: ["datahub-skills"],
+          description: "DataHub development and interaction toolkit with connector planning, PR review, catalog search, metadata enrichment, lineage tracing, data quality management, and connection setup skills",
+          publisher: "DataHub",
+          keywords: ["database"],
+          homepage: "https://datahub.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "datahub-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/datarobot-oss/datarobot-agent-skills#",
+          repository: "https://github.com/datarobot-oss/datarobot-agent-skills",
+          path: "",
+          revision: "44a57d315afd36a9f2b192fde70ceb2a53e69316",
+          names: ["datarobot-agent-skills"],
+          description: "DataRobot skills for AI/ML workflows \u2014 model training, deployment, predictions, feature engineering, monitoring, explainability, data preparation, App Framework CI/CD, and external agent monitoring.",
+          publisher: "DataRobot",
+          keywords: ["development"],
+          homepage: "https://datarobot.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "datarobot-agent-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/digital-process-tools/claude-remember#",
+          repository: "https://github.com/digital-process-tools/claude-remember",
+          path: "",
+          revision: "a5cc87c35567cff2ff603f598fc8a7134971a280",
+          names: ["remember"],
+          description: "Continuous memory for Claude Code. Extracts, summarizes, and compresses conversations into tiered daily logs. Claude remembers what you did yesterday.",
+          publisher: null,
+          keywords: [],
+          homepage: "https://github.com/Digital-Process-Tools/claude-remember",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "remember"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/dominodatalab/domino-claude-plugin#",
+          repository: "https://github.com/dominodatalab/domino-claude-plugin",
+          path: "",
+          revision: "d86698d74d56d3934c8f8ddccb4f6aa55eb2bba7",
+          names: ["dominodatalab"],
+          description: "Full Domino Data Lab platform support \u2014 workspaces, jobs, model deployment, experiment tracking, GenAI tracing, Spark/Ray/Dask, and app deployment for data science teams",
+          publisher: "Domino Data Lab",
+          keywords: ["development"],
+          homepage: "https://www.domino.ai",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "dominodatalab"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/dropbox/dropbox-ai-plugins#claude",
+          repository: "https://github.com/dropbox/dropbox-ai-plugins",
+          path: "claude",
+          revision: "ec1a5264a88081a6161d984d87705ce65535fbe0",
+          names: ["dropbox"],
+          description: "The Dropbox plugin for Claude connects your Dropbox files directly to Claude, so you can search, organize, save generated content, and create sharing links without switching tools. It respects your existing Dropbox permissions, and Claude only works with files you already have access to.",
+          publisher: "Dropbox",
+          keywords: ["productivity"],
+          homepage: "https://www.dropbox.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "dropbox"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/duckdb/duckdb-skills#",
+          repository: "https://github.com/duckdb/duckdb-skills",
+          path: "",
+          revision: "7feda8e01e22bc0886c86123f3884947e36d8c69",
+          names: ["duckdb-skills"],
+          description: "DuckDB-powered skills for Claude Code: read any data file, attach and query DuckDB databases, search DuckDB/DuckLake docs, search past session logs, and install/update DuckDB extensions.",
+          publisher: "DuckDB Foundation",
+          keywords: ["database"],
+          homepage: "https://duckdb.org",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "duckdb-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/duendesoftware/duende-skills#",
+          repository: "https://github.com/duendesoftware/duende-skills",
+          path: "",
+          revision: "fb32edc51982bf1c600e21ba91df32c903098a9c",
+          names: ["duende-skills"],
+          description: "Duende development skills and agents for Claude Code \u2014 covering OAuth/OIDC protocols, IdentityServer, token management, ASP.NET Core authentication/authorization, BFF patterns, and secure identity architecture",
+          publisher: "Duende Software",
+          keywords: ["security"],
+          homepage: "https://duendesoftware.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "duende-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/dynatrace/dynatrace-for-ai#",
+          repository: "https://github.com/dynatrace/dynatrace-for-ai",
+          path: "",
+          revision: "9529e72715d96ab47738e8edf83d49798d0f8be5",
+          names: ["Dynatrace", "dynatrace"],
+          description: "Dynatrace observability skills: DQL query patterns, application and infrastructure monitoring, log analysis, problem investigation, and incident response workflows, with the Dynatrace MCP server for live platform access.",
+          publisher: "Dynatrace",
+          keywords: ["monitoring"],
+          homepage: "https://www.dynatrace.com/hub/detail/claude-code-cli/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "dynatrace"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/endorlabs/ai-plugins#",
+          repository: "https://github.com/endorlabs/ai-plugins",
+          path: "",
+          revision: "2de00883bd2be8b8578b46ab09baf2c8731376de",
+          names: ["ai-plugins"],
+          description: "Set up endorctl and use Endor Labs to scan, prioritize, and fix security risks across your software supply chain",
+          publisher: null,
+          keywords: [],
+          homepage: "https://www.endorlabs.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "ai-plugins"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/epicgames/unreal-engine-skills-for-claude-code-plugin#",
+          repository: "https://github.com/epicgames/unreal-engine-skills-for-claude-code-plugin",
+          path: "",
+          revision: "a6aa73ada02a9fb1f5415bec491f9942c519b297",
+          names: ["unreal-engine-skills-for-claude-code"],
+          description: "Control Unreal Editor directly from Claude Code via MCP. Hundreds of tools exposed via Unreal's ToolsetRegistry across 30+ toolsets: actors, blueprints, materials, Niagara, Control Rigs, Sequencer, State Trees, widgets, Gameplay Ability System, automation testing, and more.",
+          publisher: "Epic Games",
+          keywords: ["development"],
+          homepage: "https://dev.epicgames.com/documentation/unreal-engine/unreal-mcp-in-unreal-editor",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "unreal-engine-skills-for-claude-code"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/exa-labs/exa-mcp-server#",
+          repository: "https://github.com/exa-labs/exa-mcp-server",
+          path: "",
+          revision: "15ffb50519e719dc791cdc750ce5ed1934c0a1ed",
+          names: ["exa"],
+          description: "Exa AI web search, deep research, and content extraction. Provides MCP tools and research skills for comprehensive web search, people discovery, company research, academic papers, and more.",
+          publisher: "Exa",
+          keywords: ["productivity"],
+          homepage: "https://exa.ai/docs/reference/exa-mcp",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "exa"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/explorium-ai/vibeprospecting-plugin#",
+          repository: "https://github.com/explorium-ai/vibeprospecting-plugin",
+          path: "",
+          revision: "9b4067473305dbba80be0fa9a492be39b96f455e",
+          names: ["vibe-prospecting"],
+          description: "Vibe Prospecting connects Claude to live B2B company and contact data so users can search, match, enrich, filter, and export prospects at scale. It turns natural-language requests into structured GTM workflows for lead generation, CRM enrichment, company research, executive discovery, and multi-step prospecting automation inside Claude Cowork and Claude Code.",
+          publisher: "vibeprospecting.ai",
+          keywords: ["productivity"],
+          homepage: "https://www.vibeprospecting.ai/product/claude-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "vibe-prospecting"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/expo/skills#plugins/expo",
+          repository: "https://github.com/expo/skills",
+          path: "plugins/expo",
+          revision: "cd752143d19e5a9aa71b4aaaf1cfc59226c77d6a",
+          names: ["expo"],
+          description: "Official Expo skills for building, deploying, upgrading, and debugging React Native apps with Expo. Covers UI development with Expo Router, SwiftUI and Jetpack Compose components, Tailwind CSS setup, API routes, data fetching, CI/CD workflows, App Store and Play Store deployment, SDK upgrades, DOM components, and dev client distribution.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/expo/skills/blob/main/plugins/expo/README.md",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "expo"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/fastly/fastly-agent-toolkit#",
+          repository: "https://github.com/fastly/fastly-agent-toolkit",
+          path: "",
+          revision: "abb9d42a5318d67b52b39db9f5b88289ec1567c4",
+          names: ["fastly-agent-toolkit"],
+          description: "Fastly development tools and platform skills",
+          publisher: null,
+          keywords: [],
+          homepage: "https://github.com/fastly/fastly-agent-toolkit/blob/main/README.md",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "fastly-agent-toolkit"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/figma/mcp-server-guide#",
+          repository: "https://github.com/figma/mcp-server-guide",
+          path: "",
+          revision: "172920731eedf414e9b22ae60017d9a5b6c9f81f",
+          names: ["figma"],
+          description: "Figma design platform integration. Access design files, extract component information, read design tokens, and translate designs into code. Bridge the gap between design and development workflows.",
+          publisher: null,
+          keywords: ["design"],
+          homepage: "https://github.com/figma/mcp-server-guide",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "figma"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/firecrawl/firecrawl-claude-plugin#",
+          repository: "https://github.com/firecrawl/firecrawl-claude-plugin",
+          path: "",
+          revision: "b310aa498d2bb661903d4b4e04653352fe60f74b",
+          names: ["firecrawl"],
+          description: "Web scraping and crawling powered by Firecrawl. Turn any website into clean, LLM-ready markdown or structured data. Scrape single pages, crawl entire sites, search the web, and extract structured information. Includes an AI agent for autonomous multi-source data gathering - just describe what you need and it finds, navigates, and extracts automatically.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/firecrawl/firecrawl-claude-plugin.git",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "firecrawl"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/forcedotcom/informatica-claude-plugins#informatica-for-claude-platform",
+          repository: "https://github.com/forcedotcom/informatica-claude-plugins",
+          path: "informatica-for-claude-platform",
+          revision: "554d02e0f7f2adafeaeeedbde04435b7bd310a47",
+          names: ["informatica-for-claude-platform"],
+          description: "Governed catalog discovery for Informatica Intelligent Data Management Cloud (CDGC): find tables, columns, files, glossary terms and policies across the enterprise catalog, check ownership, certification, sensitivity and applicable policy, and get safe-usage guidance grounded in catalog metadata before querying any data. Requires an Informatica IDMC tenant and the Informatica Catalog Discovery connector.",
+          publisher: "Informatica",
+          keywords: ["database"],
+          homepage: "https://github.com/forcedotcom/informatica-claude-plugins/tree/main/informatica-for-claude-platform",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "informatica-for-claude-platform"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/forcedotcom/sf-skills#plugins/builder/salesforce-development",
+          repository: "https://github.com/forcedotcom/sf-skills",
+          path: "plugins/builder/salesforce-development",
+          revision: "c217b703b3e5a3c279f1a510d8703161b14bd0a5",
+          names: ["salesforce-development"],
+          description: "Build Salesforce apps and agents using these core building blocks: metadata, Apex, deploy/retrieve, security, reporting, and generated installed-versus-available capability discovery.",
+          publisher: "Salesforce",
+          keywords: ["development"],
+          homepage: "https://github.com/forcedotcom/sf-skills/tree/main/plugins/builder/salesforce-development",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "salesforce-development"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/fullstorydev/fullstory-skills#",
+          repository: "https://github.com/fullstorydev/fullstory-skills",
+          path: "",
+          revision: "b20614e2d08d7a7c70775bb62b5af640f60b024b",
+          names: ["fullstory"],
+          description: "Connect Claude to Fullstory to query behavioral analytics, session replays, and customer experience insights.",
+          publisher: "Fullstory",
+          keywords: ["monitoring"],
+          homepage: "https://www.fullstory.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "fullstory"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gc-ai-inc/gc-ai-claude-plugin#",
+          repository: "https://github.com/gc-ai-inc/gc-ai-claude-plugin",
+          path: "",
+          revision: "efda779972c7b7162e79234e164bc2f359a8a518",
+          names: ["GC AI", "gc-ai"],
+          description: "Work in your GC AI legal knowledge base from Claude: upload documents, run review playbooks, and ask questions grounded in your own files, all as you.",
+          publisher: "GC AI",
+          keywords: ["productivity"],
+          homepage: "https://docs.gc.ai/api-reference/mcp/overview",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "gc-ai"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/alloydb-omni#",
+          repository: "https://github.com/gemini-cli-extensions/alloydb-omni",
+          path: "",
+          revision: "ae7e42c4e428e303adcc96942f4fc35cb6b27d61",
+          names: ["alloydb-omni"],
+          description: "Create, connect, and interact with an AlloyDB Omni database and data.",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://github.com/gemini-cli-extensions/alloydb-omni",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "alloydb-omni"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/alloydb#",
+          repository: "https://github.com/gemini-cli-extensions/alloydb",
+          path: "",
+          revision: "00ee6ce2bcf88b46da4bf298a3ad8c0ad85877c8",
+          names: ["alloydb"],
+          description: "Create, connect, and interact with an AlloyDB for PostgreSQL database and data.",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://cloud.google.com/alloydb",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "alloydb"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/bigquery-data-analytics#",
+          repository: "https://github.com/gemini-cli-extensions/bigquery-data-analytics",
+          path: "",
+          revision: "8475b9c79e38c92a8e28cefc54890d48c74efebc",
+          names: ["bigquery-data-analytics"],
+          description: "Connect, query, and generate data insights for BigQuery datasets and data.",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://github.com/gemini-cli-extensions/bigquery-data-analytics",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "bigquery-data-analytics"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/cloud-sql-mysql#",
+          repository: "https://github.com/gemini-cli-extensions/cloud-sql-mysql",
+          path: "",
+          revision: "ed4fbfe3e0cb6770b15b2a66bd1192a684547678",
+          names: ["cloud-sql-mysql"],
+          description: "Connect and interact with a Cloud SQL for MySQL database and data.",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://github.com/gemini-cli-extensions/cloud-sql-mysql",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "cloud-sql-mysql"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql#",
+          repository: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql",
+          path: "",
+          revision: "6191fb93757355204a5f909d41ad6c9fa2900a83",
+          names: ["cloud-sql-postgresql"],
+          description: "Create, connect, and interact with a Cloud SQL for PostgreSQL database and data.",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://cloud.google.com/sql",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "cloud-sql-postgresql"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/cloud-sql-sqlserver#",
+          repository: "https://github.com/gemini-cli-extensions/cloud-sql-sqlserver",
+          path: "",
+          revision: "8858b0fd066f1590ab7dad70ceacb1366af86a1f",
+          names: ["cloud-sql-sqlserver"],
+          description: "Connect to Cloud SQL for SQL Server",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://github.com/gemini-cli-extensions/cloud-sql-sqlserver",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "cloud-sql-sqlserver"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack#",
+          repository: "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack",
+          path: "",
+          revision: "2df10e25bbf7dba2570dce1b2e2e77870143969e",
+          names: ["data-agent-kit-starter-pack"],
+          description: "This plugin provides a specialized suite of skills for data engineers and database practitioners working on Google Cloud. It acts as an expert assistant, allowing you to use natural language prompts in your preferred coding agent to architect complex data pipelines, transform data with dbt, write Spark and BigQuery SQL notebooks, and orchestrate end-to-end workflows across GCP's data ecosystem.",
+          publisher: "Google LLC",
+          keywords: ["development"],
+          homepage: "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "data-agent-kit-starter-pack"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/dataproc#",
+          repository: "https://github.com/gemini-cli-extensions/dataproc",
+          path: "",
+          revision: "afbd516845a34fcf460ec447b81868bc48962b0f",
+          names: ["dataproc"],
+          description: "Manage Dataproc clusters and jobs.",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://github.com/gemini-cli-extensions/dataproc",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "dataproc"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/firestore-native#",
+          repository: "https://github.com/gemini-cli-extensions/firestore-native",
+          path: "",
+          revision: "502ff19b853e760539717d3c640300af3400bba3",
+          names: ["firestore-native"],
+          description: "Connect and interact with Firestore databases, collections, and documents.",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://github.com/gemini-cli-extensions/firestore-native",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "firestore-native"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/google-cloud-storage#",
+          repository: "https://github.com/gemini-cli-extensions/google-cloud-storage",
+          path: "",
+          revision: "c7e3eeefa14ac0492a024458061d662e8b04c891",
+          names: ["google-cloud-storage"],
+          description: "Official Google Cloud Storage (GCS) plugin. Manage buckets and objects, transfer data, and configure MCP, FUSE, IAM, security, lifecycle rules, signed URLs, Terraform, and the CLI.",
+          publisher: "Google LLC",
+          keywords: ["deployment"],
+          homepage: "https://cloud.google.com/storage",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "google-cloud-storage"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/knowledge-catalog#",
+          repository: "https://github.com/gemini-cli-extensions/knowledge-catalog",
+          path: "",
+          revision: "630397520359ca4594d9133c147c6e25f8b52125",
+          names: ["knowledge-catalog"],
+          description: "Connect to Knowledge Catalog to discover, manage, monitor, and govern data and AI artifacts across your data platform",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://github.com/gemini-cli-extensions/knowledge-catalog",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "knowledge-catalog"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/looker#",
+          repository: "https://github.com/gemini-cli-extensions/looker",
+          path: "",
+          revision: "aacc00342aeb7329ab0a10d7141620c5ade68d71",
+          names: ["looker"],
+          description: "Connect to Looker and interact with your data using LookML.",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://github.com/gemini-cli-extensions/looker",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "looker"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/oracledb#",
+          repository: "https://github.com/gemini-cli-extensions/oracledb",
+          path: "",
+          revision: "f8606fea23c9e7cc5ff80470964c604e04db4cc9",
+          names: ["oracledb"],
+          description: "Connect, query, and interact with Oracle Databases and their data.",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://github.com/gemini-cli-extensions/oracledb",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "oracledb"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gemini-cli-extensions/spanner#",
+          repository: "https://github.com/gemini-cli-extensions/spanner",
+          path: "",
+          revision: "a69b5f3449387a851648f8bd9be58d0b27e0411c",
+          names: ["spanner"],
+          description: "Connect and interact with Spanner data using natural language.",
+          publisher: "Google LLC",
+          keywords: ["database"],
+          homepage: "https://github.com/gemini-cli-extensions/spanner",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "spanner"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/get-convex/convex-backend-skill#",
+          repository: "https://github.com/get-convex/convex-backend-skill",
+          path: "",
+          revision: "6ca54f6e2e7582812187b8a5a4783fb4dff52692",
+          names: ["Convex", "convex"],
+          description: "Official Convex plugin for Claude Code with bundled Convex skills, the convex-expert subagent for code-writing, a runtime-error monitor, and MCP access for backend development, schema design, real-time features, auth, file storage, scheduled jobs, and AI agents.",
+          publisher: "Convex",
+          keywords: [
+            "agent",
+            "auth",
+            "backend",
+            "convex",
+            "cron",
+            "database",
+            "mcp",
+            "mobile",
+            "rag",
+            "reactive",
+            "realtime",
+            "scheduler",
+            "storage",
+            "typescript",
+            "websocket"
+          ],
+          homepage: "https://github.com/get-convex/convex-backend-skill",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "convex"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/getsentry/cli#packages/cli/plugins/sentry-cli",
+          repository: "https://github.com/getsentry/cli",
+          path: "packages/cli/plugins/sentry-cli",
+          revision: "488952e144fddc4c26ed54e9065a62550e36bac7",
+          names: ["sentry-cli"],
+          description: "Skills for using the Sentry CLI to interact with Sentry from the command line",
+          publisher: "Sentry",
+          keywords: ["monitoring"],
+          homepage: "https://sentry.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sentry-cli"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/getsentry/plugin-claude#",
+          repository: "https://github.com/getsentry/plugin-claude",
+          path: "",
+          revision: "73e53541d7af21672e27428c7067f4264b8a3d65",
+          names: ["sentry"],
+          description: "Sentry error monitoring integration. Access error reports, analyze stack traces, search issues by fingerprint, and debug production errors directly from your development environment.",
+          publisher: null,
+          keywords: ["monitoring"],
+          homepage: "https://github.com/getsentry/plugin-claude",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sentry"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gitkraken/claude-plugin#",
+          repository: "https://github.com/gitkraken/claude-plugin",
+          path: "",
+          revision: "f7a53b2cd138c22eccb977b9d93494ea6d423d12",
+          names: ["gitkraken"],
+          description: "Gives Claude access to your real Git and project context: commits, branches, pull requests, and issues across every repo you work in. Works with GitHub, GitLab, Azure DevOps, Bitbucket, and Jira.",
+          publisher: "GitKraken",
+          keywords: ["development"],
+          homepage: "https://www.gitkraken.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "gitkraken"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gitroomhq/postiz-agent#",
+          repository: "https://github.com/gitroomhq/postiz-agent",
+          path: "",
+          revision: "8d431747a895da7ed9b38df8b3d4de180dcf682e",
+          names: ["postiz"],
+          description: "Social media automation CLI for scheduling posts, managing integrations, uploading media, and tracking analytics across 28+ platforms including X, LinkedIn, Reddit, YouTube, TikTok, Instagram, and more",
+          publisher: null,
+          keywords: [],
+          homepage: "https://postiz.com/agent",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "postiz"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/googlechrome/modern-web-guidance#",
+          repository: "https://github.com/googlechrome/modern-web-guidance",
+          path: "",
+          revision: "22ab18dfb50a5d7e3bdcf471c14076a5534eae4e",
+          names: ["modern-web-guidance"],
+          description: "Keep your coding agent up to date with the latest web best practices",
+          publisher: "Google Chrome",
+          keywords: ["development"],
+          homepage: "https://goo.gle/modern-web-guidance",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "modern-web-guidance"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/gopigment/ai-plugins#",
+          repository: "https://github.com/gopigment/ai-plugins",
+          path: "",
+          revision: "6fec49f4ce9db90b0e42436e3bcb5034c1cb233d",
+          names: ["pigment"],
+          description: "Analyze business data and build custom Pigment models, metrics, and boards through natural language.",
+          publisher: "Pigment",
+          keywords: ["productivity"],
+          homepage: "https://www.pigment.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "pigment"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/goshippo/ai#providers/claude/plugin",
+          repository: "https://github.com/goshippo/ai",
+          path: "providers/claude/plugin",
+          revision: "cf8e96532f243883ff84f6d4035e72884b46d132",
+          names: ["shippo"],
+          description: "Shippo connects you to USPS, UPS, FedEx, DHL, and 40+ carriers, so you can handle a shipment end to end right inside Claude. Compare live rates and pick the cheapest or best option, buy and print labels (domestic and international, with customs declarations), validate and standardize addresses, and track packages across carriers. Just ask in plain language: rate-shop a parcel, buy the right label, check a delivery status, or confirm an address before you ship. Whether you run a store or just need to send a package, Shippo turns a pile of carrier accounts into one simple conversation.",
+          publisher: "Shippo",
+          keywords: ["productivity"],
+          homepage: "https://docs.goshippo.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "shippo"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/govtribe/claude-plugin#",
+          repository: "https://github.com/govtribe/claude-plugin",
+          path: "",
+          revision: "d3e0c82c6c4f960320c010ceb8aabb463f1fb7d2",
+          names: ["govtribe"],
+          description: "Government contracting research and capture workflows in Claude: opportunity and pipeline briefs, bid/no-bid and competitor analysis, price-to-win and proposal prep, powered by the GovTribe connector.",
+          publisher: "GovTribe",
+          keywords: ["productivity"],
+          homepage: "https://govtribe.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "govtribe"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/grafana/ai-marketplace#plugins/grafana-assistant",
+          repository: "https://github.com/grafana/ai-marketplace",
+          path: "plugins/grafana-assistant",
+          revision: "12be5634a492f73c189d466c5449d09b853ad7a4",
+          names: ["grafana-assistant"],
+          description: "Skills and rules for developing and using the Grafana Assistant app and CLI.",
+          publisher: "Grafana",
+          keywords: ["monitoring"],
+          homepage: "https://grafana.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "grafana-assistant"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/grafana/ai-marketplace#plugins/grafana-cloud-mcp",
+          repository: "https://github.com/grafana/ai-marketplace",
+          path: "plugins/grafana-cloud-mcp",
+          revision: "12be5634a492f73c189d466c5449d09b853ad7a4",
+          names: ["grafana-cloud-mcp"],
+          description: "Hosted MCP server for AI-assisted Grafana Cloud observability \u2014 no local installation required.",
+          publisher: "Grafana",
+          keywords: ["monitoring"],
+          homepage: "https://grafana.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "grafana-cloud-mcp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/grafana/ai-marketplace#plugins/grafana-mcp",
+          repository: "https://github.com/grafana/ai-marketplace",
+          path: "plugins/grafana-mcp",
+          revision: "12be5634a492f73c189d466c5449d09b853ad7a4",
+          names: ["grafana-mcp"],
+          description: "MCP server for AI-assisted Grafana dashboard, datasource, alerting, and incident management.",
+          publisher: "Grafana",
+          keywords: ["monitoring"],
+          homepage: "https://grafana.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "grafana-mcp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/greptileai/claude-plugin#plugins/greptile",
+          repository: "https://github.com/greptileai/claude-plugin",
+          path: "plugins/greptile",
+          revision: "6b725af2636072cab79e0a5426f6a960b0fd29ef",
+          names: ["greptile"],
+          description: "AI code review agent for GitHub and GitLab. View and resolve Greptile's PR review comments, run reviews on your working branch, and search your organization's knowledge base and coding patterns, directly from Claude Code.",
+          publisher: "Greptile",
+          keywords: ["development"],
+          homepage: "https://www.greptile.com/docs/mcp-v2/overview",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "greptile"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/growthbook/skills#",
+          repository: "https://github.com/growthbook/skills",
+          path: "",
+          revision: "eb7960d4fe5034bd8d8f100320192d1691a173ac",
+          names: ["growthbook"],
+          description: "A suite of agent skills for the full GrowthBook feature flag and experimentation lifecycle.",
+          publisher: "GrowthBook",
+          keywords: ["testing"],
+          homepage: "https://growthbook.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "growthbook"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/growthxai/output#coding_assistants/claude/plugins/outputai",
+          repository: "https://github.com/growthxai/output",
+          path: "coding_assistants/claude/plugins/outputai",
+          revision: "a4f6bd40ab0e3a51f524c1dc07524f33fe6999ad",
+          names: ["outputai"],
+          description: "Output.ai workflow development toolkit for Claude Code. Adds 5 specialist agents (planner, builder, debugger, prompt writer, quality reviewer), 40+ slash-command skills covering scaffolding, debugging, evaluation, and credential management, plus a SessionStart hook that auto-loads Output SDK conventions so Claude understands the framework before the first prompt.",
+          publisher: "Output.ai",
+          keywords: ["development"],
+          homepage: "https://output.ai",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "outputai"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/heygen-com/hyperframes#",
+          repository: "https://github.com/heygen-com/hyperframes",
+          path: "",
+          revision: "8d2b6e7bdc1c2c26d1abf64ef075c00a1bb230a2",
+          names: ["hyperframes"],
+          description: "HyperFrames by HeyGen. Write HTML, render video. Compositions, GSAP and runtime adapter animations, captions, voiceovers, audio-reactive visuals, and website-to-video capture for HyperFrames.",
+          publisher: "HeyGen",
+          keywords: ["design"],
+          homepage: "https://hyperframes.heygen.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "hyperframes"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/honeycombio/agent-skill#honeycomb",
+          repository: "https://github.com/honeycombio/agent-skill",
+          path: "honeycomb",
+          revision: "b169d7d1c76ab93809064226b9682efb563bed34",
+          names: ["honeycomb"],
+          description: "Skills, agents, and workflows for Honeycomb observability \u2014 query patterns, production investigations, SLOs, OpenTelemetry instrumentation, and Beeline migration. Designed to complement the Honeycomb MCP server.",
+          publisher: "Honeycomb",
+          keywords: ["monitoring"],
+          homepage: "https://www.honeycomb.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "honeycomb"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/hostinger/claude-plugin#",
+          repository: "https://github.com/hostinger/claude-plugin",
+          path: "",
+          revision: "569880c60681a7068b3ca8ca84e2fe7ab6cfa7ff",
+          names: ["Hostinger", "hostinger"],
+          description: "Deploy, manage and monitor Hostinger services \u2014 Websites, Domains, Ecommerce, Email Marketing, Subscriptions & Payments, and VPS. Authenticate via browser (OAuth) or API token.",
+          publisher: "Hostinger",
+          keywords: ["deployment"],
+          homepage: "https://www.hostinger.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "hostinger"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/hubspot/hubspot-mcp-plugins#HubSpot-Sales",
+          repository: "https://github.com/hubspot/hubspot-mcp-plugins",
+          path: "HubSpot-Sales",
+          revision: "a0c59600fc1ddcf03ceca71aebf0c28aa55f49e3",
+          names: ["HubSpot Sales", "hubspot-sales"],
+          description: "Run your HubSpot sales workflow directly from Claude. Adds skills that cover the full sales day: import contacts and deals into HubSpot, get a prioritised morning brief, prep for any call with full CRM context, draft personalised follow-ups grounded in deal history, log calls and update records by describing what happened, and review your pipeline to surface stalling deals. Everything writes back to HubSpot.",
+          publisher: "HubSpot",
+          keywords: ["productivity"],
+          homepage: "https://www.hubspot.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "hubspot-sales"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/huggingface/skills#",
+          repository: "https://github.com/huggingface/skills",
+          path: "",
+          revision: "abc20ae526d8b4c0e4dff89f904adce28a4a0eb6",
+          names: ["huggingface-skills"],
+          description: "Build, train, evaluate, and use open source AI models, datasets, and spaces.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/huggingface/skills.git",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "huggingface-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/hunter-io/claude-plugin#",
+          repository: "https://github.com/hunter-io/claude-plugin",
+          path: "",
+          revision: "44f0f5689d2d5cc2de2470550225a16447cb9a80",
+          names: ["hunter"],
+          description: "Find and verify professional email addresses, search contacts by domain, and enrich company data -- directly in Claude.",
+          publisher: "Hunter.io",
+          keywords: ["productivity"],
+          homepage: "https://hunter.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "hunter"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/incident-io/skills#plugins/incident-io",
+          repository: "https://github.com/incident-io/skills",
+          path: "plugins/incident-io",
+          revision: "443f47164eda1f93108ebd908843925f681954ef",
+          names: ["incident-io"],
+          description: "Work with incident.io from Claude: respond to and investigate incidents, check on-call schedules and escalations, and author the runbooks, skills and architecture docs that incident.io investigations draw on. Bundles the official incident.io MCP server (OAuth on first use).",
+          publisher: "incident.io",
+          keywords: ["monitoring"],
+          homepage: "https://incident.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "incident-io"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/intercom/claude-plugin-external#",
+          repository: "https://github.com/intercom/claude-plugin-external",
+          path: "",
+          revision: "62773a7d4b8aac31545d6888fe6479be3bc53804",
+          names: ["intercom"],
+          description: "Intercom integration for Claude Code. Search conversations, analyze customer support patterns, look up contacts and companies, and install the Intercom Messenger. Connect your Intercom workspace to get real-time insights from customer data.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/intercom/claude-plugin-external",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "intercom"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/intuit/quickbooks-claude-plugin#",
+          repository: "https://github.com/intuit/quickbooks-claude-plugin",
+          path: "",
+          revision: "c8daa17a64d4d0fdeabdf0516524f72549b6ad19",
+          names: ["intuit-quickbooks"],
+          description: "QuickBooks business insights and actions: financial health briefings across P&L, cash flow, balance sheet and A/R, industry benchmarking, payroll cost analysis, overdue-invoice reminders, estimate/invoice drafting from email, payroll onboarding and base-pay changes (with confirmation), and QuickBooks Capital lending guidance. Requires the Intuit QuickBooks connector.",
+          publisher: "Intuit QuickBooks",
+          keywords: ["productivity"],
+          homepage: "https://github.com/intuit/quickbooks-claude-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "intuit-quickbooks"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/jetbrains/teamcity-cli#",
+          repository: "https://github.com/jetbrains/teamcity-cli",
+          path: "",
+          revision: "ac6c1fd83300b2e42df48fcfff365ba03f73bb92",
+          names: ["teamcity-cli"],
+          description: "Agent skill for interacting with TeamCity CI/CD using the teamcity CLI. Enables Claude to explore builds, view logs, start jobs, manage queues, agents, and more.",
+          publisher: "JetBrains",
+          keywords: ["development"],
+          homepage: "https://www.jetbrains.com/teamcity/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "teamcity-cli"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/jfrog/claude-plugin#",
+          repository: "https://github.com/jfrog/claude-plugin",
+          path: "",
+          revision: "188d59b986742a01ffd677ebebe938f1ed35b689",
+          names: ["jfrog"],
+          description: "Use the JFrog Platform from Claude Code: Artifactory repos and artifacts, security findings and exposures, Catalog package safety and downloads, workflows across the SDLC, and platform administration.",
+          publisher: "JFrog Ltd.",
+          keywords: ["security"],
+          homepage: "https://jfrog.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "jfrog"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/langfuse/claude-observability-plugin#",
+          repository: "https://github.com/langfuse/claude-observability-plugin",
+          path: "",
+          revision: "b5211009698fdfe79c6bbe90d6901ad255ea65d3",
+          names: ["langfuse-observability"],
+          description: "Langfuse observability plugin for Claude Code \u2014 captures and exports traces, spans, and session telemetry from Claude Code to Langfuse for LLM monitoring, debugging, and evaluation",
+          publisher: "Langfuse",
+          keywords: ["monitoring"],
+          homepage: "https://langfuse.com/integrations/other/claude-code",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "langfuse-observability"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/langfuse/skills#",
+          repository: "https://github.com/langfuse/skills",
+          path: "",
+          revision: "b8cc05c307ffd220cfd7e91225fb983b0ab86e95",
+          names: ["langfuse"],
+          description: "Skills for working with Langfuse, the open-source LLM engineering platform for tracing, prompt management, and evaluation.",
+          publisher: "Langfuse",
+          keywords: ["monitoring"],
+          homepage: "https://langfuse.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "langfuse"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/leadfeeder/leadfeeder-mcp-plugin#",
+          repository: "https://github.com/leadfeeder/leadfeeder-mcp-plugin",
+          path: "",
+          revision: "cddf27f0771393b01a9a91335b8972e44f48cf45",
+          names: ["leadfeeder"],
+          description: "Turn website visitor signals into pipeline with Leadfeeder: daily visitor briefs, visitor company research, buyer and contact discovery, personalised outreach drafts, and adding companies to your Leadfeeder lists, via the Leadfeeder connector. Requires a Leadfeeder account.",
+          publisher: "Leadfeeder",
+          keywords: ["productivity"],
+          homepage: "https://www.leadfeeder.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "leadfeeder"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/legalzoom/claude-plugins#plugins/legalzoom",
+          repository: "https://github.com/legalzoom/claude-plugins",
+          path: "plugins/legalzoom",
+          revision: "f9fd8a0ca6e1421bc1aacb113a109663a7a6f6d8",
+          names: ["legalzoom"],
+          description: "Attorney guidance and legal tools for business and personal needs. AI-powered document review identifies critical risks and important clauses, advises when to engage an attorney, and routes to LegalZoom's network when professional expertise is needed.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://www.legalzoom.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "legalzoom"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/linq-lab/linq-alpha-plugin#plugins/linq-alpha",
+          repository: "https://github.com/linq-lab/linq-alpha-plugin",
+          path: "plugins/linq-alpha",
+          revision: "42202fdd4bd1cbb373c1f11a4114f173edffc437",
+          names: ["linq-alpha"],
+          description: "LinqAlpha financial research in Claude: guided setup for the LinqAlpha connector, capability-based source selection for fundamentals, estimates, transcripts, filings and market data, and an optional, opt-in default-source preference you can remove at any time. Requires a LinqAlpha account.",
+          publisher: "LinqAlpha",
+          keywords: ["productivity"],
+          homepage: "https://www.linqalpha.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "linq-alpha"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/logrocket/logrocket-claude-plugin#plugins/logrocket",
+          repository: "https://github.com/logrocket/logrocket-claude-plugin",
+          path: "plugins/logrocket",
+          revision: "2e44dbb47faf9bb54e3405a8ae2714e7c5ce9791",
+          names: ["logrocket"],
+          description: "Connect Claude Code to LogRocket to query session replays, metrics, issues, and user behavior using natural language.",
+          publisher: "LogRocket",
+          keywords: ["monitoring"],
+          homepage: "https://logrocket.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "logrocket"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/lovablelabs/mcp#",
+          repository: "https://github.com/lovablelabs/mcp",
+          path: "",
+          revision: "0336e6db8026b0f02cb89d1451cc48ea3f469791",
+          names: ["lovable"],
+          description: "Build, iterate on, deploy, and manage Lovable apps from Claude Code. Bundles the official Lovable MCP server (remote, OAuth 2.1) and adds focused commands for the common build/iterate/database workflows, with credit- and publish-safety prompts.",
+          publisher: "Lovable",
+          keywords: ["development"],
+          homepage: "https://lovable.dev",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "lovable"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/lusha-oss/lusha-mcp-plugin#",
+          repository: "https://github.com/lusha-oss/lusha-mcp-plugin",
+          path: "",
+          revision: "ed34947a36754411f03cdeaba91c8cdaa153ef2e",
+          names: ["lusha"],
+          description: "Prospect, enrich, and build call-ready lead lists using Lusha's B2B intelligence platform \u2014 verified phone numbers, company signals, and lookalike targeting.",
+          publisher: "Lusha",
+          keywords: ["productivity"],
+          homepage: "https://www.lusha.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "lusha"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/makenotion/claude-code-notion-plugin#",
+          repository: "https://github.com/makenotion/claude-code-notion-plugin",
+          path: "",
+          revision: "9847f2aa1a15f25df35ed1fb7b4557dbb60cd651",
+          names: ["notion"],
+          description: "Notion workspace integration. Search pages, create and update documents, manage databases, and access your team's knowledge base directly from Claude Code for seamless documentation workflows.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/makenotion/claude-code-notion-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "notion"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/mapbox/mapbox-agent-skills#",
+          repository: "https://github.com/mapbox/mapbox-agent-skills",
+          path: "",
+          revision: "aab3a6fef5c62b7c42c1f68e05885a1b50c42d24",
+          names: ["mapbox"],
+          description: "Mapbox skills and MCP servers for building location-aware applications with AI. Includes geospatial tools, style management, and patterns for web, iOS, Android, and AI agent frameworks.",
+          publisher: "Mapbox",
+          keywords: ["location"],
+          homepage: "https://www.mapbox.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "mapbox"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/mattpocock/skills#",
+          repository: "https://github.com/mattpocock/skills",
+          path: "",
+          revision: "c55ee46073ed923f86ce59a5eb3b6d895095d1b7",
+          names: ["mattpocock-skills"],
+          description: "Matt Pocock's agent skills for real engineering \u2014 grilling, spec/ticket flows, TDD, code review, domain modelling and more. Plug-and-play, not vibe coding.",
+          publisher: "Matt Pocock",
+          keywords: ["development"],
+          homepage: "https://github.com/mattpocock/skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "mattpocock-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/mercadopago/mercadopago-claude-marketplace#plugins/mercadopago",
+          repository: "https://github.com/mercadopago/mercadopago-claude-marketplace",
+          path: "plugins/mercadopago",
+          revision: "755d33740af23351b4ca7043c51077ce67ebf4d1",
+          names: ["mercadopago"],
+          description: "Mercado Pago full-product integration toolkit. One agent routes to four orchestration skills (mp-integrate wizard, mp-webhooks, mp-test-setup, mp-review) that pull every endpoint, payload, and snippet live from the official Mercado Pago MCP server. The MCP must always be connected \u2014 there is no offline mode.",
+          publisher: "Mercado Pago Developer Experience",
+          keywords: ["development"],
+          homepage: "https://github.com/mercadopago/mercadopago-claude-marketplace/tree/main/plugins/mercadopago",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "mercadopago"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/mergifyio/mergify-cli#",
+          repository: "https://github.com/mergifyio/mergify-cli",
+          path: "",
+          revision: "e7c1ebbc281361f0b2b7827cf583f57339c97ebc",
+          names: ["mergify"],
+          description: "Skills for the Mergify CLI: manage merge queues, stacked pull requests, Test Insights (flaky tests, quarantine), merge protections, and Mergify configuration directly from the terminal.",
+          publisher: "Mergify",
+          keywords: ["development"],
+          homepage: "https://mergify.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "mergify"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/microsoft/azure-skills#",
+          repository: "https://github.com/microsoft/azure-skills",
+          path: "",
+          revision: "5b4f0c0778079a2f568581107f23349ce9a0a9b2",
+          names: ["azure"],
+          description: "Transform Claude into an Azure expert. This plugin integrates the Azure MCP server and specialized Azure skills to move beyond generic advice. It enables Claude to perform real-world tasks: listing resources, validating deployments, diagnosing infrastructure issues, and optimizing costs across 50+ Azure services.",
+          publisher: null,
+          keywords: ["deployment"],
+          homepage: "https://github.com/microsoft/azure-skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "azure"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/microsoft/azure-sql-database-container#",
+          repository: "https://github.com/microsoft/azure-sql-database-container",
+          path: "",
+          revision: "c1e8167e4c1d5979d7fc4a6ea11a6ce885a9398b",
+          names: ["azure-sql-developer"],
+          description: "Agent skills for Azure SQL Developer, the Azure SQL Database engine running locally in a container. Teaches your agent to run the engine, connect, migrate, scaffold, build RAG, wire CI, and go local-to-cloud, using the real Private Preview image instead of the SQL Server image.",
+          publisher: "Microsoft",
+          keywords: ["database"],
+          homepage: "https://github.com/microsoft/azure-sql-database-container",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "azure-sql-developer"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/microsoft/dataverse-skills#.github/plugins/dataverse",
+          repository: "https://github.com/microsoft/dataverse-skills",
+          path: ".github/plugins/dataverse",
+          revision: "669e71519886d4602753c34bff3db787d616d761",
+          names: ["dataverse"],
+          description: "Agent skills for building on, analyzing, and managing Microsoft Dataverse \u2014 with Dataverse MCP, PAC CLI, and Python SDK.",
+          publisher: null,
+          keywords: ["database"],
+          homepage: "https://github.com/microsoft/Dataverse-skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "dataverse"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/microsoftdocs/mcp#",
+          repository: "https://github.com/microsoftdocs/mcp",
+          path: "",
+          revision: "f8ffde185dfd232dbf5d187c22ce299eadc3d583",
+          names: ["microsoft-docs"],
+          description: "Access official Microsoft documentation, API references, and code samples for Azure, .NET, Windows, and more.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/microsoftdocs/mcp",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "microsoft-docs"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/mintlify/mintlify-claude-plugin#",
+          repository: "https://github.com/mintlify/mintlify-claude-plugin",
+          path: "",
+          revision: "acd6d2e0128c4f235d55cfb8d8c91ecbdd5df8cc",
+          names: ["mintlify"],
+          description: "Build beautiful documentation sites with Mintlify. Convert non-markdown files into properly formatted MDX pages, add and modify content with correct component use, and automate documentation updates.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://www.mintlify.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "mintlify"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/miroapp/miro-ai#claude-plugins/miro",
+          repository: "https://github.com/miroapp/miro-ai",
+          path: "claude-plugins/miro",
+          revision: "b6408e1bdfe0c842f209d40b52e92caf118a4d39",
+          names: ["miro"],
+          description: "Secure access to Miro boards. Enables AI to read board context, create diagrams, and generate code with enterprise-grade security.",
+          publisher: "Miro",
+          keywords: ["design"],
+          homepage: "https://miro.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "miro"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/mlflow/skills#",
+          repository: "https://github.com/mlflow/skills",
+          path: "",
+          revision: "0766761276a7dd378d88ac8aa7ca742c92b830fe",
+          names: ["mlflow"],
+          description: "Skills for tracing, evaluating, and improving AI agents with MLflow. Supports the full agent improvement loop: instrument \u2192 trace \u2192 evaluate \u2192 iterate \u2192 validate.",
+          publisher: "MLflow Team",
+          keywords: ["monitoring"],
+          homepage: "https://mlflow.org/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "mlflow"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/modelcontextprotocol/ext-apps#plugins/mcp-apps",
+          repository: "https://github.com/modelcontextprotocol/ext-apps",
+          path: "plugins/mcp-apps",
+          revision: "6d9bdc7babf275b759225aa722cbf5510c4c6021",
+          names: ["mcp-apps"],
+          description: "Skills for creating MCP Apps with the MCP Apps SDK",
+          publisher: "Anthropic / Model Context Protocol",
+          keywords: ["development"],
+          homepage: "https://modelcontextprotocol.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "mcp-apps"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/mondaycom/mcp#plugins/monday-crm",
+          repository: "https://github.com/mondaycom/mcp",
+          path: "plugins/monday-crm",
+          revision: "8fdc0b4af07a4b7e1059ca3f8320d64968737b8e",
+          names: ["monday-crm"],
+          description: "Run your monday CRM in plain language. Build a pipeline from scratch, start the day with a ranked deal briefing, spin up a forecast dashboard, audit board health, clean up messy data in bulk, and turn meeting notes into deal updates. Every skill writes back into monday as a real update, doc, or dashboard. Built on the official monday MCP connector.",
+          publisher: "monday.com",
+          keywords: ["productivity"],
+          homepage: "https://monday.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "monday-crm"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/mongodb/agent-skills#plugins/mongodb-atlas",
+          repository: "https://github.com/mongodb/agent-skills",
+          path: "plugins/mongodb-atlas",
+          revision: "1e72df255e54e81eff078054c2cfb2b5d8c13503",
+          names: ["mongodb-atlas"],
+          description: "Connect to MongoDB Atlas clusters only through the Atlas Managed MCP Server. Sign in with your Atlas account to explore data, manage collections, optimize queries, generate reliable code with MongoDB best practices, and manage Atlas resources such as clusters, projects, database users, and network access. If you are running a different MongoDB deployment or want to run a local MongoDB MCP Server, install the MongoDB (Self-Managed MCP) plugin instead.",
+          publisher: "MongoDB",
+          keywords: ["database"],
+          homepage: "https://www.mongodb.com/docs/mcp-server/get-started/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "mongodb-atlas"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/mongodb/agent-skills#plugins/mongodb",
+          repository: "https://github.com/mongodb/agent-skills",
+          path: "plugins/mongodb",
+          revision: "1e72df255e54e81eff078054c2cfb2b5d8c13503",
+          names: ["mongodb"],
+          description: "Official Claude plugin for MongoDB (MCP Server + Skills). Connect to databases, explore data, manage collections, optimize queries, generate reliable code, implement best practices, develop advanced features, and more.",
+          publisher: null,
+          keywords: ["database"],
+          homepage: "https://www.mongodb.com/docs/mcp-server/overview/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "mongodb"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/neondatabase/agent-skills#plugins/neon-postgres",
+          repository: "https://github.com/neondatabase/agent-skills",
+          path: "plugins/neon-postgres",
+          revision: "827249744ed96416d799b68fb6bf033f4068b18a",
+          names: ["neon"],
+          description: "Manage your Neon projects and databases with the neon-postgres agent skill and the Neon MCP Server.",
+          publisher: null,
+          keywords: ["database"],
+          homepage: "https://github.com/neondatabase/agent-skills/tree/main/plugins/neon-postgres",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "neon"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/netlify/context-and-tools#",
+          repository: "https://github.com/netlify/context-and-tools",
+          path: "",
+          revision: "0830047fec55c33ea3f360b528c2039b9d96d97f",
+          names: ["netlify-skills"],
+          description: "Netlify platform skills for Claude Code \u2014 functions, edge functions, blobs, database, image CDN, forms, config, CLI, frameworks, caching, AI gateway, and deployment.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/netlify/context-and-tools",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "netlify-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/newrelic/claude-code-plugin#",
+          repository: "https://github.com/newrelic/claude-code-plugin",
+          path: "",
+          revision: "f8e5f8b62139072a22153ec92de1c0cc1af2f56a",
+          names: ["New Relic", "newrelic"],
+          description: "New Relic observability intelligence for Claude Code. Investigate APM performance, analyze cloud costs, debug Kubernetes, write NRQL queries, and respond to alerts \u2014 all from your terminal using New Relic telemetry data.",
+          publisher: "New Relic",
+          keywords: ["monitoring"],
+          homepage: "https://newrelic.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "newrelic"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/nimbleway/agent-skills#",
+          repository: "https://github.com/nimbleway/agent-skills",
+          path: "",
+          revision: "2890fdf94f0adfae79bf05b4de3c91667701bafb",
+          names: ["nimble"],
+          description: "Nimble web data toolkit \u2014 search, extract, map, crawl the web and work with structured data agents",
+          publisher: null,
+          keywords: [],
+          homepage: "https://docs.nimbleway.com/integrations/agent-skills/plugin-installation",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "nimble"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/noibu/ai-plugin#src",
+          repository: "https://github.com/noibu/ai-plugin",
+          path: "src",
+          revision: "9fa2eddc3a86937b7956dedfaab32fac6cabf868",
+          names: ["noibu"],
+          description: "Built for ecommerce, the Noibu plugin bridges the gap between customer experience and revenue by connecting Claude directly to your store's session, error, and conversion data through Noibu \u2014 and to the marketing, support, and commerce platforms that put insight into motion. Go beyond analysis: surface what's costing you revenue, take action across your stack, build workflows to automate work end-to-end.",
+          publisher: "Noibu",
+          keywords: ["monitoring"],
+          homepage: "https://help.noibu.com/articles/3918362002-overview-of-the-noibu-plugin-for-claude",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "noibu"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/nvidia/skills#plugins/nvidia-skills",
+          repository: "https://github.com/nvidia/skills",
+          path: "plugins/nvidia-skills",
+          revision: "8c2a4ca03c385b80f9e6cd624007d56a19d14e81",
+          names: ["nvidia-skills"],
+          description: "Find the right NVIDIA skill for GPU acceleration, CUDA, AI agents, data loading, training, inference, robotics, Physical AI, Omniverse, simulation, and other NVIDIA-powered workflows.",
+          publisher: "NVIDIA",
+          keywords: ["development"],
+          homepage: "https://build.nvidia.com/skills/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "nvidia-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/nvsecurity/nightvision-skills#",
+          repository: "https://github.com/nvsecurity/nightvision-skills",
+          path: "",
+          revision: "957db6bb934839275c0f643042101bbb675ddbf7",
+          names: ["nightvision"],
+          description: "Skills for working with NightVision, a DAST and API Discovery platform that finds exploitable vulnerabilities in web applications and REST APIs",
+          publisher: null,
+          keywords: [],
+          homepage: "https://github.com/nvsecurity/nightvision-skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "nightvision"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/obra/superpowers#",
+          repository: "https://github.com/obra/superpowers",
+          path: "",
+          revision: "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+          names: ["superpowers"],
+          description: "Superpowers teaches Claude brainstorming, subagent driven development with built in code review, systematic debugging, and red/green TDD. Additionally, it teaches Claude how to author and test new skills.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/obra/superpowers.git",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "superpowers"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/oracle-samples/oracle-aidp-samples#ai/claude-code-plugins/oracle-ai-data-platform-workbench-databricks-migrator",
+          repository: "https://github.com/oracle-samples/oracle-aidp-samples",
+          path: "ai/claude-code-plugins/oracle-ai-data-platform-workbench-databricks-migrator",
+          revision: "90b42d6c24d4e5da784842c21234a750f7e55fef",
+          names: ["oracle-ai-data-platform-workbench-databricks-migrator"],
+          description: "Drive the Oracle AI Data Platform (AIDP) Databricks Migration Toolkit in natural language. Plans and executes automated Databricks \u2192 AIDP migrations of notebooks, jobs, schedules, and catalog DDL \u2014 Pass-1 dependency rewrite + Pass-2 cell-by-cell execute/verify/fix on a live AIDP cluster with Claude.",
+          publisher: "Oracle",
+          keywords: ["development"],
+          homepage: "https://docs.oracle.com/en/cloud/paas/ai-data-platform/index.html",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "oracle-ai-data-platform-workbench-databricks-migrator"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/oracle-samples/oracle-aidp-samples#ai/claude-code-plugins/oracle-ai-data-platform-workbench-engineer-agent",
+          repository: "https://github.com/oracle-samples/oracle-aidp-samples",
+          path: "ai/claude-code-plugins/oracle-ai-data-platform-workbench-engineer-agent",
+          revision: "90b42d6c24d4e5da784842c21234a750f7e55fef",
+          names: ["oracle-ai-data-platform-workbench-engineer-agent"],
+          description: "Oracle AI Data Platform (AIDP) Workbench engineer agent for Claude Code \u2014 a 37-skill agent that operates the full Spark/Delta lakehouse in natural language. Discovers your catalog into a grounding cache, turns plain English into accurate Spark SQL, and runs the lifecycle (CREATE/INSERT/UPDATE/DELETE/MERGE, OPTIMIZE/VACUUM, time-travel). Ingests files, profiles data and sets quality rules, authors and repairs pipelines, provisions clusters, and debugs via the Spark UI. Governs the platform (roles, credential store, Delta Sharing, audit logs), plus native Git, bundles, and MLOps/MLflow. Runs via the official Oracle aidp CLI.",
+          publisher: "Oracle",
+          keywords: ["development"],
+          homepage: "https://docs.oracle.com/en/cloud/paas/ai-data-platform/index.html",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "oracle-ai-data-platform-workbench-engineer-agent"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/oracle-samples/oracle-aidp-samples#ai/claude-code-plugins/oracle-ai-data-platform-workbench-spark-connectors",
+          repository: "https://github.com/oracle-samples/oracle-aidp-samples",
+          path: "ai/claude-code-plugins/oracle-ai-data-platform-workbench-spark-connectors",
+          revision: "90b42d6c24d4e5da784842c21234a750f7e55fef",
+          names: ["oracle-ai-data-platform-workbench-spark-connectors"],
+          description: "Oracle AI Data Platform Workbench Spark connectors for Claude Code. 18 connector skills covering every data source workbench customers commonly need: Oracle Autonomous DB family (ALH/ADW/ATP) via wallet/IAM-DB-Token/API-key, ExaCS, Fusion ERP REST, Fusion BICC, EPM Cloud Planning, Essbase 21c, OCI Streaming (Kafka), OCI Object Storage, Apache Iceberg, plus external systems (PostgreSQL, MySQL/HeatWave, SQL Server, Snowflake, Azure ADLS Gen2, AWS S3, generic REST, custom JDBC, Excel). Live-validated on the workbench `tpcds` cluster (Spark 3.5.0): 17 PASS / 4 ship-as-is out of 21 test rows.",
+          publisher: "Oracle",
+          keywords: ["development"],
+          homepage: "https://docs.oracle.com/en/cloud/paas/ai-data-platform/index.html",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "oracle-ai-data-platform-workbench-spark-connectors"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/oracle/netsuite-suitecloud-sdk#anthropic/netsuite-ai-companion",
+          repository: "https://github.com/oracle/netsuite-suitecloud-sdk",
+          path: "anthropic/netsuite-ai-companion",
+          revision: "23793a10a9bb557c684c5cb8a97f926eb3463f12",
+          names: ["netsuite-ai-companion"],
+          description: "Guides AI assistants that use the NetSuite AI Connector: tool-selection order, output formatting, NetSuite domain knowledge, multi-subsidiary and currency handling, and SuiteQL safety guardrails. Requires the NetSuite AI Connector Service.",
+          publisher: "Oracle NetSuite",
+          keywords: ["productivity"],
+          homepage: "https://github.com/oracle/netsuite-suitecloud-sdk/tree/ai-plugins-dist/anthropic/netsuite-ai-companion",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "netsuite-ai-companion"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/oracle/netsuite-suitecloud-sdk#anthropic/netsuite-finance-analyst",
+          repository: "https://github.com/oracle/netsuite-suitecloud-sdk",
+          path: "anthropic/netsuite-finance-analyst",
+          revision: "23793a10a9bb557c684c5cb8a97f926eb3463f12",
+          names: ["netsuite-finance-analyst"],
+          description: "Director-level finance analysis on live NetSuite data: financial reporting, period close, variance, aging and reconciliation reviews, cash reporting, and board-ready narratives with next actions. Requires the NetSuite AI Connector Service.",
+          publisher: "Oracle NetSuite",
+          keywords: ["productivity"],
+          homepage: "https://github.com/oracle/netsuite-suitecloud-sdk/tree/ai-plugins-dist/anthropic/netsuite-finance-analyst",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "netsuite-finance-analyst"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/oracle/netsuite-suitecloud-sdk#anthropic/netsuite-suitecloud",
+          repository: "https://github.com/oracle/netsuite-suitecloud-sdk",
+          path: "anthropic/netsuite-suitecloud",
+          revision: "23793a10a9bb557c684c5cb8a97f926eb3463f12",
+          names: ["netsuite-suitecloud"],
+          description: "Develop NetSuite SuiteCloud solutions with SuiteScript, SDF, and best practices: SuiteScript records and upgrades, SDF objects, roles and permissions, UIF single-page apps, OWASP secure coding, project documentation, and the SAFE Guide.",
+          publisher: "Oracle NetSuite",
+          keywords: ["development"],
+          homepage: "https://github.com/oracle/netsuite-suitecloud-sdk/tree/ai-plugins-dist/anthropic/netsuite-suitecloud",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "netsuite-suitecloud"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/ory/lumen#",
+          repository: "https://github.com/ory/lumen",
+          path: "",
+          revision: "f60f9ecee41723b42f3758e9a9409141881ac7d5",
+          names: ["lumen"],
+          description: "Precise local semantic code search via MCP. Indexes your codebase with Go AST parsing, embeds with Ollama or LM Studio, and exposes vector search to Claude through an MCP server \u2014 no cloud, no npm.",
+          publisher: "Ory Corp",
+          keywords: ["development"],
+          homepage: "https://www.ory.sh",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "lumen"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/pagerduty/claude-code-plugins#",
+          repository: "https://github.com/pagerduty/claude-code-plugins",
+          path: "",
+          revision: "761cba75bd50fd561405c3b173ecf36084432089",
+          names: ["pagerduty"],
+          description: "Enhance code quality and security through PagerDuty risk scoring and incident correlation. Score pre-commit diffs against historical incident data and surface deployment risk before you ship.",
+          publisher: null,
+          keywords: ["monitoring"],
+          homepage: "https://github.com/PagerDuty/claude-code-plugins",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "pagerduty"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/paypal/ai-toolkit#",
+          repository: "https://github.com/paypal/ai-toolkit",
+          path: "",
+          revision: "fb672f6fce64c81911df59b8cd00bfd4db2de307",
+          names: ["paypal"],
+          description: "PayPal development plugin for Claude \u2014 integrate payments, subscriptions, invoices, disputes, and more using PayPal's APIs and MCP server",
+          publisher: "PayPal",
+          keywords: ["development"],
+          homepage: "https://developer.paypal.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "paypal"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/pendo-io/claude-pendo-plugin#plugins/pendo-analytics",
+          repository: "https://github.com/pendo-io/claude-pendo-plugin",
+          path: "plugins/pendo-analytics",
+          revision: "340d503c23eed487be83693aa4c1837df4a7dcd4",
+          names: ["pendo-analytics"],
+          description: "Bring Pendo product analytics into Claude Code: account health, feature adoption, session replay lookup and triage, feedback analysis, and data-informed planning grounded in real usage data. Requires the Pendo connector and a Pendo subscription.",
+          publisher: "Pendo",
+          keywords: ["productivity"],
+          homepage: "https://github.com/pendo-io/claude-pendo-plugin/tree/main/plugins/pendo-analytics",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "pendo-analytics"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/pendo-io/claude-pendo-plugin#plugins/pendo-guides",
+          repository: "https://github.com/pendo-io/claude-pendo-plugin",
+          path: "plugins/pendo-guides",
+          revision: "340d503c23eed487be83693aa4c1837df4a7dcd4",
+          names: ["pendo-guides"],
+          description: "Create production-ready Pendo in-app guides (walkthroughs, announcements, alerts, polls, promotions) as HTML/CSS/JS from a short intake conversation, using Pendo's guide components.",
+          publisher: "Pendo",
+          keywords: ["productivity"],
+          homepage: "https://github.com/pendo-io/claude-pendo-plugin/tree/main/plugins/pendo-guides",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "pendo-guides"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/pendo-io/claude-pendo-plugin#plugins/pendo-orchestrate",
+          repository: "https://github.com/pendo-io/claude-pendo-plugin",
+          path: "plugins/pendo-orchestrate",
+          revision: "340d503c23eed487be83693aa4c1837df4a7dcd4",
+          names: ["pendo-orchestrate"],
+          description: "Create, configure and edit draft Pendo Orchestrate email journeys, including multi-email and conditional split flows, via the Pendo connector. Journeys stay in draft; activation happens in the Orchestrate UI.",
+          publisher: "Pendo",
+          keywords: ["productivity"],
+          homepage: "https://github.com/pendo-io/claude-pendo-plugin/tree/main/plugins/pendo-orchestrate",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "pendo-orchestrate"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/pendo-io/claude-pendo-plugin#plugins/setup-agent-analytics",
+          repository: "https://github.com/pendo-io/claude-pendo-plugin",
+          path: "plugins/setup-agent-analytics",
+          revision: "340d503c23eed487be83693aa4c1837df4a7dcd4",
+          names: ["setup-agent-analytics"],
+          description: "Detect AI agents in your codebase and instrument them with Pendo Agent Analytics via the best-fit path: Python SDK, TypeScript SDK, client-side trackAgent(), or the Conversations API.",
+          publisher: "Pendo",
+          keywords: ["development"],
+          homepage: "https://github.com/pendo-io/claude-pendo-plugin/tree/main/plugins/setup-agent-analytics",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "setup-agent-analytics"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/pendo-io/claude-pendo-plugin#plugins/setup-mcp-agent-analytics",
+          repository: "https://github.com/pendo-io/claude-pendo-plugin",
+          path: "plugins/setup-mcp-agent-analytics",
+          revision: "340d503c23eed487be83693aa4c1837df4a7dcd4",
+          names: ["setup-mcp-agent-analytics"],
+          description: "Detect an MCP server's language (Python, TypeScript or Go) and instrument it with the matching Pendo SDK so MCP tool calls flow into Pendo Agent Analytics.",
+          publisher: "Pendo",
+          keywords: ["development"],
+          homepage: "https://github.com/pendo-io/claude-pendo-plugin/tree/main/plugins/setup-mcp-agent-analytics",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "setup-mcp-agent-analytics"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/pinecone-io/pinecone-claude-code-plugin#",
+          repository: "https://github.com/pinecone-io/pinecone-claude-code-plugin",
+          path: "",
+          revision: "c383d38b5cc3c5ec219f2e68026e47ffbf46524a",
+          names: ["pinecone"],
+          description: "Pinecone vector database integration. Streamline your Pinecone development with powerful tools for managing vector indexes, querying data, and rapid prototyping. Use slash commands like /quickstart to generate AGENTS.md files and initialize Python projects and /query to quickly explore indexes. Access the Pinecone MCP server for creating, describing, upserting and querying indexes with Claude. Perfect for developers building semantic search, RAG applications, recommendation systems, and other vector-based applications with Pinecone.",
+          publisher: null,
+          keywords: ["database"],
+          homepage: "https://github.com/pinecone-io/pinecone-claude-code-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "pinecone"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/pixeltable/pixeltable-skill#",
+          repository: "https://github.com/pixeltable/pixeltable-skill",
+          path: "",
+          revision: "c08f73400b13a2aaf42014e20f93df4aa902d813",
+          names: ["pixeltable"],
+          description: "Build multimodal AI applications with Pixeltable -- tables, computed columns, embedding search, UDFs, tool-calling agents, and 25+ AI provider integrations.",
+          publisher: "Pixeltable",
+          keywords: ["development"],
+          homepage: "https://docs.pixeltable.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "pixeltable"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/planetscale/claude-plugin#",
+          repository: "https://github.com/planetscale/claude-plugin",
+          path: "",
+          revision: "95c80f9f391be9b1b6172bf82d4191e1ec11b637",
+          names: ["planetscale"],
+          description: "An authenticated hosted MCP server that accesses your PlanetScale organizations, databases, branches, schema, and Insights data. Query against your data, surface slow queries, and get organizational and account information.",
+          publisher: null,
+          keywords: ["database"],
+          homepage: "https://planetscale.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "planetscale"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/posthog/ai-plugin#",
+          repository: "https://github.com/posthog/ai-plugin",
+          path: "",
+          revision: "469d1773e9cb55cb2d0cffd0a91e12bbeff8d32e",
+          names: ["posthog"],
+          description: "Access PostHog analytics, feature flags, experiments, error tracking, and insights directly from Claude Code.",
+          publisher: null,
+          keywords: ["monitoring"],
+          homepage: "https://posthog.com/docs/model-context-protocol",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "posthog"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/postmanlabs/postman-plugin#",
+          repository: "https://github.com/postmanlabs/postman-plugin",
+          path: "",
+          revision: "67cff8f385d88608f427af01e152969065ddb1d8",
+          names: ["postman"],
+          description: "Work with Postman from your agent: bootstrap a repo's Postman setup, mock an API before it's implemented, run collection and governance checks in CI, monitor a live endpoint, deploy and debug Postman Flows, and publish generated API documentation.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/postmanlabs/postman-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "postman"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/preset-io/agent-skills#plugins/preset-cli-skills",
+          repository: "https://github.com/preset-io/agent-skills",
+          path: "plugins/preset-cli-skills",
+          revision: "73d26746350d3371bb0c854892b98387553560ea",
+          names: ["preset-cli-skills"],
+          description: "Preset CLI skills for explicit shell, scripting, and CI/CD workflows driven by the `sup` CLI (PyPI package `superset-sup`). Use only for CLI workflows; do not use for MCP-only work or as a substitute for direct API calls when the user wants HTTP/SDK code.",
+          publisher: "Preset",
+          keywords: ["development"],
+          homepage: "https://www.preset.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "preset-cli-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/prisma/claude-plugin#",
+          repository: "https://github.com/prisma/claude-plugin",
+          path: "",
+          revision: "815dbc4a045a29e3b81510ba0e3ab806f1baaf0e",
+          names: ["prisma"],
+          description: "Prisma MCP integration for Postgres database management, schema migrations, SQL queries, and connection string management. Provision Prisma Postgres databases, run migrations, and interact with your data directly.",
+          publisher: null,
+          keywords: [],
+          homepage: "https://prisma.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "prisma"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/pydantic/skills#plugins/ai",
+          repository: "https://github.com/pydantic/skills",
+          path: "plugins/ai",
+          revision: "238d97102650c1caa51f35027aee13c469c59542",
+          names: ["pydantic-ai"],
+          description: "Write accurate Pydantic AI code from the start. Up-to-date patterns, decision trees, and common gotchas for agents, tools, structured output, streaming, and multi-agent apps.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/pydantic/skills/tree/main/plugins/ai",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "pydantic-ai"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/pydantic/skills#plugins/logfire",
+          repository: "https://github.com/pydantic/skills",
+          path: "plugins/logfire",
+          revision: "238d97102650c1caa51f35027aee13c469c59542",
+          names: ["logfire"],
+          description: "Add Logfire observability to Python applications with auto-instrumentation for FastAPI, httpx, asyncpg, SQLAlchemy, and more",
+          publisher: "Pydantic",
+          keywords: ["monitoring"],
+          homepage: "https://github.com/pydantic/skills/tree/main/plugins/logfire",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "logfire"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/qdrant/skills#",
+          repository: "https://github.com/qdrant/skills",
+          path: "",
+          revision: "6a03d0ce8f554a579c2e14a81fb7e2245a708db0",
+          names: ["qdrant-skills"],
+          description: "Agent skills for Qdrant vector search covering scaling, performance optimization, search quality, monitoring, deployment, model migration, version upgrades, and SDK usage across Python, TypeScript, Rust, Go, .NET, and Java.",
+          publisher: "Qdrant",
+          keywords: ["database"],
+          homepage: "https://skills.qdrant.tech",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "qdrant-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/qodo-ai/qodo-skills#packages/qodo-standards",
+          repository: "https://github.com/qodo-ai/qodo-skills",
+          path: "packages/qodo-standards",
+          revision: "7dd3e7ec7706005651a3f7adb014d9ff8f2d52ea",
+          names: ["Qodo Standards", "qodo-standards"],
+          description: "Optional Qodo rules discovery and standards administration workflows.",
+          publisher: "Qodo",
+          keywords: ["development"],
+          homepage: "https://github.com/qodo-ai/qodo-skills.git",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "qodo-standards"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/qodo-ai/qodo-skills#packages/qodo",
+          repository: "https://github.com/qodo-ai/qodo-skills",
+          path: "packages/qodo",
+          revision: "7dd3e7ec7706005651a3f7adb014d9ff8f2d52ea",
+          names: ["Qodo", "qodo"],
+          description: "Bring Qodo's codebase intelligence, coding standards, and code review into your coding agent.",
+          publisher: "Qodo",
+          keywords: ["development"],
+          homepage: "https://github.com/qodo-ai/qodo-skills.git",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "qodo"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/quarkusio/quarkus-agent-mcp#",
+          repository: "https://github.com/quarkusio/quarkus-agent-mcp",
+          path: "",
+          revision: "599dd0dcc5b3cb333440a0ff633cf594dba9f5bd",
+          names: ["quarkus-agent"],
+          description: "MCP server for AI coding agents to create, manage, and interact with Quarkus applications. Provides tools for project scaffolding, dev mode lifecycle, extension skills, Dev MCP proxy, and documentation search.",
+          publisher: "Quarkus",
+          keywords: ["development"],
+          homepage: "https://quarkus.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "quarkus-agent"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/railwayapp/railway-skills#plugins/railway",
+          repository: "https://github.com/railwayapp/railway-skills",
+          path: "plugins/railway",
+          revision: "a100f93e482c5153774fed74d0b3fb8f8ca63342",
+          names: ["railway"],
+          description: "Deploy and manage apps, databases, and infrastructure on Railway. Covers project setup, deploys, environment configuration, networking, troubleshooting, and monitoring.",
+          publisher: null,
+          keywords: ["deployment"],
+          homepage: "https://docs.railway.com/ai/claude-code-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "railway"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/redis/agent-skills#plugins/redis-development",
+          repository: "https://github.com/redis/agent-skills",
+          path: "plugins/redis-development",
+          revision: "a84871d065f398fed55e1633f66b66f731eb4e2b",
+          names: ["redis-development"],
+          description: "Redis development best practices \u2014 data structures, query engine, vector search, caching, and performance optimization",
+          publisher: "Redis",
+          keywords: ["database"],
+          homepage: "https://redis.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "redis-development"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/render-oss/render-plugin-claude-code#",
+          repository: "https://github.com/render-oss/render-plugin-claude-code",
+          path: "",
+          revision: "e8f889396634dbc8c368448a7f3de993ed4a5ac1",
+          names: ["render"],
+          description: "Deploy, debug, and monitor applications on Render. Includes skills, an agent, slash commands, and a render.yaml validation hook.",
+          publisher: "Render",
+          keywords: ["deployment"],
+          homepage: "https://render.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "render"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/resend/resend-skills#",
+          repository: "https://github.com/resend/resend-skills",
+          path: "",
+          revision: "8fd369f2f590c411f3092a02971bab59d827b00a",
+          names: ["resend"],
+          description: "Agent skills for working with Resend to send and receive emails \u2014 email API integration, agent inbox, CLI, React Email components, and deliverability best practices. Includes the Resend MCP server.",
+          publisher: "Resend",
+          keywords: ["development"],
+          homepage: "https://resend.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "resend"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/revenuecat/rc-claude-code-plugin#revenuecat",
+          repository: "https://github.com/revenuecat/rc-claude-code-plugin",
+          path: "revenuecat",
+          revision: "ac20d26b35be0d01d0dbd3130c1b34932d402e5d",
+          names: ["rc", "revenuecat"],
+          description: "Configure RevenueCat projects, apps, products, entitlements, and offerings directly from Claude Code. Manage your in-app purchase backend without leaving your development workflow.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://www.revenuecat.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "rc"
+            },
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "revenuecat"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/rilldata/agent-skills#",
+          repository: "https://github.com/rilldata/agent-skills",
+          path: "",
+          revision: "a0a211654875ce8a113a2a5c4915dc01b3d38658",
+          names: ["rill"],
+          description: "Skills for developing and querying projects in the Rill business intelligence platform",
+          publisher: "Rill Data",
+          keywords: ["development"],
+          homepage: "https://docs.rilldata.com/developers/build/ai-configuration",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "rill"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/rootly-ai-labs/rootly-claude-plugin#",
+          repository: "https://github.com/rootly-ai-labs/rootly-claude-plugin",
+          path: "",
+          revision: "65832aa6ff7a7b39c6bd64899a7a64646e3948ed",
+          names: ["rootly"],
+          description: "Full-lifecycle incident management: deploy safety, incident response, on-call management, and retrospectives.",
+          publisher: "Rootly",
+          keywords: ["monitoring"],
+          homepage: "https://rootly.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "rootly"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/runwayml/skills#",
+          repository: "https://github.com/runwayml/skills",
+          path: "",
+          revision: "e3dffc15498e9588e7815f37b9ecf10e8bc2c902",
+          names: ["runway-api"],
+          description: "Video generation at scale. Generate videos, images, and audio with Runway's API \u2014 batch ad campaigns, product videos, multishot stories, and creative iteration. Supports seedance2, gen4.5, veo3, Nano, Banana Pro, and more.",
+          publisher: "Runway",
+          keywords: ["design"],
+          homepage: "https://runwayml.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "runway-api"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/salesforceairesearch/agentforce-adlc#",
+          repository: "https://github.com/salesforceairesearch/agentforce-adlc",
+          path: "",
+          revision: "09bf1539d41f9ff355ba3eb5d05d4a75813423bb",
+          names: ["agentforce-adlc"],
+          description: "Agentforce Agent Development Life Cycle \u2014 author, discover, scaffold, deploy, test, and optimize .agent files",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/SalesforceAIResearch/agentforce-adlc",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "agentforce-adlc"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/sanity-io/agent-toolkit#",
+          repository: "https://github.com/sanity-io/agent-toolkit",
+          path: "",
+          revision: "88d6cdfa7cb06c99edd5f376efa4dac21ae3f877",
+          names: ["sanity"],
+          description: "Sanity content platform integration with MCP server, agent skills, and slash commands. Query and author content, build and optimize GROQ queries, design schemas, and set up Visual Editing.",
+          publisher: "Sanity",
+          keywords: ["development"],
+          homepage: "https://www.sanity.io",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sanity"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/sap-samples/hana-cli-claude-plugin#",
+          repository: "https://github.com/sap-samples/hana-cli-claude-plugin",
+          path: "",
+          revision: "abadd0aba32792b6378ed784e9f6d3e5b25dfc2a",
+          names: ["sap-hana-cli"],
+          description: "150+ SAP HANA database tools for AI assistants. Query tables, import/export data, profile data quality, compare schemas, manage backups, monitor performance, and more. Connects to SAP HANA Cloud and on-premise databases.",
+          publisher: "SAP SE",
+          keywords: ["database"],
+          homepage: "https://github.com/SAP-samples/hana-cli-claude-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sap-hana-cli"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/sap/mdk-mcp-server#",
+          repository: "https://github.com/sap/mdk-mcp-server",
+          path: "",
+          revision: "ce65cbf22089787599370938f43ca4b9f4567027",
+          names: ["sap-mdk-server"],
+          description: "MCP server for SAP Mobile Development Kit (MDK). Build and modify MDK applications with AI assistance \u2014 schema lookups, action validation, rule editing, and project scaffolding.",
+          publisher: "SAP SE",
+          keywords: ["development"],
+          homepage: "https://help.sap.com/docs/MDK",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sap-mdk-server"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/sap/open-ux-tools#packages/fiori-mcp-server",
+          repository: "https://github.com/sap/open-ux-tools",
+          path: "packages/fiori-mcp-server",
+          revision: "69e2c50833f10e6892d7c8f42b98b13133d8fdc3",
+          names: ["sap-fiori-mcp-server"],
+          description: "MCP server for SAP Fiori development tools for Claude Code. Build and modify SAP Fiori applications with AI assistance.",
+          publisher: "SAP SE",
+          keywords: ["development"],
+          homepage: "https://github.com/SAP/open-ux-tools/tree/main/packages/fiori-mcp-server",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sap-fiori-mcp-server"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/sap/ui-theme-designer-plugins-for-coding-agents#plugins/ui-theme-designer",
+          repository: "https://github.com/sap/ui-theme-designer-plugins-for-coding-agents",
+          path: "plugins/ui-theme-designer",
+          revision: "04a0a217e129422f8a995c5a9dd31712e5a32f47",
+          names: ["ui-theme-designer"],
+          description: "Plugin for coding agents working with UI theme designer. Bundles two skills: how-to and conceptual answers about UI theme designer on BTP, and questions about the SAP Design System and SAP Fiori design tokens \u2014 theme parameters and component-level parameter usage in UI5, UI5 Web Components, and Fundamental Styles.",
+          publisher: "SAP SE",
+          keywords: ["design"],
+          homepage: "https://github.com/SAP/ui-theme-designer-plugins-for-coding-agents",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "ui-theme-designer"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/scandit/skills#",
+          repository: "https://github.com/scandit/skills",
+          path: "",
+          revision: "2f0731a090eb9c23a64b6dcd9559cf113df3313f",
+          names: ["Scandit SDK", "scandit-sdk"],
+          description: "AI agent skills for integrating the Scandit Data Capture SDK \u2014 product selection, documentation, and implementation guides for barcode scanning, ID capture, and smart label capture.",
+          publisher: "Scandit",
+          keywords: ["development"],
+          homepage: "https://www.scandit.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "scandit-sdk"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/semgrep/mcp-marketplace#plugin",
+          repository: "https://github.com/semgrep/mcp-marketplace",
+          path: "plugin",
+          revision: "f97e1ce43533ffde2eae9af2a80f95a7250c365f",
+          names: ["semgrep"],
+          description: "Semgrep catches security vulnerabilities in real-time and guides Claude to write secure code from the start.",
+          publisher: null,
+          keywords: ["security"],
+          homepage: "https://github.com/semgrep/mcp-marketplace.git",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "semgrep"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/servicenow/sdk#providers/claude/plugin",
+          repository: "https://github.com/servicenow/sdk",
+          path: "providers/claude/plugin",
+          revision: "6f01c0e26cbe597b8a129de0bd2706ec1c0e327c",
+          names: ["servicenow-sdk"],
+          description: "Create, edit, and deploy ServiceNow applications with the Fluent SDK effortlessly through Claude AI.",
+          publisher: "ServiceNow",
+          keywords: ["development"],
+          homepage: "https://servicenow.github.io/sdk/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "servicenow-sdk"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/shopify/liquid-skills#plugins/liquid-lsp",
+          repository: "https://github.com/shopify/liquid-skills",
+          path: "plugins/liquid-lsp",
+          revision: "ae3e4cc3f454923e388bbd841fd931f0c7bf5be4",
+          names: ["liquid-lsp"],
+          description: "LSP integration for Shopify Liquid templates via the Shopify CLI theme language server.",
+          publisher: "Shopify",
+          keywords: ["development"],
+          homepage: "https://github.com/Shopify/liquid-skills/tree/main/plugins/liquid-lsp",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "liquid-lsp"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/shopify/liquid-skills#plugins/liquid-skills",
+          repository: "https://github.com/shopify/liquid-skills",
+          path: "plugins/liquid-skills",
+          revision: "ae3e4cc3f454923e388bbd841fd931f0c7bf5be4",
+          names: ["liquid-skills"],
+          description: "Liquid language fundamentals, CSS/JS/HTML coding standards, and WCAG accessibility patterns for Shopify themes",
+          publisher: "Shopify",
+          keywords: ["development"],
+          homepage: "https://github.com/Shopify/liquid-skills/tree/main/plugins/liquid-skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "liquid-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/shopify/shopify-ai-toolkit#",
+          repository: "https://github.com/shopify/shopify-ai-toolkit",
+          path: "",
+          revision: "57e293be70c7b754429b392e054105272433729d",
+          names: ["shopify-ai-toolkit"],
+          description: "Shopify's AI Toolkit provides 18 development skills for building on the Shopify platform, covering documentation search, API schema access, GraphQL and Liquid code validation, Hydrogen storefronts, Polaris UI extensions, store management via CLI, and onboarding guidance for both developers and merchants.",
+          publisher: "Shopify",
+          keywords: ["development"],
+          homepage: "https://shopify.dev",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "shopify-ai-toolkit"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/slackapi/slack-mcp-plugin#",
+          repository: "https://github.com/slackapi/slack-mcp-plugin",
+          path: "",
+          revision: "8044341769fa84f85ee952dceddb67ef165ab110",
+          names: ["slack"],
+          description: "Slack workspace integration. Search messages, access channels, read threads, and stay connected with your team's communications while coding. Find relevant discussions and context quickly.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/slackapi/slack-mcp-plugin/tree/main",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "slack"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/snowflake-labs/snowflake-ai-kit#plugins/cortex-code",
+          repository: "https://github.com/snowflake-labs/snowflake-ai-kit",
+          path: "plugins/cortex-code",
+          revision: "0c54225ea50b44c2ae07e1f378bf401e88b33c33",
+          names: ["snowflake-cortex-code"],
+          description: "Automatically route Snowflake prompts from Claude Code to Cortex Code for execution. Provides slash commands for code review and task delegation, plus skills for routing, run, and setup.",
+          publisher: "Snowflake",
+          keywords: ["development"],
+          homepage: "https://docs.snowflake.com/en/user-guide/cortex-code",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "snowflake-cortex-code"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/sonarsource/sonarqube-agent-plugins#",
+          repository: "https://github.com/sonarsource/sonarqube-agent-plugins",
+          path: "",
+          revision: "f194f77ab688c2a82b74a7c50023c552899c21ed",
+          names: ["sonarqube"],
+          description: "Automatically enforce SonarQube code quality and security in the agent coding loop \u2014 7,000+ rules, secrets scanning, agentic analysis, and quality gates across 40+ languages. PostToolUse hooks run analysis after every file edit. Pre-tool secrets scanning prevents 450+ patterns from reaching the LLM. Slash commands give on-demand access to quality gate status, coverage, duplication, and dependency risks. Includes SonarQube CLI, MCP Server, skills, hooks, and slash commands.",
+          publisher: "SonarSource",
+          keywords: ["security"],
+          homepage: "https://www.sonarsource.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sonarqube"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/sonatype/sonatype-guide-claude-plugin#",
+          repository: "https://github.com/sonatype/sonatype-guide-claude-plugin",
+          path: "",
+          revision: "1dae73980f591d3196f5532ac72186513563d028",
+          names: ["sonatype-guide"],
+          description: "Sonatype Guide MCP server for software supply chain intelligence and dependency security. Analyze dependencies for vulnerabilities, get secure version recommendations, and check component quality metrics.",
+          publisher: null,
+          keywords: ["security"],
+          homepage: "https://github.com/sonatype/sonatype-guide-claude-plugin.git",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sonatype-guide"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/sourcegraph-community/sourcegraph-claudecode-plugin#",
+          repository: "https://github.com/sourcegraph-community/sourcegraph-claudecode-plugin",
+          path: "",
+          revision: "674a05e2e28677fc3fdce7491063459455ded573",
+          names: ["sourcegraph"],
+          description: "Code search and understanding across codebases. Search, read, and trace references across repositories; analyze refactor impact; investigate incidents via commit and diff search; run targeted security sweeps.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://sourcegraph.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sourcegraph"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/spotify/ads-claude-plugin#",
+          repository: "https://github.com/spotify/ads-claude-plugin",
+          path: "",
+          revision: "532b47af3d2eb10708b38733d07a5b1433c17e82",
+          names: ["spotify-ads-api"],
+          description: "Manage Spotify ad campaigns with natural language. Create campaigns, ad sets, ads, pull reports, and handle OAuth \u2014 all through conversation.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/spotify/ads-claude-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "spotify-ads-api"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/spotify/confidence-ai-plugins#",
+          repository: "https://github.com/spotify/confidence-ai-plugins",
+          path: "",
+          revision: "f416826fde819978ab90f1d7ae27513667aa5d0f",
+          names: ["confidence"],
+          description: "Access Confidence feature flags, experiments, and migration tools directly from Claude Code.",
+          publisher: "Spotify Confidence",
+          keywords: ["development"],
+          homepage: "https://confidence.spotify.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "confidence"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/spotify/save-to-spotify#plugin",
+          repository: "https://github.com/spotify/save-to-spotify",
+          path: "plugin",
+          revision: "9d05c8cd8c8559552f84e27fe30f46b7693ce69a",
+          names: ["save-to-spotify"],
+          description: "Create polished audio episodes with TTS narration, rich timelines, cover images, and save them to Spotify via the save-to-spotify CLI.",
+          publisher: "Spotify",
+          keywords: ["productivity"],
+          homepage: "https://github.com/spotify/save-to-spotify",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "save-to-spotify"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/stackhawk/agent-skills#plugins/api",
+          repository: "https://github.com/stackhawk/agent-skills",
+          path: "plugins/api",
+          revision: "66cac9baa5883a1007575faf1b22855a1124834a",
+          names: ["stackhawk-api"],
+          description: "Query the StackHawk platform API for security posture reporting, findings analysis, and app management. Guides agents through authentication, data retrieval, and result presentation.",
+          publisher: "StackHawk",
+          keywords: ["security"],
+          homepage: "https://docs.stackhawk.com/ai-security/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "stackhawk-api"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/stackhawk/agent-skills#plugins/hawkscan",
+          repository: "https://github.com/stackhawk/agent-skills",
+          path: "plugins/hawkscan",
+          revision: "66cac9baa5883a1007575faf1b22855a1124834a",
+          names: ["stackhawk-hawkscan"],
+          description: "Configure, run, and interpret HawkScan DAST results inside Claude Code. Generates stackhawk.yml configs, runs scans via CLI or Docker, and transforms security findings into prioritized fix tasks for your coding agent.",
+          publisher: "StackHawk",
+          keywords: ["security"],
+          homepage: "https://docs.stackhawk.com/ai-security/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "stackhawk-hawkscan"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/stripe/ai#providers/claude/plugin",
+          repository: "https://github.com/stripe/ai",
+          path: "providers/claude/plugin",
+          revision: "97b2164821c378f246c3903852057b36a8bd0296",
+          names: ["stripe"],
+          description: "Stripe development plugin for Claude",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://github.com/stripe/ai/tree/main/providers/claude/plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "stripe"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/sumup/sumup-skills#",
+          repository: "https://github.com/sumup/sumup-skills",
+          path: "",
+          revision: "cb72003b417cec5e717c6b788d63394b7e921938",
+          names: ["sumup"],
+          description: "SumUp payment integrations across terminal and online checkout flows. Build Android and iOS POS apps with SumUp card readers, online checkout with server SDKs and the checkout widget, and control card readers remotely via Cloud API.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://www.sumup.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "sumup"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/supabase-community/supabase-plugin#",
+          repository: "https://github.com/supabase-community/supabase-plugin",
+          path: "",
+          revision: "f3f332e0164c34a8392772811737fda0cb972d06",
+          names: ["supabase"],
+          description: "Supabase MCP integration for database operations, authentication, storage, and real-time subscriptions. Manage your Supabase projects, run SQL queries, and interact with your backend directly.",
+          publisher: null,
+          keywords: ["database"],
+          homepage: "https://github.com/supabase-community/supabase-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "supabase"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/superdesigndev/superdesign-skill#",
+          repository: "https://github.com/superdesigndev/superdesign-skill",
+          path: "",
+          revision: "f9f05cd988c247dce6c072eaf9ac6b162f2ffc4b",
+          names: ["superdesign"],
+          description: "Design or redesign frontend UI and marketing graphics on the Superdesign infinite canvas. Reads your codebase for context, sets up a design system, and generates branchable design drafts you refine.",
+          publisher: "Superdesign dev, Inc.",
+          keywords: ["design"],
+          homepage: "https://superdesign.dev",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "superdesign"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/synthflowai/anthropicplugin#plugins/synthflow",
+          repository: "https://github.com/synthflowai/anthropicplugin",
+          path: "plugins/synthflow",
+          revision: "205871ee83508502d2c982ee1bb7e65a2a29190b",
+          names: ["synthflow"],
+          description: "Connects Claude Code to the Synthflow AI voice-agent platform through its hosted MCP server, with skills for reviewing calls and auditing agent prompts, plus a docs-search connector.",
+          publisher: "Synthflow",
+          keywords: ["automation"],
+          homepage: "https://synthflow.ai",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "synthflow"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/taosdata/agent-skills#plugins/idmp-plugin",
+          repository: "https://github.com/taosdata/agent-skills",
+          path: "plugins/idmp-plugin",
+          revision: "bf5197716bacc38908cf8025e594d15be9e00b8c",
+          names: ["idmp-plugin"],
+          description: "TDengine IDMP plugin with packaged skills for discovery, schema inspection, and safe operational workflows.",
+          publisher: "TaosData",
+          keywords: ["development"],
+          homepage: "https://github.com/taosdata/agent-skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "idmp-plugin"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/tavily-ai/skills#",
+          repository: "https://github.com/tavily-ai/skills",
+          path: "",
+          revision: "778122e5f9c680f541eeceda5a5b36405eb7980c",
+          names: ["tavily"],
+          description: "Build AI applications with real-time web data using Tavily's search, extract, crawl, and research APIs.",
+          publisher: "Tavily Team",
+          keywords: ["development"],
+          homepage: "https://www.tavily.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "tavily"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/theqtcompanyrnd/agent-skills#",
+          repository: "https://github.com/theqtcompanyrnd/agent-skills",
+          path: "",
+          revision: "71d6c10da78b9a764468ae11c86ab3bc4ca4921f",
+          names: ["qt-development-skills"],
+          description: "Agentic engineering skills for Qt software development \u2014 Qt C++/QML code review, QML coding, and Qt C++/QML code documentation.",
+          publisher: "Qt Group",
+          keywords: ["development"],
+          homepage: "https://www.qt.io/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "qt-development-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/togethercomputer/skills#",
+          repository: "https://github.com/togethercomputer/skills",
+          path: "",
+          revision: "644d38225bbdef0318462fe222f6f9883c8addcd",
+          names: ["togetherai-skills"],
+          description: "Agent Skills for Together AI platform \u2014 inference, training, embeddings, audio, video, images, function calling, and infrastructure. Covers serverless chat completions, image/video generation, fine-tuning, batch inference, evaluations, sandboxes, dedicated endpoints, and GPU clusters.",
+          publisher: "Together AI",
+          keywords: ["development"],
+          homepage: "https://www.together.ai",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "togetherai-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/twilio/ai#",
+          repository: "https://github.com/twilio/ai",
+          path: "",
+          revision: "8aba46fb65dc8d9a20f4b301a68352064b4159a5",
+          names: ["twilio-developer-kit"],
+          description: "Twilio Skills provide procedural knowledge for AI coding agents \u2014 which APIs to use, in what order, and what to avoid. Covers SMS, Voice, WhatsApp, Verify, SendGrid, Compliance, and 30+ products.",
+          publisher: "Twilio",
+          keywords: ["development"],
+          homepage: "https://www.twilio.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "twilio-developer-kit"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/ui5/plugins-coding-agents#plugins/ui5-modernization",
+          repository: "https://github.com/ui5/plugins-coding-agents",
+          path: "plugins/ui5-modernization",
+          revision: "2b8c4a944e39609214bce7aef3b05260985f0e91",
+          names: ["ui5-modernization"],
+          description: "Complete UI5 modernization toolkit with workflow and specialized fix patterns for modernizing SAPUI5/OpenUI5 applications.",
+          publisher: "SAP SE",
+          keywords: ["development"],
+          homepage: "https://github.com/UI5/plugins-coding-agents",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "ui5-modernization"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/ui5/plugins-coding-agents#plugins/ui5-typescript-conversion",
+          repository: "https://github.com/ui5/plugins-coding-agents",
+          path: "plugins/ui5-typescript-conversion",
+          revision: "2b8c4a944e39609214bce7aef3b05260985f0e91",
+          names: ["ui5-typescript-conversion"],
+          description: "SAPUI5 / OpenUI5 plugin for coding agents. Convert JavaScript based UI5 projects to TypeScript.",
+          publisher: "SAP SE",
+          keywords: ["development"],
+          homepage: "https://github.com/UI5/plugins-coding-agents",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "ui5-typescript-conversion"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/ui5/plugins-coding-agents#plugins/ui5",
+          repository: "https://github.com/ui5/plugins-coding-agents",
+          path: "plugins/ui5",
+          revision: "a99b882ce364ef4b9f52fb4054f5f410c1636563",
+          names: ["ui5"],
+          description: "SAPUI5 / OpenUI5 plugin for coding agents. Create and validate UI5 projects, access API documentation, run UI5 linter, get development guidelines and best practices for UI5 development.",
+          publisher: "SAP SE",
+          keywords: ["development"],
+          homepage: "https://github.com/UI5/plugins-coding-agents",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "ui5"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/unity-technologies/unity-agent-plugin#",
+          repository: "https://github.com/unity-technologies/unity-agent-plugin",
+          path: "",
+          revision: "ba48956ae8bee4ef8a3ef3d75dec03c16aa5cc89",
+          names: ["Unity", "unity"],
+          description: "Unity's official plugin for Claude Code, with curated skills for game development, monetization, and performance optimization.",
+          publisher: "Unity Technologies",
+          keywords: ["development"],
+          homepage: "https://unity.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "unity"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/val-town/plugins#plugin",
+          repository: "https://github.com/val-town/plugins",
+          path: "plugin",
+          revision: "2d3ec654b6a7d93e209afb8f2e8848eddcb9f17b",
+          names: ["valtown"],
+          description: "Build and deploy on Val Town. Bundles the Val Town MCP server and platform skills (HTTP vals, cron/intervals, SQLite, email, OAuth, React UI, third-party integrations, templates).",
+          publisher: "Val Town",
+          keywords: ["deployment"],
+          homepage: "https://val.town",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "valtown"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/vanguard-oss/vanguard-advisor-tools#",
+          repository: "https://github.com/vanguard-oss/vanguard-advisor-tools",
+          path: "",
+          revision: "328fe9f61fe7a375b87a6492e265b4a5a955b0ce",
+          names: ["vanguard-advisor-tools"],
+          description: "Vanguard Advisor Tools for financial professionals: research and compare funds and ETFs across the industry and prepare for client conversations, using Vanguard's advisor connector in Claude.",
+          publisher: "Vanguard",
+          keywords: ["productivity"],
+          homepage: "https://advisors.vanguard.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "vanguard-advisor-tools"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/vantainc/vanta-mcp-plugin#",
+          repository: "https://github.com/vantainc/vanta-mcp-plugin",
+          path: "",
+          revision: "345d86b55faa649e955b7ea5569cf52d8425c2d5",
+          names: ["vanta", "vanta-mcp-plugin"],
+          description: "The Vanta plugin connects Claude Code to Vanta's security and compliance platform through the Vanta MCP server. It combines Vanta's test-specific remediation intelligence with your local repository context to help you fix compliance failures faster.",
+          publisher: "Vanta",
+          keywords: ["security"],
+          homepage: "https://help.vanta.com/en/articles/14094979-connecting-to-vanta-mcp#h_887ce3f337",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "vanta-mcp-plugin"
+            },
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "vanta"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/vercel/vercel-plugin#",
+          repository: "https://github.com/vercel/vercel-plugin",
+          path: "",
+          revision: "882e66c2698689324c341b7bb8fd8beb92c27bf6",
+          names: ["vercel"],
+          description: "Vercel deployment platform integration. Manage deployments, check build status, access logs, configure domains, and control your frontend infrastructure directly from Claude Code.",
+          publisher: null,
+          keywords: ["deployment"],
+          homepage: "https://github.com/vercel/vercel-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "vercel"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/villagesql/villagesql-skills#",
+          repository: "https://github.com/villagesql/villagesql-skills",
+          path: "",
+          revision: "18f7d68673e2bd5d400b4ee91298e5a4b9e8d24e",
+          names: ["vsql-extension-builder"],
+          description: "Builds a VillageSQL extension for MySQL end-to-end through a 7-phase persona-driven workflow. Commonly used to port PostgreSQL extensions to MySQL.",
+          publisher: "VillageSQL",
+          keywords: ["database"],
+          homepage: "https://villagesql.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "vsql-extension-builder"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/voxel51/fiftyone-skills#",
+          repository: "https://github.com/voxel51/fiftyone-skills",
+          path: "",
+          revision: "e28a9a3d453b15cbefa6ccc81c89fecf723c31b2",
+          names: ["fiftyone"],
+          description: "Build high-quality datasets and computer vision models. Visualize datasets, analyze models, find duplicates, run inference, evaluate predictions, and develop custom plugins.",
+          publisher: null,
+          keywords: [],
+          homepage: "https://docs.voxel51.com/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "fiftyone"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/windsor-ai/claude-windsor-ai-plugin#",
+          repository: "https://github.com/windsor-ai/claude-windsor-ai-plugin",
+          path: "",
+          revision: "d7ba1cb036c7ca765536355fb85f13a3237ea3f9",
+          names: ["windsor-ai"],
+          description: "Connect Claude Code to 325+ business data sources via Windsor.ai. Query marketing, sales, CRM, ecommerce, finance, and analytics data from Google Ads, Meta, HubSpot, Salesforce, Shopify, Stripe, and hundreds more \u2014 directly from your terminal.",
+          publisher: "Windsor.ai",
+          keywords: ["productivity"],
+          homepage: "https://windsor.ai",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "windsor-ai"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/wingspanhq/mcp-claude-plugin#",
+          repository: "https://github.com/wingspanhq/mcp-claude-plugin",
+          path: "",
+          revision: "01f2b0806fc91d0550859a7f840db353d1edd4e9",
+          names: ["Wingspan", "wingspan"],
+          description: "Ask Claude about the contractors you pay through Wingspan, what you owe them, and what is holding up a payment, then onboard contractors and log payments as drafts, with a preview before anything is written. Requires a Wingspan account; bundles the Wingspan MCP server (OAuth on first use).",
+          publisher: "Wingspan",
+          keywords: ["productivity"],
+          homepage: "https://github.com/wingspanHQ/mcp-claude-plugin",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "wingspan"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/wix/skills#",
+          repository: "https://github.com/wix/skills",
+          path: "",
+          revision: "8fc544d319c4a4dfc7ccf3ba4adf328e1fa9866f",
+          names: ["wix"],
+          description: "Build, manage, and deploy Wix sites and apps. CLI development skills for dashboard extensions, backend APIs, site widgets, and service plugins with the Wix Design System, plus MCP server for site management.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://dev.wix.com/docs/wix-cli/guides/development/about-wix-skills",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "wix"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/wonderwhy-er/desktopcommandermcp#plugins/claude",
+          repository: "https://github.com/wonderwhy-er/desktopcommandermcp",
+          path: "plugins/claude",
+          revision: "75048278f4866f0d8bde26f6f9aa3b8d39dca870",
+          names: ["desktop-commander"],
+          description: "MCP server for terminal commands, process management, and file operations across text, code, PDF, DOCX, Excel, images, and structured data.",
+          publisher: "Desktop Commander",
+          keywords: ["productivity"],
+          homepage: "https://desktopcommander.app",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "desktop-commander"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/workos/skills#plugins/workos",
+          repository: "https://github.com/workos/skills",
+          path: "plugins/workos",
+          revision: "e25141bae047a7c837d93817347f95977598720f",
+          names: ["workos"],
+          description: "WorkOS integration skills for AuthKit, SSO, Directory Sync, RBAC, Vault, Audit Logs, migrations, and API references.",
+          publisher: "WorkOS",
+          keywords: ["security"],
+          homepage: "https://workos.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "workos"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/youdotcom-oss/agent-skills#",
+          repository: "https://github.com/youdotcom-oss/agent-skills",
+          path: "",
+          revision: "a692b6f34fac566c72bc7fcc6cafbd7c0f7889c1",
+          names: ["youdotcom-agent-skills"],
+          description: "You.com agent skills for web search, research with citations, and content extraction. Guided integrations for Vercel AI SDK, Claude Agent SDK, OpenAI Agents SDK, crewAI, LangChain, Microsoft Teams.ai, direct REST API, and bash CLI.",
+          publisher: "You.com",
+          keywords: ["productivity"],
+          homepage: "https://you.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "youdotcom-agent-skills"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/zapier/zapier-mcp#plugins/zapier",
+          repository: "https://github.com/zapier/zapier-mcp",
+          path: "plugins/zapier",
+          revision: "5360f152b96735712e5f925ad728732cb86888df",
+          names: ["zapier"],
+          description: "Connect 8,000+ apps to your AI workflow. Discover, enable, and execute Zapier actions directly from your client.",
+          publisher: null,
+          keywords: ["productivity"],
+          homepage: "https://github.com/zapier/zapier-mcp/tree/main/plugins/zapier",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "zapier"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/zilliztech/zilliz-plugin#plugins/zilliz",
+          repository: "https://github.com/zilliztech/zilliz-plugin",
+          path: "plugins/zilliz",
+          revision: "35c86c000c91abb35f3eeed5cca15ebd69cba4d5",
+          names: ["zilliz"],
+          description: "Zilliz Cloud management plugin with 14 skills covering cluster lifecycle, collection schema, vector search, index tuning, bulk import, RBAC, backups, and monitoring.",
+          publisher: "Zilliz",
+          keywords: ["database"],
+          homepage: "https://docs.zilliz.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "zilliz"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/zocks-communications/zocks-agent-plugins#",
+          repository: "https://github.com/zocks-communications/zocks-agent-plugins",
+          path: "",
+          revision: "a3e445c139665055c2f22f25c9a9f8721a7c6355",
+          names: ["zocks-advisor"],
+          description: "Seven skills for financial advisors built on Zocks meeting intelligence: client behavioral profiles, attrition-risk ranking, held-away asset radar, client journey dossiers, household review packs, next-best-action analysis and a tax opportunity scan. Requires the Zocks connector and a Zocks account.",
+          publisher: "Zocks",
+          keywords: ["productivity"],
+          homepage: "https://github.com/zocks-communications/zocks-agent-plugins",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "zocks-advisor"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/zoom/zoom-plugin#",
+          repository: "https://github.com/zoom/zoom-plugin",
+          path: "",
+          revision: "9311dd4b31e8e55c27b95479a84601576e449e97",
+          names: ["zoom-plugin"],
+          description: "Claude plugin for planning, building, and debugging Zoom integrations across REST APIs, SDKs, webhooks, bots, and MCP workflows.",
+          publisher: null,
+          keywords: ["development"],
+          homepage: "https://developers.zoom.us/",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "zoom-plugin"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/zoominfo/zoominfo-mcp-plugin#",
+          repository: "https://github.com/zoominfo/zoominfo-mcp-plugin",
+          path: "",
+          revision: "d07402feb2b9967ccc118f55bacd41a79c822d6a",
+          names: ["zoominfo"],
+          description: "Search companies and contacts, enrich leads, find lookalikes, and get AI-ranked contact recommendations. Pre-built skills chain multiple ZoomInfo tools into complete B2B sales workflows.",
+          publisher: "ZoomInfo",
+          keywords: ["productivity"],
+          homepage: "https://www.zoominfo.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "zoominfo"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/zscaler/zscaler-mcp-server#",
+          repository: "https://github.com/zscaler/zscaler-mcp-server",
+          path: "",
+          revision: "809f68d6c921e0829fb2e07e9b797e7e70cf720b",
+          names: ["zscaler"],
+          description: "Manage Zscaler cloud security platform including ZPA (private access), ZIA (internet access), ZDX (digital experience), ZCC (client connector), EASM (attack surface), and Z-Insights (analytics). Create and manage policies, troubleshoot connectivity, audit security configurations, and investigate incidents across the full Zscaler ecosystem.",
+          publisher: "Zscaler",
+          keywords: ["security"],
+          homepage: "https://github.com/zscaler/zscaler-mcp-server",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "zscaler"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        },
+        {
+          id: "https://github.com/zytedata/claude-skills#",
+          repository: "https://github.com/zytedata/claude-skills",
+          path: "",
+          revision: "d03e241729ebc3bf397e4303d654e8189b9e8185",
+          names: ["zyte-web-data"],
+          description: "Web scraping skills for Claude Code powered by the Zyte API \u2014 scrape sites, generate and run Scrapy spiders, define extraction schemas, and ship to Scrapy Cloud.",
+          publisher: "Zyte",
+          keywords: ["automation"],
+          homepage: "https://www.zyte.com",
+          license: null,
+          listings: [
+            {
+              id: "claude-plugins-official",
+              repository: "https://github.com/anthropics/claude-plugins-official",
+              revision: "ab024cdcfa7ca80be204acd4907656ba5a968589",
+              format: "claude",
+              name: "zyte-web-data"
+            }
+          ],
+          compatibility: "untested",
+          adaptationRequired: true
+        }
+      ],
+      diagnostics: []
+    };
+  }
+});
+
+// src/renderer/views/plugin-catalog-browser.ts
+function displayName(entry) {
+  return entry.names.find((name) => /[A-Z ]/.test(name)) ?? entry.names[0] ?? entry.listings[0]?.name ?? entry.id;
+}
+function publisher(entry) {
+  if (entry.publisher) return entry.publisher;
+  return new URL(entry.repository).pathname.split("/").filter(Boolean)[0] ?? "Unknown publisher";
+}
+function sourceUrl(entry) {
+  if (!entry.revision) return entry.repository;
+  const suffix = entry.path ? `/${entry.path}` : "";
+  return `${entry.repository}/tree/${entry.revision}${suffix}`;
+}
+function searchText(entry) {
+  return [
+    ...entry.names,
+    entry.description,
+    entry.publisher ?? "",
+    ...entry.keywords,
+    ...entry.listings.map((listing) => listing.id)
+  ].join(" ").toLocaleLowerCase();
+}
+function isCursorInstalled(entry, cursorNames) {
+  return entry.listings.some(
+    (listing) => listing.format === "cursor" && cursorNames.has(listing.name.toLocaleLowerCase())
+  );
+}
+function makeBadge(label, className = "") {
+  const badge = document.createElement("span");
+  badge.className = `ui-badge plugin-catalog-badge ${className}`.trim();
+  badge.textContent = label;
+  return badge;
+}
+function makeAction(label, run2, card, operationStatus, className = "ui-btn-secondary") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `ui-btn ${className} plugin-catalog-action`;
+  button.textContent = label;
+  button.addEventListener("click", () => {
+    button.disabled = true;
+    card.setAttribute("aria-busy", "true");
+    operationStatus.textContent = `${label}\u2026`;
+    void run2().then(() => {
+      operationStatus.textContent = "";
+    }).catch((error62) => {
+      operationStatus.textContent = errorMessage(error62);
+    }).finally(() => {
+      button.disabled = false;
+      card.removeAttribute("aria-busy");
+    });
+  });
+  return button;
+}
+function makeCatalogCard(entry, cursorInstalled, managed, options) {
+  const installed2 = cursorInstalled || managed !== void 0;
+  const updateAvailable = managed !== void 0 && entry.revision !== null && managed.source.revision !== entry.revision;
+  const card = document.createElement("article");
+  card.className = "plugin-catalog-card";
+  card.dataset["catalogId"] = entry.id;
+  card.dataset["installed"] = installed2 ? "true" : "false";
+  const icon = document.createElement("span");
+  icon.className = "plugin-icon plugin-catalog-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = (displayName(entry).trim()[0] ?? "?").toLocaleUpperCase();
+  const title = document.createElement("div");
+  title.className = "plugin-catalog-title";
+  const publisherEl = document.createElement("span");
+  publisherEl.className = "plugin-catalog-publisher";
+  publisherEl.textContent = publisher(entry);
+  const name = document.createElement("span");
+  name.className = "plugin-name";
+  name.textContent = displayName(entry);
+  title.append(publisherEl, name);
+  const badges = document.createElement("div");
+  badges.className = "plugin-catalog-status";
+  if (installed2) badges.append(makeBadge("Installed", "plugin-catalog-badge-installed"));
+  if (updateAvailable) badges.append(makeBadge("Update available", "plugin-catalog-badge-update"));
+  badges.append(makeBadge("Untested"));
+  if (!entry.revision) badges.append(makeBadge("Unpinned", "plugin-catalog-badge-warning"));
+  const header = document.createElement("div");
+  header.className = "plugin-catalog-card-header";
+  header.append(icon, title, badges);
+  card.append(header);
+  const description = document.createElement("p");
+  description.className = "plugin-catalog-description";
+  description.textContent = entry.description || "No description supplied by the catalogue.";
+  card.append(description);
+  if (entry.keywords.length > 0) {
+    const keywords = document.createElement("div");
+    keywords.className = "plugin-chips plugin-catalog-keywords";
+    for (const keyword of entry.keywords.slice(0, 4)) {
+      const chip2 = document.createElement("span");
+      chip2.className = "plugin-chip";
+      chip2.textContent = keyword;
+      keywords.append(chip2);
+    }
+    card.append(keywords);
+  }
+  const operationStatus = document.createElement("span");
+  operationStatus.className = "plugin-catalog-operation-status";
+  operationStatus.setAttribute("role", "status");
+  const footer = document.createElement("div");
+  footer.className = "plugin-catalog-card-footer";
+  const provenance = document.createElement("span");
+  provenance.className = "plugin-catalog-provenance";
+  provenance.textContent = [...new Set(entry.listings.map((listing) => listing.format))].map((format) => format === "claude" ? "Claude" : "Cursor").join(" \xB7 ");
+  const actions = document.createElement("div");
+  actions.className = "plugin-catalog-actions";
+  const link = document.createElement("a");
+  link.className = "ui-btn ui-btn-secondary plugin-catalog-source-link";
+  link.href = sourceUrl(entry);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = "View source";
+  actions.append(link);
+  if (entry.revision && !cursorInstalled && (!managed || updateAvailable)) {
+    actions.prepend(
+      makeAction(
+        managed ? "Review update" : "Review install",
+        () => options.reviewInstall(entry.id),
+        card,
+        operationStatus,
+        "ui-btn-primary"
+      )
+    );
+  }
+  if (managed?.previousPin) {
+    actions.prepend(makeAction("Roll back", () => options.rollback(managed), card, operationStatus));
+  }
+  if (managed) {
+    actions.append(
+      makeAction(
+        "Uninstall",
+        () => options.uninstall(managed),
+        card,
+        operationStatus,
+        "ui-btn-danger"
+      )
+    );
+  }
+  footer.append(provenance, actions);
+  card.append(operationStatus, footer);
+  return card;
+}
+function createPluginCatalogBrowser(options) {
+  const root = document.createElement("div");
+  root.className = "plugin-catalog-browser";
+  const intro = document.createElement("p");
+  intro.className = "plugin-catalog-intro";
+  intro.textContent = `${String(BUNDLED_PLUGIN_CATALOG.entries.length)} packages from ${String(BUNDLED_PLUGIN_CATALOG.sources.length)} pinned catalogues. Listings are untested in Copse until their package is reviewed.`;
+  const searchLabel = document.createElement("label");
+  searchLabel.className = "plugin-catalog-search";
+  const searchCaption = document.createElement("span");
+  searchCaption.className = "sr-only";
+  searchCaption.textContent = "Search available plugins";
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "settings-search-input plugin-catalog-search-input";
+  search.placeholder = "Search plugins, publishers, or tasks\u2026";
+  search.autocomplete = "off";
+  search.spellcheck = false;
+  search.setAttribute("aria-label", "Search available plugins");
+  searchLabel.append(searchCaption, search);
+  const resultStatus = document.createElement("p");
+  resultStatus.className = "plugin-catalog-result-status";
+  resultStatus.setAttribute("aria-live", "polite");
+  const results = document.createElement("div");
+  results.className = "plugin-catalog-results";
+  const more = document.createElement("button");
+  more.type = "button";
+  more.className = "ui-btn ui-btn-secondary plugin-catalog-more";
+  more.textContent = "Show more";
+  root.append(intro, searchLabel, resultStatus, results, more);
+  let visibleCount = PAGE_SIZE;
+  let cursorNames = /* @__PURE__ */ new Set();
+  let managedByCatalogId = /* @__PURE__ */ new Map();
+  const render = () => {
+    const query = search.value.trim().toLocaleLowerCase();
+    const matched = BUNDLED_PLUGIN_CATALOG.entries.filter(
+      (entry) => query === "" || searchText(entry).includes(query)
+    );
+    const visible = matched.slice(0, visibleCount);
+    results.replaceChildren(
+      ...visible.map(
+        (entry) => makeCatalogCard(
+          entry,
+          isCursorInstalled(entry, cursorNames),
+          managedByCatalogId.get(entry.id),
+          options
+        )
+      )
+    );
+    if (matched.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "plugins-empty";
+      empty.textContent = "No catalogue plugins match this search.";
+      results.append(empty);
+    }
+    resultStatus.textContent = matched.length === visible.length ? `${String(matched.length)} plugin${matched.length === 1 ? "" : "s"}` : `Showing ${String(visible.length)} of ${String(matched.length)} plugins`;
+    more.hidden = visible.length >= matched.length;
+  };
+  search.addEventListener("input", () => {
+    visibleCount = PAGE_SIZE;
+    render();
+  });
+  more.addEventListener("click", () => {
+    visibleCount += PAGE_SIZE;
+    render();
+  });
+  render();
+  return {
+    element: root,
+    focusSearch: () => {
+      search.focus();
+    },
+    updateInstalled: (state) => {
+      cursorNames = new Set(
+        [...state.cursor, ...state.bundledCursor].map((name) => name.toLocaleLowerCase())
+      );
+      managedByCatalogId = new Map(state.managed.map((record2) => [record2.catalogId, record2]));
+      render();
+    }
+  };
+}
+var PAGE_SIZE;
+var init_plugin_catalog_browser = __esm({
+  "src/renderer/views/plugin-catalog-browser.ts"() {
+    init_errors4();
+    init_plugin_catalog_generated();
+    PAGE_SIZE = 16;
+  }
+});
+
 // packages/shell-guard/src/trusted-commands.ts
 function isValidTrustedCommand(name) {
   return VALID_COMMAND.test(name);
@@ -56781,6 +64663,7 @@ function applyPreparedThreadCheckout(store2, threadId, prepared) {
     worktreeChoice: prepared.choice,
     ...prepared.branch ? { gitBranch: prepared.branch } : {},
     ...prepared.worktree ? { worktree: prepared.worktree } : {},
+    ...prepared.deferredWorktree ? { deferredWorktree: prepared.deferredWorktree } : {},
     updatedAt: Date.now()
   }));
   if (!applied) return;
@@ -56868,8 +64751,17 @@ function serializedSet(api2, key, value) {
   writeChains.set(key, next);
   void next.finally(() => {
     if (writeChains.get(key) === next) writeChains.delete(key);
-  });
+  }).catch(() => void 0);
   return next;
+}
+function persistProjects(api2, projects) {
+  const json3 = JSON.stringify(projects);
+  if (json3 === persistedProjectsJson) return Promise.resolve();
+  persistedProjectsJson = json3;
+  return serializedSet(api2, KEY_PROJECTS, projects).catch((error62) => {
+    if (persistedProjectsJson === json3) persistedProjectsJson = null;
+    throw error62;
+  });
 }
 function serializedWrite(key, write) {
   const prev = writeChains.get(key);
@@ -56964,7 +64856,7 @@ async function loadProjects(api2) {
     if (typeof value["missing"] === "boolean") project2.missing = value["missing"];
     if (typeof value["groupId"] === "string") project2.groupId = value["groupId"];
     const worktreeMode = value["worktreeMode"];
-    if (worktreeMode === "never" || worktreeMode === "always") {
+    if (worktreeMode === "never" || worktreeMode === "always" || worktreeMode === "on-write") {
       project2.worktreeMode = worktreeMode;
     } else if (worktreeMode === "from-default-branch") {
       project2.worktreeMode = "always";
@@ -56986,9 +64878,12 @@ async function loadProjects(api2) {
 }
 async function saveProjects(api2, projects, activeProjectId, activeThreadId) {
   await Promise.all([
-    serializedSet(api2, KEY_PROJECTS, projects),
+    persistProjects(api2, projects),
     serializedNavigation(api2, { activeProjectId, activeThreadId })
   ]);
+}
+function saveNavigation(api2, activeProjectId, activeThreadId) {
+  return serializedNavigation(api2, { activeProjectId, activeThreadId });
 }
 function saveProjectGroups(api2, groups) {
   return serializedSet(api2, KEY_PROJECT_GROUPS, groups);
@@ -57039,7 +64934,7 @@ function attachAutosave(store2, api2) {
     const writes = [];
     if (projectsDirty) {
       projectsDirty = false;
-      writes.push(serializedSet(api2, KEY_PROJECTS, projects));
+      writes.push(persistProjects(api2, projects));
     }
     writes.push(serializedNavigation(api2, { activeProjectId, activeThreadId }));
     if (activeProjectId) writes.push(reconcile(activeProjectId));
@@ -57199,7 +65094,7 @@ function attachAutosave(store2, api2) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, ownsNavigation, navigationRestored, lastNavigation, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -57208,6 +65103,7 @@ var init_persistence = __esm({
     KEY_PROJECTS = "projects";
     KEY_PROJECT_GROUPS = "projectGroups";
     writeChains = /* @__PURE__ */ new Map();
+    persistedProjectsJson = null;
     ownsNavigation = true;
     navigationRestored = true;
     lastNavigation = null;
@@ -57726,7 +65622,10 @@ var init_tool_display = __esm({
       prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" },
       coordination_check: { running: "Checking overlapping work", done: "Checked overlapping work" },
       coordination_note: { running: "Sending peer note", done: "Sent peer note" },
-      coordination_read: { running: "Reading peer notes", done: "Read peer notes" }
+      coordination_read: { running: "Reading peer notes", done: "Read peer notes" },
+      // Deliberately ungrouped: the switch from reading the user's checkout to the
+      // thread's own worktree should stand out in the transcript.
+      request_write_access: { running: "Creating worktree", done: "Created worktree" }
     };
     TOOL_GROUPS = {
       reading: {
@@ -57957,10 +65856,11 @@ function begin(name) {
     bridge.span(name, Math.round((performance.now() - start) * 100) / 100, detail);
   };
 }
-var bridge, autopilotOn;
+var bridge, perfOn, autopilotOn;
 var init_perf = __esm({
   "src/renderer/perf.ts"() {
     bridge = readBridge();
+    perfOn = bridge !== null;
     autopilotOn = bridge?.autopilot === true;
   }
 });
@@ -59777,7 +67677,8 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
   }
   const flushOutgoing = outgoingId && outgoingId !== id ? flushProjectThreads(api2, outgoingId, outgoingThreads) : Promise.resolve();
   if (pendingSwitch?.gen === gen) pendingSwitch.dispatched = true;
-  const persistSelection = saveProjects(api2, store2.getState().projects, id, pendingThreadId);
+  const projectsAtDispatch = store2.getState().projects;
+  const persistSelection = saveProjects(api2, projectsAtDispatch, id, pendingThreadId);
   const endWorkspace = begin("switch:workspace-set");
   const workspaceOpened = setWorkspaceInOrder(api2, path, sshHost);
   const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened]);
@@ -59835,16 +67736,21 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
   if (activeThreadId) markThreadRead(store2, activeThreadId);
   if (merged.length === 0) createThread(store2);
   else normalizeBlankThreads(store2);
-  await saveProjects(api2, store2.getState().projects, id, store2.getState().activeThreadId);
   store2.emit("projects_changed");
   store2.emit("workspace_changed");
   store2.emit("threads_changed");
   store2.emit("panel_changed");
   store2.emit("files_pane_changed");
   endApply({ threads: merged.length });
+  const { projects, activeThreadId: appliedThreadId } = store2.getState();
+  await (projects === projectsAtDispatch ? saveNavigation(api2, id, appliedThreadId) : saveProjects(api2, projects, id, appliedThreadId));
   endSwitch(gen, id);
   endActivate({ outcome: "ok", threads: merged.length });
   void resumePendingQueues(store2, api2);
+}
+function dispatchCallers() {
+  const frames = (new Error().stack ?? "").split("\n").slice(3, 8);
+  return frames.map((frame) => /at (?:async )?([^\s(]+)/.exec(frame)?.[1] ?? "?").join(" < ");
 }
 function activate(store2, api2, id, path, sshHost, pendingThreadId) {
   const { activeProjectId, threads, expandedProjectId } = store2.getState();
@@ -59854,6 +67760,12 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
     return;
   }
   expandProject(store2, id);
+  if (perfOn) {
+    mark("switch:dispatch", {
+      callers: dispatchCallers(),
+      restarts: pendingSwitch?.projectId === id
+    });
+  }
   supersedePendingSwitch();
   const gen = ++switchGeneration;
   pendingSwitch = { gen, projectId: id, dispatched: false };
@@ -60324,6 +68236,23 @@ function openAutomationSettings(scheduleId) {
     ...scheduleId ? { detailId: scheduleId } : {}
   };
   openSettingsDialog("customise");
+}
+function countLabel(count, noun) {
+  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+}
+function installReviewSkillName(path, pluginId) {
+  const parts = path.split("/");
+  if (parts.at(-1) !== "SKILL.md") return path;
+  return parts.at(-2) ?? pluginId;
+}
+function installReviewSection(heading, body) {
+  const section = document.createElement("section");
+  section.className = "plugin-install-review-section";
+  const title = document.createElement("div");
+  title.className = "plugin-install-review-heading";
+  title.textContent = heading;
+  section.append(title, body);
+  return section;
 }
 function closeSettingsDialog() {
   if (!overlayEl || !overlayEl.open) return;
@@ -61005,7 +68934,7 @@ function mountSettingsDialog(store2, api2) {
             <fieldset id="plugins-fieldset">
               <legend>Plugins</legend>
               <p class="settings-fieldset-desc">
-                Every plugin Copse knows about, whatever installed it \u2014 shipped with the app,
+                Browse available packages or manage every plugin Copse already knows about \u2014 shipped with the app,
                 added to <code>~/.copse/plugins/</code>, selected as a folder, or installed through
                 Cursor. Each row says where it came from and what it contributes. Turning one off
                 drops all of its contributions from new work in one action; its stored data and old
@@ -61014,18 +68943,29 @@ function mountSettingsDialog(store2, api2) {
                 <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-plugin.md" target="_blank" rel="noopener noreferrer">how to add a plugin</a>
                 for authoring and install steps.
               </p>
-              <div class="settings-action-row">
-                <button type="button" class="ui-btn ui-btn-secondary" id="plugins-add-btn">
-                  Add plugin\u2026
+              <div class="plugin-view-tabs" role="tablist" aria-label="Plugin collection">
+                <button type="button" class="plugin-view-tab active" id="plugins-installed-tab" role="tab" aria-selected="true" aria-controls="plugins-installed-panel">
+                  Installed
                 </button>
-                <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
-                  Reload
+                <button type="button" class="plugin-view-tab" id="plugins-browse-tab" role="tab" aria-selected="false" aria-controls="plugins-browse-panel">
+                  Browse
                 </button>
-                <span class="lmstudio-test-status plugins-load-status" id="plugins-reload-status"></span>
               </div>
-              <div id="plugins-list" class="plugins-group">
-                <span class="plugins-empty">Loading\u2026</span>
+              <div id="plugins-installed-panel" role="tabpanel" aria-labelledby="plugins-installed-tab">
+                <div class="settings-action-row">
+                  <button type="button" class="ui-btn ui-btn-secondary" id="plugins-add-btn">
+                    Add plugin\u2026
+                  </button>
+                  <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
+                    Reload
+                  </button>
+                  <span class="lmstudio-test-status plugins-load-status" id="plugins-reload-status"></span>
+                </div>
+                <div id="plugins-list" class="plugins-group">
+                  <span class="plugins-empty">Loading\u2026</span>
+                </div>
               </div>
+              <div id="plugins-browse-panel" role="tabpanel" aria-labelledby="plugins-browse-tab" hidden></div>
             </fieldset>
 
           </section>
@@ -61334,6 +69274,20 @@ function mountSettingsDialog(store2, api2) {
                 thread shows screenshots and the closing summary. Tool calls, reasoning, and the
                 tool errors the model recovers from stay hidden; while it works, you see what it
                 is doing now. Other models always show the full thread.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Deferred worktrees</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="deferredWorktreesEnabled" />
+                Create a worktree only when the agent needs to write
+              </label>
+              <p class="field-hint">
+                Applies across Copse to new threads using automatic checkout. Eligible agents
+                start by reading your checkout without changing it, then get an isolated worktree
+                before writing. Explicit worktree choices and ACP agents still create one up front.
+                Projects with worktrees disabled and existing threads keep their checkout behavior.
               </p>
             </fieldset>
 
@@ -62388,6 +70342,167 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
   let advisorPairHintEl = null;
   const modelFieldPopulated = /* @__PURE__ */ new WeakMap();
   let pluginDetail = null;
+  let managedInstalls = /* @__PURE__ */ new Map();
+  function installReviewDetail(review) {
+    const detail = document.createElement("div");
+    detail.className = "plugin-install-review-dialog";
+    if (review.description) {
+      const description = document.createElement("div");
+      description.className = "plugin-install-review-description";
+      description.textContent = review.description;
+      detail.append(description);
+    }
+    const provenance = document.createElement("div");
+    provenance.className = "plugin-install-review-provenance";
+    provenance.textContent = `Unsigned package from ${review.publisher}`;
+    detail.append(provenance);
+    if (review.skills.length > 0) {
+      const chips = document.createElement("div");
+      chips.className = "plugin-chips";
+      for (const path of review.skills) {
+        const chip2 = document.createElement("span");
+        chip2.className = "plugin-chip";
+        chip2.textContent = installReviewSkillName(path, review.pluginId);
+        chip2.title = path;
+        chips.append(chip2);
+      }
+      detail.append(installReviewSection(countLabel(review.skills.length, "skill"), chips));
+    }
+    if (review.mcpServers.length > 0) {
+      const servers = document.createElement("ul");
+      servers.className = "plugin-install-review-servers";
+      for (const server of review.mcpServers) {
+        const item = document.createElement("li");
+        const name = document.createElement("span");
+        name.className = "plugin-install-review-server-name";
+        name.textContent = server.name;
+        const transport = document.createElement("span");
+        transport.className = "plugin-install-review-server-transport";
+        transport.textContent = server.transport === "stdio" ? "Local command" : server.transport === "sse" ? "Legacy SSE" : "HTTP";
+        const target = document.createElement("code");
+        target.className = "plugin-install-review-server-target";
+        target.textContent = server.transport === "stdio" ? server.target : server.target.replace(/^https?:\/\//, "");
+        item.append(name, transport, target);
+        servers.append(item);
+      }
+      detail.append(
+        installReviewSection(countLabel(review.mcpServers.length, "MCP server"), servers)
+      );
+    }
+    if (review.warnings.length > 0) {
+      const warnings = document.createElement("ul");
+      warnings.className = "plugin-install-review-warnings";
+      for (const warning of review.warnings) {
+        const item = document.createElement("li");
+        item.textContent = warning;
+        warnings.append(item);
+      }
+      detail.append(warnings);
+    }
+    const pin = document.createElement("details");
+    pin.className = "plugin-install-review-pin";
+    const pinSummary = document.createElement("summary");
+    pinSummary.className = "settings-disclosure-summary";
+    const pinLabel = document.createElement("span");
+    pinLabel.textContent = `Pinned to ${review.revision.slice(0, 7)}`;
+    pinSummary.append(pinLabel, chevronDownIcon("ui-icon settings-disclosure-chevron"));
+    const list = document.createElement("dl");
+    list.className = "plugin-source-details";
+    const pinDetails = [
+      ["Revision", review.revision],
+      ["Content", review.contentHash]
+    ];
+    for (const [label, value] of pinDetails) {
+      const term = document.createElement("dt");
+      term.textContent = label;
+      const description = document.createElement("dd");
+      description.textContent = value;
+      list.append(term, description);
+    }
+    pin.append(pinSummary, list);
+    detail.append(pin);
+    return detail;
+  }
+  async function reviewCatalogInstall(catalogId) {
+    const review = await api2.plugins.prepareInstall(catalogId);
+    try {
+      const confirmed = await showConfirmDialog({
+        message: `${review.operation === "update" ? "Update" : "Install"} ${review.name}?`,
+        detail: installReviewDetail(review),
+        confirmLabel: review.operation === "update" ? "Update" : "Install",
+        confirmPendingLabel: "Installing\u2026",
+        onConfirm: async () => {
+          await api2.plugins.commitInstall(review.token);
+        }
+      });
+      if (!confirmed) {
+        await api2.plugins.cancelInstall(review.token);
+        return;
+      }
+    } catch (error62) {
+      await api2.plugins.cancelInstall(review.token).catch(() => void 0);
+      throw error62;
+    }
+    await refreshPlugins();
+    store2.emit("settings_changed");
+  }
+  async function rollbackManagedPlugin(record2) {
+    const previous = record2.previousPin;
+    if (!previous) return;
+    const confirmed = await showConfirmDialog({
+      message: `Roll back ${record2.name}?`,
+      detail: `Copse will switch back to revision ${previous.revision.slice(0, 7)}.`,
+      confirmLabel: "Roll back",
+      onConfirm: async () => {
+        await api2.plugins.rollback(record2.pluginId);
+      }
+    });
+    if (!confirmed) return;
+    await refreshPlugins();
+    store2.emit("settings_changed");
+  }
+  async function uninstallManagedPlugin(record2) {
+    const detail = document.createElement("div");
+    const explanation = document.createElement("p");
+    explanation.textContent = "The plugin payload will be removed. Existing thread history is kept.";
+    const deleteLabel = document.createElement("label");
+    deleteLabel.className = "plugin-uninstall-data-choice";
+    const deleteData = document.createElement("input");
+    deleteData.type = "checkbox";
+    deleteLabel.append(deleteData, " Also delete this plugin\u2019s saved data");
+    detail.append(explanation, deleteLabel);
+    const confirmed = await showConfirmDialog({
+      message: `Uninstall ${record2.name}?`,
+      detail,
+      confirmLabel: "Uninstall",
+      confirmPendingLabel: "Uninstalling\u2026",
+      danger: true,
+      onConfirm: async () => {
+        await api2.plugins.uninstall(record2.pluginId, deleteData.checked);
+      }
+    });
+    if (!confirmed) return;
+    await refreshPlugins();
+    store2.emit("settings_changed");
+  }
+  const pluginCatalogBrowser = createPluginCatalogBrowser({
+    reviewInstall: reviewCatalogInstall,
+    rollback: rollbackManagedPlugin,
+    uninstall: uninstallManagedPlugin
+  });
+  qsRequired(overlay, "#plugins-browse-panel").append(pluginCatalogBrowser.element);
+  function selectPluginView(view) {
+    const installed2 = view === "installed";
+    const installedTab = qsRequired(overlay, "#plugins-installed-tab");
+    const browseTab = qsRequired(overlay, "#plugins-browse-tab");
+    installedTab.classList.toggle("active", installed2);
+    browseTab.classList.toggle("active", !installed2);
+    installedTab.setAttribute("aria-selected", installed2 ? "true" : "false");
+    browseTab.setAttribute("aria-selected", installed2 ? "false" : "true");
+    qsRequired(overlay, "#plugins-installed-panel").hidden = !installed2;
+    qsRequired(overlay, "#plugins-browse-panel").hidden = installed2;
+    if (!installed2) pluginCatalogBrowser.focusSearch();
+  }
   qsRequired(overlay, "#animated-explainers-manage").addEventListener(
     "click",
     () => {
@@ -62491,7 +70606,62 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
       desc.innerHTML = renderMarkdown(plugin.description);
       row2.append(desc);
     }
-    if (plugin.source?.kind === "directory") {
+    const managedInstall = managedInstalls.get(plugin.id);
+    if (managedInstall) {
+      const review = document.createElement("div");
+      review.className = "plugin-source-review plugin-managed-review";
+      const status = document.createElement("div");
+      status.className = "plugin-source-status";
+      status.textContent = "Installed from the Copse catalogue";
+      const detailList = document.createElement("dl");
+      detailList.className = "plugin-source-details";
+      const details = [
+        ["Revision", managedInstall.source.revision],
+        ["Content", managedInstall.contentHash],
+        ["Verification", "Unsigned package"]
+      ];
+      for (const [term, value] of details) {
+        const dt2 = document.createElement("dt");
+        dt2.textContent = term;
+        const dd = document.createElement("dd");
+        dd.textContent = value;
+        detailList.append(dt2, dd);
+      }
+      const actions = document.createElement("div");
+      actions.className = "plugin-managed-actions";
+      const operationStatus = document.createElement("span");
+      operationStatus.className = "plugin-catalog-operation-status";
+      operationStatus.setAttribute("role", "status");
+      const run2 = (button, action) => {
+        button.disabled = true;
+        operationStatus.textContent = "Working\u2026";
+        void action().catch((error62) => {
+          operationStatus.textContent = errorMessage(error62);
+        }).finally(() => {
+          button.disabled = false;
+        });
+      };
+      if (managedInstall.previousPin) {
+        const rollback = document.createElement("button");
+        rollback.type = "button";
+        rollback.className = "ui-btn ui-btn-secondary ui-btn-compact";
+        rollback.textContent = "Roll back";
+        rollback.addEventListener("click", () => {
+          run2(rollback, () => rollbackManagedPlugin(managedInstall));
+        });
+        actions.append(rollback);
+      }
+      const uninstall2 = document.createElement("button");
+      uninstall2.type = "button";
+      uninstall2.className = "ui-btn ui-btn-danger ui-btn-compact";
+      uninstall2.textContent = "Uninstall";
+      uninstall2.addEventListener("click", () => {
+        run2(uninstall2, () => uninstallManagedPlugin(managedInstall));
+      });
+      actions.append(uninstall2);
+      review.append(status, detailList, operationStatus, actions);
+      row2.append(review);
+    } else if (plugin.source?.kind === "directory") {
       const review = document.createElement("div");
       review.className = "plugin-source-review";
       const status = document.createElement("div");
@@ -62849,12 +71019,19 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     };
     setStatus("Loading\u2026");
     try {
-      const [result, cursorPlugins, bundledPlugins] = await Promise.all([
+      const [result, cursorPlugins, bundledPlugins, installs] = await Promise.all([
         api2.plugins.list(),
         api2.cursorPlugins.list().catch(() => []),
-        api2.bundledSkillPlugins.list().catch(() => [])
+        api2.bundledSkillPlugins.list().catch(() => []),
+        api2.plugins.listInstalls()
       ]);
       if (generation !== pluginRefreshGeneration) return;
+      managedInstalls = new Map(installs.map((record2) => [record2.pluginId, record2]));
+      pluginCatalogBrowser.updateInstalled({
+        cursor: cursorPlugins.map((plugin) => plugin.name),
+        bundledCursor: bundledPlugins.map((plugin) => plugin.name),
+        managed: installs
+      });
       const entries2 = [
         ...result.plugins.map((plugin) => ({
           id: plugin.id,
@@ -63422,6 +71599,12 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
   qsRequired(overlay, "#plugins-reload-btn").addEventListener("click", () => {
     void refreshPlugins();
   });
+  qsRequired(overlay, "#plugins-installed-tab").addEventListener("click", () => {
+    selectPluginView("installed");
+  });
+  qsRequired(overlay, "#plugins-browse-tab").addEventListener("click", () => {
+    selectPluginView("browse");
+  });
   qsRequired(overlay, "#plugins-add-btn").addEventListener("click", () => {
     const button = qsRequired(overlay, "#plugins-add-btn");
     const status = qsRequired(overlay, "#plugins-reload-status");
@@ -63848,6 +72031,7 @@ var init_settings_dialog = __esm({
     init_tool_permissions_panel();
     init_apple_development_plugin();
     init_apple_development_panel();
+    init_plugin_catalog_browser();
     init_web_origins();
     init_provider_hosts();
     init_command_routing();
@@ -63941,6 +72125,7 @@ var init_settings_dialog = __esm({
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
       { name: "conciseThreadsEnabled", kind: "checkbox", default: false, save: true },
+      { name: "deferredWorktreesEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true },
@@ -64307,6 +72492,1533 @@ var init_image_path = __esm({
   }
 });
 
+// src/renderer/drawing/drauu/emitter.ts
+var Emitter;
+var init_emitter = __esm({
+  "src/renderer/drawing/drauu/emitter.ts"() {
+    Emitter = class {
+      listeners = /* @__PURE__ */ new Map();
+      on(type, fn2) {
+        let set2 = this.listeners.get(type);
+        if (!set2) {
+          set2 = /* @__PURE__ */ new Set();
+          this.listeners.set(type, set2);
+        }
+        set2.add(fn2);
+        return () => {
+          set2.delete(fn2);
+        };
+      }
+      emit(type, ...args) {
+        const set2 = this.listeners.get(type);
+        if (!set2) return;
+        for (const fn2 of [...set2]) {
+          Reflect.apply(fn2, void 0, args);
+        }
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/utils.ts
+function numSort(a3, b4) {
+  return a3 - b4;
+}
+function splitNum(a3) {
+  return [Math.abs(a3), a3 < 0 ? -1 : 1];
+}
+function guid3() {
+  const s42 = () => ((1 + Math.random()) * 65536 | 0).toString(16).substring(1);
+  return `${s42()}${s42()}-${s42()}-${s42()}-${s42()}-${s42()}${s42()}${s42()}`;
+}
+function createArrowHead(id, fill) {
+  const defs = document.createElementNS(SVG_NS3, "defs");
+  const marker = document.createElementNS(SVG_NS3, "marker");
+  const head = document.createElementNS(SVG_NS3, "path");
+  head.setAttribute("fill", fill);
+  marker.setAttribute("id", id);
+  marker.setAttribute("viewBox", "0 -5 10 10");
+  marker.setAttribute("refX", "5");
+  marker.setAttribute("refY", "0");
+  marker.setAttribute("markerWidth", "4");
+  marker.setAttribute("markerHeight", "4");
+  marker.setAttribute("orient", "auto");
+  head.setAttribute("d", "M0,-5L10,0L0,5");
+  marker.appendChild(head);
+  defs.appendChild(marker);
+  return defs;
+}
+function totalLength(el3) {
+  const candidate = Reflect.get(el3, "getTotalLength");
+  if (typeof candidate !== "function") return null;
+  try {
+    const length = Reflect.apply(candidate, el3, []);
+    return typeof length === "number" ? length : null;
+  } catch {
+    return null;
+  }
+}
+var SVG_NS3, D;
+var init_utils = __esm({
+  "src/renderer/drawing/drauu/utils.ts"() {
+    SVG_NS3 = "http://www.w3.org/2000/svg";
+    D = 2;
+  }
+});
+
+// src/renderer/drawing/drauu/simplify.ts
+function getSqDist(p1, p2) {
+  const dx = p1.x - p2.x;
+  const dy = p1.y - p2.y;
+  return dx * dx + dy * dy;
+}
+function getSqSegDist(p2, p1, p22) {
+  let x2 = p1.x;
+  let y2 = p1.y;
+  let dx = p22.x - x2;
+  let dy = p22.y - y2;
+  if (dx !== 0 || dy !== 0) {
+    const t2 = ((p2.x - x2) * dx + (p2.y - y2) * dy) / (dx * dx + dy * dy);
+    if (t2 > 1) {
+      x2 = p22.x;
+      y2 = p22.y;
+    } else if (t2 > 0) {
+      x2 += dx * t2;
+      y2 += dy * t2;
+    }
+  }
+  dx = p2.x - x2;
+  dy = p2.y - y2;
+  return dx * dx + dy * dy;
+}
+function simplifyRadialDist(points, sqTolerance) {
+  const first = points[0];
+  if (!first) return [];
+  let prevPoint = first;
+  const newPoints = [prevPoint];
+  let point;
+  for (let i2 = 1, len = points.length; i2 < len; i2++) {
+    point = points[i2];
+    if (point && getSqDist(point, prevPoint) > sqTolerance) {
+      newPoints.push(point);
+      prevPoint = point;
+    }
+  }
+  if (point && prevPoint !== point) newPoints.push(point);
+  return newPoints;
+}
+function simplifyDPStep(points, first, last, sqTolerance, simplified) {
+  let maxSqDist = sqTolerance;
+  let index = 0;
+  const a3 = points[first];
+  const b4 = points[last];
+  if (!a3 || !b4) return;
+  for (let i2 = first + 1; i2 < last; i2++) {
+    const p2 = points[i2];
+    if (!p2) continue;
+    const sqDist = getSqSegDist(p2, a3, b4);
+    if (sqDist > maxSqDist) {
+      index = i2;
+      maxSqDist = sqDist;
+    }
+  }
+  if (maxSqDist > sqTolerance) {
+    if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
+    const mid = points[index];
+    if (mid) simplified.push(mid);
+    if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
+  }
+}
+function simplifyDouglasPeucker(points, sqTolerance) {
+  const last = points.length - 1;
+  const first = points[0];
+  const end = points[last];
+  if (!first || !end) return points;
+  const simplified = [first];
+  simplifyDPStep(points, 0, last, sqTolerance, simplified);
+  simplified.push(end);
+  return simplified;
+}
+function simplify(points, tolerance, highestQuality = false) {
+  if (points.length <= 2) return points;
+  const sqTolerance = tolerance * tolerance;
+  const reduced = highestQuality ? points : simplifyRadialDist(points, sqTolerance);
+  return simplifyDouglasPeucker(reduced, sqTolerance);
+}
+var init_simplify = __esm({
+  "src/renderer/drawing/drauu/simplify.ts"() {
+  }
+});
+
+// src/renderer/drawing/drauu/models/base.ts
+var BaseModel;
+var init_base = __esm({
+  "src/renderer/drawing/drauu/models/base.ts"() {
+    init_utils();
+    BaseModel = class {
+      point = null;
+      start = null;
+      el = null;
+      drauu;
+      constructor(drauu) {
+        this.drauu = drauu;
+      }
+      onSelected(_el) {
+      }
+      onUnselected() {
+      }
+      onStart(_point) {
+        return void 0;
+      }
+      onMove(_point) {
+        return false;
+      }
+      onEnd(_point) {
+        return void 0;
+      }
+      get brush() {
+        return this.drauu.brush;
+      }
+      get shiftPressed() {
+        return this.drauu.shiftPressed;
+      }
+      get altPressed() {
+        return this.drauu.altPressed;
+      }
+      get svgElement() {
+        return this.drauu.el;
+      }
+      getMousePosition(event) {
+        const el3 = this.drauu.el;
+        if (!el3) return { x: event.clientX, y: event.clientY, pressure: event.pressure };
+        const svgPoint = this.drauu.svgPoint;
+        const ctm = this.drauu.options.coordinateTransform !== false && typeof el3.getScreenCTM === "function" ? el3.getScreenCTM() : null;
+        if (svgPoint && ctm && typeof svgPoint.matrixTransform === "function") {
+          svgPoint.x = event.clientX;
+          svgPoint.y = event.clientY;
+          const loc = svgPoint.matrixTransform(ctm.inverse());
+          return { x: loc.x, y: loc.y, pressure: event.pressure };
+        }
+        const rect = el3.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: event.pressure };
+      }
+      createElement(name, overrides) {
+        const el3 = document.createElementNS(SVG_NS3, name);
+        const brush = overrides ? { ...this.brush, ...overrides } : this.brush;
+        el3.setAttribute("fill", brush.fill ?? "transparent");
+        el3.setAttribute("stroke", brush.color);
+        el3.setAttribute("stroke-width", brush.size.toString());
+        el3.setAttribute("stroke-linecap", "round");
+        if (brush.dasharray) el3.setAttribute("stroke-dasharray", brush.dasharray);
+        return el3;
+      }
+      attr(name, value) {
+        this.el?.setAttribute(name, typeof value === "string" ? value : value.toFixed(D));
+      }
+      setEvent(event) {
+        this.point = this.getMousePosition(event);
+        return this.point;
+      }
+      /** @internal */
+      _eventDown(event) {
+        const point = this.setEvent(event);
+        this.start = point;
+        return this.onStart(point);
+      }
+      /** @internal */
+      _eventMove(event) {
+        return this.onMove(this.setEvent(event));
+      }
+      /** @internal */
+      _eventUp(event) {
+        return this.onEnd(this.setEvent(event));
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/draw.ts
+var DrawModel;
+var init_draw = __esm({
+  "src/renderer/drawing/drauu/models/draw.ts"() {
+    init_utils();
+    init_simplify();
+    init_base();
+    DrawModel = class _DrawModel extends BaseModel {
+      points = [];
+      count = 0;
+      onStart(point) {
+        this.el = this.createElement("path", { fill: "transparent" });
+        this.points = [point];
+        if (this.brush.arrowEnd) {
+          const id = guid3();
+          this.el.appendChild(createArrowHead(id, this.brush.color));
+          this.el.setAttribute("marker-end", `url(#${id})`);
+        }
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el) this.onStart(point);
+        if (this.points.at(-1) !== point) {
+          this.points.push(point);
+          this.count += 1;
+        }
+        if (this.count > 5) {
+          this.points = simplify(this.points, 1, true);
+          this.count = 0;
+        }
+        this.attr("d", _DrawModel.toSvgData(this.points));
+        return true;
+      }
+      onEnd() {
+        const path = this.el;
+        this.el = null;
+        if (!path) return false;
+        path.setAttribute("d", _DrawModel.toSvgData(simplify(this.points, 1, true)));
+        const first = this.points[0];
+        if (totalLength(path) === 0 && first) {
+          const r2 = (this.brush.size / 2).toFixed(D);
+          const d22 = this.brush.size.toFixed(D);
+          const x2 = (first.x - this.brush.size / 2).toFixed(D);
+          const y2 = first.y.toFixed(D);
+          path.setAttribute("d", `M ${x2} ${y2} a ${r2},${r2} 0 1,0 ${d22},0 a ${r2},${r2} 0 1,0 -${d22},0`);
+          path.setAttribute("fill", this.brush.color);
+          path.setAttribute("stroke-width", "0");
+        }
+        return true;
+      }
+      // https://francoisromain.medium.com/smooth-a-svg-path-with-cubic-bezier-curves-e37b49d46c74
+      static line(a3, b4) {
+        const lengthX = b4.x - a3.x;
+        const lengthY = b4.y - a3.y;
+        return { length: Math.sqrt(lengthX ** 2 + lengthY ** 2), angle: Math.atan2(lengthY, lengthX) };
+      }
+      static controlPoint(current, previous, next, reverse) {
+        const p2 = previous ?? current;
+        const n2 = next ?? current;
+        const smoothing = 0.2;
+        const o3 = _DrawModel.line(p2, n2);
+        const angle = o3.angle + (reverse ? Math.PI : 0);
+        const length = o3.length * smoothing;
+        return { x: current.x + Math.cos(angle) * length, y: current.y + Math.sin(angle) * length };
+      }
+      static bezierCommand(point, i2, points) {
+        const prev = points[i2 - 1] ?? point;
+        const cps = _DrawModel.controlPoint(prev, points[i2 - 2], point);
+        const cpe = _DrawModel.controlPoint(point, prev, points[i2 + 1], true);
+        return `C ${cps.x.toFixed(D)},${cps.y.toFixed(D)} ${cpe.x.toFixed(D)},${cpe.y.toFixed(D)} ${point.x.toFixed(D)},${point.y.toFixed(D)}`;
+      }
+      static toSvgData(points) {
+        return points.reduce(
+          (acc, point, i2, a3) => i2 === 0 ? `M ${point.x.toFixed(D)},${point.y.toFixed(D)}` : `${acc} ${_DrawModel.bezierCommand(point, i2, a3)}`,
+          ""
+        );
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/ellipse.ts
+var EllipseModel;
+var init_ellipse = __esm({
+  "src/renderer/drawing/drauu/models/ellipse.ts"() {
+    init_utils();
+    init_base();
+    EllipseModel = class extends BaseModel {
+      onStart(point) {
+        this.el = this.createElement("ellipse");
+        this.attr("cx", point.x);
+        this.attr("cy", point.y);
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el || !this.start) return false;
+        const [ax, sx] = splitNum(point.x - this.start.x);
+        const [ay, sy] = splitNum(point.y - this.start.y);
+        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
+        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
+        if (this.altPressed) {
+          this.attr("cx", this.start.x);
+          this.attr("cy", this.start.y);
+          this.attr("rx", dx);
+          this.attr("ry", dy);
+        } else {
+          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
+          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
+          this.attr("cx", (x1 + x2) / 2);
+          this.attr("cy", (y1 + y2) / 2);
+          this.attr("rx", (x2 - x1) / 2);
+          this.attr("ry", (y2 - y1) / 2);
+        }
+        return true;
+      }
+      onEnd() {
+        const ellipse = this.el;
+        this.el = null;
+        if (!ellipse) return false;
+        const length = totalLength(ellipse);
+        return length === null || length > 0;
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/eraser.ts
+function measurable(el3) {
+  const getTotalLength = Reflect.get(el3, "getTotalLength");
+  const getPointAtLength = Reflect.get(el3, "getPointAtLength");
+  if (typeof getTotalLength !== "function" || typeof getPointAtLength !== "function") return null;
+  return {
+    getTotalLength: () => {
+      const n2 = Reflect.apply(getTotalLength, el3, []);
+      return typeof n2 === "number" ? n2 : 0;
+    },
+    getPointAtLength: (d3) => {
+      const p2 = Reflect.apply(getPointAtLength, el3, [d3]);
+      if (p2 && typeof p2 === "object" && "x" in p2 && "y" in p2) {
+        const { x: x2, y: y2 } = p2;
+        if (typeof x2 === "number" && typeof y2 === "number") return { x: x2, y: y2 };
+      }
+      return { x: 0, y: 0 };
+    }
+  };
+}
+function intersects(a3, b4) {
+  const denom = (a3.x1 - a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 - b4.x2);
+  if (denom === 0) return false;
+  const xNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.x1 - b4.x2) - (a3.x1 - a3.x2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
+  const yNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
+  const x2 = xNum / denom;
+  const y2 = yNum / denom;
+  const between = (v3, b1, b22) => v3 >= b1 && v3 <= b22 || v3 >= b22 && v3 <= b1;
+  return between(x2, a3.x1, a3.x2) && between(y2, a3.y1, a3.y2) && between(x2, b4.x1, b4.x2) && between(y2, b4.y1, b4.y2);
+}
+var EraserModel;
+var init_eraser = __esm({
+  "src/renderer/drawing/drauu/models/eraser.ts"() {
+    init_utils();
+    init_base();
+    EraserModel = class extends BaseModel {
+      pathSubFactor = 20;
+      fragments = [];
+      previous = null;
+      erased = [];
+      onSelected(el3) {
+        this.fragments = [];
+        if (el3) this.collect(el3.children, void 0);
+      }
+      collect(children, owner) {
+        for (const child of Array.from(children)) {
+          if (child.namespaceURI !== SVG_NS3) continue;
+          const m2 = measurable(child);
+          if (m2) {
+            const length = m2.getTotalLength();
+            for (let j3 = 0; j3 < this.pathSubFactor; j3++) {
+              const a3 = m2.getPointAtLength(length * j3 / this.pathSubFactor);
+              const b4 = m2.getPointAtLength(length * (j3 + 1) / this.pathSubFactor);
+              this.fragments.push({ x1: a3.x, y1: a3.y, x2: b4.x, y2: b4.y, element: owner ?? child });
+            }
+          } else {
+            this.collect(child.children, owner ?? child);
+          }
+        }
+      }
+      onUnselected() {
+        this.fragments = [];
+      }
+      onStart(point) {
+        this.previous = point;
+        return void 0;
+      }
+      onMove(point) {
+        const previous = this.previous;
+        this.previous = point;
+        if (!previous) return false;
+        const stroke = { x1: previous.x, y1: previous.y, x2: point.x, y2: point.y };
+        let hit = false;
+        for (const fragment of this.fragments) {
+          if (this.erased.includes(fragment.element)) continue;
+          if (intersects(fragment, stroke)) {
+            this.drauu._removeNode(fragment.element);
+            this.erased.push(fragment.element);
+            hit = true;
+          }
+        }
+        if (hit) this.fragments = this.fragments.filter((f4) => !this.erased.includes(f4.element));
+        return hit;
+      }
+      onEnd() {
+        this.previous = null;
+        const erased = this.erased;
+        this.erased = [];
+        return {
+          undo: () => {
+            for (const node2 of erased) this.drauu._restoreNode(node2);
+          },
+          redo: () => {
+            for (const node2 of erased) this.drauu._removeNode(node2);
+          }
+        };
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/line.ts
+var LineModel;
+var init_line = __esm({
+  "src/renderer/drawing/drauu/models/line.ts"() {
+    init_utils();
+    init_base();
+    LineModel = class extends BaseModel {
+      onStart(point) {
+        this.el = this.createElement("line", { fill: "transparent" });
+        this.attr("x1", point.x);
+        this.attr("y1", point.y);
+        this.attr("x2", point.x);
+        this.attr("y2", point.y);
+        if (this.brush.arrowEnd) {
+          const id = guid3();
+          const g2 = document.createElementNS(SVG_NS3, "g");
+          g2.append(createArrowHead(id, this.brush.color));
+          g2.append(this.el);
+          this.attr("marker-end", `url(#${id})`);
+          return g2;
+        }
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el || !this.start) return false;
+        let { x: x2, y: y2 } = point;
+        if (this.shiftPressed) {
+          const dx = point.x - this.start.x;
+          const dy = point.y - this.start.y;
+          if (dy !== 0) {
+            const slope = Math.round(dx / dy);
+            if (Math.abs(slope) <= 1) {
+              x2 = this.start.x + dy * slope;
+              y2 = this.start.y + dy;
+            } else {
+              x2 = this.start.x + dx;
+              y2 = this.start.y;
+            }
+          }
+        }
+        if (this.altPressed) {
+          this.attr("x1", this.start.x * 2 - x2);
+          this.attr("y1", this.start.y * 2 - y2);
+        } else {
+          this.attr("x1", this.start.x);
+          this.attr("y1", this.start.y);
+        }
+        this.attr("x2", x2);
+        this.attr("y2", y2);
+        return true;
+      }
+      onEnd() {
+        const line = this.el;
+        this.el = null;
+        if (!line) return false;
+        const length = totalLength(line);
+        return length === null || length >= 5;
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/rect.ts
+var RectModel;
+var init_rect = __esm({
+  "src/renderer/drawing/drauu/models/rect.ts"() {
+    init_utils();
+    init_base();
+    RectModel = class extends BaseModel {
+      onStart(point) {
+        this.el = this.createElement("rect");
+        if (this.brush.cornerRadius) {
+          this.attr("rx", this.brush.cornerRadius);
+          this.attr("ry", this.brush.cornerRadius);
+        }
+        this.attr("x", point.x);
+        this.attr("y", point.y);
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el || !this.start) return false;
+        const [ax, sx] = splitNum(point.x - this.start.x);
+        const [ay, sy] = splitNum(point.y - this.start.y);
+        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
+        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
+        if (this.altPressed) {
+          this.attr("x", this.start.x - dx);
+          this.attr("y", this.start.y - dy);
+          this.attr("width", dx * 2);
+          this.attr("height", dy * 2);
+        } else {
+          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
+          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
+          this.attr("x", x1);
+          this.attr("y", y1);
+          this.attr("width", x2 - x1);
+          this.attr("height", y2 - y1);
+        }
+        return true;
+      }
+      onEnd() {
+        const rect = this.el;
+        this.el = null;
+        if (!rect) return false;
+        const length = totalLength(rect);
+        return length === null || length > 0;
+      }
+    };
+  }
+});
+
+// node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs
+function i(e3, t2, n2, r2 = (e4) => e4) {
+  return e3 * r2(0.5 - t2 * (0.5 - n2));
+}
+function o(e3, t2, n2) {
+  let r2 = a(1, t2 / n2);
+  return a(1, e3 + (a(1, 1 - r2) - e3) * (r2 * 0.275));
+}
+function s(e3) {
+  return [-e3[0], -e3[1]];
+}
+function c(e3, t2) {
+  return [e3[0] + t2[0], e3[1] + t2[1]];
+}
+function l(e3, t2, n2) {
+  return e3[0] = t2[0] + n2[0], e3[1] = t2[1] + n2[1], e3;
+}
+function u(e3, t2) {
+  return [e3[0] - t2[0], e3[1] - t2[1]];
+}
+function d(e3, t2, n2) {
+  return e3[0] = t2[0] - n2[0], e3[1] = t2[1] - n2[1], e3;
+}
+function f(e3, t2) {
+  return [e3[0] * t2, e3[1] * t2];
+}
+function p(e3, t2, n2) {
+  return e3[0] = t2[0] * n2, e3[1] = t2[1] * n2, e3;
+}
+function m(e3, t2) {
+  return [e3[0] / t2, e3[1] / t2];
+}
+function h(e3) {
+  return [e3[1], -e3[0]];
+}
+function g(e3, t2) {
+  let n2 = t2[0];
+  return e3[0] = t2[1], e3[1] = -n2, e3;
+}
+function ee(e3, t2) {
+  return e3[0] * t2[0] + e3[1] * t2[1];
+}
+function _(e3, t2) {
+  return e3[0] === t2[0] && e3[1] === t2[1];
+}
+function v(e3) {
+  return Math.hypot(e3[0], e3[1]);
+}
+function y(e3, t2) {
+  let n2 = e3[0] - t2[0], r2 = e3[1] - t2[1];
+  return n2 * n2 + r2 * r2;
+}
+function b(e3) {
+  return m(e3, v(e3));
+}
+function x(e3, t2) {
+  return Math.hypot(e3[1] - t2[1], e3[0] - t2[0]);
+}
+function S(e3, t2, n2) {
+  let r2 = Math.sin(n2), i2 = Math.cos(n2), a3 = e3[0] - t2[0], o3 = e3[1] - t2[1], s16 = a3 * i2 - o3 * r2, c3 = a3 * r2 + o3 * i2;
+  return [s16 + t2[0], c3 + t2[1]];
+}
+function C(e3, t2, n2, r2) {
+  let i2 = Math.sin(r2), a3 = Math.cos(r2), o3 = t2[0] - n2[0], s16 = t2[1] - n2[1], c3 = o3 * a3 - s16 * i2, l2 = o3 * i2 + s16 * a3;
+  return e3[0] = c3 + n2[0], e3[1] = l2 + n2[1], e3;
+}
+function w(e3, t2, n2) {
+  return c(e3, f(u(t2, e3), n2));
+}
+function te(e3, t2, n2, r2) {
+  let i2 = n2[0] - t2[0], a3 = n2[1] - t2[1];
+  return e3[0] = t2[0] + i2 * r2, e3[1] = t2[1] + a3 * r2, e3;
+}
+function T(e3, t2, n2) {
+  return c(e3, f(t2, n2));
+}
+function k(e3, n2) {
+  let r2 = T(e3, b(h(u(e3, c(e3, [1, 1])))), -n2), i2 = [], a3 = 1 / 13;
+  for (let n3 = a3; n3 <= 1; n3 += a3) i2.push(S(r2, e3, t * 2 * n3));
+  return i2;
+}
+function A2(e3, n2, r2) {
+  let i2 = [], a3 = 1 / r2;
+  for (let r3 = a3; r3 <= 1; r3 += a3) i2.push(S(n2, e3, t * r3));
+  return i2;
+}
+function j(e3, t2, n2) {
+  let r2 = u(t2, n2), i2 = f(r2, 0.5), a3 = f(r2, 0.51);
+  return [u(e3, i2), u(e3, a3), c(e3, a3), c(e3, i2)];
+}
+function M(e3, n2, r2, i2) {
+  let a3 = [], o3 = T(e3, n2, r2), s16 = 1 / i2;
+  for (let n3 = s16; n3 < 1; n3 += s16) a3.push(S(o3, e3, t * 3 * n3));
+  return a3;
+}
+function ne(e3, t2, n2) {
+  return [c(e3, f(t2, n2)), c(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2))];
+}
+function N(e3, t2, n2) {
+  return e3 === false || e3 === void 0 ? 0 : e3 === true ? Math.max(t2, n2) : e3;
+}
+function re(e3, t2, n2) {
+  return e3.slice(0, 10).reduce((e4, r2) => {
+    let i2 = r2.pressure;
+    return t2 && (i2 = o(e4, r2.distance, n2)), (e4 + i2) / 2;
+  }, e3[0].pressure);
+}
+function P(e3, n2 = {}) {
+  let { size: r2 = 16, smoothing: a3 = 0.5, thinning: f4 = 0.5, simulatePressure: m2 = true, easing: _3 = (e4) => e4, start: v3 = {}, end: b4 = {}, last: x2 = false } = n2, { cap: S3 = true, easing: w2 = (e4) => e4 * (2 - e4) } = v3, { cap: T2 = true, easing: P2 = (e4) => --e4 * e4 * e4 + 1 } = b4;
+  if (e3.length === 0 || r2 <= 0) return [];
+  let F3 = e3[e3.length - 1].runningLength, I2 = N(v3.taper, r2, F3), L3 = N(b4.taper, r2, F3), R2 = (r2 * a3) ** 2, z4 = [], B3 = [], V2 = re(e3, m2, r2), H2 = i(r2, f4, e3[e3.length - 1].pressure, _3), U2, W = e3[0].vector, G2 = e3[0].point, K2 = G2, q2 = G2, J2 = K2, Y3 = false;
+  for (let n3 = 0; n3 < e3.length; n3++) {
+    let { pressure: a4 } = e3[n3], { point: s16, vector: h3, distance: v4, runningLength: b5 } = e3[n3], x3 = n3 === e3.length - 1;
+    if (!x3 && F3 - b5 < 3) continue;
+    f4 ? (m2 && (a4 = o(V2, v4, r2)), H2 = i(r2, f4, a4, _3)) : H2 = r2 / 2, U2 === void 0 && (U2 = H2);
+    let S4 = b5 < I2 ? w2(b5 / I2) : 1, T3 = F3 - b5 < L3 ? P2((F3 - b5) / L3) : 1;
+    H2 = Math.max(0.01, H2 * Math.min(S4, T3));
+    let k2 = (x3 ? e3[n3] : e3[n3 + 1]).vector, A3 = x3 ? 1 : ee(h3, k2), j3 = ee(h3, W) < 0 && !Y3, M4 = A3 !== null && A3 < 0;
+    if (j3 || M4) {
+      g(E, W), p(E, E, H2);
+      for (let e4 = 0; e4 <= 1; e4 += 0.07692307692307693) d(D2, s16, E), C(D2, D2, s16, t * e4), q2 = [D2[0], D2[1]], z4.push(q2), l(O, s16, E), C(O, O, s16, t * -e4), J2 = [O[0], O[1]], B3.push(J2);
+      G2 = q2, K2 = J2, M4 && (Y3 = true);
+      continue;
+    }
+    if (Y3 = false, x3) {
+      g(E, h3), p(E, E, H2), z4.push(u(s16, E)), B3.push(c(s16, E));
+      continue;
+    }
+    te(E, k2, h3, A3), g(E, E), p(E, E, H2), d(D2, s16, E), q2 = [D2[0], D2[1]], (n3 <= 1 || y(G2, q2) > R2) && (z4.push(q2), G2 = q2), l(O, s16, E), J2 = [O[0], O[1]], (n3 <= 1 || y(K2, J2) > R2) && (B3.push(J2), K2 = J2), V2 = a4, W = h3;
+  }
+  let X3 = [e3[0].point[0], e3[0].point[1]], Z = e3.length > 1 ? [e3[e3.length - 1].point[0], e3[e3.length - 1].point[1]] : c(e3[0].point, [1, 1]), Q3 = [], $2 = [];
+  if (e3.length === 1) {
+    if (!(I2 || L3) || x2) return k(X3, U2 || H2);
+  } else {
+    I2 || L3 && e3.length === 1 || (S3 ? Q3.push(...A2(X3, B3[0], 13)) : Q3.push(...j(X3, z4[0], B3[0])));
+    let t2 = h(s(e3[e3.length - 1].vector));
+    L3 || I2 && e3.length === 1 ? $2.push(Z) : T2 ? $2.push(...M(Z, t2, H2, 29)) : $2.push(...ne(Z, t2, H2));
+  }
+  return z4.concat($2, B3.reverse(), Q3);
+}
+function I(e3) {
+  return e3 != null && e3 >= 0;
+}
+function L(e3, t2 = {}) {
+  let { streamline: i2 = 0.5, size: a3 = 16, last: o3 = false } = t2;
+  if (e3.length === 0) return [];
+  let s16 = 0.15 + (1 - i2) * 0.85, l2 = Array.isArray(e3[0]) ? e3 : e3.map(({ x: e4, y: t3, pressure: r2 = n }) => [e4, t3, r2]);
+  if (l2.length === 2) {
+    let e4 = l2[1];
+    l2 = l2.slice(0, -1);
+    for (let t3 = 1; t3 < 5; t3++) l2.push(w(l2[0], e4, t3 / 4));
+  }
+  l2.length === 1 && (l2 = [...l2, [...c(l2[0], r), ...l2[0].slice(2)]]);
+  let u2 = [{ point: [l2[0][0], l2[0][1]], pressure: I(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f4 = false, p2 = 0, m2 = u2[0], h3 = l2.length - 1;
+  for (let e4 = 1; e4 < l2.length; e4++) {
+    let t3 = o3 && e4 === h3 ? [l2[e4][0], l2[e4][1]] : w(m2.point, l2[e4], s16);
+    if (_(m2.point, t3)) continue;
+    let r2 = x(t3, m2.point);
+    if (p2 += r2, e4 < h3 && !f4) {
+      if (p2 < a3) continue;
+      f4 = true;
+    }
+    d(F, m2.point, t3), m2 = { point: t3, pressure: I(l2[e4][2]) ? l2[e4][2] : n, vector: b(F), distance: r2, runningLength: p2 }, u2.push(m2);
+  }
+  return u2[0].vector = u2[1]?.vector || [0, 0], u2;
+}
+function R(e3, t2 = {}) {
+  return P(L(e3, t2), t2);
+}
+var e, t, n, r, a, E, D2, O, F;
+var init_esm = __esm({
+  "node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs"() {
+    ({ PI: e } = Math);
+    t = e + 1e-4;
+    n = 0.5;
+    r = [1, 1];
+    ({ min: a } = Math);
+    E = [0, 0];
+    D2 = [0, 0];
+    O = [0, 0];
+    F = [0, 0];
+  }
+});
+
+// src/renderer/drawing/drauu/models/stylus.ts
+var StylusModel;
+var init_stylus = __esm({
+  "src/renderer/drawing/drauu/models/stylus.ts"() {
+    init_esm();
+    init_utils();
+    init_base();
+    StylusModel = class _StylusModel extends BaseModel {
+      points = [];
+      onStart(point) {
+        this.el = document.createElementNS(SVG_NS3, "path");
+        this.points = [point];
+        this.attr("fill", this.brush.color);
+        this.attr("d", this.getSvgData(this.points));
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el) this.onStart(point);
+        if (this.points.at(-1) !== point) this.points.push(point);
+        this.attr("d", this.getSvgData(this.points));
+        return true;
+      }
+      onEnd() {
+        const path = this.el;
+        this.el = null;
+        return path !== null;
+      }
+      getSvgData(points) {
+        return _StylusModel.getSvgData(points, this.brush);
+      }
+      static getSvgData(points, brush) {
+        const stroke = R(points, {
+          size: brush.size,
+          thinning: 0.9,
+          simulatePressure: false,
+          start: { taper: 5 },
+          end: { taper: 5 },
+          ...brush.stylusOptions
+        });
+        const first = stroke[0];
+        if (!first) return "";
+        const parts = [`M ${first[0].toFixed(2)} ${first[1].toFixed(2)} Q`];
+        for (let i2 = 0; i2 < stroke.length; i2++) {
+          const a3 = stroke[i2];
+          const b4 = stroke[(i2 + 1) % stroke.length];
+          if (!a3 || !b4) continue;
+          const [x0, y0] = a3;
+          const [x1, y1] = b4;
+          parts.push(
+            x0.toFixed(2),
+            y0.toFixed(2),
+            ((x0 + x1) / 2).toFixed(2),
+            ((y0 + y1) / 2).toFixed(2)
+          );
+        }
+        parts.push("Z");
+        return parts.join(" ");
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/index.ts
+function createModels(drauu) {
+  return {
+    draw: new DrawModel(drauu),
+    stylus: new StylusModel(drauu),
+    line: new LineModel(drauu),
+    rectangle: new RectModel(drauu),
+    ellipse: new EllipseModel(drauu),
+    eraseLine: new EraserModel(drauu)
+  };
+}
+var init_models = __esm({
+  "src/renderer/drawing/drauu/models/index.ts"() {
+    init_draw();
+    init_ellipse();
+    init_eraser();
+    init_line();
+    init_rect();
+    init_stylus();
+  }
+});
+
+// src/renderer/drawing/drauu/drauu.ts
+function createDrauu(options) {
+  return new Drauu(options);
+}
+var DEFAULT_BRUSH, Drauu;
+var init_drauu = __esm({
+  "src/renderer/drawing/drauu/drauu.ts"() {
+    init_emitter();
+    init_models();
+    DEFAULT_BRUSH = { color: "black", size: 3, mode: "stylus" };
+    Drauu = class {
+      el = null;
+      svgPoint = null;
+      shiftPressed = false;
+      altPressed = false;
+      drawing = false;
+      options;
+      emitter = new Emitter();
+      originalPointerId = null;
+      models = createModels(this);
+      currentNode;
+      opStack = [];
+      opIndex = 0;
+      disposables = [];
+      elements = [];
+      constructor(options = {}) {
+        this.options = { ...options, brush: options.brush ?? { ...DEFAULT_BRUSH } };
+        if (options.el) this.mount(options.el, options.eventTarget, options.window);
+      }
+      get model() {
+        return this.models[this.mode];
+      }
+      get mounted() {
+        return this.el !== null;
+      }
+      get mode() {
+        return this.options.brush.mode ?? "stylus";
+      }
+      set mode(v3) {
+        this.models[this.mode].onUnselected();
+        this.options.brush.mode = v3;
+        this.model.onSelected(this.el);
+      }
+      get brush() {
+        return this.options.brush;
+      }
+      set brush(v3) {
+        this.options.brush = v3;
+      }
+      mount(el3, eventEl, listenWindow = window) {
+        if (this.el) throw new Error("[drauu] already mounted, unmount previous target first");
+        if (el3.tagName.toLowerCase() !== "svg")
+          throw new Error("[drauu] can only mount to an SVG element");
+        this.el = el3;
+        this.svgPoint = typeof el3.createSVGPoint === "function" ? el3.createSVGPoint() : null;
+        const target = eventEl ?? el3;
+        const start = (e3) => {
+          if (e3 instanceof PointerEvent) this.eventStart(e3);
+        };
+        const move = (e3) => {
+          this.eventMove(e3);
+        };
+        const end = (e3) => {
+          this.eventEnd(e3);
+        };
+        const keyboard = (e3) => {
+          this.eventKeyboard(e3);
+        };
+        const touchMove = (e3) => {
+          this.touchMove(e3);
+        };
+        target.addEventListener("pointerdown", start, { passive: false });
+        listenWindow.addEventListener("pointermove", move, { passive: false });
+        listenWindow.addEventListener("pointerup", end, { passive: false });
+        listenWindow.addEventListener("pointercancel", end, { passive: false });
+        listenWindow.addEventListener("keydown", keyboard, false);
+        listenWindow.addEventListener("keyup", keyboard, false);
+        listenWindow.addEventListener("touchmove", touchMove, { passive: false });
+        this.disposables.push(() => {
+          target.removeEventListener("pointerdown", start);
+          listenWindow.removeEventListener("pointermove", move);
+          listenWindow.removeEventListener("pointerup", end);
+          listenWindow.removeEventListener("pointercancel", end);
+          listenWindow.removeEventListener("keydown", keyboard, false);
+          listenWindow.removeEventListener("keyup", keyboard, false);
+          listenWindow.removeEventListener("touchmove", touchMove);
+        });
+        this.model.onSelected(this.el);
+        this.emitter.emit("mounted");
+      }
+      unmount() {
+        for (const dispose of this.disposables) dispose();
+        this.disposables.length = 0;
+        this.elements.length = 0;
+        this.el = null;
+        this.emitter.emit("unmounted");
+      }
+      on(type, fn2) {
+        return this.emitter.on(type, fn2);
+      }
+      undo() {
+        if (!this.canUndo() || this.drawing) return false;
+        this.opIndex -= 1;
+        this.opStack[this.opIndex]?.undo();
+        this.emitter.emit("changed");
+        return true;
+      }
+      redo() {
+        if (!this.canRedo() || this.drawing) return false;
+        this.opStack[this.opIndex]?.redo();
+        this.opIndex += 1;
+        this.emitter.emit("changed");
+        return true;
+      }
+      canRedo() {
+        return this.opIndex < this.opStack.length;
+      }
+      canUndo() {
+        return this.opIndex > 0;
+      }
+      eventMove(event) {
+        if (!this.acceptsInput(event) || !this.drawing) return;
+        if (this.model._eventMove(event)) {
+          event.stopPropagation();
+          event.preventDefault();
+          this.emitter.emit("changed");
+        }
+      }
+      eventStart(event) {
+        if (!this.acceptsInput(event)) return;
+        event.stopPropagation();
+        event.preventDefault();
+        if (this.currentNode) this.cancel();
+        this.drawing = true;
+        this.originalPointerId = event.pointerId;
+        this.emitter.emit("start");
+        this.currentNode = this.model._eventDown(event);
+        if (this.currentNode && this.mode !== "eraseLine") this.el?.appendChild(this.currentNode);
+        this.emitter.emit("changed");
+      }
+      eventEnd(event) {
+        if (!this.acceptsInput(event) || !this.drawing) return;
+        const result = this.model._eventUp(event);
+        if (!result) {
+          this.cancel();
+        } else if (result === true) {
+          const node2 = this.currentNode;
+          if (node2) {
+            this._appendNode(node2);
+            this.commit({
+              undo: () => {
+                this._removeNode(node2);
+              },
+              redo: () => {
+                this._restoreNode(node2);
+              }
+            });
+          }
+        } else {
+          this.commit(result);
+        }
+        this.drawing = false;
+        this.emitter.emit("end");
+        this.emitter.emit("changed");
+        this.originalPointerId = null;
+      }
+      touchMove(event) {
+        for (const touch of Array.from(event.touches)) {
+          const touchType = Reflect.get(touch, "touchType");
+          if (touchType === "stylus" && touch.identifier === this.originalPointerId) {
+            event.preventDefault();
+            return;
+          }
+        }
+      }
+      acceptsInput(event) {
+        const accepted = this.options.acceptsInputTypes;
+        if (accepted && !accepted.some((type) => type === event.pointerType)) return false;
+        return this.originalPointerId === null || this.originalPointerId === event.pointerId;
+      }
+      eventKeyboard(event) {
+        if (this.shiftPressed === event.shiftKey && this.altPressed === event.altKey) return;
+        this.shiftPressed = event.shiftKey;
+        this.altPressed = event.altKey;
+        const point = this.model.point;
+        if (this.drawing && point && this.model.onMove(point)) this.emitter.emit("changed");
+      }
+      commit(op) {
+        this.opStack.length = this.opIndex;
+        this.opStack.push(op);
+        this.opIndex += 1;
+        const node2 = this.currentNode;
+        this.currentNode = void 0;
+        this.emitter.emit("committed", node2);
+      }
+      clear() {
+        this.opStack.length = 0;
+        this.opIndex = 0;
+        this.elements = [];
+        this.cancel();
+        if (this.el) this.el.innerHTML = "";
+        this.emitter.emit("changed");
+      }
+      cancel() {
+        if (this.currentNode) {
+          this.currentNode.remove();
+          this.currentNode = void 0;
+          this.emitter.emit("canceled");
+        }
+      }
+      dump() {
+        return this.el?.innerHTML ?? "";
+      }
+      load(svg2) {
+        this.clear();
+        if (this.el) this.el.innerHTML = svg2;
+      }
+      /** @internal */
+      _appendNode(node2) {
+        const last = this.elements.at(-1);
+        if (last) last.after(node2);
+        else this.el?.append(node2);
+        const index = this.elements.push(node2) - 1;
+        node2.setAttribute("data-drauu-index", index.toString());
+      }
+      /** @internal */
+      _removeNode(node2) {
+        node2.remove();
+        const index = Number(node2.getAttribute("data-drauu-index"));
+        if (Number.isInteger(index)) this.elements[index] = null;
+      }
+      /** @internal */
+      _restoreNode(node2) {
+        const index = Number(node2.getAttribute("data-drauu-index"));
+        if (!Number.isInteger(index)) return;
+        this.elements[index] = node2;
+        for (let i2 = index - 1; i2 >= 0; i2--) {
+          const previous = this.elements[i2];
+          if (previous) {
+            previous.after(node2);
+            return;
+          }
+        }
+        this.el?.prepend(node2);
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/index.ts
+var init_drauu2 = __esm({
+  "src/renderer/drawing/drauu/index.ts"() {
+    init_drauu();
+    init_models();
+  }
+});
+
+// src/renderer/drawing/annotation-layer.ts
+function measureBox(node2) {
+  const getBBox = Reflect.get(node2, "getBBox");
+  if (typeof getBBox !== "function") return null;
+  try {
+    const box = Reflect.apply(getBBox, node2, []);
+    if (box && typeof box === "object" && "x" in box && "y" in box && "width" in box && "height" in box) {
+      const { x: x2, y: y2, width, height } = box;
+      if ([x2, y2, width, height].every((v3) => typeof v3 === "number" && Number.isFinite(v3))) {
+        return { x: Number(x2), y: Number(y2), width: Number(width), height: Number(height) };
+      }
+    }
+  } catch {
+  }
+  return null;
+}
+function toolOf(node2) {
+  const tagged = node2.getAttribute("data-tool");
+  return TOOLS.find((t2) => t2 === tagged) ?? "pen";
+}
+function composeAnnotationPng(svg2, width, height, base) {
+  return new Promise((resolve, reject) => {
+    const scale2 = window.devicePixelRatio || 1;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale2));
+    canvas.height = Math.max(1, Math.round(height * scale2));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      reject(new Error("2D canvas unavailable"));
+      return;
+    }
+    const loadImage = (src) => new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => {
+        res(img);
+      };
+      img.onerror = () => {
+        rej(new Error("image failed to decode"));
+      };
+      img.src = src;
+    });
+    const marksUrl = URL.createObjectURL(new Blob([svg2], { type: "image/svg+xml;charset=utf-8" }));
+    void (async () => {
+      try {
+        if (base) {
+          const baseImage = await loadImage(base);
+          ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
+        }
+        const marks = await loadImage(marksUrl);
+        ctx.drawImage(marks, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (error62) {
+        reject(error62 instanceof Error ? error62 : new Error(String(error62)));
+      } finally {
+        URL.revokeObjectURL(marksUrl);
+      }
+    })();
+  });
+}
+function mountAnnotationLayer(host, options) {
+  let root = null;
+  let resizeObserver = null;
+  let svg2 = null;
+  let drauu = null;
+  let active2 = false;
+  let tool = "pen";
+  let colour = ANNOTATION_COLOURS[0]?.value ?? "#e5484d";
+  const toolButtons = /* @__PURE__ */ new Map();
+  const swatches = /* @__PURE__ */ new Map();
+  let sendBtn = null;
+  let undoBtn = null;
+  let clearBtn = null;
+  let sending = false;
+  let scrollX = 0;
+  let scrollY = 0;
+  const fmt = (v3) => String(Math.round(v3 * 100) / 100);
+  const applyViewBox = () => {
+    if (!svg2) return;
+    const rect = host.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    svg2.setAttribute("viewBox", `${fmt(scrollX)} ${fmt(scrollY)} ${fmt(width)} ${fmt(height)}`);
+  };
+  const applyBrush = () => {
+    if (!drauu) return;
+    const brush = drauu.brush;
+    brush.color = colour;
+    brush.arrowEnd = tool === "arrow";
+    brush.size = tool === "pen" ? PEN_SIZE : SHAPE_SIZE;
+    const mode = {
+      pen: "stylus",
+      line: "line",
+      arrow: "line",
+      rect: "rectangle",
+      ellipse: "ellipse",
+      eraser: "eraseLine"
+    }[tool];
+    if (drauu.mode !== mode) drauu.mode = mode;
+    else if (mode === "eraseLine") drauu.model.onSelected(drauu.el);
+    for (const [name, button] of toolButtons)
+      button.setAttribute("aria-pressed", String(name === tool));
+    for (const [value, button] of swatches)
+      button.setAttribute("aria-pressed", String(value === colour));
+  };
+  const isEmpty = () => !svg2 || svg2.childElementCount === 0;
+  const syncButtons = () => {
+    const empty = isEmpty();
+    if (sendBtn) sendBtn.disabled = empty || sending;
+    if (clearBtn) clearBtn.disabled = empty;
+    if (undoBtn) undoBtn.disabled = !drauu?.canUndo();
+    if (root) root.hidden = !active2 && empty;
+  };
+  const toolButton = (name, label, icon) => {
+    const button = el(
+      "button",
+      {
+        type: "button",
+        class: "annotation-tool",
+        "data-tool": name,
+        "aria-label": label,
+        "data-tooltip": label,
+        "aria-pressed": "false"
+      },
+      icon
+    );
+    button.addEventListener("click", () => {
+      tool = name;
+      applyBrush();
+    });
+    toolButtons.set(name, button);
+    return button;
+  };
+  const ensureMounted = () => {
+    if (root) return;
+    svg2 = document.createElementNS(SVG_NS3, "svg");
+    svg2.setAttribute("class", "annotation-layer-svg");
+    svg2.setAttribute("role", "img");
+    svg2.setAttribute("aria-label", `Annotations over ${options.label}`);
+    applyViewBox();
+    const separator = () => el("span", { class: "annotation-sep", "aria-hidden": "true" });
+    const swatchButtons = ANNOTATION_COLOURS.map(({ name, value }) => {
+      const button = el("button", {
+        type: "button",
+        class: "annotation-swatch",
+        "aria-label": name,
+        "data-tooltip": name,
+        "aria-pressed": "false"
+      });
+      button.style.setProperty("--annotation-swatch", value);
+      button.addEventListener("click", () => {
+        colour = value;
+        applyBrush();
+      });
+      swatches.set(value, button);
+      return button;
+    });
+    undoBtn = el(
+      "button",
+      { type: "button", class: "annotation-tool", "aria-label": "Undo", "data-tooltip": "Undo" },
+      undoIcon("ui-icon ui-icon-sm")
+    );
+    undoBtn.addEventListener("click", () => {
+      drauu?.undo();
+    });
+    clearBtn = el(
+      "button",
+      { type: "button", class: "annotation-tool", "aria-label": "Clear", "data-tooltip": "Clear" },
+      trashIcon("ui-icon ui-icon-sm")
+    );
+    clearBtn.addEventListener("click", () => {
+      drauu?.clear();
+    });
+    sendBtn = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-primary annotation-send", disabled: true },
+      "Send to agent"
+    );
+    sendBtn.addEventListener("click", () => {
+      if (sending) return;
+      sending = true;
+      sendBtn?.setAttribute("aria-busy", "true");
+      syncButtons();
+      void layer.export().then(async (payload) => {
+        const accepted = await options.onSend(payload);
+        if (!accepted) return;
+        layer.deactivate();
+      }).catch(() => {
+      }).finally(() => {
+        sending = false;
+        sendBtn?.removeAttribute("aria-busy");
+        syncButtons();
+      });
+    });
+    const doneBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "annotation-tool",
+        "aria-label": "Done",
+        "data-tooltip": "Done (Esc)"
+      },
+      closeIcon("ui-icon ui-icon-sm")
+    );
+    doneBtn.addEventListener("click", () => {
+      layer.deactivate();
+    });
+    const strip = el(
+      "div",
+      { class: "annotation-toolstrip", role: "toolbar", "aria-label": "Annotation tools" },
+      toolButton("pen", "Pen", penLineIcon("ui-icon ui-icon-sm")),
+      toolButton("line", "Line", slashIcon("ui-icon ui-icon-sm")),
+      toolButton("arrow", "Arrow", arrowUpRightIcon("ui-icon ui-icon-sm")),
+      toolButton("rect", "Rectangle", squareIcon("ui-icon ui-icon-sm")),
+      toolButton("ellipse", "Ellipse", circleIcon("ui-icon ui-icon-sm")),
+      toolButton("eraser", "Eraser", eraserIcon("ui-icon ui-icon-sm")),
+      separator(),
+      ...swatchButtons,
+      separator(),
+      undoBtn,
+      clearBtn,
+      separator(),
+      sendBtn,
+      doneBtn
+    );
+    strip.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    root = el("div", { class: "annotation-layer", "data-active": "false" }, svg2, strip);
+    root.hidden = true;
+    host.append(root);
+    if (typeof ResizeObserver === "function") {
+      resizeObserver = new ResizeObserver(applyViewBox);
+      resizeObserver.observe(host);
+    }
+    drauu = createDrauu({
+      el: svg2,
+      brush: { mode: "stylus", color: colour, size: PEN_SIZE }
+    });
+    drauu.on("changed", syncButtons);
+    drauu.on("committed", (node2) => {
+      if (!node2) return;
+      node2.setAttribute("data-tool", tool);
+      node2.setAttribute("data-colour", colour);
+    });
+    applyBrush();
+    syncButtons();
+  };
+  const onKeyDown = (event) => {
+    if (!active2) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      layer.deactivate();
+      return;
+    }
+    const meta3 = event.metaKey || event.ctrlKey;
+    if (meta3 && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) drauu?.redo();
+      else drauu?.undo();
+    }
+  };
+  const layer = {
+    get active() {
+      return active2;
+    },
+    activate() {
+      ensureMounted();
+      if (active2) return;
+      active2 = true;
+      root?.setAttribute("data-active", "true");
+      window.addEventListener("keydown", onKeyDown);
+      syncButtons();
+      toolButtons.get(tool)?.focus({ preventScroll: true });
+    },
+    deactivate() {
+      if (!active2) return;
+      active2 = false;
+      drauu?.cancel();
+      root?.setAttribute("data-active", "false");
+      window.removeEventListener("keydown", onKeyDown);
+      syncButtons();
+      options.onDeactivate?.();
+    },
+    toggle() {
+      if (active2) layer.deactivate();
+      else layer.activate();
+      return active2;
+    },
+    isEmpty,
+    clear() {
+      drauu?.clear();
+      syncButtons();
+    },
+    setTool(next) {
+      ensureMounted();
+      tool = next;
+      applyBrush();
+    },
+    setScrollOffset(x2, y2) {
+      if (Number.isFinite(x2)) scrollX = x2;
+      if (Number.isFinite(y2)) scrollY = y2;
+      applyViewBox();
+    },
+    async export() {
+      ensureMounted();
+      const rect = host.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width));
+      const height = Math.max(1, Math.round(rect.height));
+      const marks = Array.from(svg2?.children ?? []).map((node2) => {
+        return {
+          tool: toolOf(node2),
+          colour: node2.getAttribute("data-colour") ?? colour,
+          box: measureBox(node2)
+        };
+      });
+      const clone3 = svg2 ? svg2.cloneNode(true) : document.createElementNS(SVG_NS3, "svg");
+      if (!(clone3 instanceof Element)) throw new Error("annotation clone is not an element");
+      clone3.removeAttribute("class");
+      clone3.removeAttribute("role");
+      clone3.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      clone3.setAttribute("width", String(width));
+      clone3.setAttribute("height", String(height));
+      clone3.setAttribute(
+        "viewBox",
+        `${fmt(scrollX)} ${fmt(scrollY)} ${String(width)} ${String(height)}`
+      );
+      const serialised = clone3.outerHTML;
+      const base = await options.captureBase?.().catch(() => null);
+      let png = null;
+      let captured = false;
+      if (base) {
+        png = await composeAnnotationPng(serialised, width, height, base).catch(() => null);
+        captured = png !== null;
+      }
+      png ??= await composeAnnotationPng(serialised, width, height, null).catch(() => null);
+      return {
+        svg: serialised,
+        png,
+        captured,
+        width,
+        height,
+        marks
+      };
+    },
+    dispose() {
+      layer.deactivate();
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+      drauu?.unmount();
+      drauu = null;
+      root?.remove();
+      root = null;
+      svg2 = null;
+    }
+  };
+  return layer;
+}
+var TOOLS, ANNOTATION_COLOURS, SHAPE_SIZE, PEN_SIZE;
+var init_annotation_layer = __esm({
+  "src/renderer/drawing/annotation-layer.ts"() {
+    init_helpers();
+    init_icons();
+    init_drauu2();
+    init_utils();
+    TOOLS = ["pen", "line", "arrow", "rect", "ellipse", "eraser"];
+    ANNOTATION_COLOURS = [
+      { name: "Red", value: "#e5484d" },
+      { name: "Blue", value: "#3b82f6" },
+      { name: "Green", value: "#22c55e" },
+      { name: "Yellow", value: "#eab308" }
+    ];
+    SHAPE_SIZE = 3;
+    PEN_SIZE = 6;
+  }
+});
+
+// src/renderer/attachments/prompt-attachments.ts
+function registerPromptAttachments(h3) {
+  handlers = h3;
+  return () => {
+    if (handlers === h3) handlers = null;
+  };
+}
+function getPromptAttachmentHandlers() {
+  return handlers;
+}
+var handlers;
+var init_prompt_attachments = __esm({
+  "src/renderer/attachments/prompt-attachments.ts"() {
+    handlers = null;
+  }
+});
+
+// src/renderer/drawing/attach-annotation.ts
+function attachAnnotation(payload, subject) {
+  const handlers3 = getPromptAttachmentHandlers();
+  if (!handlers3) {
+    showToast("Open a thread before sending an annotation.", { variant: "error" });
+    return false;
+  }
+  if (!payload.png) {
+    showToast(`Could not render the annotation over ${subject}.`, { variant: "error" });
+    return false;
+  }
+  handlers3.attachImage(payload.png, "image/png");
+  handlers3.focusComposer?.();
+  showToast(
+    payload.captured ? `Added annotated screenshot of ${subject} to the thread.` : `Added annotation to the thread (${subject} could not be captured, marks only).`,
+    { durationMs: 2500 }
+  );
+  return true;
+}
+var init_attach_annotation = __esm({
+  "src/renderer/drawing/attach-annotation.ts"() {
+    init_prompt_attachments();
+    init_toast();
+  }
+});
+
 // src/renderer/attachments/image-expand.ts
 function pngDataUrlToBlob(dataUrl) {
   if (!/^data:image\/png;base64,/i.test(dataUrl)) throw new Error("Not a PNG data URL");
@@ -64364,8 +74076,75 @@ function expandableImageSource(image) {
 function imageTitle(item) {
   return item.alt.trim() || "Expanded attachment";
 }
+function annotatableImage(item, closePreview) {
+  const frame = el("div", { class: "image-expand-frame" });
+  const image = el("img", { class: "image-expand-photo image-expand-image", alt: imageTitle(item) });
+  image.src = item.src;
+  attachImageCopyMenu(image);
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost image-expand-annotate",
+      "aria-label": `Annotate ${imageTitle(item)}`,
+      "aria-pressed": "false"
+    },
+    penLineIcon("ui-icon ui-icon-sm"),
+    "Annotate"
+  );
+  let annotation = null;
+  const captureBase = () => {
+    if (!image.complete || image.naturalWidth === 0 || image.naturalHeight === 0) {
+      return Promise.resolve(null);
+    }
+    const { width, height } = frame.getBoundingClientRect();
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width));
+    canvas.height = Math.max(1, Math.round(height));
+    const context = canvas.getContext("2d");
+    if (!context) return Promise.resolve(null);
+    const scale2 = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+    const drawnWidth = image.naturalWidth * scale2;
+    const drawnHeight = image.naturalHeight * scale2;
+    context.drawImage(
+      image,
+      (canvas.width - drawnWidth) / 2,
+      (canvas.height - drawnHeight) / 2,
+      drawnWidth,
+      drawnHeight
+    );
+    return Promise.resolve(canvas.toDataURL("image/png"));
+  };
+  button.addEventListener("click", () => {
+    annotation ??= mountAnnotationLayer(frame, {
+      label: imageTitle(item),
+      captureBase,
+      onSend: (payload) => {
+        const attached = attachAnnotation(payload, imageTitle(item));
+        if (attached) closePreview();
+        return attached;
+      },
+      onDeactivate: () => {
+        button.setAttribute("aria-pressed", "false");
+      }
+    });
+    button.setAttribute("aria-pressed", String(annotation.toggle()));
+  });
+  frame.append(image);
+  return {
+    frame,
+    image,
+    button,
+    deactivate: () => annotation?.deactivate(),
+    dispose: () => {
+      annotation?.dispose();
+      image.removeAttribute("src");
+    }
+  };
+}
 function openImageGalleryViewer(items, initialIndex, returnFocus2) {
   let currentIndex = Math.min(Math.max(initialIndex, 0), items.length - 1);
+  let session = null;
   const viewer = el("div", {
     class: "image-expand-viewer",
     role: "group",
@@ -64373,8 +74152,7 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     tabindex: "-1"
   });
   const stage = el("div", { class: "image-expand-stage" });
-  const imageEl = el("img", { class: "image-expand-image", alt: "" });
-  attachImageCopyMenu(imageEl);
+  const images = items.map((item) => annotatableImage(item, () => session?.close()));
   const previousButton = el(
     "button",
     {
@@ -64403,7 +74181,7 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     { class: "image-expand-nav-zone image-expand-nav-zone-next" },
     nextButton
   );
-  stage.append(imageEl, previousZone, nextZone);
+  stage.append(...images.map(({ frame }) => frame), previousZone, nextZone);
   const thumbnailButtons = items.map((item, index) => {
     const thumbnail2 = el("img", {
       class: "image-expand-thumbnail-image",
@@ -64423,8 +74201,7 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
       thumbnail2
     );
     button.addEventListener("click", () => {
-      currentIndex = index;
-      render();
+      move(index);
     });
     return button;
   });
@@ -64434,19 +74211,26 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     ...thumbnailButtons
   );
   const counter = el("span", { class: "image-expand-counter", "aria-live": "polite" });
-  const footer = el("div", { class: "image-expand-gallery-footer" }, thumbnailStrip);
+  const actionSlot = el("div", { class: "image-expand-gallery-action" });
+  const footer = el("div", { class: "image-expand-gallery-footer" }, thumbnailStrip, actionSlot);
   viewer.append(counter, stage, footer);
   const render = () => {
     const item = items[currentIndex];
     if (!item) return;
     const label = imageTitle(item);
-    imageEl.src = item.src;
-    imageEl.alt = label;
-    imageEl.dataset["imageIndex"] = String(currentIndex);
-    imageEl.setAttribute(
+    for (const [index, entry] of images.entries()) {
+      const selected = index === currentIndex;
+      entry.frame.hidden = !selected;
+      entry.image.classList.toggle("image-expand-image", selected);
+    }
+    const selectedImage = images[currentIndex];
+    if (!selectedImage) return;
+    selectedImage.image.dataset["imageIndex"] = String(currentIndex);
+    selectedImage.image.setAttribute(
       "aria-label",
       label + ", image " + String(currentIndex + 1) + " of " + String(items.length)
     );
+    actionSlot.replaceChildren(selectedImage.button);
     viewer.setAttribute(
       "aria-label",
       "Attached images, image " + String(currentIndex + 1) + " of " + String(items.length)
@@ -64465,15 +74249,18 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     thumbnailButtons[currentIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
   const move = (nextIndex) => {
-    if (nextIndex < 0 || nextIndex >= items.length) return;
+    if (nextIndex < 0 || nextIndex >= items.length || nextIndex === currentIndex) return;
+    images[currentIndex]?.deactivate();
     currentIndex = nextIndex;
     render();
   };
   previousButton.addEventListener("click", () => {
     move(currentIndex - 1);
+    viewer.focus({ preventScroll: true });
   });
   nextButton.addEventListener("click", () => {
     move(currentIndex + 1);
+    viewer.focus({ preventScroll: true });
   });
   viewer.addEventListener("keydown", (event) => {
     if (event.key === "ArrowLeft") {
@@ -64491,14 +74278,14 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
   render();
   const initialItem = items[currentIndex];
   if (!initialItem) return;
-  const session = openAttachmentPreview({
+  session = openAttachmentPreview({
     kind: "image-gallery",
     title: "Attached images \xB7 " + String(items.length),
     ariaLabel: "Image preview: " + imageTitle(initialItem),
     content: viewer,
     ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
-      imageEl.removeAttribute("src");
+      for (const entry of images) entry.dispose();
       for (const button of thumbnailButtons) {
         button.querySelector("img")?.removeAttribute("src");
       }
@@ -64509,18 +74296,18 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
   });
 }
 function openSingleImage(src, alt, returnFocus2) {
-  const imageEl = el("img", { class: "image-expand-image", alt });
-  imageEl.src = src;
-  attachImageCopyMenu(imageEl);
-  openAttachmentPreview({
+  let session = null;
+  const entry = annotatableImage({ src, alt }, () => session?.close());
+  const content = el("div", { class: "image-expand-single" }, entry.frame, entry.button);
+  session = openAttachmentPreview({
     kind: "image",
     title: alt,
     ariaLabel: "Image preview: " + alt,
-    content: imageEl,
+    content,
     ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
-      imageEl.removeAttribute("src");
-      imageEl.alt = "Expanded attachment";
+      entry.dispose();
+      entry.image.alt = "Expanded attachment";
     }
   });
 }
@@ -64588,6 +74375,8 @@ var init_image_expand = __esm({
     init_context_menu();
     init_helpers();
     init_icons();
+    init_annotation_layer();
+    init_attach_annotation();
     init_toast();
     init_attachment_preview();
   }
@@ -66011,11 +75800,12 @@ var init_demo_scenarios = __esm({
       "",
       "## What changed",
       "",
-      "- A readable column keeps long lines from crossing the entire window.",
+      "- **A readable column:** keeps long lines from crossing the entire window.",
       "- Paragraphs and sections have enough separation to scan.",
       "  - Nested details retain their indentation.",
       "  - A second nested item checks the list rhythm.",
       "- Pending markdown uses the same text size as the completed answer.",
+      "- A [**bold link**](https://example.com) keeps the link colour.",
       "",
       "### Review the details",
       "",
@@ -67125,6 +76915,64 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME
           }
         ]
+      },
+      {
+        id: "plugin-install-review",
+        label: "Plugin catalogue install review",
+        project: project("demo-plugin-install-review-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-plugin-install-review-thread",
+            title: "Plugin install review",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        // The Figma package as reviewed at its pinned catalogue revision.
+        pluginInstallReview: {
+          token: "demo-plugin-install-review",
+          catalogId: "https://github.com/figma/mcp-server-guide#",
+          pluginId: "figma",
+          name: "figma",
+          description: "Figma design platform integration. Access design files, extract component information, read design tokens, and translate designs into code.",
+          publisher: "figma",
+          contentHash: "sha256:3e8e1e7aecedae788bc34903a3708818d3f161ea381583084e971a2804c298a3",
+          revision: "172920731eedf414e9b22ae60017d9a5b6c9f81f",
+          skillCount: 14,
+          mcpServerCount: 1,
+          skills: [
+            "skills/figma-code-connect/SKILL.md",
+            "skills/figma-create-new-file/SKILL.md",
+            "skills/figma-design-to-code/SKILL.md",
+            "skills/figma-generate-design/SKILL.md",
+            "skills/figma-generate-diagram/SKILL.md",
+            "skills/figma-generate-library/SKILL.md",
+            "skills/figma-generative-plugins/SKILL.md",
+            "skills/figma-implement-motion/SKILL.md",
+            "skills/figma-shaders/SKILL.md",
+            "skills/figma-swiftui/SKILL.md",
+            "skills/figma-use-figjam/SKILL.md",
+            "skills/figma-use-motion/SKILL.md",
+            "skills/figma-use-slides/SKILL.md",
+            "skills/figma-use/SKILL.md"
+          ],
+          mcpServers: [
+            { name: "figma", transport: "streamable-http", target: "https://mcp.figma.com/mcp" }
+          ],
+          warnings: [
+            `MCP server "figma" won't connect: Figma only admits MCP apps it has approved, and Copse isn't one yet. The skills still work.`
+          ],
+          provenance: "unsigned",
+          operation: "install"
+        }
       },
       {
         id: "mcp-sign-in",
@@ -68581,7 +78429,7 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     processManager: {
-      snapshot: () => resolved2({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
+      snapshot: () => resolved2({ sampledAt: Date.now(), processes: [] }),
       stopBackground: () => resolved2(false)
     },
     menu: {
@@ -68673,7 +78521,7 @@ function createDemoApi(scenario, options = {}) {
       fetchProviderModels: () => resolved2({ ok: false, models: [], error: "Unavailable in demo" }),
       refreshHuggingFaceModels: () => resolved2({ ok: false, count: 0, error: "Unavailable in demo" })
     },
-    appIcon: { apply: resolvedVoid },
+    appIcon: { apply: resolvedVoid, setAutomationMode: resolvedVoid },
     about: {
       getInfo: () => resolved2({ version: "demo", report: null }),
       openLicenseFile: resolvedVoid
@@ -68852,7 +78700,13 @@ function createDemoApi(scenario, options = {}) {
       }),
       setEnabled: () => resolved2({ plugins: [] }),
       setSetting: () => resolved2({ plugins: [] }),
-      addSource: () => resolved2({ plugins: [] })
+      addSource: () => resolved2({ plugins: [] }),
+      listInstalls: emptyArray,
+      prepareInstall: () => scenario.pluginInstallReview ? resolved2(scenario.pluginInstallReview) : unsupported(),
+      cancelInstall: resolvedVoid,
+      commitInstall: unsupported,
+      uninstall: unsupported,
+      rollback: unsupported
     },
     decisions: {
       list: emptyArray,
@@ -74748,7 +84602,7 @@ var init_projects_drag = __esm({
 
 // src/renderer/views/projects-pane.ts
 function attentionBell(label) {
-  const svg2 = document.createElementNS(SVG_NS3, "svg");
+  const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", "chat-attention-bell");
   svg2.setAttribute("viewBox", "0 0 24 24");
   svg2.setAttribute("width", "14");
@@ -74756,7 +84610,7 @@ function attentionBell(label) {
   svg2.setAttribute("role", "img");
   svg2.setAttribute("aria-label", label);
   svg2.setAttribute("data-tooltip", label);
-  const path = document.createElementNS(SVG_NS3, "path");
+  const path = document.createElementNS(SVG_NS4, "path");
   path.setAttribute("fill", "currentColor");
   path.setAttribute(
     "d",
@@ -74790,7 +84644,7 @@ function chatPrStatus(rollup, ciFailing, conflicts) {
   );
 }
 function settingsIcon(className = "titlebar-btn-icon") {
-  const svg2 = document.createElementNS(SVG_NS3, "svg");
+  const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", className);
   svg2.setAttribute("viewBox", "0 0 24 24");
   svg2.setAttribute("width", ICON_SIZE2);
@@ -74798,7 +84652,7 @@ function settingsIcon(className = "titlebar-btn-icon") {
   svg2.setAttribute("aria-hidden", "true");
   svg2.setAttribute("focusable", "false");
   svg2.setAttribute("data-icon", "settings");
-  const path = document.createElementNS(SVG_NS3, "path");
+  const path = document.createElementNS(SVG_NS4, "path");
   path.setAttribute(
     "d",
     "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"
@@ -75322,12 +85176,12 @@ function mountProjectsPane(root, store2, api2) {
   }
   function orphanSubtitle(orphan) {
     const count = orphan.threadCount;
-    const countLabel = `${String(count)} thread${count === 1 ? "" : "s"}`;
+    const countLabel2 = `${String(count)} thread${count === 1 ? "" : "s"}`;
     const extra = orphan.sampleTitles.slice(1).filter((title) => title.trim().length > 0);
-    if (extra.length === 0) return countLabel;
+    if (extra.length === 0) return countLabel2;
     const shown = extra.slice(0, 2).join(" \xB7 ");
     const more = orphan.threadCount > orphan.sampleTitles.length ? ` \xB7 +${String(orphan.threadCount - orphan.sampleTitles.length)} more` : "";
-    return `${countLabel} \xB7 ${shown}${more}`;
+    return `${countLabel2} \xB7 ${shown}${more}`;
   }
   function orphanRecoverDetail(orphan) {
     const lines = [
@@ -76535,7 +86389,7 @@ function mountProjectsPane(root, store2, api2) {
     });
   };
 }
-var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS3, GROUP_MENU_ORDER;
+var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS4, GROUP_MENU_ORDER;
 var init_projects_pane = __esm({
   "src/renderer/views/projects-pane.ts"() {
     init_app_run_dialog();
@@ -76571,7 +86425,7 @@ var init_projects_pane = __esm({
     init_projects_drag();
     PR_STATUS_CACHE_TTL_MS = 6e4;
     ICON_SIZE2 = "16";
-    SVG_NS3 = "http://www.w3.org/2000/svg";
+    SVG_NS4 = "http://www.w3.org/2000/svg";
     GROUP_MENU_ORDER = ["status", "project", "none"];
   }
 });
@@ -76602,13 +86456,13 @@ function seededDrawing(seed) {
     const first = pts[0];
     if (!first) return "";
     const n2 = pts.length;
-    let d3 = `M${f(first[0])} ${f(first[1])}`;
+    let d3 = `M${f2(first[0])} ${f2(first[1])}`;
     for (let i2 = 0; i2 < n2; i2++) {
       const p0 = pts[(i2 - 1 + n2) % n2] ?? first;
       const p1 = pts[i2] ?? first;
       const p2 = pts[(i2 + 1) % n2] ?? first;
       const p3 = pts[(i2 + 2) % n2] ?? first;
-      d3 += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+      d3 += `C${f2(p1[0] + (p2[0] - p0[0]) / 6)} ${f2(p1[1] + (p2[1] - p0[1]) / 6)} ${f2(p2[0] - (p3[0] - p1[0]) / 6)} ${f2(p2[1] - (p3[1] - p1[1]) / 6)} ${f2(p2[0])} ${f2(p2[1])}`;
     }
     return d3 + "Z";
   };
@@ -76682,9 +86536,9 @@ function risoIconSVG(seed, moving = false) {
           <path d="${main.d}"/>
         </clipPath>
 
-        <pattern id="${id}-dots" width="${f(dotPitch)}" height="${f(dotPitch)}"
-                 patternUnits="userSpaceOnUse" patternTransform="rotate(${f(screenAngle)})">
-          <circle cx="${f(dotPitch / 2)}" cy="${f(dotPitch / 2)}" r="${f(dotRadius)}"
+        <pattern id="${id}-dots" width="${f2(dotPitch)}" height="${f2(dotPitch)}"
+                 patternUnits="userSpaceOnUse" patternTransform="rotate(${f2(screenAngle)})">
+          <circle cx="${f2(dotPitch / 2)}" cy="${f2(dotPitch / 2)}" r="${f2(dotRadius)}"
                   fill="${pal.ink}" opacity=".55"/>
         </pattern>
 
@@ -76698,7 +86552,7 @@ function risoIconSVG(seed, moving = false) {
 
       <!-- Offset shadow in the third ink -->
       <path d="${main.d}" fill="${shadow}"
-            transform="translate(${f(shadowX)} ${f(shadowY)})"
+            transform="translate(${f2(shadowX)} ${f2(shadowY)})"
             style="mix-blend-mode:multiply"/>
 
       <g clip-path="url(#${id}-clip)">
@@ -76710,7 +86564,7 @@ function risoIconSVG(seed, moving = false) {
 
       <!-- Outline printed slightly off register -->
       <path d="${main.d}" fill="none" stroke="${pal.ink}" stroke-width="5"
-            stroke-linejoin="round" transform="translate(${f(outlineX)} ${f(outlineY)})"/>
+            stroke-linejoin="round" transform="translate(${f2(outlineX)} ${f2(outlineY)})"/>
 
       <!-- Paper grain over everything -->
       <rect width="512" height="512" filter="url(#${id}-grain)" style="mix-blend-mode:multiply"/>
@@ -76744,9 +86598,9 @@ function duotoneIconSVG(seed, moving = false) {
     <defs>
       ${moving ? inkMotion([overprint, stripes]) : ""}
       <clipPath id="${id}-clip"><path d="${main.d}"/></clipPath>
-      <pattern id="${id}-lines" width="${f(linePitch)}" height="${f(linePitch)}"
-               patternUnits="userSpaceOnUse" patternTransform="rotate(${f(lineAngle)})">
-        <rect width="${f(linePitch)}" height="${f(linePitch * 0.42)}" fill="${secondInk}"/>
+      <pattern id="${id}-lines" width="${f2(linePitch)}" height="${f2(linePitch)}"
+               patternUnits="userSpaceOnUse" patternTransform="rotate(${f2(lineAngle)})">
+        <rect width="${f2(linePitch)}" height="${f2(linePitch * 0.42)}" fill="${secondInk}"/>
       </pattern>
       <filter id="${id}-grain" x="0" y="0" width="100%" height="100%">
         <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="${String(seed % 1e4)}"/>
@@ -76762,7 +86616,7 @@ function duotoneIconSVG(seed, moving = false) {
     <!-- Second ink, slightly off register; multiply makes the overlap colour -->
     <g clip-path="url(#${id}-clip)" style="mix-blend-mode:multiply">
       <path class="ink-0" d="${overprint.d}" fill="${secondInk}" opacity=".85"
-            transform="translate(${f(registerX)} ${f(registerY)})"/>
+            transform="translate(${f2(registerX)} ${f2(registerY)})"/>
     </g>
 
     <!-- Striped patch in the second ink -->
@@ -76844,7 +86698,7 @@ function createAgentAvatarMotion() {
     }
   };
 }
-var RISO_PALETTES, DUOTONE_INK_PAIRS, DUOTONE_PAPER, f, sources, imageSources, MAX_CACHED_AVATARS;
+var RISO_PALETTES, DUOTONE_INK_PAIRS, DUOTONE_PAPER, f2, sources, imageSources, MAX_CACHED_AVATARS;
 var init_agent_avatar = __esm({
   "src/renderer/dom/agent-avatar.ts"() {
     init_helpers();
@@ -76865,7 +86719,7 @@ var init_agent_avatar = __esm({
       ["#765BA7", "#FFE800"]
     ];
     DUOTONE_PAPER = "#F7F4EE";
-    f = (n2) => n2.toFixed(1);
+    f2 = (n2) => n2.toFixed(1);
     sources = /* @__PURE__ */ new Map();
     imageSources = /* @__PURE__ */ new WeakMap();
     MAX_CACHED_AVATARS = 128;
@@ -76913,23 +86767,23 @@ var init_chat_agent_identity = __esm({
 
 // src/renderer/dom/reasoning-activity-icon.ts
 function reasoningActivityIcon(className) {
-  const svg2 = document.createElementNS(SVG_NS4, "svg");
+  const svg2 = document.createElementNS(SVG_NS5, "svg");
   svg2.setAttribute("class", className);
   svg2.setAttribute("viewBox", "-540 -540 1080 1080");
   svg2.setAttribute("aria-hidden", "true");
   svg2.setAttribute("focusable", "false");
   svg2.setAttribute("data-icon", "reasoning-activity");
-  const path = document.createElementNS(SVG_NS4, "path");
+  const path = document.createElementNS(SVG_NS5, "path");
   path.setAttribute("class", "reasoning-activity-path");
   path.setAttribute("d", SPIRAL_PATH);
   path.setAttribute("pathLength", "1");
   svg2.append(path);
   return svg2;
 }
-var SVG_NS4, SPIRAL_PATH;
+var SVG_NS5, SPIRAL_PATH;
 var init_reasoning_activity_icon = __esm({
   "src/renderer/dom/reasoning-activity-icon.ts"() {
-    SVG_NS4 = "http://www.w3.org/2000/svg";
+    SVG_NS5 = "http://www.w3.org/2000/svg";
     SPIRAL_PATH = "M416.134 -141.959 C384 -475 -72 -488 -286.485 -266.216 C-474.71 -71.585 -423.084 227.135 -226.856 360.464 C5 518 328 385 297.052 111.165 C273.531 -96.947 -15 -98 -62.629 47.319 C-128.956 249.689 154 322 180.928 153.093";
   }
 });
@@ -78175,1533 +88029,6 @@ var BROWSER_SESSION_PARTITION;
 var init_browser_session = __esm({
   "src/shared/browser-session.ts"() {
     BROWSER_SESSION_PARTITION = "persist:copse-browser";
-  }
-});
-
-// src/renderer/drawing/drauu/emitter.ts
-var Emitter;
-var init_emitter = __esm({
-  "src/renderer/drawing/drauu/emitter.ts"() {
-    Emitter = class {
-      listeners = /* @__PURE__ */ new Map();
-      on(type, fn2) {
-        let set2 = this.listeners.get(type);
-        if (!set2) {
-          set2 = /* @__PURE__ */ new Set();
-          this.listeners.set(type, set2);
-        }
-        set2.add(fn2);
-        return () => {
-          set2.delete(fn2);
-        };
-      }
-      emit(type, ...args) {
-        const set2 = this.listeners.get(type);
-        if (!set2) return;
-        for (const fn2 of [...set2]) {
-          Reflect.apply(fn2, void 0, args);
-        }
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/utils.ts
-function numSort(a3, b4) {
-  return a3 - b4;
-}
-function splitNum(a3) {
-  return [Math.abs(a3), a3 < 0 ? -1 : 1];
-}
-function guid3() {
-  const s42 = () => ((1 + Math.random()) * 65536 | 0).toString(16).substring(1);
-  return `${s42()}${s42()}-${s42()}-${s42()}-${s42()}-${s42()}${s42()}${s42()}`;
-}
-function createArrowHead(id, fill) {
-  const defs = document.createElementNS(SVG_NS5, "defs");
-  const marker = document.createElementNS(SVG_NS5, "marker");
-  const head = document.createElementNS(SVG_NS5, "path");
-  head.setAttribute("fill", fill);
-  marker.setAttribute("id", id);
-  marker.setAttribute("viewBox", "0 -5 10 10");
-  marker.setAttribute("refX", "5");
-  marker.setAttribute("refY", "0");
-  marker.setAttribute("markerWidth", "4");
-  marker.setAttribute("markerHeight", "4");
-  marker.setAttribute("orient", "auto");
-  head.setAttribute("d", "M0,-5L10,0L0,5");
-  marker.appendChild(head);
-  defs.appendChild(marker);
-  return defs;
-}
-function totalLength(el3) {
-  const candidate = Reflect.get(el3, "getTotalLength");
-  if (typeof candidate !== "function") return null;
-  try {
-    const length = Reflect.apply(candidate, el3, []);
-    return typeof length === "number" ? length : null;
-  } catch {
-    return null;
-  }
-}
-var SVG_NS5, D;
-var init_utils = __esm({
-  "src/renderer/drawing/drauu/utils.ts"() {
-    SVG_NS5 = "http://www.w3.org/2000/svg";
-    D = 2;
-  }
-});
-
-// src/renderer/drawing/drauu/simplify.ts
-function getSqDist(p1, p2) {
-  const dx = p1.x - p2.x;
-  const dy = p1.y - p2.y;
-  return dx * dx + dy * dy;
-}
-function getSqSegDist(p2, p1, p22) {
-  let x2 = p1.x;
-  let y2 = p1.y;
-  let dx = p22.x - x2;
-  let dy = p22.y - y2;
-  if (dx !== 0 || dy !== 0) {
-    const t2 = ((p2.x - x2) * dx + (p2.y - y2) * dy) / (dx * dx + dy * dy);
-    if (t2 > 1) {
-      x2 = p22.x;
-      y2 = p22.y;
-    } else if (t2 > 0) {
-      x2 += dx * t2;
-      y2 += dy * t2;
-    }
-  }
-  dx = p2.x - x2;
-  dy = p2.y - y2;
-  return dx * dx + dy * dy;
-}
-function simplifyRadialDist(points, sqTolerance) {
-  const first = points[0];
-  if (!first) return [];
-  let prevPoint = first;
-  const newPoints = [prevPoint];
-  let point;
-  for (let i2 = 1, len = points.length; i2 < len; i2++) {
-    point = points[i2];
-    if (point && getSqDist(point, prevPoint) > sqTolerance) {
-      newPoints.push(point);
-      prevPoint = point;
-    }
-  }
-  if (point && prevPoint !== point) newPoints.push(point);
-  return newPoints;
-}
-function simplifyDPStep(points, first, last, sqTolerance, simplified) {
-  let maxSqDist = sqTolerance;
-  let index = 0;
-  const a3 = points[first];
-  const b4 = points[last];
-  if (!a3 || !b4) return;
-  for (let i2 = first + 1; i2 < last; i2++) {
-    const p2 = points[i2];
-    if (!p2) continue;
-    const sqDist = getSqSegDist(p2, a3, b4);
-    if (sqDist > maxSqDist) {
-      index = i2;
-      maxSqDist = sqDist;
-    }
-  }
-  if (maxSqDist > sqTolerance) {
-    if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
-    const mid = points[index];
-    if (mid) simplified.push(mid);
-    if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
-  }
-}
-function simplifyDouglasPeucker(points, sqTolerance) {
-  const last = points.length - 1;
-  const first = points[0];
-  const end = points[last];
-  if (!first || !end) return points;
-  const simplified = [first];
-  simplifyDPStep(points, 0, last, sqTolerance, simplified);
-  simplified.push(end);
-  return simplified;
-}
-function simplify(points, tolerance, highestQuality = false) {
-  if (points.length <= 2) return points;
-  const sqTolerance = tolerance * tolerance;
-  const reduced = highestQuality ? points : simplifyRadialDist(points, sqTolerance);
-  return simplifyDouglasPeucker(reduced, sqTolerance);
-}
-var init_simplify = __esm({
-  "src/renderer/drawing/drauu/simplify.ts"() {
-  }
-});
-
-// src/renderer/drawing/drauu/models/base.ts
-var BaseModel;
-var init_base = __esm({
-  "src/renderer/drawing/drauu/models/base.ts"() {
-    init_utils();
-    BaseModel = class {
-      point = null;
-      start = null;
-      el = null;
-      drauu;
-      constructor(drauu) {
-        this.drauu = drauu;
-      }
-      onSelected(_el) {
-      }
-      onUnselected() {
-      }
-      onStart(_point) {
-        return void 0;
-      }
-      onMove(_point) {
-        return false;
-      }
-      onEnd(_point) {
-        return void 0;
-      }
-      get brush() {
-        return this.drauu.brush;
-      }
-      get shiftPressed() {
-        return this.drauu.shiftPressed;
-      }
-      get altPressed() {
-        return this.drauu.altPressed;
-      }
-      get svgElement() {
-        return this.drauu.el;
-      }
-      getMousePosition(event) {
-        const el3 = this.drauu.el;
-        if (!el3) return { x: event.clientX, y: event.clientY, pressure: event.pressure };
-        const svgPoint = this.drauu.svgPoint;
-        const ctm = this.drauu.options.coordinateTransform !== false && typeof el3.getScreenCTM === "function" ? el3.getScreenCTM() : null;
-        if (svgPoint && ctm && typeof svgPoint.matrixTransform === "function") {
-          svgPoint.x = event.clientX;
-          svgPoint.y = event.clientY;
-          const loc = svgPoint.matrixTransform(ctm.inverse());
-          return { x: loc.x, y: loc.y, pressure: event.pressure };
-        }
-        const rect = el3.getBoundingClientRect();
-        return { x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: event.pressure };
-      }
-      createElement(name, overrides) {
-        const el3 = document.createElementNS(SVG_NS5, name);
-        const brush = overrides ? { ...this.brush, ...overrides } : this.brush;
-        el3.setAttribute("fill", brush.fill ?? "transparent");
-        el3.setAttribute("stroke", brush.color);
-        el3.setAttribute("stroke-width", brush.size.toString());
-        el3.setAttribute("stroke-linecap", "round");
-        if (brush.dasharray) el3.setAttribute("stroke-dasharray", brush.dasharray);
-        return el3;
-      }
-      attr(name, value) {
-        this.el?.setAttribute(name, typeof value === "string" ? value : value.toFixed(D));
-      }
-      setEvent(event) {
-        this.point = this.getMousePosition(event);
-        return this.point;
-      }
-      /** @internal */
-      _eventDown(event) {
-        const point = this.setEvent(event);
-        this.start = point;
-        return this.onStart(point);
-      }
-      /** @internal */
-      _eventMove(event) {
-        return this.onMove(this.setEvent(event));
-      }
-      /** @internal */
-      _eventUp(event) {
-        return this.onEnd(this.setEvent(event));
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/draw.ts
-var DrawModel;
-var init_draw = __esm({
-  "src/renderer/drawing/drauu/models/draw.ts"() {
-    init_utils();
-    init_simplify();
-    init_base();
-    DrawModel = class _DrawModel extends BaseModel {
-      points = [];
-      count = 0;
-      onStart(point) {
-        this.el = this.createElement("path", { fill: "transparent" });
-        this.points = [point];
-        if (this.brush.arrowEnd) {
-          const id = guid3();
-          this.el.appendChild(createArrowHead(id, this.brush.color));
-          this.el.setAttribute("marker-end", `url(#${id})`);
-        }
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el) this.onStart(point);
-        if (this.points.at(-1) !== point) {
-          this.points.push(point);
-          this.count += 1;
-        }
-        if (this.count > 5) {
-          this.points = simplify(this.points, 1, true);
-          this.count = 0;
-        }
-        this.attr("d", _DrawModel.toSvgData(this.points));
-        return true;
-      }
-      onEnd() {
-        const path = this.el;
-        this.el = null;
-        if (!path) return false;
-        path.setAttribute("d", _DrawModel.toSvgData(simplify(this.points, 1, true)));
-        const first = this.points[0];
-        if (totalLength(path) === 0 && first) {
-          const r2 = (this.brush.size / 2).toFixed(D);
-          const d22 = this.brush.size.toFixed(D);
-          const x2 = (first.x - this.brush.size / 2).toFixed(D);
-          const y2 = first.y.toFixed(D);
-          path.setAttribute("d", `M ${x2} ${y2} a ${r2},${r2} 0 1,0 ${d22},0 a ${r2},${r2} 0 1,0 -${d22},0`);
-          path.setAttribute("fill", this.brush.color);
-          path.setAttribute("stroke-width", "0");
-        }
-        return true;
-      }
-      // https://francoisromain.medium.com/smooth-a-svg-path-with-cubic-bezier-curves-e37b49d46c74
-      static line(a3, b4) {
-        const lengthX = b4.x - a3.x;
-        const lengthY = b4.y - a3.y;
-        return { length: Math.sqrt(lengthX ** 2 + lengthY ** 2), angle: Math.atan2(lengthY, lengthX) };
-      }
-      static controlPoint(current, previous, next, reverse) {
-        const p2 = previous ?? current;
-        const n2 = next ?? current;
-        const smoothing = 0.2;
-        const o3 = _DrawModel.line(p2, n2);
-        const angle = o3.angle + (reverse ? Math.PI : 0);
-        const length = o3.length * smoothing;
-        return { x: current.x + Math.cos(angle) * length, y: current.y + Math.sin(angle) * length };
-      }
-      static bezierCommand(point, i2, points) {
-        const prev = points[i2 - 1] ?? point;
-        const cps = _DrawModel.controlPoint(prev, points[i2 - 2], point);
-        const cpe = _DrawModel.controlPoint(point, prev, points[i2 + 1], true);
-        return `C ${cps.x.toFixed(D)},${cps.y.toFixed(D)} ${cpe.x.toFixed(D)},${cpe.y.toFixed(D)} ${point.x.toFixed(D)},${point.y.toFixed(D)}`;
-      }
-      static toSvgData(points) {
-        return points.reduce(
-          (acc, point, i2, a3) => i2 === 0 ? `M ${point.x.toFixed(D)},${point.y.toFixed(D)}` : `${acc} ${_DrawModel.bezierCommand(point, i2, a3)}`,
-          ""
-        );
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/ellipse.ts
-var EllipseModel;
-var init_ellipse = __esm({
-  "src/renderer/drawing/drauu/models/ellipse.ts"() {
-    init_utils();
-    init_base();
-    EllipseModel = class extends BaseModel {
-      onStart(point) {
-        this.el = this.createElement("ellipse");
-        this.attr("cx", point.x);
-        this.attr("cy", point.y);
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el || !this.start) return false;
-        const [ax, sx] = splitNum(point.x - this.start.x);
-        const [ay, sy] = splitNum(point.y - this.start.y);
-        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
-        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
-        if (this.altPressed) {
-          this.attr("cx", this.start.x);
-          this.attr("cy", this.start.y);
-          this.attr("rx", dx);
-          this.attr("ry", dy);
-        } else {
-          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
-          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
-          this.attr("cx", (x1 + x2) / 2);
-          this.attr("cy", (y1 + y2) / 2);
-          this.attr("rx", (x2 - x1) / 2);
-          this.attr("ry", (y2 - y1) / 2);
-        }
-        return true;
-      }
-      onEnd() {
-        const ellipse = this.el;
-        this.el = null;
-        if (!ellipse) return false;
-        const length = totalLength(ellipse);
-        return length === null || length > 0;
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/eraser.ts
-function measurable(el3) {
-  const getTotalLength = Reflect.get(el3, "getTotalLength");
-  const getPointAtLength = Reflect.get(el3, "getPointAtLength");
-  if (typeof getTotalLength !== "function" || typeof getPointAtLength !== "function") return null;
-  return {
-    getTotalLength: () => {
-      const n2 = Reflect.apply(getTotalLength, el3, []);
-      return typeof n2 === "number" ? n2 : 0;
-    },
-    getPointAtLength: (d3) => {
-      const p2 = Reflect.apply(getPointAtLength, el3, [d3]);
-      if (p2 && typeof p2 === "object" && "x" in p2 && "y" in p2) {
-        const { x: x2, y: y2 } = p2;
-        if (typeof x2 === "number" && typeof y2 === "number") return { x: x2, y: y2 };
-      }
-      return { x: 0, y: 0 };
-    }
-  };
-}
-function intersects(a3, b4) {
-  const denom = (a3.x1 - a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 - b4.x2);
-  if (denom === 0) return false;
-  const xNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.x1 - b4.x2) - (a3.x1 - a3.x2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
-  const yNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
-  const x2 = xNum / denom;
-  const y2 = yNum / denom;
-  const between = (v3, b1, b22) => v3 >= b1 && v3 <= b22 || v3 >= b22 && v3 <= b1;
-  return between(x2, a3.x1, a3.x2) && between(y2, a3.y1, a3.y2) && between(x2, b4.x1, b4.x2) && between(y2, b4.y1, b4.y2);
-}
-var EraserModel;
-var init_eraser = __esm({
-  "src/renderer/drawing/drauu/models/eraser.ts"() {
-    init_utils();
-    init_base();
-    EraserModel = class extends BaseModel {
-      pathSubFactor = 20;
-      fragments = [];
-      previous = null;
-      erased = [];
-      onSelected(el3) {
-        this.fragments = [];
-        if (el3) this.collect(el3.children, void 0);
-      }
-      collect(children, owner) {
-        for (const child of Array.from(children)) {
-          if (child.namespaceURI !== SVG_NS5) continue;
-          const m2 = measurable(child);
-          if (m2) {
-            const length = m2.getTotalLength();
-            for (let j3 = 0; j3 < this.pathSubFactor; j3++) {
-              const a3 = m2.getPointAtLength(length * j3 / this.pathSubFactor);
-              const b4 = m2.getPointAtLength(length * (j3 + 1) / this.pathSubFactor);
-              this.fragments.push({ x1: a3.x, y1: a3.y, x2: b4.x, y2: b4.y, element: owner ?? child });
-            }
-          } else {
-            this.collect(child.children, owner ?? child);
-          }
-        }
-      }
-      onUnselected() {
-        this.fragments = [];
-      }
-      onStart(point) {
-        this.previous = point;
-        return void 0;
-      }
-      onMove(point) {
-        const previous = this.previous;
-        this.previous = point;
-        if (!previous) return false;
-        const stroke = { x1: previous.x, y1: previous.y, x2: point.x, y2: point.y };
-        let hit = false;
-        for (const fragment of this.fragments) {
-          if (this.erased.includes(fragment.element)) continue;
-          if (intersects(fragment, stroke)) {
-            this.drauu._removeNode(fragment.element);
-            this.erased.push(fragment.element);
-            hit = true;
-          }
-        }
-        if (hit) this.fragments = this.fragments.filter((f4) => !this.erased.includes(f4.element));
-        return hit;
-      }
-      onEnd() {
-        this.previous = null;
-        const erased = this.erased;
-        this.erased = [];
-        return {
-          undo: () => {
-            for (const node2 of erased) this.drauu._restoreNode(node2);
-          },
-          redo: () => {
-            for (const node2 of erased) this.drauu._removeNode(node2);
-          }
-        };
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/line.ts
-var LineModel;
-var init_line = __esm({
-  "src/renderer/drawing/drauu/models/line.ts"() {
-    init_utils();
-    init_base();
-    LineModel = class extends BaseModel {
-      onStart(point) {
-        this.el = this.createElement("line", { fill: "transparent" });
-        this.attr("x1", point.x);
-        this.attr("y1", point.y);
-        this.attr("x2", point.x);
-        this.attr("y2", point.y);
-        if (this.brush.arrowEnd) {
-          const id = guid3();
-          const g2 = document.createElementNS(SVG_NS5, "g");
-          g2.append(createArrowHead(id, this.brush.color));
-          g2.append(this.el);
-          this.attr("marker-end", `url(#${id})`);
-          return g2;
-        }
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el || !this.start) return false;
-        let { x: x2, y: y2 } = point;
-        if (this.shiftPressed) {
-          const dx = point.x - this.start.x;
-          const dy = point.y - this.start.y;
-          if (dy !== 0) {
-            const slope = Math.round(dx / dy);
-            if (Math.abs(slope) <= 1) {
-              x2 = this.start.x + dy * slope;
-              y2 = this.start.y + dy;
-            } else {
-              x2 = this.start.x + dx;
-              y2 = this.start.y;
-            }
-          }
-        }
-        if (this.altPressed) {
-          this.attr("x1", this.start.x * 2 - x2);
-          this.attr("y1", this.start.y * 2 - y2);
-        } else {
-          this.attr("x1", this.start.x);
-          this.attr("y1", this.start.y);
-        }
-        this.attr("x2", x2);
-        this.attr("y2", y2);
-        return true;
-      }
-      onEnd() {
-        const line = this.el;
-        this.el = null;
-        if (!line) return false;
-        const length = totalLength(line);
-        return length === null || length >= 5;
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/rect.ts
-var RectModel;
-var init_rect = __esm({
-  "src/renderer/drawing/drauu/models/rect.ts"() {
-    init_utils();
-    init_base();
-    RectModel = class extends BaseModel {
-      onStart(point) {
-        this.el = this.createElement("rect");
-        if (this.brush.cornerRadius) {
-          this.attr("rx", this.brush.cornerRadius);
-          this.attr("ry", this.brush.cornerRadius);
-        }
-        this.attr("x", point.x);
-        this.attr("y", point.y);
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el || !this.start) return false;
-        const [ax, sx] = splitNum(point.x - this.start.x);
-        const [ay, sy] = splitNum(point.y - this.start.y);
-        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
-        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
-        if (this.altPressed) {
-          this.attr("x", this.start.x - dx);
-          this.attr("y", this.start.y - dy);
-          this.attr("width", dx * 2);
-          this.attr("height", dy * 2);
-        } else {
-          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
-          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
-          this.attr("x", x1);
-          this.attr("y", y1);
-          this.attr("width", x2 - x1);
-          this.attr("height", y2 - y1);
-        }
-        return true;
-      }
-      onEnd() {
-        const rect = this.el;
-        this.el = null;
-        if (!rect) return false;
-        const length = totalLength(rect);
-        return length === null || length > 0;
-      }
-    };
-  }
-});
-
-// node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs
-function i(e3, t2, n2, r2 = (e4) => e4) {
-  return e3 * r2(0.5 - t2 * (0.5 - n2));
-}
-function o(e3, t2, n2) {
-  let r2 = a(1, t2 / n2);
-  return a(1, e3 + (a(1, 1 - r2) - e3) * (r2 * 0.275));
-}
-function s(e3) {
-  return [-e3[0], -e3[1]];
-}
-function c(e3, t2) {
-  return [e3[0] + t2[0], e3[1] + t2[1]];
-}
-function l(e3, t2, n2) {
-  return e3[0] = t2[0] + n2[0], e3[1] = t2[1] + n2[1], e3;
-}
-function u(e3, t2) {
-  return [e3[0] - t2[0], e3[1] - t2[1]];
-}
-function d(e3, t2, n2) {
-  return e3[0] = t2[0] - n2[0], e3[1] = t2[1] - n2[1], e3;
-}
-function f2(e3, t2) {
-  return [e3[0] * t2, e3[1] * t2];
-}
-function p(e3, t2, n2) {
-  return e3[0] = t2[0] * n2, e3[1] = t2[1] * n2, e3;
-}
-function m(e3, t2) {
-  return [e3[0] / t2, e3[1] / t2];
-}
-function h(e3) {
-  return [e3[1], -e3[0]];
-}
-function g(e3, t2) {
-  let n2 = t2[0];
-  return e3[0] = t2[1], e3[1] = -n2, e3;
-}
-function ee(e3, t2) {
-  return e3[0] * t2[0] + e3[1] * t2[1];
-}
-function _(e3, t2) {
-  return e3[0] === t2[0] && e3[1] === t2[1];
-}
-function v(e3) {
-  return Math.hypot(e3[0], e3[1]);
-}
-function y(e3, t2) {
-  let n2 = e3[0] - t2[0], r2 = e3[1] - t2[1];
-  return n2 * n2 + r2 * r2;
-}
-function b(e3) {
-  return m(e3, v(e3));
-}
-function x(e3, t2) {
-  return Math.hypot(e3[1] - t2[1], e3[0] - t2[0]);
-}
-function S(e3, t2, n2) {
-  let r2 = Math.sin(n2), i2 = Math.cos(n2), a3 = e3[0] - t2[0], o3 = e3[1] - t2[1], s16 = a3 * i2 - o3 * r2, c3 = a3 * r2 + o3 * i2;
-  return [s16 + t2[0], c3 + t2[1]];
-}
-function C(e3, t2, n2, r2) {
-  let i2 = Math.sin(r2), a3 = Math.cos(r2), o3 = t2[0] - n2[0], s16 = t2[1] - n2[1], c3 = o3 * a3 - s16 * i2, l2 = o3 * i2 + s16 * a3;
-  return e3[0] = c3 + n2[0], e3[1] = l2 + n2[1], e3;
-}
-function w(e3, t2, n2) {
-  return c(e3, f2(u(t2, e3), n2));
-}
-function te(e3, t2, n2, r2) {
-  let i2 = n2[0] - t2[0], a3 = n2[1] - t2[1];
-  return e3[0] = t2[0] + i2 * r2, e3[1] = t2[1] + a3 * r2, e3;
-}
-function T(e3, t2, n2) {
-  return c(e3, f2(t2, n2));
-}
-function k(e3, n2) {
-  let r2 = T(e3, b(h(u(e3, c(e3, [1, 1])))), -n2), i2 = [], a3 = 1 / 13;
-  for (let n3 = a3; n3 <= 1; n3 += a3) i2.push(S(r2, e3, t * 2 * n3));
-  return i2;
-}
-function A2(e3, n2, r2) {
-  let i2 = [], a3 = 1 / r2;
-  for (let r3 = a3; r3 <= 1; r3 += a3) i2.push(S(n2, e3, t * r3));
-  return i2;
-}
-function j(e3, t2, n2) {
-  let r2 = u(t2, n2), i2 = f2(r2, 0.5), a3 = f2(r2, 0.51);
-  return [u(e3, i2), u(e3, a3), c(e3, a3), c(e3, i2)];
-}
-function M(e3, n2, r2, i2) {
-  let a3 = [], o3 = T(e3, n2, r2), s16 = 1 / i2;
-  for (let n3 = s16; n3 < 1; n3 += s16) a3.push(S(o3, e3, t * 3 * n3));
-  return a3;
-}
-function ne(e3, t2, n2) {
-  return [c(e3, f2(t2, n2)), c(e3, f2(t2, n2 * 0.99)), u(e3, f2(t2, n2 * 0.99)), u(e3, f2(t2, n2))];
-}
-function N(e3, t2, n2) {
-  return e3 === false || e3 === void 0 ? 0 : e3 === true ? Math.max(t2, n2) : e3;
-}
-function re(e3, t2, n2) {
-  return e3.slice(0, 10).reduce((e4, r2) => {
-    let i2 = r2.pressure;
-    return t2 && (i2 = o(e4, r2.distance, n2)), (e4 + i2) / 2;
-  }, e3[0].pressure);
-}
-function P(e3, n2 = {}) {
-  let { size: r2 = 16, smoothing: a3 = 0.5, thinning: f4 = 0.5, simulatePressure: m2 = true, easing: _3 = (e4) => e4, start: v3 = {}, end: b4 = {}, last: x2 = false } = n2, { cap: S3 = true, easing: w2 = (e4) => e4 * (2 - e4) } = v3, { cap: T2 = true, easing: P2 = (e4) => --e4 * e4 * e4 + 1 } = b4;
-  if (e3.length === 0 || r2 <= 0) return [];
-  let F3 = e3[e3.length - 1].runningLength, I2 = N(v3.taper, r2, F3), L3 = N(b4.taper, r2, F3), R2 = (r2 * a3) ** 2, z4 = [], B3 = [], V2 = re(e3, m2, r2), H2 = i(r2, f4, e3[e3.length - 1].pressure, _3), U2, W = e3[0].vector, G2 = e3[0].point, K2 = G2, q2 = G2, J2 = K2, Y3 = false;
-  for (let n3 = 0; n3 < e3.length; n3++) {
-    let { pressure: a4 } = e3[n3], { point: s16, vector: h3, distance: v4, runningLength: b5 } = e3[n3], x3 = n3 === e3.length - 1;
-    if (!x3 && F3 - b5 < 3) continue;
-    f4 ? (m2 && (a4 = o(V2, v4, r2)), H2 = i(r2, f4, a4, _3)) : H2 = r2 / 2, U2 === void 0 && (U2 = H2);
-    let S4 = b5 < I2 ? w2(b5 / I2) : 1, T3 = F3 - b5 < L3 ? P2((F3 - b5) / L3) : 1;
-    H2 = Math.max(0.01, H2 * Math.min(S4, T3));
-    let k2 = (x3 ? e3[n3] : e3[n3 + 1]).vector, A3 = x3 ? 1 : ee(h3, k2), j3 = ee(h3, W) < 0 && !Y3, M4 = A3 !== null && A3 < 0;
-    if (j3 || M4) {
-      g(E, W), p(E, E, H2);
-      for (let e4 = 0; e4 <= 1; e4 += 0.07692307692307693) d(D2, s16, E), C(D2, D2, s16, t * e4), q2 = [D2[0], D2[1]], z4.push(q2), l(O, s16, E), C(O, O, s16, t * -e4), J2 = [O[0], O[1]], B3.push(J2);
-      G2 = q2, K2 = J2, M4 && (Y3 = true);
-      continue;
-    }
-    if (Y3 = false, x3) {
-      g(E, h3), p(E, E, H2), z4.push(u(s16, E)), B3.push(c(s16, E));
-      continue;
-    }
-    te(E, k2, h3, A3), g(E, E), p(E, E, H2), d(D2, s16, E), q2 = [D2[0], D2[1]], (n3 <= 1 || y(G2, q2) > R2) && (z4.push(q2), G2 = q2), l(O, s16, E), J2 = [O[0], O[1]], (n3 <= 1 || y(K2, J2) > R2) && (B3.push(J2), K2 = J2), V2 = a4, W = h3;
-  }
-  let X3 = [e3[0].point[0], e3[0].point[1]], Z = e3.length > 1 ? [e3[e3.length - 1].point[0], e3[e3.length - 1].point[1]] : c(e3[0].point, [1, 1]), Q3 = [], $2 = [];
-  if (e3.length === 1) {
-    if (!(I2 || L3) || x2) return k(X3, U2 || H2);
-  } else {
-    I2 || L3 && e3.length === 1 || (S3 ? Q3.push(...A2(X3, B3[0], 13)) : Q3.push(...j(X3, z4[0], B3[0])));
-    let t2 = h(s(e3[e3.length - 1].vector));
-    L3 || I2 && e3.length === 1 ? $2.push(Z) : T2 ? $2.push(...M(Z, t2, H2, 29)) : $2.push(...ne(Z, t2, H2));
-  }
-  return z4.concat($2, B3.reverse(), Q3);
-}
-function I(e3) {
-  return e3 != null && e3 >= 0;
-}
-function L(e3, t2 = {}) {
-  let { streamline: i2 = 0.5, size: a3 = 16, last: o3 = false } = t2;
-  if (e3.length === 0) return [];
-  let s16 = 0.15 + (1 - i2) * 0.85, l2 = Array.isArray(e3[0]) ? e3 : e3.map(({ x: e4, y: t3, pressure: r2 = n }) => [e4, t3, r2]);
-  if (l2.length === 2) {
-    let e4 = l2[1];
-    l2 = l2.slice(0, -1);
-    for (let t3 = 1; t3 < 5; t3++) l2.push(w(l2[0], e4, t3 / 4));
-  }
-  l2.length === 1 && (l2 = [...l2, [...c(l2[0], r), ...l2[0].slice(2)]]);
-  let u2 = [{ point: [l2[0][0], l2[0][1]], pressure: I(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f4 = false, p2 = 0, m2 = u2[0], h3 = l2.length - 1;
-  for (let e4 = 1; e4 < l2.length; e4++) {
-    let t3 = o3 && e4 === h3 ? [l2[e4][0], l2[e4][1]] : w(m2.point, l2[e4], s16);
-    if (_(m2.point, t3)) continue;
-    let r2 = x(t3, m2.point);
-    if (p2 += r2, e4 < h3 && !f4) {
-      if (p2 < a3) continue;
-      f4 = true;
-    }
-    d(F, m2.point, t3), m2 = { point: t3, pressure: I(l2[e4][2]) ? l2[e4][2] : n, vector: b(F), distance: r2, runningLength: p2 }, u2.push(m2);
-  }
-  return u2[0].vector = u2[1]?.vector || [0, 0], u2;
-}
-function R(e3, t2 = {}) {
-  return P(L(e3, t2), t2);
-}
-var e, t, n, r, a, E, D2, O, F;
-var init_esm = __esm({
-  "node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs"() {
-    ({ PI: e } = Math);
-    t = e + 1e-4;
-    n = 0.5;
-    r = [1, 1];
-    ({ min: a } = Math);
-    E = [0, 0];
-    D2 = [0, 0];
-    O = [0, 0];
-    F = [0, 0];
-  }
-});
-
-// src/renderer/drawing/drauu/models/stylus.ts
-var StylusModel;
-var init_stylus = __esm({
-  "src/renderer/drawing/drauu/models/stylus.ts"() {
-    init_esm();
-    init_utils();
-    init_base();
-    StylusModel = class _StylusModel extends BaseModel {
-      points = [];
-      onStart(point) {
-        this.el = document.createElementNS(SVG_NS5, "path");
-        this.points = [point];
-        this.attr("fill", this.brush.color);
-        this.attr("d", this.getSvgData(this.points));
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el) this.onStart(point);
-        if (this.points.at(-1) !== point) this.points.push(point);
-        this.attr("d", this.getSvgData(this.points));
-        return true;
-      }
-      onEnd() {
-        const path = this.el;
-        this.el = null;
-        return path !== null;
-      }
-      getSvgData(points) {
-        return _StylusModel.getSvgData(points, this.brush);
-      }
-      static getSvgData(points, brush) {
-        const stroke = R(points, {
-          size: brush.size,
-          thinning: 0.9,
-          simulatePressure: false,
-          start: { taper: 5 },
-          end: { taper: 5 },
-          ...brush.stylusOptions
-        });
-        const first = stroke[0];
-        if (!first) return "";
-        const parts = [`M ${first[0].toFixed(2)} ${first[1].toFixed(2)} Q`];
-        for (let i2 = 0; i2 < stroke.length; i2++) {
-          const a3 = stroke[i2];
-          const b4 = stroke[(i2 + 1) % stroke.length];
-          if (!a3 || !b4) continue;
-          const [x0, y0] = a3;
-          const [x1, y1] = b4;
-          parts.push(
-            x0.toFixed(2),
-            y0.toFixed(2),
-            ((x0 + x1) / 2).toFixed(2),
-            ((y0 + y1) / 2).toFixed(2)
-          );
-        }
-        parts.push("Z");
-        return parts.join(" ");
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/index.ts
-function createModels(drauu) {
-  return {
-    draw: new DrawModel(drauu),
-    stylus: new StylusModel(drauu),
-    line: new LineModel(drauu),
-    rectangle: new RectModel(drauu),
-    ellipse: new EllipseModel(drauu),
-    eraseLine: new EraserModel(drauu)
-  };
-}
-var init_models = __esm({
-  "src/renderer/drawing/drauu/models/index.ts"() {
-    init_draw();
-    init_ellipse();
-    init_eraser();
-    init_line();
-    init_rect();
-    init_stylus();
-  }
-});
-
-// src/renderer/drawing/drauu/drauu.ts
-function createDrauu(options) {
-  return new Drauu(options);
-}
-var DEFAULT_BRUSH, Drauu;
-var init_drauu = __esm({
-  "src/renderer/drawing/drauu/drauu.ts"() {
-    init_emitter();
-    init_models();
-    DEFAULT_BRUSH = { color: "black", size: 3, mode: "stylus" };
-    Drauu = class {
-      el = null;
-      svgPoint = null;
-      shiftPressed = false;
-      altPressed = false;
-      drawing = false;
-      options;
-      emitter = new Emitter();
-      originalPointerId = null;
-      models = createModels(this);
-      currentNode;
-      opStack = [];
-      opIndex = 0;
-      disposables = [];
-      elements = [];
-      constructor(options = {}) {
-        this.options = { ...options, brush: options.brush ?? { ...DEFAULT_BRUSH } };
-        if (options.el) this.mount(options.el, options.eventTarget, options.window);
-      }
-      get model() {
-        return this.models[this.mode];
-      }
-      get mounted() {
-        return this.el !== null;
-      }
-      get mode() {
-        return this.options.brush.mode ?? "stylus";
-      }
-      set mode(v3) {
-        this.models[this.mode].onUnselected();
-        this.options.brush.mode = v3;
-        this.model.onSelected(this.el);
-      }
-      get brush() {
-        return this.options.brush;
-      }
-      set brush(v3) {
-        this.options.brush = v3;
-      }
-      mount(el3, eventEl, listenWindow = window) {
-        if (this.el) throw new Error("[drauu] already mounted, unmount previous target first");
-        if (el3.tagName.toLowerCase() !== "svg")
-          throw new Error("[drauu] can only mount to an SVG element");
-        this.el = el3;
-        this.svgPoint = typeof el3.createSVGPoint === "function" ? el3.createSVGPoint() : null;
-        const target = eventEl ?? el3;
-        const start = (e3) => {
-          if (e3 instanceof PointerEvent) this.eventStart(e3);
-        };
-        const move = (e3) => {
-          this.eventMove(e3);
-        };
-        const end = (e3) => {
-          this.eventEnd(e3);
-        };
-        const keyboard = (e3) => {
-          this.eventKeyboard(e3);
-        };
-        const touchMove = (e3) => {
-          this.touchMove(e3);
-        };
-        target.addEventListener("pointerdown", start, { passive: false });
-        listenWindow.addEventListener("pointermove", move, { passive: false });
-        listenWindow.addEventListener("pointerup", end, { passive: false });
-        listenWindow.addEventListener("pointercancel", end, { passive: false });
-        listenWindow.addEventListener("keydown", keyboard, false);
-        listenWindow.addEventListener("keyup", keyboard, false);
-        listenWindow.addEventListener("touchmove", touchMove, { passive: false });
-        this.disposables.push(() => {
-          target.removeEventListener("pointerdown", start);
-          listenWindow.removeEventListener("pointermove", move);
-          listenWindow.removeEventListener("pointerup", end);
-          listenWindow.removeEventListener("pointercancel", end);
-          listenWindow.removeEventListener("keydown", keyboard, false);
-          listenWindow.removeEventListener("keyup", keyboard, false);
-          listenWindow.removeEventListener("touchmove", touchMove);
-        });
-        this.model.onSelected(this.el);
-        this.emitter.emit("mounted");
-      }
-      unmount() {
-        for (const dispose of this.disposables) dispose();
-        this.disposables.length = 0;
-        this.elements.length = 0;
-        this.el = null;
-        this.emitter.emit("unmounted");
-      }
-      on(type, fn2) {
-        return this.emitter.on(type, fn2);
-      }
-      undo() {
-        if (!this.canUndo() || this.drawing) return false;
-        this.opIndex -= 1;
-        this.opStack[this.opIndex]?.undo();
-        this.emitter.emit("changed");
-        return true;
-      }
-      redo() {
-        if (!this.canRedo() || this.drawing) return false;
-        this.opStack[this.opIndex]?.redo();
-        this.opIndex += 1;
-        this.emitter.emit("changed");
-        return true;
-      }
-      canRedo() {
-        return this.opIndex < this.opStack.length;
-      }
-      canUndo() {
-        return this.opIndex > 0;
-      }
-      eventMove(event) {
-        if (!this.acceptsInput(event) || !this.drawing) return;
-        if (this.model._eventMove(event)) {
-          event.stopPropagation();
-          event.preventDefault();
-          this.emitter.emit("changed");
-        }
-      }
-      eventStart(event) {
-        if (!this.acceptsInput(event)) return;
-        event.stopPropagation();
-        event.preventDefault();
-        if (this.currentNode) this.cancel();
-        this.drawing = true;
-        this.originalPointerId = event.pointerId;
-        this.emitter.emit("start");
-        this.currentNode = this.model._eventDown(event);
-        if (this.currentNode && this.mode !== "eraseLine") this.el?.appendChild(this.currentNode);
-        this.emitter.emit("changed");
-      }
-      eventEnd(event) {
-        if (!this.acceptsInput(event) || !this.drawing) return;
-        const result = this.model._eventUp(event);
-        if (!result) {
-          this.cancel();
-        } else if (result === true) {
-          const node2 = this.currentNode;
-          if (node2) {
-            this._appendNode(node2);
-            this.commit({
-              undo: () => {
-                this._removeNode(node2);
-              },
-              redo: () => {
-                this._restoreNode(node2);
-              }
-            });
-          }
-        } else {
-          this.commit(result);
-        }
-        this.drawing = false;
-        this.emitter.emit("end");
-        this.emitter.emit("changed");
-        this.originalPointerId = null;
-      }
-      touchMove(event) {
-        for (const touch of Array.from(event.touches)) {
-          const touchType = Reflect.get(touch, "touchType");
-          if (touchType === "stylus" && touch.identifier === this.originalPointerId) {
-            event.preventDefault();
-            return;
-          }
-        }
-      }
-      acceptsInput(event) {
-        const accepted = this.options.acceptsInputTypes;
-        if (accepted && !accepted.some((type) => type === event.pointerType)) return false;
-        return this.originalPointerId === null || this.originalPointerId === event.pointerId;
-      }
-      eventKeyboard(event) {
-        if (this.shiftPressed === event.shiftKey && this.altPressed === event.altKey) return;
-        this.shiftPressed = event.shiftKey;
-        this.altPressed = event.altKey;
-        const point = this.model.point;
-        if (this.drawing && point && this.model.onMove(point)) this.emitter.emit("changed");
-      }
-      commit(op) {
-        this.opStack.length = this.opIndex;
-        this.opStack.push(op);
-        this.opIndex += 1;
-        const node2 = this.currentNode;
-        this.currentNode = void 0;
-        this.emitter.emit("committed", node2);
-      }
-      clear() {
-        this.opStack.length = 0;
-        this.opIndex = 0;
-        this.elements = [];
-        this.cancel();
-        if (this.el) this.el.innerHTML = "";
-        this.emitter.emit("changed");
-      }
-      cancel() {
-        if (this.currentNode) {
-          this.currentNode.remove();
-          this.currentNode = void 0;
-          this.emitter.emit("canceled");
-        }
-      }
-      dump() {
-        return this.el?.innerHTML ?? "";
-      }
-      load(svg2) {
-        this.clear();
-        if (this.el) this.el.innerHTML = svg2;
-      }
-      /** @internal */
-      _appendNode(node2) {
-        const last = this.elements.at(-1);
-        if (last) last.after(node2);
-        else this.el?.append(node2);
-        const index = this.elements.push(node2) - 1;
-        node2.setAttribute("data-drauu-index", index.toString());
-      }
-      /** @internal */
-      _removeNode(node2) {
-        node2.remove();
-        const index = Number(node2.getAttribute("data-drauu-index"));
-        if (Number.isInteger(index)) this.elements[index] = null;
-      }
-      /** @internal */
-      _restoreNode(node2) {
-        const index = Number(node2.getAttribute("data-drauu-index"));
-        if (!Number.isInteger(index)) return;
-        this.elements[index] = node2;
-        for (let i2 = index - 1; i2 >= 0; i2--) {
-          const previous = this.elements[i2];
-          if (previous) {
-            previous.after(node2);
-            return;
-          }
-        }
-        this.el?.prepend(node2);
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/index.ts
-var init_drauu2 = __esm({
-  "src/renderer/drawing/drauu/index.ts"() {
-    init_drauu();
-    init_models();
-  }
-});
-
-// src/renderer/drawing/annotation-layer.ts
-function measureBox(node2) {
-  const getBBox = Reflect.get(node2, "getBBox");
-  if (typeof getBBox !== "function") return null;
-  try {
-    const box = Reflect.apply(getBBox, node2, []);
-    if (box && typeof box === "object" && "x" in box && "y" in box && "width" in box && "height" in box) {
-      const { x: x2, y: y2, width, height } = box;
-      if ([x2, y2, width, height].every((v3) => typeof v3 === "number" && Number.isFinite(v3))) {
-        return { x: Number(x2), y: Number(y2), width: Number(width), height: Number(height) };
-      }
-    }
-  } catch {
-  }
-  return null;
-}
-function toolOf(node2) {
-  const tagged = node2.getAttribute("data-tool");
-  return TOOLS.find((t2) => t2 === tagged) ?? "pen";
-}
-function composeAnnotationPng(svg2, width, height, base) {
-  return new Promise((resolve, reject) => {
-    const scale2 = window.devicePixelRatio || 1;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width * scale2));
-    canvas.height = Math.max(1, Math.round(height * scale2));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      reject(new Error("2D canvas unavailable"));
-      return;
-    }
-    const loadImage = (src) => new Promise((res, rej) => {
-      const img = new Image();
-      img.onload = () => {
-        res(img);
-      };
-      img.onerror = () => {
-        rej(new Error("image failed to decode"));
-      };
-      img.src = src;
-    });
-    const marksUrl = URL.createObjectURL(new Blob([svg2], { type: "image/svg+xml;charset=utf-8" }));
-    void (async () => {
-      try {
-        if (base) {
-          const baseImage = await loadImage(base);
-          ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
-        }
-        const marks = await loadImage(marksUrl);
-        ctx.drawImage(marks, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/png"));
-      } catch (error62) {
-        reject(error62 instanceof Error ? error62 : new Error(String(error62)));
-      } finally {
-        URL.revokeObjectURL(marksUrl);
-      }
-    })();
-  });
-}
-function mountAnnotationLayer(host, options) {
-  let root = null;
-  let resizeObserver = null;
-  let svg2 = null;
-  let drauu = null;
-  let active2 = false;
-  let tool = "pen";
-  let colour = ANNOTATION_COLOURS[0]?.value ?? "#e5484d";
-  const toolButtons = /* @__PURE__ */ new Map();
-  const swatches = /* @__PURE__ */ new Map();
-  let sendBtn = null;
-  let undoBtn = null;
-  let clearBtn = null;
-  let sending = false;
-  let scrollX = 0;
-  let scrollY = 0;
-  const fmt = (v3) => String(Math.round(v3 * 100) / 100);
-  const applyViewBox = () => {
-    if (!svg2) return;
-    const rect = host.getBoundingClientRect();
-    const width = Math.max(1, rect.width);
-    const height = Math.max(1, rect.height);
-    svg2.setAttribute("viewBox", `${fmt(scrollX)} ${fmt(scrollY)} ${fmt(width)} ${fmt(height)}`);
-  };
-  const applyBrush = () => {
-    if (!drauu) return;
-    const brush = drauu.brush;
-    brush.color = colour;
-    brush.arrowEnd = tool === "arrow";
-    brush.size = tool === "pen" ? PEN_SIZE : SHAPE_SIZE;
-    const mode = {
-      pen: "stylus",
-      line: "line",
-      arrow: "line",
-      rect: "rectangle",
-      ellipse: "ellipse",
-      eraser: "eraseLine"
-    }[tool];
-    if (drauu.mode !== mode) drauu.mode = mode;
-    else if (mode === "eraseLine") drauu.model.onSelected(drauu.el);
-    for (const [name, button] of toolButtons)
-      button.setAttribute("aria-pressed", String(name === tool));
-    for (const [value, button] of swatches)
-      button.setAttribute("aria-pressed", String(value === colour));
-  };
-  const isEmpty = () => !svg2 || svg2.childElementCount === 0;
-  const syncButtons = () => {
-    const empty = isEmpty();
-    if (sendBtn) sendBtn.disabled = empty || sending;
-    if (clearBtn) clearBtn.disabled = empty;
-    if (undoBtn) undoBtn.disabled = !drauu?.canUndo();
-    if (root) root.hidden = !active2 && empty;
-  };
-  const toolButton = (name, label, icon) => {
-    const button = el(
-      "button",
-      {
-        type: "button",
-        class: "annotation-tool",
-        "data-tool": name,
-        "aria-label": label,
-        "data-tooltip": label,
-        "aria-pressed": "false"
-      },
-      icon
-    );
-    button.addEventListener("click", () => {
-      tool = name;
-      applyBrush();
-    });
-    toolButtons.set(name, button);
-    return button;
-  };
-  const ensureMounted = () => {
-    if (root) return;
-    svg2 = document.createElementNS(SVG_NS5, "svg");
-    svg2.setAttribute("class", "annotation-layer-svg");
-    svg2.setAttribute("role", "img");
-    svg2.setAttribute("aria-label", `Annotations over ${options.label}`);
-    applyViewBox();
-    const separator = () => el("span", { class: "annotation-sep", "aria-hidden": "true" });
-    const swatchButtons = ANNOTATION_COLOURS.map(({ name, value }) => {
-      const button = el("button", {
-        type: "button",
-        class: "annotation-swatch",
-        "aria-label": name,
-        "data-tooltip": name,
-        "aria-pressed": "false"
-      });
-      button.style.setProperty("--annotation-swatch", value);
-      button.addEventListener("click", () => {
-        colour = value;
-        applyBrush();
-      });
-      swatches.set(value, button);
-      return button;
-    });
-    undoBtn = el(
-      "button",
-      { type: "button", class: "annotation-tool", "aria-label": "Undo", "data-tooltip": "Undo" },
-      undoIcon("ui-icon ui-icon-sm")
-    );
-    undoBtn.addEventListener("click", () => {
-      drauu?.undo();
-    });
-    clearBtn = el(
-      "button",
-      { type: "button", class: "annotation-tool", "aria-label": "Clear", "data-tooltip": "Clear" },
-      trashIcon("ui-icon ui-icon-sm")
-    );
-    clearBtn.addEventListener("click", () => {
-      drauu?.clear();
-    });
-    sendBtn = el(
-      "button",
-      { type: "button", class: "ui-btn ui-btn-primary annotation-send", disabled: true },
-      "Send to agent"
-    );
-    sendBtn.addEventListener("click", () => {
-      if (sending) return;
-      sending = true;
-      sendBtn?.setAttribute("aria-busy", "true");
-      syncButtons();
-      void layer.export().then(async (payload) => {
-        const accepted = await options.onSend(payload);
-        if (!accepted) return;
-        layer.deactivate();
-      }).catch(() => {
-      }).finally(() => {
-        sending = false;
-        sendBtn?.removeAttribute("aria-busy");
-        syncButtons();
-      });
-    });
-    const doneBtn = el(
-      "button",
-      {
-        type: "button",
-        class: "annotation-tool",
-        "aria-label": "Done",
-        "data-tooltip": "Done (Esc)"
-      },
-      closeIcon("ui-icon ui-icon-sm")
-    );
-    doneBtn.addEventListener("click", () => {
-      layer.deactivate();
-    });
-    const strip = el(
-      "div",
-      { class: "annotation-toolstrip", role: "toolbar", "aria-label": "Annotation tools" },
-      toolButton("pen", "Pen", penLineIcon("ui-icon ui-icon-sm")),
-      toolButton("line", "Line", slashIcon("ui-icon ui-icon-sm")),
-      toolButton("arrow", "Arrow", arrowUpRightIcon("ui-icon ui-icon-sm")),
-      toolButton("rect", "Rectangle", squareIcon("ui-icon ui-icon-sm")),
-      toolButton("ellipse", "Ellipse", circleIcon("ui-icon ui-icon-sm")),
-      toolButton("eraser", "Eraser", eraserIcon("ui-icon ui-icon-sm")),
-      separator(),
-      ...swatchButtons,
-      separator(),
-      undoBtn,
-      clearBtn,
-      separator(),
-      sendBtn,
-      doneBtn
-    );
-    strip.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
-    });
-    root = el("div", { class: "annotation-layer", "data-active": "false" }, svg2, strip);
-    root.hidden = true;
-    host.append(root);
-    if (typeof ResizeObserver === "function") {
-      resizeObserver = new ResizeObserver(applyViewBox);
-      resizeObserver.observe(host);
-    }
-    drauu = createDrauu({
-      el: svg2,
-      brush: { mode: "stylus", color: colour, size: PEN_SIZE }
-    });
-    drauu.on("changed", syncButtons);
-    drauu.on("committed", (node2) => {
-      if (!node2) return;
-      node2.setAttribute("data-tool", tool);
-      node2.setAttribute("data-colour", colour);
-    });
-    applyBrush();
-    syncButtons();
-  };
-  const onKeyDown = (event) => {
-    if (!active2) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      layer.deactivate();
-      return;
-    }
-    const meta3 = event.metaKey || event.ctrlKey;
-    if (meta3 && event.key.toLowerCase() === "z") {
-      event.preventDefault();
-      if (event.shiftKey) drauu?.redo();
-      else drauu?.undo();
-    }
-  };
-  const layer = {
-    get active() {
-      return active2;
-    },
-    activate() {
-      ensureMounted();
-      if (active2) return;
-      active2 = true;
-      root?.setAttribute("data-active", "true");
-      window.addEventListener("keydown", onKeyDown);
-      syncButtons();
-      toolButtons.get(tool)?.focus({ preventScroll: true });
-    },
-    deactivate() {
-      if (!active2) return;
-      active2 = false;
-      drauu?.cancel();
-      root?.setAttribute("data-active", "false");
-      window.removeEventListener("keydown", onKeyDown);
-      syncButtons();
-      options.onDeactivate?.();
-    },
-    toggle() {
-      if (active2) layer.deactivate();
-      else layer.activate();
-      return active2;
-    },
-    isEmpty,
-    clear() {
-      drauu?.clear();
-      syncButtons();
-    },
-    setTool(next) {
-      ensureMounted();
-      tool = next;
-      applyBrush();
-    },
-    setScrollOffset(x2, y2) {
-      if (Number.isFinite(x2)) scrollX = x2;
-      if (Number.isFinite(y2)) scrollY = y2;
-      applyViewBox();
-    },
-    async export() {
-      ensureMounted();
-      const rect = host.getBoundingClientRect();
-      const width = Math.max(1, Math.round(rect.width));
-      const height = Math.max(1, Math.round(rect.height));
-      const marks = Array.from(svg2?.children ?? []).map((node2) => {
-        return {
-          tool: toolOf(node2),
-          colour: node2.getAttribute("data-colour") ?? colour,
-          box: measureBox(node2)
-        };
-      });
-      const clone3 = svg2 ? svg2.cloneNode(true) : document.createElementNS(SVG_NS5, "svg");
-      if (!(clone3 instanceof Element)) throw new Error("annotation clone is not an element");
-      clone3.removeAttribute("class");
-      clone3.removeAttribute("role");
-      clone3.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-      clone3.setAttribute("width", String(width));
-      clone3.setAttribute("height", String(height));
-      clone3.setAttribute(
-        "viewBox",
-        `${fmt(scrollX)} ${fmt(scrollY)} ${String(width)} ${String(height)}`
-      );
-      const serialised = clone3.outerHTML;
-      const base = await options.captureBase?.().catch(() => null);
-      let png = null;
-      let captured = false;
-      if (base) {
-        png = await composeAnnotationPng(serialised, width, height, base).catch(() => null);
-        captured = png !== null;
-      }
-      png ??= await composeAnnotationPng(serialised, width, height, null).catch(() => null);
-      return {
-        svg: serialised,
-        png,
-        captured,
-        width,
-        height,
-        marks
-      };
-    },
-    dispose() {
-      layer.deactivate();
-      resizeObserver?.disconnect();
-      resizeObserver = null;
-      drauu?.unmount();
-      drauu = null;
-      root?.remove();
-      root = null;
-      svg2 = null;
-    }
-  };
-  return layer;
-}
-var TOOLS, ANNOTATION_COLOURS, SHAPE_SIZE, PEN_SIZE;
-var init_annotation_layer = __esm({
-  "src/renderer/drawing/annotation-layer.ts"() {
-    init_helpers();
-    init_icons();
-    init_drauu2();
-    init_utils();
-    TOOLS = ["pen", "line", "arrow", "rect", "ellipse", "eraser"];
-    ANNOTATION_COLOURS = [
-      { name: "Red", value: "#e5484d" },
-      { name: "Blue", value: "#3b82f6" },
-      { name: "Green", value: "#22c55e" },
-      { name: "Yellow", value: "#eab308" }
-    ];
-    SHAPE_SIZE = 3;
-    PEN_SIZE = 6;
-  }
-});
-
-// src/renderer/attachments/prompt-attachments.ts
-function registerPromptAttachments(h3) {
-  handlers = h3;
-  return () => {
-    if (handlers === h3) handlers = null;
-  };
-}
-function getPromptAttachmentHandlers() {
-  return handlers;
-}
-var handlers;
-var init_prompt_attachments = __esm({
-  "src/renderer/attachments/prompt-attachments.ts"() {
-    handlers = null;
-  }
-});
-
-// src/renderer/drawing/attach-annotation.ts
-function attachAnnotation(payload, subject) {
-  const handlers3 = getPromptAttachmentHandlers();
-  if (!handlers3) {
-    showToast("Open a thread before sending an annotation.", { variant: "error" });
-    return false;
-  }
-  if (!payload.png) {
-    showToast(`Could not render the annotation over ${subject}.`, { variant: "error" });
-    return false;
-  }
-  handlers3.attachImage(payload.png, "image/png");
-  handlers3.focusComposer?.();
-  showToast(
-    payload.captured ? `Added annotated screenshot of ${subject} to the thread.` : `Added annotation to the thread (${subject} could not be captured, marks only).`,
-    { durationMs: 2500 }
-  );
-  return true;
-}
-var init_attach_annotation = __esm({
-  "src/renderer/drawing/attach-annotation.ts"() {
-    init_prompt_attachments();
-    init_toast();
   }
 });
 
@@ -103273,7 +111600,7 @@ function buildDebugTracePrompt(thread, archiveName, build) {
       `- Context trims: ${String(trims)} (history was dropped mid-run \u2014 check whether that lost something it needed)`
     );
   }
-  const sourceUrl = build.buildCommit && build.buildDirty === false ? `https://github.com/copse-dev/agent-pane/tree/${build.buildCommit}` : null;
+  const sourceUrl2 = build.buildCommit && build.buildDirty === false ? `https://github.com/copse-dev/agent-pane/tree/${build.buildCommit}` : null;
   const buildFacts = [
     `- Copse version: ${build.version}`,
     `- Build commit${build.buildDirty === true ? " (base)" : ""}: ${build.buildCommit ?? "(unavailable)"}`,
@@ -103281,7 +111608,7 @@ function buildDebugTracePrompt(thread, archiveName, build) {
     `- Build type: ${build.packaged ? "packaged" : "development"}`,
     `- Platform: ${build.platform}`,
     `- Captured at: ${build.capturedAt}`,
-    ...sourceUrl ? [`- Exact source: ${sourceUrl}`] : []
+    ...sourceUrl2 ? [`- Exact source: ${sourceUrl2}`] : []
   ];
   return [
     "Something went wrong in another Copse thread and I would like you to work out what.",
@@ -106133,6 +114460,9 @@ ${description}
     queueIndicator.hidden = false;
     queueIndicator.textContent = count === 1 ? "1 queued" : `${String(count)} queued`;
   }
+  function currentBreakdown() {
+    return breakdownModel === footerChatModel() ? lastBreakdown : null;
+  }
   function usageViews() {
     const thread = getActiveThread(store2);
     if (!thread) return null;
@@ -106142,7 +114472,7 @@ ${description}
       running: thread.status === "running",
       messages: thread.messages,
       contextSnapshot: thread.contextSnapshot,
-      breakdown: lastBreakdown
+      breakdown: currentBreakdown()
     });
     if (!display) return null;
     const priced = { model, measuredUsage: thread.usage, pricing: modelPricing };
@@ -106154,10 +114484,10 @@ ${description}
   }
   function updateContextFitWarning() {
     const model = footerChatModel();
-    const advice = breakdownModel === model ? contextFitAdvice(lastBreakdown, {
+    const advice = contextFitAdvice(currentBreakdown(), {
       modelLabel: modelDisplayLabel(model),
       lmStudioModel: isLocalModel(model)
-    }) : null;
+    });
     if (!advice) {
       contextFitWarning.hidden = true;
       return;
@@ -106170,12 +114500,14 @@ ${description}
     const thread = getActiveThread(store2);
     const running = thread?.status === "running";
     const acpContext = isAcpModel(footerChatModel());
+    const breakdown = currentBreakdown();
+    if (lastBreakdown && !breakdown) scheduleContextEstimate(0);
     const usage = usageViews();
     const snapshot = thread?.contextSnapshot;
     const snapshotUsable = !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01;
     const draftNonEmpty = composer.value.trim().length > 0 || attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0 || attachedArchives.length > 0 || attachedThreads.length > 0 || attachedShells.length > 0;
-    const showBreakdown = !acpContext && !running && !!lastBreakdown && lastBreakdown.totalTokens > 0 && (!snapshotUsable || draftNonEmpty);
-    const hoverBreakdown = !running && !acpContext ? lastBreakdown : null;
+    const showBreakdown = !acpContext && !running && !!breakdown && breakdown.totalTokens > 0 && (!snapshotUsable || draftNonEmpty);
+    const hoverBreakdown = !running && !acpContext ? breakdown : null;
     contextWheel.update(snapshot, running, {
       usageLine: usage?.detail ?? null,
       usage: usage?.tooltip ?? null,
@@ -106226,6 +114558,7 @@ ${description}
   async function runContextEstimate() {
     if (!estimateEnabled) return;
     if (isAcpModel(footerChatModel())) {
+      estimateSeq++;
       if (lastBreakdown !== null) {
         lastBreakdown = null;
         breakdownModel = null;
@@ -106235,6 +114568,7 @@ ${description}
     }
     const id = getActiveThreadId();
     if (!id) {
+      estimateSeq++;
       if (lastBreakdown !== null) {
         lastBreakdown = null;
         breakdownModel = null;
@@ -106451,7 +114785,7 @@ ${description}
     const prefetchedPromptState = prefetchedGitState?.[1];
     let preparedPromptState;
     const threadBranch = thread.gitBranch;
-    const isolatedWorktree = thread.worktree !== void 0;
+    const isolatedWorktree = thread.worktree !== void 0 || thread.deferredWorktree !== void 0;
     if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })) {
       if (getActiveThreadId() === id) showBranchMismatch(threadBranch);
       return;
@@ -140293,14 +148627,16 @@ function discoveryHost(machine) {
   if (machine.startsWith(SSH_MACHINE_PREFIX)) {
     return { kind: "ssh", hostId: machine.slice(SSH_MACHINE_PREFIX.length) };
   }
-  if (machine === LOCAL_MACHINE) return { kind: "local" };
-  throw new Error("Choose this machine or a saved SSH machine before scanning ports");
+  throw new Error("Choose a saved SSH machine before scanning ports");
 }
 function sshMachineValue(hostId) {
   return `${SSH_MACHINE_PREFIX}${hostId}`;
 }
 function isNetworkMachine(machine) {
   return machine === MANUAL_MACHINE || machine.startsWith(NEARBY_MACHINE_PREFIX);
+}
+function isExplicitLocalAddress(host) {
+  return host.toLowerCase() === "localhost" || host === "127.0.0.1" || host === "::1";
 }
 function isSimulatorMachine(machine) {
   return machine.startsWith(SIMULATOR_MACHINE_PREFIX);
@@ -140319,7 +148655,6 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     "aria-label": "Desktop machine",
     hidden: true
   });
-  machineSelect.append(el("option", { value: LOCAL_MACHINE }, "This machine"));
   const refreshDevicesButton = el(
     "button",
     {
@@ -140448,7 +148783,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   const discoveryStatus = el(
     "div",
     { class: "vnc-discovery-status", role: "status" },
-    "Scanning this machine\u2026"
+    "Checking for screen sharing\u2026"
   );
   const discoveredPorts = el("div", {
     class: "vnc-discovered-ports",
@@ -140676,7 +149011,6 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   let selectedHasSavedPassword = false;
   let selectedSavedUsername = "";
   function machinePresentation(value) {
-    if (value === LOCAL_MACHINE) return { name: "This machine", meta: "This device" };
     if (value === MANUAL_MACHINE) {
       return { name: "Add device", meta: "Connect with an address" };
     }
@@ -140796,7 +149130,6 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     screen.hidden = !connected;
   }
   function selectedMachineName() {
-    if (machineSelect.value === LOCAL_MACHINE) return "this machine";
     if (machineSelect.value === MANUAL_MACHINE) {
       return parseVncEndpoint(addressInput.value, Number.parseInt(portInput.value, 10))?.host ?? "remote desktop";
     }
@@ -140997,7 +149330,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     return server.addresses.find((address) => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(address)) ?? (host ? host : server.addresses[0] ?? "");
   }
   function rebuildMachineOptions(preferred) {
-    machineSelect.replaceChildren(el("option", { value: LOCAL_MACHINE }, "This machine"));
+    machineSelect.replaceChildren();
     if (simulatorDevices.length > 0) {
       const simulatorGroup = el("optgroup", { label: "Local simulators" });
       for (const device of simulatorDevices) {
@@ -141034,6 +149367,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     }
     if ([...machineSelect.options].some((option) => option.value === preferred)) {
       machineSelect.value = preferred;
+    } else {
+      machineSelect.selectedIndex = -1;
     }
     renderDeviceList();
   }
@@ -141058,7 +149393,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
         sshHostResolutions.filter((resolution) => resolution.hostId === host.id)
       ).length === 0
     );
-    return matchingSsh ? sshMachineValue(matchingSsh.id) : LOCAL_MACHINE;
+    return matchingSsh ? sshMachineValue(matchingSsh.id) : MANUAL_MACHINE;
   }
   async function refreshSshHosts(preferred = machineSelect.value) {
     const generation = ++sshHostsGeneration;
@@ -141089,10 +149424,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const network = isNetworkMachine(machine);
     const simulator = isSimulatorMachine(machine);
     addressField.hidden = machine !== MANUAL_MACHINE;
-    networkWarning.hidden = !network;
+    const manualAddress = parseVncEndpoint(addressInput.value, 5900)?.host ?? "";
+    networkWarning.hidden = !network || machine === MANUAL_MACHINE && (!manualAddress || isExplicitLocalAddress(manualAddress));
     advancedSettings.hidden = simulator;
     discoverButton.hidden = true;
-    discoveryStatus.hidden = network || simulator;
+    discoveryStatus.hidden = !machine.startsWith(SSH_MACHINE_PREFIX);
     if (machineChanged) {
       setupUsernameInput.value = "";
       setupPasswordInput.value = "";
@@ -141134,6 +149470,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (isNetworkMachine(machineSelect.value)) {
       const endpoint = parseVncEndpoint(addressInput.value, port);
       if (!endpoint) return null;
+      if (machineSelect.value === MANUAL_MACHINE && isExplicitLocalAddress(endpoint.host)) {
+        return { kind: "loopback", port: endpoint.port };
+      }
       return {
         kind: "network",
         host: endpoint.host,
@@ -141141,7 +149480,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
         confirmedUnencrypted: true
       };
     }
-    return { kind: "loopback", port };
+    return null;
   }
   async function refreshSavedLogin() {
     const generation = ++savedLoginGeneration;
@@ -141216,13 +149555,13 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (ports[0] !== void 0) chooseDiscoveredPort(ports[0]);
   }
   async function discoverSelectedMachine() {
-    if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return;
+    if (!machineSelect.value.startsWith(SSH_MACHINE_PREFIX)) return;
     if (await stoppedByViewerOff()) return;
     const generation = ++discoveryGeneration;
     discoverButton.hidden = true;
     discoverButton.disabled = true;
     discoveryStatus.dataset["kind"] = "working";
-    discoveryStatus.textContent = discoveryHost(machineSelect.value).kind === "ssh" ? "Checking this saved machine for screen sharing\u2026" : "Checking this machine for screen sharing\u2026";
+    discoveryStatus.textContent = "Checking this saved machine for screen sharing\u2026";
     renderDiscoveredPorts([]);
     try {
       const ports = await api2.vnc.discover(discoveryHost(machineSelect.value));
@@ -141445,7 +149784,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const generation = ++connectGeneration;
     connectButton.disabled = true;
     setStatus(
-      target.kind === "network" ? "Opening direct network connection\u2026" : "Opening secure connection\u2026",
+      target.kind === "network" ? "Opening direct network connection\u2026" : target.kind === "loopback" ? "Opening local connection\u2026" : "Opening secure connection\u2026",
       "working"
     );
     try {
@@ -141477,7 +149816,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       pendingDisconnectStatus = null;
       resetControlState();
       const machineName = selectedMachineName();
-      options.onLabelChange(machineName === "this machine" ? "This machine" : machineName);
+      options.onLabelChange(machineName);
       empty.textContent = "Connecting to the remote desktop\u2026";
       setSessionUi(true);
       nextRfb.viewOnly = true;
@@ -141710,6 +150049,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     void refreshSavedLogin();
   });
   addressInput.addEventListener("input", () => {
+    const host = parseVncEndpoint(addressInput.value, 5900)?.host ?? "";
+    networkWarning.hidden = !host || isExplicitLocalAddress(host);
     void refreshSavedLogin();
   });
   portInput.addEventListener("keydown", (event) => {
@@ -141776,7 +150117,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     void recoverDesktopViewer();
   });
   setSessionUi(false);
-  portInput.value = "5901";
+  portInput.value = "5900";
   void loadMachines();
   return {
     simulatorMatch: (udid) => {
@@ -142006,7 +150347,7 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var CHOOSE_MACHINE_TEXT, LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
+var CHOOSE_MACHINE_TEXT, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   async "src/renderer/views/vnc-pane.ts"() {
     await init_rfb();
@@ -142023,8 +150364,7 @@ var init_vnc_pane = __esm({
     init_simulator_desktop_view();
     init_panels();
     init_desktop_viewer();
-    CHOOSE_MACHINE_TEXT = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
-    LOCAL_MACHINE = "local";
+    CHOOSE_MACHINE_TEXT = "Choose a device, enter an address, or select a saved SSH machine.";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
     SSH_MACHINE_PREFIX = "ssh:";
@@ -143762,21 +152102,8 @@ function mountProcessManagerDialog(api2, store2) {
     ),
     body
   );
-  const activityCount = el("span", { class: "process-manager-activity-count" });
-  const activityList = el("div", { class: "process-manager-activity-list" });
-  const activity = el(
-    "section",
-    { class: "process-manager-activity", "aria-label": "Agent activity" },
-    el(
-      "div",
-      { class: "process-manager-activity-heading" },
-      el("strong", {}, "Agent activity"),
-      activityCount
-    ),
-    activityList
-  );
-  activity.hidden = true;
   const status = el("p", { class: "process-manager-status", role: "status" }, "Loading processes\u2026");
+  const summary = el("p", { class: "process-manager-summary", role: "status" });
   const updated = el("span", { class: "process-manager-updated", "aria-hidden": "true" });
   dialog2.append(
     el(
@@ -143793,8 +152120,8 @@ function mountProcessManagerDialog(api2, store2) {
         ),
         closeButton
       ),
-      activity,
       el("div", { class: "process-manager-scroll" }, table),
+      summary,
       el(
         "footer",
         { class: "process-manager-footer" },
@@ -143810,17 +152137,7 @@ function mountProcessManagerDialog(api2, store2) {
   let timer = null;
   let generation = 0;
   let refreshing = false;
-  const collapsedGroups = /* @__PURE__ */ new Set();
-  const runGenerations = /* @__PURE__ */ new Map();
-  let sampledRuns = /* @__PURE__ */ new Set();
-  function trackRuns(snapshot) {
-    for (const threadId of snapshot.activeRunThreadIds) {
-      if (!sampledRuns.has(threadId)) {
-        runGenerations.set(threadId, (runGenerations.get(threadId) ?? 0) + 1);
-      }
-    }
-    sampledRuns = new Set(snapshot.activeRunThreadIds);
-  }
+  const expandedGroups = /* @__PURE__ */ new Set();
   function projectForThread(threadId, projectId) {
     return projectId ?? getThreadProjectId(store2, threadId);
   }
@@ -143864,7 +152181,7 @@ function mountProcessManagerDialog(api2, store2) {
       showErrorToast(`Could not stop the ${label}`, error62);
     }
   }
-  function threadMenuEntries(threadId, projectId, running, stillSameRun) {
+  function threadMenuEntries(threadId, projectId, running) {
     const entries2 = [];
     if (projectId && store2.getState().projects.some((project2) => project2.id === projectId)) {
       entries2.push({
@@ -143878,10 +152195,6 @@ function mountProcessManagerDialog(api2, store2) {
       entries2.push({
         label: "Stop agent run",
         onSelect: () => {
-          if (stillSameRun && !stillSameRun()) {
-            showToast("That agent run has already finished.");
-            return;
-          }
           stopAgentRun(threadId);
         }
       });
@@ -143919,15 +152232,6 @@ function mountProcessManagerDialog(api2, store2) {
     cell.append(button);
     return cell;
   }
-  function activityMenuEntries(threadId, projectId) {
-    const run2 = runGenerations.get(threadId);
-    return threadMenuEntries(
-      threadId,
-      projectId,
-      true,
-      () => current?.activeRunThreadIds.includes(threadId) === true && runGenerations.get(threadId) === run2
-    );
-  }
   function menuEntries(row2) {
     const entries2 = row2.threadId ? threadMenuEntries(
       row2.threadId,
@@ -143945,7 +152249,6 @@ function mountProcessManagerDialog(api2, store2) {
     return entries2;
   }
   function render(snapshot) {
-    const focusedActivityThread = document.activeElement instanceof HTMLElement && activityList.contains(document.activeElement) ? document.activeElement.dataset["threadId"] : void 0;
     const focusedGroup = document.activeElement instanceof HTMLElement && body.contains(document.activeElement) && document.activeElement.classList.contains("process-manager-group-toggle") ? document.activeElement.dataset["groupKey"] : void 0;
     cpuHeading.setAttribute(
       "aria-sort",
@@ -143956,60 +152259,13 @@ function mountProcessManagerDialog(api2, store2) {
       column === "memory" ? ascending ? "ascending" : "descending" : "none"
     );
     clear(body);
-    clear(activityList);
-    activity.hidden = snapshot.activeRunThreadIds.length === 0;
-    activityCount.textContent = `${String(snapshot.activeRunThreadIds.length)} working`;
-    for (const threadId of snapshot.activeRunThreadIds) {
-      const title = getThreadById(store2, threadId)?.title.trim();
-      const label = title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
-      const projectId = projectForThread(threadId);
-      const canNavigate = Boolean(
-        projectId && store2.getState().projects.some((project2) => project2.id === projectId)
-      );
-      const item = el(
-        "button",
-        {
-          type: "button",
-          class: "process-manager-activity-item",
-          "data-thread-id": threadId,
-          "aria-label": canNavigate ? `Working ${label}: open thread` : `Working ${label}`
-        },
-        el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
-        el("span", { class: "process-manager-activity-state" }, "Working"),
-        el("span", { class: "process-manager-activity-thread", title: label }, label)
-      );
-      if (projectId && canNavigate) {
-        item.addEventListener("click", () => {
-          jumpToThread(projectId, threadId);
-        });
-      } else {
-        item.setAttribute("aria-disabled", "true");
-      }
-      item.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        showContextMenu(
-          event.clientX,
-          event.clientY,
-          activityMenuEntries(threadId, projectId),
-          dialog2
-        );
-      });
-      item.addEventListener("keydown", (event) => {
-        if (event.key !== "F10" || !event.shiftKey) return;
-        event.preventDefault();
-        const rect = item.getBoundingClientRect();
-        showContextMenu(rect.left, rect.bottom, activityMenuEntries(threadId, projectId), dialog2);
-      });
-      activityList.append(item);
-      if (threadId === focusedActivityThread) item.focus({ preventScroll: true });
-    }
-    if (focusedActivityThread && !snapshot.activeRunThreadIds.includes(focusedActivityThread)) {
-      closeButton.focus({ preventScroll: true });
-    }
     const state = store2.getState();
-    for (const group of groupedRows(snapshot.processes, column, ascending)) {
+    const groups = groupedRows(snapshot.processes, column, ascending);
+    const threadGroups = groups.filter((group) => group.threadId !== null).length;
+    summary.textContent = snapshot.processes.length === 0 ? "" : `${String(threadGroups)} ${threadGroups === 1 ? "thread" : "threads"} \xB7 ${String(snapshot.processes.length)} ${snapshot.processes.length === 1 ? "process" : "processes"} \xB7 CPU ${formatCpu(total(snapshot.processes.map((row2) => row2.cpuPercent)))} \xB7 Memory ${formatMemory(total(snapshot.processes.map((row2) => row2.memoryMiB)))}`;
+    for (const group of groups) {
       const groupKey = group.threadId ?? "";
-      const expanded = !collapsedGroups.has(groupKey);
+      const expanded = expandedGroups.has(groupKey);
       const label = threadLabel2(group.threadId);
       const count = `${String(group.rows.length)} ${group.rows.length === 1 ? "process" : "processes"}`;
       const toggle = el(
@@ -144025,8 +152281,8 @@ function mountProcessManagerDialog(api2, store2) {
         el("span", { class: "process-manager-group-count" }, count)
       );
       toggle.addEventListener("click", () => {
-        if (collapsedGroups.has(groupKey)) collapsedGroups.delete(groupKey);
-        else collapsedGroups.add(groupKey);
+        if (expandedGroups.has(groupKey)) expandedGroups.delete(groupKey);
+        else expandedGroups.add(groupKey);
         if (current) render(current);
       });
       const groupEntries = () => threadEntries(group.threadId);
@@ -144099,7 +152355,6 @@ function mountProcessManagerDialog(api2, store2) {
       const snapshot = await api2.processManager.snapshot();
       if (isRequestCurrent(requestGeneration)) {
         current = snapshot;
-        trackRuns(snapshot);
         render(snapshot);
       }
     } catch {
@@ -144129,8 +152384,6 @@ function mountProcessManagerDialog(api2, store2) {
     if (timer !== null) clearInterval(timer);
     timer = null;
     refreshing = false;
-    runGenerations.clear();
-    sampledRuns = /* @__PURE__ */ new Set();
   });
   return () => {
     if (dialog2.open) return;
@@ -144970,6 +153223,10 @@ function startAgentController(store2, api2) {
         activity(threadId);
         break;
       }
+      case "thread_checkout": {
+        applyPreparedThreadCheckout(store2, threadId, chunk.prepared);
+        break;
+      }
       case "panel_update": {
         break;
       }
@@ -145346,6 +153603,49 @@ var init_automations2 = __esm({
     init_message_queue();
     init_thread_hydration();
     AUTOMATION_START_RETRY_MS = 15e3;
+  }
+});
+
+// src/renderer/controller/automation-appearance.ts
+function hasRunningAutomation(threads, backgroundThreads) {
+  return [...threads, ...backgroundThreads.map(({ thread }) => thread)].some(
+    (thread) => thread.automation !== void 0 && thread.status === "running"
+  );
+}
+function attachAutomationAppearance(store2, api2, root = document.documentElement) {
+  let active2 = null;
+  const sync = () => {
+    const state = store2.getState();
+    const next = hasRunningAutomation(state.threads, state.backgroundThreads);
+    if (next === active2) return;
+    active2 = next;
+    root.toggleAttribute(AUTOMATION_ACTIVE_ATTRIBUTE, next);
+    void api2.setAutomationMode(next).catch((error62) => {
+      console.error("[automations] Failed to apply transient appearance:", error62);
+    });
+  };
+  const unsubs = [
+    store2.on("thread_status_changed", sync),
+    store2.on("threads_changed", sync),
+    store2.on("workspace_changed", sync)
+  ];
+  sync();
+  return () => {
+    unsubs.forEach((unsubscribe) => {
+      unsubscribe();
+    });
+    root.removeAttribute(AUTOMATION_ACTIVE_ATTRIBUTE);
+    if (active2 === true) {
+      void api2.setAutomationMode(false).catch((error62) => {
+        console.error("[automations] Failed to restore the native app icon:", error62);
+      });
+    }
+  };
+}
+var AUTOMATION_ACTIVE_ATTRIBUTE;
+var init_automation_appearance = __esm({
+  "src/renderer/controller/automation-appearance.ts"() {
+    AUTOMATION_ACTIVE_ATTRIBUTE = "data-automation-active";
   }
 });
 
@@ -155733,6 +164033,7 @@ async function boot() {
     attachMobileChat(store, api, mobileReady);
     attachBestValueDefaultResolver(store, api);
     attachAutomationController(store, api);
+    attachAutomationAppearance(store, api.appIcon);
     attachPrPanelFollow(store, api);
     startExternalCursorAgentSync(store, api);
   } else {
@@ -156136,6 +164437,7 @@ var init_main = __esm({
     init_agent();
     init_diff_state();
     init_automations2();
+    init_automation_appearance();
     init_best_value_default();
     init_persistence();
     init_perf();
