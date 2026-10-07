@@ -71,7 +71,7 @@ The Zed adapter advertises `authMethods: [claude-login]` — it reuses the same
 credentials the `claude` CLI stores. If you already have it installed:
 
 ```sh
-claude /login   # only if not already logged in
+claude auth login   # only if not already logged in
 ```
 
 Then add it in Copse: **Settings → ACP agents → Claude Code → Add to my agents**.

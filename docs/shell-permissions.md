@@ -274,8 +274,10 @@ approvals run on the desktop whatever host the bytes land on. User-authored `ssh
 stay hard-external; the SSH transport is injected below command routing, so classification still
 reads the original command.
 
-- **Integrated terminals** on an SSH workspace always ask first (“Open remote terminal?”) and the
-  approval cannot be remembered.
+- **Integrated terminals** targeting SSH always ask first (“Open remote terminal?”), and the
+  approval cannot be remembered. An explicit local console, such as the Usage panel’s sign-in
+  action, runs at local home and follows the local terminal permission contract even while the
+  active project targets SSH. Agent reauthentication still selects the agent’s host.
 - **Remote ACP agents** (`acpOverSshEnabled`, off by default; [plan](plans/acp-over-ssh.md)) are
   treated as **unsandboxed** whenever the agent's working directory resolves to an SSH target,
   even when the local project sandbox is active. The Windows / sandbox-init-failure row of the

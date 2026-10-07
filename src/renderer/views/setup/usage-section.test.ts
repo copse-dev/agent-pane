@@ -249,10 +249,15 @@ describe('renderPlanProvider credit windows', () => {
 
 describe('createPlanSignInHandler', () => {
   it('closes settings and requests `claude auth login` in a terminal', () => {
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
-    const commands: string[] = []
-    store.on('request_terminal_command', (cmd) => {
-      commands.push(cmd)
+    const store = createStore({
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+      activeProjectId: 'ssh-project',
+      workspaceRoot: '/remote/project',
+    })
+    const commands: { command: string; executionTarget?: 'local' }[] = []
+    store.on('request_terminal_command', (cmd, options) => {
+      commands.push({ command: cmd, ...options })
     })
     let closed = 0
     const handler = createPlanSignInHandler(store, 'claude', () => {
@@ -260,7 +265,7 @@ describe('createPlanSignInHandler', () => {
     })
     assert.ok(handler)
     handler()
-    assert.deepEqual(commands, ['claude auth login'])
+    assert.deepEqual(commands, [{ command: 'claude auth login', executionTarget: 'local' }])
     assert.equal(closed, 1)
   })
 

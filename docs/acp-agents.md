@@ -413,3 +413,5 @@ Every ACP payload below the header is still written verbatim.
   SSH workspaces (Phase 1: remote spawn over ControlMaster stdio).
 - [Agent Client Protocol](https://agentclientprotocol.com/) — the protocol spec
   and list of supported agents.
+
+The Usage panel’s Claude sign-in action opens a local console because plan usage reads local credentials, even while an SSH workspace is active. Agent reauthentication still opens the sign-in command on the agent’s host.

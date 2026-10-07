@@ -43,6 +43,7 @@ interface TerminalTab {
   scopeProjectId: string | null
   /** Thread this shell belongs to; only the active thread's tabs are shown. */
   scopeId: string | null
+  executionTarget?: 'local'
   /** Worktree present when this shell was created; null means the shared checkout. */
   checkoutPath: string | null
   label: string
@@ -331,6 +332,7 @@ export function mountTerminalsPane(
           label: tab.label,
           projectId: tab.scopeProjectId,
           threadId: tab.scopeId,
+          ...(tab.executionTarget ? { executionTarget: tab.executionTarget } : {}),
         },
       )
       tab.sessionId = created.sessionId
@@ -447,6 +449,7 @@ export function mountTerminalsPane(
     label?: string
     codeBlockRun?: CodeBlockRunRequest
     scopeProjectId?: string
+    executionTarget?: 'local'
     scopeId?: string
   }): string {
     tabCounter += 1
@@ -498,7 +501,8 @@ export function mountTerminalsPane(
       id,
       scopeProjectId,
       scopeId,
-      checkoutPath: currentWorktreePath(scopeId),
+      ...(options?.executionTarget ? { executionTarget: options.executionTarget } : {}),
+      checkoutPath: options?.executionTarget === 'local' ? null : currentWorktreePath(scopeId),
       label,
       labelSpan,
       checkoutBadge,
@@ -678,14 +682,14 @@ export function mountTerminalsPane(
 
   newBtn.addEventListener('click', () => addTab())
 
-  // Open a fresh shell and run a command in it (e.g. `claude /login` from the
+  // Open a fresh shell and run a command in it (e.g. `claude auth login` from the
   // Usage panel). Seed the tab first so switching to terminal mode spawns the
   // seeded session rather than an extra empty one.
-  function runCommandInNewShell(command: string): void {
+  function runCommandInNewShell(command: string, options?: { executionTarget: 'local' }): void {
     const trimmed = command.trim()
     if (!trimmed) return
     const wasActive = terminalModeActive(store)
-    addTab({ activate: true, initialInput: `${trimmed}\r` })
+    addTab({ activate: true, initialInput: `${trimmed}\r`, ...options })
     if (!wasActive) {
       store.setState({ filesPaneOpen: true, rightPanelMode: 'terminal' })
       store.emit('files_pane_changed')
@@ -732,7 +736,7 @@ export function mountTerminalsPane(
   }
 
   function preserveSharedShell(tab: TerminalTab, worktreePath: string): void {
-    if (!tab.checkoutBadge.hidden) return
+    if (tab.executionTarget === 'local' || !tab.checkoutBadge.hidden) return
     tab.checkoutBadge.hidden = false
     tab.term.writeln(
       '\r\n\x1b[90mThis shell remains in the shared checkout. A new shell opened in the thread worktree.\x1b[0m',
@@ -754,7 +758,8 @@ export function mountTerminalsPane(
     if (!worktreePath) return
 
     for (const tab of tabs.values()) {
-      if (tab.scopeId !== threadId || tab.checkoutPath !== null) continue
+      if (tab.executionTarget === 'local' || tab.scopeId !== threadId || tab.checkoutPath !== null)
+        continue
       // A shell that has not spawned yet can simply follow the newly committed
       // checkout. An in-flight create resolves its authoritative mode itself.
       if (!tab.sessionId) {

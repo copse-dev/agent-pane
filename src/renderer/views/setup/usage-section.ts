@@ -70,7 +70,7 @@ export function createPlanSignInHandler(
   if (!store) return null
   return (): void => {
     onRequestClose?.()
-    store.emit('request_terminal_command', provider === 'claude' ? 'claude auth login' : 'codex login')
+    store.emit('request_terminal_command', provider === 'claude' ? 'claude auth login' : 'codex login', { executionTarget: 'local' })
   }
 }
 
