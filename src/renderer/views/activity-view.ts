@@ -1,5 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { describeAutomationFailure } from '@shared/automation-failure.ts'
 import { el } from '../dom/helpers.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
@@ -158,6 +159,8 @@ export interface ActivityView {
   strip: HTMLElement
   /** A polite live region for the result of an in-place answer. */
   status: HTMLElement
+  /** Names an outage of the automation scheduler; hidden while it is healthy. */
+  notice: HTMLElement
   /** Start a fresh look: most urgent row selected, drawn, focused, ages ticking. */
   show: (options?: { focusFirstRow?: boolean }) => void
   /** Stop drawing and forget the selection. */
@@ -182,6 +185,26 @@ export function createActivityView(
     'aria-labelledby': `${host.idPrefix}-detail-title`,
   })
   const body = el('div', { class: 'activity-panel-body' }, list, detail)
+  // Set while the automation scheduler is down: scheduled and event runs are not starting,
+  // which no thread can say because none exists.
+  const notice = el('p', {
+    class: 'activity-automation-notice',
+    role: 'status',
+    hidden: true,
+  })
+  const showSchedulerHealth = (health: { state: string; message: string | null }): void => {
+    if (health.state === 'ok') {
+      notice.hidden = true
+      notice.textContent = ''
+      return
+    }
+    const description = describeAutomationFailure('scheduler-stopped')
+    notice.hidden = false
+    notice.dataset['state'] = health.state
+    notice.textContent = `${description.title}: ${health.message ?? description.remedy} ${description.remedy}`
+  }
+  api.automations.schedulerHealth().then(showSchedulerHealth, () => {})
+  api.automations.onSchedulerHealth(showSchedulerHealth)
   const status = el('p', {
     class: 'activity-panel-status',
     role: 'status',
@@ -430,6 +453,25 @@ export function createActivityView(
    * `approvalRequestDetails` — and this pane is the only place the Approve action
    * exists, so a request is never approved from a view that shows less.
    */
+  function issueBlock(row: ActivityRow): HTMLElement[] {
+    const issue = row.issue
+    if (!issue) return []
+    return [
+      el(
+        'div',
+        {
+          class: 'activity-issue-detail',
+          role: 'group',
+          'aria-label': issue.title,
+          'data-failure-code': issue.code,
+        },
+        el('p', { class: 'activity-issue-title' }, issue.title),
+        ...(issue.message ? [el('p', { class: 'activity-issue-message' }, issue.message)] : []),
+        el('p', { class: 'activity-issue-remedy' }, issue.remedy),
+      ),
+    ]
+  }
+
   function detailContent(row: ActivityRow): HTMLElement[] {
     if (row.state === 'needs-approval' && row.approval) {
       const request = row.approval
@@ -441,6 +483,7 @@ export function createActivityView(
             role: 'region',
             'aria-label': `Approval request: ${request.title}`,
           },
+          ...issueBlock(row),
           el('p', { class: 'activity-review-title' }, request.title),
           ...approvalRequestDetails(request),
         ),
@@ -475,6 +518,8 @@ export function createActivityView(
         el('p', { class: 'activity-detail-text' }, row.want),
       ]
     }
+    // An issue block already says what happened; repeating the row's summary under it adds nothing.
+    if (row.issue) return issueBlock(row)
     return [el('p', { class: 'activity-detail-text' }, row.want)]
   }
 
@@ -636,7 +681,17 @@ export function createActivityView(
       { class: 'activity-row-second' },
       el('span', { class: 'activity-state' }, STATE_SHORT[row.state]),
     )
-    if (row.state !== 'failed' && row.state !== 'finished') {
+    if (row.issue) {
+      // An unattended run that is stuck or dead says why in the row itself: nobody is
+      // watching it, so this line is the whole of the explanation until it is opened.
+      second.append(
+        el(
+          'span',
+          { class: 'activity-want-text activity-issue', 'data-failure-code': row.issue.code },
+          row.issue.title,
+        ),
+      )
+    } else if (row.state !== 'failed' && row.state !== 'finished') {
       second.append(
         el(
           'span',
@@ -707,6 +762,7 @@ export function createActivityView(
       rowLabel(row, at),
       row.fold ? [row.fold.kind, row.fold.runs.length, expandedFolds.has(row.key)] : null,
       foldRunKeys.has(row.key),
+      row.issue ? [row.issue.code, row.issue.message] : null,
     ])
   }
 
@@ -1041,6 +1097,7 @@ export function createActivityView(
       approvals,
       questions,
       runs: timings.runs,
+      now: at,
     })
     let groups = everything
     if (projectFilter !== null) {
@@ -1054,6 +1111,7 @@ export function createActivityView(
         approvals: approvals.filter((req) => req.threadId !== undefined && ids.has(req.threadId)),
         questions: questions.filter((req) => req.threadId !== undefined && ids.has(req.threadId)),
         runs: timings.runs,
+        now: at,
       })
     }
     if (host.projectStrip) renderStrip(everything)
@@ -1257,5 +1315,5 @@ export function createActivityView(
     tickAges()
   }
 
-  return { summary, body, strip, status, show, hide }
+  return { summary, body, strip, status, notice, show, hide }
 }

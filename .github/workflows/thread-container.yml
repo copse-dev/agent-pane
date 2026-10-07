@@ -1,0 +1,55 @@
+name: Thread container (Docker path)
+
+# The unattended container runtime (`containerRunsEnabled`) is hardened by design, but its
+# integration tests need a real Docker daemon, so the main `CI` workflow's unit tier never ran
+# them (`COPSE_THREAD_CONTAINER_E2E` was set nowhere). This workflow runs them on a hosted
+# runner, where Docker is preinstalled and egress to the registry, apt and npm is open.
+#
+# ADVISORY, not a required check, on purpose: it has not yet been observed green on a hosted
+# runner, and it is deliberately not part of the `CI Passed` aggregate (which is pinned by
+# scripts/ci-workflow-invariants.test.ts). Promote it into that aggregate only after it has
+# stayed green across a representative run of PRs and nightlies — see
+# docs/plans/default-on-readiness.md, "Unattended container runs".
+on:
+  pull_request:
+    paths:
+      - 'src/main/services/container-runtime/**'
+      - 'src/main/services/security/runtime-containment.ts'
+      - 'src/shared/container-run-schema.ts'
+      - 'src/shared/types/unattended-run.ts'
+      - '.github/workflows/thread-container.yml'
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: thread-container-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-path:
+    name: Docker-path integration tests
+    # Fork PRs get no secrets and no trust; the nightly and dispatch runs cover them after merge.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # A cold run builds the worker image (15 minute cap inside the test) and then runs a few
+    # short containers. The cap is a leak-stopper, not a latency target.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Show the container engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker version
+          docker info --format '{{.ServerVersion}} {{.SecurityOptions}} cgroup={{.CgroupVersion}}'
+      - name: Run the Docker-path integration tests
+        env:
+          COPSE_THREAD_CONTAINER_E2E: '1'
+        run: npm test -- src/main/services/container-runtime/thread-container.integration.test.ts src/main/services/container-runtime/acp-container.integration.test.ts

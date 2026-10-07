@@ -72,6 +72,7 @@ function controllerApi(loaded: Thread[]): {
     },
     automations: {
       canStart: () => Promise.resolve({ allowed: true }),
+      reportStartFailure: () => Promise.resolve(true),
       onTriggered(handler) {
         triggerHandler = handler
         return () => {
@@ -243,6 +244,7 @@ test('a checkout failure preserves the scheduled prompt as a draft', async (cont
     automations: {
       onTriggered: () => () => {},
       canStart: () => Promise.resolve({ allowed: true }),
+      reportStartFailure: () => Promise.resolve(true),
     },
     threads: {
       loadProject: () => Promise.resolve([]),
@@ -298,6 +300,7 @@ test('the IPC wrapper is stripped from the failure note', async (context) => {
     automations: {
       onTriggered: () => () => {},
       canStart: () => Promise.resolve({ allowed: true }),
+      reportStartFailure: () => Promise.resolve(true),
     },
     threads: { loadProject: () => Promise.resolve([]) },
   }
@@ -310,6 +313,43 @@ test('the IPC wrapper is stripped from the failure note', async (context) => {
   // The Electron prefix is noise in a transcript; the cause is not.
   assert.doesNotMatch(note.content, /invoking remote method/)
   assert.match(note.content, /submodules unsupported \(\/repo\/\.gitmodules, for project \/repo\)/)
+
+  detach()
+})
+
+test('a checkout failure is recorded on the run and reported to main as a worktree failure', async (context) => {
+  context.mock.method(console, 'error', () => {})
+  const store = createStore({
+    activeProjectId: 'project-a',
+    workspaceRoot: '/repo',
+    threads: [automationThread()],
+  })
+  const reports: Array<{ projectId: string; threadId: string; code: string; message: string }> = []
+  const api: AutomationControllerApi = {
+    agent: {
+      prepareCheckout: () => Promise.reject(new Error('Cannot create linked worktree')),
+      run: () => Promise.resolve(),
+    },
+    automations: {
+      onTriggered: () => () => {},
+      canStart: () => Promise.resolve({ allowed: true }),
+      reportStartFailure: (projectId, threadId, failure) => {
+        reports.push({ projectId, threadId, ...failure })
+        return Promise.resolve(true)
+      },
+    },
+    threads: { loadProject: () => Promise.resolve([]) },
+  }
+  const detach = attachAutomationController(store, api)
+  await tick()
+
+  const automation = store.getState().threads[0]?.automation
+  assert.equal(automation?.failure?.code, 'worktree-failed')
+  assert.match(automation.failure.message, /Cannot create linked worktree/)
+  assert.ok(automation.startFailedAt !== undefined)
+  assert.equal(reports.length, 1)
+  assert.equal(reports[0]?.code, 'worktree-failed')
+  assert.equal(reports[0].projectId, 'project-a')
 
   detach()
 })
@@ -369,6 +409,7 @@ test('a run whose start failed is not started again when the workspace reloads',
     automations: {
       onTriggered: () => () => {},
       canStart: () => Promise.resolve({ allowed: true }),
+      reportStartFailure: () => Promise.resolve(true),
     },
     threads: {
       loadProject: () => Promise.resolve([]),
