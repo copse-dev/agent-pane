@@ -15,10 +15,30 @@ Docs: https://developers.openai.com/api/docs/guides/decisions
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
 import urllib.request
+
+
+def print_api_error(body, credential):
+    """Show only diagnostic fields, with credentials and terminal controls removed."""
+    if not isinstance(body, dict):
+        return
+    detail = body.get("error", body)
+    if isinstance(detail, str):
+        detail = {"message": detail}
+    if not isinstance(detail, dict):
+        return
+    for field in ("code", "type", "param", "message"):
+        value = detail.get(field)
+        if not isinstance(value, str):
+            continue
+        value = value.replace(credential, "[redacted]")
+        value = re.sub(r"(?i)Bearer\s+\S+|sk-[\w-]+|eyJ[\w.-]+", "[redacted]", value)
+        value = "".join(c if c.isprintable() else " " for c in value)
+        print(f"API {field}: {value[:1000]}")
 
 
 def main():
@@ -105,6 +125,7 @@ def main():
                             return 0
                     if event.get("type") in ("error", "response.failed", "response.incomplete"):
                         print("Responses stream reported failure/incomplete; control check is inconclusive.")
+                        print_api_error(event.get("response", event), key)
                         return 1
                 print("No completed Responses event received; control check is inconclusive.")
                 return 1
@@ -122,7 +143,10 @@ def main():
         ))
         if oauth:
             print(f"This result applies only to this token at {endpoint}.")
-        # Provider bodies can echo credentials; do not print them.
+        try:
+            print_api_error(json.loads(error.read(65536)), key)
+        except (ValueError, UnicodeError, OSError):
+            pass  # Never dump an HTML response or an unparsed error body.
         error.close()
         return 1
     except (urllib.error.URLError, TimeoutError, OSError):
