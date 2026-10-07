@@ -148,6 +148,10 @@
     "label": "Activity home with nothing to list"
   },
   {
+    "id": "pr-relations",
+    "label": "PR producing and related threads"
+  },
+  {
     "id": "chat-layout-styling",
     "label": "Chat layout styling"
   },
