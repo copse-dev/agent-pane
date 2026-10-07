@@ -14,10 +14,21 @@ async function readProseMetrics(selector: string) {
     const code = prose.querySelector('pre')
     const codeStyle = code ? getComputedStyle(code) : null
     const nested = prose.querySelector('ul ul')
+    const strong = prose.querySelector('strong')
+    const linkedStrong = prose.querySelector('a strong')
+    const link = prose.querySelector('a')
     return {
       width: prose.getBoundingClientRect().width,
       fontSize: parseFloat(style.fontSize),
       lineHeight: parseFloat(style.lineHeight),
+      fontFamily: style.fontFamily,
+      letterSpacing: style.letterSpacing,
+      wordSpacing: style.wordSpacing,
+      color: style.color,
+      strongWeight: strong ? Number(getComputedStyle(strong).fontWeight) : 0,
+      strongColor: strong ? getComputedStyle(strong).color : '',
+      linkColor: link ? getComputedStyle(link).color : '',
+      linkedStrongColor: linkedStrong ? getComputedStyle(linkedStrong).color : '',
       paragraphGap: first && second ? second.top - first.bottom : 0,
       overflow: prose.scrollWidth - prose.clientWidth,
       codeScrolls: code ? code.scrollWidth > code.clientWidth : false,
@@ -65,14 +76,23 @@ describe('assistant Reading layout in the real renderer', () => {
 
   it('uses a readable measure and paragraph rhythm without breaking rich markdown', async () => {
     const metrics = await readProseMetrics(PROSE)
-    expect(metrics.width).toBeLessThanOrEqual(720)
+    expect(metrics.width).toBeLessThanOrEqual(680)
     expect(metrics.width).toBeGreaterThan(500)
-    expect(metrics.fontSize).toBe(16)
-    expect(metrics.lineHeight).toBeCloseTo(26.4, 1)
+    expect(metrics.fontSize).toBe(15)
+    expect(metrics.lineHeight).toBeCloseTo(24, 1)
+    // Platform text face, untracked: Pliant's tight word gaps made prose run together.
+    expect(metrics.fontFamily).not.toContain('Pliant')
+    expect(metrics.letterSpacing).toBe('normal')
+    expect(metrics.wordSpacing).toBe('0px')
+    expect(metrics.color).toBe('rgb(230, 230, 230)')
+    expect(metrics.strongWeight).toBe(600)
+    expect(metrics.strongColor).toBe('rgb(255, 255, 255)')
+    expect(metrics.linkColor).not.toBe('')
+    expect(metrics.linkedStrongColor).toBe(metrics.linkColor)
     expect(metrics.paragraphGap).toBeGreaterThanOrEqual(15)
     expect(metrics.overflow).toBeLessThanOrEqual(1)
     expect(metrics.codeScrolls).toBe(true)
-    // Fenced code keeps tool-output density instead of the 16px/1.65 prose
+    // Fenced code keeps tool-output density instead of the 15px/1.6 prose
     // line box: 12px code on the shared 22px line, not ~26px.
     expect(metrics.codeFontSize).toBe(12)
     expect(metrics.codeLineHeight).toBeCloseTo(22, 1)
@@ -134,7 +154,11 @@ describe('assistant Reading layout in the real renderer', () => {
     const metrics = await readProseMetrics(PROSE)
     expect(metrics.width).toBeLessThan(460)
     expect(metrics.width).toBeGreaterThan(150)
-    expect(metrics.fontSize).toBe(16)
+    expect(metrics.fontSize).toBe(15)
+    expect(metrics.color).toBe('rgb(51, 51, 51)')
+    expect(metrics.strongColor).toBe('rgb(17, 17, 17)')
+    expect(metrics.linkColor).not.toBe('')
+    expect(metrics.linkedStrongColor).toBe(metrics.linkColor)
     expect(metrics.overflow).toBeLessThanOrEqual(1)
     expect(metrics.codeScrolls).toBe(true)
     const overflow = await browser.execute(() => {
@@ -155,8 +179,8 @@ describe('assistant Reading layout in the real renderer', () => {
       document.documentElement.style.setProperty('--ui-scale', '1.25')
     })
     const metrics = await readProseMetrics(PROSE)
-    expect(metrics.fontSize).toBe(20)
-    expect(metrics.lineHeight).toBeCloseTo(33, 1)
+    expect(metrics.fontSize).toBe(18.75)
+    expect(metrics.lineHeight).toBeCloseTo(30, 1)
     expect(metrics.codeFontSize).toBe(15)
     expect(metrics.codeLineHeight).toBeCloseTo(27.5, 1)
     expect(metrics.paragraphGap).toBeGreaterThanOrEqual(19)
@@ -182,8 +206,8 @@ describe('assistant Reading layout in the real renderer', () => {
     const liveProse = `${PROSE}.is-streaming`
     await $(liveProse).waitForExist()
     const live = await readProseMetrics(liveProse)
-    expect(live.fontSize).toBe(16)
-    expect(live.lineHeight).toBeCloseTo(26.4, 1)
+    expect(live.fontSize).toBe(15)
+    expect(live.lineHeight).toBeCloseTo(24, 1)
     await $('.tool-card').waitForExist({ timeout: 15_000 })
     const mixed = await browser.execute(() => {
       const card = document.querySelector('.tool-card')
@@ -192,10 +216,12 @@ describe('assistant Reading layout in the real renderer', () => {
       if (!card || !prose) throw new Error('Missing prose alongside the tool')
       return {
         proseSize: getComputedStyle(prose).fontSize,
+        proseLineHeight: getComputedStyle(prose).lineHeight,
         toolSize: getComputedStyle(card).fontSize,
       }
     })
-    expect(mixed.proseSize).toBe('16px')
+    expect(mixed.proseSize).toBe('15px')
+    expect(mixed.proseLineHeight).toBe('24px')
     expect(parseFloat(mixed.toolSize)).toBeLessThan(16)
     await saveAppScreenshot('chat-reading-layout-streaming.png')
     await browser.waitUntil(async () => (await $$(liveProse).length) === 0, {
@@ -206,7 +232,7 @@ describe('assistant Reading layout in the real renderer', () => {
     const final = answers[answers.length - 1]
     if (!final) throw new Error('Missing completed answer')
     await expect(final).toHaveText(expect.stringContaining('deterministic layout fixture'))
-    expect((await readProseMetrics(`${PROSE}:not(.is-streaming)`)).fontSize).toBe(16)
+    expect((await readProseMetrics(`${PROSE}:not(.is-streaming)`)).fontSize).toBe(15)
     // Both CI renders caught the answer's hover-only Copy button with the
     // pointer left where the Send click landed.
     await parkPointer()
