@@ -27,11 +27,17 @@ def print_api_error(body, credential):
     """Show only diagnostic fields, with credentials and terminal controls removed."""
     if not isinstance(body, dict):
         return
-    detail = body.get("error", body)
+    detail = body.get("error") or body.get("detail") or body
     if isinstance(detail, str):
         detail = {"message": detail}
+    if isinstance(detail, list):
+        for item in detail[:5]:
+            if isinstance(item, dict):
+                print_api_error({"message": item.get("msg")}, credential)
+        return
     if not isinstance(detail, dict):
         return
+    shown = False
     for field in ("code", "type", "param", "message"):
         value = detail.get(field)
         if not isinstance(value, str):
@@ -40,6 +46,9 @@ def print_api_error(body, credential):
         value = re.sub(r"(?i)Bearer\s+\S+|sk-[\w-]+|eyJ[\w.-]+", "[redacted]", value)
         value = "".join(c if c.isprintable() else " " for c in value)
         print(f"API {field}: {value[:1000]}")
+        shown = True
+    if not shown:
+        print("API error had no recognized diagnostic fields; body withheld.")
 
 
 def main():
