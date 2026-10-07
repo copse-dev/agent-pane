@@ -113,6 +113,11 @@ export function createContextWheel(): {
   function restoreEngagedPopover(): void {
     if ((hovered || focused) && popoverActive && !root.hidden) popover.hidden = false
   }
+  // Pointer clicks must not pin a hover by taking focus. Keyboard focus still
+  // opens the details; interactions inside the popover keep their defaults.
+  root.addEventListener('mousedown', (event) => {
+    if (event.target instanceof Node && !popover.contains(event.target)) event.preventDefault()
+  })
   root.addEventListener('mouseenter', () => {
     hovered = true
     showPopover()
