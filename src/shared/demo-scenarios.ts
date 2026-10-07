@@ -2,6 +2,7 @@ import type { ChatGptPlanStatus } from './types/chatgpt-plan.ts'
 import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
+import type { PluginInstallReview } from './types/plugin-installs.ts'
 import type { McpServerStatus } from './types/mcp.ts'
 import type { DemoTrace } from './demo-traces.ts'
 import type { FollowUpSuggestion } from './follow-ups/types.ts'
@@ -117,6 +118,11 @@ export interface DemoScenario {
     defaultIndex?: number
     cancelIndex?: number
   }[]
+  /**
+   * Answer `plugins:prepare-install` with this review. The browser demo cannot
+   * download a package, so this is what reaches the real install review dialog.
+   */
+  pluginInstallReview?: PluginInstallReview
   /**
    * MCP servers the demo reports as configured, with the per-tool permission
    * catalog Settings → Permissions lists for them. Scenarios without one show
@@ -1619,6 +1625,65 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         updatedAt: FIXED_TIME,
       },
     ],
+  },
+  {
+    id: 'plugin-install-review',
+    label: 'Plugin catalogue install review',
+    project: project('demo-plugin-install-review-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-plugin-install-review-thread',
+        title: 'Plugin install review',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    // The Figma package as reviewed at its pinned catalogue revision.
+    pluginInstallReview: {
+      token: 'demo-plugin-install-review',
+      catalogId: 'https://github.com/figma/mcp-server-guide#',
+      pluginId: 'figma',
+      name: 'figma',
+      description:
+        'Figma design platform integration. Access design files, extract component information, read design tokens, and translate designs into code.',
+      publisher: 'figma',
+      contentHash: 'sha256:3e8e1e7aecedae788bc34903a3708818d3f161ea381583084e971a2804c298a3',
+      revision: '172920731eedf414e9b22ae60017d9a5b6c9f81f',
+      skillCount: 14,
+      mcpServerCount: 1,
+      skills: [
+        'skills/figma-code-connect/SKILL.md',
+        'skills/figma-create-new-file/SKILL.md',
+        'skills/figma-design-to-code/SKILL.md',
+        'skills/figma-generate-design/SKILL.md',
+        'skills/figma-generate-diagram/SKILL.md',
+        'skills/figma-generate-library/SKILL.md',
+        'skills/figma-generative-plugins/SKILL.md',
+        'skills/figma-implement-motion/SKILL.md',
+        'skills/figma-shaders/SKILL.md',
+        'skills/figma-swiftui/SKILL.md',
+        'skills/figma-use-figjam/SKILL.md',
+        'skills/figma-use-motion/SKILL.md',
+        'skills/figma-use-slides/SKILL.md',
+        'skills/figma-use/SKILL.md',
+      ],
+      mcpServers: [
+        { name: 'figma', transport: 'streamable-http', target: 'https://mcp.figma.com/mcp' },
+      ],
+      warnings: [
+        'MCP server "figma" won\'t connect: Figma only admits MCP apps it has approved, and Copse isn\'t one yet. The skills still work.',
+      ],
+      provenance: 'unsigned',
+      operation: 'install',
+    },
   },
   {
     id: 'mcp-sign-in',

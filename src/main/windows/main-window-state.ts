@@ -1,5 +1,6 @@
 import { isBrowserSessionPartition } from '@shared/browser-session.ts'
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import { MAX_RESTORED_BROWSER_TABS } from '@shared/types/main-window.ts'
 import type {
@@ -141,6 +142,8 @@ function decodeState(value: unknown): MainWindowState | null {
 export interface MainWindowStateStorage {
   get(key: string): unknown
   set(key: string, value: unknown): void
+  /** Write several keys in one backing rewrite; optional so a plain store still works. */
+  setMany?(values: Readonly<Record<string, unknown>>): void
 }
 
 export interface MainWindowRecordDefaults extends MainWindowNavigation {
@@ -204,20 +207,32 @@ export class MainWindowStateRepository {
       lastFocusedAt: this.#now(),
     }
     this.#state?.windows.push(record)
-    this.#persist()
+    this.#persist(true)
     return structuredClone(record)
   }
 
-  update(id: string, patch: Partial<Omit<MainWindowRecord, 'id'>>): MainWindowRecord | undefined {
+  /**
+   * Apply `patch` to a window record. A patch that changes nothing writes nothing:
+   * every write rewrites the whole config.json, and navigation is re-reported
+   * several times per project switch with the same values. `alsoWrite` carries
+   * other keys that must change with the record (the legacy navigation mirror) so
+   * they share its single rewrite instead of costing one each.
+   */
+  update(
+    id: string,
+    patch: Partial<Omit<MainWindowRecord, 'id'>>,
+    alsoWrite: Readonly<Record<string, unknown>> = {},
+  ): MainWindowRecord | undefined {
     this.#ensureLoaded()
     const index = this.#state?.windows.findIndex((candidate) => candidate.id === id) ?? -1
     if (index < 0 || !this.#state) return undefined
     const current = this.#state.windows[index]
     if (!current) return undefined
     const next: MainWindowRecord = { ...current, ...patch, id }
-    this.#state.windows[index] = next
-    this.#persist()
-    return structuredClone(next)
+    const changed = !isDeepStrictEqual(next, current)
+    if (changed) this.#state.windows[index] = next
+    this.#persist(changed, alsoWrite)
+    return structuredClone(changed ? next : current)
   }
 
   remove(id: string): void {
@@ -226,7 +241,7 @@ export class MainWindowStateRepository {
     const windows = this.#state.windows.filter((candidate) => candidate.id !== id)
     if (windows.length === this.#state.windows.length) return
     this.#state = { version: 1, windows }
-    this.#persist()
+    this.#persist(true)
   }
 
   /**
@@ -247,8 +262,20 @@ export class MainWindowStateRepository {
     }
   }
 
-  #persist(): void {
-    if (this.#frozen) return
-    if (this.#state) this.#storage.set(MAIN_WINDOW_STATE_KEY, this.#state)
+  /**
+   * Write the window state (when `stateChanged`, and not frozen) and `alsoWrite`
+   * together. The freeze only withholds the window records: the extra keys are
+   * written regardless, as they were before they shared this call.
+   */
+  #persist(stateChanged: boolean, alsoWrite: Readonly<Record<string, unknown>> = {}): void {
+    const values: Record<string, unknown> = { ...alsoWrite }
+    if (stateChanged && !this.#frozen && this.#state) values[MAIN_WINDOW_STATE_KEY] = this.#state
+    const keys = Object.keys(values)
+    if (keys.length === 0) return
+    if (keys.length > 1 && this.#storage.setMany) {
+      this.#storage.setMany(values)
+      return
+    }
+    for (const key of keys) this.#storage.set(key, values[key])
   }
 }

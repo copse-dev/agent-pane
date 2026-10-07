@@ -31,10 +31,40 @@ export function serializedSet(api: ApiClient, key: string, value: unknown): Prom
   const prev = writeChains.get(key) ?? Promise.resolve()
   const next = prev.catch(() => undefined).then(() => api.storage.set(key, value))
   writeChains.set(key, next)
-  void next.finally(() => {
-    if (writeChains.get(key) === next) writeChains.delete(key)
-  })
+  // The caller gets `next` and sees any rejection; this cleanup chain must not
+  // raise a second, unhandled one.
+  void next
+    .finally(() => {
+      if (writeChains.get(key) === next) writeChains.delete(key)
+    })
+    .catch(() => undefined)
   return next
+}
+
+/**
+ * JSON of the projects list this window last wrote to config, or `null` when
+ * nothing has been written yet (the first write always goes out).
+ *
+ * `projects_changed` is a re-render signal as much as an edit signal — a project
+ * switch emits it several times — and each `storage:set` rewrites the whole
+ * `config.json` synchronously on the main thread. Without this, one switch
+ * rewrote an unchanged project list two or three times over. Deliberately not
+ * seeded from `loadProjects`: that list is normalised on the way in (legacy
+ * `worktreeMode` values, unknown fields dropped), so skipping the first write
+ * would leave the old on-disk form in place until the user next edited a project.
+ */
+let persistedProjectsJson: string | null = null
+
+function persistProjects(api: ApiClient, projects: Project[]): Promise<void> {
+  const json = JSON.stringify(projects)
+  if (json === persistedProjectsJson) return Promise.resolve()
+  persistedProjectsJson = json
+  return serializedSet(api, KEY_PROJECTS, projects).catch((error: unknown) => {
+    // The write did not land, so the disk no longer matches `json`: forget it and
+    // let the next save try again rather than skip it as already persisted.
+    if (persistedProjectsJson === json) persistedProjectsJson = null
+    throw error
+  })
 }
 
 function serializedWrite(key: string, write: () => Promise<void>): Promise<void> {
@@ -253,6 +283,7 @@ export function flushProjectThreads(
 /** Test-only: clear the per-project metadata baseline and write chains. */
 export function __resetPersistenceForTest(): void {
   persistedMeta.clear()
+  persistedProjectsJson = null
   writeChains.clear()
   activeAutosave = null
   ownsNavigation = true
@@ -280,7 +311,7 @@ export async function loadProjects(api: ApiClient): Promise<{
     const worktreeMode = value['worktreeMode']
     // `from-default-branch` predates cutting worktrees from the default branch
     // unconditionally; it now means the same thing as `always`.
-    if (worktreeMode === 'never' || worktreeMode === 'always') {
+    if (worktreeMode === 'never' || worktreeMode === 'always' || worktreeMode === 'on-write') {
       project.worktreeMode = worktreeMode
     } else if (worktreeMode === 'from-default-branch') {
       project.worktreeMode = 'always'
@@ -308,9 +339,22 @@ export async function saveProjects(
   activeThreadId: string | null,
 ): Promise<void> {
   await Promise.all([
-    serializedSet(api, KEY_PROJECTS, projects),
+    persistProjects(api, projects),
     serializedNavigation(api, { activeProjectId, activeThreadId }),
   ])
+}
+
+/**
+ * Persist only the window's navigation (active project + thread). For callers
+ * that have just written the projects list and would otherwise rewrite it
+ * unchanged through {@link saveProjects}. An unchanged navigation is a no-op.
+ */
+export function saveNavigation(
+  api: ApiClient,
+  activeProjectId: string | null,
+  activeThreadId: string | null,
+): Promise<void> {
+  return serializedNavigation(api, { activeProjectId, activeThreadId })
 }
 
 /**
@@ -435,7 +479,7 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
     const writes: Array<Promise<void>> = []
     if (projectsDirty) {
       projectsDirty = false
-      writes.push(serializedSet(api, KEY_PROJECTS, projects))
+      writes.push(persistProjects(api, projects))
     }
     writes.push(serializedNavigation(api, { activeProjectId, activeThreadId }))
     if (activeProjectId) writes.push(reconcile(activeProjectId))

@@ -6,7 +6,7 @@
 // This measures the rendered result at the default and a narrow rail width.
 // `dialog-tokens.test.ts` pins the declarations it depends on.
 import assert from 'node:assert/strict'
-import { $, browser } from '@wdio/globals'
+import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 async function setRailWidth(width: number): Promise<void> {
@@ -67,9 +67,19 @@ async function measureSavedLogin() {
 describe('remote desktop saved-login details', () => {
   before(async () => {
     await browser.url('/?scenario=vnc-saved-login')
+    // Supply a saved remote machine at the IPC boundary; the local device is intentionally absent.
+    await browser.execute(() => {
+      window.api.sshWorkspace.listHosts = async () => [
+        { id: 'demo-studio', label: 'Studio', host: 'studio.local' },
+      ]
+    })
     const control = $('[data-panel-control="vnc"]')
     await control.waitForDisplayed({ timeout: 20_000 })
     await control.click()
+    const machine = $('.vnc-device-header[data-machine="ssh:demo-studio"]')
+    await machine.waitForDisplayed({ timeout: 20_000 })
+    await machine.click()
+    await expect($('.vnc-machine-select option[value="local"]')).not.toExist()
     await $('.vnc-device.is-selected .vnc-saved-login').waitForDisplayed({ timeout: 20_000 })
   })
 

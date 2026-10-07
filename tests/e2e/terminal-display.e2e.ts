@@ -142,8 +142,15 @@ describe('integrated terminal', () => {
 
     await saveAppScreenshot('terminal-shell-prompt.png')
 
-    const helper = await $('.xterm-helper-textarea')
-    await helper.click()
+    // xterm's hidden textarea receives keyboard input after its visible screen is focused.
+    await $('.terminal-container .xterm-screen').click()
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () => document.activeElement?.classList.contains('xterm-helper-textarea') === true,
+        ),
+      { timeout: 5_000, timeoutMsg: 'clicking the terminal screen must focus its keyboard input' },
+    )
     await browser.keys(['echo', ' ', 'hello', '\uE007'])
 
     await browser.waitUntil(async () => (await xtermText()).includes('hello'), {

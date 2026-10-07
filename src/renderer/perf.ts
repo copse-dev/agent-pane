@@ -43,6 +43,9 @@ function readBridge(): PerfBridge | null {
 
 const bridge = readBridge()
 
+/** True only under `COPSE_PERF=1`; lets callers skip building detail nobody will read. */
+export const perfOn = bridge !== null
+
 /** True only under `COPSE_PERF=1` *and* `COPSE_PERF_AUTOPILOT=1`. */
 export const autopilotOn = bridge?.autopilot === true
 
