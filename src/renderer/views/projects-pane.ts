@@ -2139,70 +2139,76 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         mode === 'status'
           ? groupRowsByStatus(ordered, isThreadAwaitingAttention)
           : [{ id: 'all', label: '', rows: ordered }]
-      if (ordered.length === 0) {
-        // The tree is gone in this layout, so an empty project would vanish with
-        // it, taking its name and its "+" along. Keep one compact row per project.
-        return [
-          el('div', { class: 'sidebar-empty' }, 'No threads yet'),
-          ...Array.from(owners.values(), (project) => {
-            const nameRow = el(
-              'button',
-              { class: 'project-row', title: project.path },
-              el('span', { class: 'project-name' }, projectDisplayName(project)),
-            )
-            nameRow.addEventListener('click', () => {
-              switchProject(store, api, project.id)
-            })
-            return el(
-              'div',
-              { class: 'project-entry', 'data-project-id': project.id },
-              el('div', { class: 'project-line' }, nameRow, renderNewThreadButton(project)),
-            )
-          }),
-        ]
-      }
-      return sections.map((section) => {
-        const block = el('div', { class: 'thread-section', 'data-section-id': section.id })
-        if (section.label) {
-          block.append(el('div', { class: 'thread-section-heading' }, section.label))
-        }
-        const byThread = new Map(section.rows.map((row) => [row.thread, row]))
-        const countKey = `section:${mode}:${section.id}`
-        const limit = visibleThreadCounts.get(countKey) ?? SIDEBAR_THREADS_PAGE_SIZE
-        const activeRow = section.rows.find(
-          (row) => row.projectId === activeProjectId && row.thread.id === activeThreadId,
-        )
-        const paged = paginateSidebarThreads(
-          section.rows.map((row) => row.thread),
-          limit,
-          activeRow?.thread.id,
-        )
-        if (paged.visibleCount > limit) visibleThreadCounts.set(countKey, paged.visibleCount)
-        const chats = el('div', { class: 'chats-list' })
-        for (const thread of paged.visibleThreads) {
-          const project = owners.get(byThread.get(thread)?.projectId ?? '')
-          if (!project) continue
-          const row = renderThreadRow(project, thread)
-          row
-            .querySelector('.chat-title')
-            ?.after(el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`))
-          chats.append(row)
-        }
-        if (paged.hasMore) {
-          const showMoreBtn = el(
+      // The tree is gone in this layout, so a project with no threads would vanish
+      // with it, taking its name and its "+" along. Keep one compact row for each,
+      // whether or not other projects have threads.
+      const withThreads = new Set(ordered.map((row) => row.projectId))
+      const emptyProjectRows = Array.from(owners.values())
+        .filter((project) => !withThreads.has(project.id))
+        .map((project) => {
+          const nameRow = el(
             'button',
-            { type: 'button', class: 'chats-show-more' },
-            'Show more',
+            { class: 'project-row', title: project.path },
+            el('span', { class: 'project-name' }, projectDisplayName(project)),
           )
-          showMoreBtn.addEventListener('click', () => {
-            visibleThreadCounts.set(countKey, paged.visibleCount + SIDEBAR_THREADS_PAGE_SIZE)
-            render()
+          nameRow.addEventListener('click', () => {
+            switchProject(store, api, project.id)
           })
-          chats.append(showMoreBtn)
-        }
-        block.append(chats)
-        return block
-      })
+          return el(
+            'div',
+            { class: 'project-entry', 'data-project-id': project.id },
+            el('div', { class: 'project-line' }, nameRow, renderNewThreadButton(project)),
+          )
+        })
+      if (ordered.length === 0) {
+        return [el('div', { class: 'sidebar-empty' }, 'No threads yet'), ...emptyProjectRows]
+      }
+      return sections
+        .map((section) => {
+          const block = el('div', { class: 'thread-section', 'data-section-id': section.id })
+          if (section.label) {
+            block.append(el('div', { class: 'thread-section-heading' }, section.label))
+          }
+          const byThread = new Map(section.rows.map((row) => [row.thread, row]))
+          const countKey = `section:${mode}:${section.id}`
+          const limit = visibleThreadCounts.get(countKey) ?? SIDEBAR_THREADS_PAGE_SIZE
+          const activeRow = section.rows.find(
+            (row) => row.projectId === activeProjectId && row.thread.id === activeThreadId,
+          )
+          const paged = paginateSidebarThreads(
+            section.rows.map((row) => row.thread),
+            limit,
+            activeRow?.thread.id,
+          )
+          if (paged.visibleCount > limit) visibleThreadCounts.set(countKey, paged.visibleCount)
+          const chats = el('div', { class: 'chats-list' })
+          for (const thread of paged.visibleThreads) {
+            const project = owners.get(byThread.get(thread)?.projectId ?? '')
+            if (!project) continue
+            const row = renderThreadRow(project, thread)
+            row
+              .querySelector('.chat-title')
+              ?.after(
+                el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`),
+              )
+            chats.append(row)
+          }
+          if (paged.hasMore) {
+            const showMoreBtn = el(
+              'button',
+              { type: 'button', class: 'chats-show-more' },
+              'Show more',
+            )
+            showMoreBtn.addEventListener('click', () => {
+              visibleThreadCounts.set(countKey, paged.visibleCount + SIDEBAR_THREADS_PAGE_SIZE)
+              render()
+            })
+            chats.append(showMoreBtn)
+          }
+          block.append(chats)
+          return block
+        })
+        .concat(emptyProjectRows)
     }
 
     const groupMode = store.getState().sidebarThreadGroup
