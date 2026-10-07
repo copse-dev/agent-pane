@@ -16,7 +16,7 @@ describe('Apple container storage accounting', () => {
     })
     await writeFile(
       'dist/demo/container-storage-fixture.html',
-      '<!doctype html><html><head><meta charset="UTF-8"><link rel="stylesheet" href="/app.css"><style>#app.storage-fixture{display:block;overflow:auto;padding:24px;width:850px;height:auto;background:var(--bg-base)}#storage-containers{max-width:800px}</style></head><body><div id="app"></div><script src="/container-storage-fixture.js"></script></body></html>',
+      '<!doctype html><html><head><meta charset="UTF-8"><link rel="stylesheet" href="/app.css"><style>#app.storage-fixture{display:flex;flex-direction:column;overflow:hidden;padding:24px;width:850px;height:100vh;background:var(--bg-base)}#app.storage-fixture .settings-content{min-height:0;width:100%;padding:0}#storage-saved-data{display:none}#storage-containers{max-width:800px}</style></head><body><div id="app"></div><script src="/container-storage-fixture.js"></script></body></html>',
     )
   })
   it('shows all allocated storage and cache metrics with explicit shared cleanup confirmation', async () => {
@@ -27,12 +27,14 @@ describe('Apple container storage accounting', () => {
     )
     await expect($('#storage-worker-images-clean')).toBeEnabled()
     await expect($('#storage-apple-builder-clean')).toBeEnabled()
+    await $('#storage-containers details summary').scrollIntoView()
     await $('#storage-containers details summary').click()
     await expect($('#storage-container-images')).toHaveText(
       expect.stringContaining('copse-worker:local'),
     )
     await $('#storage-containers').scrollIntoView()
     await saveElementScreenshot('#storage-containers', 'settings-container-storage.png')
+    await $('#storage-apple-images-clean').scrollIntoView()
     await $('#storage-apple-images-clean').click()
     await expect($('#confirm-dialog')).toHaveText(expect.stringContaining('other applications'))
     await saveElementScreenshot('#confirm-dialog', 'settings-container-storage-confirm.png')
