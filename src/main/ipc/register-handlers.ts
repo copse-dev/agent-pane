@@ -37,6 +37,7 @@ import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
+import { hasBackgroundProcessesForThread } from '../services/exec/background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
@@ -3030,15 +3031,19 @@ export function registerAllHandlers(
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitBranchStatus(projectId, branch, root)
   })
+  const threadCheckoutBusy = (projectId: string, threadId: string): boolean =>
+    isDispatcherThreadActive(projectId, threadId) ||
+    listRunningThreadIds().includes(threadId) ||
+    hasBackgroundProcessesForThread({ projectId, threadId })
   ipcMain.handle('git:worktree-attachment', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return inspectThreadCheckoutAttachment(projectId, threadId)
+    return inspectThreadCheckoutAttachment(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:reattach-worktree', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return reattachThreadCheckout(projectId, threadId)
+    return reattachThreadCheckout(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
