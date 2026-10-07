@@ -94794,6 +94794,13 @@ function bindSelectionQuote(transcript, actions) {
       updateControls();
     }
   });
+  input2.addEventListener("copy", (event) => {
+    if (popup.hidden || input2.selectionStart !== input2.selectionEnd || !event.clipboardData) return;
+    const text2 = selectedRange?.toString();
+    if (!text2) return;
+    event.clipboardData.setData("text/plain", text2);
+    event.preventDefault();
+  });
   input2.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.isComposing || event.shiftKey) return;
     event.preventDefault();
