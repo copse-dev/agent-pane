@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { z } from 'zod'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { LoggingMessageNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
@@ -425,6 +426,75 @@ describe('startAcpNativeBridge', () => {
       }
     })
   }
+
+  it('stops after a notification send fails without changing the tool result', async (t) => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    let started = (): void => {}
+    const ready = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let finish = (_result: string): void => {}
+    const result = new Promise<string>((resolve) => {
+      finish = resolve
+    })
+    const registry = testRegistry([])
+    registry.register({
+      name: 'run_shell',
+      description: 'A silent command',
+      parameters: z.object({ command: z.string() }),
+      execute: () => {
+        started()
+        return result
+      },
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-failed-keepalive',
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-failed-keepalive', '/worktrees/t'))
+    const client = new Client({ name: 'failed-keepalive-test', version: '0' })
+    await client.connect(testHttpTransport(bridge))
+    let attempts = 0
+    const send = t.mock.method(
+      StreamableHTTPServerTransport.prototype,
+      'send',
+      function (
+        this: StreamableHTTPServerTransport,
+        message: Parameters<StreamableHTTPServerTransport['send']>[0],
+        options?: Parameters<StreamableHTTPServerTransport['send']>[1],
+      ): ReturnType<StreamableHTTPServerTransport['send']> {
+        if ('method' in message && message.method === 'notifications/message') {
+          attempts++
+          return Promise.reject(new Error('notification transport failed'))
+        }
+        // Forward the final result through the real transport after the failed notification.
+        send.mock.restore()
+        return this.send(message, options)
+      },
+    )
+    t.mock.timers.enable({ apis: ['setInterval'] })
+    const intervals = t.mock.method(globalThis, 'setInterval')
+    const cleared = t.mock.method(globalThis, 'clearInterval')
+    try {
+      const call = client.callTool({ name: 'run_shell', arguments: { command: 'silent' } })
+      await ready
+      t.mock.timers.tick(30_000)
+      // Let the rejected transport send reach the keepalive's rejection handler.
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      assert.equal(attempts, 1)
+      const timer = intervals.mock.calls.find((entry) => entry.arguments[1] === 30_000)?.result
+      assert.ok(timer)
+      assert.ok(cleared.mock.calls.some((entry) => entry.arguments[0] === timer))
+      t.mock.timers.tick(300_000)
+      assert.equal(attempts, 1, 'failed notification transport must not be retried forever')
+      finish('command completed')
+      assert.deepEqual(await call, { content: [{ type: 'text', text: 'command completed' }] })
+    } finally {
+      finish('cleanup')
+      t.mock.timers.reset()
+      await client.close()
+    }
+  })
 
   it('stops keepalives immediately when the owning turn is cancelled', async (t) => {
     setPermissionGateForTests(() => Promise.resolve(true))
