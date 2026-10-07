@@ -15,6 +15,8 @@ async function readProseMetrics(selector: string) {
     const codeStyle = code ? getComputedStyle(code) : null
     const nested = prose.querySelector('ul ul')
     const strong = prose.querySelector('strong')
+    const linkedStrong = prose.querySelector('a strong')
+    const link = prose.querySelector('a')
     return {
       width: prose.getBoundingClientRect().width,
       fontSize: parseFloat(style.fontSize),
@@ -25,6 +27,8 @@ async function readProseMetrics(selector: string) {
       color: style.color,
       strongWeight: strong ? Number(getComputedStyle(strong).fontWeight) : 0,
       strongColor: strong ? getComputedStyle(strong).color : '',
+      linkColor: link ? getComputedStyle(link).color : '',
+      linkedStrongColor: linkedStrong ? getComputedStyle(linkedStrong).color : '',
       paragraphGap: first && second ? second.top - first.bottom : 0,
       overflow: prose.scrollWidth - prose.clientWidth,
       codeScrolls: code ? code.scrollWidth > code.clientWidth : false,
@@ -83,6 +87,8 @@ describe('assistant Reading layout in the real renderer', () => {
     expect(metrics.color).toBe('rgb(230, 230, 230)')
     expect(metrics.strongWeight).toBe(600)
     expect(metrics.strongColor).toBe('rgb(255, 255, 255)')
+    expect(metrics.linkColor).not.toBe('')
+    expect(metrics.linkedStrongColor).toBe(metrics.linkColor)
     expect(metrics.paragraphGap).toBeGreaterThanOrEqual(15)
     expect(metrics.overflow).toBeLessThanOrEqual(1)
     expect(metrics.codeScrolls).toBe(true)
@@ -151,6 +157,8 @@ describe('assistant Reading layout in the real renderer', () => {
     expect(metrics.fontSize).toBe(15)
     expect(metrics.color).toBe('rgb(51, 51, 51)')
     expect(metrics.strongColor).toBe('rgb(17, 17, 17)')
+    expect(metrics.linkColor).not.toBe('')
+    expect(metrics.linkedStrongColor).toBe(metrics.linkColor)
     expect(metrics.overflow).toBeLessThanOrEqual(1)
     expect(metrics.codeScrolls).toBe(true)
     const overflow = await browser.execute(() => {

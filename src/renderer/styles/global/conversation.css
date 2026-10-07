@@ -886,6 +886,10 @@
   font-weight: 600;
   color: var(--text-prose-strong);
 }
+/* Bold inside a link keeps the link colour rather than the bold tint. */
+.msg-assistant > .message-body > .message-text a :is(strong, b) {
+  color: inherit;
+}
 /* Fenced code keeps tool-output density. The package shrinks only the inner
    `code`, so without this the `pre` keeps the 15px/1.6 prose line box and
    12px code lines sit ~26px apart. Size the block itself to the code size and

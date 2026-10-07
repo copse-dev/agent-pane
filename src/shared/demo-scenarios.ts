@@ -235,6 +235,7 @@ const readingLayoutContent = [
   '  - Nested details retain their indentation.',
   '  - A second nested item checks the list rhythm.',
   '- Pending markdown uses the same text size as the completed answer.',
+  '- A [**bold link**](https://example.com) keeps the link colour.',
   '',
   '### Review the details',
   '',
