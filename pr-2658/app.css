@@ -579,7 +579,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
 html,
 body {
   height: 100%;
-  overflow: hidden;
+  overflow: clip;
   font-family: var(--font-family);
   font-size: var(--font-size-base);
   line-height: var(--line-height-base);
