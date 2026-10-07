@@ -57,6 +57,7 @@ export function spawnSandboxedAcpSessionHost(config: AcpAgentSpawnConfig): Promi
         ...(config.args ? { args: config.args } : {}),
         ...(config.env ? { env: config.env } : {}),
         ...(config.sandbox ? { sandbox: config.sandbox } : {}),
+        ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
       },
       allowLocalhost: Boolean(config.nativeBridge),
     }
