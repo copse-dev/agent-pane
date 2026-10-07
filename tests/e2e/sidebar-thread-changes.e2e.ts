@@ -12,6 +12,7 @@ const projectId = 'e2e-changes-project'
 const threadId = 'e2e-changes-thread'
 const isolatedId = 'e2e-changes-isolated'
 const retiredId = 'e2e-changes-retired'
+let fixtureDir = ''
 let root = ''
 let isolatedRoot = ''
 let retiredRoot = ''
@@ -31,7 +32,9 @@ async function summary() {
 describe('native sidebar thread changes', () => {
   before(async function () {
     this.timeout(120_000)
-    root = mkdtempSync(join(tmpdir(), 'copse-native-changes-'))
+    fixtureDir = mkdtempSync(join(tmpdir(), 'copse-native-changes-'))
+    root = join(fixtureDir, 'changes-fixture')
+    mkdirSync(root)
     git('init', '-q')
     git('config', 'user.name', 'Fixture')
     git('config', 'user.email', 'fixture@example.test')
@@ -128,7 +131,7 @@ describe('native sidebar thread changes', () => {
     resetUserData()
     if (root) {
       git('worktree', 'remove', '--force', isolatedRoot)
-      rmSync(root, { recursive: true, force: true })
+      rmSync(fixtureDir, { recursive: true, force: true })
     }
   })
 
