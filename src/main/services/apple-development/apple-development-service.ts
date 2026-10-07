@@ -22,7 +22,14 @@ import {
   type AppleSuggestionAnswer,
 } from '@shared/types/apple-development.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { storageGet, storageUpdate } from '../storage/storage.ts'
+import {
+  storageGet,
+  storageListFiles,
+  storageReadFile,
+  storageRemoveFile,
+  storageUpdate,
+  storageWriteFile,
+} from '../storage/storage.ts'
 import {
   resolveThreadExecutionContext,
   type ThreadExecutionOwner,
@@ -42,12 +49,22 @@ import { getProjectRoot } from '../workspace.ts'
 const STORE_KEY = 'plugin.copse.apple-development.state'
 const APPLE_HANDLER = 'apple_operation'
 const MAX_LOG_CHARS = 1_000_000
+/**
+ * Build output lives in one file per operation beside config.json, not in the
+ * store. It used to be an inline string (up to 1 MB each, 50 operations per
+ * thread, across every thread), which grew the shared config.json into the
+ * megabytes: every `storage:set` in the app rewrote it, and every state read
+ * cloned and parsed all of it.
+ */
+const LOG_DIR = 'apple-development/logs'
+const OPERATION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 const LOG_PAGE_CHARS = 64_000
 const APPLE_AUTHORITY_EPOCH = randomUUID()
 
 const storedOperationSchema = z.object({
   operation: appleOperationSchema,
-  logs: z.string().max(MAX_LOG_CHARS),
+  /** Legacy inline output; moved to the operation's log file the first time the store is read. */
+  logs: z.string().max(MAX_LOG_CHARS).optional(),
   requestId: z.string().min(1).max(256),
   payloadHash: z.string().min(1),
 })
@@ -91,6 +108,45 @@ export interface AppleDevelopmentServiceDependencies {
   resolveProjectRoot?: typeof getProjectRoot
   detectProject?: typeof detectAppleProject
   suggestionsEnabled?: () => boolean
+}
+
+function logFile(operationId: string): string | null {
+  return OPERATION_ID.test(operationId) ? `${LOG_DIR}/${operationId}.log` : null
+}
+
+async function readOperationLog(operationId: string): Promise<string | null> {
+  const file = logFile(operationId)
+  return file === null ? null : storageReadFile(file)
+}
+
+async function writeOperationLog(operationId: string, logs: string): Promise<void> {
+  const file = logFile(operationId)
+  if (file !== null) await storageWriteFile(file, logs.slice(-MAX_LOG_CHARS))
+}
+
+async function removeOperationLogs(operationIds: readonly string[]): Promise<void> {
+  for (const operationId of operationIds) {
+    const file = logFile(operationId)
+    if (file !== null) await storageRemoveFile(file)
+  }
+}
+
+/** The store without the legacy inline output of the given operations. */
+function withoutInlineLogs(store: AppleStore, operationIds: ReadonlySet<string>): AppleStore {
+  const projects: AppleStore['projects'] = {}
+  for (const [projectId, project] of Object.entries(store.projects)) {
+    const threads: AppleStore['projects'][string]['threads'] = {}
+    for (const [threadId, thread] of Object.entries(project.threads)) {
+      const operations: StoredOperation[] = []
+      for (const entry of thread.operations) {
+        const { logs: _inline, ...rest } = entry
+        operations.push(operationIds.has(entry.operation.id) ? rest : entry)
+      }
+      threads[threadId] = { ...thread, operations }
+    }
+    projects[projectId] = { ...project, threads }
+  }
+  return { ...store, projects }
 }
 
 function readStore(): AppleStore {
@@ -175,6 +231,8 @@ export class AppleDevelopmentService {
   private readonly discoveries = new Map<string, Map<string, AppleDriverDiscovery>>()
   private readonly destinationCache = new Map<string, Map<string, AppleDestination[]>>()
   private readonly leases = new Map<string, Promise<void>>()
+  /** One-time housekeeping of the output files; reads of output wait for it. */
+  private readonly startup: Promise<void>
 
   constructor(dependencies: AppleDevelopmentServiceDependencies = {}) {
     this.driver = dependencies.driver ?? new InstalledXcodeDriver()
@@ -195,6 +253,7 @@ export class AppleDevelopmentService {
           APPLE_DEVELOPMENT_PLUGIN_ID,
           APPLE_DEVELOPMENT_SUGGEST_SETTING_ID,
         ) !== false)
+    this.startup = this.tidyOutputFiles()
     this.supervisor.registerHandler(
       APPLE_HANDLER,
       (task, context) => this.handleOperation(task, context.signal),
@@ -220,6 +279,49 @@ export class AppleDevelopmentService {
         },
       }))
     })
+  }
+
+  /**
+   * Bring the output files in line with the store, once per start:
+   *
+   * - move output a profile still holds inline in config.json into files (the
+   *   files are written before the stripped store is saved, so an interrupted run
+   *   loses nothing; an existing file is kept over a stale inline copy);
+   * - delete files no stored operation refers to — those of operations dropped
+   *   while the app was not running, and leftovers of an interrupted write.
+   *
+   * Best effort: a failure is logged and retried at the next start, and never
+   * stops the service from working.
+   */
+  private async tidyOutputFiles(): Promise<void> {
+    try {
+      const inline = new Set<string>()
+      for (const project of Object.values(readStore().projects)) {
+        for (const thread of Object.values(project.threads)) {
+          for (const entry of thread.operations) {
+            if (entry.logs === undefined) continue
+            if (entry.logs !== '' && (await readOperationLog(entry.operation.id)) === null) {
+              await writeOperationLog(entry.operation.id, entry.logs)
+            }
+            inline.add(entry.operation.id)
+          }
+        }
+      }
+      if (inline.size > 0) await this.updateStore((store) => withoutInlineLogs(store, inline))
+
+      const referenced = new Set<string>()
+      for (const project of Object.values(readStore().projects)) {
+        for (const thread of Object.values(project.threads)) {
+          for (const entry of thread.operations) referenced.add(entry.operation.id)
+        }
+      }
+      for (const name of await storageListFiles(LOG_DIR)) {
+        if (!name.endsWith('.log') || referenced.has(name.slice(0, -'.log'.length))) continue
+        await storageRemoveFile(`${LOG_DIR}/${name}`)
+      }
+    } catch (error) {
+      console.warn('[apple-development] could not tidy build output files:', error)
+    }
   }
 
   private async updateStore(update: (store: AppleStore) => AppleStore): Promise<void> {
@@ -270,6 +372,8 @@ export class AppleDevelopmentService {
     update: (operation: AppleOperation) => AppleOperation,
     logs?: string,
   ): Promise<void> {
+    // Before the status flips, so an operation reported finished already has its output.
+    if (logs !== undefined) await writeOperationLog(operationId, logs)
     await this.updateStore((store) => {
       const project = store.projects[projectId]
       const thread = project?.threads[threadId]
@@ -289,7 +393,6 @@ export class AppleDevelopmentService {
                     ? {
                         ...entry,
                         operation: update(entry.operation),
-                        ...(logs !== undefined ? { logs: logs.slice(-MAX_LOG_CHARS) } : {}),
                       }
                     : entry,
                 ),
@@ -584,6 +687,7 @@ export class AppleDevelopmentService {
       updatedAt: task.updatedAt,
       outcome: null,
     }
+    let evicted: string[] = []
     await this.updateStore((next) => {
       const project = next.projects[invocation.owner.projectId] ?? {
         enrolled: true,
@@ -595,10 +699,12 @@ export class AppleDevelopmentService {
       }
       const entry: StoredOperation = {
         operation,
-        logs: '',
         requestId: input.requestId,
         payloadHash: hash,
       }
+      const all = [...current.operations, entry]
+      const kept = all.slice(-50)
+      evicted = all.slice(0, all.length - kept.length).map((dropped) => dropped.operation.id)
       return {
         ...next,
         projects: {
@@ -609,13 +715,15 @@ export class AppleDevelopmentService {
               ...project.threads,
               [invocation.owner.threadId]: {
                 ...current,
-                operations: [...current.operations, entry].slice(-50),
+                operations: kept,
               },
             },
           },
         },
       }
     })
+    // An operation that fell off the thread's list no longer has a way to reach its output.
+    await removeOperationLogs(evicted)
     return operation
   }
 
@@ -783,7 +891,12 @@ export class AppleDevelopmentService {
     return { resultRef: { kind: 'handler', ref: `apple-operation:${task.taskId}` } }
   }
 
-  operation(invocation: AppleInvocation, operationId: string, cursor = 0): AppleOperationLogPage {
+  async operation(
+    invocation: AppleInvocation,
+    operationId: string,
+    cursor = 0,
+  ): Promise<AppleOperationLogPage> {
+    await this.startup
     const entry = threadState(readStore(), invocation.owner).operations.find(
       (candidate) => candidate.operation.id === operationId,
     )
@@ -792,20 +905,22 @@ export class AppleDevelopmentService {
       this.supervisor.get(invocation.owner.projectId, operationId),
       entry.operation,
     )
-    const safeCursor = Math.min(cursor, entry.logs.length)
-    const text = entry.logs.slice(safeCursor, safeCursor + LOG_PAGE_CHARS)
+    // The file is the record; inline output only remains if tidying it up failed.
+    const logs = (await readOperationLog(operationId)) ?? entry.logs ?? ''
+    const safeCursor = Math.min(cursor, logs.length)
+    const text = logs.slice(safeCursor, safeCursor + LOG_PAGE_CHARS)
     return {
       operation,
       text,
       nextCursor: safeCursor + text.length,
-      truncated: safeCursor + text.length < entry.logs.length,
+      truncated: safeCursor + text.length < logs.length,
     }
   }
 
   async cancel(invocation: AppleInvocation, operationId: string): Promise<AppleOperation> {
-    this.operation(invocation, operationId)
+    await this.operation(invocation, operationId)
     await this.supervisor.cancel(invocation.owner.projectId, operationId)
-    return this.operation(invocation, operationId).operation
+    return (await this.operation(invocation, operationId)).operation
   }
 
   async stopApp(invocation: AppleInvocation, appSessionId: string): Promise<boolean> {

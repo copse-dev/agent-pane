@@ -4,15 +4,14 @@ import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { StreamChunk } from '@shared/types'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { getThreadModels } from './thread-models.ts'
-import { getUsageEventCount } from './storage/usage-ledger.ts'
-import { storageSet, storageGet } from './storage/storage.ts'
-import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
-import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
+import { getUsageEventCount, readUsageEvents } from './storage/usage-ledger.ts'
+import { storageSet } from './storage/storage.ts'
+import { clearUsageLedger } from './storage/usage-ledger.test-support.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 
 describe('createAgentChunkSink', () => {
-  it('records usage ledger events and thread models for usage chunks', () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+  it('records usage ledger events and thread models for usage chunks', async () => {
+    await clearUsageLedger()
     storageSet('activeProjectId', 'proj-1')
     const emitted: StreamChunk[] = []
     const host: AgentHost<StreamChunk> = { emit: (_threadId, chunk) => emitted.push(chunk) }
@@ -26,7 +25,7 @@ describe('createAgentChunkSink', () => {
     })
     sink({ type: 'text', text: 'hi' })
 
-    assert.equal(getUsageEventCount(), 1)
+    assert.equal(await getUsageEventCount(), 1)
     assert.deepEqual(getThreadModels('thread-1'), ['qwen/qwen3.6-35b-a3b'])
     assert.deepEqual(emitted, [
       {
@@ -39,8 +38,8 @@ describe('createAgentChunkSink', () => {
     ])
   })
 
-  it('records advisor usageSource on the ledger for dedicated advisor cost lines', () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+  it('records advisor usageSource on the ledger for dedicated advisor cost lines', async () => {
+    await clearUsageLedger()
     storageSet('activeProjectId', 'proj-1')
     const host: AgentHost<StreamChunk> = { emit: () => undefined }
     const sink = createAgentChunkSink('thread-adv', host)
@@ -53,17 +52,15 @@ describe('createAgentChunkSink', () => {
       usageSource: 'advisor',
     })
 
-    assert.equal(getUsageEventCount(), 1)
-    const events = storageGet(USAGE_EVENTS_STORAGE_KEY)
-    const records = recordArrayOrEmpty(events)
-    const event = records[0]
+    assert.equal(await getUsageEventCount(), 1)
+    const event = (await readUsageEvents())[0]
     assert.ok(event)
-    assert.equal(event['source'], 'advisor')
-    assert.equal(event['model'], 'claude-opus-4-8')
+    assert.equal(event.source, 'advisor')
+    assert.equal(event.model, 'claude-opus-4-8')
   })
 
-  it('persists requested and actual service-tier evidence for ledger pricing', () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+  it('persists requested and actual service-tier evidence for ledger pricing', async () => {
+    await clearUsageLedger()
     const host: AgentHost<StreamChunk> = { emit: () => undefined }
     const sink = createAgentChunkSink('thread-tier', host)
 
@@ -76,14 +73,14 @@ describe('createAgentChunkSink', () => {
       responseServiceTier: 'priority',
     })
 
-    const [event] = recordArrayOrEmpty(storageGet(USAGE_EVENTS_STORAGE_KEY))
+    const [event] = await readUsageEvents()
     if (event === undefined) assert.fail('expected a persisted usage event')
-    assert.equal(event['requestedServiceTier'], 'flex')
-    assert.equal(event['responseServiceTier'], 'priority')
+    assert.equal(event.requestedServiceTier, 'flex')
+    assert.equal(event.responseServiceTier, 'priority')
   })
 
-  it('records usage against the execution context project for background runs', () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+  it('records usage against the execution context project for background runs', async () => {
+    await clearUsageLedger()
     storageSet('activeProjectId', 'project-being-viewed')
     const host: AgentHost<StreamChunk> = { emit: () => undefined }
     const sink = createAgentChunkSink('thread-background', host)
@@ -107,14 +104,13 @@ describe('createAgentChunkSink', () => {
       },
     )
 
-    const records = recordArrayOrEmpty(storageGet(USAGE_EVENTS_STORAGE_KEY))
-    const event = records[0]
+    const event = (await readUsageEvents())[0]
     assert.ok(event)
-    assert.equal(event['projectId'], 'project-owning-run')
+    assert.equal(event.projectId, 'project-owning-run')
   })
 
-  it('keeps equal-sized usage chunks from distinct billed calls', () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+  it('keeps equal-sized usage chunks from distinct billed calls', async () => {
+    await clearUsageLedger()
     const host: AgentHost<StreamChunk> = { emit: () => undefined }
     const sink = createAgentChunkSink('thread-1', host)
     const usage: StreamChunk = {
@@ -127,6 +123,6 @@ describe('createAgentChunkSink', () => {
     sink(usage)
     sink(usage)
 
-    assert.equal(getUsageEventCount(), 2)
+    assert.equal(await getUsageEventCount(), 2)
   })
 })
