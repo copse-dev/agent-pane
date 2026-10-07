@@ -219,7 +219,7 @@ export function adoptBackgroundProcess(opts: AdoptBackgroundProcessOptions): Bac
     proc: opts.proc,
     owner: opts.owner,
     startedAt: opts.startedAt,
-    output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES),
+    output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES, { evidence: true }),
     portBinding: false,
     unsandboxed: opts.unsandboxed,
     url: null,

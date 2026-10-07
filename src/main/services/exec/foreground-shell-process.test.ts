@@ -99,6 +99,26 @@ describe('foreground shell interruption', () => {
     assert.equal(listBackgroundProcesses(OWNER)[0]?.exitCode, 0)
   })
 
+  it('keeps error evidence when transferred work emits more than the background output cap', async () => {
+    const script = [
+      "console.log('ready')",
+      'setTimeout(() => {',
+      "console.log('building target\\n'.repeat(5000))",
+      "console.log('src/core/parse.ts:88:13 - error TS2345: bad argument')",
+      "console.log('building target\\n'.repeat(5000))",
+      '}, 1_000)',
+    ].join(';')
+    const run = start(`node -e ${JSON.stringify(script)}`)
+    await run.ready
+    run.controller.abort('send_now')
+    const result = await run.result
+    assert.ok(result.backgroundId)
+    await waitUntil(() => listBackgroundProcesses(OWNER)[0]?.running === false)
+    const output = getBackgroundProcessLogs(result.backgroundId, OWNER) ?? ''
+    assert.match(output, /src\/core\/parse.ts:88:13 - error TS2345: bad argument/)
+    assert.match(output, /dropped \d+ bytes/)
+  })
+
   it('Stop cancels the foreground command instead of adopting it', async () => {
     const run = start()
     await run.ready
