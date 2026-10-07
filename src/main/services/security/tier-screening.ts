@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { screeningClassifierId } from '../classifiers/classifier-service.ts'
 import { getSetting } from '../storage/settings.ts'
+import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { getActiveProjectId } from '../workspace.ts'
 import { recordDecision } from './decision-log-store.ts'
@@ -90,9 +91,12 @@ export async function guardedYoloTierReason(
 ): Promise<string | null> {
   const id = tierScreeningClassifier()
   if (!id) return null
+  const context = currentThreadExecutionContext()
+  const threadId = context?.threadId ?? getActiveRunThread()
+  const projectId = context?.projectId ?? getActiveProjectId()
   const screening = await classifyShellTierWithClassifier(id, command, workspaceRoot, signal)
   const { verdict, problem } = screening
-  reportTierCall(screening)
+  if (threadId && projectId) reportTierCall(screening, { threadId, projectId })
   if (problem) reportSafetyModelProblem(problem)
   if (!verdict) return null
   const ask = probabilityOf(verdict.probabilities, ['ask'])
@@ -108,6 +112,7 @@ export async function guardedYoloTierReason(
       `${verdict.source} gave it an ask probability of ${ask.toFixed(2)}; ${prompt ? 'asking' : 'the harm gate allow stands'}`,
     ],
     source: 'tier-screening',
+    ...(threadId && projectId ? { threadId, projectId } : {}),
   })
   return prompt
     ? `${verdict.source} rates this command as one a person should see (probability ${ask.toFixed(2)})`
@@ -128,8 +133,9 @@ export function shadowTierScreening(
   const id = tierScreeningClassifier()
   if (!id) return null
   // Resolve the thread now: by the time the answer arrives another run may be active.
-  const threadId = getActiveRunThread()
-  const projectId = getActiveProjectId()
+  const context = currentThreadExecutionContext()
+  const threadId = context?.threadId ?? getActiveRunThread()
+  const projectId = context?.projectId ?? getActiveProjectId()
   if (!threadId || !projectId) return null
   return classifyShellTierWithClassifier(id, command, workspaceRoot).then(
     (screening) => {
