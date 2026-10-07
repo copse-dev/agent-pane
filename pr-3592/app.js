@@ -20668,7 +20668,7 @@ async function mountProductAnnouncements(settings, announcements, openSettings, 
     actions
   );
   document.body.append(dialog2);
-  let active2;
+  let active3;
   let saving = false;
   let disposed = false;
   let escapeHeld = false;
@@ -20679,28 +20679,28 @@ async function mountProductAnnouncements(settings, announcements, openSettings, 
     return disposed;
   }
   function renderNext() {
-    if (isDisposed() || active2 || saving || escapeHeld || document.querySelector("dialog[open]"))
+    if (isDisposed() || active3 || saving || escapeHeld || document.querySelector("dialog[open]"))
       return;
-    active2 = pending.shift();
-    if (!active2) {
+    active3 = pending.shift();
+    if (!active3) {
       dispose();
       return;
     }
-    dialog2.dataset["announcementId"] = active2.id;
-    title.textContent = active2.title;
-    message2.textContent = active2.message;
-    detail.textContent = active2.detail ?? "";
-    detail.hidden = !active2.detail;
+    dialog2.dataset["announcementId"] = active3.id;
+    title.textContent = active3.title;
+    message2.textContent = active3.message;
+    detail.textContent = active3.detail ?? "";
+    detail.hidden = !active3.detail;
     progress.textContent = total2 > 1 ? `${String(completed + 1)} of ${String(total2)}` : "";
-    settingsButton.hidden = !active2.settingsAction;
-    settingsButton.textContent = active2.settingsAction?.label ?? "";
+    settingsButton.hidden = !active3.settingsAction;
+    settingsButton.textContent = active3.settingsAction?.label ?? "";
     error62.hidden = true;
     dialog2.showModal();
     dismissButton.focus();
   }
   async function acknowledge(navigate) {
-    if (!active2 || saving || isDisposed()) return;
-    const entry = active2;
+    if (!active3 || saving || isDisposed()) return;
+    const entry = active3;
     saving = true;
     settingsButton.disabled = true;
     dismissButton.disabled = true;
@@ -20715,7 +20715,7 @@ async function mountProductAnnouncements(settings, announcements, openSettings, 
         const candidate = pending[index];
         if (candidate && seen.has(candidate.id)) pending.splice(index, 1);
       }
-      active2 = void 0;
+      active3 = void 0;
       completed += 1;
       dialog2.close();
       if (navigate && entry.settingsAction) openSettings(entry.settingsAction.section);
@@ -20729,7 +20729,7 @@ async function mountProductAnnouncements(settings, announcements, openSettings, 
       settingsButton.disabled = false;
       dismissButton.disabled = false;
       if (!isDisposed()) {
-        if (active2) dismissButton.focus();
+        if (active3) dismissButton.focus();
         else renderNext();
       }
     }
@@ -20840,13 +20840,13 @@ function mountConfirmDialog() {
   const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl, detailEl, buttonsEl);
   document.body.append(dialog2);
   const queue = [];
-  let active2 = null;
+  let active3 = null;
   let confirming = false;
   let controller = null;
   function cancelActive() {
-    if (!active2) return;
+    if (!active3) return;
     if (confirming) {
-      if (!active2.cancellable) return;
+      if (!active3.cancellable) return;
       controller?.abort();
       dialog2.close();
       return;
@@ -20854,30 +20854,30 @@ function mountConfirmDialog() {
     finish(false);
   }
   function finish(confirmed) {
-    if (!active2) return;
-    const resolve = active2.resolve;
-    active2 = null;
+    if (!active3) return;
+    const resolve = active3.resolve;
+    active3 = null;
     confirming = false;
     controller = null;
     dialog2.close();
     resolve(confirmed);
     if (queue.length > 0) {
-      active2 = queue.shift() ?? null;
+      active3 = queue.shift() ?? null;
       renderActive();
     }
   }
   function renderActive() {
-    if (!active2) return;
-    messageEl.textContent = active2.message;
-    if (active2.detail) {
-      detailEl.replaceChildren(active2.detail);
+    if (!active3) return;
+    messageEl.textContent = active3.message;
+    if (active3.detail) {
+      detailEl.replaceChildren(active3.detail);
       detailEl.hidden = false;
     } else {
       detailEl.textContent = "";
       detailEl.hidden = true;
     }
-    const cancelLabel = active2.cancelLabel ?? "Cancel";
-    const confirmLabel = active2.confirmLabel ?? "OK";
+    const cancelLabel = active3.cancelLabel ?? "Cancel";
+    const confirmLabel = active3.confirmLabel ?? "OK";
     const cancelBtn = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-secondary confirm-dialog-cancel" },
@@ -20887,7 +20887,7 @@ function mountConfirmDialog() {
       "button",
       {
         type: "button",
-        class: active2.danger ? "ui-btn ui-btn-danger confirm-dialog-confirm" : "ui-btn ui-btn-primary confirm-dialog-confirm"
+        class: active3.danger ? "ui-btn ui-btn-danger confirm-dialog-confirm" : "ui-btn ui-btn-primary confirm-dialog-confirm"
       },
       confirmLabel
     );
@@ -20895,8 +20895,8 @@ function mountConfirmDialog() {
       cancelActive();
     });
     async function confirmActive() {
-      if (!active2 || confirming) return;
-      const request = active2;
+      if (!active3 || confirming) return;
+      const request = active3;
       if (!request.onConfirm) {
         finish(true);
         return;
@@ -20910,19 +20910,19 @@ function mountConfirmDialog() {
       confirmBtn.textContent = request.confirmPendingLabel ?? `${confirmLabel}\u2026`;
       try {
         await request.onConfirm((label) => {
-          if (active2 === request) confirmBtn.textContent = label;
+          if (active3 === request) confirmBtn.textContent = label;
         }, signal);
-        if (active2 === request) finish(!signal.aborted);
+        if (active3 === request) finish(!signal.aborted);
       } catch (error62) {
-        if (active2 !== request) return;
+        if (active3 !== request) return;
         const reject = request.reject;
-        active2 = null;
+        active3 = null;
         confirming = false;
         controller = null;
         dialog2.close();
         reject(error62);
         if (queue.length > 0) {
-          active2 = queue.shift() ?? null;
+          active3 = queue.shift() ?? null;
           renderActive();
         }
       }
@@ -20940,9 +20940,9 @@ function mountConfirmDialog() {
   });
   showConfirmDialogImpl = (req) => new Promise((resolve, reject) => {
     const queued = { ...req, resolve, reject };
-    if (active2) queue.push(queued);
+    if (active3) queue.push(queued);
     else {
-      active2 = queued;
+      active3 = queued;
       renderActive();
     }
   });
@@ -42366,12 +42366,12 @@ function findTrailingListHost(completedEl, listTag) {
   }
   return null;
 }
-function syncListPendingDom(completedEl, pending, pendingInner, active2, openListItemFirstLine2) {
+function syncListPendingDom(completedEl, pending, pendingInner, active3, openListItemFirstLine2) {
   clearBlockPendingDom(completedEl, ["continuation", "paragraph-continuation", "non-list-direct"]);
   const listTag = pendingListTag(pending);
   const indent = listPendingIndent(pending);
   const existingPendingLi = tailPendingDescendant(completedEl, BLOCK_PENDING_CLASS, "LI");
-  if (!active2 || !pendingInner) {
+  if (!active3 || !pendingInner) {
     existingPendingLi?.remove();
     const last = tailContentElement(completedEl);
     if (last && last.tagName === listTag.toUpperCase() && last.childNodes.length === 0) {
@@ -42495,12 +42495,12 @@ function removeParagraphContinuationNode(el3) {
 function clearParagraphContinuationDom(completedEl) {
   removeParagraphContinuationNode(tailPendingDescendant(completedEl, PARAGRAPH_CONTINUATION_CLASS));
 }
-function syncParagraphContinuationDom(completedEl, pendingInner, active2, seam) {
+function syncParagraphContinuationDom(completedEl, pendingInner, active3, seam) {
   const host = findTrailingParagraphHost(completedEl);
   if (!host)
     return false;
   const existing = firstDirectChild(host, null, PARAGRAPH_CONTINUATION_CLASS);
-  if (!active2 || !pendingInner) {
+  if (!active3 || !pendingInner) {
     removeParagraphContinuationNode(existing);
     return true;
   }
@@ -42515,12 +42515,12 @@ function syncParagraphContinuationDom(completedEl, pendingInner, active2, seam) 
   setPresanitizedHtml(el3, pendingInner);
   return true;
 }
-function syncListContinuationDom(completedEl, pendingInner, active2) {
+function syncListContinuationDom(completedEl, pendingInner, active3) {
   const li2 = findOpenListItemHost(completedEl);
   if (!li2)
     return false;
   const existing = firstDirectChild(li2, null, LIST_CONTINUATION_CLASS);
-  if (!active2 || !pendingInner) {
+  if (!active3 || !pendingInner) {
     existing?.remove();
     return true;
   }
@@ -42533,11 +42533,11 @@ function syncListContinuationDom(completedEl, pendingInner, active2) {
   setPresanitizedHtml(el3, pendingInner.startsWith(" ") ? pendingInner : asSanitizedHtml(` ${pendingInner}`));
   return true;
 }
-function syncBlockPendingDom(completedEl, split, pendingInner, active2) {
+function syncBlockPendingDom(completedEl, split, pendingInner, active3) {
   const { pending, openListItemFirstLine: openListItemFirstLine2 } = split;
   if (isParagraphContinuationPending(split)) {
     clearBlockPendingDom(completedEl, ["continuation", "list-items", "non-list-direct"]);
-    if (syncParagraphContinuationDom(completedEl, pendingInner, active2, paragraphContinuationSeam(split))) {
+    if (syncParagraphContinuationDom(completedEl, pendingInner, active3, paragraphContinuationSeam(split))) {
       return;
     }
   }
@@ -42548,16 +42548,16 @@ function syncBlockPendingDom(completedEl, split, pendingInner, active2) {
       "list-items",
       "non-list-direct"
     ]);
-    syncListContinuationDom(completedEl, pendingInner, active2);
+    syncListContinuationDom(completedEl, pendingInner, active3);
     return;
   }
   if (pendingListMarkerLength(pending) !== null) {
-    syncListPendingDom(completedEl, pending, pendingInner, active2, openListItemFirstLine2);
+    syncListPendingDom(completedEl, pending, pendingInner, active3, openListItemFirstLine2);
     return;
   }
   clearBlockPendingDom(completedEl, ["continuation", "paragraph-continuation", "list-items"]);
   const existing = tailDirectPendingBlock(completedEl, false);
-  if (!active2 || !pendingInner) {
+  if (!active3 || !pendingInner) {
     existing?.remove();
     return;
   }
@@ -42581,9 +42581,9 @@ function syncBlockPendingDom(completedEl, split, pendingInner, active2) {
     el3.removeAttribute("data-heading-level");
   setPresanitizedHtml(el3, wrapBlockPendingInner(pending, pendingInner));
 }
-function syncInlinePendingDom(pendingEl, pendingInner, active2) {
+function syncInlinePendingDom(pendingEl, pendingInner, active3) {
   setPresanitizedHtml(pendingEl, pendingInner);
-  pendingEl.hidden = !active2;
+  pendingEl.hidden = !active3;
   pendingEl.className = "stream-pending";
   delete pendingEl.dataset["orderedMarker"];
 }
@@ -44327,9 +44327,9 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     return recent;
   }
   function scrollActiveOptionIntoView() {
-    const active2 = list.querySelector(".model-picker-option.is-active");
-    if (!active2) return;
-    const activeBounds = active2.getBoundingClientRect();
+    const active3 = list.querySelector(".model-picker-option.is-active");
+    if (!active3) return;
+    const activeBounds = active3.getBoundingClientRect();
     const listBounds = list.getBoundingClientRect();
     if (activeBounds.top < listBounds.top) {
       list.scrollTop += activeBounds.top - listBounds.top;
@@ -44429,8 +44429,8 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     }
     const current = currentRoute();
     const matches2 = visibleOptions(options);
-    const active2 = matches2.find((opt) => opt.value === activeValue && !opt.disabled) ?? matches2.find((opt) => opt.value === current && !opt.disabled) ?? matches2.find((opt) => !opt.disabled);
-    activeValue = active2?.value ?? null;
+    const active3 = matches2.find((opt) => opt.value === activeValue && !opt.disabled) ?? matches2.find((opt) => opt.value === current && !opt.disabled) ?? matches2.find((opt) => !opt.disabled);
+    activeValue = active3?.value ?? null;
     let lastGroup;
     for (const opt of matches2) {
       if (opt.group !== lastGroup) {
@@ -46667,7 +46667,7 @@ function createChatGptPlanSection(api2, onChanged) {
   function render() {
     accountOptionsOpen = root.querySelector("details")?.open ?? accountOptionsOpen;
     clear(root);
-    const active2 = status.accounts.find((account) => account.clientId === status.activeClientId);
+    const active3 = status.accounts.find((account) => account.clientId === status.activeClientId);
     if (status.accounts.length) {
       const picker = el("select", { "aria-label": "ChatGPT account", disabled: busy });
       picker.append(el("option", { value: "" }, "Choose a ChatGPT account"));
@@ -46689,12 +46689,12 @@ function createChatGptPlanSection(api2, onChanged) {
       });
       root.append(el("label", {}, "ChatGPT account", picker));
     }
-    if (active2?.connected) {
+    if (active3?.connected) {
       root.append(
         el(
           "p",
           { role: "status", class: "field-hint" },
-          active2.planEnabled ? "Using ChatGPT plan. Select a model from the ChatGPT plan group to start." : "Signed in. ChatGPT plan permission was not granted; reconnect to enable it."
+          active3.planEnabled ? "Using ChatGPT plan. Select a model from the ChatGPT plan group to start." : "Signed in. ChatGPT plan permission was not granted; reconnect to enable it."
         )
       );
     }
@@ -46718,10 +46718,10 @@ function createChatGptPlanSection(api2, onChanged) {
     );
     connect.addEventListener("click", () => {
       void act(async () => {
-        status = await api2.chatGptPlan.signIn(active2?.clientId);
+        status = await api2.chatGptPlan.signIn(active3?.clientId);
       }, true);
     });
-    if (!active2?.connected || !active2.planEnabled) actions.append(connect);
+    if (!active3?.connected || !active3.planEnabled) actions.append(connect);
     const accountActions = el("div", { class: "provider-actions" });
     if (busy) {
       root.append(
@@ -46741,7 +46741,7 @@ function createChatGptPlanSection(api2, onChanged) {
       });
       if (signingIn) actions.append(cancel);
     }
-    if (active2?.connected) {
+    if (active3?.connected) {
       const disconnect = el(
         "button",
         { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
@@ -46749,7 +46749,7 @@ function createChatGptPlanSection(api2, onChanged) {
       );
       disconnect.addEventListener("click", () => {
         void act(async () => {
-          const result = await api2.chatGptPlan.signOut(active2.clientId);
+          const result = await api2.chatGptPlan.signOut(active3.clientId);
           status = result.status;
           if (!result.revoked)
             message2 = "Signed out locally. Remote revocation was not confirmed; disconnect Copse in ChatGPT settings.";
@@ -46762,7 +46762,7 @@ function createChatGptPlanSection(api2, onChanged) {
       );
       renew.addEventListener("click", () => {
         void act(async () => {
-          status = await api2.chatGptPlan.refreshAccount(active2.clientId);
+          status = await api2.chatGptPlan.refreshAccount(active3.clientId);
           message2 = "Connection refreshed.";
         });
       });
@@ -46783,7 +46783,7 @@ function createChatGptPlanSection(api2, onChanged) {
       "button",
       {
         type: "button",
-        class: active2?.planEnabled ? "ui-btn ui-btn-primary" : "ui-btn ui-btn-secondary"
+        class: active3?.planEnabled ? "ui-btn ui-btn-primary" : "ui-btn ui-btn-secondary"
       },
       "Manage usage"
     );
@@ -47523,10 +47523,10 @@ function createClassifiersSection(api2) {
     poll = void 0;
   }
   function syncPolling() {
-    const active2 = overview.servers.some(
+    const active3 = overview.servers.some(
       (server) => server.phase === "installing" || server.phase === "starting"
     );
-    if (active2 && poll === void 0) {
+    if (active3 && poll === void 0) {
       poll = setInterval(() => {
         if (root.closest("dialog")?.open === false) {
           stopPolling();
@@ -47534,7 +47534,7 @@ function createClassifiersSection(api2) {
         }
         void refreshLocal();
       }, 1500);
-    } else if (!active2) stopPolling();
+    } else if (!active3) stopPolling();
   }
   async function reloadProfiles() {
     profiles = await api2.classifiers.list();
@@ -51363,9 +51363,9 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     if (!group) return;
     for (const btn of group.querySelectorAll("[data-plan-coverage]")) {
       const mode = btn.dataset["planCoverage"];
-      const active2 = mode === planCoverageMode;
-      btn.classList.toggle("active", active2);
-      btn.setAttribute("aria-pressed", active2 ? "true" : "false");
+      const active3 = mode === planCoverageMode;
+      btn.classList.toggle("active", active3);
+      btn.setAttribute("aria-pressed", active3 ? "true" : "false");
     }
   }
   function makeDiscoverButton() {
@@ -64923,8 +64923,8 @@ function attachAutosave(store2, api2) {
   };
   const threadIdOfMessage = (messageId) => {
     const { threads, backgroundThreads, activeThreadId } = store2.getState();
-    const active2 = threads.find((t2) => t2.id === activeThreadId);
-    if (active2?.messages.some((m2) => m2.id === messageId)) return active2.id;
+    const active3 = threads.find((t2) => t2.id === activeThreadId);
+    if (active3?.messages.some((m2) => m2.id === messageId)) return active3.id;
     return (threads.find(
       (t2) => t2.messagesLoaded !== false && t2.messages.some((m2) => m2.id === messageId)
     ) ?? backgroundThreads.map((b4) => b4.thread).find((t2) => t2.messagesLoaded !== false && t2.messages.some((m2) => m2.id === messageId)))?.id;
@@ -65752,9 +65752,9 @@ function activeTodos(todos) {
   return todos.filter((t2) => t2.status !== "cancelled");
 }
 function todoProgress(todos) {
-  const active2 = activeTodos(todos);
-  const done = active2.filter((t2) => t2.status === "completed").length;
-  return { done, total: active2.length };
+  const active3 = activeTodos(todos);
+  const done = active3.filter((t2) => t2.status === "completed").length;
+  return { done, total: active3.length };
 }
 function formatTodoProgress(todos) {
   const { done, total: total2 } = todoProgress(todos);
@@ -67545,10 +67545,10 @@ function cancelPendingSwitch(store2, api2) {
   settleActivationWaiter(cancelled.projectId);
   if (!cancelled.dispatched) return;
   const { activeProjectId, projects } = store2.getState();
-  const active2 = projects.find((p2) => p2.id === activeProjectId);
-  if (!active2) return;
-  void setWorkspaceInOrder(api2, active2.path, active2.sshHost);
-  void saveProjects(api2, projects, active2.id, store2.getState().activeThreadId);
+  const active3 = projects.find((p2) => p2.id === activeProjectId);
+  if (!active3) return;
+  void setWorkspaceInOrder(api2, active3.path, active3.sshHost);
+  void saveProjects(api2, projects, active3.id, store2.getState().activeThreadId);
 }
 function abortProjectActivation(store2, id, gen, outgoingId, error62) {
   if (gen !== switchGeneration) return;
@@ -72172,6 +72172,37 @@ var init_announcement_fixtures = __esm({
   }
 });
 
+// src/renderer/product-announcements.ts
+var PRODUCT_ANNOUNCEMENTS;
+var init_product_announcements2 = __esm({
+  "src/renderer/product-announcements.ts"() {
+    PRODUCT_ANNOUNCEMENTS = [
+      {
+        id: "concise-threads-default-v1",
+        title: "Concise threads are now on",
+        message: "For highly capable models, threads now show results and the closing summary. Tool calls and reasoning are hidden while a turn runs and once it finishes.",
+        detail: "Use Show steps under any turn to see everything, or turn this off in Settings \u2192 Appearance.",
+        settingsAction: { label: "Appearance settings", section: "appearance" }
+      }
+    ];
+  }
+});
+
+// src/renderer/announcement-catalog.ts
+function announcementCatalog() {
+  return active2;
+}
+function useAnnouncementCatalog(entries2) {
+  active2 = entries2;
+}
+var active2;
+var init_announcement_catalog = __esm({
+  "src/renderer/announcement-catalog.ts"() {
+    init_product_announcements2();
+    active2 = PRODUCT_ANNOUNCEMENTS;
+  }
+});
+
 // src/renderer/demo/demo.css
 var init_demo = __esm({
   "src/renderer/demo/demo.css"() {
@@ -73666,7 +73697,7 @@ function mountAnnotationLayer(host, options) {
   let resizeObserver = null;
   let svg2 = null;
   let drauu = null;
-  let active2 = false;
+  let active3 = false;
   let tool = "pen";
   let colour = ANNOTATION_COLOURS[0]?.value ?? "#e5484d";
   const toolButtons = /* @__PURE__ */ new Map();
@@ -73712,7 +73743,7 @@ function mountAnnotationLayer(host, options) {
     if (sendBtn) sendBtn.disabled = empty || sending;
     if (clearBtn) clearBtn.disabled = empty;
     if (undoBtn) undoBtn.disabled = !drauu?.canUndo();
-    if (root) root.hidden = !active2 && empty;
+    if (root) root.hidden = !active3 && empty;
   };
   const toolButton = (name, label, icon) => {
     const button = el(
@@ -73850,7 +73881,7 @@ function mountAnnotationLayer(host, options) {
     syncButtons();
   };
   const onKeyDown = (event) => {
-    if (!active2) return;
+    if (!active3) return;
     if (event.key === "Escape") {
       event.preventDefault();
       layer.deactivate();
@@ -73865,20 +73896,20 @@ function mountAnnotationLayer(host, options) {
   };
   const layer = {
     get active() {
-      return active2;
+      return active3;
     },
     activate() {
       ensureMounted();
-      if (active2) return;
-      active2 = true;
+      if (active3) return;
+      active3 = true;
       root?.setAttribute("data-active", "true");
       window.addEventListener("keydown", onKeyDown);
       syncButtons();
       toolButtons.get(tool)?.focus({ preventScroll: true });
     },
     deactivate() {
-      if (!active2) return;
-      active2 = false;
+      if (!active3) return;
+      active3 = false;
       drauu?.cancel();
       root?.setAttribute("data-active", "false");
       window.removeEventListener("keydown", onKeyDown);
@@ -73886,9 +73917,9 @@ function mountAnnotationLayer(host, options) {
       options.onDeactivate?.();
     },
     toggle() {
-      if (active2) layer.deactivate();
+      if (active3) layer.deactivate();
       else layer.activate();
-      return active2;
+      return active3;
     },
     isEmpty,
     clear() {
@@ -77078,6 +77109,24 @@ var init_demo_scenarios = __esm({
         label: "Product announcements \u2014 fresh",
         project: project("demo-announcements-project"),
         settings: { onboardingCompleted: false, theme: "dark", acknowledgedProductAnnouncements: [] },
+        threads: [
+          {
+            id: "demo-announcements-thread",
+            title: "Polish the release",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
+        // The real shipped catalog (not sample copy) for an existing profile.
+        id: "product-announcements-shipped",
+        label: "Product announcements \u2014 shipped catalog",
+        project: project("demo-announcements-project"),
+        settings: { onboardingCompleted: true, theme: "dark", acknowledgedProductAnnouncements: [] },
         threads: [
           {
             id: "demo-announcements-thread",
@@ -82754,7 +82803,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   let arrivals = 0;
   const queue = [];
   let batch = [];
-  let active2 = false;
+  let active3 = false;
   let coalesceScheduled = false;
   let cancelCoalesce = null;
   let cancelSettle = null;
@@ -82923,7 +82972,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     }, settleMs);
   }
   function show2() {
-    if (active2) return;
+    if (active3) return;
     if (cancelCoalesce) {
       cancelCoalesce();
       cancelCoalesce = null;
@@ -82944,11 +82993,11 @@ function mountApprovalDialog(api2, store2, options = {}) {
       chatScrim.hidden = false;
       dialog2.show();
     }
-    active2 = true;
+    active3 = true;
     syncAttention();
   }
   function scheduleShow2() {
-    if (active2 || coalesceScheduled) return;
+    if (active3 || coalesceScheduled) return;
     if (!queue.some(isShowable)) {
       syncAttention();
       return;
@@ -82961,14 +83010,14 @@ function mountApprovalDialog(api2, store2, options = {}) {
     }, coalesceMs);
   }
   function withdrawUnshowable() {
-    if (!active2) return;
+    if (!active3) return;
     const withdrawn = batch.filter((req) => !isShowable(req));
     if (withdrawn.length === 0) return;
     batch = batch.filter((req) => isShowable(req));
     queue.unshift(...withdrawn);
     if (batch.length === 0) {
       closeDialog();
-      active2 = false;
+      active3 = false;
       clearSettle();
       return;
     }
@@ -82977,7 +83026,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     startSettle();
   }
   function appendToOpen() {
-    if (!active2) return;
+    if (!active3) return;
     if (drainShowableIntoBatch() > 0) {
       renderBatch();
       startSettle();
@@ -82989,10 +83038,10 @@ function mountApprovalDialog(api2, store2, options = {}) {
     if (queueIdx >= 0) queue.splice(queueIdx, 1);
     const wasInBatch = batch.some((req) => req.id === id);
     batch = batch.filter((req) => req.id !== id);
-    if (wasInBatch && active2) {
+    if (wasInBatch && active3) {
       if (batch.length === 0) {
         closeDialog();
-        active2 = false;
+        active3 = false;
         clearSettle();
         show2();
       } else {
@@ -83003,12 +83052,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
     syncAttention();
   }
   function resolve(approved, remember) {
-    if (!active2 || batch.length === 0) return;
+    if (!active3 || batch.length === 0) return;
     const answered = batch;
     const grantScope = approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? "turn-tree" : "once";
     closeDialog();
     batch = [];
-    active2 = false;
+    active3 = false;
     turnTreeLeaseInput.checked = false;
     clearSettle();
     for (const req of answered) {
@@ -83056,14 +83105,14 @@ function mountApprovalDialog(api2, store2, options = {}) {
         arrival: arrivals++
       };
       queue.push(pending);
-      if (active2 && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
+      if (active3 && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
         queue.unshift(...batch);
         batch = [];
         closeDialog();
-        active2 = false;
+        active3 = false;
         clearSettle();
         show2();
-      } else if (active2) appendToOpen();
+      } else if (active3) appendToOpen();
       else scheduleShow2();
       syncAttention();
     }
@@ -83073,7 +83122,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   });
   store2.on("threads_changed", () => {
     withdrawUnshowable();
-    if (active2) appendToOpen();
+    if (active3) appendToOpen();
     else show2();
   });
   document.addEventListener("visibilitychange", () => {
@@ -83768,20 +83817,20 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (list.scrollTop !== fallbackScrollTop) list.scrollTop = fallbackScrollTop;
   }
   function captureFocus() {
-    const active2 = document.activeElement;
-    if (!(active2 instanceof HTMLElement)) return null;
-    const toggled = active2.dataset["groupToggle"];
+    const active3 = document.activeElement;
+    if (!(active3 instanceof HTMLElement)) return null;
+    const toggled = active3.dataset["groupToggle"];
     if (toggled !== void 0) return { area: "toggle", group: toggled };
-    const projectKey = active2.dataset["projectKey"];
-    if (projectKey !== void 0 && strip.contains(active2)) return { area: "strip", projectKey };
-    const foldKey = list.contains(active2) && active2.matches(".activity-fold-toggle") ? active2.closest(".activity-fold")?.dataset["rowKey"] : void 0;
+    const projectKey = active3.dataset["projectKey"];
+    if (projectKey !== void 0 && strip.contains(active3)) return { area: "strip", projectKey };
+    const foldKey = list.contains(active3) && active3.matches(".activity-fold-toggle") ? active3.closest(".activity-fold")?.dataset["rowKey"] : void 0;
     if (foldKey !== void 0) return { area: "fold", key: foldKey };
-    if (list.contains(active2)) return { area: "list" };
-    if (detail.contains(active2)) {
+    if (list.contains(active3)) return { area: "list" };
+    if (detail.contains(active3)) {
       return {
         area: "detail",
         key: detail.dataset["rowKey"] ?? "",
-        control: active2.dataset["control"] ?? ""
+        control: active3.dataset["control"] ?? ""
       };
     }
     return null;
@@ -87054,29 +87103,29 @@ function setMoving(img, moving) {
 }
 function createAgentAvatarMotion() {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  let active2 = null;
+  let active3 = null;
   let visible = false;
   const sync = () => {
-    if (active2) setMoving(active2, visible && !document.hidden && !reducedMotion.matches);
+    if (active3) setMoving(active3, visible && !document.hidden && !reducedMotion.matches);
   };
   const observer = new window.IntersectionObserver((entries2) => {
     for (const entry of entries2) {
-      if (entry.target === active2) visible = entry.isIntersecting;
+      if (entry.target === active3) visible = entry.isIntersecting;
     }
     sync();
   });
   const setActive = (img) => {
-    if (active2 === img) return;
-    if (active2) {
-      observer.unobserve(active2);
-      setMoving(active2, false);
-      active2.removeAttribute("data-avatar-active");
+    if (active3 === img) return;
+    if (active3) {
+      observer.unobserve(active3);
+      setMoving(active3, false);
+      active3.removeAttribute("data-avatar-active");
     }
-    active2 = img;
+    active3 = img;
     visible = false;
-    if (active2) {
-      active2.setAttribute("data-avatar-active", "");
-      observer.observe(active2);
+    if (active3) {
+      active3.setAttribute("data-avatar-active", "");
+      observer.observe(active3);
     }
   };
   reducedMotion.addEventListener("change", sync);
@@ -92683,8 +92732,8 @@ function mountAppleProjectSuggestions(store2, api2, onAllowed) {
     return project2 ? projectDisplayName(project2) : "This project";
   };
   const renderReminder = () => {
-    const active2 = store2.getState().activeProjectId;
-    const reminder = active2 ? reminders.get(active2) : void 0;
+    const active3 = store2.getState().activeProjectId;
+    const reminder = active3 ? reminders.get(active3) : void 0;
     if (!reminder) {
       host.hidden = true;
       return;
@@ -92764,13 +92813,13 @@ function mountAppleProjectSuggestions(store2, api2, onAllowed) {
     await offer(activeProjectId, suggestion);
   };
   acceptLink.addEventListener("click", () => {
-    const active2 = store2.getState().activeProjectId;
-    const reminder = active2 ? reminders.get(active2) : void 0;
+    const active3 = store2.getState().activeProjectId;
+    const reminder = active3 ? reminders.get(active3) : void 0;
     if (reminder) void accept(reminder.projectId, reminder.pluginEnabled);
   });
   dismissLink.addEventListener("click", () => {
-    const active2 = store2.getState().activeProjectId;
-    const reminder = active2 ? reminders.get(active2) : void 0;
+    const active3 = store2.getState().activeProjectId;
+    const reminder = active3 ? reminders.get(active3) : void 0;
     if (!reminder) return;
     answer(reminder.projectId, "dismissed");
     reminders.delete(reminder.projectId);
@@ -111202,9 +111251,9 @@ function mountFooterBranchStatus(host, store2, api2) {
     activeIndex = count === 0 ? 0 : Math.max(0, Math.min(count - 1, activeIndex));
   }
   function scrollActiveRowIntoView() {
-    const active2 = list.querySelector(".branch-picker-option.is-active");
-    if (!active2) return;
-    const activeBounds = active2.getBoundingClientRect();
+    const active3 = list.querySelector(".branch-picker-option.is-active");
+    if (!active3) return;
+    const activeBounds = active3.getBoundingClientRect();
     const listBounds = list.getBoundingClientRect();
     if (activeBounds.top < listBounds.top) {
       list.scrollTop += activeBounds.top - listBounds.top;
@@ -111304,8 +111353,8 @@ function mountFooterBranchStatus(host, store2, api2) {
         list.append(el("div", { class: "branch-picker-empty" }, "No branches found."));
       }
     }
-    const active2 = list.querySelector(".branch-picker-option.is-active");
-    if (open2 && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
+    const active3 = list.querySelector(".branch-picker-option.is-active");
+    if (open2 && active3) filterInput.setAttribute("aria-activedescendant", active3.id);
     scrollActiveRowIntoView();
     schedulePopupBoundary();
   }
@@ -117011,9 +117060,9 @@ function mountRightPanelLayout(store2) {
       syncPaneMaximizeButton(btn, maximized);
     }
     if (!maximized) return;
-    const active2 = document.activeElement;
-    if (active2 instanceof HTMLElement && document.getElementById("pane-chat")?.contains(active2)) {
-      active2.blur();
+    const active3 = document.activeElement;
+    if (active3 instanceof HTMLElement && document.getElementById("pane-chat")?.contains(active3)) {
+      active3.blur();
     }
   }
   syncLayout();
@@ -126653,9 +126702,9 @@ ${output2}` : "Terminal output: (none)"
     if (activeTabId === tabId) return;
     activeTabId = tabId;
     for (const tab2 of tabs.values()) {
-      const active2 = tab2.id === tabId;
-      tab2.panel.classList.toggle("is-active", active2);
-      tab2.tabBtn.classList.toggle("is-active", active2);
+      const active3 = tab2.id === tabId;
+      tab2.panel.classList.toggle("is-active", active3);
+      tab2.tabBtn.classList.toggle("is-active", active3);
     }
     const tab = tabs.get(tabId);
     if (tab && terminalModeActive(store2)) {
@@ -126865,8 +126914,8 @@ ${output2}` : "Terminal output: (none)"
     if (tab) fitTab(tab);
   });
   function onTerminalModeChange() {
-    const active2 = terminalModeActive(store2);
-    if (active2) {
+    const active3 = terminalModeActive(store2);
+    if (active3) {
       if (visibleTabs().length === 0) addTab();
       const tab = activeTabId ? tabs.get(activeTabId) : null;
       if (tab) {
@@ -127120,9 +127169,9 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     if (!task) return;
     selectedId = id;
     for (const t2 of tasks.values()) {
-      const active2 = t2.id === id;
-      t2.tab.classList.toggle("is-active", active2);
-      t2.panel.hidden = !active2;
+      const active3 = t2.id === id;
+      t2.tab.classList.toggle("is-active", active3);
+      t2.panel.hidden = !active3;
     }
     showTaskView(true);
     scrollPanelToBottom(task);
@@ -127244,14 +127293,14 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     return null;
   }
   function onScopeSwitch() {
-    const active2 = currentThreadId();
+    const active3 = currentThreadId();
     for (const task of tasks.values()) {
-      const visible = isTabVisibleForScope(task, active2);
+      const visible = isTabVisibleForScope(task, active3);
       task.tab.hidden = !visible;
       if (!visible) task.panel.hidden = true;
     }
     const selected = selectedId ? tasks.get(selectedId) : null;
-    if (selected && !isTabVisibleForScope(selected, active2)) clearSelection();
+    if (selected && !isTabVisibleForScope(selected, active3)) clearSelection();
     syncSectionVisibility();
   }
   function onThreadMaybeChanged() {
@@ -127591,8 +127640,8 @@ function renderImageDiff(container, diff) {
   if (current?.grid.parentNode === container && current.path === diff.path && current.beforeImage === beforeImage && current.afterImage === afterImage) {
     return;
   }
-  const active2 = document.activeElement;
-  const focusedAlt = active2 && container.contains(active2) ? active2.getAttribute("alt") : null;
+  const active3 = document.activeElement;
+  const focusedAlt = active3 && container.contains(active3) ? active3.getAttribute("alt") : null;
   clear(container);
   const grid = el("div", { class: "git-image-diff" });
   if (beforeImage) grid.append(imagePane("Before", beforeImage, `${diff.path} (before)`));
@@ -133617,9 +133666,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     activeTabId = tabId;
     scheduleSessionSave();
     for (const tab2 of tabs.values()) {
-      const active2 = tab2.id === tabId;
-      tab2.panel.classList.toggle("is-active", active2);
-      tab2.tabBtn.classList.toggle("is-active", active2);
+      const active3 = tab2.id === tabId;
+      tab2.panel.classList.toggle("is-active", active3);
+      tab2.tabBtn.classList.toggle("is-active", active3);
       syncAnnotationScroll(tab2);
     }
     const tab = tabs.get(tabId);
@@ -134151,10 +134200,10 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     }
   }
   function onBrowserModeChange() {
-    const active2 = browserModeActive(store2);
+    const active3 = browserModeActive(store2);
     scheduleSessionSave();
     for (const tab of tabs.values()) syncAnnotationScroll(tab);
-    if (active2) {
+    if (active3) {
       if (tabs.size === 0) addTab();
       const tab = activeTabId ? tabs.get(activeTabId) : null;
       if (tab) {
@@ -134300,10 +134349,10 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   function whenProjectActive() {
     if (store2.getState().activeProjectId) return Promise.resolve(true);
     return new Promise((resolve) => {
-      const settle2 = (active2) => {
+      const settle2 = (active3) => {
         stop();
         pendingProjectWaits.delete(cancel);
-        resolve(active2);
+        resolve(active3);
       };
       const cancel = () => {
         settle2(false);
@@ -149684,31 +149733,31 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       deviceList.append(item);
     }
   }
-  function setSessionUi(active2, connected = false) {
+  function setSessionUi(active3, connected = false) {
     controlsRoot.scrollTop = 0;
-    if (active2) controlsBody.scrollTop = 0;
-    setupFields.hidden = active2;
-    connectButton.hidden = active2;
-    disconnectButton.hidden = !active2;
+    if (active3) controlsBody.scrollTop = 0;
+    setupFields.hidden = active3;
+    connectButton.hidden = active3;
+    disconnectButton.hidden = !active3;
     controlButton.hidden = !connected;
     homeButton.hidden = !connected || simulatorSessionId === null;
     const android = selectedSimulator()?.platform === "android";
     backButton.hidden = !connected || !android;
     overviewButton.hidden = !connected || !android;
-    note.hidden = active2 || isSimulatorMachine(machineSelect.value);
+    note.hidden = active3 || isSimulatorMachine(machineSelect.value);
     disconnectButton.textContent = connected ? "Disconnect" : "Cancel";
-    portInput.disabled = active2;
-    addressInput.disabled = active2;
-    setupUsernameInput.disabled = active2;
-    setupPasswordInput.disabled = active2;
-    machineSelect.disabled = active2;
-    discoverButton.disabled = active2;
-    nearbyButton.disabled = active2;
+    portInput.disabled = active3;
+    addressInput.disabled = active3;
+    setupUsernameInput.disabled = active3;
+    setupPasswordInput.disabled = active3;
+    machineSelect.disabled = active3;
+    discoverButton.disabled = active3;
+    nearbyButton.disabled = active3;
     for (const button of deviceList.querySelectorAll(".vnc-device-header")) {
-      button.disabled = active2;
+      button.disabled = active3;
     }
     for (const button of discoveredPorts.querySelectorAll("button")) {
-      button.disabled = active2;
+      button.disabled = active3;
     }
     empty.hidden = connected;
     screen.hidden = !connected;
@@ -150807,12 +150856,12 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
     if (!selected) return;
     activeTabId = tabId;
     for (const tab of tabs.values()) {
-      const active2 = tab.id === tabId;
-      tab.tabButton.classList.toggle("is-active", active2);
-      tab.tabButton.setAttribute("aria-selected", String(active2));
-      tab.tabButton.tabIndex = active2 ? 0 : -1;
-      tab.controlsPanel.hidden = !active2;
-      tab.viewerPanel.hidden = !active2;
+      const active3 = tab.id === tabId;
+      tab.tabButton.classList.toggle("is-active", active3);
+      tab.tabButton.setAttribute("aria-selected", String(active3));
+      tab.tabButton.tabIndex = active3 ? 0 : -1;
+      tab.controlsPanel.hidden = !active3;
+      tab.viewerPanel.hidden = !active3;
     }
     if (vncModeActive(store2)) selected.session.focus();
   }
@@ -151540,7 +151589,7 @@ function mountAskUserDialog(api2, store2) {
   const dialog2 = el("dialog", { id: "ask-user-dialog" }, form);
   document.body.append(dialog2);
   const queue = [];
-  let active2 = null;
+  let active3 = null;
   const changeListeners = /* @__PURE__ */ new Set();
   let arrivals = 0;
   let escapeHeld = false;
@@ -151556,11 +151605,11 @@ function mountAskUserDialog(api2, store2) {
     for (const listener of [...changeListeners]) listener();
   }
   function renderActive() {
-    if (!active2) return;
+    if (!active3) return;
     clear(form);
     inputs = [];
     form.append(el("h3", { class: "ask-user-title" }, "The agent has a question"));
-    active2.questions.forEach((q2, i2) => {
+    active3.questions.forEach((q2, i2) => {
       const questionId = `ask-user-question-${String(i2)}`;
       const input2 = el("textarea", {
         class: "ask-user-input",
@@ -151616,25 +151665,25 @@ function mountAskUserDialog(api2, store2) {
     inputs[0]?.focus();
   }
   function withdrawIfUnshowable() {
-    if (!active2 || isShowable(active2)) return;
+    if (!active3 || isShowable(active3)) return;
     dialog2.close();
-    queue.unshift(active2);
-    active2 = null;
+    queue.unshift(active3);
+    active3 = null;
   }
   function showNext() {
-    if (active2 || escapeHeld || !dialog2.isConnected || isAnyDialogOpen()) return;
+    if (active3 || escapeHeld || !dialog2.isConnected || isAnyDialogOpen()) return;
     const idx = queue.findIndex(isShowable);
     if (idx === -1) {
       syncAttention();
       return;
     }
-    active2 = queue.splice(idx, 1)[0] ?? null;
-    if (!active2) return;
+    active3 = queue.splice(idx, 1)[0] ?? null;
+    if (!active3) return;
     renderActive();
     syncAttention();
   }
   function scheduleNext() {
-    if (presentationTimer !== void 0 || active2 || queue.length === 0) return;
+    if (presentationTimer !== void 0 || active3 || queue.length === 0) return;
     presentationTimer = window.setTimeout(() => {
       presentationTimer = void 0;
       showNext();
@@ -151671,9 +151720,9 @@ function mountAskUserDialog(api2, store2) {
     subtree: true
   });
   function settle2(request, answers) {
-    if (active2 === request) {
+    if (active3 === request) {
       dialog2.close();
-      active2 = null;
+      active3 = null;
     } else {
       const idx = queue.indexOf(request);
       if (idx === -1) return;
@@ -151684,10 +151733,10 @@ function mountAskUserDialog(api2, store2) {
     syncAttention();
   }
   function respond(answers) {
-    if (active2) settle2(active2, answers);
+    if (active3) settle2(active3, answers);
   }
   function answerFrom(id, answers) {
-    const request = active2?.id === id ? active2 : queue.find((req) => req.id === id);
+    const request = active3?.id === id ? active3 : queue.find((req) => req.id === id);
     if (request === void 0 || answers.length !== request.questions.length) return false;
     settle2(request, [...answers]);
     return true;
@@ -151696,8 +151745,8 @@ function mountAskUserDialog(api2, store2) {
     respond(inputs.map((input2) => input2.value));
   }
   function cancel() {
-    if (!active2) return;
-    respond(active2.questions.map(() => ""));
+    if (!active3) return;
+    respond(active3.questions.map(() => ""));
   }
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -151730,9 +151779,9 @@ function mountAskUserDialog(api2, store2) {
     syncAttention();
   });
   api2.agent.onAskUserCancelled(({ id }) => {
-    if (active2?.id === id) {
+    if (active3?.id === id) {
       dialog2.close();
-      active2 = null;
+      active3 = null;
       showNext();
       syncAttention();
       return;
@@ -151747,7 +151796,7 @@ function mountAskUserDialog(api2, store2) {
     syncAttention();
   });
   return {
-    pending: () => [...active2 ? [active2] : [], ...queue].sort((a3, b4) => a3.arrival - b4.arrival).map((req) => ({
+    pending: () => [...active3 ? [active3] : [], ...queue].sort((a3, b4) => a3.arrival - b4.arrival).map((req) => ({
       id: req.id,
       threadId: req.threadId,
       questions: req.questions.map((q2) => q2.question),
@@ -151855,7 +151904,7 @@ function mountSshPromptDialog(api2) {
     secretButtons
   );
   const queue = [];
-  let active2 = null;
+  let active3 = null;
   function showKind(kind) {
     const confirm2 = kind === "confirm";
     secretField.hidden = confirm2;
@@ -151864,33 +151913,33 @@ function mountSshPromptDialog(api2) {
     confirmButtons.hidden = !confirm2;
   }
   function renderActive() {
-    if (!active2) return;
-    promptEl.textContent = active2.prompt;
+    if (!active3) return;
+    promptEl.textContent = active3.prompt;
     secretInput.value = "";
     rememberInput.checked = true;
     const rememberLabel = rememberField.querySelector(".ssh-prompt-remember-label");
     if (rememberLabel) {
-      rememberLabel.textContent = active2.canRememberOnDevice ? "Remember securely on this device" : "Remember for this session";
+      rememberLabel.textContent = active3.canRememberOnDevice ? "Remember securely on this device" : "Remember for this session";
     }
-    showKind(active2.kind);
+    showKind(active3.kind);
     dialog2.showModal();
-    if (active2.kind === "secret") secretInput.focus();
+    if (active3.kind === "secret") secretInput.focus();
     else confirmApprove.focus();
   }
   function finish(value, remember = false) {
-    if (!active2) return;
-    const id = active2.id;
-    active2 = null;
+    if (!active3) return;
+    const id = active3.id;
+    active3 = null;
     dialog2.close();
     void api2.sshPrompt.respond(id, value, remember);
     if (queue.length > 0) {
-      active2 = queue.shift() ?? null;
+      active3 = queue.shift() ?? null;
       renderActive();
     }
   }
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (!active2 || active2.kind !== "secret") return;
+    if (!active3 || active3.kind !== "secret") return;
     finish(secretInput.value, rememberInput.checked);
   });
   dialog2.addEventListener("cancel", (event) => {
@@ -151901,16 +151950,16 @@ function mountSshPromptDialog(api2) {
     finish("");
   });
   confirmApprove.addEventListener("click", () => {
-    if (!active2 || active2.kind !== "confirm") return;
+    if (!active3 || active3.kind !== "confirm") return;
     finish("yes");
   });
   confirmReject.addEventListener("click", () => {
     finish("");
   });
   api2.sshPrompt.onRequest((req) => {
-    if (active2) queue.push(req);
+    if (active3) queue.push(req);
     else {
-      active2 = req;
+      active3 = req;
       renderActive();
     }
   });
@@ -151937,33 +151986,33 @@ function mountUpdatePromptDialog(api2) {
   );
   document.body.append(dialog2);
   const queue = [];
-  let active2 = null;
+  let active3 = null;
   function finish(buttonIndex) {
-    if (!active2) return;
-    const id = active2.id;
-    active2 = null;
+    if (!active3) return;
+    const id = active3.id;
+    active3 = null;
     dialog2.close();
     void api2.updatePrompt.respond(id, buttonIndex);
     if (queue.length > 0) {
-      active2 = queue.shift() ?? null;
+      active3 = queue.shift() ?? null;
       renderActive();
     }
   }
   function renderActive() {
-    if (!active2) return;
-    messageEl.textContent = active2.message;
-    if (active2.detail) {
-      detailEl.textContent = active2.detail;
+    if (!active3) return;
+    messageEl.textContent = active3.message;
+    if (active3.detail) {
+      detailEl.textContent = active3.detail;
       detailEl.hidden = false;
     } else {
       detailEl.textContent = "";
       detailEl.hidden = true;
     }
-    renderChangelog(changelogEl, active2);
+    renderChangelog(changelogEl, active3);
     dialog2.classList.toggle("has-changelog", !changelogEl.hidden);
-    const defaultIndex = active2.defaultIndex ?? 0;
+    const defaultIndex = active3.defaultIndex ?? 0;
     buttonsEl.replaceChildren(
-      ...active2.buttons.map((label, index) => {
+      ...active3.buttons.map((label, index) => {
         const isPrimary = index === defaultIndex;
         const button = el(
           "button",
@@ -151984,12 +152033,12 @@ function mountUpdatePromptDialog(api2) {
   }
   dialog2.addEventListener("cancel", (event) => {
     event.preventDefault();
-    finish(active2?.cancelIndex ?? (active2 ? active2.buttons.length - 1 : -1));
+    finish(active3?.cancelIndex ?? (active3 ? active3.buttons.length - 1 : -1));
   });
   api2.updatePrompt.onRequest((req) => {
-    if (active2) queue.push(req);
+    if (active3) queue.push(req);
     else {
-      active2 = req;
+      active3 = req;
       renderActive();
     }
   });
@@ -152048,14 +152097,6 @@ var init_update_prompt_dialog = __esm({
     init_helpers();
     init_ui();
     init_toast();
-  }
-});
-
-// src/renderer/product-announcements.ts
-var PRODUCT_ANNOUNCEMENTS;
-var init_product_announcements2 = __esm({
-  "src/renderer/product-announcements.ts"() {
-    PRODUCT_ANNOUNCEMENTS = [];
   }
 });
 
@@ -152502,12 +152543,12 @@ function mountCommandPalette(store2, api2) {
   }
   function storeThreadHits() {
     const { projects, threads, activeProjectId } = store2.getState();
-    const active2 = projects.find((p2) => p2.id === activeProjectId);
-    if (!active2) return [];
+    const active3 = projects.find((p2) => p2.id === activeProjectId);
+    if (!active3) return [];
     return threads.map((t2) => ({
       threadId: t2.id,
-      projectId: active2.id,
-      projectName: projectDisplayName(active2),
+      projectId: active3.id,
+      projectName: projectDisplayName(active3),
       title: t2.title,
       updatedAt: 0,
       prRefs: t2.prRefs ?? []
@@ -154197,12 +154238,12 @@ function hasRunningAutomation(threads, backgroundThreads) {
   );
 }
 function attachAutomationAppearance(store2, api2, root = document.documentElement) {
-  let active2 = null;
+  let active3 = null;
   const sync = () => {
     const state = store2.getState();
     const next = hasRunningAutomation(state.threads, state.backgroundThreads);
-    if (next === active2) return;
-    active2 = next;
+    if (next === active3) return;
+    active3 = next;
     root.toggleAttribute(AUTOMATION_ACTIVE_ATTRIBUTE, next);
     void api2.setAutomationMode(next).catch((error62) => {
       console.error("[automations] Failed to apply transient appearance:", error62);
@@ -154219,7 +154260,7 @@ function attachAutomationAppearance(store2, api2, root = document.documentElemen
       unsubscribe();
     });
     root.removeAttribute(AUTOMATION_ACTIVE_ATTRIBUTE);
-    if (active2 === true) {
+    if (active3 === true) {
       void api2.setAutomationMode(false).catch((error62) => {
         console.error("[automations] Failed to restore the native app icon:", error62);
       });
@@ -154744,10 +154785,10 @@ function attachImportedCursorAgentRefresh(store2, api2) {
       if (!message2) return;
       const current = store2.getState();
       if (current.activeProjectId !== projectId || current.activeThreadId !== threadId) return;
-      const active2 = current.threads.find((candidate) => candidate.id === threadId);
-      if (!active2 || refreshKey(projectId, active2) !== key) return;
-      const merged = mergeImportedCursorResult(active2, message2);
-      if (merged === active2) return;
+      const active3 = current.threads.find((candidate) => candidate.id === threadId);
+      if (!active3 || refreshKey(projectId, active3) !== key) return;
+      const merged = mergeImportedCursorResult(active3, message2);
+      if (merged === active3) return;
       store2.setState({
         threads: current.threads.map(
           (candidate) => candidate.id === threadId ? merged : candidate
@@ -164717,14 +164758,14 @@ async function boot() {
   const { projects, projectGroups, activeProjectId, activeThreadId } = await loadProjects(api);
   endLoadProjects({ projects: projects.length });
   const [firstProject] = projects;
-  const active2 = firstProject ? projects.find((p2) => p2.id === activeProjectId) ?? firstProject : void 0;
-  store.setState({ projects, projectGroups, activeProjectId: active2?.id ?? null });
+  const active3 = firstProject ? projects.find((p2) => p2.id === activeProjectId) ?? firstProject : void 0;
+  store.setState({ projects, projectGroups, activeProjectId: active3?.id ?? null });
   markNavigationRestored({ activeProjectId, activeThreadId });
-  if (active2) {
+  if (active3) {
     ensureLayout();
     mark("renderer:layout-mounted");
     const endRestore = begin("renderer:restore-project");
-    await restoreProject(store, api, active2.id, activeThreadId);
+    await restoreProject(store, api, active3.id, activeThreadId);
     endRestore();
     endBoot({ projects: projects.length });
     startPerfAutopilot(store);
@@ -164751,7 +164792,7 @@ async function boot() {
     try {
       await mountProductAnnouncements(
         api.settings,
-        PRODUCT_ANNOUNCEMENTS,
+        announcementCatalog(),
         openSettingsDialog,
         isNewUser
       );
@@ -165018,7 +165059,7 @@ var init_main = __esm({
     init_ssh_prompt_dialog();
     init_update_prompt_dialog();
     init_product_announcement_dialog();
-    init_product_announcements2();
+    init_announcement_catalog();
     init_ui();
     init_tooltip();
     init_confirm_dialog();
@@ -165114,6 +165155,8 @@ var require_main = __commonJS({
     init_product_announcement_dialog();
     init_settings_dialog();
     init_announcement_fixtures();
+    init_product_announcements2();
+    init_announcement_catalog();
     init_demo();
     init_demo_api();
     init_scenarios();
@@ -165130,6 +165173,7 @@ var require_main = __commonJS({
     var reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     var autoplay = flag(params, "autoplay", scenario2.trace !== void 0);
     var embedded = flag(params, "embedded", false);
+    useAnnouncementCatalog([]);
     window.api = createDemoApi(scenario2, { trace: { instant: reducedMotion } });
     document.documentElement.dataset["demoScenario"] = scenario2.id;
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
@@ -165140,7 +165184,8 @@ var require_main = __commonJS({
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
           window.api.settings,
-          DEMO_PRODUCT_ANNOUNCEMENTS,
+          // `shipped` mounts the real catalog; every other scenario injects sample copy.
+          scenario2.id === "product-announcements-shipped" ? PRODUCT_ANNOUNCEMENTS : DEMO_PRODUCT_ANNOUNCEMENTS,
           openSettingsDialog,
           scenario2.settings["onboardingCompleted"] !== true
         );

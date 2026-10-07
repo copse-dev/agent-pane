@@ -60,6 +60,10 @@
     "label": "Product announcements — fresh"
   },
   {
+    "id": "product-announcements-shipped",
+    "label": "Product announcements — shipped catalog"
+  },
+  {
     "id": "product-announcements-existing",
     "label": "Product announcements — existing"
   },
