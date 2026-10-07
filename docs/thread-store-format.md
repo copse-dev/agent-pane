@@ -62,6 +62,7 @@ legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-inde
     meta.json                        # mutable thread metadata (everything except messages)
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
+    openai-agent-session.json        # private hosted OpenAI session + pending input checkpoint
     acp-session.json                 # private external ACP session binding (optional)
     history-edit-transaction.json    # pending edit rollback journal (temporary, private)
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)

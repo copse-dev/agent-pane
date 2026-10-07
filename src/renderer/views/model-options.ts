@@ -1,3 +1,4 @@
+import { DEFAULT_OPENAI_AGENT_MODEL, OPENAI_AGENT_GROUP } from '@shared/openai-cloud-agent.ts'
 import { ACP_RETENTION_NOTICE, type AcpRetentionNotice } from '@shared/acp-retention.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { chatGptPlanModelValue, parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
@@ -358,6 +359,27 @@ async function remoteAgentOptions(
   preferAcpForClaude = false,
 ): Promise<ModelOption[]> {
   const options: ModelOption[] = []
+
+  if (isAvailable('openai')) {
+    options.push({
+      value: remoteAgentModelValue('openai', DEFAULT_OPENAI_AGENT_MODEL),
+      label: 'GPT-6.1 Sol',
+      group: OPENAI_AGENT_GROUP,
+      supportsImages: false,
+    })
+    const selected = parseRemoteAgentModelSelection(current)
+    if (
+      selected?.provider === 'openai' &&
+      current !== remoteAgentModelValue('openai', DEFAULT_OPENAI_AGENT_MODEL)
+    ) {
+      options.push({
+        value: current,
+        label: selected.model ?? 'Default',
+        group: OPENAI_AGENT_GROUP,
+        supportsImages: false,
+      })
+    }
+  }
 
   if (isAvailable(REMOTE_AGENT_PROVIDER_CURSOR)) {
     const group = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_CURSOR)

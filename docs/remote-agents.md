@@ -3,15 +3,60 @@
 Copse can hand a chat turn to a **provider-managed** remote agent instead of running
 the local tool loop. Today that means:
 
-| Model value                                           | Provider              | Adapter                                             |
-| ----------------------------------------------------- | --------------------- | --------------------------------------------------- |
-| `remote-agent:cursor` / `remote-agent:cursor#…`       | Cursor Cloud Agents   | `src/main/services/remote/remote-agent-client.ts`   |
-| `remote-agent:anthropic` / `remote-agent:anthropic#…` | Claude Managed Agents | `src/main/services/remote/managed-agents-client.ts` |
+| Model value                                           | Provider                      | Adapter                                             |
+| ----------------------------------------------------- | ----------------------------- | --------------------------------------------------- |
+| `remote-agent:cursor` / `remote-agent:cursor#…`       | Cursor Cloud Agents           | `src/main/services/remote/remote-agent-client.ts`   |
+| `remote-agent:anthropic` / `remote-agent:anthropic#…` | Claude Managed Agents         | `src/main/services/remote/managed-agents-client.ts` |
+| `remote-agent:openai#gpt-6.1-sol`                     | OpenAI Agents API (prototype) | `src/main/services/remote/openai-agents-client.ts`  |
 
 Shared prompt/SSE helpers live in `src/shared/remote-agent-stream.ts`. Copse owns the
 local transcript projection (`StreamChunk`), thread ↔ agent link store, handoff
 preamble, and artifact/PR surfacing. The provider owns the guest VM, egress, and
 retention.
+
+## OpenAI prototype
+
+Save an OpenAI **Platform API key** in Settings, open a project, and select
+**OpenAI Cloud Agent (prototype · API billed · no ZDR)** in the model picker.
+ChatGPT OAuth does not authorize this integration. The key needs Agents read/write
+and Responses write permissions. Hosted sessions retain data in the US and are
+not eligible for Zero Data Retention. Model usage appears in the chat; container
+and tool charges are additional, so that display is not the complete invoice.
+
+The provider runs a separate OpenAI-hosted workspace. Local files and credentials
+are not mounted or uploaded. Explicitly name a public repository and request a
+patch under `/workspace/outputs` for repository work. Private repositories,
+automatic PR creation, images, approval-required tool flows, and automatic
+background recovery are outside this prototype.
+
+Follow-ups reuse the same hosted session. A private checkpoint lives alongside the
+native thread. After an interrupted request, resend the **same message** to recover
+the pending turn before sending a different task. Keys/models cannot change within
+an existing session. The client subscribes before submission but uses saved turns
+and items as the recovery authority: OpenAI event streams do not replay. Progress
+currently displays polled command output and completed messages, not token deltas.
+Stop requests remote cancellation and checks that work has ended; an unconfirmed
+cancellation is surfaced as an error. Runs have a ten-minute prototype limit.
+
+Artifacts download into the thread's blob directory (10 MiB per file, 20 files,
+50 MiB per turn). Remote paths never choose local filenames. Deleting local chat
+state does not delete its hosted session. Manage remote retention separately.
+
+For a standalone billable smoke test, configure `OPENAI_API_KEY` in the process
+environment, then run:
+
+```sh
+pnpm run probe:openai-agents
+pnpm run probe:openai-agents --prompt 'Inspect the script from the previous turn.'
+pnpm run probe:openai-agents --resume
+pnpm run probe:openai-agents --delete
+```
+
+The default task writes and executes a tiny Python artifact. `--resume` only applies
+to pending work; `--delete` removes the probe's remote session after it stops.
+`--state PATH` selects a separate checkpoint. Keep checkpoints private: they include
+pending prompts, though never the API key. See the
+[prototype plan and validation record](plans/openai-cloud-agent-prototype.md).
 
 ## Cursor stream resume
 

@@ -1154,3 +1154,16 @@ describe('ACP retention qualification', () => {
     }
   })
 })
+
+describe('OpenAI cloud agent prototype picker', () => {
+  it('requires an API key independently of ChatGPT plan availability', async () => {
+    const none = await fetchModelOptions(mockApi(), '')
+    assert.ok(!none.some((option) => option.value.startsWith('remote-agent:openai')))
+    const options = await fetchModelOptions(mockApi({ available: { openai: true } }), '')
+    const cloud = options.find((option) => option.value === 'remote-agent:openai#gpt-6.1-sol')
+    assert.ok(cloud)
+    assert.match(cloud.group ?? '', /API billed/)
+    assert.match(cloud.group ?? '', /no ZDR/)
+    assert.equal(cloud.supportsImages, false)
+  })
+})

@@ -1,3 +1,4 @@
+import { OpenAiCancellationUnconfirmedError } from './remote/openai-agents-api.ts'
 import { runWithInlineCanvas } from './inline-canvas-context.ts'
 import { MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { promptRoutingContext, resolvePromptModel } from './providers/prompt-model-routing.ts'
@@ -1552,7 +1553,7 @@ async function runAgentWithInlineCanvas(
         // Abort (Stop / Send now) is a clean interrupt — Cursor's adapter already
         // emits CANCELLED `done` when it handles the signal; if an abort still
         // escapes here, don't paint it as a provider error in the transcript.
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted && !(err instanceof OpenAiCancellationUnconfirmedError)) {
           const timedOut = isAgentRunTimeoutAbort(controller.signal)
           recordTurnFailure(controller.signal.reason, {
             source: timedOut ? 'host' : 'user',
