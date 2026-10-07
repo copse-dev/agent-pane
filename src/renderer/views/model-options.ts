@@ -82,8 +82,6 @@ const ACP_GROUP = 'Agents on this device'
 
 const OPENROUTER_GROUP = 'OpenRouter'
 
-const CHAT_DEFAULT_GROUP = 'Chat default'
-
 const KNOWN_TEXT_ONLY_MISTRAL_MODELS = [
   'mistral-small-latest',
   'open-mistral-nemo',
@@ -472,7 +470,7 @@ export async function fetchModelOptions(
   if (opts.includeAgentModels !== false) {
     options.push({
       value: MATCH_PROMPT_MODEL_SELECTOR,
-      label: 'Auto — match prompt',
+      label: 'Match task — Chooses a suitable model from your prompt',
       group: 'Automatic',
     })
   }
@@ -480,12 +478,12 @@ export async function fetchModelOptions(
     options.push({
       value: BEST_VALUE_CHAT_MODEL,
       label: `${BEST_VALUE_CHAT_MODEL_LABEL} — auto from plan / price frontier`,
-      group: CHAT_DEFAULT_GROUP,
+      group: 'Automatic',
     })
     // The Settings chat model can also be a rule, not just a pinned model: offer
     // the other automatic selectors (balanced, most capable, cheapest) so the
     // user can pick how the default resolves. auto:best-value is already the
-    // row above; the rest ride in their own Automatic group.
+    // row above; all rules share the Automatic group.
     for (const choice of dynamicModelChoices()) {
       if (choice.value === BEST_VALUE_CHAT_MODEL) continue
       if (choice.group !== 'Automatic') continue

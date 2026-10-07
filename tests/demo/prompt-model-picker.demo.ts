@@ -9,17 +9,21 @@ describe('primary prompt model picker', () => {
     await $(HOST + ' .model-picker-trigger').waitForDisplayed()
   })
 
-  it('offers prompt matching and preserves Auto on the composer after selection', async () => {
+  it('offers prompt matching and preserves Match task on the composer after selection', async () => {
     const picker = $(HOST + ' .model-picker')
     await picker.$('.model-picker-trigger').click()
     await picker.$('.model-picker-browse').click()
-    await picker.$('.model-picker-filter').setValue('match prompt')
+    await picker.$('.model-picker-filter').setValue('match task')
     const option = picker.$('.model-picker-option[data-value="auto:match-prompt"]')
     await option.waitForDisplayed()
-    await expect(option).toHaveText(expect.stringContaining('Auto — match prompt'))
+    await expect(option).toHaveText(
+      expect.stringContaining('Match task — Chooses a suitable model from your prompt'),
+    )
     await saveElementScreenshot(HOST + ' .model-picker-menu', 'prompt-model-picker.png')
     await option.click()
-    await expect(picker.$('.model-picker-trigger')).toHaveText(expect.stringContaining('Auto —'))
+    await expect(picker.$('.model-picker-trigger')).toHaveText(
+      expect.stringContaining('Match task'),
+    )
     await saveElementScreenshot(HOST, 'prompt-model-selected.png')
     await picker.$('.model-picker-trigger').click()
     await expect(picker.$('.model-picker-option[data-value="auto:match-prompt"]')).toHaveAttribute(
@@ -31,7 +35,7 @@ describe('primary prompt model picker', () => {
   it('pins the first choice in the picker without a routing message in the conversation', async () => {
     await browser.url('/?scenario=prompt-model-first-ask&autoplay=0')
     const label = $(HOST + ' .model-picker-label')
-    await expect(label).toHaveText('Auto — match prompt')
+    await expect(label).toHaveText('Match task')
     await $('.prompt-input').setValue('Check for typos in the README')
     await $('.submit-btn').click()
     await expect(label).toHaveText('Claude Haiku 4.5')
@@ -49,5 +53,23 @@ describe('primary prompt model picker', () => {
     await $('.submit-btn').click()
     await expect($$('.messages-list .msg-assistant')).toBeElementsArrayOfSize(2)
     await expect(label).toHaveText('Claude Haiku 4.5')
+  })
+  it('shows all automatic settings choices under one heading', async () => {
+    await browser.url('/?scenario=settings-footer&autoplay=0')
+    await $('.prompt-input').waitForExist()
+    await $('[aria-label="Settings"]').click()
+    const picker = $('[data-model-picker-for="model"]')
+    await picker.scrollIntoView({ block: 'center' })
+    await picker.$('.model-picker-trigger').click()
+    const headings = await picker
+      .$$('.model-picker-group-label')
+      .map(async (heading) => heading.getText())
+    expect(headings.filter((heading) => heading.toLowerCase() === 'automatic')).toHaveLength(1)
+    expect(headings.map((heading) => heading.toLowerCase())).not.toContain('chat default')
+    await expect(picker.$('.model-picker-option[data-value="auto:match-prompt"]')).toHaveText(
+      expect.stringContaining('Match task — Chooses a suitable model from your prompt'),
+    )
+    await expect(picker.$('.model-picker-option[data-value="auto:best-value"]')).toExist()
+    await saveElementScreenshot('#settings-dialog', 'prompt-model-settings.png')
   })
 })

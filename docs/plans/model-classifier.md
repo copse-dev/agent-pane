@@ -4,9 +4,9 @@ Tracking: [#557](https://github.com/copse-dev/agent-pane/issues/557)
 
 Status: **primary prompt routing plus an experimental advisory tool**.
 
-## Primary agent: Auto — match prompt
+## Primary agent: Match task
 
-Choose **Auto — match prompt** in the chat model picker or as the default chat model.
+Choose **Match task** in the chat model picker or as the default chat model.
 On the first ask in a new chat, after submission hooks and PII redaction, Copse asks
 the classifier selected under **Settings → Classifiers → Background questions**
 to assess that request. If none is selected or it cannot answer, Copse tries the

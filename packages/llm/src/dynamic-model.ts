@@ -125,7 +125,7 @@ export function dynamicModelLabel(value: string): string | null {
   if (!selector) return null
   switch (selector.kind) {
     case 'match-prompt':
-      return 'Auto — match prompt'
+      return 'Match task'
     case 'best-value':
       return 'Best value'
     case 'best-intellect':

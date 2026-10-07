@@ -494,7 +494,7 @@ export function mountInputBar(
   function footerModelDisplayLabel(current: string): string | undefined {
     const resolved = footerResolvedModel(current)
     if (current === MATCH_PROMPT_MODEL_SELECTOR) {
-      return resolved ? `Auto — ${modelDisplayLabel(resolved)}` : 'Auto — match prompt'
+      return resolved ? `Auto — ${modelDisplayLabel(resolved)}` : 'Match task'
     }
     // Run the resolved route through the same label formatter the picker uses
     // (OpenRouter/cloud friendly), so `openrouter:minimax/minimax-m3` renders
