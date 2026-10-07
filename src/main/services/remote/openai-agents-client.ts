@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { threadDirectoryPath } from '../thread-store.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
-import { join, extname } from 'node:path'
+import { join, extname, sep } from 'node:path'
 import { z } from 'zod'
 import { DEFAULT_OPENAI_AGENT_MODEL } from '@shared/openai-cloud-agent.ts'
 import { openAiAgentProjectContext } from '@shared/openai-agent-project.ts'
@@ -34,6 +34,23 @@ const hash = (value: string): string => createHash('sha256').update(value).diges
 const storageKey = (threadId: string): string => `openai-agent-owner:${threadId}`
 const stateFile = (projectId: string, threadId: string): string =>
   join(threadDirectoryPath(projectId, threadId), 'openai-agent-session.json')
+
+/** Read only a cached artifact belonging to a known thread; never accept a local path. */
+export async function readOpenAiArtifact(threadId: string, artifact: string): Promise<Buffer> {
+  if (!/^[a-f0-9]{64}\/[a-f0-9]{64}\.[a-zA-Z0-9]{1,10}$/.test(artifact))
+    throw new Error('Invalid OpenAI artifact reference.')
+  const owner = storageGet(storageKey(threadId))
+  if (typeof owner !== 'string') throw new Error('OpenAI artifact thread is unavailable.')
+  const directory = threadDirectoryPath(owner, threadId)
+  const root = await realpath(directory)
+  const target = await realpath(join(directory, 'blobs', 'openai-artifacts', artifact))
+  if (!target.startsWith(`${root}${sep}blobs${sep}openai-artifacts${sep}`))
+    throw new Error('OpenAI artifact escaped its thread storage.')
+  const info = await stat(target)
+  if (!info.isFile() || info.size > 10 * 1024 * 1024)
+    throw new Error('Invalid OpenAI artifact size.')
+  return readFile(target)
+}
 
 export function clearOpenAiAgentSession(threadId: string): void {
   const owner = storageGet(storageKey(threadId))
@@ -177,7 +194,9 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       const extension = extname(artifact.path).match(/^\.[a-zA-Z0-9]{1,10}$/)?.[0] ?? '.bin'
       const target = join(artifactDirectory, `${hash(artifact.id)}${extension}`)
       await writeFile(target, content, { mode: 0o600 })
-      artifactText += `\n[Download artifact (${String(artifact.size_bytes)} bytes)](${target})\n`
+      const artifactPath = `${hash(state.sessionId)}/${hash(artifact.id)}${extension}`
+      const url = `https://api.openai.com/v1/agents/${encodeURIComponent(`openai:${options.threadId}`)}/artifacts/download?path=${encodeURIComponent(artifactPath)}`
+      artifactText += `\n[Download artifact (${String(artifact.size_bytes)} bytes)](${url})\n`
     } catch {
       artifactText +=
         '\nArtifact download failed; the published file remains in the OpenAI session.\n'

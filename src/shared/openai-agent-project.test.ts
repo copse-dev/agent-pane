@@ -14,6 +14,9 @@ describe('OpenAI project handoff', () => {
     assert.match(context, /clone it into \/workspace\/project/)
     assert.match(context, /Preserve any existing hosted edits/)
     assert.match(context, /instead of silently using another revision/)
+    assert.match(context, /On EVERY turn/)
+    assert.match(context, /fetched branch tip/)
+    assert.match(context, /BEFORE making changes/)
   })
   it('explains missing project context without inventing a repository', () => {
     assert.match(openAiAgentProjectContext(null, null, null), /No GitHub repository/)

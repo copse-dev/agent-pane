@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { StreamChunk } from '@shared/types'
@@ -8,7 +8,7 @@ import { setApiKey, deleteApiKey } from '../storage/settings.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { threadDirectoryPath } from '../thread-store.ts'
 import { runRemoteAgentFromSettings } from './remote-agent-client.ts'
-import { clearOpenAiAgentSession } from './openai-agents-client.ts'
+import { clearOpenAiAgentSession, readOpenAiArtifact } from './openai-agents-client.ts'
 
 const page = (data: unknown[]): Response => Response.json({ data, has_more: false, last_id: null })
 
@@ -111,8 +111,25 @@ describe('OpenAI cloud adapter', () => {
     )
     const match = result.assistantText.match(/\[Download artifact \(4 bytes\)\]\(([^)]+)\)/)
     assert.ok(match?.[1])
-    assert.ok(match[1].startsWith(join(root, 'project', 'thread', 'blobs')))
-    assert.equal(readFileSync(match[1], 'utf8'), 'file')
+    const link = new URL(match[1])
+    assert.equal(link.origin, 'https://api.openai.com')
+    assert.match(decodeURIComponent(link.pathname), /openai:thread/)
+    const artifactPath = link.searchParams.get('path')
+    assert.ok(artifactPath)
+    assert.equal((await readOpenAiArtifact('thread', artifactPath)).toString(), 'file')
+    await assert.rejects(readOpenAiArtifact('thread', '../../secret'), /Invalid/)
+    await assert.rejects(readOpenAiArtifact('other-thread', artifactPath), /unavailable/)
+    const cachedFile = join(
+      threadDirectoryPath('project', 'thread'),
+      'blobs',
+      'openai-artifacts',
+      artifactPath,
+    )
+    rmSync(cachedFile)
+    const outside = join(root, 'outside.txt')
+    writeFileSync(outside, 'private')
+    symlinkSync(outside, cachedFile)
+    await assert.rejects(readOpenAiArtifact('thread', artifactPath), /escaped/)
     const checkpoint = readFileSync(
       join(threadDirectoryPath('project', 'thread'), 'openai-agent-session.json'),
       'utf8',

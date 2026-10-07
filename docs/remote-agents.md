@@ -46,8 +46,15 @@ pending checkpoint. Resend the previous message to recover it before starting a
 different task. Runs have a ten-minute prototype limit.
 
 Artifacts download into the thread's blob directory (10 MiB per file, 20 files,
-50 MiB per turn). Remote paths never choose local filenames. Deleting local chat
+50 MiB per turn). Artifact links open a Save dialog rather than the workspace
+index, including links in older messages. Remote paths never choose local filenames. Deleting local chat
 state does not delete its hosted session. Manage remote retention separately.
+
+The supplied commit belongs to the local chat checkout; it is not necessarily
+the latest remote branch tip. The hosted agent is instructed to refresh and
+compare both revisions on every turn, and ask before editing if they differ.
+This remains agent-enforced rather than a verified checkout synchronization
+protocol. Patches are exported deliverables, not automatically applied edits.
 
 For a standalone billable smoke test, configure `OPENAI_API_KEY` in the process
 environment, then run:
