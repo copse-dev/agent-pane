@@ -1393,3 +1393,41 @@ test('preloadSidebarThreads leaves a project that was cached meanwhile alone', a
     ['Fresh'],
   )
 })
+
+test('preloadSidebarThreads does not cache a project removed while its read was pending', async () => {
+  resetProjectSwitchStateForTest()
+  let release: (threads: Thread[]) => void = () => undefined
+  const pendingRead = new Promise<Thread[]>((resolve) => {
+    release = resolve
+  })
+  const loadedFor: string[] = []
+  const api = makeApi({
+    loadProjectThreads: (projectId) => {
+      loadedFor.push(projectId)
+      return projectId === 'gone' ? pendingRead : Promise.resolve([thread(`${projectId}-t`)])
+    },
+  })
+  const store = createStore({
+    projects: [
+      { id: 'active', path: '/a', name: 'a' },
+      { id: 'gone', path: '/g', name: 'g' },
+      { id: 'also-gone', path: '/h', name: 'h' },
+      { id: 'kept', path: '/k', name: 'k' },
+    ],
+    activeProjectId: 'active',
+    threads: [thread('live')],
+  })
+  const preload = preloadSidebarThreads(store, api)
+  await waitUntil(() => loadedFor.includes('gone'))
+  store.setState({
+    projects: store.getState().projects.filter((p) => p.id !== 'gone' && p.id !== 'also-gone'),
+  })
+  release([thread('stale')])
+  await preload
+  assert.deepEqual(getSidebarThreads(store, 'gone'), [], 'the removed project is not recached')
+  assert.deepEqual(loadedFor, ['gone', 'kept'], 'a project removed before its turn is not read')
+  assert.deepEqual(
+    getSidebarThreads(store, 'kept').map((t) => t.id),
+    ['kept-t'],
+  )
+})

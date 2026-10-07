@@ -249,8 +249,13 @@ export async function preloadSidebarThreads(store: AppStore, api: ApiClient): Pr
     .getState()
     .projects.filter((project) => !project.sshHost && !project.missing)
     .map((project) => project.id)
+  // A project removed while an earlier read was pending must not be read or cached.
+  const unwanted = (id: string): boolean =>
+    id === store.getState().activeProjectId ||
+    threadCache.has(id) ||
+    !store.getState().projects.some((project) => project.id === id)
   for (const id of pending) {
-    if (id === store.getState().activeProjectId || threadCache.has(id)) continue
+    if (unwanted(id)) continue
     let loaded: Thread[]
     try {
       loaded = await loadThreads(api, id)
@@ -258,7 +263,7 @@ export async function preloadSidebarThreads(store: AppStore, api: ApiClient): Pr
       // One unreadable project must not hide the rest; a switch still loads it.
       continue
     }
-    if (id === store.getState().activeProjectId || threadCache.has(id)) continue
+    if (unwanted(id)) continue
     threadCache.set(id, loaded.map(compactSidebarThread))
     store.emit('sidebar_threads_loaded')
   }
