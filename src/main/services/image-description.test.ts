@@ -6,10 +6,9 @@ import {
   clearMockScenarios,
 } from '@copse/llm/mock-script.ts'
 import type { LLMMessage, LLMProvider } from '@shared/types'
-import { parseUsageEvents } from '@shared/usage/aggregate-usage.ts'
-import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
 import { describeImagesForHandoff, describeImagesWithProvider } from './image-description.ts'
-import { storageGet, storageSet } from './storage/storage.ts'
+import { readUsageEvents } from './storage/usage-ledger.ts'
+import { clearUsageLedger } from './storage/usage-ledger.test-support.ts'
 
 describe('describeImagesWithProvider', () => {
   it('sends images with a constrained handoff prompt and returns trimmed text', async () => {
@@ -67,9 +66,8 @@ describe('describeImagesWithProvider', () => {
 
   it('attributes a pre-send handoff to its blank thread and selected model', async () => {
     const previousMock = process.env['COPSE_PANEL_MOCK_LLM']
-    const previousUsageEvents = storageGet(USAGE_EVENTS_STORAGE_KEY)
     process.env['COPSE_PANEL_MOCK_LLM'] = '1'
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
     setMockScenario(
       'image-handoff',
       {
@@ -95,7 +93,7 @@ describe('describeImagesWithProvider', () => {
 
       assert.equal(result.text, 'A settings panel with a dark theme.')
       assertMockScenarioComplete('image-handoff')
-      const events = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
+      const events = await readUsageEvents()
       assert.equal(events.length, 1)
       const event = events[0]
       assert.ok(event)
@@ -116,7 +114,7 @@ describe('describeImagesWithProvider', () => {
       clearMockScenarios()
       if (previousMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
       else process.env['COPSE_PANEL_MOCK_LLM'] = previousMock
-      storageSet(USAGE_EVENTS_STORAGE_KEY, previousUsageEvents)
+      await clearUsageLedger()
     }
   })
 })

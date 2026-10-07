@@ -1,7 +1,21 @@
 import type { ModelUsage } from '@shared/types'
 import type { ServiceTier } from '@copse/llm/service-tier.ts'
 
-export const USAGE_EVENTS_STORAGE_KEY = 'usageEvents'
+/**
+ * Directory (under the profile's user-data directory) holding the ledger: one
+ * `YYYY-MM-DD.jsonl` file per UTC day, one JSON event per line, appended as calls
+ * happen. It used to be a single array under the `usageEvents` config key, which
+ * made every recorded call re-serialise the whole 90-day history and rewrite the
+ * entire config.json. Day files are only ever appended to, and expire by being
+ * deleted whole, so nothing is rewritten while events are being recorded.
+ */
+export const USAGE_EVENTS_DIR = 'usage-events'
+
+/** The events that were still in config.json when the ledger moved to files. */
+export const USAGE_EVENTS_MIGRATED_FILE = 'migrated.jsonl'
+
+/** Where the ledger lived before it had its own files; read once to migrate it. */
+export const LEGACY_USAGE_EVENTS_STORAGE_KEY = 'usageEvents'
 
 export type UsageSource = 'agent' | 'small-tasks' | 'safety-classifier' | 'advisor'
 

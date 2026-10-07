@@ -38,7 +38,7 @@ overrides:
   js-yaml@4: 4.3.2
   serialize-javascript: ^7.0.7
   tar: ^7.5.22
-  sharp: 0.35.4
+  sharp: 0.35.5
   fast-xml-parser: 5.10.1
   fast-uri: 3.1.8
   hono: 4.13.5

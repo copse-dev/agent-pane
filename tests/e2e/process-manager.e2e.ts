@@ -41,11 +41,25 @@ describe('Process manager', function () {
       timeout: 10_000,
     })
     await expect(dialog.$('h2')).toHaveText('Process Manager')
-    await expect(dialog.$('.process-manager-rows')).toHaveText(
-      expect.stringContaining('Copse main'),
+    // Thread groups start collapsed, so the Shared group's rows are in the DOM
+    // but hidden; `toHaveText` only sees visible text.
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(() =>
+          (
+            document.querySelector('#process-manager-dialog .process-manager-rows')?.textContent ??
+            ''
+          ).includes('Copse main'),
+        ),
+      { timeout: 10_000, timeoutMsg: 'expected the Copse main process row' },
     )
     const ownedSelector = `.process-manager-rows tr[data-thread-id="${originalThreadId}"][data-kind="Terminal"]`
     const ownedRow = dialog.$(ownedSelector)
+    const ownedToggle = dialog.$(
+      `.process-manager-group-toggle[data-group-key="${originalThreadId}"]`,
+    )
+    await expect(ownedToggle).toHaveAttribute('aria-expanded', 'false')
+    await ownedToggle.click()
     await ownedRow.waitForDisplayed({ timeout: 10_000 })
     await expect(ownedRow.$('.process-manager-type')).toHaveText('Terminal')
     await expect(ownedRow.$('.process-manager-thread')).toHaveText('New Thread')
@@ -165,12 +179,19 @@ describe('Process manager', function () {
     assert.ok(groups.some((group) => group.key === originalThreadId))
     assert.equal(groups.at(-1)?.key, '', 'shared processes are grouped last')
     for (const group of groups) {
-      assert.equal(group.expanded, 'true', 'thread groups start expanded')
+      assert.equal(
+        group.expanded,
+        group.key === originalThreadId ? 'true' : 'false',
+        'thread groups start collapsed until expanded',
+      )
       assert.deepEqual(
         group.memory,
         [...group.memory].sort((a, b) => b - a),
       )
     }
+    await expect(dialog.$('.process-manager-summary')).toHaveText(
+      expect.stringMatching(/^\d+ threads? · \d+ processes? · CPU .+ · Memory .+ MiB$/),
+    )
     await maskProcessManagerLiveValues()
     await saveAppScreenshot('process-manager.png')
 
