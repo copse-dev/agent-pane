@@ -273,7 +273,15 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
     save()
     reportUsage(result)
   }
+  const reportExportUsage = (): void => {
+    if (exportResult && !exportUsageReported) {
+      exportUsageReported = true
+      save()
+      reportUsage(exportResult)
+    }
+  }
   if (!transfer.imported) {
+    reportExportUsage()
     const isManifest = (artifact: { path: string }): boolean =>
       artifact.path === '/workspace/outputs/copse-result.json' ||
       artifact.path === 'copse-result.json'
@@ -297,6 +305,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
         },
       )
     }
+    reportExportUsage()
     const returnedArtifacts = exportResult?.artifacts ?? result.artifacts
     const manifest = returnedArtifacts.find(
       (a) => a.path === '/workspace/outputs/copse-result.json' || a.path === 'copse-result.json',
@@ -319,11 +328,6 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
         await client.download(state, bundle, options.signal),
         { mode: 0o600 },
       )
-    if (exportResult && !exportUsageReported) {
-      exportUsageReported = true
-      save()
-      reportUsage(exportResult)
-    }
     await importGitTransfer(transfer, root, transferDirectory)
     save()
   }

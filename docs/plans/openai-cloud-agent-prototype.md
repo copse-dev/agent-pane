@@ -80,3 +80,36 @@ deletion of its own checkpointed session.
 ## Git transport implementation brief
 
 Acceptance: provision the exact thread working-tree snapshot through a bounded Git bundle and deterministic setup; verify the base before inference; export committed and uncommitted guest changes with the container carry-out helper; validate ancestry and import on the host without GitHub credentials in the guest. Persist terminal output before downloading so retry never repeats inference. Refuse adoption into a changed or dirty checkout and retain output for retry. Existing Create PR performs authenticated host push. Follow-up tasks provision fresh snapshots. Validate with real Git round trips, mocked API transport and the full local check; live API testing requires credentials unavailable on this host.
+
+### Git transport completion evidence
+
+Rebased onto main `8e6db4dd29d476eb134b1c11c68c7935c227d782` and resolved the
+protocol-version collision as version 48. The app now uses Files uploads and
+verified setup, the shipped hosted Git worker, durable terminal/export checkpoints,
+container commit adoption and the existing host Create PR path. Fresh follow-up
+snapshots replace the old clone/revision prompt helper.
+
+- Focused API, adapter, real-Git transfer, cancellation, guest carry-out and build/type
+  invariant suite: **43 passed, 1 existing platform skip, no failures**. Covers
+  binary additions/deletions, dirty input preservation, unrelated ancestry, missing
+  export recovery, failed download recovery without resubmission/double usage, and
+  fresh local code on follow-up.
+- Container suite: **42 passed, 3 failed**. The new serialized snapshot-race test
+  passes. All three failures reproduce on untouched main (**41 passed, 3 failed**):
+  this host cannot create `/home/agent/.copse`, preventing preparation and Docker
+  recorder setup. No assertions were skipped or weakened.
+- Production build, focused type-aware lint, dead-code check, formatting and diff
+  checks pass. Protocol comparison reports 12 existing provider shape changes,
+  version **47 → 48**.
+- Full `pnpm run check` stops at unchanged
+  `packages/llm/src/lm-studio-provider.test.ts:23` (TS2554). The full suite therefore
+  did not complete. No live hosted request or GitHub push from a hosted task was
+  tested: this environment has no Platform key. This change is main-process data
+  plumbing with unchanged renderer DOM; prior picker/Save-dialog visual evidence
+  and limitations remain applicable.
+
+Snapshot input is capped at 50 MiB; return bundles at 200 MiB. An initial commit is
+required; submodules and LFS object contents are unsupported. Dirty original input
+must be committed locally before adoption. Unrelated/merged guest history is
+retained but not automatically applied. Export-only recovery may incur an extra
+model turn. The draft is not promoted by this implementation.
