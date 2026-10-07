@@ -29,8 +29,13 @@ Add a declarative entry to `PRODUCT_ANNOUNCEMENTS` in
 }
 ```
 
-The shipped catalog is deliberately empty while Compact remains experimental.
 The example above is not an active announcement and does not change a default.
+The shipped catalog currently holds `concise-threads-default-v1`, which accompanies
+making Concise threads the default. Because every fixture profile is an "existing
+user" with no history, the browser demo replaces the boot catalog with an empty one
+(`announcement-catalog.ts`) and seeded Electron profiles acknowledge the shipped IDs
+(`writeSettings`); the `product-announcements-shipped` demo scenario mounts the real
+catalog.
 Only include truthful copy for behavior that already ships. The optional settings
 action uses an existing typed Settings section. Omit it for informational notices.
 Copy is plain text; no HTML, URLs, scripts, or callbacks are read from release notes.

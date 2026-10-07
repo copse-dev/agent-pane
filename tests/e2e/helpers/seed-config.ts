@@ -13,6 +13,7 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import { PRODUCT_ANNOUNCEMENTS } from '../../../src/renderer/product-announcements.ts'
 import { USAGE_EVENTS_DIR, type UsageEvent } from '../../../src/shared/usage/usage-event.ts'
 import {
   supervisedTaskMetaSchema,
@@ -339,6 +340,9 @@ export function writeSettings(settings: Record<string, unknown>): void {
       // concise view passes `conciseThreadsEnabled: true`.
       conciseThreadsEnabled: false,
       conciseThreadsDefaultMigrated: true,
+      // Every seeded profile is an existing user; keep the shipped announcements'
+      // modal off screens that are about something else.
+      acknowledgedProductAnnouncements: PRODUCT_ANNOUNCEMENTS.map((entry) => entry.id),
       ...settings,
     }),
     'utf8',

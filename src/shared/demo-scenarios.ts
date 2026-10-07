@@ -1447,6 +1447,24 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    // The real shipped catalog (not sample copy) for an existing profile.
+    id: 'product-announcements-shipped',
+    label: 'Product announcements — shipped catalog',
+    project: project('demo-announcements-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', acknowledgedProductAnnouncements: [] },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
     id: 'product-announcements-existing',
     label: 'Product announcements — existing',
     project: project('demo-announcements-project'),
