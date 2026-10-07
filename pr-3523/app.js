@@ -75669,6 +75669,7 @@ var init_demo_scenarios = __esm({
       "  - Nested details retain their indentation.",
       "  - A second nested item checks the list rhythm.",
       "- Pending markdown uses the same text size as the completed answer.",
+      "- A [**bold link**](https://example.com) keeps the link colour.",
       "",
       "### Review the details",
       "",

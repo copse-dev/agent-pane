@@ -4903,6 +4903,9 @@ label {
   font-weight: 600;
   color: var(--text-prose-strong);
 }
+.msg-assistant > .message-body > .message-text a :is(strong, b) {
+  color: inherit;
+}
 .msg-assistant > .message-body > .message-text pre {
   font-size: var(--sm-font-size-sm);
   line-height: var(--line-height-base);
