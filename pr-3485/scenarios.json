@@ -104,6 +104,14 @@
     "label": "Settings scroll + sticky footer geometry"
   },
   {
+    "id": "plugin-install-review",
+    "label": "Plugin catalogue install review"
+  },
+  {
+    "id": "mcp-sign-in",
+    "label": "MCP servers that sign in with OAuth"
+  },
+  {
     "id": "automation-permissions",
     "label": "Automation permission preferences"
   },
