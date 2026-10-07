@@ -22485,7 +22485,7 @@ function dynamicModelLabel(value) {
   if (!selector) return null;
   switch (selector.kind) {
     case "match-prompt":
-      return "Auto \u2014 match prompt";
+      return "Match task";
     case "best-value":
       return "Best value";
     case "best-intellect":
@@ -43706,7 +43706,7 @@ async function fetchModelOptions(api2, current, opts = {}) {
   if (opts.includeAgentModels !== false) {
     options.push({
       value: MATCH_PROMPT_MODEL_SELECTOR,
-      label: "Auto \u2014 match prompt",
+      label: "Match task \u2014 Chooses a suitable model from your prompt",
       group: "Automatic"
     });
   }
@@ -43714,7 +43714,7 @@ async function fetchModelOptions(api2, current, opts = {}) {
     options.push({
       value: BEST_VALUE_CHAT_MODEL,
       label: `${BEST_VALUE_CHAT_MODEL_LABEL} \u2014 auto from plan / price frontier`,
-      group: CHAT_DEFAULT_GROUP
+      group: "Automatic"
     });
     for (const choice of dynamicModelChoices()) {
       if (choice.value === BEST_VALUE_CHAT_MODEL) continue;
@@ -43944,7 +43944,7 @@ function dynamicModelOptions(current, autoLabel) {
 function fetchDynamicModelOptions(current, autoLabel) {
   return Promise.resolve(dynamicModelOptions(current, autoLabel));
 }
-var ACP_GROUP, OPENROUTER_GROUP, CHAT_DEFAULT_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
+var ACP_GROUP, OPENROUTER_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
 var init_model_options = __esm({
   "src/renderer/views/model-options.ts"() {
     init_acp_retention();
@@ -43970,7 +43970,6 @@ var init_model_options = __esm({
     init_model_coverage();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
-    CHAT_DEFAULT_GROUP = "Chat default";
     KNOWN_TEXT_ONLY_MISTRAL_MODELS = [
       "mistral-small-latest",
       "open-mistral-nemo",
@@ -114100,7 +114099,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
   function footerModelDisplayLabel(current) {
     const resolved3 = footerResolvedModel(current);
     if (current === MATCH_PROMPT_MODEL_SELECTOR) {
-      return resolved3 ? `Auto \u2014 ${modelDisplayLabel(resolved3)}` : "Auto \u2014 match prompt";
+      return resolved3 ? `Auto \u2014 ${modelDisplayLabel(resolved3)}` : "Match task";
     }
     return resolved3 ? modelDisplayLabel(resolved3) : void 0;
   }
