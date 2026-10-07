@@ -3,6 +3,9 @@
 
 Run: python3 scripts/probe-openai-decisions.py
 Requires OPENAI_API_KEY; optionally uses OPENAI_ORG_ID and OPENAI_PROJECT_ID.
+OAuth experiment: add --oauth and set OPENAI_OAUTH_ACCESS_TOKEN instead.
+This tests the public API endpoint only, not an undocumented ChatGPT endpoint.
+OAuth mode ignores API-key, organization, and project environment variables.
 Exit codes: 0 = valid decision, 1 = failed/inconclusive probe, 2 = missing key.
 Docs: https://developers.openai.com/api/docs/guides/decisions
 """
@@ -19,12 +22,14 @@ def main():
     if sys.argv[1:] == ["--help"]:
         print(__doc__)
         return 0
-    if sys.argv[1:]:
-        print("Usage: python3 scripts/probe-openai-decisions.py [--help]")
+    oauth = sys.argv[1:] == ["--oauth"]
+    if sys.argv[1:] and not oauth:
+        print("Usage: python3 scripts/probe-openai-decisions.py [--help | --oauth]")
         return 2
-    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    variable = "OPENAI_OAUTH_ACCESS_TOKEN" if oauth else "OPENAI_API_KEY"
+    key = os.environ.get(variable, "").strip()
     if not key:
-        print("OPENAI_API_KEY is not set. Export it locally, then rerun this script.")
+        print(f"{variable} is not set. Export it locally, then rerun this script.")
         return 2
 
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
@@ -32,7 +37,7 @@ def main():
         ("OPENAI_ORG_ID", "OpenAI-Organization"),
         ("OPENAI_PROJECT_ID", "OpenAI-Project"),
     ):
-        if os.environ.get(variable):
+        if not oauth and os.environ.get(variable):
             headers[header] = os.environ[variable]
     payload = {
         "model": "gpt-6-luna",
@@ -56,6 +61,7 @@ def main():
             return None
 
     print("Checking gpt-6-luna via POST /v1/decisions (one small API request)...")
+    print("Authentication: " + ("OAuth access token (experimental)" if oauth else "API key"))
     started = time.monotonic()
     try:
         with urllib.request.build_opener(NoRedirect).open(request, timeout=30) as response:
@@ -63,14 +69,16 @@ def main():
     except urllib.error.HTTPError as error:
         explanations = {
             400: "Request rejected; access is not confirmed. The API contract may have changed.",
-            401: "Authentication failed. Check your API key.",
-            403: "Permission denied for this key/project.",
+            401: "Credential rejected. It may be expired, invalid, or unsupported by this endpoint.",
+            403: "Permission denied for this credential/account/project.",
             404: "Endpoint or model unavailable to this request; access is not confirmed.",
             429: "Rate limit or quota reached; access is inconclusive. Check API billing and limits.",
         }
         print(f"HTTP {error.code}: " + explanations.get(
             error.code, "Request failed; access is not confirmed. Try again later."
         ))
+        if oauth:
+            print("This result applies only to this token at api.openai.com/v1/decisions.")
         # Provider bodies can echo credentials; do not print them.
         error.close()
         return 1
