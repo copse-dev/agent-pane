@@ -128630,7 +128630,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
-  let threadLinks = indexThreadLinks(store2);
+  let threadLinks = /* @__PURE__ */ new Map();
   let prRelationships = null;
   let relationshipError = false;
   let relationshipRequest = 0;
@@ -129553,9 +129553,13 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
     const gen = ++agentLinksGen;
     threadLinks = indexThreadLinks(store2);
-    await loadThreadRelationships();
-    ghStatus = await api2.gh.status();
-    const entries2 = await api2.gh.agentPrLinks().catch(() => []);
+    const [, status, entries2] = await Promise.all([
+      loadThreadRelationships(),
+      api2.gh.status(),
+      // Agent links are local (no gh needed), so load them regardless of gh auth.
+      api2.gh.agentPrLinks().catch(() => [])
+    ]);
+    ghStatus = status;
     if (gen !== agentLinksGen) return;
     agentLinks = indexAgentLinksByPrKey(entries2);
     linkedRefs = collectLinkedPrs(store2);
@@ -129670,7 +129674,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       workspacePrs = [];
       prList = [];
       agentLinks = /* @__PURE__ */ new Map();
-      threadLinks = indexThreadLinks(store2);
+      threadLinks = prsModeActive(store2) ? indexThreadLinks(store2) : /* @__PURE__ */ new Map();
       agentLinksGen++;
       titleGen++;
       titleInFlight.clear();
