@@ -1,10 +1,11 @@
 import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { promises as fsPromises, type PathLike } from 'node:fs'
+import { constants, promises as fsPromises, type PathLike } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import {
   chmod,
+  copyFile,
   lstat,
   mkdtemp,
   mkdir,
@@ -156,6 +157,43 @@ describe('worktree manager', () => {
     clearAllowedWorkspaceRootsForTest()
     for (const path of cleanups.splice(0).reverse()) {
       await rm(path, { recursive: true, force: true })
+    }
+  })
+
+  it('clones ignored project files into a new worktree, leaving secrets behind', async () => {
+    const { temp, repo } = await setup()
+    await writeFile(join(repo, '.gitignore'), 'node_modules/\n.env\n')
+    git(repo, ['add', '.gitignore'])
+    git(repo, ['commit', '-q', '-m', 'ignore'])
+    await mkdir(join(repo, 'node_modules', 'pkg'), { recursive: true })
+    await writeFile(join(repo, 'node_modules', 'pkg', 'index.js'), 'ok\n')
+    await writeFile(join(repo, '.env'), 'TOKEN=secret\n')
+    await writeFile(join(temp, 'probe-src'), 'x')
+    const reflinks = await copyFile(
+      join(temp, 'probe-src'),
+      join(temp, 'probe-dst'),
+      constants.COPYFILE_FICLONE_FORCE,
+    ).then(
+      () => true,
+      () => false,
+    )
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-clone',
+      projectRoot: repo,
+      prompt: 'Use deps',
+      baseBranch: 'main',
+    })
+
+    await assert.rejects(lstat(join(worktree.path, '.env')))
+    if (reflinks) {
+      assert.equal(
+        await readFile(join(worktree.path, 'node_modules', 'pkg', 'index.js'), 'utf8'),
+        'ok\n',
+      )
+    } else {
+      await assert.rejects(lstat(join(worktree.path, 'node_modules')))
     }
   })
 

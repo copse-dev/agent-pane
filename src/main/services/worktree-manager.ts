@@ -42,6 +42,7 @@ import {
   worktreeReadOnlySandboxOverlay,
 } from '../project-sandbox/worktree-config.ts'
 import { isMandatoryWriteDenyMountPath } from '../project-sandbox/mandatory-write-deny.ts'
+import { cloneIgnoredEntries } from './worktree-ignored-clone.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
 
@@ -914,6 +915,32 @@ export async function restoreThreadWorktreeBranch(
   )
 }
 
+/**
+ * Hand a new worktree the project's git-ignored content (dependencies, build
+ * output) as copy-on-write clones, so it does not start from nothing. Best
+ * effort: it never throws, and a filesystem that cannot reflink gets nothing.
+ */
+async function cloneIgnoredProjectFiles(projectRoot: string, worktreePath: string): Promise<void> {
+  try {
+    const listing = await git(projectRoot, [
+      'ls-files',
+      '--others',
+      '--ignored',
+      '--exclude-standard',
+      '--directory',
+      '-z',
+    ])
+    if (listing.code !== 0 || listing.stdoutTruncated) return
+    await cloneIgnoredEntries({
+      projectRoot,
+      worktreeRoot: worktreePath,
+      listing: listing.stdout,
+    })
+  } catch (error) {
+    console.warn(`[worktree] Could not clone ignored project files: ${String(error)}`)
+  }
+}
+
 /** Allocate one linked checkout, preserving dirty project content without touching it. */
 export async function allocateThreadWorktree(
   input: AllocateWorktreeInput,
@@ -1034,6 +1061,7 @@ export async function allocateThreadWorktree(
         await seedFromSnapshot(canonicalPath, snapshotRef)
         await deleteRef(projectRoot, snapshotRef)
       }
+      await cloneIgnoredProjectFiles(projectRoot, canonicalPath)
       return worktree
     } catch (error) {
       if (snapshotRef) {

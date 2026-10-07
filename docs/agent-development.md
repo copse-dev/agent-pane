@@ -62,6 +62,13 @@ installed compatible Python (and uv for uv projects), but no Copse declaration. 
 project and shared caches read-only, using disposable scratch for manager bookkeeping.
 See [project worktree preparation](plans/project-worktree-preparation.md).
 
+New thread worktrees also receive copy-on-write clones of the project checkout's git-ignored
+content (`node_modules`, build output), so they do not start empty. This is best effort and only
+happens where the filesystem can reflink within one volume (APFS, btrfs, XFS); otherwise nothing is
+copied. Secret-like paths (`.env*`, `*.pem`, `.ssh`, `.npmrc`, and similar) and absolute or
+project-escaping symlinks are never cloned. Cloning does not make a worktree prepared:
+`preflight_worktree` still decides readiness. See `src/main/services/worktree-ignored-clone.ts`.
+
 Cursor Cloud setup normally installs the pinned version through `.cursor/cloud-setup.sh`. If an
 older executable still shadows it, activate the repo version:
 
