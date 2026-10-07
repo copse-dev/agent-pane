@@ -129233,6 +129233,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       { class: "pr-thread-empty", role: "status" },
       relationshipError ? "Thread relationships unavailable." : "Loading thread relationships\u2026"
     );
+    relationships.hidden = prDetails !== null && activeSection !== "overview";
     if (!prDetails) {
       metaHost.append(
         el(
@@ -129463,6 +129464,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       }
       button.addEventListener("click", () => {
         activeSection = section.key;
+        renderMeta();
         clearDiff();
         renderDescription();
         renderFiles();
