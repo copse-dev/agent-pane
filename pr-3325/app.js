@@ -24420,10 +24420,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.7,
+          value: 21.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'a-x-k2', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'a-x-k2', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "agnes-2-5-pro-alpha": [
@@ -24498,10 +24498,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 30.4,
+          value: 26.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'apodex-1-1', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'apodex-1-1', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "apriel-v1-5-15b-thinker": [
@@ -25186,6 +25186,46 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "claude-sonnet-5-5": [
+        {
+          value: 56,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "claude-sonnet-5-5-high": [
+        {
+          value: 46.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-high', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "claude-sonnet-5-5-low": [
+        {
+          value: 35.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "claude-sonnet-5-5-medium": [
+        {
+          value: 40.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-medium', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "claude-sonnet-5-5-xhigh": [
+        {
+          value: 51.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-xhigh', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "claude-sonnet-5-high": [
         {
           value: 31.7,
@@ -25674,6 +25714,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "deepseek-v4-1-flash-non-reasoning": [
+        {
+          value: 24.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash-non-reasoning', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "deepseek-v4-flash": [
         {
           value: 51.8,
@@ -25710,10 +25758,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26,
+          value: 24.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420-high', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420-high', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "deepseek-v4-flash-0420-non-reasoning": [
@@ -25806,6 +25854,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424-non-reasoning', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "deepseek-v4-pro-non-reasoning": [
+        {
+          value: 20.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-non-reasoning', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "deepseek/deepseek-coder-v2-lite": [
@@ -26658,6 +26714,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "gemini-4-argon": [
+        {
+          value: 52.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-4-argon', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "gemma-3-1b": [
         {
           value: 1,
@@ -26820,10 +26884,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19,
+          value: 14.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gemma-4-31b-non-reasoning": [
@@ -27132,6 +27196,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'glm-5-3-flash', fetched 2026-09-22",
           asOf: "2026-09-22"
+        }
+      ],
+      "glm-5-3-low": [
+        {
+          value: 34.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-3-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "glm-5-non-reasoning": [
@@ -28276,74 +28348,74 @@ var init_model_intellect_generated = __esm({
       ],
       "gpt-6-luna": [
         {
-          value: 37.3,
+          value: 38.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-luna-high": [
         {
-          value: 32.1,
+          value: 32.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-high', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-high', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-luna-low": [
         {
-          value: 20.9,
+          value: 21.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-low', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-luna-medium": [
         {
-          value: 29.5,
+          value: 29.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-medium', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-medium', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-luna-non-reasoning": [
         {
-          value: 18.3,
+          value: 18.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-non-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-non-reasoning', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-luna-xhigh": [
         {
-          value: 33.9,
+          value: 34.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-xhigh', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-xhigh', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-sol": [
         {
-          value: 47.5,
+          value: 47.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-sol-high": [
         {
-          value: 42.8,
+          value: 42.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-high', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-high', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-sol-low": [
         {
-          value: 33.9,
+          value: 34.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-low', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-sol-medium": [
@@ -28356,18 +28428,18 @@ var init_model_intellect_generated = __esm({
       ],
       "gpt-6-sol-non-reasoning": [
         {
-          value: 28.1,
+          value: 28.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-non-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-non-reasoning', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-6-sol-xhigh": [
         {
-          value: 44.1,
+          value: 44.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-xhigh', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-xhigh', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "gpt-oss-120b": [
@@ -28904,6 +28976,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "grok-4-7-low": [
+        {
+          value: 42.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-7-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "grok-4-fast": [
         {
           value: 16.6,
@@ -29150,10 +29230,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.8,
+          value: 25.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'inkling-small', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'inkling-small', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "intellect-3": [
@@ -29290,10 +29370,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
+          value: 33.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "jt-4-1-flash-236b-a21b-non-reasoning": [
+        {
           value: 27.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b-non-reasoning', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "jt-mini": [
@@ -29564,6 +29652,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "kimi-k2-6": [
+        {
+          value: 27,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-6', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "kimi-k2-6-non-reasoning": [
         {
           value: 35.4,
@@ -29614,10 +29710,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 34.5,
+          value: 30.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "kimi-linear-48b-a3b-instruct": [
@@ -29824,10 +29920,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.9,
+          value: 20.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "ling-3-0-flash-fin": [
@@ -29854,10 +29950,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.3,
+          value: 11.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-tiny', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-tiny', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
+      "ling-3-1-flash": [
+        {
+          value: 41.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-1-flash', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "ling-flash-2-0": [
@@ -30308,6 +30412,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "mercury-2-5": [
+        {
+          value: 12.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mercury-2-5', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "mi-dm-k-2-5-pro-dec28": [
         {
           value: 16.6,
@@ -30390,6 +30502,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-pro-non-reasoning', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "mimo-v2-6-flash": [
+        {
+          value: 37.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-6-flash', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "mimo-v2-6-pro": [
@@ -30730,6 +30850,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "mistral-large-4": [
+        {
+          value: 38.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-large-4', fetched 2026-10-06",
+          asOf: "2026-10-06"
+        }
+      ],
       "mistral-medium": [
         {
           value: 3.2,
@@ -30880,8 +31008,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -31390,10 +31518,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.4,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-4b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-4b', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "nvidia-nemotron-3-super-120b-a12b": [
@@ -32434,10 +32562,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.7,
+          value: 11.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-9b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-9b', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "qwen3-5-9b-non-reasoning": [
@@ -33174,6 +33302,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'solar-mini', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "solar-mini4": [
+        {
+          value: 24.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'solar-mini4', fetched 2026-10-06",
+          asOf: "2026-10-06"
         }
       ],
       "solar-open-100b-reasoning": [
@@ -64619,8 +64755,17 @@ function serializedSet(api2, key, value) {
   writeChains.set(key, next);
   void next.finally(() => {
     if (writeChains.get(key) === next) writeChains.delete(key);
-  });
+  }).catch(() => void 0);
   return next;
+}
+function persistProjects(api2, projects) {
+  const json3 = JSON.stringify(projects);
+  if (json3 === persistedProjectsJson) return Promise.resolve();
+  persistedProjectsJson = json3;
+  return serializedSet(api2, KEY_PROJECTS, projects).catch((error62) => {
+    if (persistedProjectsJson === json3) persistedProjectsJson = null;
+    throw error62;
+  });
 }
 function serializedWrite(key, write) {
   const prev = writeChains.get(key);
@@ -64737,9 +64882,12 @@ async function loadProjects(api2) {
 }
 async function saveProjects(api2, projects, activeProjectId, activeThreadId) {
   await Promise.all([
-    serializedSet(api2, KEY_PROJECTS, projects),
+    persistProjects(api2, projects),
     serializedNavigation(api2, { activeProjectId, activeThreadId })
   ]);
+}
+function saveNavigation(api2, activeProjectId, activeThreadId) {
+  return serializedNavigation(api2, { activeProjectId, activeThreadId });
 }
 function saveProjectGroups(api2, groups) {
   return serializedSet(api2, KEY_PROJECT_GROUPS, groups);
@@ -64790,7 +64938,7 @@ function attachAutosave(store2, api2) {
     const writes = [];
     if (projectsDirty) {
       projectsDirty = false;
-      writes.push(serializedSet(api2, KEY_PROJECTS, projects));
+      writes.push(persistProjects(api2, projects));
     }
     writes.push(serializedNavigation(api2, { activeProjectId, activeThreadId }));
     if (activeProjectId) writes.push(reconcile(activeProjectId));
@@ -64950,7 +65098,7 @@ function attachAutosave(store2, api2) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, ownsNavigation, navigationRestored, lastNavigation, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -64959,6 +65107,7 @@ var init_persistence = __esm({
     KEY_PROJECTS = "projects";
     KEY_PROJECT_GROUPS = "projectGroups";
     writeChains = /* @__PURE__ */ new Map();
+    persistedProjectsJson = null;
     ownsNavigation = true;
     navigationRestored = true;
     lastNavigation = null;
@@ -65711,10 +65860,11 @@ function begin(name) {
     bridge.span(name, Math.round((performance.now() - start) * 100) / 100, detail);
   };
 }
-var bridge, autopilotOn;
+var bridge, perfOn, autopilotOn;
 var init_perf = __esm({
   "src/renderer/perf.ts"() {
     bridge = readBridge();
+    perfOn = bridge !== null;
     autopilotOn = bridge?.autopilot === true;
   }
 });
@@ -67531,7 +67681,8 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
   }
   const flushOutgoing = outgoingId && outgoingId !== id ? flushProjectThreads(api2, outgoingId, outgoingThreads) : Promise.resolve();
   if (pendingSwitch?.gen === gen) pendingSwitch.dispatched = true;
-  const persistSelection = saveProjects(api2, store2.getState().projects, id, pendingThreadId);
+  const projectsAtDispatch = store2.getState().projects;
+  const persistSelection = saveProjects(api2, projectsAtDispatch, id, pendingThreadId);
   const endWorkspace = begin("switch:workspace-set");
   const workspaceOpened = setWorkspaceInOrder(api2, path, sshHost);
   const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened]);
@@ -67589,16 +67740,21 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
   if (activeThreadId) markThreadRead(store2, activeThreadId);
   if (merged.length === 0) createThread(store2);
   else normalizeBlankThreads(store2);
-  await saveProjects(api2, store2.getState().projects, id, store2.getState().activeThreadId);
   store2.emit("projects_changed");
   store2.emit("workspace_changed");
   store2.emit("threads_changed");
   store2.emit("panel_changed");
   store2.emit("files_pane_changed");
   endApply({ threads: merged.length });
+  const { projects, activeThreadId: appliedThreadId } = store2.getState();
+  await (projects === projectsAtDispatch ? saveNavigation(api2, id, appliedThreadId) : saveProjects(api2, projects, id, appliedThreadId));
   endSwitch(gen, id);
   endActivate({ outcome: "ok", threads: merged.length });
   void resumePendingQueues(store2, api2);
+}
+function dispatchCallers() {
+  const frames = (new Error().stack ?? "").split("\n").slice(3, 8);
+  return frames.map((frame) => /at (?:async )?([^\s(]+)/.exec(frame)?.[1] ?? "?").join(" < ");
 }
 function activate(store2, api2, id, path, sshHost, pendingThreadId) {
   const { activeProjectId, threads, expandedProjectId } = store2.getState();
@@ -67608,6 +67764,12 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
     return;
   }
   expandProject(store2, id);
+  if (perfOn) {
+    mark("switch:dispatch", {
+      callers: dispatchCallers(),
+      restarts: pendingSwitch?.projectId === id
+    });
+  }
   supersedePendingSwitch();
   const gen = ++switchGeneration;
   pendingSwitch = { gen, projectId: id, dispatched: false };
@@ -78270,7 +78432,7 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     processManager: {
-      snapshot: () => resolved2({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
+      snapshot: () => resolved2({ sampledAt: Date.now(), processes: [] }),
       stopBackground: () => resolved2(false)
     },
     menu: {
@@ -151936,21 +152098,8 @@ function mountProcessManagerDialog(api2, store2) {
     ),
     body
   );
-  const activityCount = el("span", { class: "process-manager-activity-count" });
-  const activityList = el("div", { class: "process-manager-activity-list" });
-  const activity = el(
-    "section",
-    { class: "process-manager-activity", "aria-label": "Agent activity" },
-    el(
-      "div",
-      { class: "process-manager-activity-heading" },
-      el("strong", {}, "Agent activity"),
-      activityCount
-    ),
-    activityList
-  );
-  activity.hidden = true;
   const status = el("p", { class: "process-manager-status", role: "status" }, "Loading processes\u2026");
+  const summary = el("p", { class: "process-manager-summary", role: "status" });
   const updated = el("span", { class: "process-manager-updated", "aria-hidden": "true" });
   dialog2.append(
     el(
@@ -151967,8 +152116,8 @@ function mountProcessManagerDialog(api2, store2) {
         ),
         closeButton
       ),
-      activity,
       el("div", { class: "process-manager-scroll" }, table),
+      summary,
       el(
         "footer",
         { class: "process-manager-footer" },
@@ -151984,17 +152133,7 @@ function mountProcessManagerDialog(api2, store2) {
   let timer = null;
   let generation = 0;
   let refreshing = false;
-  const collapsedGroups = /* @__PURE__ */ new Set();
-  const runGenerations = /* @__PURE__ */ new Map();
-  let sampledRuns = /* @__PURE__ */ new Set();
-  function trackRuns(snapshot) {
-    for (const threadId of snapshot.activeRunThreadIds) {
-      if (!sampledRuns.has(threadId)) {
-        runGenerations.set(threadId, (runGenerations.get(threadId) ?? 0) + 1);
-      }
-    }
-    sampledRuns = new Set(snapshot.activeRunThreadIds);
-  }
+  const expandedGroups = /* @__PURE__ */ new Set();
   function projectForThread(threadId, projectId) {
     return projectId ?? getThreadProjectId(store2, threadId);
   }
@@ -152038,7 +152177,7 @@ function mountProcessManagerDialog(api2, store2) {
       showErrorToast(`Could not stop the ${label}`, error62);
     }
   }
-  function threadMenuEntries(threadId, projectId, running, stillSameRun) {
+  function threadMenuEntries(threadId, projectId, running) {
     const entries2 = [];
     if (projectId && store2.getState().projects.some((project2) => project2.id === projectId)) {
       entries2.push({
@@ -152052,10 +152191,6 @@ function mountProcessManagerDialog(api2, store2) {
       entries2.push({
         label: "Stop agent run",
         onSelect: () => {
-          if (stillSameRun && !stillSameRun()) {
-            showToast("That agent run has already finished.");
-            return;
-          }
           stopAgentRun(threadId);
         }
       });
@@ -152093,15 +152228,6 @@ function mountProcessManagerDialog(api2, store2) {
     cell.append(button);
     return cell;
   }
-  function activityMenuEntries(threadId, projectId) {
-    const run2 = runGenerations.get(threadId);
-    return threadMenuEntries(
-      threadId,
-      projectId,
-      true,
-      () => current?.activeRunThreadIds.includes(threadId) === true && runGenerations.get(threadId) === run2
-    );
-  }
   function menuEntries(row2) {
     const entries2 = row2.threadId ? threadMenuEntries(
       row2.threadId,
@@ -152119,7 +152245,6 @@ function mountProcessManagerDialog(api2, store2) {
     return entries2;
   }
   function render(snapshot) {
-    const focusedActivityThread = document.activeElement instanceof HTMLElement && activityList.contains(document.activeElement) ? document.activeElement.dataset["threadId"] : void 0;
     const focusedGroup = document.activeElement instanceof HTMLElement && body.contains(document.activeElement) && document.activeElement.classList.contains("process-manager-group-toggle") ? document.activeElement.dataset["groupKey"] : void 0;
     cpuHeading.setAttribute(
       "aria-sort",
@@ -152130,60 +152255,13 @@ function mountProcessManagerDialog(api2, store2) {
       column === "memory" ? ascending ? "ascending" : "descending" : "none"
     );
     clear(body);
-    clear(activityList);
-    activity.hidden = snapshot.activeRunThreadIds.length === 0;
-    activityCount.textContent = `${String(snapshot.activeRunThreadIds.length)} working`;
-    for (const threadId of snapshot.activeRunThreadIds) {
-      const title = getThreadById(store2, threadId)?.title.trim();
-      const label = title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
-      const projectId = projectForThread(threadId);
-      const canNavigate = Boolean(
-        projectId && store2.getState().projects.some((project2) => project2.id === projectId)
-      );
-      const item = el(
-        "button",
-        {
-          type: "button",
-          class: "process-manager-activity-item",
-          "data-thread-id": threadId,
-          "aria-label": canNavigate ? `Working ${label}: open thread` : `Working ${label}`
-        },
-        el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
-        el("span", { class: "process-manager-activity-state" }, "Working"),
-        el("span", { class: "process-manager-activity-thread", title: label }, label)
-      );
-      if (projectId && canNavigate) {
-        item.addEventListener("click", () => {
-          jumpToThread(projectId, threadId);
-        });
-      } else {
-        item.setAttribute("aria-disabled", "true");
-      }
-      item.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        showContextMenu(
-          event.clientX,
-          event.clientY,
-          activityMenuEntries(threadId, projectId),
-          dialog2
-        );
-      });
-      item.addEventListener("keydown", (event) => {
-        if (event.key !== "F10" || !event.shiftKey) return;
-        event.preventDefault();
-        const rect = item.getBoundingClientRect();
-        showContextMenu(rect.left, rect.bottom, activityMenuEntries(threadId, projectId), dialog2);
-      });
-      activityList.append(item);
-      if (threadId === focusedActivityThread) item.focus({ preventScroll: true });
-    }
-    if (focusedActivityThread && !snapshot.activeRunThreadIds.includes(focusedActivityThread)) {
-      closeButton.focus({ preventScroll: true });
-    }
     const state = store2.getState();
-    for (const group of groupedRows(snapshot.processes, column, ascending)) {
+    const groups = groupedRows(snapshot.processes, column, ascending);
+    const threadGroups = groups.filter((group) => group.threadId !== null).length;
+    summary.textContent = snapshot.processes.length === 0 ? "" : `${String(threadGroups)} ${threadGroups === 1 ? "thread" : "threads"} \xB7 ${String(snapshot.processes.length)} ${snapshot.processes.length === 1 ? "process" : "processes"} \xB7 CPU ${formatCpu(total(snapshot.processes.map((row2) => row2.cpuPercent)))} \xB7 Memory ${formatMemory(total(snapshot.processes.map((row2) => row2.memoryMiB)))}`;
+    for (const group of groups) {
       const groupKey = group.threadId ?? "";
-      const expanded = !collapsedGroups.has(groupKey);
+      const expanded = expandedGroups.has(groupKey);
       const label = threadLabel2(group.threadId);
       const count = `${String(group.rows.length)} ${group.rows.length === 1 ? "process" : "processes"}`;
       const toggle = el(
@@ -152199,8 +152277,8 @@ function mountProcessManagerDialog(api2, store2) {
         el("span", { class: "process-manager-group-count" }, count)
       );
       toggle.addEventListener("click", () => {
-        if (collapsedGroups.has(groupKey)) collapsedGroups.delete(groupKey);
-        else collapsedGroups.add(groupKey);
+        if (expandedGroups.has(groupKey)) expandedGroups.delete(groupKey);
+        else expandedGroups.add(groupKey);
         if (current) render(current);
       });
       const groupEntries = () => threadEntries(group.threadId);
@@ -152273,7 +152351,6 @@ function mountProcessManagerDialog(api2, store2) {
       const snapshot = await api2.processManager.snapshot();
       if (isRequestCurrent(requestGeneration)) {
         current = snapshot;
-        trackRuns(snapshot);
         render(snapshot);
       }
     } catch {
@@ -152303,8 +152380,6 @@ function mountProcessManagerDialog(api2, store2) {
     if (timer !== null) clearInterval(timer);
     timer = null;
     refreshing = false;
-    runGenerations.clear();
-    sampledRuns = /* @__PURE__ */ new Set();
   });
   return () => {
     if (dialog2.open) return;
