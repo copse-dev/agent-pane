@@ -44,6 +44,7 @@ import {
   teardownRuntime,
   WORKER_IMAGE,
 } from './thread-container.ts'
+import { createResolvedProviderFetch } from './resolved-provider-fetch.ts'
 import { buildGuestProvider } from './guest-provider.ts'
 import { withCredentialOutputRedaction } from '@copse/llm/credential-output-provider.ts'
 import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
@@ -144,18 +145,10 @@ async function main(): Promise<void> {
     if (!host || !addr) throw new Error(`--resolve expects host=addr, got "${entry}"`)
     egressResolve[host] = addr
   }
-  const hostProviderUrl = new URL(providerUrl)
-  const mapped = egressResolve[hostProviderUrl.hostname]
-  if (mapped) {
-    const destination = new URL(
-      `${hostProviderUrl.protocol}//${mapped === '::1' ? '[::1]' : mapped}`,
-    )
-    hostProviderUrl.hostname = destination.hostname
-    if (destination.port) hostProviderUrl.port = destination.port
-  }
   if (apiKeyEnv && !apiKey) throw new Error(`Provider key variable ${apiKeyEnv} is not set`)
   const maxSteps = cli.one('max-steps')
   const model = required(cli.one('model') ?? process.env['COPSE_MODEL'], '--model')
+  const transport = createResolvedProviderFetch(egressResolve)
   const record = await runThreadInContainer({
     engine,
     workspace: cli.one('workspace') ?? process.cwd(),
@@ -170,7 +163,7 @@ async function main(): Promise<void> {
               kind: 'openai-compatible',
               model,
               apiKeySlug: 'cli',
-              url: hostProviderUrl.toString(),
+              url: providerUrl,
               label: 'the --provider-url endpoint',
               local: true,
               includeUsage: true,
@@ -179,6 +172,7 @@ async function main(): Promise<void> {
               params: { maxOutputTokens },
             },
             apiKey ?? null,
+            transport.fetch,
           ),
           apiKey ? [apiKey] : [],
         ),
@@ -191,7 +185,7 @@ async function main(): Promise<void> {
     egressResolve,
     image,
     ...(maxSteps !== undefined ? { maxSteps: Number(maxSteps) } : {}),
-  })
+  }).finally(() => transport.close())
   const result = record.result
   console.log('')
   console.log(`run ${record.runtimeId}: ${result?.stopReason ?? 'no result written'}`)

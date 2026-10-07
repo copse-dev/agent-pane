@@ -120,7 +120,7 @@ describe('thread in a container (end to end)', { skip: E2E !== '1' }, () => {
       },
       { kind: 'text', text: 'done' },
     ])
-    const repo = seedRepo()
+    const repo = await seedRepo()
     writeFileSync(join(repo, 'probe.mjs'), TOKEN_PROBE)
     const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-tc-runtimes-'))
     const logs: string[] = []
@@ -130,21 +130,25 @@ describe('thread in a container (end to end)', { skip: E2E !== '1' }, () => {
           workspace: repo,
           prompt: 'probe',
           model: 'scripted',
-          provider: {
-            kind: 'openai-compatible',
-            model: 'scripted',
-            apiKeySlug: 'scripted',
-            url: `http://${GUEST_MODEL_ORIGIN}/v1`,
-            label: 'the scripted model',
-            local: true,
-            includeUsage: true,
-            apiStyle: null,
-            extraBody: null,
-            params: {},
-          },
+          hostInference: async (maxOutputTokens) =>
+            buildGuestProvider(
+              {
+                kind: 'openai-compatible',
+                model: 'scripted',
+                apiKeySlug: 'scripted',
+                url: `http://127.0.0.1:${String(model.port)}/v1`,
+                label: 'scripted host model',
+                local: true,
+                includeUsage: true,
+                apiStyle: null,
+                extraBody: null,
+                params: { maxOutputTokens },
+              },
+              null,
+            ),
           budgets: { wallClockMs: 4 * 60_000, tokenCeiling: 1_000_000 },
-          egressAllowlist: [EGRESS_WILDCARD],
-          egressResolve: { [MODEL_HOST]: `127.0.0.1:${String(model.port)}` },
+          egressAllowlist: [HOST_INFERENCE_TARGET, 'model.copse.internal:443'],
+          egressResolve: { 'model.copse.internal': `127.0.0.1:${String(model.port)}` },
           image: IMAGE,
           runtimesDir,
           maxSteps: 4,
@@ -169,7 +173,7 @@ describe('thread in a container (end to end)', { skip: E2E !== '1' }, () => {
         logs.some((l) => l.includes('token isolation: on')),
         logs.filter((l) => l.includes('token isolation')).join('\n'),
       )
-      // 4. The worker itself still reached the model through the proxy.
+      // 4. The worker itself still reached the host model through the private link.
       assert.ok(model.requests >= 2)
       assert.ok(record.egress.some((e) => e.event === 'connect'))
     } finally {

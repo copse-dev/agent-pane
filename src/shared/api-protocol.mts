@@ -81,4 +81,3 @@
 // v51 versions the context_compacted agent chunk (OpenAI server-side compaction).
 // v52 versions host-owned container authentication.
 export const API_PROTOCOL_VERSION = 52 as const
-export const API_PROTOCOL_VERSION = 51 as const

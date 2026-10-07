@@ -2,6 +2,9 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.test-shim.ts'
+import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
+import { ChatGptPlanService, getChatGptPlanService } from './chatgpt-plan-service.ts'
+import type { ChatGptPlanState } from './chatgpt-plan-store.ts'
 import { HOST_INFERENCE_TARGET } from '../container-runtime/host-inference-wire.ts'
 import {
   explainContainerModel,
@@ -85,7 +88,7 @@ describe('resolveContainerProvider', () => {
   it('pins the API key and generation settings despite later Settings changes', async (t) => {
     setApiKey('openrouter', 'host-only-secret-before')
     await setSetting('modelParameters', {
-      'openrouter:qwen/qwen3': { temperature: 0.2, maxOutputTokens: 512 },
+      'openrouter:qwen/qwen3': { temperature: 0.2, maxOutputTokens: 16384 },
     })
     const plan = await resolveContainerProvider('openrouter:qwen/qwen3')
     assert.equal(plan.mode, 'host-inference')
@@ -102,7 +105,7 @@ describe('resolveContainerProvider', () => {
         const body = await request.text()
         assert.ok(!body.includes('host-only-secret-before'))
         assert.ok(body.includes('"temperature":0.2'))
-        assert.ok(body.includes('"max_tokens":512'))
+        assert.ok(body.includes(`"max_tokens":${String(requests === 1 ? 16384 : 8192)}`))
         const payload = {
           id: 'pinned',
           object: 'chat.completion.chunk',
@@ -117,17 +120,127 @@ describe('resolveContainerProvider', () => {
         })
       },
     )
-    const provider = await plan.hostInference(1024, 'run-pinned')
+    const provider = await plan.hostInference(30000, 'run-pinned')
     let output = ''
     for await (const chunk of provider.stream(
       [{ role: 'user', content: 'Hello host-only-secret-before' }],
       [],
     ))
       output += JSON.stringify(chunk)
-    assert.ok(requests >= 1)
+    const smaller = await plan.hostInference(8192, 'run-pinned')
+    for await (const chunk of smaller.stream([{ role: 'user', content: 'hello' }], []))
+      output += JSON.stringify(chunk)
+    assert.equal(requests, 2)
     assert.ok(!output.includes('host-only-secret-before'))
     assert.ok(output.includes('[REDACTED_SECRET]'))
     await setSetting('modelParameters', {})
+  })
+
+  it('pins ChatGPT generation settings while refreshing only the selected account', async (t) => {
+    const model = 'chatgpt-plan:oaiapp_a#gpt-6.1-sol'
+    let state: ChatGptPlanState = {
+      hostId: 'urn:uuid:00000000-0000-4000-8000-000000000000',
+      activeClientId: 'oaiapp_a',
+      accounts: ['a', 'b'].map((name) => ({
+        clientId: `oaiapp_${name}`,
+        label: name,
+        subject: name,
+        credentials: {
+          accessToken: `access-${name}`,
+          refreshToken: `refresh-${name}`,
+          idToken: `id-${name}`,
+          expiresAt: 0,
+          scopes: ['chatgpt.tokens.use.direct'],
+        },
+      })),
+    }
+    let refreshes = 0
+    const realService = new ChatGptPlanService(
+      {
+        read: (): ChatGptPlanState => structuredClone(state),
+        write: (next): void => {
+          state = structuredClone(next)
+        },
+      },
+      {
+        openBrowser: async (): Promise<void> => {},
+        fetch: async (_input, init): Promise<Response> => {
+          refreshes++
+          assert.ok(init?.body instanceof URLSearchParams)
+          assert.match(init.body.toString(), /refresh-a/)
+          assert.ok(!init.body.toString().includes('refresh-b'))
+          return Response.json({
+            access_token: 'rotated-a',
+            refresh_token: 'rotated-refresh-a',
+            expires_in: 3600,
+            token_type: 'Bearer',
+          })
+        },
+      },
+    )
+    const service = getChatGptPlanService()
+    t.mock.method(service, 'status', realService.status.bind(realService))
+    t.mock.method(service, 'credentials', realService.credentials.bind(realService))
+    t.mock.method(service, 'requestSignal', realService.requestSignal.bind(realService))
+    await setSetting('modelParameters', { [model]: { reasoning: 'high' } })
+    t.after(async () => {
+      await setSetting('modelParameters', {})
+    })
+    const plan = await resolveContainerProvider(model, { threadId: 'pinned-thread' })
+    assert.equal(plan.mode, 'host-inference')
+    await setSetting('modelParameters', { [model]: { reasoning: 'low' } })
+    await realService.selectAccount('oaiapp_b')
+    let calls = 0
+    t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      assert.equal(request.url, 'https://api.openai.com/v1/responses')
+      assert.equal(request.headers.get('authorization'), 'Bearer rotated-a')
+      const body = await request.text()
+      assert.ok(body.includes('"effort":"high"'))
+      assert.ok(body.includes('oaiapp_a:pinned-thread:run-pinned'))
+      calls++
+      return new Response(
+        'data: ' +
+          JSON.stringify({
+            type: 'response.completed',
+            response: {
+              status: 'completed',
+              output: [],
+              usage: {
+                input_tokens: 10,
+                output_tokens: 2,
+                input_tokens_details: { cached_tokens: 0 },
+                output_tokens_details: { reasoning_tokens: 0 },
+              },
+            },
+          }) +
+          '\n\n',
+        { headers: { 'content-type': 'text/event-stream' } },
+      )
+    })
+    for (const budget of [20000, 8000]) {
+      const provider = await plan.hostInference(budget, 'run-pinned')
+      for await (const chunk of provider.stream([{ role: 'user', content: 'hello' }], []))
+        assert.ok(chunk)
+    }
+    assert.equal(refreshes, 1)
+    assert.equal(calls, 2)
+    // Preserve the supported model-free runtime override in the resolved path too.
+    const previousMock = process.env['COPSE_PANEL_MOCK_LLM']
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    try {
+      assert.ok((await plan.hostInference(8000, 'run-mock')) instanceof MockLLMProvider)
+    } finally {
+      if (previousMock === undefined) Reflect.deleteProperty(process.env, 'COPSE_PANEL_MOCK_LLM')
+      else process.env['COPSE_PANEL_MOCK_LLM'] = previousMock
+    }
+    await realService.signOut('oaiapp_a')
+    const signedOut = await plan.hostInference(8000, 'run-pinned')
+    await assert.rejects(async () => {
+      for await (const chunk of signedOut.stream([{ role: 'user', content: 'hello' }], []))
+        assert.ok(chunk)
+    }, /sign|connect|abort/i)
+    assert.equal(calls, 2)
   })
 
   it('refuses a cloud model with no key rather than starting a run that cannot talk', async () => {

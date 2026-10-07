@@ -85,9 +85,7 @@ export class HostInference {
       if (this.used + reservation >= this.options.tokenCeiling)
         throw new Error('Host inference token budget reached')
       this.used += reservation
-      const provider = await this.options.provider(
-        Math.min(4096, this.options.tokenCeiling - this.used),
-      )
+      const provider = await this.options.provider(this.options.tokenCeiling - this.used)
       signal.throwIfAborted()
       let reported = false
       for await (const chunk of provider.stream(

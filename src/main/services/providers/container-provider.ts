@@ -27,8 +27,9 @@ import {
 import {
   apiKeyForDescription,
   describeProvider,
-  buildProvider,
+  resolveTurnParameters,
   buildResolvedProvider,
+  buildResolvedChatGptPlanProvider,
 } from './provider-selection.ts'
 import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import { getChatGptPlanService } from './chatgpt-plan-service.ts'
@@ -150,9 +151,9 @@ export async function resolveContainerProvider(
   assertModelMakerAllowed(model)
   const chatGpt = parseChatGptPlanModel(model)
   if (chatGpt) {
-    const account = getChatGptPlanService()
-      .status()
-      .accounts.find((entry) => entry.clientId === chatGpt.clientId)
+    const service = getChatGptPlanService()
+    const params = resolveTurnParameters(model)
+    const account = service.status().accounts.find((entry) => entry.clientId === chatGpt.clientId)
     if (!account?.connected || !account.planEnabled)
       throw new ContainerModelUnavailable(
         'Reconnect this ChatGPT account in Settings → Providers → OpenAI.',
@@ -165,7 +166,18 @@ export async function resolveContainerProvider(
       egress: [HOST_INFERENCE_TARGET],
       contextWindow: await resolveContextWindow(model),
       hostInference: (maxOutputTokens, runId) =>
-        buildProvider(model, `${options.threadId ?? 'container'}:${runId}`, { maxOutputTokens }),
+        Promise.resolve(
+          buildResolvedChatGptPlanProvider(
+            service,
+            chatGpt,
+            model,
+            {
+              ...params,
+              maxOutputTokens: Math.min(maxOutputTokens, params.maxOutputTokens ?? maxOutputTokens),
+            },
+            `${options.threadId ?? 'container'}:${runId}`,
+          ),
+        ),
     }
   }
   const acp = parseAcpModelSelection(model)

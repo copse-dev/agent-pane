@@ -488,6 +488,11 @@ guarantee, and the record must say so.
   A1 and A1′ still govern external ACP agents: their agent processes and tools remain in the guest;
   this does not move external agent commands onto the user's host. Token reservation is an estimate
   before a call; reported usage can exhaust the budget during that call and refuses later calls.
+  Generation parameters are captured at plan creation for API-key and ChatGPT providers; only
+  credentials for the pinned ChatGPT account are refreshed between requests. After reserving
+  estimated input, the broker passes the remaining token budget to that pinned provider, whose
+  captured output setting supplies any supported model/user ceiling. CLI `--resolve` changes
+  the transport destination while preserving the logical URL authority, HTTP Host and TLS identity.
   The broker has no separate request-count ceiling: the time and token budgets selected when
   starting the run bound inference. An explicit CLI `--max-steps` still bounds the guest loop;
   shared agent-loop termination and progress safeguards are separate from broker admission.

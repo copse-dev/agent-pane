@@ -173,12 +173,12 @@ async function dialOrigin(
 }
 
 /** Where to dial for a guest-named target, after any `resolve` remap. */
-function dialAddress(
+export function dialAddress(
   resolve: Readonly<Record<string, string>>,
   host: string,
   port: number,
 ): { host: string; port: number } {
-  const mapped = resolve[host]
+  const mapped = Object.hasOwn(resolve, host) ? resolve[host] : undefined
   if (mapped === undefined) return { host, port }
   const bracketedIpv6 = /^\[([^\]]+)\]:(\d{1,5})$/.exec(mapped.trim())
   const bracketedPort = Number(bracketedIpv6?.[2])

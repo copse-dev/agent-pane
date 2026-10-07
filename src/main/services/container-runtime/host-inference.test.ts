@@ -44,10 +44,13 @@ function fixture(
   link: EgressLink
   provider: LLMProvider
   wire: Buffer[]
+  maxima: number[]
 } {
+  const maxima: number[] = []
   const host = new HostInference({
     provider: async (maximum): Promise<LLMProvider> => {
-      assert.ok(maximum <= 4096)
+      maxima.push(maximum)
+      assert.ok(maximum > 0)
       return provider
     },
     tokenCeiling: 10000,
@@ -77,7 +80,7 @@ function fixture(
     toGuest.destroy()
     toHost.destroy()
   })
-  return { host, broker, link, provider: buildHostInferenceProvider(link), wire }
+  return { host, broker, link, provider: buildHostInferenceProvider(link), wire, maxima }
 }
 async function collect(
   provider: LLMProvider,
@@ -153,6 +156,38 @@ describe('run-scoped host inference', () => {
     await assert.rejects(collect(f.provider), /token budget/)
     assert.equal(calls, 1)
     assert.equal(f.broker.log().filter((entry) => entry.event === 'connect').length, 2)
+  })
+  it('passes the full remaining budget after input reservation and reported usage', async (t) => {
+    const f = fixture(t, echo, { tokenCeiling: 30000 })
+    await collect(f.provider)
+    await collect(f.provider)
+    const reservation = Math.ceil(
+      Buffer.byteLength(
+        JSON.stringify({
+          messages: [{ role: 'user', content: 'Hello 😀' }],
+          tools: [{ name: 'read_file', description: 'Read', parameters: { type: 'object' } }],
+          options: { toolChoice: { name: 'read_file' }, suppressReasoning: true },
+        }),
+      ) / 4,
+    )
+    assert.deepEqual(f.maxima, [30000 - reservation, 29900 - reservation])
+    assert.ok((f.maxima[0] ?? 0) > 16384)
+  })
+  it('retains the estimated input reservation when usage is not reported', async (t) => {
+    const f = fixture(
+      t,
+      {
+        async *stream() {
+          yield { type: 'done' }
+        },
+      },
+      { tokenCeiling: 20000 },
+    )
+    const body = JSON.stringify({ messages: [], tools: [] })
+    await raw(f.link, body)
+    await raw(f.link, body)
+    const reservation = Math.ceil(Buffer.byteLength(body) / 4)
+    assert.deepEqual(f.maxima, [20000 - reservation, 20000 - 2 * reservation])
   })
   it('enforces the token budget during a request', async (t) => {
     const tokens = fixture(t, echo, { tokenCeiling: 90 })
