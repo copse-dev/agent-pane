@@ -149,6 +149,16 @@ export interface AcpAgentSpawnConfig {
    */
   mcpServers?: McpServerConfig[]
   /**
+   * `cwd` is the user's own checkout, which this thread must not modify (a
+   * deferred-worktree thread still reading it). The agent spawns under the
+   * workspace seatbelt minus every write grant at or under `cwd`, and never
+   * spawns without that confinement or on a remote host: there is no contained
+   * way to honour a read-only checkout there, so the spawn fails instead. Part
+   * of the pool fingerprint, so the agent is respawned (and its session
+   * reattached) when the thread gains its worktree.
+   */
+  readonlyCheckout?: boolean
+  /**
    * Run the agent process under the workspace seatbelt with these relaxations
    * (issue #590). Only effective when the project sandbox is active on this
    * platform; otherwise the agent spawns unsandboxed as before.
@@ -485,9 +495,13 @@ export async function spawnAcpAgentProcess(
   if (!(await isSpawnableWorkingDirectory(config.cwd))) {
     throw new Error(`Working directory no longer exists: ${config.cwd}`)
   }
+  if (config.readonlyCheckout && !(config.sandbox && willSandboxAcpAgent(config.sandbox))) {
+    throw new Error('A read-only checkout cannot run an ACP agent outside the project sandbox')
+  }
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
+      ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
     })
     // ASRT's proxies consult the GLOBAL config per connection — the overlay's
     // network block only wires restriction up. Widen the global allowlist for
@@ -960,6 +974,9 @@ async function spawnTransport(
   // agent on the remote host (stdio over SSH) instead of locally — see
   // docs/plans/acp-over-ssh.md. Otherwise fall through to the local spawn.
   const sshTarget = spawnConfigSshTarget(config)
+  if (sshTarget && config.readonlyCheckout) {
+    throw new Error('A read-only checkout cannot run an ACP agent on a remote host')
+  }
   if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget, signal)
   let child: ChildProcess
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {

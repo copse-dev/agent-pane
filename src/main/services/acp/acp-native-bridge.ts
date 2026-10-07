@@ -23,9 +23,12 @@ import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-re
 import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
 import {
   getThreadExecutionContext,
+  isThreadCheckoutDeferred,
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
 } from '../thread-execution-context.ts'
+import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
+import { ACP_WRITE_ACCESS_HANDOFF_NOTE } from './acp-write-access.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
 import { BRIDGE_MCP_SERVER_NAME, matchesBridgedToolName } from './acp-bridge-name.ts'
@@ -155,11 +158,18 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
 export function activeBridgeToolNames(
   projectId?: string,
   registry?: ToolRegistry,
+  /**
+   * The thread is still a read-only view of the user's checkout, so the agent
+   * has write access to ask for. Offered to deferred threads alone, as on the
+   * native loop (`withoutUnofferedWriteAccess`).
+   */
+  offerWriteAccess = false,
 ): readonly string[] {
   const mcpTools = registry?.names().filter((name) => name.startsWith('mcp__')) ?? []
   return [
     ...new Set([
       ...BRIDGE_TOOL_NAMES,
+      ...(offerWriteAccess ? [REQUEST_WRITE_ACCESS_TOOL] : []),
       ...getDefaultPluginRegistry().activeAcpToolNames(),
       ...mcpTools,
     ]),
@@ -223,7 +233,11 @@ export function isBridgedNativeToolTitle(title: string | null | undefined): bool
   if (!title) return false
   const text = unwrapInlineCode(title)
   return [
-    ...activeBridgeToolNames(getThreadExecutionContext()?.projectId),
+    ...activeBridgeToolNames(
+      getThreadExecutionContext()?.projectId,
+      undefined,
+      isThreadCheckoutDeferred(),
+    ),
     ...activeMediatedMcpTools.keys(),
   ].some((tool) => matchesBridgedToolName(text, tool))
 }
@@ -264,8 +278,9 @@ export interface AcpNativeBridge {
 function bridgedTools(
   registry: ToolRegistry,
   projectId?: string,
+  offerWriteAccess = false,
 ): { name: string; description: string; inputSchema: Record<string, unknown> }[] {
-  const offered = new Set(activeBridgeToolNames(projectId, registry))
+  const offered = new Set(activeBridgeToolNames(projectId, registry, offerWriteAccess))
   // toMcpTools, not toLLMTools: the agent forwards these schemas to the
   // Anthropic API, which validates them as JSON Schema draft 2020-12 and
   // 400s the whole request on the openapi-3.0 flavor.
@@ -301,6 +316,8 @@ interface BridgeExecuteContext {
   getExecutionContext: () => ThreadExecutionContext | null
   getInlineCanvasScope: () => ReturnType<typeof captureInlineCanvasScope>
   networkScopeAlreadyApplies: boolean
+  /** The bridge was started for a deferred-worktree thread: offer `request_write_access`. */
+  offerWriteAccess: boolean
   recordWorkspaceWrite: (path: string) => void
 }
 
@@ -380,7 +397,7 @@ function buildMcpServer(
     { capabilities: { tools: {} } },
   )
   server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: bridgedTools(registry, ctx.projectId),
+    tools: bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess),
   }))
   // Stateless mode gives every POST its own server, so the SDK's built-in
   // cancellation (which aborts a request on the SAME server) never sees the
@@ -396,7 +413,10 @@ function buildMcpServer(
   })
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name
-    if (!activeBridgeToolNames(ctx.projectId, registry).includes(name) || !registry.has(name)) {
+    if (
+      !activeBridgeToolNames(ctx.projectId, registry, ctx.offerWriteAccess).includes(name) ||
+      !registry.has(name)
+    ) {
       return {
         content: [{ type: 'text', text: `Tool "${name}" is not offered by this bridge.` }],
         isError: true,
@@ -472,7 +492,14 @@ function buildMcpServer(
       for (const path of bridgedWorkspaceWritePaths(name, request.params.arguments)) {
         ctx.recordWorkspaceWrite(path)
       }
-      return { content: toMcpContent(result, images) }
+      return {
+        content: toMcpContent(
+          name === REQUEST_WRITE_ACCESS_TOOL
+            ? `${result}\n\n${ACP_WRITE_ACCESS_HANDOFF_NOTE}`
+            : result,
+          images,
+        ),
+      }
     } catch (err) {
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
     } finally {
@@ -556,10 +583,17 @@ function compatibleServerTransport(transport: StreamableHTTPServerTransport): Tr
 export async function startAcpNativeBridge(
   registry: ToolRegistry,
   signal: AbortSignal,
-  opts: { networkScopeAlreadyApplies?: boolean; projectId?: string; threadId: string },
+  opts: {
+    networkScopeAlreadyApplies?: boolean
+    /** Offer `request_write_access`: the thread's agent starts on a read-only checkout. */
+    offerWriteAccess?: boolean
+    projectId?: string
+    threadId: string
+  },
 ): Promise<AcpNativeBridge | null> {
   if (!getSetting<boolean>('acpNativeBridgeEnabled', true)) return null
-  if (bridgedTools(registry, opts.projectId).length === 0) return null
+  const offerWriteAccess = opts.offerWriteAccess === true
+  if (bridgedTools(registry, opts.projectId, offerWriteAccess).length === 0) return null
 
   const token = randomBytes(32).toString('hex')
   const networkScopeAlreadyApplies = opts.networkScopeAlreadyApplies === true
@@ -610,6 +644,7 @@ export async function startAcpNativeBridge(
         getExecutionContext: () => executionContext,
         getInlineCanvasScope: () => inlineCanvasScope,
         networkScopeAlreadyApplies,
+        offerWriteAccess,
         recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
       })
       res.on('close', () => {
@@ -640,7 +675,9 @@ export async function startAcpNativeBridge(
     })
     throw new Error('ACP native bridge did not bind a TCP port')
   }
-  const offeredToolNames = bridgedTools(registry, opts.projectId).map((tool) => tool.name)
+  const offeredToolNames = bridgedTools(registry, opts.projectId, offerWriteAccess).map(
+    (tool) => tool.name,
+  )
   retainMediatedMcpTools(offeredToolNames)
   let closed = false
   return {
