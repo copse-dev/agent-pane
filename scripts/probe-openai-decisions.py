@@ -7,6 +7,7 @@ OAuth experiment: add --oauth and set OPENAI_OAUTH_ACCESS_TOKEN instead.
 Use --responses to check public Responses, or --codex-responses for Codex OAuth.
 Optional --model selects the Responses model (default: gpt-5.4).
 Codex mode optionally uses OPENAI_CHATGPT_ACCOUNT_ID.
+Use --check-token for a read-only Codex usage request (no inference).
 OAuth mode ignores API-key, organization, and project environment variables.
 Exit codes: 0 = valid decision, 1 = failed/inconclusive probe, 2 = missing key.
 Docs: https://developers.openai.com/api/docs/guides/decisions
@@ -47,9 +48,10 @@ def main():
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--responses", action="store_true")
     modes.add_argument("--codex-responses", action="store_true")
+    modes.add_argument("--check-token", action="store_true")
     parser.add_argument("--model", default="gpt-5.4")
     args = parser.parse_args()
-    oauth = args.oauth or args.codex_responses
+    oauth = args.oauth or args.codex_responses or args.check_token
     responses = args.responses or args.codex_responses
     variable = "OPENAI_OAUTH_ACCESS_TOKEN" if oauth else "OPENAI_API_KEY"
     key = os.environ.get(variable, "").strip()
@@ -89,11 +91,16 @@ def main():
         headers["Accept"] = "text/event-stream"
         if args.codex_responses and os.environ.get("OPENAI_CHATGPT_ACCOUNT_ID"):
             headers["ChatGPT-Account-Id"] = os.environ["OPENAI_CHATGPT_ACCOUNT_ID"]
+    if args.check_token:
+        endpoint = "https://chatgpt.com/backend-api/wham/usage"
+        headers["Accept"] = "application/json"
+        if os.environ.get("OPENAI_CHATGPT_ACCOUNT_ID"):
+            headers["ChatGPT-Account-Id"] = os.environ["OPENAI_CHATGPT_ACCOUNT_ID"]
     request = urllib.request.Request(
         endpoint,
-        data=json.dumps(payload).encode("utf-8"),
+        data=None if args.check_token else json.dumps(payload).encode("utf-8"),
         headers=headers,
-        method="POST",
+        method="GET" if args.check_token else "POST",
     )
 
     # Never forward authorization to a redirect destination.
@@ -101,7 +108,10 @@ def main():
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             return None
 
-    print(f"Checking {payload['model']} via POST {endpoint} (one small request)...")
+    if args.check_token:
+        print(f"Checking OAuth token via GET {endpoint} (no inference)...")
+    else:
+        print(f"Checking {payload['model']} via POST {endpoint} (one small request)...")
     print("Authentication: " + ("OAuth access token (experimental)" if oauth else "API key"))
     started = time.monotonic()
     try:
@@ -130,6 +140,15 @@ def main():
                 print("No completed Responses event received; control check is inconclusive.")
                 return 1
             body = json.load(response)
+            if args.check_token:
+                if isinstance(body, dict) and any(
+                    field in body for field in ("plan_type", "rate_limit", "credits")
+                ):
+                    print("TOKEN ACCEPTED: Codex returned account usage data.")
+                    print("This validates access to Codex usage, not public Responses or Decisions.")
+                    return 0
+                print("Unexpected usage response; token validation is inconclusive.")
+                return 1
     except urllib.error.HTTPError as error:
         explanations = {
             400: "Request rejected; access is not confirmed. The API contract may have changed.",
