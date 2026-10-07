@@ -177,8 +177,8 @@ export async function askClassifierBatch(
 }
 
 /**
- * Ask the chosen classifier connection. Its own configured timeout applies:
- * nothing waits on the answer, and a SemIf scorer needs time to load weights.
+ * Ask the chosen classifier connection. Its configured timeout applies unless
+ * a caller waiting on the answer supplies a shorter budget and cancellation signal.
  * Any failure — a removed connection, a missing key, a timeout, a malformed
  * answer — returns null so the models can answer instead.
  */
@@ -187,10 +187,11 @@ export async function askClassifierChoice<T extends string>(
   state: string,
   id: string | null = backgroundClassifierId(),
   recordUsage: RecordUsage = recordSmallTasksUsage,
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<BackgroundChoice<T> | null> {
   const results = await askClassifierBatch(
     [{ state, questions: { [QUESTION_ID]: backgroundClassifierQuestion(question) } }],
-    {},
+    options,
     id,
     recordUsage,
   )

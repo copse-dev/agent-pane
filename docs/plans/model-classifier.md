@@ -8,7 +8,9 @@ Status: **primary prompt routing plus an experimental advisory tool**.
 
 Choose **Auto — match prompt** in the chat model picker or as the default chat model.
 On the first ask in a new chat, after submission hooks and PII redaction, Copse asks
-the configured small-tasks model to assess that request. The assessment has a
+the classifier selected under **Settings → Classifiers → Background questions**
+to assess that request. If none is selected or it cannot answer, Copse tries the
+Small tasks model (local Gemma by default), then its chat-model backup. The assessment has a
 five-second inference budget per route and returns low, mid, or
 top demand. Each level uses the shared representative model's Intelligence Index
 score as a capability floor. This is an estimate, not a measured guarantee of task success.
@@ -27,8 +29,8 @@ Routing produces no assistant message: the chosen model is shown in the picker,
 and diagnostic details go to the application log. The chosen model becomes the chat's fixed
 model in both live state and persisted metadata. Later asks reuse it without another
 assessment. The user can still select another model manually. Opening a blank chat
-does not resolve the automatic choice before the first ask. Assessment uses the small-tasks
-route (with its existing chat fallback), so hosted routes receive the bounded context
+does not resolve the automatic choice before the first ask. Assessment uses the configured
+classifier and model fallback routes, so hosted routes receive the bounded context
 and may incur a small additional charge. Assessment token usage is recorded.
 
 This applies only to primary turns. Subagent routing is unchanged. The existing

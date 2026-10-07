@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict'
-import { describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it, mock } from 'node:test'
+import { CLASSIFIER_PRESETS } from '@copse/llm/classifiers/presets.ts'
+import { deleteSetting, setSetting } from '../storage/settings.ts'
+import {
+  saveClassifierProfile,
+  setBackgroundClassifier,
+} from '../classifiers/classifier-service.ts'
 import { BAND_REPRESENTATIVE_MODEL, modelIntellect } from '@copse/llm/model-intellect.ts'
 import { computeParetoFrontier } from '@copse/llm/pareto-frontier.ts'
 import type { SmallTasksRoute } from './small-tasks-provider.ts'
@@ -29,6 +35,112 @@ function assessmentRoute(model: string, answer: string | Error): SmallTasksRoute
 }
 
 describe('primary prompt model routing', () => {
+  beforeEach(() => {
+    setSetting('classifierProviders', { version: 1, profiles: [] })
+    deleteSetting('backgroundClassifier')
+  })
+  afterEach(() => {
+    mock.restoreAll()
+  })
+
+  async function enableClassifier(): Promise<void> {
+    const profile = CLASSIFIER_PRESETS.find((entry) => entry.id === 'kev')
+    assert.ok(profile)
+    await saveClassifierProfile(profile)
+    await setBackgroundClassifier('kev')
+  }
+
+  it('uses classifier probabilities before resolving any model route', async () => {
+    await enableClassifier()
+    mock.method(globalThis, 'fetch', async () =>
+      Response.json({
+        model: 'kev-fixture',
+        answers: {
+          answer: {
+            type: 'choice',
+            choice: 'top',
+            probabilities: { low: 0.9, mid: 0.08, top: 0.02 },
+          },
+        },
+      }),
+    )
+    let modelResolved = false
+    const candidates: AsyncIterable<SmallTasksRoute> = {
+      async *[Symbol.asyncIterator]() {
+        modelResolved = true
+        yield assessmentRoute('unused', 'top')
+      },
+    }
+    assert.equal(
+      await assessPromptDemandWithFallback(
+        'Check for typos',
+        candidates,
+        new AbortController().signal,
+      ),
+      'low',
+    )
+    assert.equal(modelResolved, false)
+  })
+
+  it('falls back to the small model after classifier failure or malformed probabilities', async () => {
+    await enableClassifier()
+    for (const fail of [true, false]) {
+      mock.method(globalThis, 'fetch', async () => {
+        if (fail) throw new Error('offline')
+        return Response.json({
+          model: 'kev-fixture',
+          answers: { answer: { type: 'choice', choice: 'low', probabilities: { low: 1 } } },
+        })
+      })
+      assert.equal(
+        await assessPromptDemandWithFallback(
+          'Task',
+          routes(assessmentRoute('local', 'mid')),
+          new AbortController().signal,
+        ),
+        'mid',
+      )
+      mock.restoreAll()
+    }
+  })
+
+  it('cancels classifier inference without starting model fallback', async () => {
+    await enableClassifier()
+    const controller = new AbortController()
+    mock.method(globalThis, 'fetch', async (_url: string | URL | Request, init?: RequestInit) => {
+      assert.ok(init?.signal)
+      controller.abort()
+      assert.equal(init.signal.aborted, true)
+      throw new DOMException('Aborted', 'AbortError')
+    })
+    await assert.rejects(
+      assessPromptDemandWithFallback(
+        'Task',
+        routes(assessmentRoute('unused', 'low')),
+        controller.signal,
+      ),
+      { name: 'AbortError' },
+    )
+  })
+
+  it('prefers sufficient local and smaller plan models over included Astra', () => {
+    const low = modelIntellect(BAND_REPRESENTATIVE_MODEL.low)
+    assert.ok(low !== null)
+    const local = { id: 'local-fit', intellect: low, costPerMTok: 0, local: true }
+    const plan = { id: 'acp:plan#small', intellect: low + 1, costPerMTok: 0, plan: 'included' }
+    const astra = {
+      id: 'acp:codex-acp#gpt-6-astra',
+      intellect: low + 30,
+      costPerMTok: 0,
+      plan: 'ChatGPT',
+    }
+    assert.equal(
+      pickPromptModel('low', computeParetoFrontier([astra, plan, local]), 'fallback'),
+      'lmstudio:local-fit',
+    )
+    assert.equal(pickPromptModel('low', computeParetoFrontier([astra, plan]), 'fallback'), plan.id)
+  })
+
   it('tries the backup after a stopped local server or malformed assessment', async () => {
     for (const answer of [new Error('Local server unavailable'), 'unparseable answer']) {
       assert.equal(

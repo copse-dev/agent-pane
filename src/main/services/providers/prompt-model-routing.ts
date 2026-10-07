@@ -3,6 +3,7 @@ import { BAND_REPRESENTATIVE_MODEL, modelIntellect } from '@copse/llm/model-inte
 import { pickDynamicModel } from '@copse/llm/dynamic-model-pick.ts'
 import type { FrontierPoint } from '@copse/llm/pareto-frontier.ts'
 import {
+  askClassifierChoice,
   backgroundChoicePrompt,
   parseChoiceWord,
   type BackgroundChoiceQuestion,
@@ -90,13 +91,22 @@ export async function assessPromptDemand(
   }
 }
 
-/** A dead local model must not prevent trying the configured backup route. */
+/** Prefer the configured classifier, then model routes, then the task heuristic. */
 export async function assessPromptDemandWithFallback(
   context: string,
   routes: AsyncIterable<SmallTasksRoute>,
   signal: AbortSignal,
 ): Promise<Demand> {
   signal.throwIfAborted()
+  const classified = await askClassifierChoice(
+    PROMPT_DEMAND_QUESTION,
+    context,
+    undefined,
+    undefined,
+    { timeoutMs: 5000, signal },
+  )
+  signal.throwIfAborted()
+  if (classified) return classified.choice
   for await (const route of routes) {
     signal.throwIfAborted()
     const demand = await assessPromptDemand(context, route, signal)
