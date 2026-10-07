@@ -129,7 +129,7 @@ describe('modern CSS adoptions', () => {
 
     const readingSelector = '.msg-assistant > .message-body > .message-text'
     assert.ok(
-      declares(read('conversation.css'), readingSelector, /--sm-line-height:\s*1\.65;/),
+      declares(read('conversation.css'), readingSelector, /--sm-line-height:\s*1\.6;/),
       'assistant prose must define the Reading rhythm for pending and completed markdown',
     )
     assert.ok(

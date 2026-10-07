@@ -8,7 +8,7 @@ import {
   setThreadDraftPrompt,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
-import type { Thread, ThreadCatalogHit, StreamChunk } from '@shared/types'
+import type { ContextBreakdown, Thread, ThreadCatalogHit, StreamChunk } from '@shared/types'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import { containerRunToolCall } from '@shared/store/container-run-card.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -16,6 +16,7 @@ import { startAgentController } from '../controller/agent.ts'
 import { mountInputBar } from './input-bar.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import { carryRunningThreads, adoptBackgroundThreads } from '../controller/background-threads.ts'
+import { commitThreadModelSelection } from '../controller/model-selection.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
@@ -4003,6 +4004,96 @@ describe('input bar context fit warning', () => {
     const host = await mountWithEstimate('gpt-4o-mini', 12_000, 128_000)
 
     assert.equal(host.querySelector<HTMLElement>('.composer-context-warning')?.hidden, true)
+  })
+})
+
+describe('input bar context wheel across a model change', () => {
+  const ACP_MODEL = 'acp:claude-acp#opus'
+
+  function breakdown(totalTokens: number): ContextBreakdown {
+    return {
+      segments: [{ key: 'system', label: 'System prompt', tokens: totalTokens }],
+      totalTokens,
+      contextWindow: 200_000,
+    }
+  }
+
+  function mount(
+    model: string,
+    estimateContext: ApiClient['agent']['estimateContext'],
+  ): { host: HTMLElement; store: ReturnType<typeof createStore>; api: ApiClient } {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread(), model }],
+    })
+    const api = createApi({ currentBranch: 'main', estimateContext })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, api)
+    return { host, store, api }
+  }
+
+  function wheel(host: HTMLElement): HTMLElement {
+    const found = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(found)
+    return found
+  }
+
+  it('drops the auto:* estimate when the dynamic default resolves to an ACP route', async () => {
+    const calls: string[] = []
+    const { host, store, api } = mount('auto:balanced', async (_projectId, _threadId, payload) => {
+      calls.push(payload)
+      return breakdown(30_000)
+    })
+    await flush()
+    await flush()
+    assert.equal(wheel(host).hidden, false)
+    assert.ok(wheel(host).classList.contains('has-breakdown'))
+
+    // The best-value resolver commits its route without going through the picker.
+    commitThreadModelSelection(store, api, 'thread-1', 'auto', 'auto:balanced', ACP_MODEL)
+    await flush()
+    await flush()
+
+    // ACP owns its prompt, so no Copse-native figure survives: no empty ring
+    // whose hover quotes the auto:balanced estimate.
+    assert.equal(wheel(host).hidden, true)
+    assert.equal(calls.length, 1, 'ACP never asks main for a native estimate')
+  })
+
+  it('re-estimates when the dynamic default resolves to another native model', async () => {
+    const payloads: string[] = []
+    const { host, store, api } = mount('auto:balanced', async (_projectId, _threadId, payload) => {
+      payloads.push(payload)
+      return breakdown(30_000)
+    })
+    await flush()
+    await flush()
+
+    commitThreadModelSelection(store, api, 'thread-1', 'auto', 'auto:balanced', 'gpt-4o-mini')
+    await flush()
+    await flush()
+
+    assert.equal(payloads.length, 2)
+    assert.match(payloads[1] ?? '', /"model":"gpt-4o-mini"/)
+    assert.ok(wheel(host).classList.contains('has-breakdown'))
+  })
+
+  it('ignores an estimate that lands after the thread moves to an ACP model', async () => {
+    const pending = deferred<ContextBreakdown>()
+    const { host, store, api } = mount('gpt-4o-mini', () => pending.promise)
+    await flush()
+
+    commitThreadModelSelection(store, api, 'thread-1', 'user', 'gpt-4o-mini', ACP_MODEL)
+    await flush()
+    pending.resolve(breakdown(30_000))
+    await flush()
+    await flush()
+
+    assert.equal(wheel(host).hidden, true)
   })
 })
 

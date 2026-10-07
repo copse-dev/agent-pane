@@ -1430,6 +1430,16 @@ export function mountInputBar(
     queueIndicator.textContent = count === 1 ? '1 queued' : `${String(count)} queued`
   }
 
+  /**
+   * The pre-send estimate, only while it describes the model the footer shows.
+   * The dynamic-default resolver swaps a blank thread's model without going
+   * through the picker, so an estimate made for `auto:*` can outlive it — and
+   * for an ACP route it would draw an empty ring quoting Copse-native figures.
+   */
+  function currentBreakdown(): ContextBreakdown | null {
+    return breakdownModel === footerChatModel() ? lastBreakdown : null
+  }
+
   /** The one-line usage detail (tooltip fallback) and the usage rows for the wheel hover. */
   function usageViews(): {
     detail: string
@@ -1444,7 +1454,7 @@ export function mountInputBar(
       running: thread.status === 'running',
       messages: thread.messages,
       contextSnapshot: thread.contextSnapshot,
-      breakdown: lastBreakdown,
+      breakdown: currentBreakdown(),
     })
     if (!display) return null
     // #1483 moved footer pricing onto the persisted catalog snapshot; all three
@@ -1464,13 +1474,10 @@ export function mountInputBar(
    */
   function updateContextFitWarning(): void {
     const model = footerChatModel()
-    const advice =
-      breakdownModel === model
-        ? contextFitAdvice(lastBreakdown, {
-            modelLabel: modelDisplayLabel(model),
-            lmStudioModel: isLocalModel(model),
-          })
-        : null
+    const advice = contextFitAdvice(currentBreakdown(), {
+      modelLabel: modelDisplayLabel(model),
+      lmStudioModel: isLocalModel(model),
+    })
     if (!advice) {
       contextFitWarning.hidden = true
       return
@@ -1534,6 +1541,10 @@ export function mountInputBar(
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
     const acpContext = isAcpModel(footerChatModel())
+    const breakdown = currentBreakdown()
+    // The model moved under a standing estimate without a re-estimate (the
+    // dynamic-default resolver): refresh it, which for ACP drops it instead.
+    if (lastBreakdown && !breakdown) scheduleContextEstimate(0)
     const usage = usageViews()
     refreshClassifierUse(thread)
     const snapshot = thread?.contextSnapshot
@@ -1552,15 +1563,15 @@ export function mountInputBar(
     const showBreakdown =
       !acpContext &&
       !running &&
-      !!lastBreakdown &&
-      lastBreakdown.totalTokens > 0 &&
+      !!breakdown &&
+      breakdown.totalTokens > 0 &&
       (!snapshotUsable || draftNonEmpty)
     // Always forward the estimated breakdown so already-run primary chats keep
     // the context-window breakdown on hover; `breakdownRing` controls whether it
     // also replaces the live snapshot fill (pre-send / fresh threads). While the
     // agent is running we suppress it — the live snapshot is the authoritative
     // source then, and subagent/remote windows never produce a breakdown here.
-    const hoverBreakdown = !running && !acpContext ? lastBreakdown : null
+    const hoverBreakdown = !running && !acpContext ? breakdown : null
     contextWheel.update(snapshot, running, {
       usageLine: usage?.detail ?? null,
       usage: usage?.tooltip ?? null,
@@ -1624,8 +1635,11 @@ export function mountInputBar(
     if (!estimateEnabled) return
     // The external agent owns its system prompt, tools, skills, and cache. A
     // Copse-native estimate would describe the wrong prompt; wait for ACP's
-    // authoritative `usage_update` instead.
+    // authoritative `usage_update` instead. Invalidate any estimate still in
+    // flight for the previous model too, or it lands after the switch and the
+    // wheel shows an empty ring whose hover quotes the native figures.
     if (isAcpModel(footerChatModel())) {
+      estimateSeq++
       if (lastBreakdown !== null) {
         lastBreakdown = null
         breakdownModel = null
@@ -1635,6 +1649,7 @@ export function mountInputBar(
     }
     const id = getActiveThreadId()
     if (!id) {
+      estimateSeq++
       if (lastBreakdown !== null) {
         lastBreakdown = null
         breakdownModel = null
