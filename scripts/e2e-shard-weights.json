@@ -184,7 +184,6 @@
     "tests/e2e/pr-panel-new-thread.e2e.ts": 8.5,
     "tests/e2e/pr-panel-unavailable.e2e.ts": 6.9,
     "tests/e2e/pr-panel.e2e.ts": 12.6,
-    "tests/e2e/process-manager-agent-activity.e2e.ts": 12,
     "tests/e2e/process-manager.e2e.ts": 21.2,
     "tests/e2e/project-quarantine-recovery.e2e.ts": 7.5,
     "tests/e2e/project-switch-panels.e2e.ts": 45.7,

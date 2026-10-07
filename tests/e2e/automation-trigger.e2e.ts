@@ -16,6 +16,11 @@ import {
   writeSeedConfig,
   writeSeedSupervisedTask,
 } from './helpers/seed-config.ts'
+import {
+  COPSE_TINT_COLOR,
+  applyAppearanceViaSettings,
+  editorSurfacePaint,
+} from './helpers/appearance.ts'
 import { assertScheduleHeadingKeepsTitle } from './helpers/text-fit.ts'
 
 const PROJECT_ID = 'e2e-automation-trigger'
@@ -246,6 +251,11 @@ describe('cron automation trigger', function () {
       },
       null,
     )
+    await applyAppearanceViaSettings({
+      theme: 'dark',
+      tintColor: COPSE_TINT_COLOR,
+      tintStrength: 'strong',
+    })
 
     // Only now open the schedule's project, so its scheduled run starts
     // against the scenario above rather than the mock's unscripted fallback.
@@ -345,6 +355,34 @@ describe('cron automation trigger', function () {
       )
     }
 
+    await browser.waitUntil(
+      () => browser.execute(() => document.documentElement.hasAttribute('data-automation-active')),
+      {
+        timeout: 10_000,
+        timeoutMsg: 'a running scheduled thread never enabled automation appearance mode',
+      },
+    )
+    assert.equal(await browser.execute(() => document.documentElement.dataset['theme']), 'dark')
+    assert.equal(
+      await browser.execute(() => document.documentElement.dataset['tintPalette']),
+      'copse',
+    )
+    assert.equal(
+      await browser.execute(() => document.documentElement.dataset['tintStrength']),
+      'strong',
+    )
+    assert.deepEqual((await editorSurfacePaint([])).token, [45, 39, 26])
+    const restoreActiveRunTime = await pinTextForCapture(
+      '.automation-schedule-runs',
+      /^Latest · .+$/,
+      'Latest · Jan 1, 2026, 12:00 AM',
+    )
+    try {
+      await saveAppScreenshot('automation-active.png')
+    } finally {
+      await restoreActiveRunTime()
+    }
+
     await scenario.release('review-ready')
     const expectedResponse = 'The CI review is complete; no failures were found.'
     await browser.waitUntil(
@@ -361,6 +399,14 @@ describe('cron automation trigger', function () {
       },
     )
     assert.equal(await $('.prompt-input').getText(), '')
+    await browser.waitUntil(
+      () => browser.execute(() => !document.documentElement.hasAttribute('data-automation-active')),
+      {
+        timeout: 10_000,
+        timeoutMsg: 'automation appearance mode did not restore after the scheduled run settled',
+      },
+    )
+    assert.deepEqual((await editorSurfacePaint([])).token, [0, 46, 43])
 
     const restoreFinalRunTime = await pinTextForCapture(
       '.automation-schedule-runs',

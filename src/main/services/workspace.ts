@@ -136,6 +136,32 @@ export async function seedAllowedWorkspaceRoots(
 }
 
 /**
+ * The persisted projects `workspace:set` has to seed before it can validate
+ * `root`: the ones that name it.
+ *
+ * Every persisted project is already seeded once at startup, so a switch only
+ * needs the target. Re-seeding all of them on every switch ran `exists`,
+ * `realpath` and `stat` plus a linked-worktree sibling scan for each project one
+ * after another — seconds of main-process filesystem work with a few dozen
+ * projects, in front of the reply the renderer is waiting on. Falls back to every
+ * project when none names `root` verbatim (a symlinked or differently spelled
+ * path), because only canonicalising each one can tell which it resolves to.
+ */
+export function workspaceProjectsToSeed(
+  projects: readonly WorkspaceProjectRef[],
+  root: string,
+  sshHost?: string,
+): readonly WorkspaceProjectRef[] {
+  const matching = projects.filter((project) =>
+    sshHost
+      ? project.sshHost === sshHost &&
+        normalizeRemoteWorkspacePath(project.path) === normalizeRemoteWorkspacePath(root)
+      : !project.sshHost && resolve(project.path) === resolve(root),
+  )
+  return matching.length > 0 ? matching : projects
+}
+
+/**
  * Run best-effort linked-worktree discovery without letting slow or blocked Git
  * metadata prevent an otherwise valid project folder from opening.
  */
@@ -446,6 +472,9 @@ export function resolveSshHostForWorkspaceRoot(
 
 export function setWorkspaceRoot(root: string | null): void {
   workspaceRoot = root
+  // Re-selecting the root that is already stored is common (a switch can be
+  // issued twice) and each write rewrites the whole config.json synchronously.
+  if (storageGet(WORKSPACE_KEY) === root) return
   storageSet(WORKSPACE_KEY, root)
 }
 
@@ -489,6 +518,39 @@ export async function resolveWorkspacePath(
   return resolvePathWithinRoot(path, root, backend)
 }
 
+/**
+ * The project checkout an execution root stands in for, or null. Registered by
+ * the thread execution context (which imports this module, so it cannot be
+ * imported back): a worktree turn's root answers with its project root, and
+ * every other root answers null.
+ */
+type ExecutionRootAliasLookup = (root: string) => string | null
+let executionRootAlias: ExecutionRootAliasLookup | null = null
+
+export function setExecutionRootAliasLookup(lookup: ExecutionRootAliasLookup): void {
+  executionRootAlias = lookup
+}
+
+/**
+ * Map an absolute path in the project checkout onto the same relative path in
+ * the worktree standing in for it. Agents carry absolute paths across a
+ * mid-turn switch into a worktree (and copy them from the user's messages); in
+ * a worktree turn the project checkout is never a valid file-tool target, so
+ * the only useful reading of such a path is the thread's own copy of the file.
+ */
+async function rebaseOntoExecutionRoot(
+  absInput: string,
+  root: string,
+  absRoot: string,
+  backend: PathBackend,
+): Promise<string | null> {
+  const alias = executionRootAlias?.(root)
+  if (!alias) return null
+  const absAlias = await backend.realpath(resolve(alias))
+  if (!isPathInsideRoot(absInput, absAlias)) return null
+  return resolve(absRoot, relative(absAlias, absInput))
+}
+
 /** Resolve a path against an explicit trusted root, with the workspace containment rules. */
 export async function resolvePathWithinRoot(
   path: string,
@@ -498,7 +560,10 @@ export async function resolvePathWithinRoot(
   const absRoot = await backend.realpath(resolve(root))
   let relPath = path
   if (isAbsolute(path)) {
-    const absInput = await resolveThroughExistingPrefix(resolve(path), backend)
+    let absInput = await resolveThroughExistingPrefix(resolve(path), backend)
+    if (!isPathInsideRoot(absInput, absRoot)) {
+      absInput = (await rebaseOntoExecutionRoot(absInput, root, absRoot, backend)) ?? absInput
+    }
     const fromRoot = relative(absRoot, absInput)
     if (!isPathInsideRoot(absInput, absRoot)) {
       throw new Error(

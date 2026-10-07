@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ToolRegistry, setPermissionGateForTests } from './tool-registry.ts'
+import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 import {
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
@@ -60,6 +61,41 @@ describe('ToolRegistry', () => {
     assert.equal(result, 'User rejected the gated tool call.')
     assert.equal(executed, false)
     setPermissionGateForTests(null)
+  })
+
+  // H1 (docs/plans/hooks-and-feature-packs.md): the object the permission gate
+  // rewrites is also the input the tool executes, after one final schema parse.
+  it('executes with hook-rewritten input without applying schema transforms twice', async () => {
+    setPermissionGateForTests(async (check) => {
+      if (check.args === null || typeof check.args !== 'object' || Array.isArray(check.args)) {
+        throw new Error('expected object tool arguments')
+      }
+      Object.assign(check.args, { target: 'after-hook' })
+      return true
+    })
+    try {
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'rewrite-me',
+        description: 'echo rewritten args',
+        parameters: z.object({
+          msg: z.string().transform((value) => `${value}!`),
+          target: z.string(),
+        }),
+        execute: async ({ msg, target }) => `${msg}:${target}`,
+      })
+
+      assert.equal(
+        await reg.execute(
+          'rewrite-me',
+          { msg: 'original', target: 'before-hook' },
+          new AbortController().signal,
+        ),
+        'original!:after-hook',
+      )
+    } finally {
+      setPermissionGateForTests(null)
+    }
   })
 
   // H2 (docs/plans/hooks-and-feature-packs.md): a toolGate hook's injected
@@ -420,6 +456,32 @@ describe('ToolRegistry', () => {
       assert.equal(first, second)
     })
 
+    it('keys cached results by hook-rewritten input', async () => {
+      const rewrittenPatterns = ['first', 'second', 'first']
+      let gateCalls = 0
+      setPermissionGateForTests(async (check) => {
+        if (check.args === null || typeof check.args !== 'object' || Array.isArray(check.args)) {
+          throw new Error('expected object tool arguments')
+        }
+        Object.assign(check.args, { pattern: rewrittenPatterns[gateCalls] })
+        gateCalls += 1
+        return true
+      })
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      const results = await inThread('t1', async () => [
+        await reg.execute('search_code', { pattern: 'original' }, signal),
+        await reg.execute('search_code', { pattern: 'original' }, signal),
+        await reg.execute('search_code', { pattern: 'original' }, signal),
+      ])
+      assert.deepEqual(results, [
+        'match for first (call 1)',
+        'match for second (call 2)',
+        'match for first (call 1)',
+      ])
+      assert.equal(searchCalls, 2)
+    })
+
     it('checks a new block policy before returning a cached result', async () => {
       const reg = registryWithSearchAndWrite()
       const signal = new AbortController().signal
@@ -726,5 +788,139 @@ describe('ToolRegistry', () => {
       /command not found: frobnicate/,
     )
     setPermissionGateForTests(null)
+  })
+})
+
+describe('ToolRegistry in a deferred-worktree thread', () => {
+  it('gets the worktree before a write-capable tool runs, and leaves reads alone', async () => {
+    // A project the store does not know makes the allocation fail at its first
+    // step. That failure is the observable: it proves the registry tried to
+    // allocate before the write tool's own code, without faking the allocator.
+    const root = await mkdtemp(join(tmpdir(), 'copse-deferred-registry-'))
+    setPermissionGateForTests(async () => true)
+    try {
+      const context: ThreadExecutionContext = {
+        projectId: 'deferred-registry-missing-project',
+        threadId: 'deferred-registry-thread',
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: 'main',
+        deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+      }
+      const reg = new ToolRegistry()
+      let wrote = false
+      reg.register({
+        name: 'git_log',
+        description: 'read-only inspection',
+        parameters: z.object({}),
+        execute: async () => 'log ok',
+      })
+      reg.register({
+        name: 'write_file',
+        description: 'writes the checkout',
+        parameters: z.object({ path: z.string() }),
+        execute: async () => {
+          wrote = true
+          return 'written'
+        },
+      })
+      await runWithThreadExecutionContext(context, async () => {
+        const signal = new AbortController().signal
+        assert.equal(await reg.execute('git_log', {}, signal), 'log ok')
+        await assert.rejects(
+          reg.execute('write_file', { path: 'a.txt' }, signal),
+          /Project is no longer available/,
+        )
+      })
+      assert.equal(wrote, false, 'the write must not run against the user checkout')
+    } finally {
+      setPermissionGateForTests(null)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('lets the permission gate reject a write before allocating a worktree', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-deferred-gate-reject-'))
+    let gated = false
+    setPermissionGateForTests(async () => {
+      gated = true
+      return false
+    })
+    try {
+      const context: ThreadExecutionContext = {
+        projectId: 'deferred-gate-reject-missing-project',
+        threadId: 'deferred-gate-reject-thread',
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: 'main',
+        deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+      }
+      const reg = new ToolRegistry()
+      let wrote = false
+      reg.register({
+        name: 'write_file',
+        description: 'writes the checkout',
+        parameters: z.object({ path: z.string() }),
+        execute: async () => {
+          wrote = true
+          return 'written'
+        },
+      })
+
+      const result = await runWithThreadExecutionContext(context, () =>
+        reg.execute('write_file', { path: 'a.txt' }, new AbortController().signal),
+      )
+      assert.equal(result, 'User rejected the write_file tool call.')
+      assert.equal(gated, true)
+      assert.equal(wrote, false)
+    } finally {
+      setPermissionGateForTests(null)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a write in read-only mode before allocating anything', async () => {
+    // Same unknown project: had the registry tried to allocate first, this
+    // call would reject with the allocation failure instead of returning the
+    // read-only refusal — and in a real project would leave a branch behind.
+    const root = await mkdtemp(join(tmpdir(), 'copse-deferred-readonly-'))
+    setPermissionGateForTests(async () => true)
+    try {
+      const context: ThreadExecutionContext = {
+        projectId: 'deferred-registry-missing-project',
+        threadId: 'deferred-registry-thread',
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: 'main',
+        deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+      }
+      const reg = new ToolRegistry()
+      let wrote = false
+      reg.register({
+        name: 'write_file',
+        description: 'writes the checkout',
+        parameters: z.object({ path: z.string() }),
+        execute: async () => {
+          wrote = true
+          return 'written'
+        },
+      })
+      const result = await runWithAgentRunReadonly(true, () =>
+        runWithThreadExecutionContext(context, () =>
+          reg.execute('write_file', { path: 'a.txt' }, new AbortController().signal),
+        ),
+      )
+      assert.equal(
+        typeof result === 'string' && result.startsWith('write_file: Blocked in read-only mode'),
+        true,
+      )
+      assert.equal(wrote, false)
+    } finally {
+      setPermissionGateForTests(null)
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })

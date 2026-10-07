@@ -35,6 +35,13 @@ import type {
 } from '@shared/types/hooks.ts'
 import type { PluginsListResult } from '@shared/types/plugins.ts'
 import type {
+  PluginInstallCommitResult,
+  PluginInstallRecord,
+  PluginInstallReview,
+  PluginRollbackResult,
+  PluginUninstallResult,
+} from '@shared/types/plugin-installs.ts'
+import type {
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
@@ -524,6 +531,16 @@ export interface ApiClient {
     /** Plugin-declared servers nothing is running. See {@link DeclaredMcpServer}. */
     listDeclared: () => Promise<DeclaredMcpServer[]>
     setCuratedEnabled: (name: string, enabled: boolean) => Promise<CuratedMcpServerStatus[]>
+    /**
+     * Sign in to a remote server through the user's browser (OAuth). Resolves
+     * with fresh statuses once the server reconnects; rejects on failure,
+     * cancellation, or timeout.
+     */
+    signIn: (name: string) => Promise<McpServerStatus[]>
+    /** Abandon a pending {@link signIn} for this server. */
+    cancelSignIn: (name: string) => Promise<void>
+    /** Forget the stored sign-in for a remote server and reconnect it. */
+    signOut: (name: string) => Promise<McpServerStatus[]>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
   }
   toolPermissions: {
@@ -935,6 +952,7 @@ export interface ApiClient {
   }
   appIcon: {
     apply: () => Promise<void>
+    setAutomationMode: (active: boolean) => Promise<void>
   }
   about: {
     /** The app version and the third-party licence report the build shipped. */
@@ -1169,6 +1187,18 @@ export interface ApiClient {
     setSetting: (id: string, key: string, value: unknown) => Promise<PluginsListResult>
     /** Choose and register one plugin directory through a native host dialog. */
     addSource: () => Promise<PluginsListResult>
+    /** List immutable catalogue revisions installed and managed by Copse. */
+    listInstalls: () => Promise<readonly PluginInstallRecord[]>
+    /** Download and validate a pinned catalogue package without activating it. */
+    prepareInstall: (catalogId: string) => Promise<PluginInstallReview>
+    /** Discard a prepared package when its review is cancelled. */
+    cancelInstall: (token: string) => Promise<void>
+    /** Activate the exact package represented by a completed install review. */
+    commitInstall: (token: string) => Promise<PluginInstallCommitResult>
+    /** Remove a managed plugin, optionally deleting its separate data directory. */
+    uninstall: (pluginId: string, deleteData: boolean) => Promise<PluginUninstallResult>
+    /** Switch a managed plugin to its retained previous immutable revision. */
+    rollback: (pluginId: string) => Promise<PluginRollbackResult>
   }
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>

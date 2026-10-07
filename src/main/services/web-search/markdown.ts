@@ -11,6 +11,7 @@ import {
   webAllowedOriginsWithDefaults,
   webOriginKey,
 } from '../security/web-origin-policy.ts'
+import { COMMAND_OUTPUT_MAX_BYTES, truncateToolOutput } from '../exec/subprocess-output-cap.ts'
 
 const turndown = new Turndown({
   headingStyle: 'atx',
@@ -50,6 +51,13 @@ turndown.remove([
   'picture',
 ])
 
+/**
+ * Cap on the Markdown `fetch_url` hands the model. The 2 MiB response limit
+ * bounds the download, not the converted page, so this is the same 100 KiB
+ * head + tail cap run_shell output gets. Pages are prose, so no evidence lines.
+ */
+export const FETCH_URL_OUTPUT_MAX_BYTES = COMMAND_OUTPUT_MAX_BYTES
+
 const FETCH_USER_AGENT = 'Copse/0.1 (+https://github.com/copse-dev/agent-pane)'
 
 export function htmlToMarkdown(html: string): string {
@@ -85,7 +93,7 @@ export async function fetchUrlMarkdown(url: string, signal?: AbortSignal): Promi
     const res = await fetchWithWebOriginPolicy(parsed, init, allowedOrigins)
     if (!res.ok) throw new Error(`Fetch failed (${String(res.status)}): ${url}`)
     const html = await readWebResponseText(res)
-    return htmlToMarkdown(html)
+    return truncateToolOutput(htmlToMarkdown(html), FETCH_URL_OUTPUT_MAX_BYTES)
   } finally {
     clearWebOriginGrant(origin)
   }

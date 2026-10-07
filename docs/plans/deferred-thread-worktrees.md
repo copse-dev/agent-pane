@@ -1,0 +1,213 @@
+# Deferred thread worktrees (prototype)
+
+Status: **Prototype, opt-in** through Settings → Experimental → Deferred worktrees
+(`deferredWorktreesEnabled`, off by default). The toggle applies across Copse to eligible new
+threads using automatic checkout, including projects with no explicit mode or `always`.
+Projects with `never` and explicit shared/worktree choices keep their behavior. The existing
+per-project `worktreeMode: "on-write"` opt-in remains supported. Existing threads keep their
+recorded checkout state when the toggle changes. The default (`always`) is unchanged. Extends [`thread-worktrees.md`](./thread-worktrees.md): isolation is
+still decided at the first message, but the checkout is created only when the thread first
+needs to write.
+
+## Why
+
+Every isolated thread pays for a worktree before its agent sees the prompt: a fetch of the
+default branch, a set of sandboxed Git probes, and a full `git worktree add`. In this repository
+(about 5,000 tracked files) `worktree add` alone took 2.0–2.3 s warm and 9.1 s cold on the
+maintainer's M1 Max. It leaves a branch and a directory behind whether or not anything was
+written.
+
+On that machine on 2026-09-26, `~/.copse/worktrees` held 119 GB across 168 thread worktrees:
+
+- **This repository (160 worktrees):** 24 were clean with no commits beyond `origin/main`.
+  That means they never wrote anything, or everything they wrote was merge-committed upstream.
+- **Other projects (8 worktrees):** 5 were clean and titled like questions ("tell me about what
+  is happening here", "without making changes can you review this").
+
+The saving in cruft is therefore project-dependent (roughly 15% here, most of it in Q&A-heavy
+projects). The latency saving applies to every thread, because agents read before they write.
+
+## Behaviour
+
+At the first message with the global setting enabled (or in an `on-write` project),
+with an automatic checkout choice and a native model, or an ACP agent that
+[can start read-only](#acp-agents):
+
+1. The policy decides `worktree` exactly as `always` does. The transaction resolves the base
+   branch, including a picked branch, and persists
+   `deferredWorktree: { baseBranch, requestedAt }`. Nothing is allocated, and the project
+   checkout is not switched.
+2. The turn resolves a `ThreadExecutionContext` rooted at the project checkout with
+   `checkoutMode: 'shared'` and `deferredWorktree` set. Consumers that only read treat it as
+   shared.
+3. The system prompt tells the agent the checkout is read-only and names `request_write_access`.
+
+During a deferred turn:
+
+- **Reads, search, git inspection, network reads, and CI/PR inspection** run against the
+  project checkout, uncommitted work included.
+- **`run_shell`** runs in the ordinary project sandbox profile with every checkout write removed
+  (`withoutCheckoutWrites`). It keeps reads, tmp, scratch, and no network. It has no
+  unsandboxed route: the expected-block escalation and reactive retry are suppressed, and
+  `spawnShellInProjectSandbox({ readonlyCheckout })` throws rather than run unsandboxed or with
+  the sandbox unavailable. A failing command gets a one-line hint to request write access.
+- **Any tool that may write** (`toolNeedsWritableCheckout`) allocates the worktree first, at the
+  permission gate's post-hook seam, then runs as it would in an eager worktree thread. Blocking
+  `toolGate` hooks therefore deny, halt, ask, or rewrite the input before allocation; the host
+  permission policy runs afterward against the final input and upgraded root. This covers edits,
+  commits, `run_background`, preparation, unknown tools, non-read-only MCP tools, and `run_shell`
+  commands routed outside the sandbox. The default is to allocate, so an unlisted tool costs an
+  allocation, never safety.
+- **`request_write_access({ branch_name })`** allocates explicitly and names the branch from the
+  agent's description (`copse/<slug>-<id>`). The anonymous-branch rename after the title then
+  leaves it alone.
+
+On allocation, `ensureWritableThreadCheckout`:
+
+1. Snapshots what the turn was reading: the project `HEAD` and its dirty paths.
+2. Allocates through the same manager and seeding rules as an eager thread. Seeding is decided
+   from fresh inspection, because the turn read the live dirty work.
+3. Persists `worktree` and `gitBranch`.
+4. Re-roots every bound copy of the turn at once, through `adoptUpgradedThreadExecutionContext`.
+   A deferred context resolves through the upgrade map, so the loop, subagents, and the ACP
+   bridge all follow.
+5. Starts indexing the new root.
+6. Streams a `thread_checkout` chunk so the renderer re-roots its file tree, changes pane, and
+   branch chip mid-turn.
+
+After the switch, file tools treat an absolute path into the project checkout as the same
+relative path in the worktree (`setExecutionRootAliasLookup` in `workspace.ts`, registered by the
+execution context and scoped to the turn's own root). Agents carry absolute paths across the
+switch; without this they would get `Path outside workspace`. Shell commands are not rewritten.
+In the shell, that path still reads the user's checkout, and the switch notice says so. The
+rewrite applies to every worktree turn, not only deferred ones: in any worktree turn the project
+checkout was never a valid file-tool target.
+
+The model-facing result (or a system reminder on the tool call that triggered an implicit
+allocation) states:
+
+- the new root and branch;
+- that the user's checkout is no longer this thread's code;
+- which files differ between the commit it read and the worktree base, to re-read before editing;
+- which uncommitted files it saw that were not carried over.
+
+## ACP agents
+
+An ACP agent edits through its own process, so Copse cannot allocate before its first write the
+way the tool registry does for a native model. Its cwd and OS sandbox are also fixed when the
+process starts. An ACP thread therefore defers only when all of these hold
+(`acpAgentCanDeferCheckout`), and otherwise allocates up front as before:
+
+- the project is local, not an SSH workspace;
+- the agent will spawn under the project sandbox (`willSandboxAcpAgent`), so its writes can be
+  contained;
+- the native bridge is on, so `request_write_access` can reach it.
+
+The check runs at the first message (`canDeferAcpModel` in the checkout transaction) and again
+at every turn (`runAcpAgentTurn`), because the sandbox or bridge setting may have changed in
+between. A thread that deferred and then fails the turn-time check allocates before the session
+sees a root.
+
+When it holds, the turn runs like this:
+
+1. **Read-only start.** The agent spawns with `readonlyCheckout`: the ordinary agent sandbox
+   overlay with every write grant at or under the checkout removed (`withoutCheckoutWrites`).
+   Its home-scoped state and scratch stay writable, so its session files persist.
+   `spawnAcpAgentProcess` throws if `readonlyCheckout` reaches it without the sandbox, and
+   `spawnTransport` throws on a remote host. The flag is part of the pool fingerprint but not
+   the lineage, so the transition costs a process and not the session. The first prompt says the
+   workspace is read-only and to call `request_write_access` before changing anything.
+2. **Ask.** `request_write_access` is offered through the bridge to that session alone (a bridge
+   is started per session, and the flag is fixed for it). If the bridge does not start, the pool
+   refuses to spawn the read-only agent (`AcpReadonlyCheckoutUnavailableError`): nothing else
+   reaches the worktree allocator, so it could neither write nor ask. The turn then allocates the
+   worktree up front and runs again writable, as an agent that cannot defer does. Its result carries the usual
+   allocation note plus an instruction to end the turn: the agent's own tools stay read-only
+   until it is restarted. A bridged write tool still allocates on its own, as on the native
+   loop, and the agent's bridged edits land in the worktree at once.
+3. **Continue.** When the turn ends on its own (`end_turn`) and the thread now owns a worktree,
+   `runAcpTurnWithContinuation` starts a second turn at once under the worktree's context.
+   The pool respawns the agent there and reattaches the same agent session
+   ([`acp-session-continuity.md`](./acp-session-continuity.md#changed-working-directory)). The
+   continuation prompt tells the agent it now has write access and to carry on, or to say so
+   briefly if it had already finished. If the session cannot carry over, the turn opens with the
+   handover note and the agent works from the transcript, which is extended with the first
+   turn's messages. A stopped, aborted, or failed first turn does not continue; the user's next
+   message opens the session in the worktree.
+
+The continuation is an extra, short model turn even when the agent finished the work through
+bridged tools. That is the price of not guessing from the transcript whether it was done.
+
+## Invariants
+
+1. A deferred thread never writes the user's checkout. This is enforced at the registry
+   (allocate first), the diff queue (`DEFERRED_CHECKOUT_BLOCK_MESSAGE`), and the sandbox profile
+   and spawn guard.
+2. Nothing in a deferred turn runs unsandboxed against the user's checkout.
+3. When in doubt, allocate. Deferral may cost an extra worktree; it may not weaken isolation.
+4. A thread never returns to deferred once it owns a worktree. A stale upgrade-map entry can
+   therefore never misroute a later turn.
+5. Remote models and explicit worktree choices allocate eagerly. So does an ACP agent that cannot
+   be contained (no sandbox, remote host, bridge off); a thread that deferred under a native
+   model and then switched to such an agent allocates before its session sees a root.
+6. Container runs refuse a deferred thread rather than snapshot the user's checkout.
+
+## Evidence
+
+- `src/main/project-sandbox/readonly-checkout-sandbox.test.ts`, against the real macOS seatbelt:
+  - reads, `git status`/`log`, and `$TMPDIR` writes succeed;
+  - overwrite, create, and commit in the checkout fail and leave it unchanged;
+  - the same `touch` succeeds in the ordinary profile (positive control);
+  - an unsandboxed read-only request throws.
+- `src/main/services/deferred-worktree.test.ts`:
+  - transaction deferral and its eager exceptions;
+  - idempotent allocation;
+  - the context swap across nested bindings;
+  - the drift report;
+  - the classifier;
+  - a real-repository allocation that names the branch from the agent, carries the dirty work,
+    and leaves the user's checkout on its branch with its edit.
+- `src/shared/git/worktree-policy.test.ts` pins `on-write` in the policy matrix and in the
+  `settledCheckoutMode` lockstep check.
+- `src/main/services/tool-registry.test.ts`: in a deferred turn, a write tool attempts
+  allocation before its own code runs (and fails with it), while an inspection tool runs
+  untouched.
+- `tests/e2e/thread-deferred-worktree.e2e.ts`: a real Electron turn against a fixture model.
+  - A question turn reads the checkout, stays on `main`, and creates no worktree or branch.
+  - The next turn calls `request_write_access` and `write_file`. The branch chip switches
+    mid-turn to the agent-named `copse/readme-usage-abc123`. The model's tool result names its
+    new worktree. The edit lands only in the worktree, and the user's checkout is unchanged.
+  - Screenshots: `thread-deferred-worktree-reading.png`, `thread-deferred-worktree-writing.png`.
+
+## Known gaps before this could become the default
+
+- **Deferred-state indication.** The composer chip still previews "worktree" (the eventual truth). While deferred, the
+  branch chip shows the project checkout's branch, and nothing yet says "reading your
+  checkout".
+- **ACP deferral is unproven against real agents.** The pool, sandbox overlay, bridge and
+  continuation are covered with fakes, and the continuity probe shows Claude Agent ACP and Codex
+  ACP reattaching from another directory. No real-agent run has started read-only, asked for
+  write access, and continued. Cursor was never probed, and a custom agent may not be able to
+  load. Those fall back to the handover note.
+- **An agent may not ask first.** Its own edit tools then fail against the read-only sandbox.
+  The prompt note steers it to `request_write_access`, but nothing enforces it.
+- **No visual evidence yet** for the ACP flow. It needs a macOS or Linux host where the project
+  sandbox is active, plus a scripted ACP agent in the Electron e2e.
+- **Approval keys include the root**, so a session-scoped approval granted before the switch is
+  asked again after it.
+- **A declined host prompt still leaves the worktree.** Allocation runs after `toolGate` hooks
+  but before host permission policy, so approval keys and sandbox routing see the root the tool
+  will run in. The cost is that declining a shell, MCP, or network prompt for a write-capable
+  call keeps the worktree and branch just created for it. They are clean (no commits, unless
+  seeded from the user's dirty checkout) and reclaimable through Settings → Sources →
+  Worktrees. Prompting against the project root first would instead key remembered approvals
+  and routing to a root the command never runs in. Undoing a declined allocation mid-turn would
+  also need to re-defer the turn, and could not discard a seeded worktree.
+- **Live checkout, not a pinned snapshot.** The deferred turn reads whatever the user's checkout
+  holds, which may move between turns. The drift report covers the switch, but not a user
+  editing mid-turn.
+- **Read-only shell without an OS sandbox.** On Windows every `run_shell` allocates (there is
+  nothing to contain it), so deferral saves less there.
+- **Real-model evidence.** No agent-loop eval yet shows how often a real model calls
+  `request_write_access` first versus stumbling into an implicit allocation, or answers
+  questions without allocating. That eval decides whether this is worth making the default.

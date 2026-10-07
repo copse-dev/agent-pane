@@ -377,6 +377,60 @@ test('switchProject starts outgoing persistence and workspace activation concurr
   await waitUntil(() => store.getState().activeProjectId === 'perf-b')
 })
 
+test('a project switch repaints before its final navigation write lands and writes projects once', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'persist-a', path: '/a', name: 'A' },
+      { id: 'persist-b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'persist-a',
+    expandedProjectId: 'persist-a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+
+  const projectWrites: unknown[] = []
+  const navigations: Array<string | null> = []
+  let releaseFinalNavigation: () => void = () => undefined
+  const api = makeApi({
+    storageSet: async (key, value) => {
+      if (key === 'projects') projectWrites.push(value)
+    },
+    setNavigation: async (navigation) => {
+      navigations.push(navigation.activeThreadId)
+      // The first write records the selection before the open; hold the one that
+      // records the thread the switch settled on.
+      if (navigation.activeThreadId === 't-b') {
+        await new Promise<void>((resolve) => {
+          releaseFinalNavigation = resolve
+        })
+      }
+    },
+    loadProjectThreads: async () => [thread('t-b')],
+  })
+
+  let repainted = false
+  store.on('workspace_changed', () => {
+    repainted = true
+  })
+
+  switchProject(store, api, 'persist-b')
+  await waitUntil(() => repainted)
+
+  // The UI has the new project while its final navigation write is still pending.
+  assert.equal(store.getState().activeProjectId, 'persist-b')
+  assert.equal(store.getState().activeThreadId, 't-b')
+  await waitUntil(() => navigations.includes('t-b'))
+
+  releaseFinalNavigation()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  assert.deepEqual(navigations, [null, 't-b'])
+  assert.equal(projectWrites.length, 1, 'the unchanged projects list is persisted once per switch')
+})
+
 test('switchProjectThread selects the clicked thread after activation', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({

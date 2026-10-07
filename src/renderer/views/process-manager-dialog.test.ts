@@ -53,7 +53,6 @@ test('managed rows jump to their thread and stop by handle; shared rows stay rea
       ...base.processManager,
       snapshot: async () => ({
         sampledAt: Date.now(),
-        activeRunThreadIds: [],
         processes: [
           {
             pid: 1,
@@ -141,7 +140,6 @@ test('running-thread and background-task actions keep their thread scope', async
     processManager: {
       snapshot: async () => ({
         sampledAt: Date.now(),
-        activeRunThreadIds: ['thread-a'],
         processes: [
           {
             pid: 43,
@@ -171,14 +169,14 @@ test('running-thread and background-task actions keep their thread scope', async
   const open = mountProcessManagerDialog(api, store)
   open()
   await new Promise((resolve) => setTimeout(resolve, 0))
-  assert.equal(document.querySelector('.process-manager-activity')?.hasAttribute('hidden'), false)
-  const activityItem = document.querySelector<HTMLButtonElement>('.process-manager-activity-item')
-  assert.ok(activityItem)
-  assert.match(activityItem.textContent, /Working.*thread-a/)
-  assert.equal(activityItem.getAttribute('aria-label'), 'Working thread-a: open thread')
-  activityItem.dispatchEvent(
+  const groupHeader = document.querySelector<HTMLElement>(
+    '.process-manager-group[data-group-key="thread-a"]',
+  )
+  assert.ok(groupHeader)
+  groupHeader.dispatchEvent(
     new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
   )
+  assert.ok(menuItem('Jump to thread'), 'right-clicking a thread offers jump to thread')
   menuItem('Stop agent run').click()
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.deepEqual(aborted, ['thread-a'])
@@ -200,55 +198,7 @@ test('running-thread and background-task actions keep their thread scope', async
   document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
 })
 
-test('activity refresh preserves keyboard focus and hands it back when a run finishes', async (t) => {
-  t.mock.timers.enable({ apis: ['setInterval'] })
-  const store = createStore({
-    projects: [{ id: 'project-a', path: '/a', name: 'A' }],
-    activeProjectId: 'project-a',
-    threads: [thread('thread-a')],
-  })
-  let activeRunThreadIds = ['thread-a']
-  const base = createFakeApi()
-  const api: ApiClient = {
-    ...base,
-    processManager: {
-      ...base.processManager,
-      snapshot: async () => ({ sampledAt: Date.now(), activeRunThreadIds, processes: [] }),
-    },
-  }
-  mountProcessManagerDialog(api, store)()
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  const item = document.querySelector<HTMLButtonElement>('.process-manager-activity-item')
-  assert.ok(item)
-  item.focus()
-  t.mock.timers.tick(1_000)
-  await Promise.resolve()
-  const refreshed = document.querySelector<HTMLButtonElement>('.process-manager-activity-item')
-  assert.ok(refreshed)
-  assert.ok(document.activeElement === refreshed, 'the refreshed activity button keeps focus')
-  refreshed.dispatchEvent(
-    new window.KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true }),
-  )
-  assert.ok(menuItem('Jump to thread'))
-  assert.ok(menuItem('Stop agent run'))
-  menuItem('Jump to thread').focus()
-  const focusedMenuItem = document.activeElement
-  t.mock.timers.tick(1_000)
-  await Promise.resolve()
-  assert.ok(document.activeElement === focusedMenuItem, 'refresh must not steal menu focus')
-  dismissContextMenu()
-  document.querySelector<HTMLButtonElement>('.process-manager-activity-item')?.focus()
-  activeRunThreadIds = []
-  t.mock.timers.tick(1_000)
-  await Promise.resolve()
-  assert.ok(
-    document.activeElement === document.querySelector('[aria-label="Close process manager"]'),
-    'finishing a run returns focus to the close button',
-  )
-  document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
-})
-
-test('processes group under their thread, expanded by default, with shared processes last', async (t) => {
+test('processes group under their thread, collapsed by default, with shared processes last', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] })
   const store = createStore({
     projects: [{ id: 'project-a', path: '/a', name: 'A' }],
@@ -271,7 +221,6 @@ test('processes group under their thread, expanded by default, with shared proce
       ...base.processManager,
       snapshot: async () => ({
         sampledAt: Date.now(),
-        activeRunThreadIds: [],
         processes: [
           row(1, null, 50),
           row(2, 'thread-a', 1),
@@ -292,21 +241,25 @@ test('processes group under their thread, expanded by default, with shared proce
     )
   assert.deepEqual(layout(), [
     'thread-b:1 process',
-    '3',
+    '3 hidden',
     'thread-a:2 processes',
-    '4',
-    '2',
+    '4 hidden',
+    '2 hidden',
     'shared:1 process',
-    '1',
+    '1 hidden',
   ])
+  assert.equal(
+    document.querySelector('.process-manager-summary')?.textContent,
+    '2 threads · 4 processes · CPU 57.0% · Memory 4.0 MiB',
+  )
   const toggle = document.querySelector<HTMLButtonElement>(
     '.process-manager-group-toggle[data-group-key="thread-a"]',
   )
   assert.ok(toggle)
-  assert.equal(toggle.getAttribute('aria-expanded'), 'true')
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false')
   toggle.focus()
   toggle.click()
-  assert.deepEqual(layout().slice(2, 5), ['thread-a:2 processes', '4 hidden', '2 hidden'])
+  assert.deepEqual(layout().slice(2, 5), ['thread-a:2 processes', '4', '2'])
   assert.equal(
     document.activeElement?.getAttribute('data-group-key'),
     'thread-a',
@@ -318,68 +271,7 @@ test('processes group under their thread, expanded by default, with shared proce
   const refreshed = document.querySelector<HTMLButtonElement>(
     '.process-manager-group-toggle[data-group-key="thread-a"]',
   )
-  assert.equal(refreshed?.getAttribute('aria-expanded'), 'false', 'collapse survives refresh')
+  assert.equal(refreshed?.getAttribute('aria-expanded'), 'true', 'expansion survives refresh')
   assert.ok(document.activeElement === refreshed, 'refresh keeps focus on the group toggle')
-  document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
-})
-
-test('a chip menu never stops a run other than the one it was opened on', async (t) => {
-  t.mock.timers.enable({ apis: ['setInterval'] })
-  const store = createStore({
-    projects: [{ id: 'project-a', path: '/a', name: 'A' }],
-    activeProjectId: 'project-a',
-    threads: [thread('thread-a')],
-  })
-  let activeRunThreadIds = ['thread-a']
-  const aborted: string[] = []
-  const base = createFakeApi()
-  const api: ApiClient = {
-    ...base,
-    agent: {
-      ...base.agent,
-      abort: async (threadId) => {
-        aborted.push(threadId)
-      },
-    },
-    processManager: {
-      ...base.processManager,
-      snapshot: async () => ({ sampledAt: Date.now(), activeRunThreadIds, processes: [] }),
-    },
-  }
-  mountProcessManagerDialog(api, store)()
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  const openChipMenu = (): void => {
-    document
-      .querySelector('.process-manager-activity-item')
-      ?.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-  }
-  const refresh = async (): Promise<void> => {
-    t.mock.timers.tick(1_000)
-    await Promise.resolve()
-  }
-
-  // The run finishes while its menu is open.
-  openChipMenu()
-  activeRunThreadIds = []
-  await refresh()
-  menuItem('Stop agent run').click()
-  assert.deepEqual(aborted, [])
-
-  // The run finishes and a new one starts in the same thread.
-  activeRunThreadIds = ['thread-a']
-  await refresh()
-  openChipMenu()
-  activeRunThreadIds = []
-  await refresh()
-  activeRunThreadIds = ['thread-a']
-  await refresh()
-  menuItem('Stop agent run').click()
-  assert.deepEqual(aborted, [])
-
-  // The run the menu was opened on is still going.
-  openChipMenu()
-  await refresh()
-  menuItem('Stop agent run').click()
-  assert.deepEqual(aborted, ['thread-a'])
   document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
 })

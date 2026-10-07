@@ -3,7 +3,11 @@ import type { CanvasArtefactReference } from './canvas-types.ts'
 import type { RemoteAgentLink } from './remote-agent-link.ts'
 import type { GithubPrRef } from './github-pr-url.ts'
 import type { HookCard } from './hook-card.ts'
-import type { ThreadWorktree, ThreadWorktreeChoice } from './worktree-types.ts'
+import type {
+  ThreadDeferredWorktree,
+  ThreadWorktree,
+  ThreadWorktreeChoice,
+} from './worktree-types.ts'
 import type { ThreadProposalDecision } from './thread-proposal.ts'
 
 /** A human answer to an agent-authored, non-blocking review question. */
@@ -359,6 +363,11 @@ export interface Thread {
   worktree?: ThreadWorktree
   /** Checkout decision captured once when the thread sends its first message. */
   worktreeChoice?: ThreadWorktreeChoice
+  /**
+   * Isolation decided but allocation deferred to the first write. Pending only
+   * while `worktree` is absent; kept afterwards as a record of how it started.
+   */
+  deferredWorktree?: ThreadDeferredWorktree
   /**
    * Durable link to the cloud-agent run + PR this thread launched (issue #690).
    * Recorded by the remote-agent clients at launch and completion, not the

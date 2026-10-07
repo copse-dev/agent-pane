@@ -18,6 +18,7 @@ export async function maskProcessManagerLiveValues(): Promise<void> {
     style.textContent =
       '#process-manager-dialog .process-manager-number,' +
       '#process-manager-dialog .process-manager-pid,' +
+      '#process-manager-dialog .process-manager-summary,' +
       '#process-manager-dialog .process-manager-updated{color:transparent!important}'
     document.head.append(style)
   }, MASK_STYLE_ID)

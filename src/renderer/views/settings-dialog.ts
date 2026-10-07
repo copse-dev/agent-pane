@@ -2,6 +2,7 @@ import { createStorageMaintenancePanel } from './storage-maintenance-panel.ts'
 import { createSourcesSection } from './settings/sources-section.ts'
 import { makeSourceRow } from './settings/source-row.ts'
 import { errorMessage } from '@shared/errors.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import {
   AUTO_APPROVAL_LEVEL_LABELS,
@@ -68,6 +69,8 @@ import { createParallelSearchPluginSettings } from './parallel-search-plugin-set
 import { createToolPermissionsPanel } from './tool-permissions-panel.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
+import { createPluginCatalogBrowser } from './plugin-catalog-browser.ts'
+import type { PluginInstallRecord, PluginInstallReview } from '@shared/types/plugin-installs.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -322,6 +325,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'conciseThreadsEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
@@ -509,6 +513,27 @@ export function openAutomationSettings(scheduleId?: string): void {
     ...(scheduleId ? { detailId: scheduleId } : {}),
   }
   openSettingsDialog('customise')
+}
+
+function countLabel(count: number, noun: string): string {
+  return `${String(count)} ${noun}${count === 1 ? '' : 's'}`
+}
+
+/** `skills/figma-use/SKILL.md` → `figma-use`; a root `SKILL.md` is the plugin's own. */
+function installReviewSkillName(path: string, pluginId: string): string {
+  const parts = path.split('/')
+  if (parts.at(-1) !== 'SKILL.md') return path
+  return parts.at(-2) ?? pluginId
+}
+
+function installReviewSection(heading: string, body: HTMLElement): HTMLElement {
+  const section = document.createElement('section')
+  section.className = 'plugin-install-review-section'
+  const title = document.createElement('div')
+  title.className = 'plugin-install-review-heading'
+  title.textContent = heading
+  section.append(title, body)
+  return section
 }
 
 export function closeSettingsDialog(): void {
@@ -1204,7 +1229,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset id="plugins-fieldset">
               <legend>Plugins</legend>
               <p class="settings-fieldset-desc">
-                Every plugin Copse knows about, whatever installed it — shipped with the app,
+                Browse available packages or manage every plugin Copse already knows about — shipped with the app,
                 added to <code>~/.copse/plugins/</code>, selected as a folder, or installed through
                 Cursor. Each row says where it came from and what it contributes. Turning one off
                 drops all of its contributions from new work in one action; its stored data and old
@@ -1213,18 +1238,29 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-plugin.md" target="_blank" rel="noopener noreferrer">how to add a plugin</a>
                 for authoring and install steps.
               </p>
-              <div class="settings-action-row">
-                <button type="button" class="ui-btn ui-btn-secondary" id="plugins-add-btn">
-                  Add plugin…
+              <div class="plugin-view-tabs" role="tablist" aria-label="Plugin collection">
+                <button type="button" class="plugin-view-tab active" id="plugins-installed-tab" role="tab" aria-selected="true" aria-controls="plugins-installed-panel">
+                  Installed
                 </button>
-                <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
-                  Reload
+                <button type="button" class="plugin-view-tab" id="plugins-browse-tab" role="tab" aria-selected="false" aria-controls="plugins-browse-panel">
+                  Browse
                 </button>
-                <span class="lmstudio-test-status plugins-load-status" id="plugins-reload-status"></span>
               </div>
-              <div id="plugins-list" class="plugins-group">
-                <span class="plugins-empty">Loading…</span>
+              <div id="plugins-installed-panel" role="tabpanel" aria-labelledby="plugins-installed-tab">
+                <div class="settings-action-row">
+                  <button type="button" class="ui-btn ui-btn-secondary" id="plugins-add-btn">
+                    Add plugin…
+                  </button>
+                  <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
+                    Reload
+                  </button>
+                  <span class="lmstudio-test-status plugins-load-status" id="plugins-reload-status"></span>
+                </div>
+                <div id="plugins-list" class="plugins-group">
+                  <span class="plugins-empty">Loading…</span>
+                </div>
               </div>
+              <div id="plugins-browse-panel" role="tabpanel" aria-labelledby="plugins-browse-tab" hidden></div>
             </fieldset>
 
           </section>
@@ -1533,6 +1569,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 thread shows screenshots and the closing summary. Tool calls, reasoning, and the
                 tool errors the model recovers from stay hidden; while it works, you see what it
                 is doing now. Other models always show the full thread.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Deferred worktrees</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="deferredWorktreesEnabled" />
+                Create a worktree only when the agent needs to write
+              </label>
+              <p class="field-hint">
+                Applies across Copse to new threads using automatic checkout. Eligible agents
+                start by reading your checkout without changing it, then get an isolated worktree
+                before writing. Explicit worktree choices and ACP agents still create one up front.
+                Projects with worktrees disabled and existing threads keep their checkout behavior.
               </p>
             </fieldset>
 
@@ -2867,6 +2917,185 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // are rebuilt on every `refreshPlugins()`, so the target lives out here rather
   // than in a row that a later refresh would replace.
   let pluginDetail: PluginDetailTarget | null = null
+  let managedInstalls = new Map<string, PluginInstallRecord>()
+
+  function installReviewDetail(review: PluginInstallReview): HTMLElement {
+    const detail = document.createElement('div')
+    detail.className = 'plugin-install-review-dialog'
+    if (review.description) {
+      const description = document.createElement('div')
+      description.className = 'plugin-install-review-description'
+      description.textContent = review.description
+      detail.append(description)
+    }
+    const provenance = document.createElement('div')
+    provenance.className = 'plugin-install-review-provenance'
+    provenance.textContent = `Unsigned package from ${review.publisher}`
+    detail.append(provenance)
+
+    // What the plugin will add is the decision, so it leads: skills by name (a
+    // path's directory is the skill's name) and MCP servers by where they run.
+    if (review.skills.length > 0) {
+      const chips = document.createElement('div')
+      chips.className = 'plugin-chips'
+      for (const path of review.skills) {
+        const chip = document.createElement('span')
+        chip.className = 'plugin-chip'
+        chip.textContent = installReviewSkillName(path, review.pluginId)
+        chip.title = path
+        chips.append(chip)
+      }
+      detail.append(installReviewSection(countLabel(review.skills.length, 'skill'), chips))
+    }
+    if (review.mcpServers.length > 0) {
+      const servers = document.createElement('ul')
+      servers.className = 'plugin-install-review-servers'
+      for (const server of review.mcpServers) {
+        const item = document.createElement('li')
+        const name = document.createElement('span')
+        name.className = 'plugin-install-review-server-name'
+        name.textContent = server.name
+        const transport = document.createElement('span')
+        transport.className = 'plugin-install-review-server-transport'
+        transport.textContent =
+          server.transport === 'stdio'
+            ? 'Local command'
+            : server.transport === 'sse'
+              ? 'Legacy SSE'
+              : 'HTTP'
+        const target = document.createElement('code')
+        target.className = 'plugin-install-review-server-target'
+        target.textContent =
+          server.transport === 'stdio' ? server.target : server.target.replace(/^https?:\/\//, '')
+        item.append(name, transport, target)
+        servers.append(item)
+      }
+      detail.append(
+        installReviewSection(countLabel(review.mcpServers.length, 'MCP server'), servers),
+      )
+    }
+    if (review.warnings.length > 0) {
+      const warnings = document.createElement('ul')
+      warnings.className = 'plugin-install-review-warnings'
+      for (const warning of review.warnings) {
+        const item = document.createElement('li')
+        item.textContent = warning
+        warnings.append(item)
+      }
+      detail.append(warnings)
+    }
+
+    // The pin is what makes the review exact, but it is evidence, not the
+    // decision: one click away rather than two wrapped lines of hex.
+    const pin = document.createElement('details')
+    pin.className = 'plugin-install-review-pin'
+    const pinSummary = document.createElement('summary')
+    pinSummary.className = 'settings-disclosure-summary'
+    const pinLabel = document.createElement('span')
+    pinLabel.textContent = `Pinned to ${review.revision.slice(0, 7)}`
+    pinSummary.append(pinLabel, chevronDownIcon('ui-icon settings-disclosure-chevron'))
+    const list = document.createElement('dl')
+    list.className = 'plugin-source-details'
+    const pinDetails: Array<[string, string]> = [
+      ['Revision', review.revision],
+      ['Content', review.contentHash],
+    ]
+    for (const [label, value] of pinDetails) {
+      const term = document.createElement('dt')
+      term.textContent = label
+      const description = document.createElement('dd')
+      description.textContent = value
+      list.append(term, description)
+    }
+    pin.append(pinSummary, list)
+    detail.append(pin)
+    return detail
+  }
+
+  async function reviewCatalogInstall(catalogId: string): Promise<void> {
+    const review = await api.plugins.prepareInstall(catalogId)
+    try {
+      const confirmed = await showConfirmDialog({
+        message: `${review.operation === 'update' ? 'Update' : 'Install'} ${review.name}?`,
+        detail: installReviewDetail(review),
+        confirmLabel: review.operation === 'update' ? 'Update' : 'Install',
+        confirmPendingLabel: 'Installing…',
+        onConfirm: async () => {
+          await api.plugins.commitInstall(review.token)
+        },
+      })
+      if (!confirmed) {
+        await api.plugins.cancelInstall(review.token)
+        return
+      }
+    } catch (error) {
+      await api.plugins.cancelInstall(review.token).catch(() => undefined)
+      throw error
+    }
+    await refreshPlugins()
+    store.emit('settings_changed')
+  }
+
+  async function rollbackManagedPlugin(record: PluginInstallRecord): Promise<void> {
+    const previous = record.previousPin
+    if (!previous) return
+    const confirmed = await showConfirmDialog({
+      message: `Roll back ${record.name}?`,
+      detail: `Copse will switch back to revision ${previous.revision.slice(0, 7)}.`,
+      confirmLabel: 'Roll back',
+      onConfirm: async () => {
+        await api.plugins.rollback(record.pluginId)
+      },
+    })
+    if (!confirmed) return
+    await refreshPlugins()
+    store.emit('settings_changed')
+  }
+
+  async function uninstallManagedPlugin(record: PluginInstallRecord): Promise<void> {
+    const detail = document.createElement('div')
+    const explanation = document.createElement('p')
+    explanation.textContent = 'The plugin payload will be removed. Existing thread history is kept.'
+    const deleteLabel = document.createElement('label')
+    deleteLabel.className = 'plugin-uninstall-data-choice'
+    const deleteData = document.createElement('input')
+    deleteData.type = 'checkbox'
+    deleteLabel.append(deleteData, ' Also delete this plugin’s saved data')
+    detail.append(explanation, deleteLabel)
+    const confirmed = await showConfirmDialog({
+      message: `Uninstall ${record.name}?`,
+      detail,
+      confirmLabel: 'Uninstall',
+      confirmPendingLabel: 'Uninstalling…',
+      danger: true,
+      onConfirm: async () => {
+        await api.plugins.uninstall(record.pluginId, deleteData.checked)
+      },
+    })
+    if (!confirmed) return
+    await refreshPlugins()
+    store.emit('settings_changed')
+  }
+
+  const pluginCatalogBrowser = createPluginCatalogBrowser({
+    reviewInstall: reviewCatalogInstall,
+    rollback: rollbackManagedPlugin,
+    uninstall: uninstallManagedPlugin,
+  })
+  qsRequired(overlay, '#plugins-browse-panel').append(pluginCatalogBrowser.element)
+
+  function selectPluginView(view: 'installed' | 'browse'): void {
+    const installed = view === 'installed'
+    const installedTab = qsRequired<HTMLButtonElement>(overlay, '#plugins-installed-tab')
+    const browseTab = qsRequired<HTMLButtonElement>(overlay, '#plugins-browse-tab')
+    installedTab.classList.toggle('active', installed)
+    browseTab.classList.toggle('active', !installed)
+    installedTab.setAttribute('aria-selected', installed ? 'true' : 'false')
+    browseTab.setAttribute('aria-selected', installed ? 'false' : 'true')
+    qsRequired(overlay, '#plugins-installed-panel').hidden = !installed
+    qsRequired(overlay, '#plugins-browse-panel').hidden = installed
+    if (!installed) pluginCatalogBrowser.focusSearch()
+  }
 
   qsRequired<HTMLButtonElement>(overlay, '#animated-explainers-manage').addEventListener(
     'click',
@@ -3024,7 +3253,64 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       row.append(desc)
     }
 
-    if (plugin.source?.kind === 'directory') {
+    const managedInstall = managedInstalls.get(plugin.id)
+    if (managedInstall) {
+      const review = document.createElement('div')
+      review.className = 'plugin-source-review plugin-managed-review'
+      const status = document.createElement('div')
+      status.className = 'plugin-source-status'
+      status.textContent = 'Installed from the Copse catalogue'
+      const detailList = document.createElement('dl')
+      detailList.className = 'plugin-source-details'
+      const details: Array<[string, string]> = [
+        ['Revision', managedInstall.source.revision],
+        ['Content', managedInstall.contentHash],
+        ['Verification', 'Unsigned package'],
+      ]
+      for (const [term, value] of details) {
+        const dt = document.createElement('dt')
+        dt.textContent = term
+        const dd = document.createElement('dd')
+        dd.textContent = value
+        detailList.append(dt, dd)
+      }
+      const actions = document.createElement('div')
+      actions.className = 'plugin-managed-actions'
+      const operationStatus = document.createElement('span')
+      operationStatus.className = 'plugin-catalog-operation-status'
+      operationStatus.setAttribute('role', 'status')
+      const run = (button: HTMLButtonElement, action: () => Promise<void>): void => {
+        button.disabled = true
+        operationStatus.textContent = 'Working…'
+        void action()
+          .catch((error: unknown) => {
+            operationStatus.textContent = errorMessage(error)
+          })
+          .finally(() => {
+            button.disabled = false
+          })
+      }
+      if (managedInstall.previousPin) {
+        const rollback = document.createElement('button')
+        rollback.type = 'button'
+        rollback.className = 'ui-btn ui-btn-secondary ui-btn-compact'
+        rollback.textContent = 'Roll back'
+        rollback.addEventListener('click', () => {
+          run(rollback, () => rollbackManagedPlugin(managedInstall))
+        })
+        actions.append(rollback)
+      }
+      const uninstall = document.createElement('button')
+      uninstall.type = 'button'
+      uninstall.className = 'ui-btn ui-btn-danger ui-btn-compact'
+      uninstall.textContent = 'Uninstall'
+      uninstall.addEventListener('click', () => {
+        run(uninstall, () => uninstallManagedPlugin(managedInstall))
+      })
+      actions.append(uninstall)
+      review.append(status, detailList, operationStatus, actions)
+      row.append(review)
+    } else if (plugin.source?.kind === 'directory') {
       const review = document.createElement('div')
       review.className = 'plugin-source-review'
 
@@ -3495,12 +3781,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       // installed; Cursor owns its own cache, so those rows are read-only. A
       // Cursor failure must not blank the registry rows beside it, hence the
       // catch rather than a bare Promise.all.
-      const [result, cursorPlugins, bundledPlugins] = await Promise.all([
+      const [result, cursorPlugins, bundledPlugins, installs] = await Promise.all([
         api.plugins.list(),
         api.cursorPlugins.list().catch(() => []),
         api.bundledSkillPlugins.list().catch(() => []),
+        api.plugins.listInstalls(),
       ])
       if (generation !== pluginRefreshGeneration) return
+      managedInstalls = new Map(installs.map((record) => [record.pluginId, record]))
+      pluginCatalogBrowser.updateInstalled({
+        cursor: cursorPlugins.map((plugin) => plugin.name),
+        bundledCursor: bundledPlugins.map((plugin) => plugin.name),
+        managed: installs,
+      })
       // Enabled plugins first, disabled plugins after — so a scrapped plugin moves
       // out of the way instead of sitting in the middle of the list. The two
       // runs get a heading each: with rows this tall, "why is this one dimmed"
@@ -3853,6 +4146,66 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     row.scrollIntoView({ block: 'start' })
   }
 
+  // Servers whose browser sign-in is in flight, and the last sign-in failure per
+  // server. Both outlive a re-render of the list.
+  const mcpSignInPending = new Set<string>()
+  const mcpSignInErrors = new Map<string, string>()
+
+  function mcpSignInButton(
+    s: import('@shared/types/mcp.ts').McpServerStatus,
+  ): HTMLButtonElement | null {
+    if (s.auth === undefined) return null
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'ui-btn ui-btn-compact mcp-auth-btn'
+    if (mcpSignInPending.has(s.name)) {
+      button.classList.add('ui-btn-secondary')
+      button.textContent = 'Cancel sign-in'
+      button.addEventListener('click', () => {
+        void api.mcp.cancelSignIn(s.name)
+      })
+      return button
+    }
+    if (s.auth === 'signed-in') {
+      button.classList.add('ui-btn-secondary')
+      button.textContent = 'Sign out'
+      button.setAttribute('aria-label', `Sign out of ${s.name}`)
+      button.addEventListener('click', () => {
+        button.disabled = true
+        mcpSignInErrors.delete(s.name)
+        void api.mcp
+          .signOut(s.name)
+          .then(renderMcpServers)
+          .catch((error: unknown) => {
+            mcpSignInErrors.set(s.name, ipcErrorMessage(error, 'Sign-out failed.'))
+            void refreshMcpServers()
+          })
+      })
+      return button
+    }
+    button.classList.add('ui-btn-primary')
+    button.textContent = 'Sign in'
+    button.setAttribute('aria-label', `Sign in to ${s.name}`)
+    button.addEventListener('click', () => {
+      mcpSignInPending.add(s.name)
+      mcpSignInErrors.delete(s.name)
+      void refreshMcpServers()
+      void api.mcp
+        .signIn(s.name)
+        .then((next) => {
+          mcpSignInPending.delete(s.name)
+          renderMcpServers(next)
+        })
+        .catch((error: unknown) => {
+          mcpSignInPending.delete(s.name)
+          const message = ipcErrorMessage(error, 'Sign-in failed.')
+          if (message !== 'Sign-in cancelled.') mcpSignInErrors.set(s.name, message)
+          void refreshMcpServers()
+        })
+    })
+    return button
+  }
+
   function renderMcpServers(allStatuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
     const listEl = qsRequired(overlay, '#mcp-server-list')
     // Curated ("Copse reviewed") servers have their own section below.
@@ -3943,13 +4296,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const badge: Node =
         s.state === 'connected'
           ? inlineStatus('filled', 'connected')
-          : s.state === 'error'
-            ? inlineStatus('error', 'error')
-            : s.state === 'disabled'
-              ? inlineStatus('idle', 'disabled')
-              : s.state === 'untrusted'
-                ? inlineStatus('warn', 'not trusted')
-                : document.createTextNode('… connecting')
+          : s.auth === 'required'
+            ? inlineStatus('warn', 'sign-in required')
+            : s.state === 'error'
+              ? inlineStatus('error', 'error')
+              : s.state === 'disabled'
+                ? inlineStatus('idle', 'disabled')
+                : s.state === 'untrusted'
+                  ? inlineStatus('warn', 'not trusted')
+                  : document.createTextNode('… connecting')
       const row = document.createElement('div')
       row.className = `mcp-server-row mcp-state-${s.state}`
 
@@ -4005,13 +4360,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           qsRequired(overlay, '#tool-permissions-fieldset').scrollIntoView({ block: 'start' })
         })
       })
+      const authButton = mcpSignInButton(s)
+      if (authButton) header.append(authButton)
       header.append(permissionsButton)
       row.append(header)
 
-      let detailText =
+      const statusDetail =
         s.state === 'connected'
           ? `${String(s.toolCount)} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
-          : (s.error ?? '')
+          : s.auth === 'required'
+            ? "Sign in to use this server's tools."
+            : (s.error ?? '')
+      let detailText = mcpSignInPending.has(s.name)
+        ? 'Continue in your browser to finish signing in.'
+        : (mcpSignInErrors.get(s.name) ?? statusDetail)
       if (s.configDisabled) {
         detailText = detailText
           ? `${detailText} · disabled in MCP config`
@@ -4030,6 +4392,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       listEl.append(row)
     }
   }
+
+  // Servers change state outside this dialog's own actions — they finish
+  // connecting after boot, or a sign-in is refused mid-session — so the list
+  // follows the main process rather than only the results of its own calls.
+  api.mcp.onStatusChanged((statuses) => {
+    renderMcpServers(statuses)
+  })
 
   async function refreshMcpServers(): Promise<void> {
     try {
@@ -4209,6 +4578,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   qsRequired(overlay, '#plugins-reload-btn').addEventListener('click', () => {
     void refreshPlugins()
+  })
+
+  qsRequired(overlay, '#plugins-installed-tab').addEventListener('click', () => {
+    selectPluginView('installed')
+  })
+
+  qsRequired(overlay, '#plugins-browse-tab').addEventListener('click', () => {
+    selectPluginView('browse')
   })
 
   qsRequired(overlay, '#plugins-add-btn').addEventListener('click', () => {

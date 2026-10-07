@@ -42,6 +42,7 @@ import {
   worktreeReadOnlySandboxOverlay,
 } from '../project-sandbox/worktree-config.ts'
 import { isMandatoryWriteDenyMountPath } from '../project-sandbox/mandatory-write-deny.ts'
+import { cloneIgnoredEntries } from './worktree-ignored-clone.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
 
@@ -99,6 +100,13 @@ export interface AllocateWorktreeInput {
    * checkout's own HEAD, whatever the caller asked for.
    */
   seedFromDirtyProject?: boolean
+  /**
+   * Name the branch from this description (`copse/<slug>-<id>`) instead of the
+   * anonymous `copse/thread-<id>`. A deferred thread allocates only once its
+   * agent knows what it is changing, so the name is available up front and the
+   * post-title rename (which only touches anonymous names) leaves it alone.
+   */
+  branchTitle?: string
 }
 
 export interface ValidateWorktreeInput {
@@ -660,6 +668,19 @@ async function chooseInitialBranch(projectRoot: string, threadId: string): Promi
   throw new Error('Could not find an available initial worktree branch name')
 }
 
+async function chooseAllocationBranch(
+  projectRoot: string,
+  threadId: string,
+  branchTitle: string | undefined,
+): Promise<string> {
+  if (branchTitle?.trim()) {
+    // No current branch yet, so the titled search can only return a candidate.
+    const titled = await chooseTitledBranch(projectRoot, branchTitle, threadId, '')
+    if (titled) return titled
+  }
+  return chooseInitialBranch(projectRoot, threadId)
+}
+
 async function chooseTitledBranch(
   projectRoot: string,
   title: string,
@@ -870,6 +891,32 @@ export async function restoreThreadWorktreeBranch(
   )
 }
 
+/**
+ * Hand a new worktree the project's git-ignored content (dependencies, build
+ * output) as copy-on-write clones, so it does not start from nothing. Best
+ * effort: it never throws, and a filesystem that cannot reflink gets nothing.
+ */
+async function cloneIgnoredProjectFiles(projectRoot: string, worktreePath: string): Promise<void> {
+  try {
+    const listing = await git(projectRoot, [
+      'ls-files',
+      '--others',
+      '--ignored',
+      '--exclude-standard',
+      '--directory',
+      '-z',
+    ])
+    if (listing.code !== 0 || listing.stdoutTruncated) return
+    await cloneIgnoredEntries({
+      projectRoot,
+      worktreeRoot: worktreePath,
+      listing: listing.stdout,
+    })
+  } catch (error) {
+    console.warn(`[worktree] Could not clone ignored project files: ${String(error)}`)
+  }
+}
+
 /** Allocate one linked checkout, preserving dirty project content without touching it. */
 export async function allocateThreadWorktree(
   input: AllocateWorktreeInput,
@@ -894,7 +941,7 @@ export async function allocateThreadWorktree(
       getDefaultBranch(projectRoot),
       repositoryIsDirty(projectRoot),
       git(projectRoot, ['show', '-s', '--format=%H%x00%T', 'HEAD']),
-      chooseInitialBranch(projectRoot, input.threadId),
+      chooseAllocationBranch(projectRoot, input.threadId, input.branchTitle),
       hasOriginRemote(projectRoot),
     ])
     const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch
@@ -990,6 +1037,7 @@ export async function allocateThreadWorktree(
         await seedFromSnapshot(canonicalPath, snapshotRef)
         await deleteRef(projectRoot, snapshotRef)
       }
+      await cloneIgnoredProjectFiles(projectRoot, canonicalPath)
       return worktree
     } catch (error) {
       if (snapshotRef) {

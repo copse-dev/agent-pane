@@ -28,7 +28,8 @@ contract.
   reads named paths outside the project, and which paths a seatbelt may be widened
   to.
 - **`gh-argv.ts`** — `classifyGhSegment`: which GitHub CLI shapes only read, which
-  write to the user's own repository, and the flags a write may carry.
+  artifact downloads stay inside the project sandbox, which write to the user's own
+  repository, and the flags a write may carry.
 - **`command-routing.ts`** + **`trusted-commands.ts`** — the trusted-command
   allow-list: resolution (`routeShellCommand`) and the Node-free types and text
   serialization the Settings renderer imports.

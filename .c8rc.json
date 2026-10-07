@@ -1,5 +1,6 @@
 {
   "all": true,
+  "merge-async": true,
   "src": ["src", "packages"],
   "include": [
     "src/**/*.ts",

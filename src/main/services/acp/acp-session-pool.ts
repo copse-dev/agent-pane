@@ -4,6 +4,7 @@ import type { AcpSessionCarryOver, AcpSessionHandover } from './acp-session-reat
 import { spawnConfigSshTarget } from './acp-ssh-transport.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
 import { createAcpWireTrace } from './acp-wire-trace.ts'
+import { AcpReadonlyCheckoutUnavailableError } from './acp-write-access.ts'
 import {
   formatOpenFileCeilingWarning,
   noteUnrepairableOpenFileFault,
@@ -141,6 +142,7 @@ export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
     sandbox: config.sandbox ?? null,
     mcpServers: config.mcpServers ?? [],
     permissionMode: config.permissionMode ?? null,
+    readonlyCheckout: config.readonlyCheckout === true,
   })
 }
 
@@ -325,6 +327,7 @@ async function acquireAcpSessionUnlocked(
     ? await perfSpan('ttft:acp-bridge-start', () =>
         startAcpNativeBridge(registry, bridgeAbort.signal, {
           networkScopeAlreadyApplies: shareNetworkScope,
+          offerWriteAccess: opts.config.readonlyCheckout === true,
           ...(opts.projectId ? { projectId: opts.projectId } : {}),
           threadId: opts.threadId,
         }).catch((err: unknown) => {
@@ -336,6 +339,11 @@ async function acquireAcpSessionUnlocked(
         }),
       )
     : null
+  // Fail closed: a read-only agent can only reach the worktree allocator through
+  // the bridge, so without one it could neither write nor ask to.
+  if (opts.config.readonlyCheckout === true && !bridge) {
+    throw new AcpReadonlyCheckoutUnavailableError()
+  }
   if (remote) {
     console.info(
       `[acp-bridge] thread ${opts.threadId}'s agent runs on an SSH host; native tools are not offered to remote agents`,

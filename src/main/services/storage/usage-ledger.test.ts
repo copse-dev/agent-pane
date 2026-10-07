@@ -5,17 +5,32 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { at } from '@shared/array-utils.ts'
 import type { Thread } from '@shared/types'
-import { storageGet, storageSet } from './storage.ts'
+import {
+  storageGet,
+  storageListFiles,
+  storageReadFile,
+  storageSet,
+  storageWriteFile,
+} from './storage.ts'
 import { setSetting } from './settings.ts'
 import { OPENROUTER_PRICING_KEY } from '../providers/model-pricing-store.ts'
-import { getUsageSummary, recordAgentUsageChunk, recordUsageEvent } from './usage-ledger.ts'
-import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
-import { parseUsageEvents } from '@shared/usage/aggregate-usage.ts'
+import {
+  getUsageSummary,
+  readUsageEvents,
+  recordAgentUsageChunk,
+  recordUsageEvent,
+} from './usage-ledger.ts'
+import {
+  LEGACY_USAGE_EVENTS_STORAGE_KEY,
+  USAGE_EVENTS_DIR,
+  USAGE_EVENTS_MIGRATED_FILE,
+} from '@shared/usage/usage-event.ts'
+import { clearUsageLedger } from './usage-ledger.test-support.ts'
 import { saveProjectThread } from '../thread-store.ts'
 
 describe('usage ledger', () => {
   it('persists events and exposes them in day/month summaries', async () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
     storageSet('activeProjectId', 'proj-1')
     storageSet('projects', [{ id: 'proj-1', path: '/tmp', name: 'tmp' }])
     storageSet('threads:proj-1', [])
@@ -40,7 +55,7 @@ describe('usage ledger', () => {
   it('prices OpenRouter turns from the persisted catalog rates', async () => {
     // Regression: an `openrouter:` selection matched neither pricing source, so
     // the ledger reported $0.00 for real, billed OpenRouter usage.
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
     await setSetting(OPENROUTER_PRICING_KEY, {
       'openrouter:z-ai/glm-5.2': { inputPricePerMTok: 0.4, outputPricePerMTok: 1.6 },
     })
@@ -63,10 +78,10 @@ describe('usage ledger', () => {
     assert.equal(summary.day.totalCostUsd, row.estimatedCostUsd)
   })
 
-  it('keeps the router-reported hosting provider on each call, across later appends', () => {
+  it('keeps the router-reported hosting provider on each call, across later appends', async () => {
     // Prompt caches live per upstream, so the provider that served each call is
     // what tells a routing switch apart from a request-bytes cache miss.
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
     recordAgentUsageChunk('thread-or', {
       type: 'usage',
       model: 'openrouter:moonshotai/kimi-k3',
@@ -84,7 +99,7 @@ describe('usage ledger', () => {
       cacheReadTokens: 89_000,
     })
 
-    const events = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
+    const events = await readUsageEvents()
     assert.deepEqual(
       events.map((e) => e.hostingProvider),
       ['Moonshot AI', undefined],
@@ -92,7 +107,7 @@ describe('usage ledger', () => {
   })
 
   it('records local lmstudio models in day summaries', async () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
     recordUsageEvent({
       model: 'lmstudio:qwen/qwen3.6-35b-a3b',
       source: 'agent',
@@ -107,7 +122,7 @@ describe('usage ledger', () => {
   })
 
   it('keeps distinct calls with identical token counts', async () => {
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
     const input = {
       model: 'gpt-4o',
       source: 'agent' as const,
@@ -118,6 +133,136 @@ describe('usage ledger', () => {
     recordUsageEvent(input)
     recordUsageEvent(input)
     assert.equal((await getUsageSummary()).ledgerEventCount, 2)
+  })
+
+  it('keeps the ledger out of config.json', async () => {
+    // Every storageSet rewrites the whole config file on the main thread, so a
+    // ledger that grew there taxed every other write.
+    await clearUsageLedger()
+    recordUsageEvent({ model: 'gpt-4o', source: 'agent', inputTokens: 10, outputTokens: 5 })
+    assert.equal(storageGet(LEGACY_USAGE_EVENTS_STORAGE_KEY), undefined)
+    assert.equal((await readUsageEvents()).length, 1)
+  })
+
+  it('appends each day to its own file', async () => {
+    await clearUsageLedger()
+    const day = 24 * 60 * 60 * 1000
+    const noon = Date.UTC(2026, 9, 5, 12)
+    recordUsageEvent({ model: 'a', source: 'agent', inputTokens: 1, outputTokens: 1, at: noon })
+    recordUsageEvent({ model: 'b', source: 'agent', inputTokens: 1, outputTokens: 1, at: noon + 1 })
+    recordUsageEvent({
+      model: 'c',
+      source: 'agent',
+      inputTokens: 1,
+      outputTokens: 1,
+      at: noon + day,
+    })
+
+    // Appends are asynchronous; a reader waits for the ones in flight.
+    await readUsageEvents()
+    assert.deepEqual((await storageListFiles(USAGE_EVENTS_DIR)).sort(), [
+      '2026-10-05.jsonl',
+      '2026-10-06.jsonl',
+    ])
+    const first = await storageReadFile(`${USAGE_EVENTS_DIR}/2026-10-05.jsonl`)
+    assert.equal(first?.split('\n').filter((line) => line !== '').length, 2)
+  })
+
+  it('moves a ledger stored in config.json into a file, dropping expired events', async () => {
+    await clearUsageLedger()
+    const now = Date.now()
+    const day = 24 * 60 * 60 * 1000
+    storageSet(LEGACY_USAGE_EVENTS_STORAGE_KEY, [
+      { at: now - 120 * day, model: 'old-model', source: 'agent', inputTokens: 1, outputTokens: 1 },
+      { at: now - day, model: 'kept-model', source: 'agent', inputTokens: 7, outputTokens: 3 },
+    ])
+
+    assert.deepEqual(
+      (await readUsageEvents()).map((event) => event.model),
+      ['kept-model'],
+    )
+    assert.equal(storageGet(LEGACY_USAGE_EVENTS_STORAGE_KEY), undefined)
+    assert.ok(
+      (await storageListFiles(USAGE_EVENTS_DIR)).includes(USAGE_EVENTS_MIGRATED_FILE),
+      'the old events are kept in their own file',
+    )
+
+    // New events land alongside the migrated ones, newest last.
+    recordUsageEvent({ model: 'new-model', source: 'agent', inputTokens: 2, outputTokens: 2 })
+    assert.deepEqual(
+      (await readUsageEvents()).map((event) => event.model),
+      ['kept-model', 'new-model'],
+    )
+  })
+
+  it('migrates before the first new event is recorded', async () => {
+    await clearUsageLedger()
+    storageSet(LEGACY_USAGE_EVENTS_STORAGE_KEY, [
+      { at: Date.now() - 1_000, model: 'legacy', source: 'agent', inputTokens: 3, outputTokens: 3 },
+    ])
+
+    recordUsageEvent({ model: 'fresh', source: 'agent', inputTokens: 1, outputTokens: 1 })
+
+    assert.deepEqual(
+      (await readUsageEvents()).map((event) => event.model),
+      ['legacy', 'fresh'],
+      'recording first must not make the migration skip the old events',
+    )
+  })
+
+  it('finishes an interrupted migration by dropping the stale config key, not merging it', async () => {
+    // The migrated file is written atomically before the key is deleted, so ledger
+    // files that already exist are complete and newer than whatever the key holds.
+    await clearUsageLedger()
+    recordUsageEvent({ model: 'in-file', source: 'agent', inputTokens: 4, outputTokens: 4 })
+    await readUsageEvents()
+    storageSet(LEGACY_USAGE_EVENTS_STORAGE_KEY, [
+      { at: Date.now(), model: 'stale-key', source: 'agent', inputTokens: 9, outputTokens: 9 },
+    ])
+
+    assert.deepEqual(
+      (await readUsageEvents()).map((event) => event.model),
+      ['in-file'],
+    )
+    assert.equal(storageGet(LEGACY_USAGE_EVENTS_STORAGE_KEY), undefined)
+  })
+
+  it('skips a torn record and keeps appending after it', async () => {
+    await clearUsageLedger()
+    const at = Date.now()
+    const good = { at, model: 'good', source: 'agent', inputTokens: 1, outputTokens: 1 }
+    const file = `${USAGE_EVENTS_DIR}/${new Date(at).toISOString().slice(0, 10)}.jsonl`
+    // A crash mid-append leaves a record without its closing brace and newline.
+    await storageWriteFile(file, `\n${JSON.stringify(good)}\n{"at":1,"model":"to`)
+
+    recordUsageEvent({ model: 'after-tear', source: 'agent', inputTokens: 2, outputTokens: 2, at })
+
+    assert.deepEqual(
+      (await readUsageEvents()).map((event) => event.model),
+      ['good', 'after-tear'],
+    )
+  })
+
+  it('never reports an expired event, and deletes a day file once all of it has expired', async () => {
+    await clearUsageLedger()
+    const day = 24 * 60 * 60 * 1000
+    const old = Date.now() - 200 * day
+    const oldFile = `${USAGE_EVENTS_DIR}/${new Date(old).toISOString().slice(0, 10)}.jsonl`
+    await storageWriteFile(
+      oldFile,
+      `\n${JSON.stringify({ at: old, model: 'expired', source: 'agent', inputTokens: 1, outputTokens: 1 })}`,
+    )
+    recordUsageEvent({ model: 'fresh', source: 'agent', inputTokens: 1, outputTokens: 1 })
+
+    assert.deepEqual(
+      (await readUsageEvents()).map((event) => event.model),
+      ['fresh'],
+    )
+    assert.equal(
+      (await storageListFiles(USAGE_EVENTS_DIR)).some((name) => oldFile.endsWith(name)),
+      false,
+      'the expired day file is removed',
+    )
   })
 
   it('builds all-time totals from metadata without reading transcript bodies (#1154)', async () => {
@@ -149,7 +294,7 @@ describe('usage ledger', () => {
     }
     process.env['COPSE_WORKSPACE_DIR'] = root
     storageSet('projects', [{ id: projectId, path: root, name: 'usage metadata' }])
-    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    await clearUsageLedger()
 
     try {
       await saveProjectThread(projectId, thread)

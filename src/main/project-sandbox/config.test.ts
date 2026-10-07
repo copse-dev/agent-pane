@@ -93,6 +93,30 @@ describe('acpAgentSandboxOverlay', () => {
     }
   })
 
+  it('keeps the agent home dirs writable but strips every checkout write for a read-only checkout', () => {
+    const writable = acpAgentSandboxOverlay(workspace, sandbox, { allowLocalhost: true })
+    const readonly = acpAgentSandboxOverlay(workspace, sandbox, {
+      allowLocalhost: true,
+      readonlyCheckout: true,
+    })
+    const root = workspaceSandboxOverlay(workspace).filesystem?.allowWrite[0]
+    assert.ok(root, 'the ordinary profile grants the checkout first')
+    assert.ok(writable.filesystem?.allowWrite.includes(root))
+    assert.ok(
+      readonly.filesystem?.allowWrite.every(
+        (path) => path !== root && !path.startsWith(`${root}/`),
+      ),
+      `checkout writes survived: ${JSON.stringify(readonly.filesystem?.allowWrite)}`,
+    )
+    // The agent's session files live under its home dir, outside the checkout.
+    const claudeDir = join(homedir(), '.claude')
+    assert.ok(readonly.filesystem?.allowWrite.includes(claudeDir))
+    assert.ok(readonly.filesystem?.allowWrite.includes(`${claudeDir}/**`))
+    // Reads and the bridge's loopback are unchanged.
+    assert.deepEqual(readonly.filesystem?.allowRead, writable.filesystem?.allowRead)
+    assert.deepEqual(readonly.network, writable.network)
+  })
+
   it('adds trustd only on opt-in without changing network or filesystem policy', () => {
     const strict = acpAgentSandboxOverlay(workspace, sandbox)
     const trusted = acpAgentSandboxOverlay(workspace, { ...sandbox, allowMacOsTrustd: true })
@@ -722,7 +746,7 @@ describe('workspaceSandboxOverlay', () => {
     // points $TMPDIR at. It lives under the home dir, which is broadly denyRead,
     // so it must be re-allowed for read as well as write.
     const overlay = workspaceSandboxOverlay('/Users/me/project')
-    const tmpDir = workspaceTmpDir()
+    const tmpDir = ensureWorkspaceTmpDir()
     assert.ok(tmpDir.endsWith(join('.copse', 'workspace', 'tmp')))
     const allowWrite = overlay.filesystem?.allowWrite ?? []
     const allowRead = overlay.filesystem?.allowRead ?? []
@@ -730,6 +754,35 @@ describe('workspaceSandboxOverlay', () => {
     assert.ok(allowWrite.some((p) => p === `${tmpDir}/**`))
     assert.ok(allowRead.includes(tmpDir))
     assert.ok(allowRead.some((p) => p === `${tmpDir}/**`))
+  })
+
+  it('uses the canonical workspace tmp target when COPSE_DIR is a symlink', () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-profile-link-')))
+    const target = join(root, 'profile')
+    const linked = join(root, 'linked-profile')
+    const previous = process.env['COPSE_DIR']
+    mkdirSync(target)
+    symlinkSync(target, linked, 'dir')
+    process.env['COPSE_DIR'] = linked
+    try {
+      const configured = workspaceTmpDir()
+      const canonical = ensureWorkspaceTmpDir()
+      assert.notEqual(configured, canonical)
+      assert.equal(canonical, realpathSync.native(configured))
+
+      const overlay = workspaceSandboxOverlay('/Users/me/project')
+      for (const entries of [overlay.filesystem?.allowRead, overlay.filesystem?.allowWrite]) {
+        assert.ok(entries)
+        assert.ok(entries.includes(canonical), `canonical ${canonical}`)
+        assert.ok(entries.includes(`${canonical}/**`), `canonical ${canonical}/**`)
+        assert.equal(entries.includes(configured), false, `configured ${configured}`)
+        assert.equal(entries.includes(`${configured}/**`), false, `configured ${configured}/**`)
+      }
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_DIR']
+      else process.env['COPSE_DIR'] = previous
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('allows only direct Darwin per-user temp children for Apple converter staging (sips)', () => {
@@ -792,6 +845,8 @@ describe('ensureWorkspaceTmpDir', () => {
       const dir = ensureWorkspaceTmpDir()
       assert.equal(dir, join(workspace, 'tmp'))
       assert.equal(dir, workspaceTmpDir())
+      // Callers get the canonical path, so sandbox rules match what the OS reports.
+      assert.equal(dir, realpathSync.native(workspaceTmpDir()))
       accessSync(dir)
       assert.equal(ensureWorkspaceTmpDir(), dir, 'creation is idempotent')
     } finally {
@@ -1001,8 +1056,8 @@ describe('gitBackupSandboxOverlay', () => {
       assert.ok(fs)
       assert.deepEqual(fs.denyWrite, [])
       assert.deepEqual(fs.allowWrite, [
-        workspaceTmpDir(),
-        `${workspaceTmpDir()}/**`,
+        ensureWorkspaceTmpDir(),
+        `${ensureWorkspaceTmpDir()}/**`,
         ...['objects', 'refs', 'logs'].flatMap((entry) => [
           join(root, '.git', entry),
           `${join(root, '.git', entry)}/**`,

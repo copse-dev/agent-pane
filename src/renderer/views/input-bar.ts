@@ -1872,7 +1872,9 @@ export function mountInputBar(
     const prefetchedPromptState = prefetchedGitState?.[1]
     let preparedPromptState: GitPromptState | undefined
     const threadBranch = thread.gitBranch
-    const isolatedWorktree = thread.worktree !== undefined
+    // A deferred thread is isolated too: its worktree is cut from the recorded
+    // base when it first writes, so the project checkout's HEAD may move.
+    const isolatedWorktree = thread.worktree !== undefined || thread.deferredWorktree !== undefined
     // Worktree threads keep the project checkout on its original branch; the
     // bound `gitBranch` names the isolated checkout, not a required HEAD move.
     if (
@@ -2628,6 +2630,9 @@ export function mountInputBar(
     }),
     store.on('message_queued', (tid) => {
       if (tid === getActiveThreadId()) updateQueueIndicator()
+    }),
+    store.on('thread_model_resolved', (tid) => {
+      if (tid === getActiveThreadId()) modelPicker.sync()
     }),
     store.on('message_added', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()

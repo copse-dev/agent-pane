@@ -30,12 +30,16 @@ import {
   resolveAcpRunContainment,
   respondToPermissionForTest,
   runAcpAgentFromSettings,
+  runAcpTurnWithContinuation,
+  type AcpContinuationDependencies,
+  type RunAcpAgentOptions,
   shouldAutoApproveLowRiskAcpPermission,
   shouldAutoApproveSandboxedCodexCodeMode,
   runWithAcpRetry,
   sliceLines,
 } from './acp-agent-service.ts'
 import { resolveAcpPermissionMode } from './acp-agent-registry.ts'
+import { AcpReadonlyCheckoutUnavailableError } from './acp-write-access.ts'
 
 const ALLOW_ONCE: PermissionOption = { optionId: 'a1', name: 'Allow once', kind: 'allow_once' }
 const ALLOW_ALWAYS: PermissionOption = {
@@ -984,4 +988,190 @@ describe('worktree-backup auto-approval of ACP edits', () => {
       assert.deepEqual(await answer(true, kind), { prompted: true, approved: false })
     })
   }
+})
+
+describe('continuing into a granted worktree', () => {
+  const WORKTREE = '/worktrees/thread-1'
+  type TurnResult = Awaited<ReturnType<AcpContinuationDependencies['runTurn']>>
+
+  function options(patch: Partial<RunAcpAgentOptions> = {}): RunAcpAgentOptions {
+    return {
+      threadId: 'thread-1',
+      agentId: 'claude-code',
+      userPrompt: 'fix the redirect',
+      priorMessages: [{ role: 'user', content: 'earlier' }],
+      signal: new AbortController().signal,
+      onChunk: () => undefined,
+      invokedSkills: ['review'],
+      ...patch,
+    }
+  }
+
+  /** A thread whose first turn starts read-only; `grantsAfter` turns later it owns a worktree. */
+  function harness(
+    turns: Array<{ readonly: boolean; text: string; stopReason?: 'end_turn' | 'cancelled' }>,
+  ): {
+    seen: RunAcpAgentOptions[]
+    dependencies: AcpContinuationDependencies
+    keepDeferred: () => void
+    allocations: () => number
+  } {
+    const seen: RunAcpAgentOptions[] = []
+    let allocations = 0
+    let deferred = true
+    const dependencies: AcpContinuationDependencies = {
+      runTurn: (turnOptions) => {
+        seen.push(turnOptions)
+        const turn = turns[seen.length - 1]
+        assert.ok(turn, 'unexpected extra turn')
+        if (seen.length === 1) deferred = false
+        return Promise.resolve({
+          stopReason: turn.stopReason ?? 'end_turn',
+          messages: [{ role: 'assistant', content: turn.text }],
+          usage: { inputTokens: 10, outputTokens: 1 },
+          startedReadonly: turn.readonly,
+        })
+      },
+      isCheckoutDeferred: () => deferred,
+      executionRoot: () => WORKTREE,
+      allocateCheckout: () => {
+        allocations++
+        deferred = false
+        return Promise.resolve()
+      },
+    }
+    return {
+      seen,
+      dependencies,
+      keepDeferred: () => void (deferred = true),
+      allocations: () => allocations,
+    }
+  }
+
+  it('starts a second turn in the worktree once the first allocated one', async () => {
+    const { seen, dependencies } = harness([
+      { readonly: true, text: 'I will edit the redirect.' },
+      { readonly: false, text: 'Done.' },
+    ])
+    const result = await runAcpTurnWithContinuation(options(), dependencies)
+
+    assert.equal(seen.length, 2)
+    const continuationOptions = seen[1]
+    assert.ok(continuationOptions)
+    const continuation = continuationOptions.userPrompt
+    assert.ok(typeof continuation === 'string')
+    assert.match(continuation, new RegExp(`worktree at ${WORKTREE}`))
+    assert.deepEqual(continuationOptions.invokedSkills, [], 'skills ran in the first turn')
+    // Read only when the agent could not carry its session over, so it must
+    // include the user message and what the agent said before asking to write.
+    assert.deepEqual(continuationOptions.priorMessages, [
+      { role: 'user', content: 'earlier' },
+      { role: 'user', content: 'fix the redirect' },
+      { role: 'assistant', content: 'I will edit the redirect.' },
+    ])
+    assert.deepEqual(result.messages, [
+      { role: 'assistant', content: 'I will edit the redirect.' },
+      { role: 'assistant', content: 'Done.' },
+    ])
+    assert.deepEqual(result.usage, { inputTokens: 20, outputTokens: 2 })
+  })
+
+  it('allocates and reruns the turn writable when the read-only agent cannot start', async () => {
+    const { seen, dependencies, allocations } = harness([{ readonly: false, text: 'Done.' }])
+    const runTurn = dependencies.runTurn
+    let unavailable = true
+    dependencies.runTurn = (turnOptions): Promise<TurnResult> => {
+      if (unavailable) {
+        unavailable = false
+        return Promise.reject(new AcpReadonlyCheckoutUnavailableError())
+      }
+      return runTurn(turnOptions)
+    }
+    const result = await runAcpTurnWithContinuation(options(), dependencies)
+
+    assert.equal(allocations(), 1, 'the worktree is taken up front')
+    assert.equal(seen.length, 1, 'the same turn runs once more, writable')
+    assert.equal(seen[0]?.userPrompt, 'fix the redirect')
+    assert.deepEqual(result.messages, [{ role: 'assistant', content: 'Done.' }])
+  })
+
+  it('does not allocate for any other turn failure', async () => {
+    const { dependencies, allocations } = harness([])
+    dependencies.runTurn = (): Promise<TurnResult> =>
+      Promise.reject(
+        new AcpTurnFailure(new Error('agent died'), {
+          assistantText: '',
+          usage: { inputTokens: 0, outputTokens: 0 },
+        }),
+      )
+    await assert.rejects(() => runAcpTurnWithContinuation(options(), dependencies), AcpTurnFailure)
+    assert.equal(allocations(), 0)
+  })
+
+  it('surfaces a second failure to start instead of looping', async () => {
+    const { dependencies, allocations } = harness([])
+    dependencies.runTurn = (): Promise<TurnResult> =>
+      Promise.reject(new AcpReadonlyCheckoutUnavailableError())
+    await assert.rejects(
+      () => runAcpTurnWithContinuation(options(), dependencies),
+      AcpReadonlyCheckoutUnavailableError,
+    )
+    assert.equal(allocations(), 1)
+  })
+
+  it('does nothing extra when the thread was never read-only', async () => {
+    const { seen, dependencies } = harness([{ readonly: false, text: 'Done.' }])
+    await runAcpTurnWithContinuation(options(), dependencies)
+    assert.equal(seen.length, 1)
+  })
+
+  it('does nothing extra when the read-only turn never got a worktree', async () => {
+    const { seen, dependencies, keepDeferred } = harness([{ readonly: true, text: 'It is a bug.' }])
+    const once = dependencies.runTurn
+    dependencies.runTurn = async (turnOptions): Promise<TurnResult> => {
+      const result = await once(turnOptions)
+      keepDeferred()
+      return result
+    }
+    await runAcpTurnWithContinuation(options(), dependencies)
+    assert.equal(seen.length, 1)
+  })
+
+  it('does not continue a stopped or aborted turn', async () => {
+    const stopped = harness([{ readonly: true, text: 'partial', stopReason: 'cancelled' }])
+    await runAcpTurnWithContinuation(options(), stopped.dependencies)
+    assert.equal(stopped.seen.length, 1)
+
+    const controller = new AbortController()
+    const aborted = harness([{ readonly: true, text: 'partial' }])
+    const once = aborted.dependencies.runTurn
+    aborted.dependencies.runTurn = async (turnOptions): Promise<TurnResult> => {
+      const result = await once(turnOptions)
+      controller.abort()
+      return result
+    }
+    await runAcpTurnWithContinuation(options({ signal: controller.signal }), aborted.dependencies)
+    assert.equal(aborted.seen.length, 1)
+  })
+
+  it('keeps the first turn’s text and usage when the continuation fails', async () => {
+    const { dependencies } = harness([{ readonly: true, text: 'Going to edit. ' }])
+    const first = dependencies.runTurn
+    dependencies.runTurn = async (turnOptions): Promise<TurnResult> => {
+      if (turnOptions.userPrompt !== 'fix the redirect') {
+        throw new AcpTurnFailure(new Error('agent died'), {
+          assistantText: 'half',
+          usage: { inputTokens: 5, outputTokens: 1 },
+        })
+      }
+      return first(turnOptions)
+    }
+    await assert.rejects(
+      () => runAcpTurnWithContinuation(options(), dependencies),
+      (err: unknown) =>
+        err instanceof AcpTurnFailure &&
+        err.partial.assistantText === 'Going to edit. half' &&
+        err.partial.usage.inputTokens === 15,
+    )
+  })
 })

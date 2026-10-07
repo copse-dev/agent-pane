@@ -1235,6 +1235,17 @@ export async function getCurrentCommitHash(
   return hash || null
 }
 
+/** Paths that differ between two commits, or null when Git cannot compare them. */
+export async function getChangedPathsBetween(
+  root: string,
+  from: string,
+  to: string,
+): Promise<string[] | null> {
+  const { stdout, code } = await runGitRead(['diff', '--name-only', '-z', from, to, '--'], root)
+  if (code !== 0) return null
+  return stdout.split('\0').filter((path) => path.length > 0)
+}
+
 /**
  * Snapshot the repository state a prompt is about to be sent against: the HEAD
  * commit it starts from and whether the working tree is dirty. Captured once per

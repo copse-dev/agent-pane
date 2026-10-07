@@ -311,9 +311,17 @@ export function workspaceTmpDir(): string {
 }
 
 /**
- * Create {@link workspaceTmpDir} if missing and return it. Best-effort: returns
- * the path even if creation fails (e.g. read-only home) so callers can still set
- * $TMPDIR — the spawn just falls back to the system temp dir as before.
+ * Create {@link workspaceTmpDir} if missing and return its canonical path.
+ *
+ * `$COPSE_DIR` may itself be a symlink. macOS seatbelt checks the symlink vnode
+ * while resolving a path through it, before the more-specific allow for the
+ * target can apply; that traversal fails under the broad home read-deny. Giving
+ * `$TMPDIR` the canonical spelling avoids crossing the link at all and makes the
+ * path the child uses identical to the path seatbelt evaluates.
+ *
+ * Best-effort: if creation or canonicalization fails (for example, a read-only
+ * home), the resolved configured path is returned so callers retain the prior
+ * fallback behaviour.
  */
 export function ensureWorkspaceTmpDir(): string {
   const dir = workspaceTmpDir()
@@ -322,7 +330,7 @@ export function ensureWorkspaceTmpDir(): string {
   } catch {
     // Best-effort: a missing dir only means the redirect is a no-op this run.
   }
-  return dir
+  return canonicalizePathCached(dir)
 }
 
 /**
@@ -618,6 +626,62 @@ export function readOnlyWorkspaceSandboxOverlay(
 }
 
 /**
+ * Strip every write grant at or under the checkout from an agent overlay.
+ *
+ * A deferred-worktree thread's execution root is the user's own project
+ * checkout, which the thread must never modify. Everything else the ordinary
+ * profile grants — reads, the workspace tmp dir (under `~/.copse`, outside the
+ * checkout), agent scratch, the macOS user temp dir, and the no-network policy —
+ * is kept, so read-only commands behave as they would in a worktree. A linked
+ * checkout's per-worktree and common Git directories may live outside the
+ * checkout, so their write grants are stripped too: changing a ref is still a
+ * project write even when no working-tree file changes. Matching by prefix
+ * rather than exact entry removes more rather than less if a grant was spelled
+ * differently. `denyWrite` is emptied for the same reason as
+ * {@link readOnlyWorkspaceSandboxOverlay}: with no checkout write to carve
+ * exceptions from, Linux deny mounts would only litter the checkout. Ancestor
+ * and glob grants must go too: a checkout beneath an agent scratch root would
+ * otherwise inherit that root's broad write access.
+ */
+export function withoutCheckoutWrites(
+  overlay: Partial<SandboxRuntimeConfig>,
+  workspaceRoot: string,
+): Partial<SandboxRuntimeConfig> {
+  const root = canonicalizeWorkspaceRoot(workspaceRoot)
+  const fs = overlay.filesystem
+  if (!fs) throw new Error('An agent sandbox overlay must define a filesystem config')
+  const registration = getInternalWorkspaceRootRegistration(root)
+  const protectedRoots = [
+    root,
+    ...(registration ? [registration.gitDir, registration.commonGitDir] : []),
+  ]
+  const overlapsProtectedRoot = (path: string): boolean => {
+    const wildcardAt = path.search(/[?*[\]{}]/)
+    const rawPrefix = (wildcardAt === -1 ? path : path.slice(0, wildcardAt)).replace(/\/+$/, '')
+    if (!rawPrefix) return true
+    const fixedPrefix =
+      wildcardAt === -1
+        ? canonicalizePathCached(rawPrefix)
+        : join(canonicalizePathCached(dirname(rawPrefix)), basename(rawPrefix))
+    return protectedRoots.some(
+      (protectedRoot) =>
+        protectedRoot === fixedPrefix ||
+        fixedPrefix.startsWith(`${protectedRoot}/`) ||
+        (wildcardAt === -1 && protectedRoot.startsWith(`${fixedPrefix}/`)) ||
+        (wildcardAt !== -1 && protectedRoot.startsWith(fixedPrefix)),
+    )
+  }
+  return {
+    ...overlay,
+    filesystem: {
+      ...fs,
+      allowWrite: fs.allowWrite.filter((path) => !overlapsProtectedRoot(path)),
+      denyWrite: [],
+    },
+  }
+}
+
+/**
  * Backups read the checkout and write only Git objects/refs and a scratch index.
  * Keeping the checkout read-only also avoids Linux's synthetic write-deny
  * mount points: `git add -A` must snapshot user files, not sandbox placeholders.
@@ -741,7 +805,23 @@ export function acpAgentSandboxOverlay(
      * MCP bridge (#602), which the agent reaches at `http://127.0.0.1:<port>`.
      */
     allowLocalhost?: boolean
+    /**
+     * `workspaceRoot` is the user's own checkout, which a deferred-worktree
+     * thread must not modify: strip every write grant at or under it (see
+     * {@link withoutCheckoutWrites}). The agent's home-scoped state and scratch
+     * paths stay writable, so its session files still persist.
+     */
+    readonlyCheckout?: boolean
   },
+): Partial<SandboxRuntimeConfig> {
+  const overlay = acpAgentSandboxOverlayWithCheckoutWrites(workspaceRoot, sandbox, opts)
+  return opts?.readonlyCheckout ? withoutCheckoutWrites(overlay, workspaceRoot) : overlay
+}
+
+function acpAgentSandboxOverlayWithCheckoutWrites(
+  workspaceRoot: string,
+  sandbox: AcpAgentSandboxConfig,
+  opts: { allowLocalhost?: boolean } | undefined,
 ): Partial<SandboxRuntimeConfig> {
   const base = workspaceSandboxOverlay(workspaceRoot)
   const fs = base.filesystem
