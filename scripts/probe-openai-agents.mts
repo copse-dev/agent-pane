@@ -7,7 +7,7 @@ import {
   openAiAgentStateSchema,
   type OpenAiAgentState,
 } from '../src/main/services/remote/openai-agents-api.ts'
-import { safeJsonParse, decodeWithSchema } from '../packages/std/src/safe-json.ts'
+import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { DEFAULT_OPENAI_AGENT_MODEL } from '../src/shared/openai-cloud-agent.ts'
 
 const { values } = parseArgs({

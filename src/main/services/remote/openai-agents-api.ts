@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import type { SessionCreateParamsNonStreaming } from 'openai/resources/beta/agents/sessions/sessions'
+import { memberOf } from '@copse/std/member-of.ts'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 
 const usageSchema = z.object({
@@ -71,7 +72,11 @@ export interface OpenAiAgentResult {
   cacheReadTokens: number
 }
 
-export class OpenAiCancellationUnconfirmedError extends Error {}
+export class OpenAiCancellationError extends Error {}
+export class OpenAiCancellationUnconfirmedError extends OpenAiCancellationError {}
+export class OpenAiCancellationRecoveryError extends OpenAiCancellationError {
+  readonly cancellationConfirmed = true
+}
 
 /** Thin, fixed-origin beta client. Credentials never enter the hosted environment. */
 export class OpenAiAgentsApi {
@@ -386,25 +391,33 @@ export class OpenAiAgentsApi {
         }
         // Recover terminal output and billable usage with an independent signal.
         // Keep the pending submission if this read fails so the next run can recover it.
-        const recoverySignal = AbortSignal.timeout(25_000)
-        const turns = await this.turns(state, recoverySignal)
-        const turn = turns.find(
-          (entry) =>
-            entry.subagent_id === null && !state.pending?.previousTurnIds.includes(entry.id),
-        )
-        if (!turn || !terminal(turn.status))
-          throw new OpenAiCancellationUnconfirmedError(
-            'Cancellation was accepted but the submitted turn could not be recovered. The session remains linked; resend the previous message to inspect it.',
+        try {
+          const recoverySignal = AbortSignal.timeout(25_000)
+          const turns = await this.turns(state, recoverySignal)
+          const turn = turns.find(
+            (entry) =>
+              entry.subagent_id === null && !state.pending?.previousTurnIds.includes(entry.id),
           )
-        const session = await this.json(await this.request(path, recoverySignal), sessionSchema)
-        const items = (await this.list(`${path}/items`, itemSchema, recoverySignal)).filter(
-          (item) => item.turn_id === turn.id,
-        )
-        for (const item of items) {
-          const text = messageText(item)
-          if (item.id && text && !emitted.has(item.id)) options.onText(`${text}\n\n`)
+          if (!turn || !terminal(turn.status))
+            throw new Error(
+              'Cancellation was confirmed but the submitted turn could not be recovered. The session remains linked; resend the previous message to inspect it.',
+              { cause: error },
+            )
+          const session = await this.json(await this.request(path, recoverySignal), sessionSchema)
+          const items = (await this.list(`${path}/items`, itemSchema, recoverySignal)).filter(
+            (item) => item.turn_id === turn.id,
+          )
+          for (const item of items) {
+            const text = messageText(item)
+            if (item.id && text && !emitted.has(item.id)) options.onText(`${text}\n\n`)
+          }
+          return await finish({ ...turn, status: turn.status }, items, session, recoverySignal)
+        } catch (recoveryError) {
+          throw new OpenAiCancellationRecoveryError(
+            `OpenAI cancellation was confirmed, but output, usage, or artifacts could not be recovered. Session ${state.sessionId} remains linked; resend the previous message to recover it before starting another task.`,
+            { cause: recoveryError },
+          )
         }
-        return await finish({ ...turn, status: turn.status }, items, session, recoverySignal)
       }
       throw error
     } finally {
@@ -414,9 +427,7 @@ export class OpenAiAgentsApi {
   }
 }
 
-function terminal(status: AgentTurn['status']): status is 'completed' | 'failed' | 'cancelled' {
-  return status === 'completed' || status === 'failed' || status === 'cancelled'
-}
+const terminal = memberOf(['completed', 'failed', 'cancelled'] as const)
 
 function messageText(item: OpenAiAgentItem): string {
   return item.type === 'message' && item.role === 'assistant'

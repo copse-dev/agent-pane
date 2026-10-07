@@ -2697,6 +2697,45 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     'Full thread view for a model below the concise gate',
     'gpt-4o',
   ),
+  {
+    id: 'openai-cancellation-recovery',
+    label: 'OpenAI confirmed cancellation with interrupted recovery',
+    project: project('demo-openai-recovery-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'remote-agent:openai#gpt-6.1-sol',
+    },
+    threads: [
+      {
+        id: 'demo-openai-recovery-thread',
+        title: 'Stopped hosted task',
+        status: 'idle',
+        model: 'remote-agent:openai#gpt-6.1-sol',
+        messages: [
+          {
+            id: 'recovery-user',
+            role: 'user',
+            content: 'Run the public repository tests and report the result.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+          {
+            id: 'recovery-assistant',
+            role: 'assistant',
+            content:
+              '> An error occurred: OpenAI cancellation was confirmed, but output, usage, or artifacts could not be recovered. Session sess_demo remains linked; resend the previous message to recover it before starting another task.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
   conciseThreadScenario(
     'concise-thread-working',
     'Concise thread view while a capable model works',

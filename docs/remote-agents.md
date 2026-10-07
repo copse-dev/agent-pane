@@ -36,7 +36,10 @@ an existing session. The client subscribes before submission but uses saved turn
 and items as the recovery authority: OpenAI event streams do not replay. Progress
 currently displays polled command output and completed messages, not token deltas.
 Stop requests remote cancellation and checks that work has ended; an unconfirmed
-cancellation is surfaced as an error. Runs have a ten-minute prototype limit.
+cancellation is surfaced as an error. If cancellation is confirmed but recovery of
+output, usage, or artifacts fails, Copse reports that distinction and retains the
+pending checkpoint. Resend the previous message to recover it before starting a
+different task. Runs have a ten-minute prototype limit.
 
 Artifacts download into the thread's blob directory (10 MiB per file, 20 files,
 50 MiB per turn). Remote paths never choose local filenames. Deleting local chat

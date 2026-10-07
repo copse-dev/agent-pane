@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { threadDirectoryPath } from '../thread-store.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
@@ -68,10 +68,13 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   const path = stateFile(projectId, options.threadId)
   const client = new OpenAiAgentsApi(apiKey, options.fetchImpl)
   const keyHash = hash(apiKey)
-  const stored = existsSync(path)
-    ? safeJsonParse(readFileSync(path, 'utf8'), decodeWithSchema(savedSchema))
-    : null
-  if (existsSync(path) && !stored)
+  const checkpoint = await readFile(path, 'utf8').catch((error: unknown) => {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
+    throw error
+  })
+  const stored =
+    checkpoint === null ? null : safeJsonParse(checkpoint, decodeWithSchema(savedSchema))
+  if (checkpoint !== null && !stored)
     throw new Error('Invalid OpenAI session checkpoint. It has not been replaced.')
   const prior = savedSchema.safeParse(stored)
   if (prior.success && (prior.data.keyHash !== keyHash || prior.data.state.model !== model)) {

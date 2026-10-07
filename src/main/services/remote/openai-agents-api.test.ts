@@ -5,6 +5,8 @@ import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import {
   OpenAiAgentsApi,
   OpenAiCancellationUnconfirmedError,
+  OpenAiCancellationError,
+  OpenAiCancellationRecoveryError,
   openAiAgentStateSchema,
   type OpenAiAgentState,
 } from './openai-agents-api.ts'
@@ -26,6 +28,7 @@ function fixture(
     lostSubmit?: boolean
     streamFailure?: boolean
     cancelFailure?: boolean
+    recoveryFailure?: string
     abort?: AbortController
   } = {},
 ): {
@@ -38,6 +41,8 @@ function fixture(
   let cancelled = false
   let lost = options.lostSubmit ?? false
   let streamClosed = 0
+  let cancellationConfirmed = false
+  let recoveryFailed = false
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
     assert.equal(url.origin, 'https://api.openai.com')
@@ -88,6 +93,15 @@ function fixture(
       }
       return new Response(null, { status: 202 })
     }
+    if (
+      cancellationConfirmed &&
+      !recoveryFailed &&
+      url.pathname.endsWith(options.recoveryFailure ?? '/never')
+    ) {
+      assert.equal(init.signal?.aborted, false)
+      recoveryFailed = true
+      return new Response('', { status: 503 })
+    }
     if (url.pathname.endsWith('/turns'))
       return page(
         Array.from({ length: turn }, (_, i) => ({
@@ -102,6 +116,7 @@ function fixture(
     if (url.pathname.endsWith('/artifacts')) return page([])
     if (method === 'DELETE') return json({ deleted: true })
     if (url.pathname.endsWith('/content')) return new Response('file')
+    if (cancelled) cancellationConfirmed = true
     return json({
       id: 'sess_1',
       status: cancelled || !options.abort ? 'idle' : 'in_progress',
@@ -206,6 +221,42 @@ describe('OpenAI Agents API prototype', () => {
     )
     assert.ok(state.pending)
   })
+
+  for (const endpoint of ['/turns', '/sess_1', '/items', '/artifacts']) {
+    it(`surfaces confirmed cancellation recovery failure at ${endpoint} and resumes without replay`, async () => {
+      const controller = new AbortController()
+      const { api, requests } = fixture({ abort: controller, recoveryFailure: endpoint })
+      const state = await api.create('gpt-6.1-sol', signal())
+      let saved: OpenAiAgentState | undefined
+      const save = (value: OpenAiAgentState): void => {
+        saved = structuredClone(value)
+      }
+      await assert.rejects(
+        api.run(state, 'task', { signal: controller.signal, save, onText: () => {} }),
+        (error: unknown) => {
+          assert.ok(error instanceof OpenAiCancellationRecoveryError)
+          assert.ok(error instanceof OpenAiCancellationError)
+          assert.equal(error.cancellationConfirmed, true)
+          assert.match(error.message, /cancellation was confirmed.*could not be recovered/)
+          assert.ok(error.cause instanceof Error)
+          assert.match(error.cause.message, /HTTP 503/)
+          return true
+        },
+      )
+      assert.ok(saved?.pending)
+      assert.deepEqual(state, saved)
+      assert.equal(state.usageInput, 0)
+      const result = await api.run(openAiAgentStateSchema.parse(saved), 'task', {
+        signal: signal(),
+        save,
+        onText: () => {},
+      })
+      assert.equal(result.status, 'cancelled')
+      assert.equal(result.inputTokens, 10)
+      assert.equal(saved.pending, null)
+      assert.equal(requests.filter((r) => r.method === 'POST' && r.key !== null).length, 1)
+    })
+  }
 
   it('rejects mismatched artifact lengths and oversized metadata', async () => {
     const { api } = fixture()
