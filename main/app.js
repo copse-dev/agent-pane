@@ -66804,16 +66804,22 @@ var init_thread_pr_status2 = __esm({
 
 // src/renderer/controller/sidebar-thread.ts
 function sidebarPrRefs(thread) {
+  const cached2 = [...thread.prRefs ?? [], ...(thread.prProductions ?? []).map((item) => item.pr)];
   if (thread.messages && thread.messagesLoaded !== false) {
     const scraped = collectThreadPrRefs({
       messages: thread.messages,
       ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}
     });
     const seen = new Set(scraped.map(githubPrKey));
-    const cachedOnly = (thread.prRefs ?? []).filter((ref) => !seen.has(githubPrKey(ref)));
+    const cachedOnly = cached2.filter((ref) => {
+      const key = githubPrKey(ref);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     return [...scraped, ...cachedOnly];
   }
-  return thread.prRefs ?? [];
+  return [...new Map(cached2.map((ref) => [githubPrKey(ref), ref])).values()];
 }
 function sidebarLastPromptAt(thread) {
   if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
@@ -66836,7 +66842,8 @@ function compactSidebarThread(thread) {
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
     ...thread.automation ? { automation: thread.automation } : {},
     ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {},
-    prRefs: sidebarPrRefs(thread)
+    prRefs: sidebarPrRefs(thread),
+    ...thread.prProductions ? { prProductions: thread.prProductions } : {}
   };
 }
 var init_sidebar_thread = __esm({
@@ -72176,6 +72183,162 @@ var init_demo = __esm({
   }
 });
 
+// packages/thread-store/src/thread-pr-relations.ts
+function parsePrRelationUrl(raw) {
+  try {
+    const url2 = new URL(raw);
+    const match = /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/.*)?$/u.exec(url2.pathname);
+    const [, owner, repo, number4] = match ?? [];
+    if (url2.protocol !== "https:" && url2.protocol !== "http:" || !owner || !repo || !number4)
+      return null;
+    if (!Number.isSafeInteger(Number(number4))) return null;
+    return { owner, repo, number: Number(number4), url: raw };
+  } catch {
+    return null;
+  }
+}
+function prRepositoryKey(pr2) {
+  return `${new URL(pr2.url).hostname.replace(/^www\./iu, "").toLowerCase()}/${pr2.owner.toLowerCase()}/${pr2.repo.toLowerCase()}`;
+}
+function prRelationKey(pr2) {
+  return `${prRepositoryKey(pr2)}#${String(pr2.number)}`;
+}
+function threadPrRelationships(thread, messages = []) {
+  const refs = /* @__PURE__ */ new Map();
+  const add2 = (pr2, kind) => {
+    const parsed2 = parsePrRelationUrl(pr2.url);
+    if (!parsed2 || parsed2.owner.toLowerCase() !== pr2.owner.toLowerCase() || parsed2.repo.toLowerCase() !== pr2.repo.toLowerCase() || parsed2.number !== pr2.number)
+      return;
+    const key = prRelationKey(pr2);
+    let entry = refs.get(key);
+    if (!entry) {
+      entry = { pr: pr2, kinds: [] };
+      refs.set(key, entry);
+    }
+    if (!entry.kinds.includes(kind)) entry.kinds.push(kind);
+  };
+  for (const pr2 of thread.prRefs ?? []) add2(pr2, "referenced");
+  for (const message2 of messages)
+    for (const pr2 of extractGithubPrUrls(message2.content)) add2(pr2, "referenced");
+  if (thread.remoteAgentLink?.prUrl) {
+    const pr2 = parseGithubPrUrl(thread.remoteAgentLink.prUrl);
+    if (pr2) add2(pr2, "agent-linked");
+  }
+  for (const production of thread.prProductions ?? []) add2(production.pr, "produced");
+  return [...refs.values()];
+}
+var prRefSchema, prProductionSchema, commitProductionSchema, ThreadPrRelationshipIndex;
+var init_thread_pr_relations = __esm({
+  "packages/thread-store/src/thread-pr-relations.ts"() {
+    init_zod();
+    init_github_pr_url();
+    prRefSchema = external_exports.object({
+      owner: external_exports.string().min(1),
+      repo: external_exports.string().min(1),
+      number: external_exports.number().int().positive(),
+      url: external_exports.url()
+    });
+    prProductionSchema = external_exports.object({
+      pr: prRefSchema,
+      eventId: external_exports.string().min(1),
+      source: external_exports.literal("pr-create"),
+      createdAt: external_exports.number().int().nonnegative()
+    });
+    commitProductionSchema = external_exports.object({
+      repository: external_exports.string().regex(/^[a-z0-9.-]+\/[a-z0-9_.-]+\/[a-z0-9_.-]+$/u),
+      sha: external_exports.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u),
+      eventId: external_exports.string().min(1),
+      source: external_exports.literal("git-commit"),
+      createdAt: external_exports.number().int().nonnegative()
+    });
+    ThreadPrRelationshipIndex = class {
+      #threads = /* @__PURE__ */ new Map();
+      #byPr = /* @__PURE__ */ new Map();
+      #byCommit = /* @__PURE__ */ new Map();
+      #refs = /* @__PURE__ */ new Map();
+      constructor(threads = []) {
+        for (const thread of threads) this.upsert(thread);
+      }
+      upsert(thread) {
+        this.remove(thread.id);
+        if (thread.archivedAt != null) return;
+        this.#threads.set(thread.id, thread);
+        const refs = threadPrRelationships(thread);
+        this.#refs.set(thread.id, refs);
+        for (const { pr: pr2 } of refs) this.#add(this.#byPr, prRelationKey(pr2), thread.id);
+        for (const commit of thread.commitProductions ?? []) {
+          this.#add(this.#byCommit, `${commit.repository}@${commit.sha}`, thread.id);
+        }
+      }
+      #add(map2, key, threadId) {
+        let ids = map2.get(key);
+        if (!ids) {
+          ids = /* @__PURE__ */ new Set();
+          map2.set(key, ids);
+        }
+        ids.add(threadId);
+      }
+      remove(threadId) {
+        const remove = (map2, key) => {
+          const ids = map2.get(key);
+          ids?.delete(threadId);
+          if (ids?.size === 0) map2.delete(key);
+        };
+        for (const { pr: pr2 } of this.#refs.get(threadId) ?? []) remove(this.#byPr, prRelationKey(pr2));
+        for (const commit of this.#threads.get(threadId)?.commitProductions ?? []) {
+          remove(this.#byCommit, `${commit.repository}@${commit.sha}`);
+        }
+        this.#threads.delete(threadId);
+        this.#refs.delete(threadId);
+      }
+      forPr(pr2) {
+        const key = prRelationKey(pr2);
+        const rows = [];
+        for (const id of this.#byPr.get(key) ?? []) {
+          const thread = this.#threads.get(id);
+          const ref = this.#refs.get(id)?.find((item) => prRelationKey(item.pr) === key);
+          if (!thread || !ref) continue;
+          rows.push({
+            threadId: id,
+            title: thread.title,
+            kinds: [...ref.kinds],
+            productions: (thread.prProductions ?? []).filter((item) => prRelationKey(item.pr) === key)
+          });
+        }
+        return rows.sort((a3, b4) => a3.threadId.localeCompare(b4.threadId));
+      }
+      forThread(threadId) {
+        return (this.#refs.get(threadId) ?? []).map((item) => ({
+          pr: { ...item.pr },
+          kinds: [...item.kinds]
+        }));
+      }
+      forCommit(repository, sha) {
+        const rows = [];
+        for (const id of this.#byCommit.get(`${repository.toLowerCase()}@${sha.toLowerCase()}`) ?? []) {
+          const thread = this.#threads.get(id);
+          if (!thread) continue;
+          rows.push({
+            threadId: id,
+            title: thread.title,
+            evidence: (thread.commitProductions ?? []).filter(
+              (item) => item.repository === repository.toLowerCase() && item.sha === sha.toLowerCase()
+            )
+          });
+        }
+        return rows;
+      }
+    };
+  }
+});
+
+// src/shared/git/thread-pr-relations.ts
+var init_thread_pr_relations2 = __esm({
+  "src/shared/git/thread-pr-relations.ts"() {
+    init_thread_pr_relations();
+  }
+});
+
 // packages/agent/src/parse-agent-run-payload.ts
 function parseReviewContext(value) {
   if (typeof value !== "string" || value.trim() === "") return void 0;
@@ -75943,6 +76106,7 @@ var init_demo_scenarios = __esm({
       ].join("")
     )}`;
     DEMO_SCENARIOS = [
+      // The first scenario remains the marketing landing walkthrough.
       {
         // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
         // visual-test fixture. It is also what the marketing hero iframe embeds.
@@ -77649,6 +77813,107 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "pr-relations",
+        label: "PR producing and related threads",
+        project: project("demo-pr-relations", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          filesPaneOpen: true,
+          rightPanelMode: "prs",
+          layout: {
+            projectsPaneWidth: 220,
+            filesPaneWidth: 660,
+            filesPaneHeight: 360,
+            fileTreeWidth: 220
+          }
+        },
+        threads: [
+          {
+            id: "pr-producer",
+            title: "Implement widget",
+            status: "idle",
+            messages: [],
+            prProductions: [
+              {
+                pr: {
+                  owner: "acme",
+                  repo: "widgets",
+                  number: 42,
+                  url: "https://github.com/acme/widgets/pull/42"
+                },
+                source: "pr-create",
+                eventId: "demo-create-42",
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "pr-reviewer",
+            title: "Review widget",
+            status: "idle",
+            messages: [
+              {
+                id: "review-refs",
+                role: "user",
+                content: "Review https://github.com/acme/widgets/pull/42 and https://github.com/acme/widgets/pull/43",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            prRefs: [42, 43].map((number4) => ({
+              owner: "acme",
+              repo: "widgets",
+              number: number4,
+              url: `https://github.com/acme/widgets/pull/${String(number4)}`
+            })),
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "pr-mentioned",
+            title: "Release planning",
+            status: "idle",
+            messages: [
+              {
+                id: "release-ref",
+                role: "user",
+                content: "Include https://github.com/acme/widgets/pull/42 in the release.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            prRefs: [
+              {
+                owner: "acme",
+                repo: "widgets",
+                number: 42,
+                url: "https://github.com/acme/widgets/pull/42"
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        pullRequests: [42, 43].map((number4) => ({
+          owner: "acme",
+          repo: "widgets",
+          number: number4,
+          url: `https://github.com/acme/widgets/pull/${String(number4)}`,
+          title: number4 === 42 ? "Add widget support" : "Follow up on widget review",
+          state: "OPEN",
+          body: "",
+          files: [],
+          checks: "success"
+        }))
+      },
+      {
         id: "chat-layout-styling",
         label: "Chat layout styling",
         project: project("demo-chat-layout-project"),
@@ -78822,8 +79087,8 @@ function createDemoApi(scenario, options = {}) {
     },
     gh: {
       status: () => resolved2({
-        installed: false,
-        authenticated: false,
+        installed: Boolean(scenario.pullRequests),
+        authenticated: Boolean(scenario.pullRequests),
         username: null,
         message: "Unavailable in browser demo"
       }),
@@ -78831,12 +79096,18 @@ function createDemoApi(scenario, options = {}) {
       setListWatch: resolvedVoid,
       onListsTick: subscribe,
       listMyOpenPrs: () => resolved2([]),
-      listWorkspaceOpenPrs: emptyArray,
+      listWorkspaceOpenPrs: () => resolved2(scenario.pullRequests ?? []),
       prChecks: () => resolved2("no_checks"),
-      prDetails: () => resolved2(null),
+      prDetails: (owner, repo, number4) => resolved2(
+        scenario.pullRequests?.find(
+          (pr2) => pr2.owner === owner && pr2.repo === repo && pr2.number === number4
+        ) ?? null
+      ),
       prFileDiff: () => resolved2(null),
       resolvePrUrl: () => resolved2(null),
       agentPrLinks: emptyArray,
+      prThreadRelationships: (pr2) => resolved2(new ThreadPrRelationshipIndex(threads).forPr(pr2)),
+      threadPrRelationships: (threadId) => resolved2(new ThreadPrRelationshipIndex(threads).forThread(threadId)),
       createPrForThread: () => resolved2({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       rerunFailedRuns: () => resolved2({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       approvePr: () => resolved2({ ok: false, message: "Unavailable in demo", backend: "mock" }),
@@ -78909,6 +79180,7 @@ function createDemoApi(scenario, options = {}) {
 var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
+    init_thread_pr_relations2();
     init_automations_plugin();
     init_parse_agent_run_payload();
     init_advisor_strategy_plugin();
@@ -81625,6 +81897,9 @@ function buildForkedThread(source, options = {}) {
     title: forkThreadTitle(source.title),
     status: "idle",
     messages,
+    // References follow only the copied transcript; native production belongs
+    // to the source thread and is never inherited or inferred from tool text.
+    prRefs: collectThreadPrRefs({ messages }),
     // Usage is a ledger of what a thread spent. The fork has spent nothing yet;
     // the source keeps its own totals.
     usage: { inputTokens: 0, outputTokens: 0 },
@@ -81670,6 +81945,7 @@ function copyMessage(message2) {
 var randomUUID2, MAX_TITLE_LENGTH, FORK_SUFFIX;
 var init_fork_thread = __esm({
   "packages/thread-store/src/fork-thread.ts"() {
+    init_thread_pr_status();
     randomUUID2 = () => globalThis.crypto.randomUUID();
     MAX_TITLE_LENGTH = 120;
     FORK_SUFFIX = " (fork)";
@@ -128345,6 +128621,67 @@ var init_pr_pane_activity = __esm({
   }
 });
 
+// src/renderer/views/pr-thread-relationships.ts
+function renderPrThreadRelationships(rows, openThread) {
+  const host = el("section", {
+    class: "pr-thread-relationships",
+    "aria-label": "PR thread relationships"
+  });
+  const groups = [
+    {
+      label: "Producing threads",
+      kind: "produced",
+      rows: rows.filter((row2) => row2.kinds.includes("produced"))
+    },
+    {
+      label: "Related threads",
+      kind: "related",
+      rows: rows.filter((row2) => !row2.kinds.includes("produced"))
+    }
+  ];
+  for (const group of groups) {
+    const section = el(
+      "div",
+      { class: "pr-thread-group", "data-relationship-group": group.kind },
+      el("h5", {}, group.label)
+    );
+    if (group.rows.length === 0)
+      section.append(
+        el(
+          "p",
+          { class: "pr-thread-empty" },
+          group.kind === "produced" ? "No recorded producing thread." : "No related threads recorded."
+        )
+      );
+    for (const row2 of group.rows) {
+      const label = row2.kinds.includes("produced") ? "Created PR" : row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
+      const button = el(
+        "button",
+        {
+          type: "button",
+          class: "pr-open-thread-btn pr-thread-link",
+          "data-thread-id": row2.threadId,
+          "data-relationship": group.kind,
+          "aria-label": `Open thread: ${row2.title}`
+        },
+        el("span", { class: "pr-thread-title" }, row2.title),
+        el("span", { class: "pr-thread-kind" }, label)
+      );
+      button.addEventListener("click", () => {
+        openThread(row2.threadId);
+      });
+      section.append(button);
+    }
+    host.append(section);
+  }
+  return host;
+}
+var init_pr_thread_relationships = __esm({
+  "src/renderer/views/pr-thread-relationships.ts"() {
+    init_helpers();
+  }
+});
+
 // src/renderer/views/pr-pane.ts
 function agentProviderLabel(provider) {
   return AGENT_PROVIDER_LABEL[provider] ?? provider;
@@ -128353,7 +128690,7 @@ function indexAgentLinksByPrKey(entries2) {
   const map2 = /* @__PURE__ */ new Map();
   for (const entry of entries2) {
     const key = remoteAgentPrIndexKey(entry.prUrl);
-    if (key) map2.set(key, entry);
+    if (key) map2.set(key, [...map2.get(key) ?? [], entry]);
   }
   return map2;
 }
@@ -128364,35 +128701,26 @@ function prsModeActive(store2) {
 function collectLinkedPrs(store2) {
   const thread = getActiveThread(store2);
   if (!thread) return [];
-  const seen = /* @__PURE__ */ new Set();
-  const refs = [];
-  for (const message2 of thread.messages) {
-    for (const parsed2 of extractGithubPrUrls(message2.content)) {
-      const key = githubPrKey(parsed2);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      refs.push({ owner: parsed2.owner, repo: parsed2.repo, number: parsed2.number });
-    }
-  }
-  return refs;
+  return threadPrRelationships(thread, thread.messages).map(({ pr: pr2 }) => ({
+    owner: pr2.owner,
+    repo: pr2.repo,
+    number: pr2.number
+  }));
 }
 function indexThreadLinks(store2) {
   const links = /* @__PURE__ */ new Map();
   for (const thread of store2.getState().threads) {
-    for (const ref of thread.prRefs ?? []) {
-      const key = githubPrKey(ref);
-      if (!links.has(key)) links.set(key, { threadId: thread.id, title: thread.title });
-    }
-  }
-  const activeThread = getActiveThread(store2);
-  if (activeThread) {
-    for (const message2 of activeThread.messages) {
-      for (const ref of extractGithubPrUrls(message2.content)) {
-        const key = githubPrKey(ref);
-        if (!links.has(key)) {
-          links.set(key, { threadId: activeThread.id, title: activeThread.title });
-        }
-      }
+    if (thread.archivedAt != null) continue;
+    for (const { pr: pr2, kinds } of threadPrRelationships(thread, thread.messages)) {
+      const key = prRelationKey(pr2);
+      const rows = links.get(key) ?? [];
+      rows.push({
+        threadId: thread.id,
+        title: thread.title,
+        kinds,
+        productions: (thread.prProductions ?? []).filter((item) => prRelationKey(item.pr) === key)
+      });
+      links.set(key, rows);
     }
   }
   return links;
@@ -128453,7 +128781,65 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
-  let threadLinks = indexThreadLinks(store2);
+  let threadLinks = /* @__PURE__ */ new Map();
+  let prRelationships = null;
+  let relationshipError = false;
+  let relationshipRequest = 0;
+  let activeThreadRelations = null;
+  let threadRelationshipRequest = 0;
+  async function loadThreadRelationships() {
+    const thread = getActiveThread(store2);
+    const projectId = store2.getState().activeProjectId;
+    const request = ++threadRelationshipRequest;
+    if (!thread) {
+      activeThreadRelations = null;
+      return;
+    }
+    try {
+      const rows = await api2.gh.threadPrRelationships(thread.id);
+      if (disposed || request !== threadRelationshipRequest || store2.getState().activeProjectId !== projectId || getActiveThread(store2)?.id !== thread.id)
+        return;
+      activeThreadRelations = { projectId, threadId: thread.id, rows };
+      renderList();
+    } catch {
+      if (request === threadRelationshipRequest) activeThreadRelations = null;
+    }
+  }
+  async function loadPrRelationships(input2) {
+    const ref = input2 ?? (prDetails ? {
+      owner: prDetails.owner,
+      repo: prDetails.repo,
+      number: prDetails.number,
+      url: prDetails.url
+    } : selectedPr ? {
+      ...selectedPr,
+      url: `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`
+    } : null);
+    if (!ref) return null;
+    const projectId = store2.getState().activeProjectId;
+    const request = ++relationshipRequest;
+    try {
+      const rows = await api2.gh.prThreadRelationships(ref);
+      if (disposed || request !== relationshipRequest || store2.getState().activeProjectId !== projectId)
+        return null;
+      const byThread = new Map(rows.map((row2) => [row2.threadId, row2]));
+      for (const row2 of threadLinks.get(prRelationKey(ref)) ?? []) {
+        const current = byThread.get(row2.threadId);
+        if (current) current.kinds = [.../* @__PURE__ */ new Set([...current.kinds, ...row2.kinds])];
+        else byThread.set(row2.threadId, row2);
+      }
+      prRelationships = [...byThread.values()];
+      relationshipError = false;
+    } catch {
+      if (disposed || request !== relationshipRequest || store2.getState().activeProjectId !== projectId)
+        return null;
+      relationshipError = true;
+      prRelationships = null;
+    }
+    renderMeta();
+    renderList();
+    return prRelationships;
+  }
   let agentLinksGen = 0;
   let linkedRefs = [];
   let myPrs = [];
@@ -128582,16 +128968,22 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const state = knownChecks(pr2);
     applyPrStatus(ci2, pr2, state ?? "loading");
     ciEls.set(githubPrKey(pr2), ci2);
-    const agent = agentLinks.get(githubPrKey(pr2));
-    const agentBadge = agent ? el(
+    const agents = agentLinks.get(githubPrKey(pr2)) ?? [];
+    const agentBadge = agents.length > 0 ? el(
       "span",
       {
         class: "pr-list-agent-badge",
-        "data-tooltip": `Opened by a ${agentProviderLabel(agent.provider)} agent launched from this app`
+        "data-tooltip": `Linked to ${String(agents.length)} agent thread${agents.length === 1 ? "" : "s"}: ${[...new Set(agents.map((agent) => agentProviderLabel(agent.provider)))].join(", ")}`
       },
       "\u{1F916}"
     ) : null;
     const titleText = prListDisplayTitle(pr2);
+    const activeThread = getActiveThread(store2);
+    const currentKinds = prRelationships?.find((item) => item.threadId === activeThread?.id)?.kinds;
+    const producedInNative = activeThreadRelations !== null && activeThreadRelations.projectId === store2.getState().activeProjectId && activeThreadRelations.threadId === activeThread?.id && activeThreadRelations.rows.some(
+      (item) => prRelationKey(item.pr) === prRelationKey(pr2) && item.kinds.includes("produced")
+    );
+    const producedHere = (activeThread?.prProductions?.some((item) => prRelationKey(item.pr) === prRelationKey(pr2)) ?? false) || producedInNative || selectedPr !== null && githubPrKey(selectedPr) === githubPrKey(pr2) && (currentKinds?.includes("produced") ?? false);
     const row2 = el(
       "button",
       {
@@ -128606,6 +128998,16 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         { class: "pr-list-meta" },
         el("span", { class: "pr-list-number" }, `#${String(pr2.number)}`),
         el("span", { class: "pr-list-repo", title: `${pr2.owner}/${pr2.repo}` }, pr2.repo),
+        ...section === "linked" ? [
+          el(
+            "span",
+            {
+              class: "pr-list-relationship",
+              "data-relationship": producedHere ? "produced" : "related"
+            },
+            producedHere ? "Produced" : "Related"
+          )
+        ] : [],
         ...agentBadge ? [agentBadge] : [],
         ci2,
         el(
@@ -128687,7 +129089,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         el(
           "div",
           { class: "git-changes-section-title" },
-          `From chat (${String(linkedPrs.length)})`
+          `Related PRs \xB7 this thread (${String(linkedPrs.length)})`
         )
       );
       for (const pr2 of linkedPrs) section.append(renderPrRow(pr2, "linked"));
@@ -128830,7 +129232,35 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   function renderMeta() {
     clear(metaHost);
-    if (!prDetails || !selectedPr) return;
+    if (!selectedPr) return;
+    const relationships = prRelationships ? renderPrThreadRelationships(prRelationships, (id) => {
+      switchThread(store2, id);
+    }) : el(
+      "p",
+      { class: "pr-thread-empty", role: "status" },
+      relationshipError ? "Thread relationships unavailable." : "Loading thread relationships\u2026"
+    );
+    relationships.hidden = prDetails !== null && activeSection !== "overview";
+    if (!prDetails) {
+      metaHost.append(
+        el(
+          "div",
+          { class: "pr-viewer-title-row" },
+          el(
+            "h4",
+            { class: "pr-viewer-title" },
+            `#${String(selectedPr.number)} ${selectedPr.owner}/${selectedPr.repo}`
+          )
+        ),
+        el(
+          "div",
+          { class: "pr-viewer-subtitle" },
+          `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`
+        ),
+        relationships
+      );
+      return;
+    }
     const openBtn = el(
       "button",
       {
@@ -128845,27 +129275,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     openBtn.addEventListener("click", () => {
       void api2.shell.openExternal(prUrl);
     });
-    const agent = agentLinks.get(githubPrKey(selectedPr));
-    const producingThread = threadLinks.get(githubPrKey(selectedPr));
-    const producingThreadId = agent?.threadId ?? producingThread?.threadId;
-    const openThreadBtn = producingThreadId ? el(
-      "button",
-      {
-        type: "button",
-        class: "ui-btn ui-btn-ghost ui-btn-compact pr-open-thread-btn",
-        "data-tooltip": agent ? `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent` : "Go to the thread that opened this pull request"
-      },
-      el(
-        "span",
-        {},
-        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open chat"
-      )
-    ) : null;
-    if (openThreadBtn && producingThreadId) {
-      openThreadBtn.addEventListener("click", () => {
-        switchThread(store2, producingThreadId);
-      });
-    }
     const newThreadBtn = el(
       "button",
       {
@@ -128940,8 +129349,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     );
     const menu = el("div", { class: "pr-actions-menu" });
     overflow.append(summary, menu);
-    const actions = el("div", { class: "pr-viewer-actions" }, openThreadBtn ?? newThreadBtn);
-    if (openThreadBtn) menu.append(newThreadBtn);
+    const actions = el("div", { class: "pr-viewer-actions" }, newThreadBtn);
     if (prDetails.state === "OPEN") {
       const ref = { owner: prDetails.owner, repo: prDetails.repo, number: prDetails.number };
       const approve = actionButton(
@@ -129010,7 +129418,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       branch,
       badges,
       actions,
-      statusLine
+      statusLine,
+      relationships
     );
   }
   function renderDescription() {
@@ -129062,6 +129471,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       }
       button.addEventListener("click", () => {
         activeSection = section.key;
+        renderMeta();
         clearDiff();
         renderDescription();
         renderFiles();
@@ -129191,8 +129601,18 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       activeSection = "overview";
     }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number };
+    prRelationships = null;
+    relationshipError = false;
+    relationshipRequest++;
     prDetails = null;
     renderSections();
+    await loadPrRelationships({
+      owner: ref.owner,
+      repo: ref.repo,
+      number: ref.number,
+      url: `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`
+    });
+    if (disposed || requestId !== detailsRequestId) return;
     selectedFile = null;
     renderList();
     if (!ghStatus?.installed || !ghStatus.authenticated) {
@@ -129202,18 +129622,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       clearDiff();
       emptyState.hidden = false;
       emptyState.textContent = ghStatus?.installed ? "Sign in with GitHub CLI to load pull request details." : "Install GitHub CLI to load pull request details.";
-      metaHost.append(
-        el(
-          "div",
-          { class: "pr-viewer-title-row" },
-          el("h4", { class: "pr-viewer-title" }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`)
-        ),
-        el(
-          "div",
-          { class: "pr-viewer-subtitle" },
-          `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`
-        )
-      );
       return;
     }
     renderMeta();
@@ -129258,6 +129666,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     renderFiles();
     clearDiff();
     renderSections();
+    await loadPrRelationships();
   }
   function resetOther() {
     ciGen++;
@@ -129297,8 +129706,13 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
     const gen = ++agentLinksGen;
     threadLinks = indexThreadLinks(store2);
-    ghStatus = await api2.gh.status();
-    const entries2 = await api2.gh.agentPrLinks().catch(() => []);
+    const [, status, entries2] = await Promise.all([
+      loadThreadRelationships(),
+      api2.gh.status(),
+      // Agent links are local (no gh needed), so load them regardless of gh auth.
+      api2.gh.agentPrLinks().catch(() => [])
+    ]);
+    ghStatus = status;
     if (gen !== agentLinksGen) return;
     agentLinks = indexAgentLinksByPrKey(entries2);
     linkedRefs = collectLinkedPrs(store2);
@@ -129398,6 +129812,10 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (prsModeActive(store2)) void refresh();
     }),
     store2.on("workspace_changed", () => {
+      threadRelationshipRequest++;
+      activeThreadRelations = null;
+      relationshipRequest++;
+      prRelationships = null;
       detailsRequestId++;
       selectedPr = null;
       prDetails = null;
@@ -129409,7 +129827,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       workspacePrs = [];
       prList = [];
       agentLinks = /* @__PURE__ */ new Map();
-      threadLinks = indexThreadLinks(store2);
+      threadLinks = prsModeActive(store2) ? indexThreadLinks(store2) : /* @__PURE__ */ new Map();
       agentLinksGen++;
       titleGen++;
       titleInFlight.clear();
@@ -129426,7 +129844,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       linkedRefs = collectLinkedPrs(store2);
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
       renderList();
-      if (selectedPr && prDetails) renderMeta();
+      if (selectedPr) void loadPrRelationships();
+      void loadThreadRelationships();
       const gen = agentLinksGen;
       void api2.gh.agentPrLinks().then((entries2) => {
         if (gen !== agentLinksGen) return;
@@ -129513,6 +129932,8 @@ var init_pr_pane = __esm({
     init_ui_scale();
     init_git_image_diff();
     init_pr_pane_activity();
+    init_thread_pr_relations2();
+    init_pr_thread_relationships();
     STATUS_LABEL2 = {
       added: "A",
       modified: "M",
