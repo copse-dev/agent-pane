@@ -139,6 +139,25 @@ describe('foreground shell interruption', () => {
     assert.equal(supervisor.list(OWNER.projectId)[0]?.state, 'cancelled')
   })
 
+  it('refuses unsandboxed commands in a read-only checkout before starting a child', async () => {
+    await assert.rejects(
+      runShellOnce(
+        'echo unexpected',
+        root,
+        5_000,
+        new AbortController().signal,
+        true,
+        process.env,
+        [],
+        undefined,
+        true,
+      ),
+      /A read-only checkout cannot run commands outside the project sandbox/,
+    )
+    assert.deepEqual(listBackgroundProcesses(OWNER), [])
+    assert.deepEqual(supervisor.list(OWNER.projectId), [])
+  })
+
   it('rejects a pre-aborted call without starting a child', async () => {
     const controller = new AbortController()
     controller.abort()
