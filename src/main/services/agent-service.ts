@@ -980,12 +980,11 @@ async function runAgentWithInlineCanvas(
         threadId,
         promptRoutingContext(outboundPrompt, priorMessages),
       )
-      const choice = await resolvePromptModel(
+      model = await resolvePromptModel(
         promptTextForSubmit(context.content),
         model,
         routingController.signal,
       )
-      model = choice.model
       recordThreadModel(threadId, model)
       setActiveRunModel(model)
       if (runContext)
@@ -998,7 +997,6 @@ async function runAgentWithInlineCanvas(
       terminalContext = acpSelection
         ? { executor: 'acp', provider: acpSelection.id, model }
         : { executor: 'local', provider: providerIdForModel(model), model }
-      sendChunk({ type: 'text', text: choice.notice })
     } catch (err) {
       if (routingController.signal.aborted) {
         sendChunk({ type: 'done', stopReason: 'cancelled' })

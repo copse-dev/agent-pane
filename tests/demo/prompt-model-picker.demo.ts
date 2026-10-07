@@ -1,4 +1,4 @@
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 const HOST = '.footer-model-host'
@@ -26,5 +26,28 @@ describe('primary prompt model picker', () => {
       'aria-selected',
       'true',
     )
+  })
+
+  it('pins the first choice in the picker without a routing message in the conversation', async () => {
+    await browser.url('/?scenario=prompt-model-first-ask&autoplay=0')
+    const label = $(HOST + ' .model-picker-label')
+    await expect(label).toHaveText('Auto — match prompt')
+    await $('.prompt-input').setValue('Check for typos in the README')
+    await $('.submit-btn').click()
+    await expect(label).toHaveText('Claude Haiku 4.5')
+    await expect(label).toHaveAttribute('title', 'claude-haiku-4-5')
+    await expect($('.messages-list .msg-assistant')).toHaveText(
+      expect.stringContaining('I’ll check the README for typos.'),
+    )
+    await expect($$('.messages-list .msg-assistant')).toBeElementsArrayOfSize(1)
+    await expect($('.messages-list')).not.toHaveText(
+      expect.stringContaining('Auto — match prompt:'),
+    )
+    await expect($('.messages-list')).not.toHaveText(expect.stringContaining('Prompt assessment'))
+    await saveElementScreenshot('#app', 'prompt-model-first-ask.png')
+    await $('.prompt-input').setValue('Now investigate a complex concurrency bug')
+    await $('.submit-btn').click()
+    await expect($$('.messages-list .msg-assistant')).toBeElementsArrayOfSize(2)
+    await expect(label).toHaveText('Claude Haiku 4.5')
   })
 })

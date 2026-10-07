@@ -2,13 +2,115 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { BAND_REPRESENTATIVE_MODEL, modelIntellect } from '@copse/llm/model-intellect.ts'
 import { computeParetoFrontier } from '@copse/llm/pareto-frontier.ts'
+import type { SmallTasksRoute } from './small-tasks-provider.ts'
+import type { ProviderStreamChunk } from '@shared/types/stream.ts'
 import {
   assessPromptDemand,
+  assessPromptDemandWithFallback,
   pickPromptModel,
   promptRoutingContext,
 } from './prompt-model-routing.ts'
 
+async function* routes(...items: SmallTasksRoute[]): AsyncIterable<SmallTasksRoute> {
+  yield* items
+}
+
+function assessmentRoute(model: string, answer: string | Error): SmallTasksRoute {
+  return {
+    model,
+    provider: {
+      async *stream(): AsyncIterable<ProviderStreamChunk> {
+        if (answer instanceof Error) throw answer
+        yield { type: 'text', text: answer }
+        yield { type: 'done' }
+      },
+    },
+  }
+}
+
 describe('primary prompt model routing', () => {
+  it('tries the backup after a stopped local server or malformed assessment', async () => {
+    for (const answer of [new Error('Local server unavailable'), 'unparseable answer']) {
+      assert.equal(
+        await assessPromptDemandWithFallback(
+          'Check for typos in the README',
+          routes(assessmentRoute('local', answer), assessmentRoute('backup', 'low')),
+          new AbortController().signal,
+        ),
+        'low',
+      )
+    }
+  })
+
+  it('does not ask the backup after a successful assessment', async () => {
+    let backupAsked = false
+    const candidates: AsyncIterable<SmallTasksRoute> = {
+      async *[Symbol.asyncIterator]() {
+        yield assessmentRoute('local', 'low')
+        backupAsked = true
+        yield assessmentRoute('backup', 'top')
+      },
+    }
+    assert.equal(
+      await assessPromptDemandWithFallback(
+        'Check for typos',
+        candidates,
+        new AbortController().signal,
+      ),
+      'low',
+    )
+    assert.equal(backupAsked, false)
+  })
+
+  it('keeps a typo check on a smaller included model when no assessor is usable', async () => {
+    const low = modelIntellect(BAND_REPRESENTATIVE_MODEL.low)
+    const high = modelIntellect(BAND_REPRESENTATIVE_MODEL.top)
+    assert.ok(low !== null && high !== null)
+    const included = computeParetoFrontier([
+      { id: 'acp:codex-acp#small', intellect: low, costPerMTok: 0, plan: 'ChatGPT' },
+      { id: 'acp:codex-acp#large', intellect: high, costPerMTok: 0, plan: 'ChatGPT' },
+    ])
+    const prompt = promptRoutingContext('Check for typos in the README', [])
+    for (const candidates of [routes(), routes(assessmentRoute('offline', new Error('offline')))]) {
+      const demand = await assessPromptDemandWithFallback(
+        prompt,
+        candidates,
+        new AbortController().signal,
+      )
+      assert.equal(demand, 'low')
+      assert.equal(pickPromptModel(demand, included, 'fallback'), 'acp:codex-acp#small')
+    }
+  })
+
+  it('retains high demand for difficult work when assessment is unavailable', async () => {
+    const demand = await assessPromptDemandWithFallback(
+      promptRoutingContext('Debug a race condition in the transaction isolation layer', []),
+      routes(),
+      new AbortController().signal,
+    )
+    assert.equal(demand, 'top')
+  })
+
+  it('does not fall back or ask another model after cancellation', async () => {
+    const controller = new AbortController()
+    const candidates: AsyncIterable<SmallTasksRoute> = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          model: 'cancelled',
+          provider: {
+            async *stream(): AsyncIterable<ProviderStreamChunk> {
+              controller.abort()
+              yield { type: 'text', text: 'low' }
+            },
+          },
+        }
+        assert.fail('backup must not run after cancellation')
+      },
+    }
+    await assert.rejects(assessPromptDemandWithFallback('task', candidates, controller.signal), {
+      name: 'AbortError',
+    })
+  })
   it('asks a model about the task rather than applying keyword rules', async () => {
     let received = ''
     const demand = await assessPromptDemand(
@@ -81,8 +183,8 @@ describe('primary prompt model routing', () => {
   ])
 
   it('uses a capable route instead of the cheapest underpowered local model', () => {
-    assert.equal(pickPromptModel('mid', pool, 'fallback').model, 'capable')
-    assert.equal(pickPromptModel('top', pool, 'fallback').model, 'frontier')
+    assert.equal(pickPromptModel('mid', pool, 'fallback'), 'capable')
+    assert.equal(pickPromptModel('top', pool, 'fallback'), 'frontier')
   })
 
   it('uses included capacity when it meets the requirement', () => {
@@ -90,24 +192,21 @@ describe('primary prompt model routing', () => {
       ...pool,
       { id: 'acp:claude#frontier', intellect: high, costPerMTok: 0, plan: 'Claude' },
     ])
-    assert.equal(pickPromptModel('mid', included, 'fallback').model, 'acp:claude#frontier')
+    assert.equal(pickPromptModel('mid', included, 'fallback'), 'acp:claude#frontier')
   })
 
-  it('explains unmet demand and uses the strongest available model', () => {
+  it('uses the strongest available model when none meets the demand', () => {
     const result = pickPromptModel(
       'top',
       pool.filter((point) => point.id !== 'frontier'),
       'fallback',
     )
-    assert.equal(result.model, 'capable')
-    assert.match(result.notice, /no available model meets it/)
+    assert.equal(result, 'capable')
   })
 
-  it('reports assessment failure and handles an empty candidate pool', () => {
-    const result = pickPromptModel(null, [], 'fallback')
-    assert.equal(result.model, 'fallback')
-    assert.match(result.notice, /assessment was unavailable/)
-    assert.match(pickPromptModel('top', [], 'fallback').notice, /No scored route/)
+  it('uses the fallback when the scored pool is empty', () => {
+    assert.equal(pickPromptModel('low', [], 'fallback'), 'fallback')
+    assert.equal(pickPromptModel('top', [], 'fallback'), 'fallback')
   })
 
   it('preserves conversational context for a short follow-up without forwarding tool or system text', () => {

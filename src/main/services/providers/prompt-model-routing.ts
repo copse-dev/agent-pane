@@ -8,10 +8,11 @@ import {
   type BackgroundChoiceQuestion,
 } from '../classifiers/background-classification.ts'
 import { completeMessagesWithUsage } from './llm-complete-text.ts'
-import { resolveSmallTasksRoute, type SmallTasksRoute } from './small-tasks-provider.ts'
+import { smallTasksRoutes, type SmallTasksRoute } from './small-tasks-provider.ts'
 import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { routableFrontierPoints, toRoutableModelId } from './best-value-model.ts'
 import { assertModelMakerAllowed } from './model-maker-policy.ts'
+import { classifyModelForTask } from './model-classifier.ts'
 
 const DEMAND_LEVELS = ['low', 'mid', 'top'] as const
 type Demand = (typeof DEMAND_LEVELS)[number]
@@ -72,53 +73,78 @@ export async function assessPromptDemand(
           })
       },
     )
-    return parseChoiceWord(DEMAND_LEVELS, text)
-  } catch {
+    signal.throwIfAborted()
+    const demand = parseChoiceWord(DEMAND_LEVELS, text)
+    if (!demand)
+      console.info('[prompt-model-routing] Assessment returned no demand level', {
+        model: route.model,
+      })
+    return demand
+  } catch (error) {
+    if (!signal.aborted)
+      console.info('[prompt-model-routing] Assessment failed', {
+        model: route.model,
+        error: error instanceof Error ? error.name : 'UnknownError',
+      })
     return null
   }
 }
 
-export interface PromptModelChoice {
-  model: string
-  notice: string
+/** A dead local model must not prevent trying the configured backup route. */
+export async function assessPromptDemandWithFallback(
+  context: string,
+  routes: AsyncIterable<SmallTasksRoute>,
+  signal: AbortSignal,
+): Promise<Demand> {
+  signal.throwIfAborted()
+  for await (const route of routes) {
+    signal.throwIfAborted()
+    const demand = await assessPromptDemand(context, route, signal)
+    signal.throwIfAborted()
+    if (demand !== null) return demand
+  }
+  // ACP-only setups may have no one-shot model provider. Retain task demand
+  // rather than sending every failed assessment to the strongest free route.
+  const demand = classifyModelForTask({ task: context, agentic: true }).band
+  console.info('[prompt-model-routing] Using heuristic assessment', { demand })
+  return demand
 }
 
 /** Apply demand to the live, policy-filtered pool, using normal plan/cost rules. */
 export function pickPromptModel(
-  demand: Demand | null,
+  demand: Demand,
   pool: readonly FrontierPoint[],
   fallback: string,
-): PromptModelChoice {
-  const threshold = demand === null ? null : modelIntellect(BAND_REPRESENTATIVE_MODEL[demand])
-  const picked = pickDynamicModel(
-    threshold === null ? { kind: 'best-value' } : { kind: 'min-intellect', threshold },
-    pool,
-  )
-  const model = picked ? toRoutableModelId(picked) : fallback
-  const reason =
-    threshold === null
-      ? 'Prompt assessment was unavailable; using best value.'
-      : !picked
-        ? 'No scored route is available; using the fallback model.'
-        : picked.intellect < threshold
-          ? `The task needs intelligence ${String(threshold)}+; no available model meets it, so using the most capable available.`
-          : `Assessed ${String(demand)} demand (intelligence ${String(threshold)}+); selected an available route using plan coverage and price.`
-  return { model, notice: `_Auto — match prompt: ${reason} Model: ${model}._\n\n` }
+): string {
+  const threshold = modelIntellect(BAND_REPRESENTATIVE_MODEL[demand])
+  if (threshold === null) return fallback
+  const qualified = pool.filter((point) => point.intellect >= threshold)
+  const price = (point: FrontierPoint): number =>
+    point.local || point.plan ? 0 : point.costPerMTok
+  // Subscription routes often all cost zero. Unlike best-value routing, a
+  // task-sized choice should use the least capability that meets the floor,
+  // not the most powerful model simply because it is also included.
+  const picked = qualified.length
+    ? [...qualified].sort(
+        (a, b) => price(a) - price(b) || a.intellect - b.intellect || a.id.localeCompare(b.id),
+      )[0]
+    : pickDynamicModel({ kind: 'best-intellect' }, pool)
+  return picked ? toRoutableModelId(picked) : fallback
 }
 
 export async function resolvePromptModel(
   context: string,
   fallback: string,
   signal: AbortSignal,
-): Promise<PromptModelChoice> {
+): Promise<string> {
   // The scenario provider owns all conversation replies in mock runs.
-  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return pickPromptModel(null, [], fallback)
-  const route = await resolveSmallTasksRoute()
-  const demand = route ? await assessPromptDemand(context, route, signal) : null
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return fallback
+  const demand = await assessPromptDemandWithFallback(context, smallTasksRoutes(), signal)
   signal.throwIfAborted()
   const pool = await routableFrontierPoints().catch(() => [])
   signal.throwIfAborted()
-  const choice = pickPromptModel(demand, pool, fallback)
-  assertModelMakerAllowed(choice.model)
-  return choice
+  const model = pickPromptModel(demand, pool, fallback)
+  assertModelMakerAllowed(model)
+  console.info('[prompt-model-routing] Selected primary model', { demand, model })
+  return model
 }

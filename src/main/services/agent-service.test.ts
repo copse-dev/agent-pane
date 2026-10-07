@@ -192,10 +192,14 @@ describe('runAgent AgentHost decoupling', () => {
             ),
           ),
       )
-      assert.ok(
+      assert.equal(
         chunks.some(
-          (chunk) => chunk.type === 'text' && chunk.text.includes('Auto — match prompt:'),
+          (chunk) =>
+            chunk.type === 'text' &&
+            /Auto — match prompt:|Prompt assessment|using best value/.test(chunk.text),
         ),
+        false,
+        'routing must not add an assistant message',
       )
       const parameters = chunks.find((chunk) => chunk.type === 'turn_parameters')
       assert.ok(parameters?.type === 'turn_parameters')
