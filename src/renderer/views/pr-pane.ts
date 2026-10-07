@@ -1485,7 +1485,9 @@ export function mountPrPane(
       workspacePrs = []
       prList = []
       agentLinks = new Map()
-      threadLinks = prsModeActive(store) ? indexThreadLinks(store) : new Map()
+      threadLinks = prsModeActive(store)
+        ? indexThreadLinks(store)
+        : new Map<string, PrThreadRelationship[]>()
       agentLinksGen++
       titleGen++
       titleInFlight.clear()
