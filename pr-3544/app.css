@@ -12975,6 +12975,7 @@ dialog.process-manager-overlay {
 }
 .process-manager-subtitle,
 .process-manager-footer,
+.process-manager-summary,
 .process-manager-status {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
@@ -12984,68 +12985,6 @@ dialog.process-manager-overlay {
 }
 .process-manager-close {
   flex-shrink: 0;
-}
-.process-manager-activity {
-  padding: var(--spacing-sm) var(--spacing-lg);
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
-  font-size: var(--font-size-sm);
-}
-.process-manager-activity[hidden] {
-  display: none;
-}
-.process-manager-activity-heading,
-.process-manager-activity-list,
-.process-manager-activity-item {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-.process-manager-activity-heading {
-  margin-bottom: var(--spacing-xs);
-}
-.process-manager-activity-count {
-  color: var(--text-muted);
-}
-.process-manager-activity-list {
-  flex-wrap: wrap;
-}
-.process-manager-activity-item {
-  min-width: 0;
-  max-width: 100%;
-  padding: 4px var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  font: inherit;
-  cursor: pointer;
-}
-.process-manager-activity-item:hover {
-  border-color: var(--border-focus);
-}
-.process-manager-activity-item:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 2px;
-}
-.process-manager-activity-item[aria-disabled=true] {
-  cursor: default;
-}
-.process-manager-activity-dot {
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--accent);
-}
-.process-manager-activity-state {
-  font-weight: 600;
-}
-.process-manager-activity-thread {
-  overflow: hidden;
-  color: var(--text-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .process-manager-scroll {
   min-height: 0;
@@ -13235,6 +13174,15 @@ dialog.process-manager-overlay {
 }
 .process-manager-status:not(:empty) {
   padding-block: var(--spacing-sm);
+}
+.process-manager-summary {
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-top: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+.process-manager-summary:empty {
+  display: none;
 }
 
 /* src/renderer/styles/global/activity-panel.css */
