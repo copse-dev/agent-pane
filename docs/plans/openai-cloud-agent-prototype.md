@@ -90,8 +90,8 @@ container commit adoption and the existing host Create PR path. Fresh follow-up
 snapshots replace the old clone/revision prompt helper.
 
 - Focused API, adapter, real-Git transfer, cancellation, guest carry-out and build/type
-  invariant suite: **43 passed, 1 existing platform skip, no failures**. Covers
-  binary additions/deletions, dirty input preservation, unrelated ancestry, missing
+  invariant suite: **44 passed, 1 existing platform skip, no failures**. Covers
+  binary additions/deletions, dirty/ignored local file preservation, unrelated ancestry, missing
   export recovery, failed download recovery without resubmission/double usage, and
   fresh local code on follow-up.
 - Container suite: **42 passed, 3 failed**. The new serialized snapshot-race test

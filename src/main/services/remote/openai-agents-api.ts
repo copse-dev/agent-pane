@@ -282,7 +282,9 @@ export class OpenAiAgentsApi {
         ? 200 * 1024 * 1024
         : 10 * 1024 * 1024
     if (artifact.size_bytes > maxBytes)
-      throw new Error('Artifact exceeds the prototype 10 MiB download limit.')
+      throw new Error(
+        `Artifact exceeds the ${String(maxBytes / (1024 * 1024))} MiB download limit.`,
+      )
     const response = await this.request(
       `${this.path(state)}/artifacts/${encodeURIComponent(artifact.id)}/content`,
       signal,

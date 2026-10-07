@@ -28,12 +28,12 @@ and nonignored untracked files. A history-free Git bundle provisions `/workspace
 through `environment.files` and a deterministic `setup_commands` script. The script
 verifies the snapshot commit before inference starts. No GitHub credentials or Git
 configuration enter the hosted workspace. Snapshot uploads are limited to 50 MiB;
-Git submodules are currently unsupported. Ignored files and Git LFS object contents
+An initial Git commit is required; Git submodules are currently unsupported. Ignored files and Git LFS object contents
 are not transferred.
 
 The hosted exporter commits remaining edits and publishes a Git bundle. Copse checks
 the recorded base, exported ref and ancestry, then uses the container adoption path
-to cherry-pick the commits into the chat checkout. On `main`, `master` or detached
+to cherry-pick the commits into the chat checkout. On `main`, `master`, the known origin default branch or detached
 HEAD it creates a `copse/openai-…` branch. The existing **Create PR** flow pushes from
 the host using its GitHub authentication. No manual patch download is needed.
 If local edits or a changed base prevent adoption, the result stays checkpointed:

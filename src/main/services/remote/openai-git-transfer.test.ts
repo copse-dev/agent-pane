@@ -146,3 +146,17 @@ it('runs the shipped deterministic setup and exporter, including a no-change res
     rmSync(f.directory, { recursive: true, force: true })
   }
 })
+
+it('does not overwrite ignored local files when the guest force-adds the same path', async () => {
+  const f = await fixture()
+  try {
+    writeFileSync(join(f.guest, 'secret'), 'guest replacement')
+    git(f.guest, ['add', '-f', 'secret'])
+    f.exportChanges()
+    await assert.rejects(importGitTransfer(f.transfer, f.host, f.files), /ignored local files/)
+    assert.equal(readFileSync(join(f.host, 'secret'), 'utf8'), 'never upload')
+    assert.equal(git(f.host, ['status', '--porcelain']), '')
+  } finally {
+    rmSync(f.directory, { recursive: true, force: true })
+  }
+})

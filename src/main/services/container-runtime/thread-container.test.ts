@@ -912,8 +912,8 @@ describe('adoptCarryOut', () => {
         adoptCarryOut(repo, 'refs/copse/runs/hosted-a', base, tree),
         adoptCarryOut(repo, 'refs/copse/runs/hosted-b', base, tree),
       ])
-      assert.equal(results[0]?.status, 'fulfilled')
-      assert.equal(results[1]?.status, 'rejected')
+      assert.equal(results[0].status, 'fulfilled')
+      assert.equal(results[1].status, 'rejected')
       assert.equal(git(repo, ['show', 'HEAD:one.txt']), 'one.txt')
       assert.equal(git(repo, ['ls-tree', '--name-only', 'HEAD', 'two.txt']), '')
       assert.equal(git(repo, ['status', '--porcelain']), '')

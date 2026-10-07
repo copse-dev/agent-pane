@@ -103,6 +103,18 @@ export async function importGitTransfer(
   if (await git(root, ['rev-list', '--merges', `${transfer.base}..${ref}`]))
     throw new Error('Hosted merge commits cannot be adopted automatically.')
   // A retry after successful cherry-pick is safe even if saving the checkpoint failed.
+  const added = (
+    await git(root, ['diff', '--name-only', '-z', '--diff-filter=A', transfer.base, ref])
+  )
+    .split('\0')
+    .filter(Boolean)
+  if (
+    added.length > 0 &&
+    (await git(root, ['ls-files', '--others', '--ignored', '--exclude-standard', '--', ...added]))
+  )
+    throw new Error(
+      'Hosted changes would replace ignored local files; the returned commits are retained.',
+    )
   const cherry = await git(root, ['cherry', 'HEAD', ref, transfer.base])
   if (cherry.split('\n').some((line) => line.startsWith('+ '))) {
     const current = await createSnapshotCommit(root)
