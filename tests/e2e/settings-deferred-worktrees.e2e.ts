@@ -28,13 +28,15 @@ describe('Copse-wide deferred worktrees setting', () => {
     await browser.reloadSession()
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('defaults off and persists opting in and out across restarts', async function () {
     this.timeout(120_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await openExperimental()
-    const toggle = () => $('input[name="deferredWorktreesEnabled"]')
+    const toggle = (): ReturnType<typeof $> => $('input[name="deferredWorktreesEnabled"]')
     await expect(toggle()).not.toBeSelected()
     const hint = (await $(FIELDSET).$('.field-hint').getText()).replace(/\s+/g, ' ')
     assert.match(hint, /Applies across Copse to new threads using automatic checkout/)

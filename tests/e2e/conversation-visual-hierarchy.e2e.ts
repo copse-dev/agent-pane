@@ -180,7 +180,7 @@ describe('conversation visual hierarchy', () => {
     expect(layout.comparisonLeftBorder).toBe('0px')
     expect(layout.comparisonBackground).toContain('repeating-linear-gradient')
     expect(layout.baseLineHeight).toBe('22px')
-    expect(parseFloat(layout.answerLineHeight ?? '')).toBeCloseTo(24, 1)
+    expect(parseFloat(layout.answerLineHeight)).toBeCloseTo(24, 1)
     expect(layout.reasoningLineHeight).toBe(layout.baseLineHeight)
     expect(layout.composerLineHeight).toBe(layout.baseLineHeight)
     expect(layout.sidebarLineHeight).toBe(layout.baseLineHeight)

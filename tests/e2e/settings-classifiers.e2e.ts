@@ -97,19 +97,19 @@ describe('classifier connections settings', () => {
   async function saveClassifierScreenshot(selector: string, filename: string): Promise<void> {
     await browser.execute(() => {
       for (const input of document.querySelectorAll<HTMLInputElement>('[name="classifierUrl"]')) {
-        input.dataset.e2eReal = input.value
+        input.dataset['e2eReal'] = input.value
         input.value = input.value.replace(/:\d+(?=\/)/, ':4000')
       }
       for (const code of document.querySelectorAll('#settings-classifiers-host .field-hint code')) {
-        code.setAttribute('data-e2e-real', code.textContent ?? '')
-        code.textContent = (code.textContent ?? '').replace(/-[0-9a-f]{8}$/, '-00000000')
+        code.setAttribute('data-e2e-real', code.textContent)
+        code.textContent = code.textContent.replace(/-[0-9a-f]{8}$/, '-00000000')
       }
     })
     await saveElementScreenshot(selector, filename)
     await browser.execute(() => {
       for (const input of document.querySelectorAll<HTMLInputElement>('[data-e2e-real]')) {
-        input.value = input.dataset.e2eReal ?? input.value
-        delete input.dataset.e2eReal
+        input.value = input.dataset['e2eReal'] ?? input.value
+        delete input.dataset['e2eReal']
       }
       for (const code of document.querySelectorAll('code[data-e2e-real]')) {
         code.textContent = code.getAttribute('data-e2e-real')

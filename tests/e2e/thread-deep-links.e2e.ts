@@ -1,4 +1,8 @@
-import { readChromeOptions } from './helpers/chrome-options.ts'
+import {
+  cloneRequestedChromeCapabilities,
+  readChromeOptions,
+  updateChromeOptions,
+} from './helpers/chrome-options.ts'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -48,7 +52,9 @@ describe('native thread deep links', () => {
         thread(WARM, 'Running app destination'),
       ],
     })
-    const capabilities = browser.capabilities
+    // Negotiated response capabilities contain ChromeDriver-only fields that
+    // are invalid in a new-session request. Keep the original launch contract.
+    const capabilities = cloneRequestedChromeCapabilities(browser.requestedCapabilities)
     const chrome = readChromeOptions(browser.requestedCapabilities)
     if (!chrome.args) throw new Error('Expected Electron launch capabilities')
     // ChromeDriver prefixes non-switch args with '--'. Inject the ordinary OS
@@ -60,10 +66,8 @@ describe('native thread deep links', () => {
       `#!/bin/sh\nexec ${quote(electronBinary)} ${quote(join(process.cwd(), 'tests/e2e/electron-shell'))} "$@" ${quote(`copse://thread/${COLD}`)}\n`,
       { mode: 0o755 },
     )
-    await browser.reloadSession({
-      ...capabilities,
-      'goog:chromeOptions': { ...chrome, binary: launcher },
-    })
+    updateChromeOptions(capabilities, (options) => ({ ...options, binary: launcher }))
+    await browser.reloadSession(capabilities)
   })
 
   after(() => {

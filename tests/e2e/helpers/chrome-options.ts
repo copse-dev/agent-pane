@@ -25,6 +25,23 @@ export function readChromeOptions(capabilities: unknown): ChromeOptions {
   return decodeChromeOptions(chromeCapabilityRoot(capabilities)['goog:chromeOptions'] ?? {})
 }
 
+/** Copy the original launch request, never ChromeDriver's negotiated response. */
+export function cloneRequestedChromeCapabilities(capabilities: unknown): {
+  [key: string]: unknown
+  browserName: 'chrome'
+  'goog:chromeOptions': ChromeOptions
+} {
+  const root = chromeCapabilityRoot(capabilities)
+  if (Object.hasOwn(root, 'chrome') || Object.hasOwn(root, 'networkConnectionEnabled')) {
+    throw new Error('Expected requested Chrome capabilities, not a negotiated response')
+  }
+  return {
+    ...structuredClone(root),
+    browserName: 'chrome' as const,
+    'goog:chromeOptions': readChromeOptions(root),
+  }
+}
+
 /** Mutate the actual standalone/W3C session options after validating their argument list. */
 export function updateChromeOptions(
   capabilities: unknown,

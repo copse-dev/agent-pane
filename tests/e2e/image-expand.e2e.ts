@@ -381,7 +381,7 @@ describe('Screenshot click-to-expand', () => {
     await $('.annotation-send').click()
     await expect($('dialog.attachment-preview-dialog[open]')).not.toExist()
     await expect($('.attachment-chips .image-chip')).toExist()
-    await browser.waitUntil(async () => (await $$('.toast')).length === 0, {
+    await browser.waitUntil(async () => (await $$('.toast').getElements()).length === 0, {
       timeout: 5_000,
       timeoutMsg: 'expected annotation confirmation to clear before the next screenshot',
     })
@@ -439,7 +439,7 @@ describe('Screenshot click-to-expand', () => {
     assert.equal(clipboardText, DIFF_TEXT)
 
     await $('.attachment-preview-close').click()
-    await browser.waitUntil(async () => (await $$('.toast')).length === 0, {
+    await browser.waitUntil(async () => (await $$('.toast').getElements()).length === 0, {
       timeout: 5_000,
       timeoutMsg: 'expected copy confirmation to clear before the next screenshot',
     })

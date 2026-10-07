@@ -221,17 +221,17 @@ describe('agent tasks in terminal tab', () => {
     await setComposerValue('Run the long sequence and tell me if anything failed.')
     await submitComposer()
 
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 10_000 })
     await dialog.$('.approval-approve').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
 
-    const taskTab = await $('.agent-task-tab*=seq 1 15000')
+    const taskTab = await $('.agent-task-tab*=seq 1 15000').getElement()
     await taskTab.waitForExist({ timeout: 30_000 })
     await expect(taskTab).toHaveAttribute('data-status', 'done', { wait: 30_000 })
     await taskTab.click()
     // Earlier tasks keep their (hidden) panels; pick this command's.
-    const panel = await $('.agent-task-output-panel*=seq 1 15000')
+    const panel = await $('.agent-task-output-panel*=seq 1 15000').getElement()
     await panel.waitForDisplayed({ timeout: 10_000 })
     await waitForAgentIdle(30_000)
 

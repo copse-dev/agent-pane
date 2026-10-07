@@ -4,9 +4,14 @@ import { saveAppScreenshot, saveElementScreenshot } from '../e2e/helpers/screens
 async function saveDocumentCapture(selector: string, filename: string): Promise<void> {
   await $(selector).scrollIntoView({ block: 'center', inline: 'nearest' })
   const framing = await browser.execute((subjectSelector) => {
-    const subject = document.querySelector(subjectSelector)!.getBoundingClientRect()
-    const masthead = document.querySelector('.masthead')!.getBoundingClientRect()
-    const app = document.getElementById('app')!
+    const subjectElement = document.querySelector(subjectSelector)
+    if (!subjectElement) throw new Error('Missing subject capture element')
+    const subject = subjectElement.getBoundingClientRect()
+    const mastheadElement = document.querySelector('.masthead')
+    if (!mastheadElement) throw new Error('Missing masthead capture element')
+    const masthead = mastheadElement.getBoundingClientRect()
+    const app = document.getElementById('app')
+    if (!app) throw new Error('Missing app capture subject')
     return {
       top: subject.top,
       bottom: subject.bottom,

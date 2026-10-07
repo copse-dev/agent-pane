@@ -7,6 +7,14 @@ async function readProseMetrics(selector: string): Promise<{
   width: number
   fontSize: number
   lineHeight: number
+  fontFamily: string
+  letterSpacing: string
+  wordSpacing: string
+  color: string
+  strongWeight: number
+  strongColor: string
+  linkColor: string
+  linkedStrongColor: string
   paragraphGap: number
   overflow: number
   codeScrolls: boolean

@@ -169,7 +169,8 @@ describe('coverage in the real composer model picker', () => {
     // Screenshot framing pins #app to 800px tall. Release that capture frame
     // before shrinking the window so the composer follows the real viewport.
     await browser.execute(() => {
-      const app = document.getElementById('app')!
+      const app = document.getElementById('app')
+      if (!app) throw new Error('Missing app capture subject')
       app.style.removeProperty('width')
       app.style.removeProperty('height')
     })

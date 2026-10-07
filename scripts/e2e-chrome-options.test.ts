@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { readChromeOptions, updateChromeOptions } from '../tests/e2e/helpers/chrome-options.ts'
+import {
+  cloneRequestedChromeCapabilities,
+  readChromeOptions,
+  updateChromeOptions,
+} from '../tests/e2e/helpers/chrome-options.ts'
 
 describe('Chrome session capability boundary', () => {
   it('reads requested W3C launch options without changing the original capabilities', () => {
@@ -37,6 +41,40 @@ describe('Chrome session capability boundary', () => {
       alwaysMatch: { browserName: 'chrome', 'goog:chromeOptions': { args: ['--new'] } },
       firstMatch: [{}],
     })
+  })
+  it('replaces the launcher binary without losing requested W3C or driver options', () => {
+    const requested = {
+      alwaysMatch: {
+        browserName: 'chrome',
+        browserVersion: '152.0.7977.130',
+        'wdio:enforceWebDriverClassic': true,
+        'goog:loggingPrefs': { browser: 'ALL' },
+        'goog:chromeOptions': {
+          binary: '/fixture/Electron',
+          windowTypes: ['app', 'webview'],
+          args: ['--app=/fixture/shell', '--headless=new'],
+        },
+      },
+      firstMatch: [{}],
+    }
+    const launch = cloneRequestedChromeCapabilities(requested)
+    updateChromeOptions(launch, (options) => ({ ...options, binary: '/fixture/link-launcher' }))
+    assert.deepEqual(launch, {
+      ...requested.alwaysMatch,
+      'goog:chromeOptions': {
+        ...requested.alwaysMatch['goog:chromeOptions'],
+        binary: '/fixture/link-launcher',
+      },
+    })
+    assert.equal(requested.alwaysMatch['goog:chromeOptions'].binary, '/fixture/Electron')
+  })
+  it('rejects response-only ChromeDriver fields instead of sending them in a new request', () => {
+    for (const response of [
+      { browserName: 'chrome', chrome: { chromedriverVersion: '152' } },
+      { browserName: 'chrome', networkConnectionEnabled: false },
+    ]) {
+      assert.throws(() => cloneRequestedChromeCapabilities(response), /not a negotiated response/)
+    }
   })
   it('rejects invalid sessions and argument arrays before mutation', () => {
     for (const value of [

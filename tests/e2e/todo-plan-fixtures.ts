@@ -5,7 +5,7 @@
  * not treat the change as a broad helpers edit and force a full suite.
  */
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeSeedConfig } from './helpers/seed-config.ts'
 import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'

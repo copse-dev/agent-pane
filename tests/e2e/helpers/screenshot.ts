@@ -227,7 +227,7 @@ export async function saveChatPaneScreenshot(filename: string): Promise<void> {
     document.querySelector('.message-text table')?.scrollIntoView({ block: 'start' })
   })
   await browser.pause(100)
-  const app = await browser.$('#app').getElement().getElement()
+  const app = await browser.$('#app').getElement()
   await app.waitForDisplayed({ timeout: 15_000 })
   await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
@@ -242,7 +242,7 @@ export async function savePreparedElementScreenshot(
     document.querySelector<HTMLElement>(sel)?.scrollIntoView({ block: 'start', inline: 'nearest' })
   }, selector)
   await browser.pause(100)
-  const el = await browser.$(selector).getElement().getElement()
+  const el = await browser.$(selector).getElement()
   await el.waitForDisplayed({ timeout: 15_000 })
   await el.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
@@ -441,7 +441,8 @@ export async function pinTextForCapture(
         let matched = 0
         const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
         for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-          if (!(node instanceof Text)) throw new Error('Expected a text node from the text-only walker')
+          if (!(node instanceof Text))
+            throw new Error('Expected a text node from the text-only walker')
           const text = node
           // `search` ignores lastIndex, so a /g pattern cannot skip a node.
           if (text.data.search(re) === -1) continue

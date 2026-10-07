@@ -38,11 +38,11 @@ const store = createStore({
 })
 const api = createFakeApi()
 let estimates = 0
-api.agent.estimateContext = async () => {
+api.agent.estimateContext = async (): Promise<ContextBreakdown> => {
   controls.dataset['estimates'] = String(++estimates)
   return late ? pending.promise : breakdown
 }
-api.settings.get = async (key) =>
+api.settings.get = async (key): Promise<unknown> =>
   key === 'registeredAcpAgents'
     ? [
         {
@@ -64,7 +64,7 @@ const input = document.createElement('div')
 app.append(input)
 mountInputBar(input, store, api)
 
-function control(id: string, label: string, action: () => void): void {
+const control = (id: string, label: string, action: () => void): void => {
   const button = document.createElement('button')
   button.id = id
   button.textContent = label
@@ -74,7 +74,9 @@ function control(id: string, label: string, action: () => void): void {
 control('resolve-acp', 'Resolve Auto to ACP', () => {
   commitThreadModelSelection(store, api, 'thread-1', 'auto', 'auto:balanced', 'acp:claude-acp#opus')
 })
-control('finish-estimate', 'Return the old native estimate', () => pending.resolve(breakdown))
+control('finish-estimate', 'Return the old native estimate', () => {
+  pending.resolve(breakdown)
+})
 control('report-usage', 'Report ACP usage', () => {
   updateContextSnapshot(store, 'thread-1', {
     contextWindow: 200_000,
