@@ -813,6 +813,9 @@ export function mountPrPane(
           { class: 'pr-thread-empty', role: 'status' },
           relationshipError ? 'Thread relationships unavailable.' : 'Loading thread relationships…',
         )
+    // Keep activity and file views compact; provenance belongs to the overview.
+    // Offline relationships remain available even without GitHub details.
+    relationships.hidden = prDetails !== null && activeSection !== 'overview'
     if (!prDetails) {
       metaHost.append(
         el(
@@ -1068,6 +1071,7 @@ export function mountPrPane(
       }
       button.addEventListener('click', () => {
         activeSection = section.key
+        renderMeta()
         clearDiff()
         renderDescription()
         renderFiles()

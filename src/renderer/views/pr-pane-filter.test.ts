@@ -251,6 +251,33 @@ describe('pr pane filter (issue #2482)', () => {
     assert.equal(viewerRoot.querySelector('.git-diff-editor-wrap')?.hasAttribute('hidden'), true)
   })
 
+  it('keeps relationships on Overview and New thread available as a primary action', async () => {
+    const { viewerRoot, dispose } = mount([], {
+      workspacePrs: [],
+      prDetails: async (_owner, _repo, number) =>
+        number === LINKED_PR.number ? { ...LINKED_PR, body: 'Summary', files: [] } : null,
+    })
+    await settle()
+    const relationships = (): HTMLElement => {
+      const host = viewerRoot.querySelector<HTMLElement>('.pr-thread-relationships')
+      assert.ok(host)
+      return host
+    }
+    assert.equal(relationships().hidden, false)
+    const menu = viewerRoot.querySelector<HTMLDetailsElement>('.pr-more-actions')
+    assert.ok(menu)
+    assert.equal(menu.open, false)
+    assert.equal(menu.querySelector('.pr-new-thread-btn'), null)
+    assert.ok(viewerRoot.querySelector('.pr-viewer-actions > .pr-new-thread-btn'))
+    for (const section of ['comments', 'checks', 'files']) {
+      viewerRoot.querySelector<HTMLButtonElement>(`[data-section="${section}"]`)?.click()
+      assert.equal(relationships().hidden, true, section)
+    }
+    viewerRoot.querySelector<HTMLButtonElement>('[data-section="overview"]')?.click()
+    assert.equal(relationships().hidden, false)
+    dispose()
+  })
+
   it('shows known conflicts as an X while retaining the failing CI label', async () => {
     const { listRoot } = mount([], {
       linkedUrls: 'https://github.com/acme/widgets/pull/994',
