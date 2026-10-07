@@ -30,8 +30,8 @@ projects). The latency saving applies to every thread, because agents read befor
 ## Behaviour
 
 At the first message with the global setting enabled (or in an `on-write` project),
-with an automatic checkout choice and a native
-(non-ACP) model:
+with an automatic checkout choice and a native model, or an ACP agent that
+[can start read-only](#acp-agents):
 
 1. The policy decides `worktree` exactly as `always` does. The transaction resolves the base
    branch, including a picked branch, and persists
@@ -91,6 +91,53 @@ allocation) states:
 - which files differ between the commit it read and the worktree base, to re-read before editing;
 - which uncommitted files it saw that were not carried over.
 
+## ACP agents
+
+An ACP agent edits through its own process, so Copse cannot allocate before its first write the
+way the tool registry does for a native model. Its cwd and OS sandbox are also fixed when the
+process starts. An ACP thread therefore defers only when all of these hold
+(`acpAgentCanDeferCheckout`), and otherwise allocates up front as before:
+
+- the project is local, not an SSH workspace;
+- the agent will spawn under the project sandbox (`willSandboxAcpAgent`), so its writes can be
+  contained;
+- the native bridge is on, so `request_write_access` can reach it.
+
+The check runs at the first message (`canDeferAcpModel` in the checkout transaction) and again
+at every turn (`runAcpAgentTurn`), because the sandbox or bridge setting may have changed in
+between. A thread that deferred and then fails the turn-time check allocates before the session
+sees a root.
+
+When it holds, the turn runs like this:
+
+1. **Read-only start.** The agent spawns with `readonlyCheckout`: the ordinary agent sandbox
+   overlay with every write grant at or under the checkout removed (`withoutCheckoutWrites`).
+   Its home-scoped state and scratch stay writable, so its session files persist.
+   `spawnAcpAgentProcess` throws if `readonlyCheckout` reaches it without the sandbox, and
+   `spawnTransport` throws on a remote host. The flag is part of the pool fingerprint but not
+   the lineage, so the transition costs a process and not the session. The first prompt says the
+   workspace is read-only and to call `request_write_access` before changing anything.
+2. **Ask.** `request_write_access` is offered through the bridge to that session alone (a bridge
+   is started per session, and the flag is fixed for it). If the bridge does not start, the pool
+   refuses to spawn the read-only agent (`AcpReadonlyCheckoutUnavailableError`): nothing else
+   reaches the worktree allocator, so it could neither write nor ask. The turn then allocates the
+   worktree up front and runs again writable, as an agent that cannot defer does. Its result carries the usual
+   allocation note plus an instruction to end the turn: the agent's own tools stay read-only
+   until it is restarted. A bridged write tool still allocates on its own, as on the native
+   loop, and the agent's bridged edits land in the worktree at once.
+3. **Continue.** When the turn ends on its own (`end_turn`) and the thread now owns a worktree,
+   `runAcpTurnWithContinuation` starts a second turn at once under the worktree's context.
+   The pool respawns the agent there and reattaches the same agent session
+   ([`acp-session-continuity.md`](./acp-session-continuity.md#changed-working-directory)). The
+   continuation prompt tells the agent it now has write access and to carry on, or to say so
+   briefly if it had already finished. If the session cannot carry over, the turn opens with the
+   handover note and the agent works from the transcript, which is extended with the first
+   turn's messages. A stopped, aborted, or failed first turn does not continue; the user's next
+   message opens the session in the worktree.
+
+The continuation is an extra, short model turn even when the agent finished the work through
+bridged tools. That is the price of not guessing from the transcript whether it was done.
+
 ## Invariants
 
 1. A deferred thread never writes the user's checkout. This is enforced at the registry
@@ -100,8 +147,9 @@ allocation) states:
 3. When in doubt, allocate. Deferral may cost an extra worktree; it may not weaken isolation.
 4. A thread never returns to deferred once it owns a worktree. A stale upgrade-map entry can
    therefore never misroute a later turn.
-5. ACP agents, remote models, and explicit worktree choices allocate eagerly. An ACP turn on a
-   thread that deferred under a native model allocates before its session sees a root.
+5. Remote models and explicit worktree choices allocate eagerly. So does an ACP agent that cannot
+   be contained (no sandbox, remote host, bridge off); a thread that deferred under a native
+   model and then switched to such an agent allocates before its session sees a root.
 6. Container runs refuse a deferred thread rather than snapshot the user's checkout.
 
 ## Evidence
@@ -136,9 +184,15 @@ allocation) states:
 - **Deferred-state indication.** The composer chip still previews "worktree" (the eventual truth). While deferred, the
   branch chip shows the project checkout's branch, and nothing yet says "reading your
   checkout".
-- **ACP agents allocate eagerly.** Deferring them needs an ACP session to resume in a new cwd
-  without losing the conversation. That is tracked separately under
-  [`acp-session-continuity.md`](./acp-session-continuity.md).
+- **ACP deferral is unproven against real agents.** The pool, sandbox overlay, bridge and
+  continuation are covered with fakes, and the continuity probe shows Claude Agent ACP and Codex
+  ACP reattaching from another directory. No real-agent run has started read-only, asked for
+  write access, and continued. Cursor was never probed, and a custom agent may not be able to
+  load. Those fall back to the handover note.
+- **An agent may not ask first.** Its own edit tools then fail against the read-only sandbox.
+  The prompt note steers it to `request_write_access`, but nothing enforces it.
+- **No visual evidence yet** for the ACP flow. It needs a macOS or Linux host where the project
+  sandbox is active, plus a scripted ACP agent in the Electron e2e.
 - **Approval keys include the root**, so a session-scoped approval granted before the switch is
   asked again after it.
 - **A declined host prompt still leaves the worktree.** Allocation runs after `toolGate` hooks
