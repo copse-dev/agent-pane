@@ -73,6 +73,7 @@
 // v45 conservatively versions deferred thread worktrees: the optional `deferredWorktree` on
 // threads and prepared checkouts, the `on-write` project mode, and the `thread_checkout`
 // agent chunk.
-// v46 conservatively versions the optional classifier-call latency and token fields on
+// v46 versions the removal of `activeRunThreadIds` from the process-manager snapshot.
+// v47 conservatively versions the optional classifier-call latency and token fields on
 // decision events, alongside the new `usage:get-thread-classifier-use` channel.
-export const API_PROTOCOL_VERSION = 46 as const
+export const API_PROTOCOL_VERSION = 47 as const
