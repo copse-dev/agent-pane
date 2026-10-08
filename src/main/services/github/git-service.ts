@@ -34,6 +34,7 @@ import {
   type GitFileDiff,
   type GitPromptState,
   type GitStatusResult,
+  type ThreadChangeSummary,
 } from '@shared/types/git.ts'
 import { isNonNull } from '@shared/nullish.ts'
 
@@ -85,6 +86,7 @@ async function runGit(
 async function runGitRead(
   args: string[],
   root: string | null = getAgentExecutionRoot(),
+  extra: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = root
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
@@ -92,6 +94,8 @@ async function runGitRead(
   return runCommand('git', args, {
     cwd,
     sandboxConfig: readOnlyWorkspaceSandboxOverlay(cwd),
+    ...(extra.timeoutMs !== undefined ? { timeout_ms: extra.timeoutMs } : {}),
+    ...(extra.env ? { env: extra.env } : {}),
   })
 }
 
@@ -823,6 +827,50 @@ export async function getGitStatus(
   const { stdout, code } = await runGitRead(args, root)
   if (code !== 0) return null
   return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix)
+}
+
+const THREAD_CHANGE_GIT_TIMEOUT_MS = 10_000
+
+/**
+ * Cheap "does this checkout hold unlanded work" read for a sidebar row: a
+ * `git status` without optional locks plus a few ref reads. Deliberately smaller than
+ * {@link getGitStatus} (no path normalisation) and free of PR lookups. Untracked
+ * files count as dirty, matching the Changes pane: new files are uncommitted work.
+ *
+ * `unpushed` is only reported when it is meaningful. With no remote, or a branch
+ * whose configured upstream is gone (e.g. squash-merged and deleted), the count
+ * is unknown, so only `dirty` is reported rather than the whole history. A
+ * transient failure resolving a real upstream also reports `dirty` only; it does
+ * not fall back to the looser comparison. Null when `root` is not a work tree.
+ */
+export async function readThreadChangeSummary(root: string): Promise<ThreadChangeSummary | null> {
+  if (isActiveSshWorkspace()) return null
+  if (!(await isGitAvailableForTarget()) || !(await confirmInsideWorkTree(root, true))) return null
+  const read = (args: string[]): ReturnType<typeof runGitRead> =>
+    // GIT_OPTIONAL_LOCKS=0: a background status must not take the index lock and
+    // race the user's or agent's own git commands.
+    runGitRead(args, root, {
+      timeoutMs: THREAD_CHANGE_GIT_TIMEOUT_MS,
+      env: { GIT_OPTIONAL_LOCKS: '0' },
+    })
+  const status = await read(['status', '--porcelain=v1', '-z'])
+  if (status.code !== 0) return null
+  const dirty = status.stdout.length > 0
+  const withUnpushed = (count: { stdout: string; code: number }): ThreadChangeSummary => {
+    const unpushed = count.code === 0 ? Number.parseInt(count.stdout.trim(), 10) : Number.NaN
+    return Number.isFinite(unpushed) && unpushed > 0 ? { dirty, unpushed } : { dirty }
+  }
+
+  if ((await read(['remote'])).stdout.trim() === '') return { dirty }
+  if ((await read(['rev-parse', '--verify', '--quiet', '@{u}'])).code === 0) {
+    return withUnpushed(await read(['rev-list', '--count', '@{u}..HEAD']))
+  }
+  const branch = (await read(['symbolic-ref', '--short', '-q', 'HEAD'])).stdout.trim()
+  if (branch === '') return { dirty }
+  // An upstream is configured but its ref is gone: unknown, not "everything".
+  if ((await read(['config', '--get', `branch.${branch}.merge`])).code === 0) return { dirty }
+  // Never published: commits no remote-tracking ref has.
+  return withUnpushed(await read(['rev-list', '--count', 'HEAD', '--not', '--remotes']))
 }
 
 /**

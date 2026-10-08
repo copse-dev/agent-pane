@@ -69,6 +69,7 @@ import type {
   GitCommittedChanges,
   GitFileDiff,
   GitStatusResult,
+  ThreadChangeSummary,
   GitBranchStatus,
   ThreadWorktreeAttachment,
   ThreadWorktreeReattachResult,
@@ -1311,6 +1312,16 @@ export interface ApiClient {
       projectId: string,
       threadId: string,
     ) => Promise<{ additions: number; deletions: number } | null>
+    /**
+     * Inspect-only "has unlanded work" read for sidebar rows, aligned with `refs`:
+     * dirty working tree and/or unpushed commits, null when unreadable. Never arms a
+     * file watcher or restores a worktree, and threads sharing a checkout cost one read.
+     * `fresh` bypasses the short per-checkout cache.
+     */
+    threadChangeSummary: (
+      refs: Array<{ projectId: string; threadId: string }>,
+      opts?: { fresh?: boolean },
+    ) => Promise<Array<ThreadChangeSummary | null>>
     fileDiff: (
       projectId: string,
       threadId: string,

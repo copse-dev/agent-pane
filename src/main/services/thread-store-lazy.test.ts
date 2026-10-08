@@ -303,11 +303,12 @@ describe('thread-store PR-ref cache', () => {
     await backfillThreadPrRefs('p', ['old', 'plain'], (refs) => batches.push(...refs))
 
     assert.deepEqual(
-      batches.map((b) => b.threadId),
-      ['old'],
-      'only threads that actually have PR links are reported',
+      batches.map((b) => b.threadId).toSorted(),
+      ['old', 'plain'],
+      'every scanned thread is reported so the renderer can distinguish no PRs from unscanned',
     )
-    assert.equal(batches[0]?.prRefs[0]?.number, 5)
+    assert.equal(batches.find((batch) => batch.threadId === 'old')?.prRefs[0]?.number, 5)
+    assert.deepEqual(batches.find((batch) => batch.threadId === 'plain')?.prRefs, [])
     // A thread with no links must still be marked as scanned, or the backfill
     // would re-read the whole project on every open forever.
     assert.deepEqual(metaOnDisk(root, 'p', 'plain')['prRefs'], [])

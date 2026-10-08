@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   getThreadExecutionContext,
+  inspectThreadCheckoutRoot,
   prepareThreadExecutionContext,
   requireThreadExecutionContext,
   resolveThreadExecutionContext,
@@ -525,5 +526,58 @@ describe('thread execution owner', () => {
       () => requireThreadExecutionOwner(),
     )
     assert.deepEqual(result, { projectId: 'p1', threadId: 't1' })
+  })
+})
+
+describe('inspectThreadCheckoutRoot', () => {
+  const worktree = (extra: Partial<ThreadWorktree> = {}): ThreadWorktree => ({
+    path: '/worktrees/t1',
+    branch: 'copse/t1',
+    baseBranch: 'main',
+    baseCommit: 'abc',
+    createdAt: 1,
+    seededFromDirtyProject: false,
+    ...extra,
+  })
+  const inspect = (
+    meta: Awaited<ReturnType<ThreadExecutionContextDependencies['getThreadMeta']>>,
+  ): Promise<string | null> =>
+    inspectThreadCheckoutRoot('project-1', 'thread-1', {
+      getProjectRoot: () => '/project',
+      getThreadMeta: async () => meta,
+      inspectWorktreePath: async (_projectId, _threadId, recorded) =>
+        recorded === '/worktrees/t1' ? '/canonical/t1' : null,
+    })
+
+  it('returns the project root for a shared thread and the path of an active worktree', async () => {
+    assert.equal(await inspect({ id: 'thread-1' }), '/project')
+    assert.equal(await inspect({ id: 'thread-1', worktree: worktree() }), '/canonical/t1')
+  })
+
+  it('returns null when the recorded worktree path is not the managed one', async () => {
+    assert.equal(await inspect({ id: 'thread-1', worktree: worktree({ path: '/etc' }) }), null)
+  })
+
+  it('returns null for retired or PR worktrees instead of restoring them', async () => {
+    assert.equal(await inspect({ id: 'thread-1', worktree: worktree({ retiredAt: 5 }) }), null)
+    assert.equal(
+      await inspect({
+        id: 'thread-1',
+        worktree: worktree({ pullRequestUrl: 'https://github.com/o/r/pull/1' }),
+      }),
+      null,
+    )
+  })
+
+  it('returns null for an unknown project or thread, or a mismatched id', async () => {
+    assert.equal(await inspect(null), null)
+    assert.equal(await inspect({ id: 'other' }), null)
+    assert.equal(
+      await inspectThreadCheckoutRoot('project-1', 'thread-1', {
+        getProjectRoot: () => null,
+        getThreadMeta: async () => ({ id: 'thread-1' }),
+      }),
+      null,
+    )
   })
 })
