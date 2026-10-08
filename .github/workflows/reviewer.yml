@@ -14,7 +14,7 @@ on:
         default: npm
         type: string
       pr:
-        description: PR number for a manual workflow_dispatch caller
+        description: PR number resolved by the trusted workflow_run or manual caller
         required: true
         type: number
       provider:
@@ -60,7 +60,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: copse-review-${{ github.repository }}-${{ inputs.pr }}
+  group: copse-review-${{ github.repository }}-${{ inputs.pr }}-${{ github.event.workflow_run.head_sha || 'manual' }}
   cancel-in-progress: true
 
 jobs:
@@ -77,7 +77,7 @@ jobs:
         id: authorize
         env:
           PREPARATION: ${{ inputs.preparation }}
-          COPSE_CALLER_ALLOWED: ${{ github.event_name == 'workflow_dispatch' && github.repository_id == '1274237362' && github.actor_id == '338988' && github.triggering_actor == 'jonathanKingston' && github.ref == 'refs/heads/main' && github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main' }}
+          COPSE_CALLER_ALLOWED: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run') && github.repository_id == '1274237362' && github.actor_id == '338988' && github.triggering_actor == 'jonathanKingston' && github.ref == 'refs/heads/main' && github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main' }}
           REVIEWER_REF: ${{ inputs.reviewer-ref }}
           MANUAL_PR: ${{ inputs.pr }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
@@ -111,23 +111,62 @@ jobs:
             if (repository.private || context.ref !== `refs/heads/${repository.default_branch}`) {
               throw new Error('The initial Copse Actions release requires a public repo and default-branch workflow');
             }
-            if (context.eventName !== 'workflow_dispatch') {
-              throw new Error('Invoke from workflow_dispatch');
+            const automatic = context.eventName === 'workflow_run';
+            if (!automatic && context.eventName !== 'workflow_dispatch') {
+              throw new Error('Invoke from workflow_run or workflow_dispatch');
             }
-            // Re-check both the initiating actor and the actor requesting a rerun.
-            for (const username of new Set([context.actor, process.env.TRIGGERING_ACTOR])) {
-              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username });
-              if (!['admin', 'maintain', 'write'].includes(data.permission)) {
-                core.notice('Copse reviews require a caller with repository write permission.');
+            const signal = context.payload.workflow_run;
+            if (automatic && (signal?.event !== 'pull_request' || signal.conclusion !== 'success' ||
+                signal.path !== '.github/workflows/copse-review-request.yml' ||
+                signal.repository?.id !== repository.id || signal.head_repository?.id !== repository.id ||
+                !signal.actor?.login || !signal.triggering_actor?.login ||
+                !Array.isArray(signal.pull_requests) || signal.pull_requests.length > 1 ||
+                (signal.pull_requests.length === 1 &&
+                  signal.pull_requests[0].number !== Number(process.env.MANUAL_PR)))) {
+              core.notice('Automatic reviews require a successful same-repository PR request.');
+              return;
+            }
+            let number = Number(process.env.MANUAL_PR);
+            if (automatic && signal.pull_requests.length === 0) {
+              if (number !== 0 || typeof signal.head_branch !== 'string' || !signal.head_branch) return;
+              // GitHub can omit the PR association on Dependabot workflow_run events.
+              const { data: candidates } = await github.rest.pulls.list({
+                owner, repo, state: 'open', head: `${owner}:${signal.head_branch}`,
+                base: repository.default_branch, per_page: 100,
+              });
+              const matches = candidates.filter(pull => pull.head.repo?.id === repository.id &&
+                pull.base.repo?.id === repository.id && pull.head.sha === signal.head_sha &&
+                pull.base.ref === repository.default_branch);
+              if (matches.length !== 1) {
+                core.notice('No unique current same-repository PR matches this request.');
                 return;
               }
+              number = matches[0].number;
             }
-            const number = Number(process.env.MANUAL_PR);
             if (!Number.isSafeInteger(number) || number < 1) throw new Error('A valid PR number is required');
             const { data: pull } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             if (pull.head.repo?.id !== repository.id) {
               core.notice('Copse reviews support same-repository PRs only; fork PRs are not supported.');
               return;
+            }
+            if (automatic && pull.head.sha !== signal.head_sha) {
+              core.notice('The PR has moved since this review request; waiting for its new request.');
+              return;
+            }
+            if (copse && automatic && (signal.actor.id !== 338988 || signal.triggering_actor.id !== 338988)) return;
+            // Dependabot can request automatic reviews of its own same-repository PRs.
+            // Human initiators and all other rerunning actors still need write permission.
+            const actors = [context.actor, process.env.TRIGGERING_ACTOR];
+            if (automatic) actors.push(signal.actor.login, signal.triggering_actor.login);
+            for (const username of new Set(actors)) {
+              if (automatic && username === 'dependabot[bot]' &&
+                  signal.actor?.login === username && signal.actor.id === 49699333 &&
+                  pull.user?.id === 49699333) continue;
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username });
+              if (!['admin', 'maintain', 'write'].includes(data.permission)) {
+                core.notice('Copse reviews require a caller with repository write permission.');
+                return;
+              }
             }
             if (copse && (repository.id !== 1274237362 || pull.user?.id !== 338988 ||
                 pull.head.repo?.id !== 1274237362)) return;
@@ -203,7 +242,7 @@ jobs:
           github-token: ${{ github.token }}
 
   copse-findings:
-    if: ${{ inputs.preparation == 'copse-pnpm' && github.event_name == 'workflow_dispatch' && github.repository_id == '1274237362' && github.actor_id == '338988' && github.triggering_actor == 'jonathanKingston' && github.ref == 'refs/heads/main' && github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main' }}
+    if: ${{ inputs.preparation == 'copse-pnpm' && (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run') && github.repository_id == '1274237362' && github.actor_id == '338988' && github.triggering_actor == 'jonathanKingston' && github.ref == 'refs/heads/main' && github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main' }}
     needs: [authorize, ground]
     environment: copse-review-models
     runs-on: ubuntu-latest
