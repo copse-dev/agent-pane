@@ -94562,6 +94562,14 @@ var init_model_selection2 = __esm({
   }
 });
 
+// src/shared/turn-recovery.ts
+var INTERRUPTED_TURN_CONTINUATION;
+var init_turn_recovery = __esm({
+  "src/shared/turn-recovery.ts"() {
+    INTERRUPTED_TURN_CONTINUATION = "Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.";
+  }
+});
+
 // src/renderer/controller/turn-recovery.ts
 function turnRecoveryForMessage(thread, failedMessageId) {
   if (!thread || thread.messagesLoaded === false) return null;
@@ -94608,13 +94616,13 @@ function recoverFailedTurn(store2, api2, projectId, threadId, failedMessageId, m
   dispatchAgentRun(store2, api2, threadId, payload);
   return true;
 }
-var INTERRUPTED_TURN_CONTINUATION;
-var init_turn_recovery = __esm({
+var init_turn_recovery2 = __esm({
   "src/renderer/controller/turn-recovery.ts"() {
     init_thread_helpers();
     init_model_selection2();
     init_message_queue();
-    INTERRUPTED_TURN_CONTINUATION = "Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.";
+    init_turn_recovery();
+    init_turn_recovery();
   }
 });
 
@@ -98824,7 +98832,7 @@ var init_conversation = __esm({
     init_message_queue();
     init_fork_thread3();
     init_resend_message();
-    init_turn_recovery();
+    init_turn_recovery2();
     init_turn_recovery_card();
     init_image_input_support();
     init_toast();
