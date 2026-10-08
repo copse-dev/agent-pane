@@ -24,6 +24,10 @@
     "label": "Balanced model rule label"
   },
   {
+    "id": "prompt-model-first-ask",
+    "label": "Prompt matching without transcript diagnostics"
+  },
+  {
     "id": "footer-compact",
     "label": "Responsive composer footer"
   },
