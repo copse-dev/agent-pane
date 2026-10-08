@@ -32,6 +32,10 @@ on:
       max-verify:
         default: 3
         type: number
+      post-summary:
+        description: Update the PR description with the completed review's summary
+        default: false
+        type: boolean
     secrets:
       COPSE_REVIEW_API_KEY:
         required: false
@@ -194,6 +198,7 @@ jobs:
           lenses: ${{ inputs.lenses }}
           max-steps: ${{ inputs.max-steps }}
           max-verify: ${{ inputs.max-verify }}
+          post-summary: ${{ inputs['post-summary'] && 'true' || 'false' }}
           app-id: ${{ secrets.app-id }}
           app-private-key: ${{ secrets.app-private-key }}
           github-token: ${{ github.token }}

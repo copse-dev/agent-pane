@@ -288,6 +288,45 @@ describe('portable review authorization', () => {
 })
 
 describe('portable Actions isolation', () => {
+  it('opts portable description summaries in without changing the default', () => {
+    const workflow = z
+      .object({
+        on: z.object({
+          workflow_call: z.object({
+            inputs: z.object({
+              'post-summary': z.object({ type: z.literal('boolean'), default: z.boolean() }),
+            }),
+          }),
+        }),
+        jobs: z.object({
+          findings: z.object({
+            steps: z.array(
+              z.object({
+                uses: z.string().optional(),
+                with: z.record(z.string(), z.unknown()).optional(),
+              }),
+            ),
+          }),
+        }),
+      })
+      .parse(load(readFileSync('.github/workflows/reviewer.yml', 'utf8')))
+    const option = workflow.on.workflow_call.inputs['post-summary']
+    assert.equal(option.default, false)
+    const step = workflow.jobs.findings.steps.find(
+      (step) => step.uses === './.copse-reviewer/.github/actions/review-findings',
+    )
+    const expression = z.string().parse(step?.with?.['post-summary'])
+    assert.ok(expression.startsWith('${{ ') && expression.endsWith(' }}'))
+    for (const enabled of [option.default, true]) {
+      assert.equal(
+        runInNewContext(expression.slice(3, -2), {
+          inputs: { 'post-summary': enabled },
+        }),
+        enabled ? 'true' : 'false',
+      )
+    }
+  })
+
   it('keeps paid credentials out of grounding and gates the fresh findings runner on successful grounding', () => {
     const workflow = workflowSchema.parse(
       load(readFileSync('.github/workflows/reviewer.yml', 'utf8')),
@@ -568,5 +607,11 @@ describe('shared findings model configuration', () => {
     const portable = execute('portable', { REVIEW_BASE_URL: '' })
     assert.equal(portable.status, 0, portable.stderr)
     assert.doesNotMatch(portable.stdout, /--post-summary|--feedback-label/)
+    const portableSummary = execute('portable', {
+      REVIEW_BASE_URL: '',
+      REVIEW_POST_SUMMARY: 'true',
+    })
+    assert.equal(portableSummary.status, 0, portableSummary.stderr)
+    assert.match(portableSummary.stdout, /--post-summary\ngithub\n$/)
   })
 })

@@ -106,9 +106,12 @@ and publish with their own workflow token.
 
 Optional workflow inputs: `provider` (default `openrouter`), `model` (default
 `openai/gpt-6-luna`), `lenses` (default `correctness,visual`), `max-steps` (default
-12, maximum 100) and `max-verify` (default 3, maximum 10). Other hosted providers
-supported by the CLI can use `model-api-key`; custom base URLs are not exposed by
-this first wrapper. Limits apply per reviewer; this is not a dollar spending cap.
+12, maximum 100), `max-verify` (default 3, maximum 10) and `post-summary` (default
+`false`). Set `post-summary: true` in the caller's `with` block to update the PR
+description with an evidence-based summary, including reviews with no findings.
+Other hosted providers supported by the CLI can use `model-api-key`; custom base
+URLs are not exposed by this first wrapper. Limits apply per reviewer; this is
+not a dollar spending cap.
 
 Standard `build`, `typecheck`, `lint` and `test` npm scripts are detected.
 `review.config.json` can override/disable commands and set per-check timeouts;
@@ -116,9 +119,13 @@ all configured commands still execute inside the cell. Missing checks and failed
 preparation remain visible limitations. Normal review does not claim browser
 coverage, fetch external conformance fixtures or replace project CI.
 
-Findings post as advisory `COMMENT` reviews. The wrapper does not edit the PR
-description, add feedback labels, make commits, or merge. An empty completed
-review uses the existing resolution behavior and may post no new review.
+Findings post as advisory `COMMENT` reviews. With `post-summary: true`, the reviewer
+adds or replaces its managed summary block in the PR description, preserving the
+author's text. Description updates use the same current-head/base and opt-out checks
+as review publishing. Summaries are disabled by default. The portable wrapper does
+not add feedback labels, make commits, or merge. An empty completed review uses the
+existing resolution behavior and may post no new review; an enabled description
+summary still provides a visible result.
 Grounding is retained for seven days; the full findings JSON, SARIF and model
 event stream are retained for thirty days.
 
