@@ -82,7 +82,7 @@ const TOP_BAND_HINTS =
 
 // Signals that a task is trivial enough for the low band.
 const LOW_BAND_HINTS =
-  /\b(rename|typo|format|lint|comment|docstring|summari[sz]e|classify|extract|translate|one-?liner|trivial|tweak)\b/i
+  /\b(rename|typos?|format|lint|comment|docstring|summari[sz]e|classify|extract|translate|one-?liner|trivial|tweak)\b/i
 
 /** Combined input+output USD/MTok — the cost signal used within a band. */
 export function modelUsdPerMTok(model: string): number | null {

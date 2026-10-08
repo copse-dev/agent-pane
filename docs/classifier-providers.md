@@ -4,7 +4,11 @@ Copse stores classifier connections separately from chat providers. Open **Setti
 to add a Liquid/d1, TypeSafe/Jev, Kev, SemIf, Featherless/Simple Jev, or compatible custom connection. Saving a
 profile or its key makes no inference request. **Test** submits a small sample and displays the
 answer and duration. These profiles are available for safety screening, background questions and
-evals; they never appear as chat models or change model routing or the agent loop.
+evals; they never appear as chat models. With **Match task**, the background
+classifier assesses the first ask’s reasoning demand before Copse picks the primary model.
+This assessment has a five-second budget and respects cancellation. An unavailable or
+unusable classifier falls back to Small tasks, its chat-model backup, then the task
+heuristic. Later asks keep the selected model.
 
 ## Safety screening
 
