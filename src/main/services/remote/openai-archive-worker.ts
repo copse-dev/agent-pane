@@ -5,6 +5,10 @@ import { join } from 'node:path'
 import { x, ReadEntry } from 'tar'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
+import {
+  downloadHostedArchive,
+  HostedArchiveDownloadError,
+} from './openai-archive-download-worker.ts'
 
 const sha = z.string().regex(/^[a-f0-9]{40}$/)
 const archiveMetadataSchema = z.object({
@@ -17,7 +21,7 @@ const archiveMetadataSchema = z.object({
 export async function setupHostedArchive(
   workspace: string,
   base: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl?: typeof fetch,
 ): Promise<void> {
   let stage = 'reading setup metadata'
   try {
@@ -40,32 +44,34 @@ export async function setupHostedArchive(
     const archive = join(workspace, 'inputs/source.tar.gz')
     stage = 'downloading the GitHub archive'
     try {
-      const response = await fetchImpl(url, {
-        redirect: 'error',
-        signal: AbortSignal.timeout(240_000),
-      })
-      stage = `downloading the GitHub archive (HTTP ${String(response.status)})`
-      if (!response.ok || !response.body) throw new Error('Archive unavailable')
-      let bytes = 0
-      const reader = response.body.getReader()
-      const output = await open(archive, 'wx', 0o600)
-      try {
-        for (;;) {
-          const next = await reader.read()
-          if (next.done) break
-          bytes += next.value.byteLength
-          if (bytes > 2 * 1024 ** 3) throw new Error('Archive exceeds 2 GiB')
-          await output.writeFile(next.value)
+      if (!fetchImpl) await downloadHostedArchive(url, archive)
+      else {
+        const response = await fetchImpl(url, {
+          redirect: 'error',
+          signal: AbortSignal.timeout(240_000),
+        })
+        stage = `downloading the GitHub archive (HTTP ${String(response.status)})`
+        if (!response.ok || !response.body) throw new Error('Archive unavailable')
+        let bytes = 0
+        const reader = response.body.getReader()
+        const output = await open(archive, 'wx', 0o600)
+        try {
+          for (;;) {
+            const next = await reader.read()
+            if (next.done) break
+            bytes += next.value.byteLength
+            if (bytes > 2 * 1024 ** 3) throw new Error('Archive exceeds 2 GiB')
+            await output.writeFile(next.value)
+          }
+        } finally {
+          await reader.cancel().catch(() => {})
+          reader.releaseLock()
+          await output.close()
         }
-      } finally {
-        await reader.cancel().catch(() => {})
-        reader.releaseLock()
-        await output.close()
       }
-    } catch {
-      throw new Error(
-        'GitHub archive download failed or its URL expired. Retry to provision a fresh session.',
-      )
+    } catch (error) {
+      if (error instanceof HostedArchiveDownloadError) stage += ` (${error.message})`
+      throw error
     }
     stage = 'extracting the GitHub archive'
     const root = join(workspace, 'repo')

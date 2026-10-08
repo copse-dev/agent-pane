@@ -74,6 +74,11 @@ it('reports fixed worker failure markers without persisting raw stderr or secret
       ],
       ['runtime', "throw new Error('secret-bearer-token')", 'failed-worker-runtime-or-assembly'],
       [
+        'proxy',
+        "console.error('Repository setup failed while downloading the GitHub archive (curl 60).'); process.exit(1)",
+        'failed-download',
+      ],
+      [
         'tree',
         "console.error('Repository setup failed while verifying the pinned archive tree.'); process.exit(1)",
         'failed-archive-tree',
@@ -94,6 +99,7 @@ it('reports fixed worker failure markers without persisting raw stderr or secret
       const markers = readdirSync(join(workspace, 'copse-diagnostics'))
       assert.ok(markers.includes(marker))
       if (name === 'download') assert.ok(markers.includes('http-403'))
+      if (name === 'proxy') assert.ok(markers.includes('curl-60'))
       for (const file of markers) {
         assert.ok(!file.includes('secret'))
         assert.equal(readFileSync(join(workspace, 'copse-diagnostics', file), 'utf8'), '')

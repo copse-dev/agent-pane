@@ -138,7 +138,7 @@ export async function probeRepository(options: {
     const markers = files
       .map((path) => path.replace(/^\/workspace\/copse-diagnostics\//, ''))
       .filter((name) =>
-        /^(?:0[0-5]-[a-z-]+|failed-[a-z-]+|http-[1-5][0-9]{2}|runtime-node-[0-9]+|runtime-(?:fetch-present|fetch-missing|https-proxy-present))$/.test(
+        /^(?:0[0-5]-[a-z-]+|failed-[a-z-]+|http-[1-5][0-9]{2}|curl-(?:[0-9]+|unavailable)|runtime-node-[0-9]+|runtime-(?:fetch-present|fetch-missing|https-proxy-present))$/.test(
           name,
         ),
       )

@@ -248,3 +248,23 @@ only the diagnostic wraps setup failure, and it cannot submit inference. No DOM
 changes. Full check still stops at the unchanged LM Studio TS2554. Live repository
 provisioning remains unverified here; the user's empty-sandbox success is the only
 new live provider evidence.
+
+## Hosted proxy download brief
+
+Live repository diagnostics reached the worker and failed during download before
+an HTTP status, with Node 22, fetch and HTTPS_PROXY present. Native Node 22 fetch
+does not automatically use HTTPS_PROXY. Replace the guest download transport with
+curl, preserving the sandbox proxy/CA environment, TLS verification, no redirects,
+240-second deadline and 2 GiB streaming bound. Pass the signed URL on stdin rather
+than argv; retain only safe HTTP/curl failure codes. Verify a real HTTPS download
+through a local CONNECT proxy with a trusted test CA, refusal of redirects and
+certificate failures. Do not claim the live private archive succeeded yet.
+
+Proxy download completion evidence: 9 focused archive/diagnostic tests passed.
+The new test uses a real curl subprocess, authenticated local CONNECT proxy and
+TLS server to verify archive bytes, exact Git tree/commit restoration, absence of
+origin authorization headers, redirect refusal, untrusted-CA refusal and safe
+HTTP/curl error codes. Production build, focused ESLint, formatting and dead-code
+checks passed. Full check stops only at the existing LM Studio TS2554. The live
+failure is consistent with missing Node proxy support, but a hosted retry is still
+needed to establish that no further provisioning issue remains. No DOM changes.

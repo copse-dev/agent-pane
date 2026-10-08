@@ -141,6 +141,12 @@ never proxy values. A connection failure without markers still cannot establish
 which bootstrap stage ran. Success validates repository provisioning for that
 attempt, not inference or export.
 
+Hosted archive downloads use `curl` so Node 22 sandboxes honor their configured
+HTTPS proxy and certificate trust. TLS verification remains enabled, redirects
+are refused, and the signed URL is passed through stdin rather than process
+arguments. Download failures report only HTTP status or a curl exit code (for
+example, `curl-60` means certificate verification failed), never raw stderr or URLs.
+
 The probe automatically deletes the session and uploaded files after either
 outcome. If cleanup fails or the process is killed, retry cleanup explicitly:
 

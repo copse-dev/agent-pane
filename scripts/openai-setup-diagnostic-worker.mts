@@ -65,6 +65,11 @@ if (inputs.some((file) => !existsSync(join(workspace, 'inputs', file)))) {
           result.stderr,
         )?.[1]
       if (http) mark(`http-${http}`)
+      const curl =
+        /Repository setup failed while downloading the GitHub archive \(curl ([0-9]+|unavailable)\)\./.exec(
+          result.stderr,
+        )?.[1]
+      if (curl) mark(`curl-${curl}`)
     }
   }
 }
