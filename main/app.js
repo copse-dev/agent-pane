@@ -77627,6 +77627,64 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "sidebar-thread-changes",
+        label: "Sidebar changes glyph",
+        project: project("demo-sidebar-changes-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // Two finished threads with unlanded work, one clean, one still running.
+        threadChanges: {
+          "demo-sidebar-changes-commits": { dirty: false, unpushed: 2 },
+          "demo-sidebar-changes-dirty": { dirty: true },
+          "demo-sidebar-changes-clean": { dirty: false }
+        },
+        threads: [
+          {
+            id: "demo-sidebar-changes-clean",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-sidebar-changes-commits",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          {
+            id: "demo-sidebar-changes-dirty",
+            title: "Add a retry to uploads",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 3,
+            updatedAt: FIXED_TIME - 3
+          },
+          {
+            id: "demo-sidebar-changes-running",
+            title: "Run the schema migration",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 4,
+            updatedAt: FIXED_TIME - 4
+          }
+        ]
+      },
+      {
         id: "activity-home",
         label: "Activity home on a new thread",
         project: project("demo-activity-home-project"),
@@ -78173,6 +78231,7 @@ function createDemoApi(scenario, options = {}) {
   ]);
   let workspaceRoot = scenario.project.path;
   let threads = structuredClone(scenario.threads);
+  const prRefsHandlers = /* @__PURE__ */ new Set();
   const showAutomationPermissions = scenario.id === "automation-permissions";
   const demoPlugins = showAutomationPermissions ? [...DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN] : DEMO_PLUGINS;
   const automationSchedules = showAutomationPermissions ? [
@@ -78641,9 +78700,23 @@ function createDemoApi(scenario, options = {}) {
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
       loadMessages: (_projectId, threadId) => scenario.holdThreadHydration === true ? new Promise(() => void 0) : scenario.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved2(structuredClone(threads.find((t2) => t2.id === threadId)?.messages ?? [])),
-      // Demo threads always arrive whole, so nothing is ever backfilled.
-      backfillPrRefs: () => resolvedVoid(),
-      onPrRefs: () => () => void 0,
+      // Demo threads link no PRs, so a backfill answers each one with an empty ref set —
+      // the settled "no PR" the sidebar waits for before it draws a row's changes glyph.
+      backfillPrRefs: (projectId, threadIds) => {
+        for (const handler of prRefsHandlers) {
+          handler(
+            projectId,
+            threadIds.map((threadId) => ({ threadId, prRefs: [] }))
+          );
+        }
+        return resolvedVoid();
+      },
+      onPrRefs: (handler) => {
+        prRefsHandlers.add(handler);
+        return () => {
+          prRefsHandlers.delete(handler);
+        };
+      },
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => void 0,
       create: (_projectId, thread) => {
@@ -79122,6 +79195,12 @@ function createDemoApi(scenario, options = {}) {
       isAvailable: () => resolved2(true),
       status: () => resolved2({ staged: [], unstaged: [] }),
       changeStats: () => resolved2(scenario.changeStats ? { ...scenario.changeStats } : null),
+      threadChangeSummary: (refs) => resolved2(
+        refs.map(({ threadId }) => {
+          const changes = scenario.threadChanges?.[threadId];
+          return changes ? { ...changes } : null;
+        })
+      ),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved2(null),
       workingFileDiff: () => resolved2(null),
@@ -81808,6 +81887,24 @@ function prHasMergeConflicts(pr2) {
 }
 var init_pr_status = __esm({
   "src/renderer/dom/pr-status.ts"() {
+  }
+});
+
+// src/shared/git/thread-change-summary.ts
+function describeThreadChanges(summary) {
+  if (!summary) return null;
+  const unpushed = summary.unpushed ?? 0;
+  if (unpushed > 0) {
+    const commits = `${String(unpushed)} unpushed commit${unpushed === 1 ? "" : "s"}`;
+    return summary.dirty ? `${commits} and uncommitted changes` : commits;
+  }
+  return summary.dirty ? "Uncommitted changes" : null;
+}
+function sameThreadChangeSummary(a3, b4) {
+  return describeThreadChanges(a3) === describeThreadChanges(b4);
+}
+var init_thread_change_summary = __esm({
+  "src/shared/git/thread-change-summary.ts"() {
   }
 });
 
@@ -84986,6 +85083,15 @@ function chatPrStatus(rollup, ciFailing, conflicts) {
     icon
   );
 }
+function chatChangesStatus(label) {
+  const icon = gitBranchIcon("ui-icon ui-icon-sm");
+  icon.setAttribute("aria-hidden", "true");
+  return el(
+    "span",
+    { class: "chat-changes-status", role: "img", "aria-label": label, "data-tooltip": label },
+    icon
+  );
+}
 function settingsIcon(className = "titlebar-btn-icon") {
   const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", className);
@@ -85328,6 +85434,36 @@ function mountProjectsPane(root, store2, api2) {
   const prBackfillRetryTimers = /* @__PURE__ */ new Set();
   let prBackfillRowsByKey = /* @__PURE__ */ new Map();
   let prBackfillObserver = null;
+  const THREAD_CHANGE_TTL_MS = 3e4;
+  const THREAD_CHANGE_MAX_PER_PASS = 60;
+  const threadChangeCache = /* @__PURE__ */ new Map();
+  const threadChangeInFlight = /* @__PURE__ */ new Set();
+  let threadChangeGeneration = 0;
+  let threadChangeTimer = null;
+  const threadChangeKey = (projectId, threadId) => `${projectId}\0${threadId}`;
+  let threadChangeRendered = [];
+  function refreshThreadChanges(refs, opts = {}) {
+    const batch = refs.filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId))).slice(0, THREAD_CHANGE_MAX_PER_PASS);
+    if (batch.length === 0) return;
+    const generation = threadChangeGeneration;
+    for (const ref of batch) threadChangeInFlight.add(threadChangeKey(ref.projectId, ref.threadId));
+    const settle2 = (results) => {
+      let changed = false;
+      for (const [i2, ref] of batch.entries()) {
+        const key = threadChangeKey(ref.projectId, ref.threadId);
+        threadChangeInFlight.delete(key);
+        const summary = results[i2] ?? null;
+        if (!sameThreadChangeSummary(threadChangeCache.get(key)?.summary ?? null, summary)) {
+          changed = true;
+        }
+        threadChangeCache.set(key, { summary, at: Date.now() });
+      }
+      if (changed && generation === threadChangeGeneration) render(true);
+    };
+    void api2.git.threadChangeSummary(batch, opts).then(settle2, () => {
+      settle2([]);
+    });
+  }
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
   const expandedFailedSchedules = /* @__PURE__ */ new Set();
@@ -85469,6 +85605,16 @@ function mountProjectsPane(root, store2, api2) {
         if (lifecycleChanged) render();
       });
     }
+  }
+  function recheckStaleThreadChanges() {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    const now = Date.now();
+    refreshThreadChanges(
+      threadChangeRendered.filter(({ projectId, threadId }) => {
+        const cached2 = threadChangeCache.get(threadChangeKey(projectId, threadId));
+        return !cached2 || now - cached2.at > THREAD_CHANGE_TTL_MS;
+      })
+    );
   }
   function ciFailingForThread(thread) {
     return sidebarPrRefs(thread).some((ref) => {
@@ -85872,6 +86018,9 @@ function mountProjectsPane(root, store2, api2) {
     prBackfillObserver = null;
     clear(list);
     const prBackfillRows = [];
+    const threadChangeWanted = [];
+    const threadChangeSeen = [];
+    const threadChangeSeenKeys = /* @__PURE__ */ new Set();
     syncFilterControls();
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
@@ -86053,6 +86202,19 @@ function mountProjectsPane(root, store2, api2) {
             prRollup.kind === "open" && conflictsForThread(thread)
           )
         );
+      } else if (thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
+        const key = threadChangeKey(project2.id, thread.id);
+        threadChangeSeen.push({ projectId: project2.id, threadId: thread.id });
+        threadChangeSeenKeys.add(key);
+        const cached2 = threadChangeCache.get(key);
+        const changesLabel = describeThreadChanges(cached2?.summary ?? null);
+        if (changesLabel) {
+          chatRow.classList.add("has-changes-status");
+          chatRow.append(chatChangesStatus(changesLabel));
+        }
+        if (!cached2 || Date.now() - cached2.at > THREAD_CHANGE_TTL_MS) {
+          threadChangeWanted.push({ projectId: project2.id, threadId: thread.id });
+        }
       }
       if (thread.prRefs === void 0) {
         prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
@@ -86709,9 +86871,30 @@ function mountProjectsPane(root, store2, api2) {
       prBackfillObserver = observer;
       for (const { row: row2 } of prBackfillRows) observer.observe(row2);
     }
+    threadChangeRendered = threadChangeSeen;
+    const pruneBefore = Date.now() - 2 * THREAD_CHANGE_TTL_MS;
+    for (const [key, entry] of threadChangeCache) {
+      if (entry.at < pruneBefore && !threadChangeSeenKeys.has(key)) threadChangeCache.delete(key);
+    }
+    refreshThreadChanges(threadChangeWanted);
     if (preserveScroll) list.scrollTop = scrollTop;
   }
+  const unsubWorkingTree = api2.git.onWorkingTreeChanged(() => {
+    if (threadChangeTimer !== null) clearTimeout(threadChangeTimer);
+    threadChangeTimer = setTimeout(() => {
+      threadChangeTimer = null;
+      const { activeProjectId, activeThreadId, projects } = store2.getState();
+      if (!activeProjectId || !activeThreadId) return;
+      if (projects.find((p2) => p2.id === activeProjectId)?.sshHost) return;
+      refreshThreadChanges([{ projectId: activeProjectId, threadId: activeThreadId }], {
+        fresh: true
+      });
+    }, 1500);
+  });
+  window.addEventListener("focus", recheckStaleThreadChanges);
+  document.addEventListener("visibilitychange", recheckStaleThreadChanges);
   const unsubs = [
+    unsubWorkingTree,
     store2.on("projects_changed", render),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
@@ -86745,6 +86928,13 @@ function mountProjectsPane(root, store2, api2) {
     prBackfillObserver = null;
     prBackfillRowsByKey.clear();
     prStatusGeneration += 1;
+    threadChangeGeneration += 1;
+    if (threadChangeTimer !== null) clearTimeout(threadChangeTimer);
+    threadChangeTimer = null;
+    window.removeEventListener("focus", recheckStaleThreadChanges);
+    document.removeEventListener("visibilitychange", recheckStaleThreadChanges);
+    threadChangeCache.clear();
+    threadChangeInFlight.clear();
     orphanScanGeneration += 1;
     dismissContextMenu();
     renaming = null;
@@ -86764,6 +86954,7 @@ var init_projects_pane = __esm({
     init_rename_blur();
     init_pr_status();
     init_icons();
+    init_thread_change_summary();
     init_thread_helpers();
     init_github_pr_url2();
     init_thread_pr_status2();
