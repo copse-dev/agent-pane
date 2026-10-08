@@ -184,7 +184,7 @@ describe('branch CI automations', () => {
         threads.push(thread)
         return Promise.resolve()
       },
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
       inboxStore: new FileEventInboxStore(env),
     })
@@ -242,7 +242,7 @@ describe('branch CI automations', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
       inboxStore: new FileEventInboxStore(env),
     })
@@ -317,7 +317,7 @@ describe('branch CI automations', () => {
         threads.push(thread)
         return Promise.resolve()
       },
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
       inboxStore: new FileEventInboxStore(env),
     })
@@ -357,7 +357,10 @@ describe('branch CI automations', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      releasePreviousRun: () => Promise.resolve(worktreeReleased),
+      releasePreviousRun: () =>
+        Promise.resolve(
+          worktreeReleased ? { released: true } : { released: false, reason: 'unmerged-commits' },
+        ),
       supervisor: () => supervisor,
       inboxStore: new FileEventInboxStore(env),
     })
@@ -419,7 +422,7 @@ describe('branch CI automations', () => {
       loadProjectThreads: () => Promise.resolve([]),
       getProjectThread: () => Promise.resolve(null),
       createProjectThread: () => Promise.resolve(),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
       inboxStore: new FileEventInboxStore(env),
     })

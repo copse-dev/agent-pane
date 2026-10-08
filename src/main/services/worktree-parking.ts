@@ -6,7 +6,12 @@ import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { findThreadOwners, getThreadMeta, updateMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
-import { parkThreadWorktree, retireThreadWorktree } from './worktree-manager.ts'
+import type { AutomationRetainedReason } from '@shared/types/automations.ts'
+import {
+  MissingThreadWorktreeError,
+  parkThreadWorktree,
+  retireThreadWorktree,
+} from './worktree-manager.ts'
 import { registerWorktreeParkingRecheck } from './worktree-parking-events.ts'
 
 const createdPrByThread = new Map<string, string>()
@@ -65,46 +70,81 @@ export async function parkCompletedPullRequestWorktree(
   })
 }
 
+export type AutomationWorktreeRelease =
+  | { released: true }
+  | { released: false; reason: AutomationRetainedReason; paths?: string[] }
+
+const RELEASED: AutomationWorktreeRelease = { released: true }
+
+/** How many changed paths a release block carries for display. */
+const MAX_REPORTED_PATHS = 5
+
 /**
  * Make a completed automation checkout eligible for its next fresh run.
- * Read-only runs disappear immediately; a dirty or unmerged checkout is kept
- * and blocks replacement so a schedule can never leak an unbounded trail of
- * worktrees behind work that still needs a human decision.
+ * Read-only runs disappear immediately; a checkout with uncommitted changes
+ * or unmerged commits is kept and blocks replacement so a schedule can never
+ * leak an unbounded trail of worktrees behind work that still needs a human
+ * decision. Git-ignored files (build output, dependencies) are regenerable
+ * and do not count as work. A checkout already gone from disk holds nothing,
+ * so it is released rather than failing every later run.
  */
 export async function releaseCompletedAutomationWorktree(
   projectId: string,
   threadId: string,
-): Promise<boolean> {
+): Promise<AutomationWorktreeRelease> {
   const projectRoot = getProjectRoot(projectId)
   const meta = await getThreadMeta(projectId, threadId)
-  if (!projectRoot || !meta?.automation) return false
+  if (!projectRoot || !meta?.automation) return { released: false, reason: 'in-use' }
   const worktree = meta.worktree
-  if (!worktree || worktree.retiredAt !== undefined) return true
+  if (!worktree || worktree.retiredAt !== undefined) return RELEASED
 
   const owner = { projectId, threadId }
-  if (hasTerminalSessions(threadId) || hasBackgroundProcessesForThread(owner)) return false
-
-  await disposeAcpSession(threadId)
-  if (worktree.pullRequestUrl) {
-    const result = await parkThreadWorktree({ projectId, threadId, projectRoot, worktree })
-    if (result.status !== 'removed') return false
-    await updateMeta(projectId, threadId, {
-      worktree: {
-        ...worktree,
-        retiredAt: Date.now(),
-        retiredHead: result.head,
-        upstreamRef: result.upstreamRef,
-      },
-    })
-    return true
+  if (hasTerminalSessions(threadId) || hasBackgroundProcessesForThread(owner)) {
+    return { released: false, reason: 'in-use' }
   }
 
-  const result = await retireThreadWorktree({ projectId, threadId, projectRoot, worktree })
-  if (result.status !== 'removed') return false
+  await disposeAcpSession(threadId)
+  try {
+    if (worktree.pullRequestUrl) {
+      const result = await parkThreadWorktree({ projectId, threadId, projectRoot, worktree })
+      if (result.status === 'blocked-dirty') {
+        return {
+          released: false,
+          reason: 'uncommitted-changes',
+          paths: result.paths.slice(0, MAX_REPORTED_PATHS),
+        }
+      }
+      if (result.status !== 'removed') return { released: false, reason: 'unpushed-pull-request' }
+      await updateMeta(projectId, threadId, {
+        worktree: {
+          ...worktree,
+          retiredAt: Date.now(),
+          retiredHead: result.head,
+          upstreamRef: result.upstreamRef,
+        },
+      })
+      return RELEASED
+    }
+
+    const result = await retireThreadWorktree(
+      { projectId, threadId, projectRoot, worktree },
+      { ignoreIgnoredFiles: true },
+    )
+    if (result.status === 'blocked-dirty') {
+      return {
+        released: false,
+        reason: 'uncommitted-changes',
+        paths: result.paths.slice(0, MAX_REPORTED_PATHS),
+      }
+    }
+    if (result.status !== 'removed') return { released: false, reason: 'unmerged-commits' }
+  } catch (error) {
+    if (!(error instanceof MissingThreadWorktreeError)) throw error
+  }
   await updateMeta(projectId, threadId, {
     worktree: { ...worktree, retiredAt: Date.now() },
   })
-  return true
+  return RELEASED
 }
 
 const scheduledRechecks = new Map<string, NodeJS.Timeout>()

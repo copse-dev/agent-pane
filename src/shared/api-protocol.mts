@@ -75,6 +75,7 @@
 // agent chunk.
 // v46 versions the removal of `activeRunThreadIds` from the process-manager snapshot.
 // v47 conservatively versions optional PR/commit production evidence on thread payloads.
-// v48 conservatively versions the optional classifier-call latency and token fields on
+// v48 conservatively versions retained-worktree blockers on automation schedules and triggers.
+// v49 conservatively versions the optional classifier-call latency and token fields on
 // decision events, alongside the new `usage:get-thread-classifier-use` channel.
-export const API_PROTOCOL_VERSION = 48 as const
+export const API_PROTOCOL_VERSION = 49 as const

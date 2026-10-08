@@ -18,7 +18,10 @@ import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { runSerialized } from '../storage/write-queue.ts'
 import { getProjectRoot } from '../workspace.ts'
 import { createThread, getProjectThread, loadProjectThreads } from '../thread-store.ts'
-import { releaseCompletedAutomationWorktree } from '../worktree-parking.ts'
+import {
+  releaseCompletedAutomationWorktree,
+  type AutomationWorktreeRelease,
+} from '../worktree-parking.ts'
 import { getTaskSupervisor, type TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import {
   AutomationEventInbox,
@@ -244,7 +247,7 @@ export interface BranchCiAutomationDependencies {
   loadProjectThreads(projectId: string): Promise<Thread[]>
   getProjectThread(projectId: string, threadId: string): Promise<Thread | null>
   createProjectThread(projectId: string, thread: Thread): Promise<void>
-  releasePreviousRun(projectId: string, threadId: string): Promise<boolean>
+  releasePreviousRun(projectId: string, threadId: string): Promise<AutomationWorktreeRelease>
   supervisor(): TaskSupervisor
   inboxStore?: EventInboxStore
 }
@@ -334,7 +337,7 @@ export function createBranchCiAutomationService(
           if (
             thread.worktree &&
             thread.worktree.retiredAt === undefined &&
-            !(await deps.releasePreviousRun(definition.projectId, thread.id))
+            !(await deps.releasePreviousRun(definition.projectId, thread.id)).released
           )
             retained++
         }

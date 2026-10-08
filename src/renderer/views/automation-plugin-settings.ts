@@ -21,6 +21,7 @@ import { mountModelSelectPicker } from './model-picker.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { mountBranchCiEditor, type AutomationCreationDraft } from './branch-ci-editor.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
+import { describeRetainedWorktrees } from './automation-retained-worktrees.ts'
 
 function cleanIpcError(error: unknown): string {
   return ipcErrorMessage(error, 'Automation request failed.')
@@ -686,7 +687,11 @@ export function createAutomationPluginSettings(
           el(
             'div',
             { class: 'automation-row-blocked-message' },
-            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`,
+            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.${
+              schedule.lastWorktreeLimitBlockedBy?.length
+                ? ` Held by ${describeRetainedWorktrees(schedule.lastWorktreeLimitBlockedBy)}.`
+                : ''
+            }`,
           ),
         )
       }
@@ -732,7 +737,11 @@ export function createAutomationPluginSettings(
               event.disposition === 'started'
                 ? `Started “${schedule.name}”.`
                 : event.coalescedReason === 'worktree-limit'
-                  ? `“${schedule.name}” has reached its live worktree limit.`
+                  ? `“${schedule.name}” has reached its live worktree limit.${
+                      event.blockedBy?.length
+                        ? ` Held by ${describeRetainedWorktrees(event.blockedBy)}.`
+                        : ''
+                    }`
                   : `“${schedule.name}” is already pending or running.`,
             )
             void refresh()

@@ -33,8 +33,6 @@ a separately reviewed preparation policy before adopting this shell.
 name: Copse review
 
 on:
-  pull_request_target:
-    types: [opened, reopened, ready_for_review, labeled]
   workflow_dispatch:
     inputs:
       pr:
@@ -52,7 +50,7 @@ jobs:
     uses: copse-dev/agent-pane/.github/workflows/reviewer.yml@REVIEWER_SHA
     with:
       reviewer-ref: REVIEWER_SHA
-      pr: ${{ inputs.pr || 0 }}
+      pr: ${{ inputs.pr }}
     secrets:
       model-api-key: ${{ secrets.COPSE_REVIEW_API_KEY }}
 ```
@@ -68,11 +66,15 @@ The Actions currently install their trusted source dependencies from that pinned
 checkout; no published npm package, release tag or prebuilt image is required.
 The validation image is built on each runner from the trusted Dockerfile.
 
-Reviews require the initiating actor and any rerunning actor to have repository
-write permission. PRs must target the default branch. Fork authors cannot start
-paid reviews themselves; a maintainer can add `copse-review` or use the manual
-dispatch. Other labels do not start reviews. Drafts need `copse-review`, and
-`copse-review-skip` opts out. Pushes alone do not start another review.
+Reviews start only through `workflow_dispatch` on the default branch. Open
+Actions → Copse review → Run workflow, select the default branch and enter the
+PR number, or use `gh workflow run copse-review.yml --ref main -f pr=123` (replace
+`main` with your default branch). The initiating actor and any rerunning actor
+must have repository write permission. Both the PR head and base must belong to
+the caller repository and target its default branch. Fork PRs are rejected even
+when a maintainer dispatches them. Opening, pushing or labelling a PR does not
+start a review. Drafts still need `copse-review` before manual dispatch;
+`copse-review-skip` opts out.
 
 The two jobs share a grounding artifact from the same run and attempt, not an
 arbitrary earlier run. The CLI validates its shape, head and merge-base before
@@ -106,9 +108,12 @@ and publish with their own workflow token.
 
 Optional workflow inputs: `provider` (default `openrouter`), `model` (default
 `openai/gpt-6-luna`), `lenses` (default `correctness,visual`), `max-steps` (default
-12, maximum 100) and `max-verify` (default 3, maximum 10). Other hosted providers
-supported by the CLI can use `model-api-key`; custom base URLs are not exposed by
-this first wrapper. Limits apply per reviewer; this is not a dollar spending cap.
+12, maximum 100), `max-verify` (default 3, maximum 10) and `post-summary` (default
+`false`). Set `post-summary: true` in the caller's `with` block to update the PR
+description with an evidence-based summary, including reviews with no findings.
+Other hosted providers supported by the CLI can use `model-api-key`; custom base
+URLs are not exposed by this first wrapper. Limits apply per reviewer; this is
+not a dollar spending cap.
 
 Standard `build`, `typecheck`, `lint` and `test` npm scripts are detected.
 `review.config.json` can override/disable commands and set per-check timeouts;
@@ -116,9 +121,13 @@ all configured commands still execute inside the cell. Missing checks and failed
 preparation remain visible limitations. Normal review does not claim browser
 coverage, fetch external conformance fixtures or replace project CI.
 
-Findings post as advisory `COMMENT` reviews. The wrapper does not edit the PR
-description, add feedback labels, make commits, or merge. An empty completed
-review uses the existing resolution behavior and may post no new review.
+Findings post as advisory `COMMENT` reviews. With `post-summary: true`, the reviewer
+adds or replaces its managed summary block in the PR description, preserving the
+author's text. Description updates use the same current-head/base and opt-out checks
+as review publishing. Summaries are disabled by default. The portable wrapper does
+not add feedback labels, make commits, or merge. An empty completed review uses the
+existing resolution behavior and may post no new review; an enabled description
+summary still provides a visible result.
 Grounding is retained for seven days; the full findings JSON, SARIF and model
 event stream are retained for thirty days.
 
@@ -134,7 +143,9 @@ The protected model job repeats the owner/caller/rerun guard before entering
 `copse-review-models`. It uses the existing dedicated OpenRouter key, retained
 configured Scaleway route, App identity, feedback label and evidence-based description
 summary. Its workflow token remains read-only. No new secret configuration is needed
-for existing Copse credentials. Summary-on-push and nightly sampling remain separate.
+for existing Copse credentials. Full-review summaries are produced by manual
+reviews; the separate summary-only workflow can also be dispatched manually.
+Nightly sampling remains separate.
 
 Copse's pnpm lockfiles and patch paths are validated before host-side fetch;
 workspace/local contents and native builds run only inside validation cells.
