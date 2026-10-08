@@ -65216,7 +65216,7 @@ function mountSettingsDialog(store2, api2) {
                 <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
                   Reload
                 </button>
-                <span class="lmstudio-test-status plugins-load-status" id="plugins-reload-status"></span>
+                <span class="lmstudio-test-status" id="plugins-reload-status"></span>
               </div>
               <div id="plugins-list" class="plugins-group">
                 <span class="plugins-empty">Loading\u2026</span>
@@ -65577,18 +65577,6 @@ function mountSettingsDialog(store2, api2) {
                 Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
             </fieldset>
-
-            <fieldset id="experimental-plugins-fieldset" hidden>
-              <legend>Experimental plugins</legend>
-              <p class="settings-fieldset-desc">
-                Plugins whose behavior and compatibility may change. These are also available
-                under Customise. Changes here apply immediately.
-              </p>
-              <span class="lmstudio-test-status plugins-load-status" role="status"></span>
-              <div id="experimental-plugins-list" class="plugins-group">
-                <span class="plugins-empty">Loading\u2026</span>
-              </div>
-            </fieldset>
           </section>
 
           <section class="settings-section" data-section="about">
@@ -65857,7 +65845,6 @@ function mountSettingsDialog(store2, api2) {
   syncDeveloperOnlySettings();
   function showSection(id) {
     activeSection = id;
-    renderPluginLists();
     navBtns.forEach((btn) => btn.classList.toggle("active", btn.dataset["section"] === id));
     sections.forEach((sec) => sec.classList.toggle("active", sec.dataset["section"] === id));
     renderNavSubheadings(id);
@@ -65967,8 +65954,8 @@ function mountSettingsDialog(store2, api2) {
         if (id === "ssh") void sshWorkspaceSection.refresh();
         if (id === "customise") {
           void refreshSources();
+          void refreshPlugins();
         }
-        if (id === "customise" || id === "experimental") void refreshPlugins();
         if (id === "storage") void refreshWorktrees();
         if (id === "mcp") {
           void refreshMcpServers();
@@ -67307,81 +67294,55 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     update();
     return hint;
   }
-  let pluginEntries = null;
-  function renderPluginLists() {
-    qsRequired(overlay, "#experimental-plugins-fieldset").hidden = activeSection !== "experimental";
-    if (!pluginEntries) return;
-    for (const experimental of [false, true]) {
-      const listEl = qsRequired(
-        overlay,
-        experimental ? "#experimental-plugins-list" : "#plugins-list"
-      );
-      const entries2 = pluginEntries.filter(
-        (entry) => (activeSection === "experimental" && entry.experimental) === experimental
-      );
-      listEl.replaceChildren();
-      let lastEnabled = null;
-      for (const entry of entries2) {
-        if (entry.enabled !== lastEnabled) {
-          const heading = document.createElement("h4");
-          heading.className = "plugins-group-heading";
-          heading.textContent = entry.enabled ? "Active" : "Inactive";
-          listEl.append(heading);
-          lastEnabled = entry.enabled;
-        }
-        listEl.append(entry.row);
-      }
-      if (entries2.length === 0) {
-        const empty = document.createElement("span");
-        empty.className = "plugins-empty";
-        empty.textContent = experimental ? "No experimental plugins installed." : "No plugins installed.";
-        listEl.append(empty);
-      }
-    }
-  }
   async function refreshPlugins() {
-    const statusEls = overlay.querySelectorAll(".plugins-load-status");
-    const setStatus = (text2) => {
-      statusEls.forEach((el3) => {
-        el3.textContent = text2;
-      });
-    };
-    setStatus("Loading\u2026");
+    const listEl = qsRequired(overlay, "#plugins-list");
+    const statusEl = qsRequired(overlay, "#plugins-reload-status");
+    statusEl.textContent = "Loading\u2026";
     try {
       const [result, cursorPlugins, bundledPlugins] = await Promise.all([
         api2.plugins.list(),
         api2.cursorPlugins.list().catch(() => []),
         api2.bundledSkillPlugins.list().catch(() => [])
       ]);
-      const entries2 = [
-        ...result.plugins.map((plugin) => ({
-          id: plugin.id,
-          enabled: plugin.enabled,
-          experimental: plugin.stability === "experimental",
-          render: () => makePluginRow(plugin)
-        })),
-        ...cursorPlugins.map((plugin) => ({
-          id: plugin.name,
-          enabled: true,
-          experimental: false,
-          render: () => makeCursorPluginRow(plugin)
-        })),
-        ...bundledPlugins.map((plugin) => ({
-          id: plugin.name,
-          enabled: plugin.enabled && !plugin.suppressed,
-          experimental: false,
-          render: () => makeBundledSkillPluginRow(plugin)
-        }))
-      ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
-      pluginEntries = entries2.map((entry) => ({
-        enabled: entry.enabled,
-        experimental: entry.experimental,
-        row: entry.render()
-      }));
-      renderPluginLists();
-      setStatus("");
+      listEl.innerHTML = "";
+      if (result.plugins.length === 0 && cursorPlugins.length === 0 && bundledPlugins.length === 0) {
+        const empty = document.createElement("span");
+        empty.className = "plugins-empty";
+        empty.textContent = "No plugins installed.";
+        listEl.append(empty);
+      } else {
+        const entries2 = [
+          ...result.plugins.map((plugin) => ({
+            id: plugin.id,
+            enabled: plugin.enabled,
+            render: () => makePluginRow(plugin)
+          })),
+          ...cursorPlugins.map((plugin) => ({
+            id: plugin.name,
+            enabled: true,
+            render: () => makeCursorPluginRow(plugin)
+          })),
+          ...bundledPlugins.map((plugin) => ({
+            id: plugin.name,
+            enabled: plugin.enabled && !plugin.suppressed,
+            render: () => makeBundledSkillPluginRow(plugin)
+          }))
+        ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
+        let lastEnabled = null;
+        for (const entry of entries2) {
+          if (entry.enabled !== lastEnabled) {
+            const heading = document.createElement("h4");
+            heading.className = "plugins-group-heading";
+            heading.textContent = entry.enabled ? "Active" : "Inactive";
+            listEl.append(heading);
+            lastEnabled = entry.enabled;
+          }
+          listEl.append(entry.render());
+        }
+      }
+      statusEl.textContent = "";
     } catch {
-      setStatus("Failed to load plugins.");
+      statusEl.textContent = "Failed to load plugins.";
     }
   }
   function makeCursorPluginRow(plugin) {
@@ -67936,7 +67897,6 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
     if (openedSection === "about") void aboutSection.refresh();
-    if (openedSection === "experimental") void refreshPlugins();
     if (openedSection === "customise") {
       void refreshSources();
       void revealPluginDetail();
