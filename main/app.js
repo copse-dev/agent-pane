@@ -52258,14 +52258,22 @@ function isAbortTimeoutMessage(message2) {
   return /aborted due to timeout|operation was aborted|aborterror|timeout/i.test(message2);
 }
 function claudeReasonNeedsLogin(reason) {
-  return /claude \/login|user:profile|rejected/i.test(reason);
+  return /claude \/login|user:profile|rejected|access token has expired/i.test(reason);
 }
-function createClaudeSignInHandler(store2, onRequestClose) {
+function createPlanSignInHandler(store2, provider, onRequestClose) {
   if (!store2) return null;
   return () => {
     onRequestClose?.();
-    store2.emit("request_terminal_command", "claude /login");
+    store2.emit("request_terminal_command", provider === "claude" ? "claude /login" : "codex login");
   };
+}
+function planSignInProvider(result) {
+  if (result.status !== "unavailable") return null;
+  if (result.provider === "claude" && claudeReasonNeedsLogin(result.reason)) return "claude";
+  if (result.provider === "codex" && /codex login|credentials were rejected/i.test(result.reason)) {
+    return "codex";
+  }
+  return null;
 }
 function formatReset2(resetsAt) {
   if (!resetsAt) return "reset unknown";
@@ -52303,7 +52311,7 @@ function formatPlanWindowStats(window2) {
   if (severity && severity !== "normal") parts.push(severity);
   return parts.join(" \xB7 ");
 }
-function renderPlanProvider(host, result, onClaudeSignIn) {
+function renderPlanProvider(host, result, onSignIn) {
   const card = document.createElement("div");
   card.className = "usage-plan-provider";
   card.dataset["provider"] = result.provider;
@@ -52317,14 +52325,16 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
     hint.className = "usage-plan-status field-hint";
     setInlineMarkdown(hint, result.reason);
     card.append(hint);
-    if (result.provider === "claude" && onClaudeSignIn && claudeReasonNeedsLogin(result.reason)) {
+    const signInProvider = planSignInProvider(result);
+    const onProviderSignIn = signInProvider ? onSignIn?.[signInProvider] : void 0;
+    if (signInProvider && onProviderSignIn) {
       const signIn = document.createElement("button");
       signIn.type = "button";
       signIn.className = "ui-btn ui-btn-primary usage-plan-signin-btn";
-      signIn.textContent = "Sign in to Claude";
-      signIn.title = "Open a terminal and run claude /login";
+      signIn.textContent = signInProvider === "claude" ? "Sign in to Claude" : "Sign in to Codex";
+      signIn.title = `Open a terminal and run ${signInProvider === "claude" ? "claude /login" : "codex login"}`;
       signIn.addEventListener("click", () => {
-        onClaudeSignIn();
+        onProviderSignIn();
       });
       card.append(signIn);
     }
@@ -52387,7 +52397,7 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
   }
   host.append(card);
 }
-function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
+function renderPlanSection(host, snapshot, error62, onSignIn) {
   host.replaceChildren();
   const heading = document.createElement("h4");
   heading.className = "usage-plan-heading";
@@ -52421,7 +52431,7 @@ function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
   const list = document.createElement("div");
   list.className = "usage-plan-providers";
   for (const provider of snapshot.providers) {
-    renderPlanProvider(list, provider, onClaudeSignIn);
+    renderPlanProvider(list, provider, onSignIn);
   }
   host.append(list);
 }
@@ -52626,7 +52636,10 @@ function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
   );
 }
 function createUsageSection(api2, store2, onRequestClose) {
-  const handleClaudeSignIn = createClaudeSignInHandler(store2, onRequestClose);
+  const handleSignIn = {
+    claude: createPlanSignInHandler(store2, "claude", onRequestClose) ?? void 0,
+    codex: createPlanSignInHandler(store2, "codex", onRequestClose) ?? void 0
+  };
   const root = document.createElement("div");
   root.className = "usage-section-root";
   root.innerHTML = `
@@ -52754,15 +52767,15 @@ function createUsageSection(api2, store2, onRequestClose) {
   });
   async function refreshPlan() {
     if (!cachedPlanSnapshot) {
-      renderPlanSection(planEl, null, null, handleClaudeSignIn);
+      renderPlanSection(planEl, null, null, handleSignIn);
     }
     try {
       const snapshot = await api2.usage.getPlanUsage();
       cachedPlanSnapshot = snapshot;
-      renderPlanSection(planEl, snapshot, null, handleClaudeSignIn);
+      renderPlanSection(planEl, snapshot, null, handleSignIn);
     } catch (err2) {
       const message2 = err2 instanceof Error ? err2.message : "Failed to load subscription plan usage.";
-      renderPlanSection(planEl, null, message2, handleClaudeSignIn);
+      renderPlanSection(planEl, null, message2, handleSignIn);
     }
   }
   async function refreshWorthIt() {
