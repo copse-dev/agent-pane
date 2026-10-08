@@ -6,12 +6,14 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
+import { sideChatsOf } from '@shared/threads/side-chat.ts'
 import { countPortraitPanelOverflow } from './portrait-panel-bar-overflow.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 
 export type PanelControlId =
   | 'explorer'
+  | 'side-chat'
   | 'terminal'
   | 'changes'
   | 'prs'
@@ -41,6 +43,14 @@ function panelIcon(): SVGSVGElement {
   return outlineIcon(
     'panel',
     ['M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z', 'M9 4v16'],
+    'titlebar-btn-icon',
+  )
+}
+
+function sideChatIcon(): SVGSVGElement {
+  return outlineIcon(
+    'side-chat',
+    ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z'],
     'titlebar-btn-icon',
   )
 }
@@ -117,6 +127,13 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
     ariaLabel: 'Toggle right panel',
     label: 'Panel',
     icon: panelIcon,
+  },
+  {
+    id: 'side-chat',
+    mode: 'side-chat',
+    ariaLabel: 'Open side chat',
+    label: 'Side chat',
+    icon: sideChatIcon,
   },
   {
     id: 'terminal',
@@ -207,6 +224,7 @@ export function mountPanelModeControls(
   const controls = el('div', { class: opts.className ?? 'titlebar-panel-controls' })
   const buttons = new Map<PanelControlId, HTMLButtonElement>()
   let changesBadge: HTMLSpanElement | null = null
+  let sideChatBadge: HTMLSpanElement | null = null
   const cleanups: Array<() => void> = []
   let syncOverflow: (() => void) | null = null
 
@@ -221,6 +239,10 @@ export function mountPanelModeControls(
     if (def.id === 'changes') {
       changesBadge = el('span', { class: 'titlebar-btn-badge', hidden: true })
       children.push(changesBadge)
+    }
+    if (def.id === 'side-chat') {
+      sideChatBadge = el('span', { class: 'titlebar-btn-badge', hidden: true })
+      children.push(sideChatBadge)
     }
     const btn = el(
       'button',
@@ -480,14 +502,41 @@ export function mountPanelModeControls(
     syncOverflow?.()
   }
 
+  /** Count of the open thread's live side chats; highlighted while one is unread. */
+  function syncSideChatBadge(): void {
+    if (!sideChatBadge) return
+    const { threads, activeThreadId } = store.getState()
+    const active = threads.find((thread) => thread.id === activeThreadId)
+    const mainId = active?.sideChat?.parentThreadId ?? active?.id
+    const rows = mainId === undefined ? [] : sideChatsOf(threads, mainId)
+    const unread = rows.filter((row) => row.unread).length
+    const btn = buttons.get('side-chat')
+    sideChatBadge.hidden = rows.length === 0
+    sideChatBadge.textContent = String(rows.length)
+    btn?.classList.toggle('has-pending', unread > 0)
+    if (btn) {
+      setTooltip(
+        btn,
+        rows.length === 0
+          ? 'Open side chat'
+          : `Open side chat — ${String(rows.length)} ${rows.length === 1 ? 'chat' : 'chats'}${
+              unread > 0 ? `, ${String(unread)} unread` : ''
+            }`,
+      )
+    }
+    syncOverflow?.()
+  }
+
   syncPanelBtns()
   syncChangesBadge()
+  syncSideChatBadge()
   syncExperimentalBtns()
 
   const unsubs = [
     store.on('files_pane_changed', syncPanelBtns),
     store.on('right_panel_mode_changed', syncPanelBtns),
     store.on('staged_diffs_changed', syncChangesBadge),
+    store.on('threads_changed', syncSideChatBadge),
     store.on('settings_changed', syncExperimentalBtns),
   ]
 

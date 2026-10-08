@@ -80,4 +80,5 @@
 // v50 versions skill-source diagnostics and validated extra-root updates.
 // v51 adds `threads:backlinks`, and versions the optional `sideChat` link and the
 // recorded `links` on thread payloads.
-export const API_PROTOCOL_VERSION = 51 as const
+// v52 adds the `side-chat` right-panel mode to the pane and pop-out channels.
+export const API_PROTOCOL_VERSION = 52 as const
