@@ -10,6 +10,7 @@ let expandDialog: HTMLDialogElement | null = null
 let viewportEl: HTMLDivElement | null = null
 let stageEl: HTMLDivElement | null = null
 let zoomLabelEl: HTMLSpanElement | null = null
+let expandedFrame: DiagramFrame | null = null
 
 let scale = 1
 let translateX = 0
@@ -183,6 +184,8 @@ function ensureExpandDialog(): HTMLDialogElement {
   })
   expandDialog.addEventListener('close', () => {
     resetTransform()
+    expandedFrame?.dispose()
+    expandedFrame = null
     stageEl?.replaceChildren()
   })
 
@@ -198,7 +201,12 @@ function openMermaidExpand(
   const frame = recreate(sourceFrame)
   if (!frame) return
   const dialog = ensureExpandDialog()
-  if (!stageEl) return
+  if (!stageEl) {
+    frame.dispose()
+    return
+  }
+  expandedFrame?.dispose()
+  expandedFrame = frame
   stageEl.replaceChildren(frame.element)
   dialog.showModal()
   void frame.ready

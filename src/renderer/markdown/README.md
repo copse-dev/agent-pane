@@ -21,8 +21,11 @@ This directory keeps the app-side integration only:
   hosts: buttons, hints, list rows, and inline statuses.
 - `mermaid.ts`, `mermaid-frame.ts`, `mermaid-expand.ts`, `mermaid-fallback.ts` —
   isolated diagram frames after final insertion, expansion in a fresh frame,
-  and the inert source fallback. `mermaid-frame-entry.ts` and `mermaid-render.ts`
-  are bundled separately and execute only inside `mermaid-frame.html`.
+  and the inert source fallback. `mermaid-frame-entry.ts` supplies Copse fonts/theme to the package’s optional
+  `diagrams/mermaid/frame` runtime. The package owns the protocol, lifecycle and
+  hash-pinned CSP document builder; `scripts/write-mermaid-frame.mts` supplies
+  Copse CSS and writes the generated `mermaid-frame.html`. Electron navigation
+  enforcement remains in `src/main/windows/web-contents-lockdown.ts`.
   See [the isolation prototype](../../../docs/spikes/mermaid-isolation.md) for
   the protocol, security boundaries, and remaining production work.
 

@@ -145,6 +145,21 @@ describe('isolated mermaid diagram rendering', () => {
       const img = document.createElement('img')
       img.src = `${url}/diagram-image-probe`
       document.body.append(img)
+      const svg = document.querySelector('svg')
+      for (const tag of ['image', 'use', 'feImage']) {
+        const resource = document.createElementNS('http://www.w3.org/2000/svg', tag)
+        resource.setAttribute('href', `${url}/diagram-svg-${tag}.svg#probe`)
+        svg?.append(resource)
+      }
+      const style = document.createElement('style')
+      style.textContent = `@import url('${url}/diagram-style.css');
+        @font-face { font-family: MermaidProbe; src: url('${url}/diagram-font.woff2'); }
+        .mermaid-probe { font-family: MermaidProbe; background-image: url('${url}/diagram-css-image.png'); }`
+      document.head.append(style)
+      const label = document.createElement('p')
+      label.className = 'mermaid-probe'
+      label.textContent = 'Force font loading'
+      document.body.append(label)
       window.parent.postMessage({ type: 'rendered', width: 1e9, height: 1e9 }, '*')
       void fetch(`${url}/diagram-fetch-probe`).then(
         () =>
@@ -169,6 +184,8 @@ describe('isolated mermaid diagram rendering', () => {
     expect(probes.inlineExecuted).toBe(null)
     expect(probes.violations).toContain('connect-src')
     expect(probes.violations).toContain('img-src')
+    expect(probes.violations).toContain('font-src')
+    expect(probes.violations).toContain('style-src-elem')
     expect(probes.violations).toContain('script-src-elem')
     await browser.execute((url) => {
       window.location.href = `${url}/diagram-navigation-probe`
