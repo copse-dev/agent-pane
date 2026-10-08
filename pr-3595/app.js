@@ -20834,10 +20834,10 @@ var init_errors4 = __esm({
 function mountConfirmDialog() {
   document.getElementById("confirm-dialog")?.remove();
   showConfirmDialogImpl = null;
-  const messageEl = el("h3", { class: "confirm-dialog-message" });
+  const messageEl2 = el("h3", { class: "confirm-dialog-message" });
   const detailEl = el("p", { class: "confirm-dialog-detail" });
   const buttonsEl = uiActions({ className: "confirm-dialog-buttons" });
-  const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl, detailEl, buttonsEl);
+  const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl2, detailEl, buttonsEl);
   document.body.append(dialog2);
   const queue = [];
   let active2 = null;
@@ -20868,7 +20868,7 @@ function mountConfirmDialog() {
   }
   function renderActive() {
     if (!active2) return;
-    messageEl.textContent = active2.message;
+    messageEl2.textContent = active2.message;
     if (active2.detail) {
       detailEl.replaceChildren(active2.detail);
       detailEl.hidden = false;
@@ -63855,6 +63855,84 @@ var init_appearance = __esm({
   }
 });
 
+// packages/thread-store/src/side-chat.ts
+function excerpt(message2) {
+  const line = message2.content.trim().split("\n", 1)[0] ?? "";
+  return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
+}
+function buildSideChatThread(parent, options) {
+  if (parent.sideChat !== void 0) return null;
+  const anchor2 = parent.messages.find((message2) => message2.id === options.anchorMessageId);
+  if (!anchor2) return null;
+  const model = options.model ?? parent.model;
+  const now = Date.now();
+  return {
+    id: globalThis.crypto.randomUUID(),
+    title: options.title ?? (excerpt(anchor2) || "Side chat"),
+    status: "idle",
+    messages: [],
+    // A fresh side chat has nothing to scan: mark both caches as scanned and empty so
+    // the index never queues it for a transcript backfill.
+    prRefs: [],
+    links: [],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    ...model !== void 0 ? { model } : {},
+    sideChat: { parentThreadId: parent.id, anchorMessageId: anchor2.id },
+    createdAt: now,
+    updatedAt: now
+  };
+}
+function toSideChatRow(thread) {
+  const link = thread.sideChat;
+  if (link === void 0) return null;
+  return {
+    id: thread.id,
+    title: thread.title,
+    ...thread.model !== void 0 ? { model: thread.model } : {},
+    anchorMessageId: link.anchorMessageId,
+    archived: thread.archivedAt != null,
+    unread: thread.unreadAt !== void 0,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt
+  };
+}
+function sideChatsOf(threads, parentId, includeArchived = false) {
+  const rows = [];
+  for (const thread of threads) {
+    if (thread.sideChat?.parentThreadId !== parentId) continue;
+    const row2 = toSideChatRow(thread);
+    if (row2 && (includeArchived || !row2.archived)) rows.push(row2);
+  }
+  return rows.sort((a3, b4) => a3.createdAt - b4.createdAt || a3.id.localeCompare(b4.id));
+}
+function withoutSideChats(threads) {
+  const ids = new Set(threads.map((thread) => thread.id));
+  return threads.filter(
+    (thread) => thread.sideChat === void 0 || !ids.has(thread.sideChat.parentThreadId)
+  );
+}
+function unreadSideChatParents(threads) {
+  const parents = /* @__PURE__ */ new Set();
+  for (const thread of threads) {
+    if (thread.sideChat && thread.unreadAt !== void 0 && thread.archivedAt == null)
+      parents.add(thread.sideChat.parentThreadId);
+  }
+  return parents;
+}
+var MAX_TITLE_LENGTH;
+var init_side_chat = __esm({
+  "packages/thread-store/src/side-chat.ts"() {
+    MAX_TITLE_LENGTH = 80;
+  }
+});
+
+// src/shared/threads/side-chat.ts
+var init_side_chat2 = __esm({
+  "src/shared/threads/side-chat.ts"() {
+    init_side_chat();
+  }
+});
+
 // src/shared/store/pending-submissions.ts
 function beginThreadSubmission(store2, threadId) {
   let pending = pendingByStore.get(store2);
@@ -64435,6 +64513,19 @@ function archiveThread(store2, id, persisted) {
   });
   store2.emit("threads_changed");
   if (activeArchived) store2.emit("panel_changed");
+}
+function restoreThread(store2, id) {
+  const { threads } = store2.getState();
+  const target = threads.find((t2) => t2.id === id);
+  if (!target || !isThreadArchived(target)) return;
+  store2.setState({
+    threads: threads.map((t2) => {
+      if (t2.id !== id) return t2;
+      const { archivedAt: _archivedAt, ...restored } = t2;
+      return { ...restored, updatedAt: Date.now() };
+    })
+  });
+  store2.emit("threads_changed");
 }
 function recordContextTrim(store2, threadId, record2) {
   patchThreadAnywhere(store2, threadId, (t2) => {
@@ -67098,6 +67189,7 @@ function compactSidebarThread(thread) {
     status: thread.status,
     ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
+    ...thread.sideChat ? { sideChat: thread.sideChat } : {},
     ...thread.automation ? { automation: thread.automation } : {},
     ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {},
     prRefs: sidebarPrRefs(thread),
@@ -67746,7 +67838,25 @@ function supersedePendingSwitch() {
 function getSidebarThreads(store2, projectId) {
   const { activeProjectId, threads } = store2.getState();
   const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
-  return list.filter((t2) => t2.archivedAt == null);
+  return withoutSideChats(list).filter((t2) => t2.archivedAt == null);
+}
+function getSideChatUnreadParents(store2, projectId) {
+  const { activeProjectId, threads } = store2.getState();
+  if (projectId !== activeProjectId) return /* @__PURE__ */ new Set();
+  const cached2 = sideChatUnreadCache.get(threads);
+  if (cached2) return cached2;
+  const parents = unreadSideChatParents(threads);
+  sideChatUnreadCache.set(threads, parents);
+  return parents;
+}
+function attentionThreadId(store2, threadId) {
+  for (const list of [store2.getState().threads, ...threadCache.values()]) {
+    const thread = list.find((t2) => t2.id === threadId);
+    if (!thread) continue;
+    const parentId = thread.sideChat?.parentThreadId;
+    return parentId !== void 0 && list.some((t2) => t2.id === parentId) ? parentId : threadId;
+  }
+  return threadId;
 }
 function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
   const cached2 = threadCache.get(projectId);
@@ -68323,9 +68433,10 @@ async function recoverOrphanProject(store2, api2, storeId, confirm2) {
   await activateAndWait(store2, api2, storeId, path);
   return true;
 }
-var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
+var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
 var init_projects = __esm({
   "src/renderer/controller/projects.ts"() {
+    init_side_chat2();
     init_thread_helpers();
     init_persistence();
     init_message_queue();
@@ -68343,6 +68454,7 @@ var init_projects = __esm({
     switchGeneration = 0;
     pendingSwitch = null;
     activationWaiters = /* @__PURE__ */ new Map();
+    sideChatUnreadCache = /* @__PURE__ */ new WeakMap();
     workspaceChain = Promise.resolve();
     NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
     KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
@@ -72653,14 +72765,82 @@ var init_thread_pr_relations2 = __esm({
 });
 
 // packages/thread-store/src/thread-links.ts
+function threadIdFromHref(href) {
+  const deep = /^copse:\/\/thread\/([a-f0-9-]+)$/i.exec(href);
+  if (deep?.[1] !== void 0) return THREAD_ID.test(deep[1]) ? deep[1].toLowerCase() : null;
+  try {
+    const url2 = new URL(href);
+    if (url2.hostname !== "copse.dev" || !url2.pathname.startsWith("/open")) return null;
+    const id = new URLSearchParams(url2.hash.slice(1)).get("thread");
+    return id !== null && THREAD_ID.test(id) ? id.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+function toLink(raw) {
+  const href = raw.replace(TRAILING_PUNCTUATION, "");
+  const threadId = threadIdFromHref(href);
+  if (threadId !== null) return { kind: "thread", target: threadId };
+  let url2;
+  try {
+    url2 = new URL(href);
+  } catch {
+    return null;
+  }
+  if (url2.protocol !== "https:" && url2.protocol !== "http:") return null;
+  if (parseGithubPrUrl(url2.href) !== null) return null;
+  url2.hash = "";
+  return { kind: "url", target: url2.href };
+}
+function extractThreadLinks(text2) {
+  const seen = /* @__PURE__ */ new Set();
+  const links = [];
+  for (const match of text2.matchAll(URL_PATTERN)) {
+    const link = toLink(match[0]);
+    if (!link) continue;
+    const key = `${link.kind}:${link.target}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push(link);
+    if (links.length >= MAX_LINKS_PER_MESSAGE) break;
+  }
+  return links;
+}
+function mergeThreadLinks(existing, found) {
+  const links = [...existing];
+  const seen = new Set(links.map((link) => `${link.kind}:${link.target}`));
+  let added = false;
+  for (const link of found) {
+    if (links.length >= MAX_LINKS_PER_THREAD) break;
+    const key = `${link.kind}:${link.target}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push(link);
+    added = true;
+  }
+  return { links, added };
+}
+function collectThreadLinks(thread) {
+  let links = [];
+  for (const message2 of thread.messages) {
+    links = mergeThreadLinks(links, extractThreadLinks(message2.content)).links;
+  }
+  return thread.id === void 0 ? links : links.filter((link) => !(link.kind === "thread" && link.target === thread.id));
+}
 function backlinksFor(threads, kind, target) {
   return threads.filter(
     (thread) => thread.archivedAt == null && (thread.links ?? []).some((link) => link.kind === kind && link.target === target)
   ).map((thread) => ({ threadId: thread.id, title: thread.title })).sort((a3, b4) => a3.threadId.localeCompare(b4.threadId));
 }
+var URL_PATTERN, THREAD_ID, TRAILING_PUNCTUATION, MAX_LINKS_PER_MESSAGE, MAX_LINKS_PER_THREAD;
 var init_thread_links = __esm({
   "packages/thread-store/src/thread-links.ts"() {
     init_github_pr_url();
+    URL_PATTERN = /https?:\/\/[^\s<>"'`)\]]+|copse:\/\/thread\/[a-f0-9-]+/gi;
+    THREAD_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    TRAILING_PUNCTUATION = /[.,;:!?]+$/;
+    MAX_LINKS_PER_MESSAGE = 50;
+    MAX_LINKS_PER_THREAD = 200;
   }
 });
 
@@ -76205,12 +76385,14 @@ function conciseThreadScenario(id, label, model, {
     ]
   };
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, DEMO_SCENARIOS;
+var FIXED_TIME, SIDE_CHATS_MAIN_ID, SIDE_CHATS_OTHER_ID, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, SIDE_CHATS_THREADS, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
     init_demo_site_tour();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
+    SIDE_CHATS_MAIN_ID = "7b3e9a10-5c2d-4f6e-8a41-0d9c2b7e5f13";
+    SIDE_CHATS_OTHER_ID = "3c1f0a52-8b3e-4d7a-9f10-2a6b7c8d9e01";
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
     DEMO_CODEX_ACP_AGENT = {
@@ -76437,6 +76619,127 @@ var init_demo_scenarios = __esm({
         "</svg>"
       ].join("")
     )}`;
+    SIDE_CHATS_THREADS = [
+      {
+        id: SIDE_CHATS_MAIN_ID,
+        title: "Fix flaky mermaid e2e",
+        status: "idle",
+        gitBranch: "fix/mermaid-wait",
+        model: "acp:claude-acp#sonnet",
+        messages: [
+          {
+            id: "sc-user-1",
+            role: "user",
+            content: "The mermaid e2e spec fails about one run in five on CI. Any idea why?",
+            toolCalls: [],
+            createdAt: FIXED_TIME + 1e3
+          },
+          {
+            id: "sc-assistant-1",
+            role: "assistant",
+            content: [
+              "The spec asserts on the rendered svg right after navigation, but Mermaid renders",
+              "asynchronously. See https://webdriver.io/docs/api/element/waitForDisplayed and the",
+              `release thread copse://thread/${SIDE_CHATS_OTHER_ID}. Fix proposed in`,
+              "https://github.com/acme/widgets/pull/42."
+            ].join(" "),
+            toolCalls: [
+              {
+                id: "sc-explore-call",
+                name: "explore",
+                args: { query: "waitForExist usages" },
+                status: "done",
+                result: "14 matches across 3 specs.",
+                subagent: {
+                  id: "sc-explore-session",
+                  kind: "explore",
+                  status: "done",
+                  prompt: "Find every waitForExist on the mermaid selector",
+                  summary: "14 matches across 3 specs.",
+                  messages: [],
+                  model: "acp:claude-acp#haiku"
+                }
+              }
+            ],
+            createdAt: FIXED_TIME + 2e3
+          }
+        ],
+        prRefs: [
+          {
+            owner: "acme",
+            repo: "widgets",
+            number: 42,
+            url: "https://github.com/acme/widgets/pull/42"
+          }
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME + 5e3
+      },
+      {
+        id: "sc-side-1",
+        title: "waitForExist vs waitForDisplayed",
+        status: "idle",
+        model: "acp:codex-acp#fast",
+        sideChat: { parentThreadId: SIDE_CHATS_MAIN_ID, anchorMessageId: "sc-assistant-1" },
+        unreadAt: FIXED_TIME + 4e3,
+        messages: [
+          {
+            id: "sc-side1-user",
+            role: "user",
+            content: "What is the difference between waitForExist and waitForDisplayed here?",
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3100
+          },
+          {
+            id: "sc-side1-assistant",
+            role: "assistant",
+            content: "`waitForExist` only checks that the node is in the DOM. `waitForDisplayed` also needs a non-zero size and no `display: none`. Mermaid inserts an empty svg first, so the first one passes too early.",
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3900
+          }
+        ],
+        prRefs: [],
+        links: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME + 3e3,
+        updatedAt: FIXED_TIME + 4e3
+      },
+      {
+        id: "sc-side-2",
+        title: "Is this safe to merge?",
+        status: "idle",
+        model: "acp:claude-acp#sonnet",
+        sideChat: { parentThreadId: SIDE_CHATS_MAIN_ID, anchorMessageId: "sc-user-1" },
+        archivedAt: FIXED_TIME + 4500,
+        messages: [],
+        messagesLoaded: false,
+        prRefs: [],
+        links: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME + 2500,
+        updatedAt: FIXED_TIME + 4500
+      },
+      {
+        id: SIDE_CHATS_OTHER_ID,
+        title: "Release notes draft",
+        status: "idle",
+        messages: [
+          {
+            id: "sc-other-1",
+            role: "user",
+            content: `Include the mermaid fix from copse://thread/${SIDE_CHATS_MAIN_ID}.`,
+            toolCalls: [],
+            createdAt: FIXED_TIME
+          }
+        ],
+        prRefs: [],
+        links: [{ kind: "thread", target: SIDE_CHATS_MAIN_ID }],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME + 1e3
+      }
+    ];
     DEMO_SCENARIOS = [
       // The first scenario remains the marketing landing walkthrough.
       {
@@ -78409,6 +78712,50 @@ var init_demo_scenarios = __esm({
         }))
       },
       {
+        id: "side-chats",
+        label: "Side chats beside the main thread",
+        project: project("demo-side-chats", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        threads: SIDE_CHATS_THREADS
+      },
+      {
+        id: "side-chat-approval",
+        label: "A side chat asks for approval over its parent thread",
+        project: project("demo-side-chat-approval", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        threads: SIDE_CHATS_THREADS,
+        approvalRequests: [
+          {
+            id: "demo-side-chat-approval-request",
+            threadId: "sc-side-1",
+            title: "Run outside sandbox?",
+            body: "pnpm exec wdio run wdio.e2e.conf.ts --spec tests/e2e/mermaid.e2e.ts",
+            bodyFooter: "Allow running it once outside the sandbox?",
+            type: "shell"
+          }
+        ]
+      },
+      {
         id: "chat-layout-styling",
         label: "Chat layout styling",
         project: project("demo-chat-layout-project"),
@@ -80336,6 +80683,7 @@ function createStore(initial) {
     browser_url_requested: /* @__PURE__ */ new Set(),
     browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
     pr_open_requested: /* @__PURE__ */ new Set(),
+    side_chat_open_requested: /* @__PURE__ */ new Set(),
     canvas_artefact_requested: /* @__PURE__ */ new Set(),
     canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
     settings_changed: /* @__PURE__ */ new Set(),
@@ -81508,6 +81856,13 @@ function panelIcon() {
     "titlebar-btn-icon"
   );
 }
+function sideChatIcon() {
+  return outlineIcon(
+    "side-chat",
+    ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"],
+    "titlebar-btn-icon"
+  );
+}
 function terminalIcon() {
   return outlineIcon("terminal", ["m7 8 4 4-4 4", "M13 16h4"], "titlebar-btn-icon");
 }
@@ -81574,6 +81929,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
   const controls = el("div", { class: opts.className ?? "titlebar-panel-controls" });
   const buttons = /* @__PURE__ */ new Map();
   let changesBadge = null;
+  let sideChatBadge = null;
   const cleanups = [];
   let syncOverflow = null;
   for (const def of PANEL_CONTROL_DEFS) {
@@ -81587,6 +81943,10 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     if (def.id === "changes") {
       changesBadge = el("span", { class: "titlebar-btn-badge", hidden: true });
       children.push(changesBadge);
+    }
+    if (def.id === "side-chat") {
+      sideChatBadge = el("span", { class: "titlebar-btn-badge", hidden: true });
+      children.push(sideChatBadge);
     }
     const btn = el(
       "button",
@@ -81806,13 +82166,34 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     }
     syncOverflow?.();
   }
+  function syncSideChatBadge() {
+    if (!sideChatBadge) return;
+    const { threads, activeThreadId } = store2.getState();
+    const active2 = threads.find((thread) => thread.id === activeThreadId);
+    const mainId = active2?.sideChat?.parentThreadId ?? active2?.id;
+    const rows = mainId === void 0 ? [] : sideChatsOf(threads, mainId);
+    const unread = rows.filter((row2) => row2.unread).length;
+    const btn = buttons.get("side-chat");
+    sideChatBadge.hidden = rows.length === 0;
+    sideChatBadge.textContent = String(rows.length);
+    btn?.classList.toggle("has-pending", unread > 0);
+    if (btn) {
+      setTooltip(
+        btn,
+        rows.length === 0 ? "Open side chat" : `Open side chat \u2014 ${String(rows.length)} ${rows.length === 1 ? "chat" : "chats"}${unread > 0 ? `, ${String(unread)} unread` : ""}`
+      );
+    }
+    syncOverflow?.();
+  }
   syncPanelBtns();
   syncChangesBadge();
+  syncSideChatBadge();
   syncExperimentalBtns();
   const unsubs = [
     store2.on("files_pane_changed", syncPanelBtns),
     store2.on("right_panel_mode_changed", syncPanelBtns),
     store2.on("staged_diffs_changed", syncChangesBadge),
+    store2.on("threads_changed", syncSideChatBadge),
     store2.on("settings_changed", syncExperimentalBtns)
   ];
   return {
@@ -81836,6 +82217,7 @@ var init_panel_mode_controls = __esm({
     init_outline_icon();
     init_tooltip();
     init_panels();
+    init_side_chat2();
     init_portrait_panel_bar_overflow();
     init_roadmap_plans_plugin();
     init_okf_memories_plugin();
@@ -81846,6 +82228,13 @@ var init_panel_mode_controls = __esm({
         ariaLabel: "Toggle right panel",
         label: "Panel",
         icon: panelIcon
+      },
+      {
+        id: "side-chat",
+        mode: "side-chat",
+        ariaLabel: "Open side chat",
+        label: "Side chat",
+        icon: sideChatIcon
       },
       {
         id: "terminal",
@@ -82435,7 +82824,7 @@ function forkThreadTitle(title) {
   return truncateTitle(`${base}${FORK_SUFFIX}`);
 }
 function truncateTitle(title) {
-  return title.length <= MAX_TITLE_LENGTH ? title : `${title.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
+  return title.length <= MAX_TITLE_LENGTH2 ? title : `${title.slice(0, MAX_TITLE_LENGTH2 - 1)}\u2026`;
 }
 function buildForkedThread(source, options = {}) {
   const excluded = options.excludeMessageIds ?? /* @__PURE__ */ new Set();
@@ -82502,12 +82891,12 @@ function copyMessage(message2) {
     ...attachments !== void 0 ? { attachments: attachments.map((attachment) => ({ ...attachment })) } : {}
   };
 }
-var randomUUID2, MAX_TITLE_LENGTH, FORK_SUFFIX;
+var randomUUID2, MAX_TITLE_LENGTH2, FORK_SUFFIX;
 var init_fork_thread = __esm({
   "packages/thread-store/src/fork-thread.ts"() {
     init_thread_pr_status();
     randomUUID2 = () => globalThis.crypto.randomUUID();
-    MAX_TITLE_LENGTH = 120;
+    MAX_TITLE_LENGTH2 = 120;
     FORK_SUFFIX = " (fork)";
   }
 });
@@ -82973,7 +83362,8 @@ function collectActivityThreads(store2) {
   }
   for (const carried of backgroundThreads) {
     const project2 = projects.find((p2) => p2.id === carried.projectId);
-    if (!project2 || carried.thread.archivedAt != null) continue;
+    if (!project2 || carried.thread.archivedAt != null || carried.thread.sideChat !== void 0)
+      continue;
     out.set(carried.thread.id, {
       id: carried.thread.id,
       title: carried.thread.title,
@@ -83049,6 +83439,142 @@ var init_activity_model = __esm({
     MINUTE = 6e4;
     HOUR = 60 * MINUTE;
     DAY = 24 * HOUR;
+  }
+});
+
+// src/renderer/controller/side-chat.ts
+async function startSideChat(store2, api2, parentThreadId, options = {}) {
+  const parent = getThreadById(store2, parentThreadId);
+  if (!parent) return null;
+  const queued = queuedMessageIds(parent);
+  const anchorMessageId = options.anchorMessageId ?? parent.messages.filter((m2) => !queued.has(m2.id)).at(-1)?.id;
+  if (anchorMessageId === void 0 || queued.has(anchorMessageId)) return null;
+  const side = buildSideChatThread(parent, {
+    anchorMessageId,
+    ...options.model !== void 0 ? { model: options.model } : {}
+  });
+  if (!side) return null;
+  const openAs = options.open ?? "panel";
+  if (openAs === "thread") {
+    store2.emit("composer_draft_flush");
+    store2.setState({
+      threads: [side, ...store2.getState().threads],
+      activeThreadId: side.id,
+      openFile: null,
+      activeDiff: null,
+      stagedDiffs: []
+    });
+    store2.emit("threads_changed");
+    store2.emit("panel_changed");
+  } else {
+    store2.setState({ threads: [side, ...store2.getState().threads] });
+    store2.emit("threads_changed");
+    store2.emit("side_chat_open_requested", side.id);
+  }
+  const projectId = store2.getState().activeProjectId;
+  if (projectId) {
+    try {
+      await api2.threads.fork(projectId, parentThreadId, side.id, anchorMessageId);
+    } catch (error62) {
+      console.error("[side-chat] failed to seed history from the parent:", error62);
+    }
+  }
+  return side.id;
+}
+function sendSideChatMessage(store2, api2, sideThreadId, text2) {
+  const side = getThreadById(store2, sideThreadId);
+  const prompt = text2.trim();
+  if (!side || side.sideChat === void 0 || prompt === "") return null;
+  const messageId = addMessage(store2, sideThreadId, "user", prompt);
+  const payload = {
+    content: prompt,
+    invokedSkills: [],
+    priorTodos: side.todos ?? [],
+    ...side.workingBrief !== void 0 ? { workingBrief: side.workingBrief } : {}
+  };
+  const queued = { messageId, payload, createdAt: Date.now() };
+  if (side.status === "running") {
+    enqueueUserMessage(store2, sideThreadId, queued);
+  } else {
+    startHumanTurnTree(store2, sideThreadId);
+    dispatchAgentRun(store2, api2, sideThreadId, payload, queued);
+  }
+  return messageId;
+}
+async function promoteSideChat(store2, api2, sideThreadId) {
+  const side = getThreadById(store2, sideThreadId);
+  if (!side || side.sideChat === void 0) return null;
+  const parent = getThreadById(store2, side.sideChat.parentThreadId);
+  const prefix = parent ? buildForkedThread(parent, {
+    throughMessageId: side.sideChat.anchorMessageId,
+    excludeMessageIds: queuedMessageIds(parent)
+  }) : null;
+  const own2 = buildForkedThread(side);
+  const base = own2 ?? prefix;
+  if (!base) {
+    const { sideChat: _link, ...detached } = side;
+    store2.setState({
+      threads: store2.getState().threads.map((t2) => t2.id === sideThreadId ? detached : t2)
+    });
+    store2.emit("threads_changed");
+    return sideThreadId;
+  }
+  const messages = [...prefix?.messages ?? [], ...own2?.messages ?? []];
+  const promoted = {
+    ...base,
+    title: side.title,
+    messages,
+    prRefs: collectThreadPrRefs({ messages }),
+    links: collectThreadLinks({ id: base.id, messages }),
+    ...side.model !== void 0 ? { model: side.model } : {}
+  };
+  store2.emit("composer_draft_flush");
+  store2.setState({
+    threads: [promoted, ...store2.getState().threads],
+    activeThreadId: promoted.id,
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: []
+  });
+  store2.emit("threads_changed");
+  store2.emit("panel_changed");
+  archiveThread(store2, sideThreadId);
+  const projectId = store2.getState().activeProjectId;
+  if (projectId) {
+    try {
+      if (own2) await api2.threads.fork(projectId, sideThreadId, promoted.id);
+      else if (parent)
+        await api2.threads.fork(projectId, parent.id, promoted.id, side.sideChat.anchorMessageId);
+    } catch (error62) {
+      console.error("[side-chat] failed to seed the promoted thread history:", error62);
+    }
+  }
+  return promoted.id;
+}
+function sideChatPromptOrigin(store2, threadIds) {
+  const titles2 = [];
+  let firstSideChatId;
+  for (const id of new Set(threadIds)) {
+    if (id === void 0 || attentionThreadId(store2, id) === id) continue;
+    firstSideChatId ??= id;
+    const title = getThreadById(store2, id)?.title ?? "";
+    titles2.push(`\u201C${title === "" ? "Side chat" : title}\u201D`);
+  }
+  if (firstSideChatId === void 0) return null;
+  return {
+    label: titles2.length === 1 ? `From the side chat ${titles2.join("")}` : `From the side chats ${titles2.join(", ")}`,
+    firstSideChatId
+  };
+}
+var init_side_chat3 = __esm({
+  "src/renderer/controller/side-chat.ts"() {
+    init_thread_pr_status2();
+    init_fork_thread2();
+    init_thread_helpers();
+    init_thread_links2();
+    init_side_chat2();
+    init_projects();
+    init_message_queue();
   }
 });
 
@@ -83151,6 +83677,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     el("span", {}, "GitHub")
   );
   const heading = el("h3", { class: "approval-heading" });
+  const origin = el("p", { class: "approval-origin", hidden: "" });
   const items = el("div", { class: "approval-items" });
   const chatScrim = el("div", { class: "approval-chat-scrim", "aria-hidden": "true", hidden: "" });
   const approveOnceButton = el("button", {
@@ -83172,6 +83699,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   dialog2.append(
     githubBrand,
     heading,
+    origin,
     items,
     rememberLabel,
     turnTreeLeaseLabel,
@@ -83212,12 +83740,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
   function isShowable(req) {
     if (isWindowHidden()) return false;
     if (isSettingsDialogOpen() && !req.showWhileSettingsOpen) return false;
-    return !req.threadId || req.threadId === store2.getState().activeThreadId;
+    return !req.threadId || attentionThreadId(store2, req.threadId) === store2.getState().activeThreadId;
   }
   function syncAttention() {
     const activeThreadId = store2.getState().activeThreadId;
     const hidden = isWindowHidden();
-    const waiting = queue.map((req) => req.threadId).filter((id) => !!id && (hidden || id !== activeThreadId));
+    const waiting = queue.map((req) => req.threadId ? attentionThreadId(store2, req.threadId) : void 0).filter((id) => !!id && (hidden || id !== activeThreadId));
     setAttentionThreads(store2, "approval", waiting);
     for (const listener of [...changeListeners]) listener();
   }
@@ -83281,6 +83809,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
       }
     }
     heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
+    const asker = sideChatPromptOrigin(
+      store2,
+      batch.map((req) => req.threadId)
+    );
+    origin.hidden = asker === null;
+    origin.textContent = asker?.label ?? "";
     const isGithubApproval = batch.some((request) => request.title.includes("GitHub"));
     githubBrand.hidden = !isGithubApproval;
     dialog2.classList.toggle("approval-dialog-github", isGithubApproval);
@@ -83380,6 +83914,11 @@ function mountApprovalDialog(api2, store2, options = {}) {
     rememberInput.checked = false;
     detailsExpanded = false;
     renderBatch();
+    const asker = sideChatPromptOrigin(
+      store2,
+      batch.map((req) => req.threadId)
+    );
+    if (asker) store2.emit("side_chat_open_requested", asker.firstSideChatId);
     const shouldShowModal = isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
     if (shouldShowModal) {
       dialog2.showModal();
@@ -83570,6 +84109,8 @@ var init_approval_dialog = __esm({
     init_helpers();
     init_settings_dialog();
     init_attention();
+    init_projects();
+    init_side_chat3();
     init_actions();
     APPROVAL_COALESCE_MS = 120;
     APPROVAL_SETTLE_MS = 500;
@@ -86574,13 +87115,13 @@ function mountProjectsPane(root, store2, api2) {
       if (thread.status === "running") {
         chatRow.classList.add("is-running");
         chatRow.insertBefore(runningStatus("Agent is working"), title);
-      } else if (thread.unreadAt !== void 0 && thread.id !== activeId) {
+      } else if ((thread.unreadAt !== void 0 || getSideChatUnreadParents(store2, project2.id).has(thread.id)) && thread.id !== activeId) {
         chatRow.classList.add("is-unread");
         chatRow.insertBefore(
           el("span", {
             class: "chat-unread-dot",
             role: "img",
-            "aria-label": "Unread agent completion"
+            "aria-label": thread.unreadAt !== void 0 ? "Unread agent completion" : "Unread reply in a side chat"
           }),
           title
         );
@@ -87030,7 +87571,7 @@ function mountProjectsPane(root, store2, api2) {
       }
       if (!isExpanded) return entry;
       const isFiltering = threadFilter.length > 0 && project2.id === activeProjectId;
-      const sidebarThreads = isFiltering ? sortThreadsNewestFirst(store2.getState().threads).filter(
+      const sidebarThreads = isFiltering ? withoutSideChats(sortThreadsNewestFirst(store2.getState().threads)).filter(
         (thread) => thread.archivedAt == null
       ) : getSidebarThreads(store2, project2.id);
       const matchingThreads = isFiltering ? sidebarThreads.filter(
@@ -87347,6 +87888,7 @@ var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS4, GROUP_MENU_ORDER;
 var init_projects_pane = __esm({
   "src/renderer/views/projects-pane.ts"() {
     init_app_run_dialog();
+    init_side_chat2();
     init_helpers();
     init_context_menu();
     init_rename_blur();
@@ -98528,6 +99070,8 @@ function mountConversation(root, store2, api2) {
     msgEl.append(body);
     if (msg.role === "assistant" && msg.content.trim()) {
       attachCopyButton(body, msgId, store2);
+      const sideChat = buildSideChatAction(threadId, msgId);
+      if (sideChat) body.append(el("div", { class: "msg-actions" }, sideChat));
     }
     if (msg.role === "user") body.append(buildUserActions(threadId, msgId));
     return msgEl;
@@ -98550,6 +99094,7 @@ function mountConversation(root, store2, api2) {
     if (msg.reviewReport) renderMessageReviewReport(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
     renderMessageTurnRecovery(threadId, msgId);
+    attachSideChatChip(threadId, msgId);
   }
   function appendMessageEl(threadId, msgId, batched = false) {
     if (threadId !== store2.getState().activeThreadId) return;
@@ -98580,6 +99125,74 @@ function mountConversation(root, store2, api2) {
     if (!msgEl) return;
     list.insertBefore(msgEl, before);
     finalizeMessageEl(threadId, msgId);
+  }
+  function buildSideChatAction(threadId, msgId) {
+    if (getThreadById(store2, threadId)?.sideChat !== void 0) return null;
+    const button = el(
+      "button",
+      {
+        class: "msg-action msg-side-chat",
+        type: "button",
+        title: "Ask a side question about this message"
+      },
+      "Side chat"
+    );
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      void startSideChat(store2, api2, threadId, { anchorMessageId: msgId }).then((id) => {
+        if (id === null)
+          showToast("Could not start a side chat from this message.", { variant: "error" });
+      }).finally(() => button.disabled = false);
+    });
+    return button;
+  }
+  let sideChatChipSignature = "";
+  function sideChatChipFor(rows) {
+    const unread = rows.find((row2) => row2.unread);
+    const target = unread ?? rows[0];
+    const chip2 = el(
+      "button",
+      {
+        type: "button",
+        class: "msg-side-chat-chip",
+        "data-unread": unread ? "true" : void 0,
+        title: "Open the side chat"
+      },
+      unread ? el("span", { class: "msg-side-chat-chip-dot", "aria-hidden": "true" }) : "",
+      `${String(rows.length)} side ${rows.length === 1 ? "chat" : "chats"}`
+    );
+    chip2.addEventListener("click", () => {
+      if (target) store2.emit("side_chat_open_requested", target.id);
+    });
+    return chip2;
+  }
+  function anchoredSideChats(threadId, msgId) {
+    return sideChatsOf(store2.getState().threads, threadId).filter(
+      (row2) => row2.anchorMessageId === msgId
+    );
+  }
+  function attachSideChatChip(threadId, msgId) {
+    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    if (!msgEl) return;
+    for (const child of Array.from(msgEl.children)) {
+      if (child.classList.contains("msg-side-chat-chip")) child.remove();
+    }
+    const rows = anchoredSideChats(threadId, msgId);
+    if (rows.length > 0) msgEl.append(sideChatChipFor(rows));
+  }
+  function syncSideChatChips() {
+    const thread = getActiveThread(store2);
+    const rows = thread ? sideChatsOf(store2.getState().threads, thread.id) : [];
+    const signature = thread ? `${thread.id}|${rows.map((row2) => `${row2.anchorMessageId}:${row2.id}:${row2.unread ? "u" : "r"}`).join(",")}` : "";
+    if (signature === sideChatChipSignature) return;
+    sideChatChipSignature = signature;
+    list.querySelectorAll(".msg-side-chat-chip").forEach((node2) => {
+      node2.remove();
+    });
+    if (!thread) return;
+    for (const anchorId of new Set(rows.map((row2) => row2.anchorMessageId))) {
+      attachSideChatChip(thread.id, anchorId);
+    }
   }
   function buildUserActions(threadId, msgId) {
     const fork = el(
@@ -98620,7 +99233,14 @@ function mountConversation(root, store2, api2) {
     resend.addEventListener("click", () => {
       runResend(threadId);
     });
-    const actions = el("div", { class: "msg-actions" }, fork, resend);
+    const sideChat = buildSideChatAction(threadId, msgId);
+    const actions = el(
+      "div",
+      { class: "msg-actions" },
+      fork,
+      ...sideChat ? [sideChat] : [],
+      resend
+    );
     const message2 = getThreadById(store2, threadId)?.messages.find((item) => item.id === msgId);
     if ((message2?.images?.length ?? 0) > 0) {
       const imageCount = message2?.images?.length ?? 0;
@@ -99206,6 +99826,7 @@ function mountConversation(root, store2, api2) {
       rebuildForThread();
       syncFromStore();
       reviewerInput.sync();
+      syncSideChatChips();
     }),
     store2.on("todos_changed", () => {
       syncTodoPanel();
@@ -99404,6 +100025,8 @@ var init_conversation = __esm({
     init_render_signature();
     init_message_queue();
     init_fork_thread3();
+    init_side_chat3();
+    init_side_chat2();
     init_resend_message();
     init_turn_recovery();
     init_turn_recovery_card();
@@ -117380,6 +118003,7 @@ function mountRightPanelLayout(store2) {
   function syncLayout() {
     const mode = store2.getState().rightPanelMode;
     const isExplorer = mode === "explorer";
+    const isSideChat = mode === "side-chat";
     const isTerminal = mode === "terminal";
     const isChanges = mode === "changes";
     const isPrs = mode === "prs";
@@ -117388,6 +118012,7 @@ function mountRightPanelLayout(store2) {
     const isBrowser = mode === "browser";
     const isVnc = mode === "vnc";
     const treeHost = document.getElementById("file-tree-host");
+    const sideChatHost = document.getElementById("side-chat-host");
     const terminalsList = document.getElementById("terminals-list-host");
     const gitChangesHost = document.getElementById("git-changes-host");
     const prListHost = document.getElementById("pr-list-host");
@@ -117397,6 +118022,7 @@ function mountRightPanelLayout(store2) {
     const vncControlsHost = document.getElementById("vnc-controls-host");
     const treeResizer = document.getElementById("resizer-tree");
     const fileViewer = document.getElementById("file-viewer");
+    const sideChatViewer = document.getElementById("side-chat-viewer-host");
     const terminalsViewer = document.getElementById("terminals-viewer-host");
     const gitDiffViewer = document.getElementById("git-diff-viewer-host");
     const prViewer = document.getElementById("pr-viewer-host");
@@ -117405,6 +118031,7 @@ function mountRightPanelLayout(store2) {
     const browserViewer = document.getElementById("browser-viewer-host");
     const vncViewer = document.getElementById("vnc-viewer-host");
     if (treeHost) treeHost.hidden = !isExplorer;
+    if (sideChatHost) sideChatHost.hidden = !isSideChat;
     if (terminalsList) terminalsList.hidden = !isTerminal;
     if (gitChangesHost) gitChangesHost.hidden = !isChanges;
     if (prListHost) prListHost.hidden = !isPrs;
@@ -117413,6 +118040,7 @@ function mountRightPanelLayout(store2) {
     if (browserTabsHost) browserTabsHost.hidden = !isBrowser;
     if (vncControlsHost) vncControlsHost.hidden = !isVnc;
     if (fileViewer) fileViewer.hidden = !isExplorer;
+    if (sideChatViewer) sideChatViewer.hidden = !isSideChat;
     if (terminalsViewer) terminalsViewer.hidden = !isTerminal;
     if (gitDiffViewer) gitDiffViewer.hidden = !isChanges;
     if (prViewer) prViewer.hidden = !isPrs;
@@ -130988,6 +131616,295 @@ var init_memories_pane = __esm({
     init_unknown_value3();
     init_icons();
     init_pane_loading();
+  }
+});
+
+// src/renderer/views/side-chat-panel.ts
+function resolveSideChatSelection(threads, activeThreadId, remembered) {
+  const active2 = threads.find((thread) => thread.id === activeThreadId);
+  const mainId = active2 ? active2.sideChat?.parentThreadId ?? active2.id : null;
+  if (mainId === null) return { mainId, rows: [], selectedId: null };
+  const rows = sideChatsOf(threads, mainId, true).sort(
+    (a3, b4) => Number(a3.archived) - Number(b4.archived)
+  );
+  const choice = remembered.get(mainId);
+  const chosen = rows.find((row2) => row2.id === choice && !row2.archived);
+  const selected = chosen ?? rows.find((row2) => !row2.archived) ?? rows.find((row2) => row2.id === choice);
+  const own2 = active2?.sideChat ? rows.find((row2) => row2.id === active2.id) : void 0;
+  return { mainId, rows, selectedId: (own2 ?? selected ?? rows[0])?.id ?? null };
+}
+function excerpt2(text2) {
+  const line = text2.trim().split("\n", 1)[0] ?? "";
+  return line.length <= 80 ? line : `${line.slice(0, 79)}\u2026`;
+}
+function messageEl(message2) {
+  if (message2.role === "user") {
+    return el("div", { class: "side-chat-msg is-user", "data-role": "user" }, message2.content);
+  }
+  if (message2.role === "error") {
+    return el("div", { class: "side-chat-msg is-error", "data-role": "error" }, message2.content);
+  }
+  const bubble = el("div", {
+    class: "side-chat-msg is-assistant message-text",
+    "data-role": "assistant"
+  });
+  if (message2.content.trim() !== "") bubble.innerHTML = renderMarkdown(message2.content);
+  for (const call of message2.toolCalls) {
+    bubble.append(el("div", { class: "side-chat-tool", "data-tool": call.name }, call.name));
+  }
+  return bubble;
+}
+function renderSideChat(input2) {
+  const { side, parent } = input2;
+  const archived = side.archivedAt != null;
+  const anchor2 = parent?.messages.find((m2) => m2.id === side.sideChat?.anchorMessageId);
+  const header = el(
+    "div",
+    { class: "side-chat-head" },
+    el(
+      "div",
+      { class: "side-chat-head-row" },
+      el("span", { class: "side-chat-title" }, side.title || "Side chat"),
+      side.model !== void 0 ? el("span", { class: "side-chat-chip side-chat-model" }, side.model) : "",
+      el(
+        "button",
+        {
+          type: "button",
+          class: "side-chat-action",
+          "data-action": archived ? "restore-side-chat" : "archive-side-chat"
+        },
+        archived ? "Restore" : "Archive"
+      )
+    ),
+    el(
+      "p",
+      { class: "side-chat-context", "data-side-chat-context": "" },
+      anchor2 ? `Reads the main thread up to \u201C${excerpt2(anchor2.content)}\u201D. Read-only.` : "Reads the main thread up to where it branched. Read-only."
+    )
+  );
+  header.querySelector("button")?.addEventListener("click", () => {
+    input2.onArchive(archived);
+  });
+  const body = el("div", { class: "side-chat-body" });
+  if (side.messages.length === 0) {
+    body.append(
+      el(
+        "div",
+        { class: "side-chat-empty" },
+        el("p", {}, "Ask anything about this message without touching the main thread."),
+        ...SIDE_CHAT_SUGGESTIONS.map((text2) => {
+          const button = el(
+            "button",
+            { type: "button", class: "side-chat-suggestion", "data-suggestion": "" },
+            text2
+          );
+          button.addEventListener("click", () => {
+            input2.onSuggestion(text2);
+          });
+          return button;
+        })
+      )
+    );
+  } else {
+    for (const message2 of side.messages) body.append(messageEl(message2));
+  }
+  if (side.status === "running") {
+    body.append(el("div", { class: "side-chat-typing", role: "status" }, "Copse is thinking\u2026"));
+  }
+  return { header, body };
+}
+function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
+  const remembered = /* @__PURE__ */ new Map();
+  const newButton = el(
+    "button",
+    {
+      type: "button",
+      class: "git-changes-refresh-btn side-chat-new-btn",
+      "aria-label": "New side chat",
+      "data-tooltip": "New side chat"
+    },
+    plusIcon("ui-icon ui-icon-sm")
+  );
+  listRoot.append(
+    el(
+      "div",
+      { class: "pane-header" },
+      el("span", { class: "pane-header-title" }, "Side chats"),
+      panePopoutButton(store2, api2, "side-chat", "side chat"),
+      paneMaximizeButton(store2, "side-chat"),
+      newButton
+    )
+  );
+  const list = el("div", { class: "git-changes-list side-chat-list" });
+  listRoot.append(list);
+  const headerHost = el("div", { class: "side-chat-head-host" });
+  const bodyHost = el("div", { class: "side-chat-body-host" });
+  const emptyState = el("div", { class: "panel-empty side-chat-none" });
+  const input2 = el("input", {
+    type: "text",
+    class: "side-chat-input",
+    placeholder: "Ask a side question\u2026",
+    autocomplete: "off",
+    "aria-label": "Ask a side question"
+  });
+  const send = el(
+    "button",
+    { type: "submit", class: "ui-btn ui-btn-primary side-chat-send" },
+    "Send"
+  );
+  const promote = el(
+    "button",
+    { type: "button", class: "side-chat-action", "data-action": "promote-side-chat" },
+    "Promote to thread"
+  );
+  const form = el(
+    "form",
+    { class: "side-chat-form" },
+    el("div", { class: "side-chat-form-row" }, input2, send),
+    el("div", { class: "side-chat-foot" }, promote)
+  );
+  viewerRoot.append(headerHost, bodyHost, emptyState, form);
+  let selectedId = null;
+  let frame = 0;
+  function paneVisible() {
+    const { filesPaneOpen, rightPanelMode } = store2.getState();
+    return filesPaneOpen && rightPanelMode === "side-chat";
+  }
+  function ask(text2) {
+    if (selectedId === null) return;
+    sendSideChatMessage(store2, api2, selectedId, text2);
+  }
+  function render() {
+    frame = 0;
+    if (!paneVisible()) return;
+    const { threads, activeThreadId } = store2.getState();
+    const selection2 = resolveSideChatSelection(threads, activeThreadId, remembered);
+    selectedId = selection2.selectedId;
+    if (selection2.mainId !== null && selectedId !== null)
+      remembered.set(selection2.mainId, selectedId);
+    clear(list);
+    for (const row2 of selection2.rows) {
+      const item = el(
+        "button",
+        {
+          type: "button",
+          class: `git-change-row side-chat-row${row2.id === selectedId ? " is-selected" : ""}`,
+          "data-side-chat-id": row2.id,
+          "data-archived": row2.archived ? "true" : void 0,
+          "data-unread": row2.unread ? "true" : void 0,
+          "aria-pressed": String(row2.id === selectedId)
+        },
+        row2.unread ? el("span", { class: "chat-unread-dot", role: "img", "aria-label": "Unread reply" }) : "",
+        el(
+          "span",
+          { class: "side-chat-row-main" },
+          el("span", { class: "side-chat-row-title" }, row2.title || "Side chat"),
+          row2.model !== void 0 ? el("span", { class: "side-chat-row-sub" }, row2.model) : ""
+        ),
+        row2.archived ? el("span", { class: "side-chat-chip" }, "Archived") : ""
+      );
+      item.addEventListener("click", () => {
+        if (selection2.mainId !== null) remembered.set(selection2.mainId, row2.id);
+        render();
+      });
+      list.append(item);
+    }
+    if (selection2.rows.length === 0) {
+      list.append(el("p", { class: "side-chat-list-empty" }, "No side chats yet."));
+    }
+    const side = threads.find((thread) => thread.id === selectedId);
+    clear(headerHost);
+    const bodyScroll = bodyHost;
+    const atBottom = bodyScroll.scrollHeight - bodyScroll.scrollTop - bodyScroll.clientHeight < 32 || bodyScroll.childElementCount === 0;
+    clear(bodyHost);
+    emptyState.hidden = side !== void 0;
+    form.hidden = side === void 0;
+    headerHost.hidden = side === void 0;
+    bodyHost.hidden = side === void 0;
+    if (!side) {
+      emptyState.textContent = selection2.mainId === null ? "Open a thread to start a side chat." : "Branch a question off any message without touching this thread.";
+      return;
+    }
+    const parent = threads.find((thread) => thread.id === side.sideChat?.parentThreadId);
+    const view = renderSideChat({
+      side,
+      parent,
+      onSuggestion: ask,
+      onArchive: (archived) => {
+        if (archived) restoreThread(store2, side.id);
+        else archiveThread(store2, side.id);
+      }
+    });
+    headerHost.append(view.header);
+    bodyHost.append(...Array.from(view.body.childNodes));
+    if (atBottom) bodyHost.scrollTop = bodyHost.scrollHeight;
+    input2.disabled = side.archivedAt != null;
+    send.disabled = side.archivedAt != null || side.status === "running";
+    if (side.unreadAt !== void 0) markThreadRead(store2, side.id);
+  }
+  function schedule() {
+    if (!paneVisible() || frame !== 0) return;
+    frame = requestAnimationFrame(render);
+  }
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text2 = input2.value;
+    if (text2.trim() === "") return;
+    input2.value = "";
+    ask(text2);
+  });
+  newButton.addEventListener("click", () => {
+    const thread = getActiveThread(store2);
+    const mainId = thread?.sideChat?.parentThreadId ?? thread?.id;
+    if (mainId === void 0) return;
+    void startSideChat(store2, api2, mainId).then((id) => {
+      if (id === null) showToast("Send a message first: a side chat branches from one.");
+    });
+  });
+  promote.addEventListener("click", () => {
+    if (selectedId === null) return;
+    void promoteSideChat(store2, api2, selectedId);
+  });
+  const offs = [
+    store2.on("side_chat_open_requested", (threadId) => {
+      const side = store2.getState().threads.find((thread) => thread.id === threadId);
+      if (side?.sideChat) remembered.set(side.sideChat.parentThreadId, threadId);
+      openRightPanel(store2, "side-chat");
+      render();
+    }),
+    store2.on("right_panel_mode_changed", schedule),
+    store2.on("files_pane_changed", schedule),
+    store2.on("threads_changed", schedule),
+    store2.on("message_added", schedule),
+    store2.on("message_token", schedule),
+    store2.on("message_done", schedule),
+    store2.on("tool_call_started", schedule),
+    store2.on("thread_status_changed", schedule)
+  ];
+  schedule();
+  return () => {
+    for (const off of offs) off();
+    if (frame !== 0) cancelAnimationFrame(frame);
+  };
+}
+var SIDE_CHAT_SUGGESTIONS;
+var init_side_chat_panel = __esm({
+  "src/renderer/views/side-chat-panel.ts"() {
+    init_dist();
+    init_helpers();
+    init_icons();
+    init_thread_helpers();
+    init_side_chat2();
+    init_panels();
+    init_side_chat3();
+    init_pane_maximize_button();
+    init_pane_popout_button();
+    init_toast();
+    SIDE_CHAT_SUGGESTIONS = [
+      "Explain this in simpler terms",
+      "What alternatives did you consider?",
+      "Is this safe to merge?"
+    ];
   }
 });
 
@@ -152110,11 +153027,11 @@ function mountAskUserDialog(api2, store2) {
   let presentationTimer;
   let inputs = [];
   function isShowable(req) {
-    return !req.threadId || req.threadId === store2.getState().activeThreadId;
+    return !req.threadId || attentionThreadId(store2, req.threadId) === store2.getState().activeThreadId;
   }
   function syncAttention() {
     const activeThreadId = store2.getState().activeThreadId;
-    const waiting = queue.map((req) => req.threadId).filter((id) => !!id && id !== activeThreadId);
+    const waiting = queue.map((req) => req.threadId ? attentionThreadId(store2, req.threadId) : void 0).filter((id) => !!id && id !== activeThreadId);
     setAttentionThreads(store2, "ask", waiting);
     for (const listener of [...changeListeners]) listener();
   }
@@ -152122,7 +153039,18 @@ function mountAskUserDialog(api2, store2) {
     if (!active2) return;
     clear(form);
     inputs = [];
-    form.append(el("h3", { class: "ask-user-title" }, "The agent has a question"));
+    const asker = sideChatPromptOrigin(store2, [active2.threadId]);
+    form.append(
+      el(
+        "h3",
+        { class: "ask-user-title" },
+        asker ? "A side chat has a question" : "The agent has a question"
+      )
+    );
+    if (asker) {
+      form.append(el("p", { class: "ask-user-origin" }, asker.label));
+      store2.emit("side_chat_open_requested", asker.firstSideChatId);
+    }
     active2.questions.forEach((q2, i2) => {
       const questionId = `ask-user-question-${String(i2)}`;
       const input2 = el("textarea", {
@@ -152332,6 +153260,8 @@ var init_ask_user_dialog = __esm({
     init_dist();
     init_inline_markdown();
     init_attention();
+    init_projects();
+    init_side_chat3();
     init_dialog_shell();
   }
 });
@@ -152486,14 +153416,14 @@ var init_ssh_prompt_dialog = __esm({
 
 // src/renderer/views/update-prompt-dialog.ts
 function mountUpdatePromptDialog(api2) {
-  const messageEl = el("h3", { class: "update-prompt-message" });
+  const messageEl2 = el("h3", { class: "update-prompt-message" });
   const detailEl = el("p", { class: "update-prompt-detail" });
   const changelogEl = el("section", { class: "update-prompt-changelog" });
   const buttonsEl = uiActions({ className: "update-prompt-buttons" });
   const dialog2 = el(
     "dialog",
     { id: "update-prompt-dialog" },
-    messageEl,
+    messageEl2,
     detailEl,
     changelogEl,
     buttonsEl
@@ -152514,7 +153444,7 @@ function mountUpdatePromptDialog(api2) {
   }
   function renderActive() {
     if (!active2) return;
-    messageEl.textContent = active2.message;
+    messageEl2.textContent = active2.message;
     if (active2.detail) {
       detailEl.textContent = active2.detail;
       detailEl.hidden = false;
@@ -165514,6 +166444,12 @@ function mountFullLayout() {
     api
   );
   mountVncPane(requireElement("vnc-controls-host"), requireElement("vnc-viewer-host"), store, api);
+  mountSideChatPane(
+    requireElement("side-chat-host"),
+    requireElement("side-chat-viewer-host"),
+    store,
+    api
+  );
   mountMemoriesPane(
     requireElement("memories-host"),
     requireElement("memories-viewer-host"),
@@ -165692,6 +166628,7 @@ var init_main = __esm({
     init_git_changes_pane();
     init_pr_pane();
     init_memories_pane();
+    init_side_chat_panel();
     init_ports_section();
     init_terminal_rail_resizer();
     init_roadmap_pane();
@@ -165763,6 +166700,7 @@ var init_main = __esm({
     api = window.api;
     POPOUT_MODES = [
       "explorer",
+      "side-chat",
       "terminal",
       "changes",
       "prs",
