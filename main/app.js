@@ -77554,6 +77554,16 @@ var init_demo_scenarios = __esm({
         }))
       },
       {
+        id: "sidebar-empty-project",
+        label: "Empty unopened project in the sidebar",
+        project: project("demo-empty-active"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [],
+        otherProjects: [
+          { project: project("demo-empty-other", "empty-project", "/demo/empty"), threads: [] }
+        ]
+      },
+      {
         id: "sidebar-thread-sort",
         label: "Sidebar thread sort",
         project: project("demo-sidebar-sort-project"),
@@ -78155,7 +78165,10 @@ function createDemoApi(scenario, options = {}) {
   let mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
   const pendingMcpSignIns = /* @__PURE__ */ new Map();
   const storage = /* @__PURE__ */ new Map([
-    ["projects", [scenario.project]],
+    [
+      "projects",
+      [scenario.project, ...(scenario.otherProjects ?? []).map((other) => other.project)]
+    ],
     ["activeProjectId", scenario.project.id]
   ]);
   let workspaceRoot = scenario.project.path;
@@ -78617,7 +78630,11 @@ function createDemoApi(scenario, options = {}) {
         if (thread) thread.archivedAt = archivedAt;
         return resolved2({ status: "archived", archivedAt, worktree: thread?.worktree });
       },
-      loadProject: (projectId) => resolved2(projectId === scenario.project.id ? structuredClone(threads) : []),
+      loadProject: (projectId) => resolved2(
+        projectId === scenario.project.id ? structuredClone(threads) : structuredClone(
+          scenario.otherProjects?.find((other) => other.project.id === projectId)?.threads ?? []
+        )
+      ),
       // The demo always hands back whole threads, so nothing ever asks to
       // hydrate one; answering from the in-memory list keeps that true. The
       // exceptions are scenarios built around the hydration window itself,
@@ -86295,6 +86312,31 @@ function mountProjectsPane(root, store2, api2) {
       }
       return section;
     }
+    function renderNewThreadButton(project2) {
+      const newThreadBtn = el(
+        "button",
+        {
+          type: "button",
+          class: "project-new-thread-btn",
+          "aria-label": "New thread",
+          "data-tooltip": "New thread"
+        },
+        plusIcon("ui-icon ui-icon-sm")
+      );
+      newThreadBtn.addEventListener("click", (e3) => {
+        e3.stopPropagation();
+        if (project2.id !== store2.getState().activeProjectId) {
+          switchProject(store2, api2, project2.id);
+          return;
+        }
+        if (!store2.getState().workspaceRoot) {
+          void addProject(store2, api2);
+          return;
+        }
+        openNewThread(store2);
+      });
+      return newThreadBtn;
+    }
     function renderProjectEntry(project2) {
       const entry = el("div", { class: "project-entry", "data-project-id": project2.id });
       const isExpanded = project2.id === expandedId;
@@ -86425,29 +86467,7 @@ function mountProjectsPane(root, store2, api2) {
         return entry;
       }
       if (isExpanded) {
-        const newThreadBtn = el(
-          "button",
-          {
-            type: "button",
-            class: "project-new-thread-btn",
-            "aria-label": "New thread",
-            "data-tooltip": "New thread"
-          },
-          plusIcon("ui-icon ui-icon-sm")
-        );
-        newThreadBtn.addEventListener("click", (e3) => {
-          e3.stopPropagation();
-          if (project2.id !== store2.getState().activeProjectId) {
-            switchProject(store2, api2, project2.id);
-            return;
-          }
-          if (!store2.getState().workspaceRoot) {
-            void addProject(store2, api2);
-            return;
-          }
-          openNewThread(store2);
-        });
-        projectLine.append(newThreadBtn);
+        projectLine.append(renderNewThreadButton(project2));
       }
       if (!isExpanded) return entry;
       const isFiltering = threadFilter.length > 0 && project2.id === activeProjectId;
@@ -86507,6 +86527,8 @@ function mountProjectsPane(root, store2, api2) {
         );
       } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
+      } else if (!isFiltering && visibleThreads.length === 0) {
+        chats.append(el("div", { class: "sidebar-empty" }, "No threads yet"));
       }
       for (const thread of visibleThreads) {
         chats.append(renderThreadRow(project2, thread));
@@ -86553,8 +86575,24 @@ function mountProjectsPane(root, store2, api2) {
       const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
       const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse);
       const sections = mode === "status" ? groupRowsByStatus(ordered, isThreadAwaitingAttention) : [{ id: "all", label: "", rows: ordered }];
+      const withThreads = new Set(ordered.map((row2) => row2.projectId));
+      const emptyProjectRows = Array.from(owners.values()).filter((project2) => !withThreads.has(project2.id)).map((project2) => {
+        const nameRow = el(
+          "button",
+          { class: "project-row", title: project2.path },
+          el("span", { class: "project-name" }, projectDisplayName(project2))
+        );
+        nameRow.addEventListener("click", () => {
+          switchProject(store2, api2, project2.id);
+        });
+        return el(
+          "div",
+          { class: "project-entry", "data-project-id": project2.id },
+          el("div", { class: "project-line" }, nameRow, renderNewThreadButton(project2))
+        );
+      });
       if (ordered.length === 0) {
-        return [el("div", { class: "sidebar-empty" }, "No threads yet")];
+        return [el("div", { class: "sidebar-empty" }, "No threads yet"), ...emptyProjectRows];
       }
       return sections.map((section) => {
         const block = el("div", { class: "thread-section", "data-section-id": section.id });
@@ -86578,7 +86616,9 @@ function mountProjectsPane(root, store2, api2) {
           const project2 = owners.get(byThread.get(thread)?.projectId ?? "");
           if (!project2) continue;
           const row2 = renderThreadRow(project2, thread);
-          row2.querySelector(".chat-title")?.after(el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project2)}`));
+          row2.querySelector(".chat-title")?.after(
+            el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project2)}`)
+          );
           chats.append(row2);
         }
         if (paged.hasMore) {
@@ -86595,7 +86635,7 @@ function mountProjectsPane(root, store2, api2) {
         }
         block.append(chats);
         return block;
-      });
+      }).concat(emptyProjectRows);
     }
     const groupMode = store2.getState().sidebarThreadGroup;
     if (groupMode !== "project" && threadFilter.length === 0) {
