@@ -851,6 +851,8 @@ const api: ApiClient = {
         targetThreadId,
         throughMessageId,
       ),
+    backlinks: (projectId: string, kind: 'url' | 'thread', target: string) =>
+      ipcRenderer.invoke('threads:backlinks', projectId, kind, target),
     historySnapshot: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:history-snapshot', projectId, threadId),
     editHistory: (

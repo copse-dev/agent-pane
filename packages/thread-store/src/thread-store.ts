@@ -21,6 +21,7 @@ import type {
   Thread,
   ThreadCatalogEntry,
   ThreadCatalogHit,
+  ThreadLink,
 } from './thread-types.ts'
 import { sortThreadsNewestFirst } from './thread-sort.ts'
 import { stripToolResultImages } from '@copse/llm/tool-result-images.ts'
@@ -65,6 +66,12 @@ import {
   githubRepoKey,
 } from './github-pr-url.ts'
 import { collectThreadPrRefs } from './thread-pr-status.ts'
+import {
+  backlinksFor,
+  extractThreadLinks,
+  mergeThreadLinks,
+  type ThreadBacklink,
+} from './thread-links.ts'
 import { isRecord, parseJsonUnknown } from '@copse/std/unknown-value.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
@@ -745,15 +752,25 @@ async function mergePrRefsIntoMetaUnqueued(
   projectId: string,
   threadId: string,
   found: readonly GithubPrRef[],
+  foundLinks: readonly ThreadLink[] = [],
 ): Promise<GithubPrRef[] | null> {
-  if (found.length === 0) return null
+  if (found.length === 0 && foundLinks.length === 0) return null
   const path = join(threadDir(projectId, threadId), META_FILE)
   const meta = parseMeta(await readOrNull(path))
   if (meta === null) return null
   const { refs, added } = mergeGithubPrRefs(meta.prRefs ?? [], found)
-  if (!added) return null
-  await atomicWriteFileAsync(path, JSON.stringify({ ...meta, prRefs: refs }, null, 2))
-  return refs
+  // Links ride the same read-merge-write: one meta write per message, not two.
+  const { links, added: linksAdded } = mergeThreadLinks(meta.links ?? [], foundLinks)
+  if (!added && !linksAdded) return null
+  await atomicWriteFileAsync(
+    path,
+    JSON.stringify(
+      { ...meta, ...(added ? { prRefs: refs } : {}), ...(linksAdded ? { links } : {}) },
+      null,
+      2,
+    ),
+  )
+  return added ? refs : null
 }
 
 /**
@@ -777,13 +794,30 @@ export function recordThreadPrRefs(
   return runStoreWrite(projectId, () => mergePrRefsIntoMetaUnqueued(projectId, threadId, found))
 }
 
+/**
+ * Recorded links are append-only. A renderer patch carries the renderer's copy,
+ * which can lag a link the main process just recorded, so union rather than replace.
+ */
+function mergedLinksField(
+  current: ThreadMeta,
+  patch: Partial<ThreadMeta>,
+): { links?: ThreadLink[] } {
+  if (current.links === undefined && patch.links === undefined) return {}
+  return { links: mergeThreadLinks(current.links ?? [], patch.links ?? []).links }
+}
+
 async function mergePrRefsIntoMeta(
   projectId: string,
   threadId: string,
   message: Message,
 ): Promise<void> {
   try {
-    await mergePrRefsIntoMetaUnqueued(projectId, threadId, extractGithubPrUrls(message.content))
+    await mergePrRefsIntoMetaUnqueued(
+      projectId,
+      threadId,
+      extractGithubPrUrls(message.content),
+      extractThreadLinks(message.content),
+    )
   } catch {
     // Diagnostic metadata; never worth failing the write it rides along with.
   }
@@ -1507,6 +1541,24 @@ export function lookupThreadPrRelationships(
   )
 }
 
+/**
+ * Active threads that mention a URL or another thread. Complete only for threads
+ * whose links were recorded (on append); legacy transcripts are not scanned.
+ */
+export function lookupThreadBacklinks(
+  projectId: string,
+  kind: ThreadLink['kind'],
+  target: string,
+): Promise<ThreadBacklink[]> {
+  return runSerialized(queueKey(projectId), () =>
+    withThreadIndex(
+      projectId,
+      (index) => index.backlinks(kind, target),
+      async () => backlinksFor(await readProjectThreadMetas(projectId), kind, target),
+    ),
+  )
+}
+
 /** Direct source reader for diagnostics/rebuilds; deliberately bypasses the projection. */
 export function loadProjectThreadMetasFromFiles(
   projectId: string,
@@ -2207,6 +2259,7 @@ export function updateMeta(
       id: threadId,
       ...(current.prProductions ? { prProductions: current.prProductions } : {}),
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
+      ...mergedLinksField(current, patch),
     }
     writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
     refreshCatalogLine(projectId, threadId)
@@ -2229,6 +2282,7 @@ export function updateMetaOrThrow(
       id: threadId,
       ...(current.prProductions ? { prProductions: current.prProductions } : {}),
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
+      ...mergedLinksField(current, patch),
     }
     writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
     refreshCatalogLine(projectId, threadId)
