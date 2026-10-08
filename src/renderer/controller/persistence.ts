@@ -177,7 +177,9 @@ function serializedNavigation(api: ApiClient, navigation: MainWindowNavigation):
     lastNavigation.activeProjectId === navigation.activeProjectId &&
     lastNavigation.activeThreadId === navigation.activeThreadId
   ) {
-    return Promise.resolve()
+    // The value is recorded before IPC finishes. Callers that await navigation
+    // before reading project-scoped stores must also await that pending write.
+    return (writeChains.get('mainWindow:navigation') ?? Promise.resolve()).then(() => undefined)
   }
   lastNavigation = navigation
   return serializedWrite('mainWindow:navigation', () => api.windowState.setNavigation(navigation))
