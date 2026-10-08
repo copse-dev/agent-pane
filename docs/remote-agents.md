@@ -100,6 +100,23 @@ to pending work; `--delete` removes the probe's remote session after it stops.
 pending prompts, though never the API key. See the
 [prototype plan and validation record](plans/openai-cloud-agent-prototype.md).
 
+To isolate an “environment failed to connect” error from repository setup, run
+this control with a fresh checkpoint and `OPENAI_API_KEY` configured locally:
+
+```sh
+pnpm run probe:openai-agents --setup-only --state .tmp/openai-empty-sandbox.json
+pnpm run probe:openai-agents --delete --state .tmp/openai-empty-sandbox.json
+```
+
+The first command starts an empty hosted sandbox with networking enabled, without
+uploading files, running setup commands or sending an inference task. Container
+charges can still apply. A matching failure demonstrates that repository setup is
+not required to trigger the problem. A successful connection narrows investigation
+to provisioning differences but does not prove an archive URL expired. Retain the
+printed session/environment IDs for provider support. Run the deletion command
+after either outcome; interrupted probes also retain their checkpoint. Do not
+share your API key or private checkpoint contents.
+
 ## Cursor stream resume
 
 Cursor run streams are run-scoped SSE

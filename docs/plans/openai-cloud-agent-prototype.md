@@ -207,3 +207,22 @@ and cancellation recovery. Production build and focused lint passed. Full check 
 stops at the unchanged LM Studio TS2554. The live failure is not reproduced; this
 fixes premature failure on ready and exposes available provider evidence without
 asserting that expiry caused the user's failure. Existing error DOM is unchanged.
+
+## Empty sandbox diagnostic brief
+
+The provider now reports only “The environment failed to connect”; this does not
+identify a repository bootstrap failure. Add a standalone `--setup-only` probe
+that requires a fresh checkpoint, creates an empty hosted environment, waits for
+connection, and never sends an inference task or repository files. Retain its
+checkpoint on success/failure for explicit deletion and provider support. Reject
+conflicting task modes before making API requests. Document how the result
+distinguishes baseline startup from repository provisioning; no live success may
+be claimed without a provider-key run.
+
+Diagnostic completion evidence: the bundled CLI help and a subprocess smoke test
+with an intercepted fetch boundary passed. The smoke test rejected unexpected API
+requests and covered empty connection, connection failure, retained checkpoints,
+fresh-state refusal, conflicting modes and deletion after either outcome. Focused
+ESLint and formatting passed. Full check still stops at the existing LM Studio
+TS2554. This is CLI-only; no renderer changes or live provider calls. The user's
+startup failure remains unresolved pending the empty-sandbox control.

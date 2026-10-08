@@ -17,19 +17,31 @@ const { values } = parseArgs({
     prompt: { type: 'string' },
     resume: { type: 'boolean' },
     delete: { type: 'boolean' },
+    'setup-only': { type: 'boolean' },
     model: { type: 'string', default: DEFAULT_OPENAI_AGENT_MODEL },
   },
 })
 
 if (values.help) {
   console.log(
-    'OPENAI_API_KEY must be configured. API and container charges apply.\nUsage: pnpm run probe:openai-agents [--state PATH] [--prompt TEXT | --resume | --delete] [--model MODEL]\nDefault task writes and runs a tiny Python script, then downloads its artifact. Ctrl-C cancels remote work and confirms its outcome. Session state is retained for follow-ups; --delete removes the remote session after work stops.',
+    'OPENAI_API_KEY must be configured. API and container charges apply.\nUsage: pnpm run probe:openai-agents [--state PATH] [--prompt TEXT | --resume | --delete | --setup-only] [--model MODEL]\nDefault task writes and runs a tiny Python script, then downloads its artifact. Ctrl-C cancels remote work and confirms its outcome. Session state is retained for follow-ups; --delete removes the remote session after work stops.\n--setup-only requires a fresh state path and starts an empty sandbox without files, setup commands or inference. Container charges can still apply. Its checkpoint is retained on failure as well as success; use --delete with the same --state path to clean up.',
   )
 } else {
+  if (
+    [values.prompt !== undefined, values.resume, values.delete, values['setup-only']].filter(
+      Boolean,
+    ).length > 1
+  )
+    throw new Error('Choose only one of --prompt, --resume, --delete or --setup-only.')
+  const statePath = resolve(values.state)
+  const existing = existsSync(statePath)
+  if (values['setup-only'] && existing)
+    throw new Error(
+      '--setup-only requires a fresh --state path; the saved session was not changed.',
+    )
   const key = process.env['OPENAI_API_KEY']
   if (!key) throw new Error('Set OPENAI_API_KEY before running the billable smoke test.')
   const client = new OpenAiAgentsApi(key)
-  const statePath = resolve(values.state)
   const controller = new AbortController()
   process.once('SIGINT', () => {
     controller.abort()
@@ -39,7 +51,6 @@ if (values.help) {
     writeFileSync(`${statePath}.tmp`, JSON.stringify(state, null, 2), { mode: 0o600 })
     renameSync(`${statePath}.tmp`, statePath)
   }
-  const existing = existsSync(statePath)
   if ((values.resume || values.delete) && !existing)
     throw new Error('No saved session at the selected state path.')
   const state = existing
@@ -48,11 +59,22 @@ if (values.help) {
   if (!state) throw new Error('Invalid saved session state; it has not been overwritten.')
   save(state)
   console.log(`Session: ${state.sessionId}`)
+  if (state.environmentId) console.log(`Environment: ${state.environmentId}`)
   if (values.delete) {
     if (state.pending) throw new Error('Recover the pending turn with --resume before deleting.')
     await client.delete(state, controller.signal)
     renameSync(statePath, `${statePath}.deleted`)
     console.log('Remote session deleted. Local artifacts retained.')
+  } else if (values['setup-only']) {
+    console.log('Waiting for an empty sandbox; no repository or inference task was sent.')
+    try {
+      await client.waitForEnvironment(state, controller.signal)
+      console.log('Empty sandbox connected. Repository provisioning has not been tested.')
+    } finally {
+      console.log(
+        `Checkpoint retained at ${statePath}. Use --delete with this --state path to clean up.`,
+      )
+    }
   } else {
     if (values.resume && !state.pending) throw new Error('The saved session has no pending task.')
     const prompt = values.resume
