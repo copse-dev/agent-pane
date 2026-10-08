@@ -78048,6 +78048,13 @@ var init_demo_scenarios = __esm({
                 content: "Changes imported. Done: Created draft PR https://github.com/example/project/pull/42",
                 toolCalls: [
                   {
+                    id: "openai-publish-turn-push",
+                    name: "gh_push",
+                    args: {},
+                    status: "done",
+                    result: "Done: Pushed feature/mcp-apps to origin. Existing PR updated."
+                  },
+                  {
                     id: "openai-publish-turn-call",
                     name: "gh_pr_create",
                     args: {
