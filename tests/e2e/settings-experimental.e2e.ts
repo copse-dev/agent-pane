@@ -63,8 +63,7 @@ describe('experimental settings section', () => {
     // Advisor strategy enablement migrated to the `copse.advisor-strategy` plugin,
     // and the advisor MODEL select went with it — settings-dialog.ts moves the
     // picker into the plugin row and re-applies the `#advisorModel` id there, so
-    // neither the retired checkbox nor the old fieldset remains here. The plugin
-    // row is also reachable from Experimental, with the same model picker.
+    // neither the retired checkbox nor the old fieldset remains here.
     assert.equal(
       await experimental.$('input[name="advisorStrategyEnabled"]').isExisting(),
       false,
@@ -75,13 +74,10 @@ describe('experimental settings section', () => {
       false,
       'the Advisor model fieldset must leave Settings > Experimental — the plugin owns it',
     )
-    await experimental.$('.plugin-row[data-plugin-id="copse.advisor-strategy"]').waitForExist()
     assert.equal(
-      await experimental
-        .$('.plugin-row[data-plugin-id="copse.advisor-strategy"] #advisorModel')
-        .isExisting(),
-      true,
-      'the advisor model belongs to the experimental plugin row',
+      await experimental.$('#advisorModel').isExisting(),
+      false,
+      'the advisor model select must not render under Experimental; it lives on the plugin row',
     )
     assert.equal(await experimental.$('legend=Advisor strategy').isExisting(), false)
 
