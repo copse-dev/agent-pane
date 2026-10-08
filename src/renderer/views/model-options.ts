@@ -507,7 +507,7 @@ export async function fetchModelOptions(
   if (opts.includeAgentModels !== false) {
     options.push({
       value: MATCH_PROMPT_MODEL_SELECTOR,
-      label: 'Match task — Chooses a suitable model from your prompt',
+      label: 'Match task: Chooses a suitable model from your prompt',
       group: 'Automatic',
     })
   }
@@ -515,7 +515,7 @@ export async function fetchModelOptions(
     options.push({
       value: BEST_VALUE_CHAT_MODEL,
       label: `${BEST_VALUE_CHAT_MODEL_LABEL}: auto from plan / price frontier`,
-      group: CHAT_DEFAULT_GROUP,
+      group: 'Automatic',
     })
     // The Settings chat model can also be a rule, not just a pinned model: offer
     // the other automatic selectors (balanced, most capable, cheapest) so the

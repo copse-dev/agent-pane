@@ -293,7 +293,13 @@ function pluginsFieldset(): HTMLElement {
 }
 
 it('reveals explainer settings after Manage finishes rebuilding the plugin row', async () => {
-  const spy: StubApiSpy = { lastSetEnabled: null, lastSetSetting: null, addSourceCalls: 0 }
+  const spy: StubApiSpy = {
+    lastSetEnabled: null,
+    lastSetSetting: null,
+    addSourceCalls: 0,
+    lastPreparedCatalogId: null,
+    lastCommittedToken: null,
+  }
   const initial: PluginsListResult = {
     plugins: [{ ...demoPlugin, id: 'copse.mcp-ui-canvas', stability: 'experimental' }],
   }
@@ -329,7 +335,13 @@ it('reveals explainer settings after Manage finishes rebuilding the plugin row',
 })
 
 it('does not reveal a pending explainer target after Settings closes', async () => {
-  const spy: StubApiSpy = { lastSetEnabled: null, lastSetSetting: null, addSourceCalls: 0 }
+  const spy: StubApiSpy = {
+    lastSetEnabled: null,
+    lastSetSetting: null,
+    addSourceCalls: 0,
+    lastPreparedCatalogId: null,
+    lastCommittedToken: null,
+  }
   const initial: PluginsListResult = {
     plugins: [{ ...demoPlugin, id: 'copse.mcp-ui-canvas', stability: 'experimental' }],
   }
@@ -368,7 +380,13 @@ it('does not reveal a pending explainer target after Settings closes', async () 
 })
 
 it('reveals explainer settings when search already loaded Customise beside Experimental', async () => {
-  const spy: StubApiSpy = { lastSetEnabled: null, lastSetSetting: null, addSourceCalls: 0 }
+  const spy: StubApiSpy = {
+    lastSetEnabled: null,
+    lastSetSetting: null,
+    addSourceCalls: 0,
+    lastPreparedCatalogId: null,
+    lastCommittedToken: null,
+  }
   const initial: PluginsListResult = {
     plugins: [
       {

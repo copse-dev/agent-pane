@@ -274,8 +274,6 @@ export function createPacksSection(
     if (!installed) pluginCatalogBrowser.focusSearch()
   }
 
-
-
   qsRequired<HTMLButtonElement>(overlay, '#animated-explainers-manage').addEventListener(
     'click',
     () => {

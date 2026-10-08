@@ -149,7 +149,7 @@ describe('advisor pair assessment hint', function () {
     })
     assert.equal(
       await hint.getText(),
-      'Advice comes from the configured external agent, consulted on a bare one-off session. No capability annotations, so no strength comparison.',
+      'Advice comes from the configured external coding agent, consulted on a bare one-off session. Its strength is not rated, so there is no comparison.',
     )
     assert.equal(await hint.getAttribute('data-level'), 'info')
   })

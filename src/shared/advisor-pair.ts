@@ -235,7 +235,7 @@ export function validateAdvisorPair(
       native,
       level: 'info',
       reason:
-        'Advice comes from the configured external coding agent, consulted on a bare one-off session. No capability annotations, so no strength comparison.',
+        'Advice comes from the configured external coding agent, consulted on a bare one-off session. Its strength is not rated, so there is no comparison.',
     }
   }
 
@@ -275,7 +275,7 @@ export function validateAdvisorPair(
       ok: true,
       native,
       level: 'info',
-      reason: `Cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}; the executor isn’t in the capability annotations, so no strength comparison is possible.`,
+      reason: `Cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}; the executor has no strength rating, so no strength comparison is possible.`,
     }
   }
 
@@ -313,6 +313,6 @@ export function validateAdvisorPair(
     native,
     level: 'info',
     reason:
-      'Client-side pairing. any configured executor/advisor combination works. Neither model carries capability annotations, so no strength comparison is possible.',
+      'Client-side pairing. any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible.',
   }
 }

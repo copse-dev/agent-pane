@@ -161,7 +161,9 @@ export function createAppearanceSection(
         tintStrength: changes.uiTintStrength ?? rendered.tintStrength,
       })
       applyUiScale(uiScale)
-      baseline = null
+      // Dedicated saves may fail after ordinary appearance preferences commit.
+      // Further previews must still roll back to this successfully saved state.
+      baseline = current()
     },
     rollback(): void {
       if (baseline) apply(baseline)

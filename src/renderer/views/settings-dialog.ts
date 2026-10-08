@@ -339,7 +339,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   overlay.addEventListener('settings-reveal-model', () => {
     const target = consumeSettingsOpenTarget()
     modelTarget = target.modelTarget
-    nav.show(target.section)
+    nav.reset(target.section)
     if (!snapshot) return
     const mine = openGeneration
     void lifecycle.show([target.section], snapshot).then(() => {

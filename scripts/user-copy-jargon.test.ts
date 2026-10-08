@@ -322,7 +322,7 @@ const ALLOWED: readonly Allowance[] = [
     reason: REASON.mcpTransport,
   },
   {
-    file: 'src/renderer/views/settings-dialog.ts',
+    file: 'src/renderer/views/settings/packs-section.ts',
     term: 'stdio',
     count: 2,
     reason: REASON.mcpTransport,
@@ -342,7 +342,7 @@ const ALLOWED: readonly Allowance[] = [
     reason: REASON.pluginAuthor,
   },
   {
-    file: 'src/renderer/views/settings-dialog.ts',
+    file: 'src/renderer/views/settings/packs-section.ts',
     term: 'capability',
     count: 1,
     reason: REASON.advancedSettings,

@@ -395,9 +395,10 @@ dialog.settings-overlay::backdrop {
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
   mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
 }
-.settings-buttons button {
+.settings-buttons button,
+#settings-save-status {
   -webkit-app-region: no-drag;
-  /* Lift the buttons over the frosted ::before. Without this the absolutely
+  /* Lift the actions and save status over the frosted ::before. Without this the absolutely
      positioned pseudo paints above them — in-flow content sits below the
      positioned layer — and Save comes out blurred along with the backdrop. */
   position: relative;

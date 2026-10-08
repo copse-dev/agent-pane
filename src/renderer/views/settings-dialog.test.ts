@@ -138,6 +138,24 @@ describe('settings dialog (native <dialog>)', () => {
     assert.ok(scrolled)
   })
 
+  it('clears search before revealing a model recovery target', async () => {
+    prepareRecoveryDialog()
+    openSettingsDialog()
+    await settleRecovery()
+    const search = qsRequired<HTMLInputElement>(dialog, '#settings-search-input')
+    search.value = 'nothing-matches-this-setting'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    assert.ok(qsRequired(dialog, '.settings-content').classList.contains('settings-searching'))
+    openModelSettings('model')
+    await settleRecovery()
+    assert.equal(search.value, '')
+    assert.equal(
+      qsRequired(dialog, '.settings-content').classList.contains('settings-searching'),
+      false,
+    )
+    assert.equal(document.activeElement?.getAttribute('data-model-setting-target'), 'model')
+  })
+
   it('opens folded exact role/security fields instead of only the Models heading', async () => {
     prepareRecoveryDialog()
     openSettingsDialog()
@@ -696,6 +714,36 @@ describe('Settings snapshot and submitted draft lifecycle', () => {
     await tick()
     assert.equal(securityWrites, 1)
     assert.equal(dialog.open, false)
+  })
+
+  it('cancels new appearance previews back to the saved value after a dedicated save fails', async () => {
+    const base = createFakeApi()
+    const dialog = mounted({
+      ...base,
+      settings: {
+        ...base.settings,
+        getSnapshot: async () => ({ theme: 'dark' }),
+        update: async () => {},
+        setSecurity: async () => {
+          throw new Error('Security save failed')
+        },
+      },
+    })
+    openSettingsDialog('appearance')
+    await tick()
+    const theme = qsRequired<HTMLSelectElement>(dialog, '[name="theme"]')
+    change(theme, 'light')
+    const safety = qsRequired<HTMLInputElement>(dialog, '[name="autoRunSandboxCommands"]')
+    safety.checked = true
+    safety.dispatchEvent(new Event('change', { bubbles: true }))
+    submit(dialog)
+    await tick()
+    assert.equal(dialog.open, true)
+    assert.match(qsRequired(dialog, '#settings-save-status').textContent, /Security save failed/)
+    change(theme, 'dark')
+    closeSettingsDialog()
+    dialog.dispatchEvent(new Event('close'))
+    assert.equal(document.documentElement.dataset['theme'], 'light')
   })
 
   it('keeps failed ordinary saves open and never starts dedicated writes', async () => {
