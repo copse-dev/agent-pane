@@ -457,7 +457,7 @@ export function createAcpAgentsSection(
         }
         return Promise.resolve(pickerOptions)
       },
-      ariaLabel: 'ACP agent model',
+      ariaLabel: 'Agent model',
       loadOnMount: false,
     })
     void modelPicker.refresh(initialModel)

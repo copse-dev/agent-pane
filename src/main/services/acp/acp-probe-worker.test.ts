@@ -177,7 +177,7 @@ describe('acp probe worker', () => {
     )
 
     for (const { stdout } of attempts) {
-      assert.throws(() => parseProbeWorkerOutput(stdout), /ACP agent.*exited.*code 3/i)
+      assert.throws(() => parseProbeWorkerOutput(stdout), /coding agent.*exited.*code 3/i)
     }
   })
 

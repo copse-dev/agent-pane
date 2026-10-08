@@ -117,14 +117,17 @@ function agentBaseEnv(): NodeJS.ProcessEnv {
 async function main(): Promise<void> {
   const request = parseSessionHostRequest(process.env[ACP_SESSION_HOST_REQUEST_ENV] ?? '')
   if (!request) {
-    send({ type: 'error', error: 'invalid ACP session host request' })
+    send({ type: 'error', error: 'invalid agent session request' })
     process.exitCode = 1
     return
   }
   try {
     await initHostSandbox()
   } catch (err) {
-    send({ type: 'error', error: `ACP session host sandbox init failed: ${errorMessage(err)}` })
+    send({
+      type: 'error',
+      error: `Could not set up the sandbox for the agent session: ${errorMessage(err)}`,
+    })
     process.exitCode = 1
     return
   }
@@ -142,7 +145,7 @@ async function main(): Promise<void> {
       baseEnv: agentBaseEnv(),
     })
   } catch (err) {
-    send({ type: 'error', error: `ACP session host spawn failed: ${errorMessage(err)}` })
+    send({ type: 'error', error: `Could not start the agent session: ${errorMessage(err)}` })
     await SandboxManager.reset().catch(() => {})
     process.exitCode = 1
     return
@@ -151,7 +154,7 @@ async function main(): Promise<void> {
   const stdin = child.stdin
   const stdout = child.stdout
   if (!stdin || !stdout) {
-    send({ type: 'error', error: 'ACP session host agent has no stdio pipes' })
+    send({ type: 'error', error: 'The coding agent started without input and output channels' })
     terminateAcpChild(child)
     await SandboxManager.reset().catch(() => {})
     process.exitCode = 1

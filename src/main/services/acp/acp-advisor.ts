@@ -105,12 +105,12 @@ export async function runAcpAdvisorPrompt(options: {
   const agent = getAcpAgent(options.agentId)
   if (!agent) {
     throw new Error(
-      `ACP advisor agent "${options.agentId}" is not configured or is disabled. Add it in Settings → ACP agents.`,
+      `The advisor agent "${options.agentId}" is not configured or is disabled. Add it in Settings → General → Providers.`,
     )
   }
   const cwd = getAgentExecutionRoot()
   if (!cwd) {
-    throw new Error('Open a folder before consulting an ACP advisor.')
+    throw new Error('Open a folder before consulting an advisor agent.')
   }
   const config = buildAcpAdvisorSpawnConfig(agent, cwd)
   // Same consent rule as a session turn: configured provider keys reach a

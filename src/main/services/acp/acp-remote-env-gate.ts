@@ -55,8 +55,8 @@ export async function gateRemoteAcpEnvForward(
       {
         title: `Forward ${agentId} environment to ${target.hostId}?`,
         body:
-          `The ACP agent "${agentId}" runs on the SSH host ${target.hostId} and has ` +
-          `environment configured in Settings → ACP agents: ${envNames.join(', ')}. ` +
+          `The coding agent "${agentId}" runs on the SSH host ${target.hostId} and has ` +
+          `environment configured in Settings → General → Providers: ${envNames.join(', ')}. ` +
           `Forward these values to the remote agent so it can authenticate there? ` +
           `They travel over the encrypted SSH channel into the agent's process ` +
           `environment only — never on a command line (\`ps\`) or the remote disk. ` +
@@ -99,7 +99,7 @@ export function remoteAcpAuthRequiredHint(
     `The "${agentId}" agent on ${target.hostId} has no model-provider credentials. ` +
       `Either log the agent's CLI in once on that host (e.g. \`claude /login\` over SSH), ` +
       `or add its API key (e.g. ANTHROPIC_API_KEY) to the agent's environment in ` +
-      `Settings → ACP agents — Copse will offer to forward it securely to the host. ` +
+      `Settings → General → Providers — Copse will offer to forward it securely to the host. ` +
       `If you previously declined forwarding, restart Copse to be asked again.`,
     { cause: err },
   )

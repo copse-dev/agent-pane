@@ -22,7 +22,7 @@ export function assertMainFrameSender(event: IpcMainInvokeEvent, win: BrowserWin
   // load our renderer; sub-frames and <webview> guests are still rejected.
   if (frame === win.webContents.mainFrame) return
   if (isTrustedAppFrame(frame)) return
-  throw new IpcValidationError('IPC rejected: sender is not the main frame')
+  throw new IpcValidationError('Request rejected: it did not come from the app window')
 }
 
 export function parseIpcArgs<T extends z.ZodType>(schema: T, args: unknown[]): z.infer<T> {

@@ -1,4 +1,4 @@
-import { validateApiKey } from './validate-api-key.ts'
+import { validateApiKey, type ApiKeyValidationResult } from './validate-api-key.ts'
 import { resolveApiKey } from '../storage/settings.ts'
 import { AsyncTtlCache } from '../async-ttl-cache.ts'
 
@@ -8,8 +8,8 @@ const VALIDATION_TTL_MS = 5 * 60 * 1000
 /** Failed validations retry sooner so a fixed key surfaces quickly. */
 const VALIDATION_FAILURE_TTL_MS = 30 * 1000
 
-const validationCache = new AsyncTtlCache<string, boolean>({
-  ttlMs: (ok): number => (ok ? VALIDATION_TTL_MS : VALIDATION_FAILURE_TTL_MS),
+const validationCache = new AsyncTtlCache<string, ApiKeyValidationResult>({
+  ttlMs: (result): number => (result.ok ? VALIDATION_TTL_MS : VALIDATION_FAILURE_TTL_MS),
   maxEntries: 32,
 })
 const activeCacheKeys = new Map<string, string>()
@@ -30,7 +30,7 @@ export function invalidateProviderKeyStatus(provider: string): void {
 
 /** Seed the cache after an explicit validateKey call from Settings. */
 export function recordProviderKeyValidation(provider: string, key: string, ok: boolean): void {
-  validationCache.set(selectCacheKey(provider, key.trim()), ok)
+  validationCache.set(selectCacheKey(provider, key.trim()), { ok })
 }
 
 export function clearProviderKeyStatusCache(): void {
@@ -43,12 +43,19 @@ export function clearProviderKeyStatusCache(): void {
  * Absent or blank keys are unavailable; a present but rejected key is too.
  */
 export async function isProviderKeyUsable(provider: string): Promise<boolean> {
+  return (await providerKeyStatus(provider)) === 'usable'
+}
+
+/** A network/server failure is not evidence that saved credentials became invalid. */
+export async function providerKeyStatus(
+  provider: string,
+): Promise<'missing' | 'invalid' | 'usable' | 'unknown'> {
   const key = resolveApiKey(provider)?.trim()
-  if (!key) return false
+  if (!key) return 'missing'
   const cacheKey = selectCacheKey(provider, key)
 
-  return validationCache.get(cacheKey, async () => {
-    const result = await validateApiKey(provider, key)
-    return result.ok
-  })
+  const result = await validationCache.get(cacheKey, () => validateApiKey(provider, key))
+  if (result.ok) return 'usable'
+  if (result.formatOk === false || result.error?.startsWith('Key rejected by ')) return 'invalid'
+  return 'unknown'
 }

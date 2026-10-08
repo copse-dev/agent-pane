@@ -29,7 +29,11 @@ export interface DemoScenario {
   chatGptPlan?: ChatGptPlanStatus
   project: Project
   threads: Thread[]
-  /** Other projects exposed by the demo boundary, compatible with #3541. */
+  /**
+   * Further projects in the sidebar, each with its own threads. The scenario's
+   * `project` stays the one that opens; these are the ones never opened this
+   * session, so a spec can see what the sidebar lists for them.
+   */
   otherProjects?: ReadonlyArray<{ project: Project; threads: Thread[] }>
   settings: Readonly<Record<string, unknown>>
   /** Optional read-only PR showcase data for the browser demo's PR panel. */
@@ -2107,6 +2111,61 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     threads: [],
     otherProjects: [
       { project: project('demo-empty-other', 'empty-project', '/demo/empty'), threads: [] },
+    ],
+  },
+  {
+    id: 'sidebar-other-projects',
+    label: 'Sidebar listing threads of projects not opened yet',
+    project: project('demo-other-projects-active', 'copse-demo', '/demo/copse'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      sidebarThreadGroup: 'status',
+    },
+    // The open project has one thread; two more projects hold threads that are only
+    // read in the background after startup, so their titles must still be listed.
+    threads: [
+      {
+        id: 'demo-other-projects-active-chat',
+        title: 'Open project thread',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    otherProjects: [
+      {
+        project: project('demo-other-projects-docs', 'docs-site', '/demo/docs-site'),
+        threads: ['Rewrite the install guide', 'Fix broken anchors'].map((title, index) => ({
+          id: `demo-other-projects-docs-${String(index)}`,
+          title,
+          status: 'idle' as const,
+          messages: [],
+          messagesLoaded: false,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: FIXED_TIME - 10 - index,
+          updatedAt: FIXED_TIME - 10 - index,
+        })),
+      },
+      {
+        project: project('demo-other-projects-api', 'api-server', '/demo/api-server'),
+        threads: [
+          {
+            id: 'demo-other-projects-api-0',
+            title: 'Add pagination to the list endpoint',
+            status: 'idle' as const,
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 20,
+            updatedAt: FIXED_TIME - 20,
+          },
+        ],
+      },
     ],
   },
   {

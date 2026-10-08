@@ -27,7 +27,7 @@ export async function probeSshCapabilities(transport: SshTransport): Promise<Ssh
   // so the UI does not show the same missing-tool message twice.
   const warnings: string[] = []
   if (osResult.code !== 0 || archResult.code !== 0) {
-    warnings.push('Capability probe command failed — remote tooling may be unavailable.')
+    warnings.push('Checking the remote machine failed — remote tools may be unavailable.')
   }
 
   return {

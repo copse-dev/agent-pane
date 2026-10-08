@@ -151,7 +151,7 @@ export const RETIRED_ACP_AGENTS: readonly RetiredAcpAgent[] = [
     // has been renamed to @agentclientprotocol/claude-agent-acp." It stopped
     // at 0.16.2 (2026-02-17); the renamed package carries on from 0.24.0.
     reason: 'Renamed upstream to @agentclientprotocol/claude-agent-acp.',
-    title: 'Claude Code (ACP, Zed)',
+    title: 'Claude Code (Zed adapter)',
     command: 'claude-code-acp',
     args: [],
     envHints: ['ANTHROPIC_API_KEY'],
@@ -192,7 +192,7 @@ export const RETIRED_ACP_AGENTS: readonly RetiredAcpAgent[] = [
     },
     sandboxedPermissionMode: 'acceptEdits',
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
-    note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or `ANTHROPIC_API_KEY`.",
+    note: "Zed's adapter for Claude Code. Sign in with `claude /login` or set `ANTHROPIC_API_KEY`.",
   },
 ]
 
@@ -284,7 +284,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     setup: 'claude setup-token',
     reauth: 'claude /login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
-    note: 'Claude Agent SDK over ACP. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`).',
+    note: 'Runs Claude Code through its agent SDK. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`).',
   },
   {
     id: 'cursor',
@@ -310,7 +310,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     setup: 'cursor-agent login',
     reauth: 'cursor-agent login',
     docsUrl: 'https://docs.cursor.com/en/cli/overview',
-    note: 'Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`.',
+    note: 'Runs the Cursor CLI (`cursor-agent acp`). Sign in with `cursor-agent login`.',
   },
   {
     id: 'codex-acp',
@@ -350,7 +350,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     setup: 'codex login', // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
     reauth: 'codex login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/codex-acp',
-    note: 'OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`.',
+    note: 'Runs OpenAI Codex. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`.',
   },
 ]
 

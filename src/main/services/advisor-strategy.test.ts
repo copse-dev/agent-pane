@@ -224,7 +224,7 @@ describe('validateAdvisorPair', () => {
     const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'acp:gemini-cli')
     assert.equal(a.ok, true)
     assert.equal(a.level, 'info')
-    assert.match(a.reason, /external ACP agent/i)
+    assert.match(a.reason, /external coding agent/i)
   })
 })
 

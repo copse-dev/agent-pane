@@ -1483,17 +1483,38 @@ describe('Copse Reviewer workflow invariants', () => {
     return next >= 0 ? workflow.slice(start, start + header.length + next) : workflow.slice(start)
   }
 
-  it('dogfoods the local reusable workflow only on manual dispatch', () => {
-    assert.match(triggerWorkflow, /^on:\n {2}workflow_dispatch:$/m)
+  it('dogfoods the local reusable workflow after PR requests and supports manual dispatch', () => {
+    assert.match(triggerWorkflow, /^ {2}workflow_dispatch:$/m)
+    assert.match(triggerWorkflow, /^on:\n {2}workflow_run:$/m)
+    assert.match(triggerWorkflow, /workflows: \[Copse review request\]/)
     assert.doesNotMatch(triggerWorkflow, /^ {2}(?:pull_request|pull_request_target|push):/m)
-    assert.match(triggerWorkflow, /group: copse-review-trigger-\$\{\{ inputs\.pr \}\}/)
+    assert.match(
+      triggerWorkflow,
+      /group: copse-review-trigger-\$\{\{ github\.event\.workflow_run\.pull_requests\[0\]\.number \|\| inputs\.pr/,
+    )
     const review = workflowJobBlock(triggerWorkflow, 'review')
     assert.match(review, /uses: \.\/\.github\/workflows\/reviewer\.yml/)
     assert.match(review, /reviewer-ref: \$\{\{ github\.sha \}\}/)
     assert.match(review, /preparation: copse-pnpm/)
+    assert.ok(
+      review.includes(
+        "pr: ${{ github.event.workflow_run.pull_requests[0].number || fromJSON(inputs.pr || '0') }}",
+      ),
+    )
     assert.match(review, /github\.event_name == 'workflow_dispatch'/)
     assert.doesNotMatch(review, /runs-on:|steps:|actions: write/)
     assert.doesNotMatch(triggerWorkflow, /gh workflow run|^ {2}summary:/m)
+  })
+
+  it('signals PR requests without executing PR code or carrying credentials', () => {
+    const signal = readFileSync(resolve('.github/workflows/copse-review-request.yml'), 'utf8')
+    assert.match(signal, /^permissions: \{\}$/m)
+    assert.match(signal, /types: \[opened, reopened, synchronize, ready_for_review\]/)
+    assert.match(signal, /head\.repo\.id == github\.event\.repository\.id/)
+    assert.doesNotMatch(
+      signal,
+      /\$\{\{\s*secrets\.|uses:|download-artifact|pull_request_target|edited|labeled/,
+    )
   })
 
   it('retains the credential-free runner boundary for independent nightly sampling', () => {

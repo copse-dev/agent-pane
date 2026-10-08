@@ -9,11 +9,13 @@ import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import type { SettingsUpdate } from '@shared/settings-contract.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
+  openModelSettings,
   closeSettingsDialog,
   isSettingsDialogOpen,
   applyUiAccent,
@@ -103,6 +105,39 @@ describe('settings dialog (native <dialog>)', () => {
     openSettingsDialog()
     assert.equal(spy.showModalCalls, 1)
     assert.equal(isSettingsDialogOpen(), true)
+  })
+
+  it('reveals and focuses model recovery when Settings is already open on another section', () => {
+    openSettingsDialog()
+    qsRequired(dialog, '.settings-nav-btn[data-section="appearance"]').click()
+    const models = qsRequired(dialog, '[data-model-setting-target="model"]')
+    let scrolled = false
+    Object.defineProperty(models, 'scrollIntoView', {
+      value: (): void => {
+        scrolled = true
+      },
+    })
+    openModelSettings()
+    assert.equal(spy.showModalCalls, 1)
+    assert.ok(dialog.querySelector('.settings-section.active[data-section="general"]'))
+    assert.equal(document.activeElement, models)
+    assert.ok(scrolled)
+  })
+
+  it('opens folded exact role/security fields instead of only the Models heading', () => {
+    openSettingsDialog()
+    openModelSettings('safetyModel')
+    assert.equal(document.activeElement?.getAttribute('data-model-setting-target'), 'safetyModel')
+    assert.equal(dialog.querySelector<HTMLDetailsElement>('.routing-advanced')?.open, true)
+    openModelSettings('role:docs')
+    assert.equal(document.activeElement.getAttribute('data-model-setting-target'), 'role:docs')
+    assert.equal(dialog.querySelector<HTMLDetailsElement>('.routing-additional-roles')?.open, true)
+    openModelSettings('orchestrationWorkerModel')
+    assert.ok(dialog.querySelector('.settings-section.active[data-section="experimental"]'))
+    assert.equal(
+      document.activeElement.getAttribute('data-model-setting-target'),
+      'orchestrationWorkerModel',
+    )
   })
 
   it('moves Mobile Companion management into Experimental settings', async () => {
@@ -395,5 +430,42 @@ describe('settings search (cross-section block filter)', () => {
     const activeSection = active.item(0)
     assert.ok(activeSection instanceof HTMLElement)
     assert.equal(activeSection.dataset['section'], 'general')
+  })
+})
+
+describe('model-role cancellation before async Settings refresh', () => {
+  it('does not persist a cancelled role draft when reopening Appearance and saving before reads settle', async () => {
+    document.body.innerHTML = ''
+    const updates: SettingsUpdate[] = []
+    const written: string[] = []
+    const api = createPendingApi({
+      'settings.update': async (changes: SettingsUpdate): Promise<void> => {
+        updates.push(changes)
+      },
+      'settings.set': async (key: string): Promise<void> => {
+        written.push(key)
+      },
+    })
+    mountSettingsDialog(createStore(), api)
+    const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+    shimModal(dialog)
+    openSettingsDialog()
+    const docs = qsRequired<HTMLSelectElement>(dialog, 'select[name="role:docs"]')
+    const option = document.createElement('option')
+    option.value = 'missing-provider:docs'
+    docs.append(option)
+    docs.value = option.value
+    docs.dispatchEvent(new Event('change', { bubbles: true }))
+    closeSettingsDialog()
+    openSettingsDialog('appearance')
+    const theme = qsRequired<HTMLSelectElement>(dialog, 'select[name="theme"]')
+    theme.value = 'light'
+    theme.dispatchEvent(new Event('change', { bubbles: true }))
+    qsRequired(dialog, 'form').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+    await new Promise<void>((resolve) => setTimeout(resolve, 20))
+    assert.ok(written.includes('theme'), 'the fresh Appearance edit must reach Save')
+    assert.deepEqual(updates, [], 'the cancelled role must not enter the atomic role patch')
   })
 })

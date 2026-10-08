@@ -39,7 +39,7 @@ describe('Copse-wide deferred worktrees setting', () => {
     const hint = (await $(FIELDSET).$('.field-hint').getText()).replace(/\s+/g, ' ')
     assert.match(hint, /Applies across Copse to new threads using automatic checkout/)
     assert.match(hint, /before writing/)
-    assert.match(hint, /ACP agents still create one up front/)
+    assert.match(hint, /agents installed on this device still create one up front/)
     await saveElementScreenshot(FIELDSET, 'settings-deferred-worktrees-off.png')
 
     await toggle().click()

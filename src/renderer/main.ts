@@ -39,6 +39,7 @@ import { isAnyDialogOpen } from './views/dialog-shell.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
+  openModelSettings,
   isSettingsDialogOpen,
   closeSettingsDialog,
   applyUiAccent,
@@ -103,6 +104,7 @@ import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachAutomationAppearance } from './controller/automation-appearance.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
+import { attachProviderInvalidationWarning } from './controller/provider-invalidation.ts'
 import {
   loadProjects,
   attachAutosave,
@@ -120,6 +122,7 @@ import { loadStartupSettings } from './controller/startup-settings.ts'
 import {
   addProjectFromPath,
   attachProjectThreadCache,
+  preloadSidebarThreads,
   restoreProject,
 } from './controller/projects.ts'
 import {
@@ -382,6 +385,10 @@ async function boot(): Promise<void> {
     attachAutosave(store, api)
     attachMobileChat(store, api, mobileReady)
     attachBestValueDefaultResolver(store, api)
+    attachProviderInvalidationWarning(store, api, {
+      warn: showConfirmDialog,
+      openSettings: openModelSettings,
+    })
     attachAutomationController(store, api)
     attachAutomationAppearance(store, api.appIcon)
     // When `gh_pr_create` turns the diff you're reading into a PR, move the
@@ -548,6 +555,9 @@ async function boot(): Promise<void> {
     await restoreProject(store, api, active.id, activeThreadId)
     endRestore()
     endBoot({ projects: projects.length })
+    // Other projects' thread titles arrive behind the active project's, so the
+    // sidebar lists them without waiting for a switch.
+    void preloadSidebarThreads(store, api)
     // Debug branch, inert without COPSE_PERF_AUTOPILOT=1. Started only on the
     // path that has a workspace mounted, because it drives the real composer —
     // and only after restoreProject, so the thread it types into is the

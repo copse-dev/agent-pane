@@ -209,24 +209,18 @@ describe('workspace-level automations section', function () {
     resetUserData()
   })
 
-  it('collates every visited project’s automations under the workspace heading', async () => {
+  it('collates every project’s automations under the workspace heading', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const toggle = $('.automation-threads-toggle')
     await toggle.waitForExist({ timeout: 15_000 })
-    // Project B has not been visited this session, so only A's schedule is
-    // known yet — the same limit a collapsed, never-opened project already had.
-    await expect(toggle.$('.automation-threads-count')).toHaveText('1')
-
-    // Visiting B loads its real thread history (and automation run) into the
-    // sidebar; switching back to A keeps the rest of the screenshot familiar.
-    await $('.project-row*=Ops project').click()
+    // Project B is never opened here: the background read after startup loads its
+    // thread history (and automation run) into the sidebar, so both projects'
+    // schedules join the workspace section without a project switch.
     await browser.waitUntil(
       async () => (await toggle.$('.automation-threads-count').getText()) === '2',
       { timeout: 15_000, timeoutMsg: 'Ops project’s schedule never joined the workspace section' },
     )
-    await $('.project-row*=Docs project').click()
-    await expect(toggle.$('.automation-threads-count')).toHaveText('2')
 
     const alignment = await headingAlignment()
     assert.ok(alignment)

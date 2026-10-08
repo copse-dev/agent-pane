@@ -19,7 +19,7 @@ export function nodeReadableStream(source: Readable): ReadableStream<Uint8Array>
         else if (chunk instanceof Uint8Array) controller.enqueue(chunk)
         else
           settle(() => {
-            controller.error(new TypeError('ACP stream emitted a non-byte chunk'))
+            controller.error(new TypeError('The coding agent sent data Copse could not read'))
           })
       })
       source.once('end', () => {
@@ -34,7 +34,7 @@ export function nodeReadableStream(source: Readable): ReadableStream<Uint8Array>
       })
       source.once('close', () => {
         settle(() => {
-          controller.error(new Error('ACP stream closed before it ended'))
+          controller.error(new Error('The coding agent stopped sending data before it finished'))
         })
       })
     },

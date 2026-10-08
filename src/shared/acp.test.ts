@@ -75,7 +75,7 @@ describe('acp model values', () => {
     assert.equal(acpModelDisplayLabel('acp:unknown', agents), 'unknown')
     // A thread that ran a since-retired agent still names it, even though the
     // agent is no longer offered and so is not in `agents`.
-    assert.equal(acpModelDisplayLabel('acp:claude-code-acp', agents), 'Claude Code (ACP, Zed)')
+    assert.equal(acpModelDisplayLabel('acp:claude-code-acp', agents), 'Claude Code (Zed adapter)')
     assert.equal(acpModelDisplayLabel('claude-opus-4-8', agents), 'claude-opus-4-8')
   })
 
@@ -173,7 +173,7 @@ describe('Claude ACP agent preference', () => {
     }
     const enabled: AcpAgentConfig = {
       id: 'claude-zed',
-      title: 'Claude Code (ACP, Zed)',
+      title: 'Claude Code (Zed adapter)',
       command: 'claude-code-acp',
       enabled: true,
     }

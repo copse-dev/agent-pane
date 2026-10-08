@@ -175,7 +175,7 @@ describe('providers panel', () => {
     assert.equal(openai?.querySelector('.provider-chip-dot'), null)
   })
 
-  it('leads with configured OpenAI access and keeps API and ACP controls in expanders', async () => {
+  it('leads with configured OpenAI access and keeps API and Codex agent controls in expanders', async () => {
     state.keys['openai'] = 'fixture-key'
     const panel = createProvidersPanel(stubApi(state), {
       showOpenAiServiceTier: true,
@@ -188,7 +188,7 @@ describe('providers panel', () => {
       [...panel.root.querySelectorAll('.openai-connection-heading h4')].map(
         (heading) => heading.textContent,
       ),
-      ['OpenAI API', 'ChatGPT plan', 'Codex ACP'],
+      ['OpenAI API', 'ChatGPT plan', 'Codex agent'],
     )
     assert.match(panel.root.textContent, /Copse’s agent and tools/)
     assert.match(panel.root.textContent, /Codex’s agent/)

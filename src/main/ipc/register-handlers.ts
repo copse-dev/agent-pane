@@ -4,6 +4,7 @@ import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
+import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
 import { getChatGptPlanService } from '../services/providers/chatgpt-plan-service.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
@@ -1645,6 +1646,28 @@ export function registerAllHandlers(
     }
   })
   ipcMain.handle('models:best-value-default', () => resolveBestValueChatModel())
+  ipcMain.handle(
+    'models:invalidations',
+    (event, rawThreadModel: unknown, rawFreshLocal: unknown) => {
+      assertMainFrameSender(event, win)
+      const [model, fresh] = parseIpcArgs(
+        z.tuple([z.string().max(512).optional(), z.boolean().optional()]),
+        [rawThreadModel, rawFreshLocal],
+      )
+      return modelInvalidationService.report(model, fresh)
+    },
+  )
+  ipcMain.handle(
+    'models:recover-setting',
+    (event, rawTarget: unknown, rawExpected: unknown, rawFallback: unknown) => {
+      assertMainFrameSender(event, win)
+      const [target, expected, fallback] = parseIpcArgs(
+        z.tuple([z.string().max(512), z.string().max(512), z.string().max(512)]),
+        [rawTarget, rawExpected, rawFallback],
+      )
+      return modelInvalidationService.recover(target, expected, fallback)
+    },
+  )
   // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
   // to show the concrete model behind a rule; a pinned id round-trips unchanged.
   ipcMain.handle('models:resolve-dynamic', (_event, rawValue: unknown) => {
@@ -3554,7 +3577,7 @@ export function registerAllHandlers(
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event, rawScenario: unknown) => {
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
-      if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
+      if (!codex) throw new IpcValidationError('The Codex agent preset is missing')
       // Fixture at the detection boundary; no global package mutation runs here.
       const scenario = parseIpcArgs(
         z.enum(['install', 'firewall-bootstrap', 'mixed-bootstrap']).default('install'),
@@ -3562,7 +3585,7 @@ export function registerAllHandlers(
       )
       if (scenario === 'mixed-bootstrap') {
         const claude = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'claude-acp')
-        if (!claude) throw new IpcValidationError('Claude ACP preset is missing')
+        if (!claude) throw new IpcValidationError('The Claude agent preset is missing')
         return requestAcpPackageInstallApproval(
           [
             { agent: claude, action: 'install' },

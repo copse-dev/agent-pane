@@ -883,12 +883,17 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
 - **The CI shell, in two privilege domains.** Amended 2026-10-04: Copse's
   `review-trigger.yml` dogfoods the reusable `reviewer.yml` with a local workflow call
   and the trusted caller SHA, replacing separate ground/findings dispatch workflows.
-  Amended 2026-10-08: reviews start only through `workflow_dispatch` on the default
-  branch and resolve current PR metadata. Both portable and Copse authorization reject
-  fork heads before grounding. Owner-only, same-repository paid review policy remains
-  enforced in preflight and on the protected model job, including failed-job reruns.
-  The automatic cheap-summary dispatcher is removed; full manual reviews still update
-  their descriptions, and the separate summary-only workflow remains manually callable.
+  Amended 2026-10-08: same-repository PRs request automatic reviews through a
+  credential-free `copse-review-request.yml` on opened/reopened/synchronize/ready
+  events. A `workflow_run` caller runs on the default branch; manual dispatch
+  remains available. Shared authorization validates the successful request's path,
+  repository, unique PR, current head and initiating/rerunning actors. Missing PR
+  associations use an exact branch/repository/commit lookup instead of guessing.
+  Dependabot is allowed only for its own same-repository PRs in the portable profile;
+  Copse's protected profile retains owner-only authority. Fork heads are rejected
+  before grounding. Request workflows do not listen to description edits or feedback
+  labels, preventing review-publication loops. Full reviews update descriptions;
+  the separate summary-only workflow remains manually callable.
   Nightly sampling and real-model benchmarks remain separate.
 
   The trusted same-repository call uses `secrets: inherit` so the protected findings
@@ -976,7 +981,7 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   API preflight and again on each model job, including partial reruns. The preflight
   accepts only owner-authored PRs (user ID `338988`) whose head and base both
   belong to this repository (ID `1274237362`). External authors and forks do not enter
-  the protected model job, even if a trusted actor dispatches them. Manual PR reviews
+  the protected model job, even if a trusted actor dispatches them. Copse PR reviews
   require the owner actor; a later live PR check verifies head/base identity again before
   model/App credentials enter a step. Luna drops Scaleway credentials, and rollback drops
   the OpenRouter credential. The key's $25/month cap remains an account-side limit.

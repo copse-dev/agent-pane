@@ -273,7 +273,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             }
             st.toolSinceText = nextState.toolSinceText
             st.currentText = nextState.currentText ?? ''
-            if (st.msgId === null) throw new Error('assistant message id missing for ACP text')
+            if (st.msgId === null) throw new Error('assistant message id missing for agent text')
             appendToken(store, st.msgId, plan.text)
             st.writing = plan.text.trim().length > 0
             if (st.writing) maybeNameThread(store, api, threadId)

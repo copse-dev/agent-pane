@@ -125,4 +125,7 @@ export interface StoreEvents {
   // The set of non-focused threads awaiting user input (a pending approval or
   // ask_user question) changed. Drives the sidebar attention indicator.
   attention_changed: []
+  // A project other than the active one had its thread titles read in the
+  // background, so the sidebar and Activity can list them.
+  sidebar_threads_loaded: []
 }

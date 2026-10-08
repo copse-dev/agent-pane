@@ -96,11 +96,21 @@ function findJsonRpcError(err: unknown): JsonRpcError | null {
   return null
 }
 
-function formatJsonRpcErrorCode(code: number, message: string): string {
+/**
+ * `technical` keeps the protocol name for the "Technical details" block, where
+ * a user filing a bug needs the exact code; the headline form stays in plain
+ * words because it is shown straight in the error banner.
+ */
+function formatJsonRpcErrorCode(code: number, message: string, technical: boolean): string {
   const label = ACP_ERROR_CODE_LABELS[code]
+  if (technical) {
+    return label
+      ? `ACP error ${String(code)} (${label}): ${message}`
+      : `ACP error ${String(code)}: ${message}`
+  }
   return label
-    ? `ACP error ${String(code)} (${label}): ${message}`
-    : `ACP error ${String(code)}: ${message}`
+    ? `The agent reported an error (code ${String(code)}, ${label}): ${message}`
+    : `The agent reported an error (code ${String(code)}): ${message}`
 }
 
 function formatErrorData(data: unknown): string | null {
@@ -384,7 +394,7 @@ function acpCredentialsNote(known: { title: string; envHints?: string[] } | unde
 function acpAgentReport(rpc: JsonRpcError | null): string | null {
   if (!rpc) return null
   const dataDetail = formatErrorData(rpc.data)
-  const report = formatJsonRpcErrorCode(rpc.code, rpc.message)
+  const report = formatJsonRpcErrorCode(rpc.code, rpc.message, true)
   return dataDetail ? `${report}\nDetails: ${dataDetail}` : report
 }
 
@@ -583,7 +593,7 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
   if (rpc && ctx?.acpAgentId) {
     const dataDetail = formatErrorData(rpc.data)
     const suffix = dataDetail ? `\n\nDetails: ${dataDetail}` : ''
-    return `${formatJsonRpcErrorCode(rpc.code, rpc.message)}${suffix}`
+    return `${formatJsonRpcErrorCode(rpc.code, rpc.message, false)}${suffix}`
   }
 
   return message ?? raw

@@ -422,14 +422,14 @@ function acpProcessExitError(
   const reason = signal ? `signal ${signal}` : `code ${code === null ? 'unknown' : String(code)}`
   const detail = stderr.trim()
   return new Error(
-    `ACP agent "${command}" exited with ${reason}${detail ? `. stderr: ${detail}` : ''}`,
+    `The coding agent "${command}" exited with ${reason}${detail ? `. Its error output: ${detail}` : ''}`,
   )
 }
 
 function acpProcessSpawnError(command: string, err: Error, stderr: string): Error {
   const detail = stderr.trim()
   return new Error(
-    `ACP agent "${command}" failed to start: ${err.message}${detail ? `. stderr: ${detail}` : ''}`,
+    `The coding agent "${command}" failed to start: ${err.message}${detail ? `. Its error output: ${detail}` : ''}`,
   )
 }
 
@@ -496,7 +496,7 @@ export async function spawnAcpAgentProcess(
     throw new Error(`Working directory no longer exists: ${config.cwd}`)
   }
   if (config.readonlyCheckout && !(config.sandbox && willSandboxAcpAgent(config.sandbox))) {
-    throw new Error('A read-only checkout cannot run an ACP agent outside the project sandbox')
+    throw new Error('A read-only checkout cannot run a coding agent outside the project sandbox')
   }
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
@@ -741,7 +741,7 @@ class AcpUpdateQueue {
 
 function closedConnectionError(reason: unknown): Error {
   if (reason instanceof Error) return reason
-  return new Error(typeof reason === 'string' ? reason : 'ACP connection closed')
+  return new Error(typeof reason === 'string' ? reason : 'The coding agent connection closed')
 }
 
 /**
@@ -882,7 +882,7 @@ function acpChildStdoutStream(
   stderrTail: () => string,
 ): ReadableStream<Uint8Array> {
   const stdout = child.stdout
-  if (!stdout) throw new Error('ACP agent spawned without stdout pipe')
+  if (!stdout) throw new Error('The coding agent started without a way to read its output')
   let cancelRead = (): void => {
     void shutdownAcpChild(child)
   }
@@ -975,7 +975,7 @@ async function spawnTransport(
   // docs/plans/acp-over-ssh.md. Otherwise fall through to the local spawn.
   const sshTarget = spawnConfigSshTarget(config)
   if (sshTarget && config.readonlyCheckout) {
-    throw new Error('A read-only checkout cannot run an ACP agent on a remote host')
+    throw new Error('A read-only checkout cannot run a coding agent on a remote host')
   }
   if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget, signal)
   let child: ChildProcess
@@ -994,7 +994,7 @@ async function spawnTransport(
   } else {
     child = await spawnAcpAgentProcess(config)
   }
-  if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
+  if (!child.stdin) throw new Error('The coding agent started without a way to receive input')
   const stderr = captureAcpChildStderr(child, config.command)
   const writable = nodeWritableStream(child.stdin)
   const readable = acpChildStdoutStream(child, config.command, stderr.tail)
@@ -1482,7 +1482,7 @@ export async function probeAcpAgent(
   timeoutMs = 15000,
 ): Promise<AcpAgentProbe> {
   const child = await spawnAcpAgentProcess(config)
-  if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
+  if (!child.stdin) throw new Error('The coding agent started without a way to receive input')
   const stderr = captureAcpChildStderr(child, config.command)
   const writable = nodeWritableStream(child.stdin)
   const readable = acpChildStdoutStream(child, config.command, stderr.tail)

@@ -102,7 +102,7 @@ export function buildAcpAgentApp(runner: AcpTurnRunner, options: AcpAgentOptions
     })
     .onRequest('session/resume', (ctx) => {
       if (!options.resume || !sessions.has(ctx.params.sessionId)) {
-        throw new Error('ACP session is not resumable')
+        throw new Error('This agent session cannot be resumed')
       }
       return {}
     })
