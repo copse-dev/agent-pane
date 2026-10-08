@@ -161,6 +161,7 @@ describe('OpenAI cloud adapter', () => {
     let published = 0
     let environmentReads = 0
     const hostTools: OpenAiHostTools = {
+      validate: () => {},
       definitions: [
         { type: 'function', name: 'gh_pr_create', description: 'Queue PR', parameters: {} },
       ],

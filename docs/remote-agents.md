@@ -72,18 +72,25 @@ the submission; recovery requires the same current message and images.
 Keys/models cannot change within an existing chat. Automatic background recovery
 remains outside this prototype.
 
-The hosted agent can call Copse's GitHub/CI read tools. Asking it to create a PR
-queues a local action: after the hosted turn exports and Copse imports its changes,
-the normal approval prompt appears. Copse then pushes the whole current branch and
-creates/links the PR using your local GitHub login. GitHub credentials stay local.
-The queued acknowledgement is not confirmation that a PR exists; the later local
-tool result contains the outcome. No second local agent is involved.
+The hosted agent gets all registered Copse GitHub/CI tools, with the same arguments,
+implementations, and approval rules as the regular agent. Reads run immediately.
+Writes (push, create PR, rerun CI, approve, mark ready, and enable auto-merge) queue
+until the hosted turn exports and Copse successfully imports its changes. Copse then
+runs them in order through the normal approval flow; a denial or failure stops later
+queued writes. `gh_push` pushes the thread branch to origin without force, updating
+its existing PR. `gh_pr_create` pushes and creates/links a PR as usual; an explicit
+head must already be pushed. GitHub credentials stay local. Shell and file tools
+remain in the hosted environment.
+
+The queued acknowledgement is not confirmation of success; later local tool results
+contain the outcomes. Reads during the same hosted turn will not see queued writes.
+No second local agent is involved.
 
 If interrupted, use **Retry this turn** or resend the previous message to recover.
 Retry resumes the saved hosted request, including its original images; it does not
 submit the generic continuation as a new task. Completed output can be recovered
 after the hosted environment disconnects. A write interrupted during
-PR creation is not automatically repeated: Copse reports an uncertain outcome so
+a GitHub action is not automatically repeated: Copse reports an uncertain outcome so
 you can check GitHub first. Failed or cancelled hosted turns do not publish.
 
 The client subscribes before submission but uses saved turns

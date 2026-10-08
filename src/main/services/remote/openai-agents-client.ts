@@ -458,11 +458,12 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   if (hostActions.length && !hostActionsReported) {
     if (result.status !== 'completed') {
       for (const action of hostActions) {
+        if (action.phase !== 'queued') continue
         action.phase = 'done'
         action.result = {
           success: false,
           error:
-            'PR request was not executed because the hosted turn did not complete successfully.',
+            'GitHub action was not executed because the hosted turn did not complete successfully.',
         }
       }
       await save()

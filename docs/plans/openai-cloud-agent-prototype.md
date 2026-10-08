@@ -393,3 +393,25 @@ attachment composer. Demo build, focused type-aware lint, formatting and diff ch
 pass. Full check still stops at the unchanged LM Studio TS2554. The 11 choices come
 from the existing OpenAI chat catalog, not live per-account Agents eligibility; no
 billable compatibility probes were run.
+
+### Shared GitHub write tools
+
+Task: expose all registered GitHub reads and writes through the regular tool schemas,
+implementations, and approval gate. Add a regular `gh_push` action for the thread branch.
+Keep shell and file operations in the hosted environment. Queue writes until successful
+export/import, persist intent before execution, and never replay ambiguous writes. Validate
+schema parity, approval denial, ordering, migration of existing PR requests, and push isolation.
+
+Completion evidence: all six GitHub writes use the normal registry schemas and
+handlers, including shared `gh_push`. All writes are deferred until import; reads
+within the hosted turn cannot observe queued writes. Legacy PR queues decode with
+`gh_pr_create` as the default name. Writes retain persisted intent/result recovery,
+and a failed/denied write stops remaining queued actions.
+
+Validation: 200 focused tests passed, one skipped (201 total), covering API recovery,
+adapter import, queue ordering/migration, schema parity, permissions and a real local
+bare-remote push. One focused WDIO browser spec passed; inspected
+`tests/e2e/screenshots/openai-host-pr.png` with readable push and PR results. Demo
+build and dead-code checks pass. Full `pnpm run check` remains blocked by the
+unchanged `packages/llm/src/lm-studio-provider.test.ts:23` TS2554. No live OpenAI
+inference or authenticated GitHub push was used to validate this change.

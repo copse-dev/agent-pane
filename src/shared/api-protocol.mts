@@ -81,4 +81,3 @@
 // v51 versions the context_compacted agent chunk (OpenAI server-side compaction).
 // v52 versions the OpenAI remote-agent provider in thread and agent-PR-link payloads.
 export const API_PROTOCOL_VERSION = 52 as const
-export const API_PROTOCOL_VERSION = 51 as const

@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { GITHUB_WRITE_TOOLS } from '../security/permission-policy.ts'
 import { READONLY_MODE_BLOCK_MESSAGE } from '@shared/tools/readonly-tools.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import {
@@ -19,15 +19,9 @@ const READ_TOOLS = new Set([
   'wait_for_ci_checks',
   'get_ci_failure_logs',
 ])
-export const openAiPrRequestSchema = z
-  .object({
-    title: z.string().min(1).max(256),
-    body: z.string().max(60_000),
-    draft: z.boolean(),
-  })
-  .strict()
 export interface OpenAiHostTools {
   definitions: OpenAiFunctionTool[]
+  validate(name: string, args: unknown): void
   execute(
     name: string,
     args: unknown,
@@ -42,20 +36,21 @@ export function createOpenAiHostTools(registry: ToolRegistry, threadId: string):
   const definitions: OpenAiFunctionTool[] = owner
     ? registry
         .toMcpTools()
-        .filter((tool) => READ_TOOLS.has(tool.name) || tool.name === 'gh_pr_create')
+        .filter((tool) => READ_TOOLS.has(tool.name) || GITHUB_WRITE_TOOLS.has(tool.name))
         .map((tool) => ({
           type: 'function',
           name: tool.name,
-          description:
-            tool.name === 'gh_pr_create'
-              ? 'Queue a pull request for this thread. The host will ask for approval and push the entire current branch after this turn finishes and its changes are imported. This returns queued, not a PR URL. Export your changes and finish the turn; do not wait or poll for creation.'
-              : tool.description,
-          parameters:
-            tool.name === 'gh_pr_create' ? z.toJSONSchema(openAiPrRequestSchema) : tool.inputSchema,
+          description: GITHUB_WRITE_TOOLS.has(tool.name)
+            ? `${tool.description} The host queues this action until the turn finishes and exported changes are imported, then uses its normal approval flow. A queued response does not mean the action succeeded. Export and finish the turn; do not poll for completion.`
+            : tool.description,
+          parameters: tool.inputSchema,
         }))
     : []
   return {
     definitions,
+    validate: (name, args): void => {
+      registry.validateArgs(name, args)
+    },
     async execute(name, args, callId, signal): Promise<OpenAiFunctionResult> {
       const context = getThreadExecutionContext()
       if (
@@ -73,11 +68,7 @@ export function createOpenAiHostTools(registry: ToolRegistry, threadId: string):
         runWithThreadExecutionContext(context, () =>
           runWithApprovalToolCallId(callId, async () => {
             try {
-              const { result } = await registry.executeNormalized(
-                name,
-                name === 'gh_pr_create' ? openAiPrRequestSchema.parse(args) : args,
-                signal,
-              )
+              const { result } = await registry.executeNormalized(name, args, signal)
               const failed =
                 /^(Failed:|Error:|User rejected|Tool .* blocked)/.test(result) ||
                 result.includes(READONLY_MODE_BLOCK_MESSAGE)

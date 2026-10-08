@@ -1,3 +1,4 @@
+import { ghCreatePrTool } from '../../tools/gh-pr-action-tools.ts'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
@@ -21,12 +22,15 @@ function fixture(): {
   const writes: string[] = []
   let executions = 0
   const tools: OpenAiHostTools = {
-    definitions: ['gh_pr_create', 'gh_pr_list'].map((name) => ({
+    definitions: ['gh_pr_create', 'gh_pr_list', 'gh_push', 'gh_pr_mark_ready'].map((name) => ({
       type: 'function',
       name,
       description: name,
       parameters: {},
     })),
+    validate(name, args) {
+      if (name === 'gh_pr_create') ghCreatePrTool.parameters.parse(args)
+    },
     async execute() {
       executions++
       return { success: true, output: 'Done: https://github.com/example/repo/pull/1' }
@@ -57,7 +61,7 @@ describe('OpenAI host action queue', () => {
   it('durably queues without publishing, then persists write intent and result, and never repeats a completed write', async () => {
     const f = fixture()
     const result = await handleOpenAiHostCall(f.call, f.context)
-    assert.match(result.output ?? '', /No PR has been opened/)
+    assert.match(result.output ?? '', /No remote write has occurred/)
     assert.equal(f.executions(), 0)
     assert.equal(f.writes.length, 1)
     await handleOpenAiHostCall(f.call, f.context)
@@ -73,7 +77,7 @@ describe('OpenAI host action queue', () => {
     assert.equal(f.executions(), 1)
     assert.ok(f.chunks.some((chunk) => chunk.type === 'tool_result' && !chunk.isError))
   })
-  it('rejects arbitrary tools, branch overrides, changed arguments, and additional PRs', async () => {
+  it('rejects arbitrary tools, invalid arguments, changed arguments, and additional PRs', async () => {
     const f = fixture()
     assert.equal(
       (await handleOpenAiHostCall({ ...f.call, name: 'run_shell' }, f.context)).success,
@@ -82,7 +86,7 @@ describe('OpenAI host action queue', () => {
     assert.equal(
       (
         await handleOpenAiHostCall(
-          { ...f.call, arguments: { ...f.call.arguments, head: 'other' } },
+          { ...f.call, arguments: { ...f.call.arguments, title: 123 } },
           f.context,
         )
       ).success,
@@ -127,5 +131,42 @@ describe('OpenAI host action queue', () => {
     })
     assert.match(await finishOpenAiHostActions(f.context), /User rejected/)
     assert.equal(f.context.actions[0]?.result?.success, false)
+  })
+  it('queues all writes in order and stops dependent actions after denial', async () => {
+    const f = fixture()
+    for (const name of ['gh_push', 'gh_pr_mark_ready']) {
+      assert.equal(
+        (await handleOpenAiHostCall({ ...f.call, name, call_id: name, arguments: {} }, f.context))
+          .success,
+        true,
+      )
+    }
+    assert.equal(f.executions(), 0)
+    const executed: string[] = []
+    f.context.tools.execute = async (name): Promise<OpenAiFunctionResult> => {
+      executed.push(name)
+      return { success: false, error: 'User rejected push.' }
+    }
+    await finishOpenAiHostActions(f.context)
+    assert.deepEqual(executed, ['gh_push'])
+    assert.equal(f.context.actions[1]?.result?.success, false)
+  })
+  it('restores legacy PR queues and accepts the regular PR arguments', async () => {
+    const f = fixture()
+    const restored = openAiHostActionsSchema.parse([
+      { turnId: 'old', callId: 'old', request: f.call.arguments, phase: 'queued' },
+    ])
+    assert.equal(restored[0]?.name, 'gh_pr_create')
+    assert.equal(
+      (
+        await handleOpenAiHostCall(
+          { ...f.call, arguments: { title: 'Title', base: 'main', head: 'feature' } },
+          f.context,
+        )
+      ).success,
+      true,
+    )
+    await finishOpenAiHostActions(f.context)
+    assert.equal(f.executions(), 1)
   })
 })

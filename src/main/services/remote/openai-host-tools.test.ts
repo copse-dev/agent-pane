@@ -1,3 +1,4 @@
+import { ghPrActionTools, registerGhPrActionTools } from '../../tools/gh-pr-action-tools.ts'
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { z } from 'zod'
@@ -68,7 +69,7 @@ describe('OpenAI host registry boundary', () => {
         (
           await bridge.execute(
             'gh_pr_create',
-            { ...args, head: 'other' },
+            { ...args, title: 123 },
             'call',
             new AbortController().signal,
           )
@@ -87,6 +88,27 @@ describe('OpenAI host registry boundary', () => {
         true,
       )
       assert.equal(executed, 1)
+    })
+  })
+  it('exposes every registered GitHub write with exactly the regular schema', () => {
+    const registry = new ToolRegistry()
+    registerGhPrActionTools(registry)
+    const bridge = runWithThreadExecutionContext(context, () =>
+      createOpenAiHostTools(registry, 'thread'),
+    )
+    assert.deepEqual(
+      bridge.definitions.map((tool) => tool.name).sort(),
+      ghPrActionTools.map((tool) => tool.name).sort(),
+    )
+    for (const tool of bridge.definitions) {
+      assert.deepEqual(
+        tool.parameters,
+        registry.toMcpTools().find((entry) => entry.name === tool.name)?.inputSchema,
+      )
+    }
+    bridge.validate('gh_pr_create', { title: 'Title', base: 'main' })
+    assert.throws(() => {
+      bridge.validate('gh_push', { force: true })
     })
   })
 })
