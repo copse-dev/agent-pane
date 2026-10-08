@@ -12,6 +12,7 @@ import {
   extraProviderForModel,
   extraProviderModelId,
   isExtraProviderModel,
+  isLocalBaseUrl,
 } from '@copse/llm/extra-providers.ts'
 import { getApprovedProviderHosts } from './approved-provider-hosts.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
@@ -92,7 +93,9 @@ export function normalizeRoleModelSelection(model: string): string {
     isDynamicModel(value) ||
     value.startsWith('lmstudio:') ||
     isOpenRouterModel(value) ||
-    extraProviderForModel(getResolvedExtraProviders(), value) !== null ||
+    // Preserve stale provider routes so the missing-provider guard can explain
+    // them instead of reinterpreting the route as a bare local model id.
+    isExtraProviderModel(value) ||
     firstPartyProviderOf(value) !== null ||
     parseChatGptPlanModel(value) !== null
   ) {
@@ -496,13 +499,15 @@ export async function listLmStudioModels(): Promise<string[]> {
 
 /** List local models with the capability metadata LM Studio advertises. */
 export async function listLmStudioModelInfo(): Promise<
-  Array<{ id: string; supportsImages?: boolean }>
+  Array<{ id: string; supportsImages?: boolean; embedding?: boolean; local?: boolean }>
 > {
   const url = localServerUrl()
   const result = await fetchLmStudioModelsCached(url)
   if (!result.ok) return []
   return result.models.map((model) => ({
     id: model.id,
+    local: isLocalBaseUrl(url),
+    ...(model.embedding !== undefined ? { embedding: model.embedding } : {}),
     ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
   }))
 }

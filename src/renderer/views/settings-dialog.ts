@@ -11,6 +11,7 @@ import {
   sanitizeAutoApprovalLevel,
 } from '@shared/auto-approval.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import type { ModelSettingsTarget } from '@shared/model-invalidation.ts'
 import {
   isRightPanelPosition,
   isThemePreference,
@@ -485,6 +486,8 @@ let overlayEl: HTMLDialogElement | null = null
 // Section to reveal on the next open (e.g. a deep-link from the low-context
 // warning). Read and cleared by the `settings-open` handler; null → General.
 let pendingSection: SettingsSection | null = null
+let pendingModelFocus: ModelSettingsTarget | null = null
+let revealPluginModel: ((target: ModelSettingsTarget) => Promise<void>) | null = null
 // Plugin detail to reveal on the next open. Same lifecycle as `pendingSection`.
 let pendingPluginDetail: PluginDetailTarget | null = null
 
@@ -496,6 +499,37 @@ export function openSettingsDialog(section?: SettingsSection): void {
   // hand-rolled overlay + manual `hidden` toggle.
   overlayEl.showModal()
   overlayEl.dispatchEvent(new Event('settings-open'))
+}
+
+/** Reveal the exact saved field whose provider changed. */
+export function openModelSettings(target: ModelSettingsTarget = 'model'): void {
+  if (!overlayEl) return
+  const pluginTarget = target.startsWith('plugin:') || target === 'advisorModel'
+  const section: SettingsSection = pluginTarget
+    ? 'customise'
+    : target === 'orchestrationWorkerModel'
+      ? 'experimental'
+      : 'general'
+  if (overlayEl.open) {
+    qsRequired(overlayEl, `.settings-nav-btn[data-section="${section}"]`).click()
+    if (pluginTarget) void revealPluginModel?.(target)
+    else focusModelSettings(overlayEl, target)
+    return
+  }
+  pendingModelFocus = target
+  openSettingsDialog(section)
+}
+
+function focusModelSettings(overlay: HTMLElement, target: ModelSettingsTarget): void {
+  const control = [...overlay.querySelectorAll<HTMLElement>('[data-model-setting-target]')].find(
+    (element) => element.dataset['modelSettingTarget'] === target,
+  )
+  if (!control) return
+  for (let ancestor = control.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    if (ancestor.tagName === 'DETAILS') ancestor.setAttribute('open', '')
+  }
+  control.scrollIntoView({ block: 'center' })
+  control.focus({ preventScroll: true })
 }
 
 /**
@@ -1836,6 +1870,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         loadOnMount: false,
       },
     ),
+  }
+  for (const [target, picker] of Object.entries(settingsModelPickers)) {
+    qsRequired(picker.root, '.model-picker-trigger').setAttribute(
+      'data-model-setting-target',
+      target,
+    )
   }
 
   const usageSection = createUsageSection(api, store, closeSettingsDialog)
@@ -3677,6 +3717,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         ariaLabel: field.title,
         loadOnMount: false,
       })
+      qsRequired(picker.root, '.model-picker-trigger').setAttribute(
+        'data-model-setting-target',
+        `plugin:${pluginId}:${field.id}`,
+      )
       modelFieldPopulated.set(modelSelectInput, picker.refresh(modelFieldCurrent ?? ''))
     }
     if (field.description) {
@@ -4144,6 +4188,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const fold = row.querySelector<HTMLDetailsElement>('.plugin-settings-fold')
     if (fold) fold.open = true
     row.scrollIntoView({ block: 'start' })
+  }
+  revealPluginModel = async (target: ModelSettingsTarget): Promise<void> => {
+    const resolved =
+      target === 'advisorModel'
+        ? `plugin:${ADVISOR_STRATEGY_PLUGIN_ID}:${ADVISOR_MODEL_SETTING_ID}`
+        : target
+    const pluginId = resolved.split(':')[1]
+    if (!pluginId) return
+    await revealPluginDetail({ pluginId })
+    if (
+      overlay.open &&
+      overlay.querySelector('.settings-section.active')?.getAttribute('data-section') ===
+        'customise'
+    )
+      focusModelSettings(overlay, resolved)
   }
 
   // Servers whose browser sign-in is in flight, and the last sign-in failure per
@@ -4664,6 +4723,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     appearanceBaseline = currentAppearance()
     appearanceCommitted = false
     resetDirtyState()
+    modelRoutingSection.reset()
     developerModeInput.checked = store.getState().developerMode
     syncDeveloperOnlySettings()
     // A fresh open always starts on a section, never in a leftover search.
@@ -4674,6 +4734,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     applySearch('')
     storageProjectId = null
     const openedSection = pendingSection ?? 'general'
+    const modelFocus = pendingModelFocus
+    pendingModelFocus = null
     showSection(openedSection)
     pendingSection = null
     pluginDetail = pendingPluginDetail
@@ -4688,13 +4750,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (openedSection === 'experimental') void refreshPlugins()
     if (openedSection === 'customise') {
       void refreshSources()
-      void revealPluginDetail()
+      if (modelFocus) void revealPluginModel?.(modelFocus)
+      else void revealPluginDetail()
     }
     if (openedSection === 'storage') {
       void refreshWorktrees('', true)
       void storageMaintenance.refresh()
     }
-    searchInput.focus()
+    if (!modelFocus) {
+      searchInput.focus()
+    }
     void (async (): Promise<void> => {
       // These stages used to be one unbroken `await` chain inside this
       // `void (async …)()`. A rejection anywhere aborted every later step, and
@@ -4822,6 +4887,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       })
 
       await refreshStage('local-models', () => refreshLocalModelSelects())
+      if (
+        modelFocus &&
+        openedSection !== 'customise' &&
+        overlay.open &&
+        overlay.querySelector('.settings-section.active')?.getAttribute('data-section') ===
+          openedSection
+      )
+        focusModelSettings(overlay, modelFocus)
       await refreshStage('gh-cli', () => ghCliSection.refreshStatus())
       await refreshStage('mcp-servers', async () => {
         await refreshMcpServers()
@@ -4964,23 +5037,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         )
       }
 
-      if (
-        dirtyFieldNames.has('localDefaultModel') ||
-        dirtyFieldNames.has('subagentModel') ||
-        dirtyFieldNames.has('smallTasksModel')
-      ) {
-        writes.push(
-          (async (): Promise<void> => {
-            const savedRoleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
-            await api.settings.set('roleModels', {
-              ...savedRoleModels,
-              coder: routingValues.localDefaultModel,
-              research: routingValues.subagentModel,
-              'small-tasks': formDataString(data, 'smallTasksModel').trim(),
-            })
-          })(),
-        )
-      }
+      const roleAssignments = modelRoutingSection.readRoleModels() ?? {}
+      if (dirtyFieldNames.has('localDefaultModel'))
+        roleAssignments['coder'] = routingValues.localDefaultModel
+      if (dirtyFieldNames.has('subagentModel'))
+        roleAssignments['research'] = routingValues.subagentModel
+      if (dirtyFieldNames.has('smallTasksModel'))
+        roleAssignments['small-tasks'] = formDataString(data, 'smallTasksModel').trim()
+      if (Object.keys(roleAssignments).length) writes.push(api.settings.update({ roleAssignments }))
 
       const securityFieldNames = [
         'localServerUrl',

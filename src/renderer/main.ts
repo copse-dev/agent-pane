@@ -39,6 +39,7 @@ import { isAnyDialogOpen } from './views/dialog-shell.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
+  openModelSettings,
   isSettingsDialogOpen,
   closeSettingsDialog,
   applyUiAccent,
@@ -103,6 +104,7 @@ import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachAutomationAppearance } from './controller/automation-appearance.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
+import { attachProviderInvalidationWarning } from './controller/provider-invalidation.ts'
 import {
   loadProjects,
   attachAutosave,
@@ -383,6 +385,10 @@ async function boot(): Promise<void> {
     attachAutosave(store, api)
     attachMobileChat(store, api, mobileReady)
     attachBestValueDefaultResolver(store, api)
+    attachProviderInvalidationWarning(store, api, {
+      warn: showConfirmDialog,
+      openSettings: openModelSettings,
+    })
     attachAutomationController(store, api)
     attachAutomationAppearance(store, api.appIcon)
     // When `gh_pr_create` turns the diff you're reading into a PR, move the
