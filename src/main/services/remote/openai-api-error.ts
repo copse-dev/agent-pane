@@ -15,17 +15,7 @@ export async function openAiApiError(
   operation: string,
   apiKey: string,
 ): Promise<Error> {
-  const redact = (value: string): string =>
-    value
-      .split(apiKey)
-      .join('[redacted]')
-      .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
-      .replace(/sk-[A-Za-z0-9_-]+/g, '[redacted]')
-      .replace(/data:[^\s,]+,[A-Za-z0-9+/=]+/g, '[image data]')
-      .replace(/https?:\/\/[^\s]+/g, '[URL]')
-      .replace(/[\u0000-\u001f\u007f]/g, ' ')
-      .replace(/[\\`*_<>[\]#]/g, '\\$&')
-      .slice(0, 600)
+  const redact = (value: string): string => redactOpenAiDiagnostic(value, apiKey)
   const reader = response.body?.getReader()
   const chunks: Uint8Array[] = []
   let bytes = 0
@@ -62,3 +52,15 @@ export async function openAiApiError(
     `OpenAI Agents API HTTP ${String(response.status)} (${operation}).${reason}${fields.length ? ` (${fields.join('; ')})` : ''}${auth}${requestId ? ` Request ID: ${redact(requestId)}.` : ''}`,
   )
 }
+
+export const redactOpenAiDiagnostic = (value: string, apiKey: string): string =>
+  value
+    .split(apiKey)
+    .join('[redacted]')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/sk-[A-Za-z0-9_-]+/g, '[redacted]')
+    .replace(/data:[^\s,]+,[A-Za-z0-9+/=]+/g, '[image data]')
+    .replace(/https?:\/\/[^\s]+/g, '[URL]')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[\\`*_<>[\]#]/g, '\\$&')
+    .slice(0, 600)

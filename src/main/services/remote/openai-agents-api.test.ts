@@ -359,6 +359,6 @@ it('uploads a bounded source file and passes deterministic setup to a verified e
   assert.equal(state.environmentId, 'env')
   await api.waitForEnvironment(state, signal())
   connected = false
-  await assert.rejects(api.waitForEnvironment(state, signal()), /setup failed/)
+  await assert.rejects(api.waitForEnvironment(state, signal()), /setup stopped \(failed\)/)
   await assert.rejects(api.uploadSource(new Uint8Array(50 * 1024 * 1024 + 1), signal()), /50 MiB/)
 })

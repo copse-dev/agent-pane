@@ -1,4 +1,4 @@
-import { openAiApiError } from './openai-api-error.ts'
+import { openAiApiError, redactOpenAiDiagnostic } from './openai-api-error.ts'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
@@ -41,7 +41,11 @@ const artifactSchema = z.object({
   size_bytes: z.number().int().nonnegative(),
   turn_id: z.string(),
 })
-const eventSchema = z.object({ type: z.string() })
+const setupErrorSchema = z.object({ message: z.string(), code: z.string().nullish() })
+const eventSchema = z.object({
+  type: z.string(),
+  environment: z.object({ error: setupErrorSchema.nullish() }).optional(),
+})
 
 export const openAiAgentStateSchema = z.object({
   v: z.literal(1),
@@ -170,26 +174,59 @@ export class OpenAiAgentsApi {
 
   async waitForEnvironment(state: OpenAiAgentState, signal: AbortSignal): Promise<void> {
     if (!state.environmentId) throw new Error('Hosted environment ID is missing.')
-    const bounded = AbortSignal.any([signal, AbortSignal.timeout(5 * 60_000)])
-    for (;;) {
-      const environment = await this.json(
-        await this.request(
-          `/${encodeURIComponent(state.environmentId)}`,
-          bounded,
-          undefined,
-          'GET',
-          undefined,
-          false,
-          '/agents/environments',
-        ),
-        z.object({ status: z.string() }),
-      )
-      if (environment.status === 'connected') return
-      if (environment.status !== 'pending' && environment.status !== 'provisioning')
-        throw new OpenAiSetupError(
-          'Hosted repository setup failed or expired. Retry to provision a fresh archive URL.',
+    const controller = new AbortController()
+    const bounded = AbortSignal.any([signal, controller.signal, AbortSignal.timeout(5 * 60_000)])
+    const diagnostic: string[] = []
+    const events = this.request(
+      `${this.path(state)}/events`,
+      bounded,
+      undefined,
+      'GET',
+      undefined,
+      true,
+    )
+      .then(async (response) => {
+        if (response.body && response.headers.get('content-type')?.includes('text/event-stream'))
+          await followProgress(response.body, bounded, undefined, (error) => {
+            diagnostic.splice(0, diagnostic.length, error)
+          })
+        else await response.body?.cancel()
+      })
+      .catch(() => {
+        /* Polling remains authoritative if the event stream is unavailable. */
+      })
+    try {
+      for (;;) {
+        const environment = await this.json(
+          await this.request(
+            `/${encodeURIComponent(state.environmentId)}`,
+            bounded,
+            undefined,
+            'GET',
+            undefined,
+            false,
+            '/agents/environments',
+          ),
+          z.object({ status: z.string(), error: setupErrorSchema.nullish() }),
         )
-      await delay(1000, undefined, { signal: bounded })
+        if (environment.status === 'connected') return
+        if (!['pending', 'provisioning', 'ready'].includes(environment.status)) {
+          let detail = environment.error?.message ?? diagnostic.at(-1)
+          if (!detail) {
+            const session = await this.request(this.path(state), bounded)
+              .then((response) => this.json(response, z.object({ error: z.string().nullish() })))
+              .catch(() => null)
+            detail = session?.error ?? undefined
+          }
+          throw new OpenAiSetupError(
+            `Hosted repository setup stopped (${redactOpenAiDiagnostic(environment.status, this.apiKey)}).${detail ? ` ${redactOpenAiDiagnostic(detail, this.apiKey)}` : ' OpenAI did not supply a setup error detail.'} Session: ${state.sessionId}; environment: ${state.environmentId}.`,
+          )
+        }
+        await delay(1000, undefined, { signal: bounded })
+      }
+    } finally {
+      controller.abort()
+      await events
     }
   }
 
@@ -539,6 +576,7 @@ async function followProgress(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal,
   onProgress: ((type: string) => void) | undefined,
+  onEnvironmentError?: (message: string) => void,
 ): Promise<void> {
   const reader = body.getReader()
   const abort = (): void => {
@@ -561,6 +599,8 @@ async function followProgress(
         if (!line.startsWith('data:')) continue
         const event = safeJsonParse(line.slice(5).trim(), decodeWithSchema(eventSchema))
         if (event) onProgress?.(event.type)
+        if (event?.type === 'agent.session.environment.failed' && event.environment?.error)
+          onEnvironmentError?.(event.environment.error.message)
       }
     }
   } finally {

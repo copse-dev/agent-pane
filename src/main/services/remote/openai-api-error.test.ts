@@ -74,3 +74,103 @@ it('does not echo malformed, unstructured or oversized response bodies', async (
     assert.equal(error.message, 'OpenAI Agents API HTTP 400 (GET /agents/environments/env).')
   }
 })
+
+it('waits through ready instead of treating it as setup failure', async () => {
+  let polls = 0
+  const api = new OpenAiAgentsApi('key', async (input) => {
+    if (
+      new URL(
+        typeof input === 'string' || input instanceof URL ? input : input.url,
+      ).pathname.endsWith('/events')
+    )
+      return new Response('')
+    return Response.json({ status: ++polls === 1 ? 'ready' : 'connected' })
+  })
+  await api.waitForEnvironment(
+    {
+      v: 1,
+      sessionId: 'session',
+      environmentId: 'env',
+      model: 'model',
+      pending: null,
+      usageInput: 0,
+      usageOutput: 0,
+      usageCacheRead: 0,
+    },
+    AbortSignal.timeout(5000),
+  )
+  assert.equal(polls, 2)
+})
+
+it('includes a redacted provider setup error and actual status', async () => {
+  const api = new OpenAiAgentsApi('secret-key', async (input) => {
+    if (
+      new URL(
+        typeof input === 'string' || input instanceof URL ? input : input.url,
+      ).pathname.endsWith('/events')
+    )
+      return new Response('')
+    return Response.json({
+      status: 'failed',
+      error: {
+        message: 'Setup command failed: secret-key https://codeload.github.com/repo?token=private',
+      },
+    })
+  })
+  await assert.rejects(
+    api.waitForEnvironment(
+      {
+        v: 1,
+        sessionId: 'session',
+        environmentId: 'env',
+        model: 'model',
+        pending: null,
+        usageInput: 0,
+        usageOutput: 0,
+        usageCacheRead: 0,
+      },
+      AbortSignal.timeout(1000),
+    ),
+    (error) => {
+      assert.ok(error instanceof Error)
+      assert.match(error.message, /setup stopped \(failed\).*Setup command failed/)
+      assert.doesNotMatch(error.message, /secret-key|token=private|expired/)
+      return true
+    },
+  )
+})
+
+it('captures setup error events when environment polling contains only a status', async () => {
+  const api = new OpenAiAgentsApi('secret-key', async (input) => {
+    const path = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+      .pathname
+    if (path.endsWith('/events'))
+      return new Response(
+        `data: ${JSON.stringify({ type: 'agent.session.environment.failed', environment: { error: { message: 'Bootstrap failed while applying local changes. secret-key' } } })}\n\n`,
+        { headers: { 'content-type': 'text/event-stream' } },
+      )
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    return Response.json({ status: 'failed' })
+  })
+  await assert.rejects(
+    api.waitForEnvironment(
+      {
+        v: 1,
+        sessionId: 'session',
+        environmentId: 'env',
+        model: 'model',
+        pending: null,
+        usageInput: 0,
+        usageOutput: 0,
+        usageCacheRead: 0,
+      },
+      AbortSignal.timeout(1000),
+    ),
+    (error) => {
+      assert.ok(error instanceof Error)
+      assert.match(error.message, /applying local changes/)
+      assert.doesNotMatch(error.message, /secret-key/)
+      return true
+    },
+  )
+})

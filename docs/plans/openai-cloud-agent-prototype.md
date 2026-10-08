@@ -191,3 +191,19 @@ Full `pnpm run check` still stops only at the existing LM Studio TS2554. No rend
 or DOM changes. Live private GitHub redirect/OpenAI provisioning remains unverified:
 this environment has no provider credentials and its network policy excludes the API
 hosts. No billable call was made.
+
+## Setup failure diagnostics brief
+
+A live archive session failed during environment setup; the displayed error does not
+prove URL expiry. Accept the documented `ready` transition, capture redacted provider
+setup errors from environment events/polling, and report status and session identity
+instead of diagnosing expiry. Preserve stage-specific bootstrap failures without
+printing archive URLs, Git output or credentials. Test transition handling and
+redaction. Do not claim the live failure reproduced without provider evidence.
+
+Setup diagnostics validation: focused tests cover the ready transition, direct and
+SSE provider errors, secret/URL redaction, stage-specific worker failures, setup retry
+and cancellation recovery. Production build and focused lint passed. Full check still
+stops at the unchanged LM Studio TS2554. The live failure is not reproduced; this
+fixes premature failure on ready and exposes available provider evidence without
+asserting that expiry caused the user's failure. Existing error DOM is unchanged.

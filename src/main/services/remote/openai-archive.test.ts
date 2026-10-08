@@ -192,7 +192,7 @@ it('fails closed for expired URLs and archive tree mismatches, without leaving t
         setupHostedArchive(guest, 'a'.repeat(40), async () =>
           scenario === 'expired' ? new Response(null, { status: 404 }) : new Response(archive),
         ),
-        scenario === 'expired' ? /URL expired/ : /tree does not match/,
+        scenario === 'expired' ? /archive \(HTTP 404\)/ : /verifying the pinned archive tree/,
       )
       assert.equal(existsSync(join(guest, 'inputs/archive.json')), false)
     }

@@ -124,7 +124,7 @@ describe('OpenAI cloud adapter', () => {
           fetchImpl,
           onChunk: () => {},
         }),
-        /setup failed or expired/,
+        /setup stopped \(failed\)/,
       )
     assert.equal(creates, 2)
     assert.equal(urls, 2)
