@@ -96,6 +96,9 @@ describe('projects pane group by (component)', () => {
     assert.equal(titles().length, 3)
     assert.equal(document.querySelectorAll('.chat-thread-owner').length, 3)
     assert.equal(document.querySelector('.chat-thread-owner')?.textContent, '· work')
+    // The label sits in the row right after the title, where the row CSS lets the title give way first.
+    const owner = document.querySelector('.chat-row > .chat-title + .chat-thread-owner')
+    assert.ok(owner, 'the owner label follows the title inside the row')
   })
 
   it('applies and persists the choice from the menu', () => {
