@@ -654,15 +654,15 @@ export function withoutCheckoutWrites(
   const protectedRoots = [
     root,
     ...(registration ? [registration.gitDir, registration.commonGitDir] : []),
-  ]
+  ].map(canonicalizeProtectionPath)
   const overlapsProtectedRoot = (path: string): boolean => {
     const wildcardAt = path.search(/[?*[\]{}]/)
     const rawPrefix = (wildcardAt === -1 ? path : path.slice(0, wildcardAt)).replace(/\/+$/, '')
     if (!rawPrefix) return true
     const fixedPrefix =
-      wildcardAt === -1
-        ? canonicalizePathCached(rawPrefix)
-        : join(canonicalizePathCached(dirname(rawPrefix)), basename(rawPrefix))
+      wildcardAt === -1 || path[wildcardAt - 1] === '/'
+        ? canonicalizeProtectionPath(rawPrefix)
+        : join(canonicalizeProtectionPath(dirname(rawPrefix)), basename(rawPrefix))
     return protectedRoots.some(
       (protectedRoot) =>
         protectedRoot === fixedPrefix ||
@@ -678,6 +678,23 @@ export function withoutCheckoutWrites(
       allowWrite: fs.allowWrite.filter((path) => !overlapsProtectedRoot(path)),
       denyWrite: [],
     },
+  }
+}
+
+/** Match missing protected paths through their deepest existing ancestor too. */
+function canonicalizeProtectionPath(path: string): string {
+  const resolved = resolve(path)
+  let ancestor = resolved
+  const missing: string[] = []
+  for (;;) {
+    try {
+      return join(realpathSync.native(ancestor), ...missing)
+    } catch {
+      const parent = dirname(ancestor)
+      if (parent === ancestor) return resolved
+      missing.unshift(basename(ancestor))
+      ancestor = parent
+    }
   }
 }
 

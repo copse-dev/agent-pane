@@ -36,6 +36,7 @@ import {
   darwinUserTempWriteEntries,
   darwinUserTempDir,
   workspaceSandboxOverlay,
+  withoutCheckoutWrites,
   workspaceTmpDir,
 } from './config.ts'
 import {
@@ -56,6 +57,50 @@ import {
 
 /** Bare directory entries are emitted everywhere but Linux (see config.ts). */
 const LISTING_ENTRIES = process.platform !== 'linux'
+
+describe('read-only checkout path aliases', () => {
+  for (const relativeRoot of ['checkout', 'missing/checkout']) {
+    it(`strips missing ${relativeRoot} writes through either parent spelling`, () => {
+      const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-readonly-alias-')))
+      try {
+        const actual = join(root, 'actual')
+        const alias = join(root, 'alias')
+        mkdirSync(actual)
+        symlinkSync(actual, alias, 'dir')
+        const scratch = join(root, 'scratch', '**')
+        const grants = [actual, alias].flatMap((parent) => [
+          join(parent, relativeRoot),
+          join(parent, relativeRoot, '**'),
+          join(parent, '*'),
+        ])
+        const overlay = withoutCheckoutWrites(
+          { filesystem: { allowWrite: [...grants, scratch], denyRead: [], denyWrite: [] } },
+          join(alias, relativeRoot),
+        )
+        assert.deepEqual(overlay.filesystem?.allowWrite, [scratch])
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+
+  it('strips a recursive write grant whose complete directory prefix is a symlink', () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-readonly-leaf-')))
+    try {
+      const actual = join(root, 'checkout')
+      const alias = join(root, 'alias')
+      mkdirSync(actual)
+      symlinkSync(actual, alias, 'dir')
+      const overlay = withoutCheckoutWrites(
+        { filesystem: { allowWrite: [join(alias, '**')], denyRead: [], denyWrite: [] } },
+        actual,
+      )
+      assert.deepEqual(overlay.filesystem?.allowWrite, [])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('acpAgentSandboxOverlay', () => {
   const workspace = '/tmp/acp-sandbox-test-workspace'
