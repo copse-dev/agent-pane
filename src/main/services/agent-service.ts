@@ -1,4 +1,6 @@
 import { runWithInlineCanvas } from './inline-canvas-context.ts'
+import { MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
+import { promptRoutingContext, resolvePromptModel } from './providers/prompt-model-routing.ts'
 import { randomUUID } from 'node:crypto'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { errorMessage } from '@shared/errors.ts'
@@ -65,7 +67,7 @@ import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isAppleDevelopmentToolOffered } from './apple-development/apple-development-tool-scope.ts'
 import { dispatchInlineVisualization } from './inline-visualization.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
-import { appendContextCompaction, updateMeta } from './thread-store.ts'
+import { appendContextCompaction, getThreadMeta, updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
@@ -803,14 +805,20 @@ async function runAgentWithInlineCanvas(
   resetSessionBackup()
 
   const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
-  const resolved = await perfSpan('ttft:model-resolve', () => resolveAgentChatModel(requestedModel))
-  const model = resolved.model
+  const runContext = getThreadExecutionContext()
+  const previousPromptModel =
+    requestedModel === MATCH_PROMPT_MODEL_SELECTOR && priorMessages.length > 0 && runContext
+      ? (await getThreadMeta(runContext.projectId, threadId))?.resolvedModel
+      : undefined
+  const resolved = await perfSpan('ttft:model-resolve', () =>
+    resolveAgentChatModel(previousPromptModel ?? requestedModel),
+  )
+  let model = resolved.model
   recordThreadModel(threadId, model)
   // Persist the resolved model so a turn that fails before any usage (e.g. a
   // provider rejecting the model) still leaves the concrete id in meta.json —
   // the live byModel map only fills from usage chunks. Best-effort: a thread
   // that is not persisted yet must not block the turn.
-  const runContext = getThreadExecutionContext()
   if (runContext) {
     await updateMeta(runContext.projectId, threadId, { resolvedModel: model }).catch(() => {})
   }
@@ -818,10 +826,10 @@ async function runAgentWithInlineCanvas(
   // payloads (B4). Set before any hook can fire (beforeSubmitPrompt below, the
   // tool gate, afterFileEdit, stop) so every one reports the real model.
   setActiveRunModel(model)
-  const remoteSelection = parseRemoteAgentModelSelection(model)
-  const acpSelection = parseAcpModelSelection(model)
-  const acpAgentId = acpSelection?.id ?? null
-  const pluginModel = parsePluginModelSelection(model)
+  let remoteSelection = parseRemoteAgentModelSelection(model)
+  let acpSelection = parseAcpModelSelection(model)
+  let acpAgentId = acpSelection?.id ?? null
+  let pluginModel = parsePluginModelSelection(model)
 
   const emitChunk = createAgentChunkSink(threadId, host)
   let terminalContext: Pick<TurnOutcome, 'executor' | 'provider' | 'model'> = pluginModel
@@ -957,6 +965,57 @@ async function runAgentWithInlineCanvas(
   const outboundPrompt = redaction.content
   if (redaction.notice) {
     sendChunk({ type: 'text', text: redaction.notice })
+  }
+  // Only primary runs opt into task assessment. Auxiliary resolvers and the
+  // subagent path retain their existing rules. Hooks/redaction must finish
+  // before any assessment model sees the submitted prompt.
+  if (
+    requestedModel === MATCH_PROMPT_MODEL_SELECTOR &&
+    priorMessages.length === 0 &&
+    !options?.provider
+  ) {
+    const routingController = new AbortController()
+    abortMap.set(threadId, routingController)
+    try {
+      const context = await redactUserContent(
+        threadId,
+        promptRoutingContext(outboundPrompt, priorMessages),
+      )
+      model = await resolvePromptModel(
+        promptTextForSubmit(context.content),
+        model,
+        routingController.signal,
+      )
+      recordThreadModel(threadId, model)
+      setActiveRunModel(model)
+      if (runContext)
+        await updateMeta(runContext.projectId, threadId, { resolvedModel: model }).catch(() => {})
+      routingController.signal.throwIfAborted()
+      remoteSelection = parseRemoteAgentModelSelection(model)
+      acpSelection = parseAcpModelSelection(model)
+      acpAgentId = acpSelection?.id ?? null
+      pluginModel = parsePluginModelSelection(model)
+      terminalContext = acpSelection
+        ? { executor: 'acp', provider: acpSelection.id, model }
+        : { executor: 'local', provider: providerIdForModel(model), model }
+    } catch (err) {
+      if (routingController.signal.aborted) {
+        sendChunk({ type: 'done', stopReason: 'cancelled' })
+        return resultWithOutcome({
+          usage: { inputTokens: 0, outputTokens: 0 },
+          messages: priorMessages,
+        })
+      }
+      throw err
+    } finally {
+      if (abortMap.get(threadId) === routingController) abortMap.delete(threadId)
+    }
+  }
+  // Prompt matching chooses once. Pin the route in both persisted and live
+  // thread state before the provider starts, including ACP/remote turn paths.
+  if (requestedModel === MATCH_PROMPT_MODEL_SELECTOR) {
+    if (runContext) await updateMeta(runContext.projectId, threadId, { model }).catch(() => {})
+    sendChunk({ type: 'turn_parameters', model, parameters: {}, requestedModel })
   }
   const resolvePluginSetting =
     options?.resolvePluginSetting ??

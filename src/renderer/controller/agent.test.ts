@@ -358,6 +358,29 @@ test('assistant messages record the requested (picker) model', () => {
   assert.equal(at(messages(), 0).requestedModel, 'auto:min-intellect:40')
 })
 
+test('prompt matching pins the first resolved model for later asks', () => {
+  const { store, send } = setup([{ ...thread('t1'), model: 'auto:match-prompt' }])
+  send({
+    type: 'turn_parameters',
+    model: 'gpt-5.6-sol',
+    parameters: {},
+    requestedModel: 'auto:match-prompt',
+  })
+  assert.equal(requireThread(store, 't1').model, 'gpt-5.6-sol')
+  assert.equal(requireThread(store, 't1').resolvedModel, 'gpt-5.6-sol')
+})
+
+test('a delayed automatic choice does not overwrite a newer manual selection', () => {
+  const { store, send } = setup([{ ...thread('t1'), model: 'claude-sonnet-4-6' }])
+  send({
+    type: 'turn_parameters',
+    model: 'gpt-5.6-sol',
+    parameters: {},
+    requestedModel: 'auto:match-prompt',
+  })
+  assert.equal(requireThread(store, 't1').model, 'claude-sonnet-4-6')
+})
+
 test('whitespace-only text before any message is ignored', () => {
   const { send, messages } = setup()
   send({ type: 'text', text: '   ' })
