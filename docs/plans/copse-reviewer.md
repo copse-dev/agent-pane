@@ -883,10 +883,12 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
 - **The CI shell, in two privilege domains.** Amended 2026-10-04: Copse's
   `review-trigger.yml` dogfoods the reusable `reviewer.yml` with a local workflow call
   and the trusted caller SHA, replacing separate ground/findings dispatch workflows.
-  `pull_request_target` selects default-branch workflow code for ready/label events;
-  manual dispatch also resolves current PR metadata. Owner-only, same-repository paid
-  review policy remains enforced in preflight and on the protected model job, including
-  failed-job reruns. Pushes only trigger the independent cheap description summary.
+  Amended 2026-10-08: reviews start only through `workflow_dispatch` on the default
+  branch and resolve current PR metadata. Both portable and Copse authorization reject
+  fork heads before grounding. Owner-only, same-repository paid review policy remains
+  enforced in preflight and on the protected model job, including failed-job reruns.
+  The automatic cheap-summary dispatcher is removed; full manual reviews still update
+  their descriptions, and the separate summary-only workflow remains manually callable.
   Nightly sampling and real-model benchmarks remain separate.
 
   The trusted same-repository call uses `secrets: inherit` so the protected findings
@@ -974,8 +976,8 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   API preflight and again on each model job, including partial reruns. The preflight
   accepts only owner-authored PRs (user ID `338988`) whose head and base both
   belong to this repository (ID `1274237362`). External authors and forks do not enter
-  the protected model job, even if a trusted actor dispatches them. The label trigger also
-  requires the owner actor; a later live PR check verifies head/base identity again before
+  the protected model job, even if a trusted actor dispatches them. Manual PR reviews
+  require the owner actor; a later live PR check verifies head/base identity again before
   model/App credentials enter a step. Luna drops Scaleway credentials, and rollback drops
   the OpenRouter credential. The key's $25/month cap remains an account-side limit.
 - **A bounded clean review names its limits.** _Added 2026-09-23 after live review #2737._

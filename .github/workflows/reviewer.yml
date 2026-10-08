@@ -15,7 +15,7 @@ on:
         type: string
       pr:
         description: PR number for a manual workflow_dispatch caller
-        default: 0
+        required: true
         type: number
       provider:
         default: openrouter
@@ -60,7 +60,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: copse-review-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr }}
+  group: copse-review-${{ github.repository }}-${{ inputs.pr }}
   cancel-in-progress: true
 
 jobs:
@@ -77,7 +77,7 @@ jobs:
         id: authorize
         env:
           PREPARATION: ${{ inputs.preparation }}
-          COPSE_CALLER_ALLOWED: ${{ github.repository_id == '1274237362' && github.actor_id == '338988' && github.triggering_actor == 'jonathanKingston' && github.ref == 'refs/heads/main' && github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main' }}
+          COPSE_CALLER_ALLOWED: ${{ github.event_name == 'workflow_dispatch' && github.repository_id == '1274237362' && github.actor_id == '338988' && github.triggering_actor == 'jonathanKingston' && github.ref == 'refs/heads/main' && github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main' }}
           REVIEWER_REF: ${{ inputs.reviewer-ref }}
           MANUAL_PR: ${{ inputs.pr }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
@@ -111,12 +111,8 @@ jobs:
             if (repository.private || context.ref !== `refs/heads/${repository.default_branch}`) {
               throw new Error('The initial Copse Actions release requires a public repo and default-branch workflow');
             }
-            if (!['pull_request_target', 'workflow_dispatch'].includes(context.eventName)) {
-              throw new Error('Invoke from pull_request_target or workflow_dispatch');
-            }
-            if (context.eventName === 'pull_request_target') {
-              if (!['opened', 'reopened', 'ready_for_review', 'labeled'].includes(context.payload.action)) return;
-              if (context.payload.action === 'labeled' && context.payload.label?.name !== 'copse-review') return;
+            if (context.eventName !== 'workflow_dispatch') {
+              throw new Error('Invoke from workflow_dispatch');
             }
             // Re-check both the initiating actor and the actor requesting a rerun.
             for (const username of new Set([context.actor, process.env.TRIGGERING_ACTOR])) {
@@ -126,10 +122,13 @@ jobs:
                 return;
               }
             }
-            const number = context.eventName === 'workflow_dispatch'
-              ? Number(process.env.MANUAL_PR) : context.payload.pull_request?.number;
+            const number = Number(process.env.MANUAL_PR);
             if (!Number.isSafeInteger(number) || number < 1) throw new Error('A valid PR number is required');
             const { data: pull } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (pull.head.repo?.id !== repository.id) {
+              core.notice('Copse reviews support same-repository PRs only; fork PRs are not supported.');
+              return;
+            }
             if (copse && (repository.id !== 1274237362 || pull.user?.id !== 338988 ||
                 pull.head.repo?.id !== 1274237362)) return;
             const labels = pull.labels.map(label => label.name);
@@ -204,7 +203,7 @@ jobs:
           github-token: ${{ github.token }}
 
   copse-findings:
-    if: ${{ inputs.preparation == 'copse-pnpm' && github.repository_id == '1274237362' && github.actor_id == '338988' && github.triggering_actor == 'jonathanKingston' && github.ref == 'refs/heads/main' && github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main' }}
+    if: ${{ inputs.preparation == 'copse-pnpm' && github.event_name == 'workflow_dispatch' && github.repository_id == '1274237362' && github.actor_id == '338988' && github.triggering_actor == 'jonathanKingston' && github.ref == 'refs/heads/main' && github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main' }}
     needs: [authorize, ground]
     environment: copse-review-models
     runs-on: ubuntu-latest
