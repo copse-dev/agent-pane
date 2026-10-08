@@ -1496,6 +1496,11 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(review, /uses: \.\/\.github\/workflows\/reviewer\.yml/)
     assert.match(review, /reviewer-ref: \$\{\{ github\.sha \}\}/)
     assert.match(review, /preparation: copse-pnpm/)
+    assert.ok(
+      review.includes(
+        "pr: ${{ github.event.workflow_run.pull_requests[0].number || fromJSON(inputs.pr || '0') }}",
+      ),
+    )
     assert.match(review, /github\.event_name == 'workflow_dispatch'/)
     assert.doesNotMatch(review, /runs-on:|steps:|actions: write/)
     assert.doesNotMatch(triggerWorkflow, /gh workflow run|^ {2}summary:/m)

@@ -79,10 +79,13 @@ jobs:
     uses: copse-dev/agent-pane/.github/workflows/reviewer.yml@REVIEWER_SHA
     with:
       reviewer-ref: REVIEWER_SHA
-      pr: ${{ github.event.workflow_run.pull_requests[0].number || inputs.pr || 0 }}
+      pr: ${{ github.event.workflow_run.pull_requests[0].number || fromJSON(inputs.pr || '0') }}
     secrets:
       model-api-key: ${{ secrets.COPSE_REVIEW_API_KEY }}
 ```
+
+The `fromJSON` conversion passes the dispatch value as a number to the reusable
+workflow, rather than forwarding its string representation.
 
 The caller grants the maximum permissions available to the reusable workflow;
 its grounding job reduces that grant to `permissions: {}`. Only the findings
