@@ -412,6 +412,9 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
     // workspace back on the project that stays active.
     if (wasExpanded) cancelPendingSwitch(store, api)
     await saveProjects(api, projects, state.activeProjectId, state.activeThreadId)
+    // A background preload can finish while persistence is pending and the
+    // project is still listed. Discard that entry before removing its owner.
+    threadCache.delete(id)
     store.setState({
       projects,
       expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId,

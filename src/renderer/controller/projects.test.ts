@@ -1431,3 +1431,50 @@ test('preloadSidebarThreads does not cache a project removed while its read was 
     ['kept-t'],
   )
 })
+
+test('removeProject clears a preload that settles while removal persistence is pending', async () => {
+  resetProjectSwitchStateForTest()
+  let releaseRead = (_threads: Thread[]): void => {}
+  const read = new Promise<Thread[]>((resolve) => {
+    releaseRead = resolve
+  })
+  let releaseSave = (): void => {}
+  const save = new Promise<void>((resolve) => {
+    releaseSave = resolve
+  })
+  let readStarted = false
+  let saveStarted = false
+  const api = makeApi({
+    loadProjectThreads: () => {
+      readStarted = true
+      return read
+    },
+    storageSet: async (key) => {
+      if (key === 'projects') {
+        saveStarted = true
+        await save
+      }
+    },
+  })
+  const store = createStore({
+    projects: [
+      { id: 'active', path: '/a', name: 'a' },
+      { id: 'gone', path: '/g', name: 'g' },
+    ],
+    activeProjectId: 'active',
+    threads: [thread('live')],
+  })
+  const preload = preloadSidebarThreads(store, api)
+  await waitUntil(() => readStarted)
+  const removal = removeProject(store, api, 'gone')
+  await waitUntil(() => saveStarted)
+  releaseRead([thread('stale')])
+  await preload
+  releaseSave()
+  await removal
+  assert.deepEqual(
+    store.getState().projects.map((project) => project.id),
+    ['active'],
+  )
+  assert.deepEqual(getSidebarThreads(store, 'gone'), [], 'removal must discard the late preload')
+})
