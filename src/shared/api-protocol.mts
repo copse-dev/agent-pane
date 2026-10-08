@@ -77,4 +77,5 @@
 // v47 conservatively versions optional PR/commit production evidence on thread payloads.
 // v48 conservatively versions retained-worktree blockers on automation schedules and triggers.
 // v49 versions saved-model invalidation reports and guarded recovery IPC.
-export const API_PROTOCOL_VERSION = 49 as const
+// v50 versions skill-source diagnostics and validated extra-root updates.
+export const API_PROTOCOL_VERSION = 50 as const

@@ -177,6 +177,14 @@ description: Demo skill for tests
     assert.deepEqual(threadReadRoots('thread-2'), [])
   })
 
+  it('does not manually inject a model-only skill or grant its read roots', async () => {
+    setSkillsForTest([{ ...demoSkill, userInvocable: false }])
+    const block = await buildInvokedSkillsBlock(['demo-skill'], { threadId: 'thread-1' })
+    assert.match(block, /failed to load skill/)
+    assert.doesNotMatch(block, /# Demo instructions/)
+    assert.deepEqual(threadReadRoots('thread-1'), [])
+  })
+
   it('grants nothing without a thread, so composer previews widen no sandbox', async () => {
     await buildInvokedSkillsBlock(['demo-skill'])
     assert.deepEqual(threadReadRoots('thread-1'), [])

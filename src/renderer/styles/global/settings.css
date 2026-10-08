@@ -3145,3 +3145,50 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .chatgpt-sign-in img {
   flex: none;
 }
+
+.sources-skill-controls,
+#sources-skills-status {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.sources-skill-controls {
+  display: block;
+  margin-top: var(--spacing-xs);
+}
+.sources-skill-metadata,
+.sources-skill-folders {
+  margin: var(--spacing-sm) 0;
+  color: var(--text-secondary);
+}
+.sources-skill-metadata summary,
+.sources-skill-folders summary {
+  cursor: pointer;
+}
+.sources-skill-metadata dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--spacing-xs) var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+  overflow-wrap: anywhere;
+}
+.sources-skill-metadata dd {
+  margin: 0;
+}
+.sources-skill-folders label {
+  display: block;
+  margin: var(--spacing-sm) 0;
+}
+#sources-skill-roots {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+  font: inherit;
+}
+#sources-skills-status {
+  margin-left: var(--spacing-sm);
+}
