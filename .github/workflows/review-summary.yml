@@ -2,11 +2,9 @@ name: Copse review summary
 
 # The pull request's description summary (docs/plans/copse-reviewer.md, §PR
 # description summary): a risk level and a short overview kept at the bottom of
-# the description, replaced in place. "Copse review trigger" dispatches this
-# default-branch workflow on every push to a ready or labelled pull request,
-# and when one is opened or becomes ready, so a summary appears in minutes; the
-# full review in "Copse review findings" rewrites it later with the findings'
-# evidence, provided the pull request has not moved on.
+# the description, replaced in place. This workflow is manually dispatched on
+# the default branch with the exact PR head and base. Full manual reviews also
+# update the description with their findings' evidence when the PR is current.
 #
 # Nothing from the pull request is executed. The CLI is this branch's, runs
 # with `--summary-only` (read-only checkouts, one tool-free model turn over the
@@ -23,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       pr:
-        description: Pull request number resolved by the trusted trigger
+        description: Pull request number to summarize
         required: true
         type: string
       head:
@@ -31,7 +29,7 @@ on:
         required: true
         type: string
       base:
-        description: Base branch resolved by the trusted trigger
+        description: Base branch of the pull request
         required: true
         type: string
 
@@ -41,7 +39,7 @@ permissions:
   contents: read
   pull-requests: read
 
-# A newer push supersedes an in-flight summary of an older head.
+# A new manual summary request supersedes an in-flight summary for the same PR.
 concurrency:
   group: copse-review-summary-${{ inputs.pr }}
   cancel-in-progress: true

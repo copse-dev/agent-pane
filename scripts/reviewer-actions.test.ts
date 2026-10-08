@@ -171,7 +171,8 @@ async function authorize(
     preparation?: string
     copseAllowed?: boolean
     author?: number
-    headRepo?: number
+    headRepo?: number | null
+    manualPr?: string
   } = {},
 ): Promise<Record<string, string>> {
   const workflow = workflowSchema.parse(
@@ -192,7 +193,7 @@ async function authorize(
         PREPARATION: options.preparation ?? 'npm',
         COPSE_CALLER_ALLOWED: options.copseAllowed === false ? 'false' : 'true',
         REVIEWER_REF: options.reviewerRef ?? 'c'.repeat(40),
-        MANUAL_PR: '123',
+        MANUAL_PR: options.manualPr ?? '123',
         TRIGGERING_ACTOR: 'rerunner',
         MAX_STEPS: '12',
         MAX_VERIFY: '3',
@@ -205,7 +206,7 @@ async function authorize(
       repo: { owner: 'copse-dev', repo: copse ? 'agent-pane' : 'streaming-markdown' },
       actor: 'maintainer',
       ref: options.ref ?? 'refs/heads/main',
-      eventName: options.event ?? 'pull_request_target',
+      eventName: options.event ?? 'workflow_dispatch',
       payload: {
         action: options.action ?? 'opened',
         label: { name: options.label ?? 'copse-review' },
@@ -237,7 +238,10 @@ async function authorize(
               state: options.state ?? 'open',
               draft: options.draft ?? false,
               user: { id: options.author ?? 338988 },
-              head: { sha: request.head, repo: { id: options.headRepo ?? repository.id } },
+              head: {
+                sha: request.head,
+                repo: options.headRepo === null ? null : { id: options.headRepo ?? repository.id },
+              },
               base: { sha: request.base, ref: 'main', repo: repository },
               labels: (options.labels ?? []).map((name) => ({ name })),
             },
@@ -251,22 +255,18 @@ async function authorize(
 }
 
 describe('portable review authorization', () => {
-  it('resolves a current PR for a maintainer, including manually dispatched and labelled drafts', async () => {
-    for (const options of [
-      {},
-      { event: 'workflow_dispatch' },
-      { action: 'labeled', draft: true, labels: ['copse-review'] },
-    ]) {
+  it('resolves a current same-repository PR for a manual maintainer request, including labelled drafts', async () => {
+    for (const options of [{}, { draft: true, labels: ['copse-review'] }]) {
       assert.deepEqual(decodeActionRequest((await authorize(options))['request'] ?? ''), request)
     }
   })
 
-  it('does not spend model credentials on unauthorized callers, unrelated labels or opted-out PRs', async () => {
+  it('does not authorize grounding or model review for fork heads, unauthorized callers or opted-out PRs', async () => {
     for (const options of [
       { permission: 'read' },
       { rerunPermission: 'read' },
-      { action: 'synchronize' },
-      { action: 'labeled', label: 'other' },
+      { headRepo: 999 },
+      { headRepo: null },
       { labels: ['copse-review-skip'] },
       { draft: true },
       { state: 'closed' },
@@ -277,6 +277,10 @@ describe('portable review authorization', () => {
   it('rejects untrusted workflow contexts and unpinned source', async () => {
     for (const options of [
       { event: 'pull_request' },
+      { event: 'pull_request_target' },
+      { event: 'push' },
+      { manualPr: '0' },
+      { manualPr: 'not-a-number' },
       { ref: 'refs/heads/contributor' },
       { privateRepo: true },
       { reviewerRef: 'main' },
@@ -288,6 +292,45 @@ describe('portable review authorization', () => {
 })
 
 describe('portable Actions isolation', () => {
+  it('opts portable description summaries in without changing the default', () => {
+    const workflow = z
+      .object({
+        on: z.object({
+          workflow_call: z.object({
+            inputs: z.object({
+              'post-summary': z.object({ type: z.literal('boolean'), default: z.boolean() }),
+            }),
+          }),
+        }),
+        jobs: z.object({
+          findings: z.object({
+            steps: z.array(
+              z.object({
+                uses: z.string().optional(),
+                with: z.record(z.string(), z.unknown()).optional(),
+              }),
+            ),
+          }),
+        }),
+      })
+      .parse(load(readFileSync('.github/workflows/reviewer.yml', 'utf8')))
+    const option = workflow.on.workflow_call.inputs['post-summary']
+    assert.equal(option.default, false)
+    const step = workflow.jobs.findings.steps.find(
+      (step) => step.uses === './.copse-reviewer/.github/actions/review-findings',
+    )
+    const expression = z.string().parse(step?.with?.['post-summary'])
+    assert.ok(expression.startsWith('${{ ') && expression.endsWith(' }}'))
+    for (const enabled of [option.default, true]) {
+      assert.equal(
+        runInNewContext(expression.slice(3, -2), {
+          inputs: { 'post-summary': enabled },
+        }),
+        enabled ? 'true' : 'false',
+      )
+    }
+  })
+
   it('keeps paid credentials out of grounding and gates the fresh findings runner on successful grounding', () => {
     const workflow = workflowSchema.parse(
       load(readFileSync('.github/workflows/reviewer.yml', 'utf8')),
@@ -324,14 +367,16 @@ describe('Copse dogfooding of the reusable reviewer', () => {
       repository_id: '1274237362',
       actor_id: '338988',
       triggering_actor: 'jonathanKingston',
-      event: { action: 'opened' },
+      event_name: 'workflow_dispatch',
     }
     assert.equal(runInNewContext(job.if, { github }), true)
     for (const patch of [
       { repository_id: '999' },
       { actor_id: '999' },
       { triggering_actor: 'contributor' },
-      { event: { action: 'synchronize' } },
+      { event_name: 'pull_request_target' },
+      { event_name: 'pull_request' },
+      { event_name: 'push' },
     ]) {
       assert.equal(runInNewContext(job.if, { github: { ...github, ...patch } }), false)
     }
@@ -443,6 +488,7 @@ describe('Copse dogfooding of the reusable reviewer', () => {
       triggering_actor: 'jonathanKingston',
       ref: 'refs/heads/main',
       workflow_ref: 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main',
+      event_name: 'workflow_dispatch',
     }
     const allows = (expression: string, context: Record<string, unknown>): boolean =>
       Boolean(runInNewContext(expression.trim().slice(3, -2), context))
@@ -455,6 +501,7 @@ describe('Copse dogfooding of the reusable reviewer', () => {
         repository_id: '999',
         actor_id: '999',
         triggering_actor: 'contributor',
+        event_name: 'pull_request_target',
         ref: 'refs/heads/contributor',
         workflow_ref: github.workflow_ref.replace('/heads/main', '/heads/untrusted'),
       })) {
@@ -568,5 +615,11 @@ describe('shared findings model configuration', () => {
     const portable = execute('portable', { REVIEW_BASE_URL: '' })
     assert.equal(portable.status, 0, portable.stderr)
     assert.doesNotMatch(portable.stdout, /--post-summary|--feedback-label/)
+    const portableSummary = execute('portable', {
+      REVIEW_BASE_URL: '',
+      REVIEW_POST_SUMMARY: 'true',
+    })
+    assert.equal(portableSummary.status, 0, portableSummary.stderr)
+    assert.match(portableSummary.stdout, /--post-summary\ngithub\n$/)
   })
 })
