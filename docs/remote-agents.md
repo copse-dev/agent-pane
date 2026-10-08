@@ -76,7 +76,10 @@ creates/links the PR using your local GitHub login. GitHub credentials stay loca
 The queued acknowledgement is not confirmation that a PR exists; the later local
 tool result contains the outcome. No second local agent is involved.
 
-If interrupted, resend the previous message to recover. A write interrupted during
+If interrupted, use **Retry this turn** or resend the previous message to recover.
+Retry resumes the saved hosted request, including its original images; it does not
+submit the generic continuation as a new task. Completed output can be recovered
+after the hosted environment disconnects. A write interrupted during
 PR creation is not automatically repeated: Copse reports an uncertain outcome so
 you can check GitHub first. Failed or cancelled hosted turns do not publish.
 

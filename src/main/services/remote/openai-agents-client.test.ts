@@ -1,3 +1,4 @@
+import { INTERRUPTED_TURN_CONTINUATION } from '@shared/turn-recovery.ts'
 import type { OpenAiHostTools } from './openai-host-tools.ts'
 import { setupHostedArchive } from './openai-archive-worker.ts'
 import assert from 'node:assert/strict'
@@ -131,13 +132,34 @@ describe('OpenAI cloud adapter', () => {
     assert.equal(urls, 2)
   })
 
-  it('dispatches OpenAI, saves its checkpoint in the thread, projects tools, and downloads a safely named artifact', async () => {
+  it('does not submit the Retry instruction as a new hosted task without a checkpoint', async () => {
+    let requests = 0
+    await assert.rejects(
+      runRemoteAgentFromSettings({
+        threadId: 'thread',
+        provider: 'openai',
+        userPrompt: INTERRUPTED_TURN_CONTINUATION,
+        signal: AbortSignal.timeout(10_000),
+        onChunk: () => {},
+        fetchImpl: async () => {
+          requests++
+          throw new Error('unexpected remote request')
+        },
+      }),
+      /No submitted OpenAI task/,
+    )
+    assert.equal(requests, 0)
+  })
+
+  it('Retry resumes the original image request and imports before publishing, without resubmission', async () => {
     const imagePrompt = [{ type: 'image' as const, dataUrl: 'data:image/png;base64,aGVsbG8=' }]
     let submitted = false
     let failDownload = true
+    let failToolReply = true
     let submissions = 0
     let acknowledged = false
     let published = 0
+    let environmentReads = 0
     const hostTools: OpenAiHostTools = {
       definitions: [
         { type: 'function', name: 'gh_pr_create', description: 'Queue PR', parameters: {} },
@@ -174,8 +196,10 @@ describe('OpenAI cloud adapter', () => {
         return Response.json({ id: 'source-file' })
       }
       if (url.pathname === '/v1/files/source-file') return Response.json({ deleted: true })
-      if (url.pathname === '/v1/agents/environments/env')
-        return Response.json({ status: 'connected' })
+      if (url.pathname === '/v1/agents/environments/env') {
+        environmentReads++
+        return Response.json({ status: submitted ? 'disconnected' : 'connected' })
+      }
       if (url.pathname === '/v1/agents/sessions') {
         assert.ok(typeof init?.body === 'string')
         const request = safeJsonParse(
@@ -197,6 +221,10 @@ describe('OpenAI cloud adapter', () => {
           typeof init?.body === 'string' &&
           init.body.includes('agent.session.input.tool_result')
         ) {
+          if (failToolReply) {
+            failToolReply = false
+            throw new Error('lost tool reply')
+          }
           acknowledged = true
           assert.equal(published, 0)
           return new Response(null, { status: 202 })
@@ -300,7 +328,7 @@ describe('OpenAI cloud adapter', () => {
           chunks.push(chunk)
         },
       }),
-      /503/,
+      /lost tool reply/,
     )
     assert.equal(published, 0)
     await assert.rejects(
@@ -315,11 +343,26 @@ describe('OpenAI cloud adapter', () => {
       }),
       /previous hosted task/,
     )
+    await assert.rejects(
+      runRemoteAgentFromSettings({
+        threadId: 'thread',
+        provider: 'openai',
+        hostTools,
+        userPrompt: INTERRUPTED_TURN_CONTINUATION,
+        signal: AbortSignal.timeout(10_000),
+        fetchImpl,
+        onChunk: (chunk) => {
+          chunks.push(chunk)
+        },
+      }),
+      /503/,
+    )
+    assert.equal(published, 0)
     const result = await runRemoteAgentFromSettings({
       threadId: 'thread',
       provider: 'openai',
       hostTools,
-      userPrompt: imagePrompt,
+      userPrompt: INTERRUPTED_TURN_CONTINUATION,
       signal: AbortSignal.timeout(10_000),
       fetchImpl,
       onChunk: (chunk) => {
@@ -330,7 +373,22 @@ describe('OpenAI cloud adapter', () => {
     assert.doesNotMatch(result.assistantText, /billed to your API key|US session retention/)
     assert.equal(result.inputTokens, 0)
     assert.equal(submissions, 1)
+    assert.equal(environmentReads, 1)
     assert.equal(published, 1)
+    await assert.rejects(
+      runRemoteAgentFromSettings({
+        threadId: 'thread',
+        provider: 'openai',
+        hostTools,
+        userPrompt: INTERRUPTED_TURN_CONTINUATION,
+        signal: AbortSignal.timeout(10_000),
+        fetchImpl,
+        onChunk: () => {},
+      }),
+      /No submitted OpenAI task/,
+    )
+    assert.equal(published, 1)
+    assert.equal(requests.filter((path) => path === '/v1/agents/sessions').length, 1)
     assert.equal(chunks.filter((chunk) => chunk.type === 'usage').length, 1)
     assert.ok(
       chunks.some((chunk) => chunk.type === 'tool_call' && chunk.toolCall.name === 'run_shell'),
@@ -403,6 +461,8 @@ describe('OpenAI cloud adapter', () => {
   it('imports exported commits and provisions fresh local code for the follow-up', async () => {
     let session = 0
     let turn = 0
+    let exportAcknowledged = false
+    let refusedExportCalls = 0
     let guest = ''
     let base = ''
     let uploaded = Buffer.alloc(0)
@@ -428,6 +488,7 @@ describe('OpenAI cloud adapter', () => {
       if (url.pathname === '/v1/agents/sessions') {
         session++
         turn = 0
+        exportAcknowledged = false
         guest = join(root, `guest-${String(session)}`)
         mkdirSync(join(guest, 'inputs'), { recursive: true })
         writeFileSync(join(guest, 'inputs/source.part-0'), uploaded)
@@ -462,6 +523,17 @@ describe('OpenAI cloud adapter', () => {
       }
       if (url.pathname.endsWith('/events')) {
         if (init?.method === 'GET') return new Response('')
+        if (
+          typeof init?.body === 'string' &&
+          init.body.includes('agent.session.input.tool_result')
+        ) {
+          assert.match(init.body, /"success":false/)
+          assert.match(init.body, /This recovery turn only exports/)
+          refusedExportCalls++
+          exportAcknowledged = true
+          runHostedGitTransfer(guest, 'export', base)
+          return new Response(null, { status: 202 })
+        }
         turn++
         if (turn === 1)
           writeFileSync(join(guest, 'repo/result.txt'), `hosted change ${String(session)}`)
@@ -470,7 +542,6 @@ describe('OpenAI cloud adapter', () => {
             typeof init?.body === 'string' &&
               init.body.includes('Do not change code or repeat the previous task'),
           )
-          runHostedGitTransfer(guest, 'export', base)
         }
         return new Response(null, { status: 202 })
       }
@@ -478,7 +549,7 @@ describe('OpenAI cloud adapter', () => {
         return page(
           Array.from({ length: turn }, (_, i) => ({
             id: `turn-${String(i + 1)}`,
-            status: 'completed',
+            status: i === 1 && !exportAcknowledged ? 'waiting' : 'completed',
             subagent_id: null,
           })),
         )
@@ -501,7 +572,19 @@ describe('OpenAI cloud adapter', () => {
       }
       return Response.json({
         id: `session-${String(session)}`,
-        status: 'idle',
+        status: turn === 2 && !exportAcknowledged ? 'requires_action' : 'idle',
+        required_actions:
+          turn === 2 && !exportAcknowledged
+            ? [
+                {
+                  type: 'function_call',
+                  turn_id: 'turn-2',
+                  call_id: 'unexpected-export-call',
+                  name: 'gh_pr_create',
+                  arguments: { title: 'Unrequested PR', body: '', draft: true },
+                },
+              ]
+            : [],
         environment: { id: 'env' },
         usage: { input_tokens: turn * 10, output_tokens: turn },
       })
@@ -530,6 +613,7 @@ describe('OpenAI cloud adapter', () => {
     execFileSync('git', ['commit', '-m', 'local follow-up'], { cwd: join(root, 'repo') })
     await run('Another change')
     assert.equal(session, 2)
+    assert.equal(refusedExportCalls, 2)
     assert.equal(readFileSync(join(root, 'repo/result.txt'), 'utf8'), 'hosted change 2')
   })
 })

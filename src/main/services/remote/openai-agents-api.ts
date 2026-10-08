@@ -569,9 +569,13 @@ export class OpenAiAgentsApi {
           return await finish({ ...turn, status: turn.status }, items, session, signal)
         }
         if (session.status === 'failed') throw new Error(session.error ?? 'OpenAI session failed.')
-        if (session.status === 'requires_action' && turn && options.onFunctionCall) {
-          if (!session.required_actions?.length)
-            throw new Error('OpenAI supplied no pending action details.')
+        // Turn and session reads are not an atomic snapshot. Pending actions, not
+        // a status label or a historical item, authorize function dispatch.
+        if (turn && session.required_actions?.length) {
+          if (!options.onFunctionCall)
+            throw new Error(
+              'OpenAI requested a host action but no handler is available. The task remains linked for recovery.',
+            )
           for (const raw of session.required_actions) {
             const parsed = openAiFunctionCallSchema.safeParse(raw)
             if (!parsed.success || parsed.data.turn_id !== turn.id)
@@ -623,10 +627,9 @@ export class OpenAiAgentsApi {
                 .digest('hex'),
             )
           }
-        } else if (session.status === 'requires_action' || turn?.status === 'waiting')
-          throw new Error(
-            'OpenAI requires an action this prototype cannot handle. The task remains linked for recovery.',
-          )
+        }
+        // Waiting can precede action visibility (or follow a submitted result).
+        // Continue polling under the existing cancellation/deadline bounds.
         await delay(1_500, undefined, { signal })
       }
     } catch (error) {

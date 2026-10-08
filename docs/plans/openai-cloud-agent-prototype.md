@@ -343,3 +343,36 @@ The turn-end artifact boundary is why PR publishing is deferred.
 - No live provider function call or authenticated GitHub publish was run in this
   environment. A live smoke test must still confirm OpenAI admission, queued acknowledgement,
   normal approval and the final GitHub link.
+
+## Waiting-state and Retry recovery fix brief
+
+The live trace reached `gh_pr_create`, but the adapter's fallback rejected a waiting
+turn. Turn and session reads are separate snapshots: waiting without a matching
+session status is not proof of an unsupported action. Dispatch only current
+`required_actions`, regardless of the status label; keep polling when waiting has
+no pending details, retaining cancellation/deadlines and refusing unknown actions.
+Never infer pending calls from historical items. Export-only recovery must return
+an explicit refusal for host functions instead of abandoning a waiting call.
+
+The existing Retry button submits the standard interrupted-turn continuation.
+Recognize that exact shared instruction only as recovery of an existing checkpoint,
+reuse its original prompt/images/hash, and keep unrelated new prompts blocked.
+Do not create a fresh hosted task from the recovery instruction or replay a completed
+PR write. Test status skew, delayed action visibility, replay after lost delivery,
+unknown actions, UI continuation recovery, original image preservation and no-checkpoint
+refusal. Existing UI/DOM remains unchanged; validate the renderer Retry dispatch contract
+and the adapter together through their shared instruction.
+
+Recovery of an already submitted turn reads its session even if the environment has
+disconnected; setup readiness only gates initial admission. This preserves terminal
+output/artifact recovery after the hosted sandbox stops.
+
+Completion evidence: 57 focused API/adapter/host-tool/renderer recovery tests pass.
+They reproduce waiting with no details, pending actions under `in_progress`, stale
+waiting after result delivery, unknown/wrong-turn/changed-call refusal, saved-result
+replay, image-preserving Retry, disconnected recovery, no duplicate submission/PR,
+and export-only function refusal. Production build, focused type-aware lint,
+formatting, diff and dead-code checks pass. Full `pnpm run check` still stops at the
+unchanged LM Studio TS2554. No renderer DOM/copy/layout changed: the existing Retry
+component tests exercise the click and shared continuation contract; the adapter
+regression consumes that same instruction. No live provider call was made here.

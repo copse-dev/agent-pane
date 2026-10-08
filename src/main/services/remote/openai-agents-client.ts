@@ -1,3 +1,4 @@
+import { INTERRUPTED_TURN_CONTINUATION } from '@shared/turn-recovery.ts'
 import { repositoryEnvironment } from './openai-repository-environment.ts'
 import {
   openAiHostActionsSchema,
@@ -105,6 +106,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       'Add an OpenAI Platform API key in Settings. ChatGPT sign-in does not authorize this cloud agent.',
     )
   const payload = promptPayloadFromUserContent(options.userPrompt)
+  const retryRequested = payload.text === INTERRUPTED_TURN_CONTINUATION && !payload.images?.length
   const imageUrls = openAiImageUrls(
     payload.images ?? [],
     collectPriorPromptImages(options.priorMessages ?? []),
@@ -144,6 +146,10 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
     prior.data.transfer &&
     (!prior.data.transfer.imported ||
       (prior.data.hostActions.length > 0 && !prior.data.hostActionsReported))
+  if (retryRequested && (!recovering || (!prior.data.state.pending && !prior.data.result)))
+    throw new Error(
+      'No submitted OpenAI task is available to resume. Send the original message to continue.',
+    )
   const transferDirectory = join(directory, 'blobs', 'openai-git')
   const archive = recovering ? undefined : await githubArchiveBase(root)
   const transfer = recovering
@@ -203,7 +209,10 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       throw error
     }
   }
-  const promptHash = hash(payload.images?.length ? JSON.stringify(payload) : payload.text)
+  const promptHash =
+    recovering && retryRequested
+      ? prior.data.promptHash
+      : hash(payload.images?.length ? JSON.stringify(payload) : payload.text)
   let terminalResult: OpenAiAgentResult | undefined = recovering ? prior.data.result : undefined
   let usageReported = recovering ? prior.data.usageReported : false
   let exportUsageReported = recovering ? prior.data.exportUsageReported : false
@@ -250,11 +259,13 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       createdAt: Date.now(),
     })
   }
-  if (!terminalResult) {
+  // A submitted turn is recovered through its session, even after the hosted
+  // environment disconnects. Setup readiness only gates initial submission.
+  if (!terminalResult && !state.pending) {
     try {
       await client.waitForEnvironment(state, options.signal)
     } catch (error) {
-      if (error instanceof OpenAiSetupError && !state.pending) {
+      if (error instanceof OpenAiSetupError) {
         await client.delete(state, AbortSignal.timeout(20_000)).catch(() => {})
         await Promise.all(
           sourceFileIds.map((id) =>
@@ -279,7 +290,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   const result =
     terminalResult ??
     (await client.run(state, prompt, {
-      images: state.pending?.images ?? imageUrls,
+      images: state.pending ? (state.pending.images ?? []) : imageUrls,
       onFunctionCall: (call, signal) =>
         handleOpenAiHostCall(call, {
           actions: hostActions,
@@ -366,6 +377,12 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
           signal: options.signal,
           save,
           onText: () => {},
+          onFunctionCall: () =>
+            Promise.resolve({
+              success: false,
+              error:
+                'This recovery turn only exports existing repository changes. Run the required export command and finish; host tools are unavailable in this turn.',
+            }),
           onResult: async (completed) => {
             exportResult = completed
             await save()

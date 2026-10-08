@@ -364,13 +364,16 @@ it('uploads a bounded source file and passes deterministic setup to a verified e
 })
 
 describe('OpenAI function action transport', () => {
-  it('advertises functions and replays a saved result after lost delivery without repeating execution', async () => {
+  it('tolerates waiting/status skew and replays a saved result without executing historical calls', async () => {
     let submitted = false
     let completed = false
     let loseReply = true
     let calls = 0
     let actionTurn = 'turn'
     let actionName = 'gh_pr_list'
+    let actionType = 'function_call'
+    let sessionPolls = 0
+    let resultSettled = false
     const keys: Array<string | null> = []
     let persisted: OpenAiAgentState | undefined
     const api = new OpenAiAgentsApi('test', async (input, init) => {
@@ -398,22 +401,38 @@ describe('OpenAI function action transport', () => {
       if (path.endsWith('/turns'))
         return page(
           submitted
-            ? [{ id: 'turn', subagent_id: null, status: completed ? 'completed' : 'waiting' }]
+            ? [{ id: 'turn', subagent_id: null, status: resultSettled ? 'completed' : 'waiting' }]
             : [],
         )
-      if (path.endsWith('/items') || path.endsWith('/artifacts')) return page([])
-      return json({
-        id: 'session',
-        status: completed ? 'idle' : 'requires_action',
-        required_actions: [
+      if (path.endsWith('/items'))
+        return page([
           {
+            id: 'old-call',
             type: 'function_call',
-            turn_id: actionTurn,
-            call_id: 'call',
-            name: actionName,
+            turn_id: 'turn',
+            status: 'completed',
+            name: 'gh_pr_create',
             arguments: {},
           },
-        ],
+        ])
+      if (path.endsWith('/artifacts')) return page([])
+      sessionPolls++
+      if (completed) resultSettled = true
+      return json({
+        id: 'session',
+        status: sessionPolls === 1 ? 'requires_action' : completed ? 'idle' : 'in_progress',
+        required_actions:
+          sessionPolls === 1 || completed
+            ? []
+            : [
+                {
+                  type: actionType,
+                  turn_id: actionTurn,
+                  call_id: 'call',
+                  name: actionName,
+                  arguments: {},
+                },
+              ],
       })
     })
     const state = await api.create('model', signal(), undefined, [
@@ -432,6 +451,12 @@ describe('OpenAI function action transport', () => {
     }
     await assert.rejects(api.run(state, 'prompt', options), /lost delivery/)
     assert.ok(persisted)
+    actionType = 'environment_connection'
+    await assert.rejects(
+      api.run(openAiAgentStateSchema.parse(persisted), 'prompt', options),
+      /unsupported action/,
+    )
+    actionType = 'function_call'
     actionTurn = 'other-turn'
     await assert.rejects(
       api.run(openAiAgentStateSchema.parse(persisted), 'prompt', options),
