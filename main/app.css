@@ -1422,6 +1422,10 @@ copse-ui-field input[type=password],
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
 }
+.chats-list .chat-row .chat-thread-owner {
+  flex: 0 0 auto;
+  max-width: 45%;
+}
 .automation-fold-row {
   display: flex;
   align-items: center;
