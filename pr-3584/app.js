@@ -43069,11 +43069,15 @@ var init_inline_status = __esm({
 });
 
 // src/shared/openai-cloud-agent.ts
-var DEFAULT_OPENAI_AGENT_MODEL, OPENAI_AGENT_GROUP;
+var DEFAULT_OPENAI_AGENT_MODEL, OPENAI_AGENT_GROUP, OPENAI_AGENT_RETENTION_NOTICE;
 var init_openai_cloud_agent = __esm({
   "src/shared/openai-cloud-agent.ts"() {
     DEFAULT_OPENAI_AGENT_MODEL = "gpt-6.1-sol";
-    OPENAI_AGENT_GROUP = "OpenAI Cloud Agent (prototype \xB7 API billed \xB7 no ZDR)";
+    OPENAI_AGENT_GROUP = "OpenAI Cloud Agent (prototype)";
+    OPENAI_AGENT_RETENTION_NOTICE = {
+      label: "No ZDR",
+      detail: "OpenAI-hosted Agents API sessions retain session data and are not eligible for zero data retention (ZDR)."
+    };
   }
 });
 
@@ -43659,18 +43663,26 @@ function extraProviderOptions(provider, available, current) {
 async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude = false) {
   const options = [];
   if (isAvailable("openai")) {
-    options.push({
-      value: remoteAgentModelValue("openai", DEFAULT_OPENAI_AGENT_MODEL),
-      label: "GPT-6.1 Sol",
-      group: OPENAI_AGENT_GROUP,
-      supportsImages: true
-    });
+    const models = CLOUD_MODELS.filter(([, , provider]) => provider === "openai");
+    models.sort(
+      ([a3], [b4]) => Number(b4 === DEFAULT_OPENAI_AGENT_MODEL) - Number(a3 === DEFAULT_OPENAI_AGENT_MODEL)
+    );
+    for (const [id, label] of models) {
+      options.push({
+        value: remoteAgentModelValue("openai", id),
+        label,
+        group: OPENAI_AGENT_GROUP,
+        retention: OPENAI_AGENT_RETENTION_NOTICE,
+        supportsImages: true
+      });
+    }
     const selected = parseRemoteAgentModelSelection(current);
-    if (selected?.provider === "openai" && current !== remoteAgentModelValue("openai", DEFAULT_OPENAI_AGENT_MODEL)) {
+    if (selected?.provider === "openai" && !options.some((option) => option.value === current)) {
       options.push({
         value: current,
         label: selected.model ?? "Default",
         group: OPENAI_AGENT_GROUP,
+        retention: OPENAI_AGENT_RETENTION_NOTICE,
         supportsImages: false
       });
     }
@@ -43844,7 +43856,8 @@ async function fetchModelOptions(api2, current, opts = {}) {
       options.push({
         value: current,
         label: `${modelDisplayLabel(current)} (no valid key)`,
-        group: selection2 ? remoteAgentGroupLabel(selection2.provider) : "Remote agents"
+        group: selection2?.provider === "openai" ? OPENAI_AGENT_GROUP : selection2 ? remoteAgentGroupLabel(selection2.provider) : "Remote agents",
+        ...selection2?.provider === "openai" ? { retention: OPENAI_AGENT_RETENTION_NOTICE } : {}
       });
     } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
       const selection2 = parseAcpModelSelection(current);
