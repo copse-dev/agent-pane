@@ -268,3 +268,22 @@ HTTP/curl error codes. Production build, focused ESLint, formatting and dead-cod
 checks passed. Full check stops only at the existing LM Studio TS2554. The live
 failure is consistent with missing Node proxy support, but a hosted retry is still
 needed to establish that no further provisioning issue remains. No DOM changes.
+
+## Hosted repository links brief
+
+The user confirmed hosted snapshot verification and working inference, then found
+that `/workspace/repo/docs/plans/...` links fail locally. Teach the existing
+owner-scoped workspace resolver the hosted checkout prefix so both saved and new
+messages resolve against the current thread checkout. Keep traversal/symlink
+containment checks and exact-path semantics; never map outputs or neighboring
+sandbox directories. Test files missing from the index, checkout ownership,
+missing-file basename collisions and invalid paths. This is main-process path
+resolution only, with unchanged renderer/DOM.
+
+Hosted link completion evidence: all 16 resolver tests passed, including an
+unindexed plan in the owning checkout, rejection in another checkout, absent
+ownership context, missing-file basename collisions, neighboring sandbox paths,
+traversal and escaping symlinks. Focused lint and formatting passed. Full check
+still stops at the unchanged LM Studio TS2554. No IPC shape, renderer or DOM
+change; existing click handlers retain line/column handling. Live click testing
+in the user's desktop remains unverified here.
