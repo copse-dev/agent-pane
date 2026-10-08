@@ -132,6 +132,10 @@
     "label": "Empty unopened project in the sidebar"
   },
   {
+    "id": "sidebar-other-projects",
+    "label": "Sidebar listing threads of projects not opened yet"
+  },
+  {
     "id": "sidebar-thread-sort",
     "label": "Sidebar thread sort"
   },

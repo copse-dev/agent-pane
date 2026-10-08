@@ -22533,7 +22533,7 @@ function dynamicModelChoices() {
     {
       value: BALANCED_MODEL_SELECTOR,
       label: "Balanced",
-      description: "Strong capability at a fair price; favors plans",
+      description: "Strong results at a fair price; favors plans",
       group: AUTOMATIC_GROUP
     },
     {
@@ -23574,7 +23574,7 @@ var init_acp_known_agents = __esm({
         // has been renamed to @agentclientprotocol/claude-agent-acp." It stopped
         // at 0.16.2 (2026-02-17); the renamed package carries on from 0.24.0.
         reason: "Renamed upstream to @agentclientprotocol/claude-agent-acp.",
-        title: "Claude Code (ACP, Zed)",
+        title: "Claude Code (Zed adapter)",
         command: "claude-code-acp",
         args: [],
         envHints: ["ANTHROPIC_API_KEY"],
@@ -23615,7 +23615,7 @@ var init_acp_known_agents = __esm({
         },
         sandboxedPermissionMode: "acceptEdits",
         docsUrl: "https://www.npmjs.com/package/@zed-industries/claude-code-acp",
-        note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or `ANTHROPIC_API_KEY`."
+        note: "Zed's adapter for Claude Code. Sign in with `claude /login` or set `ANTHROPIC_API_KEY`."
       }
     ];
     KNOWN_ACP_AGENTS = [
@@ -23694,7 +23694,7 @@ var init_acp_known_agents = __esm({
         setup: "claude setup-token",
         reauth: "claude /login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
-        note: "Claude Agent SDK over ACP. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`)."
+        note: "Runs Claude Code through its agent SDK. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`)."
       },
       {
         id: "cursor",
@@ -23720,7 +23720,7 @@ var init_acp_known_agents = __esm({
         setup: "cursor-agent login",
         reauth: "cursor-agent login",
         docsUrl: "https://docs.cursor.com/en/cli/overview",
-        note: "Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`."
+        note: "Runs the Cursor CLI (`cursor-agent acp`). Sign in with `cursor-agent login`."
       },
       {
         id: "codex-acp",
@@ -23761,7 +23761,7 @@ var init_acp_known_agents = __esm({
         // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
         reauth: "codex login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/codex-acp",
-        note: "OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
+        note: "Runs OpenAI Codex. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
       }
     ];
   }
@@ -34941,7 +34941,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: true,
       native,
       level: "info",
-      reason: "Advice comes from the configured external ACP agent, consulted on a bare one-off session. No capability annotations, so no strength comparison."
+      reason: "Advice comes from the configured external coding agent, consulted on a bare one-off session. Its strength is not rated, so there is no comparison."
     };
   }
   const executor = annotationFor(executorModel);
@@ -34971,7 +34971,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: true,
       native,
       level: "info",
-      reason: `Cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}; the executor isn\u2019t in the capability annotations, so no strength comparison is possible.`
+      reason: `Cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}; the executor has no strength rating, so no strength comparison is possible.`
     };
   }
   if (advisor.kind === "local") {
@@ -35003,7 +35003,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
     ok: true,
     native,
     level: "info",
-    reason: "Client-side pairing \u2014 any configured executor/advisor combination works. Neither model carries capability annotations, so no strength comparison is possible."
+    reason: "Client-side pairing \u2014 any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible."
   };
 }
 var NATIVE_ADVISOR_COMPAT, INTELLECT_PARITY;
@@ -46363,7 +46363,7 @@ function createAcpAgentsSection(api2, opts = {}) {
         }
         return Promise.resolve(pickerOptions);
       },
-      ariaLabel: "ACP agent model",
+      ariaLabel: "Agent model",
       loadOnMount: false
     });
     void modelPicker.refresh(initialModel);
@@ -46978,7 +46978,7 @@ function createProvidersPanel(api2, opts = {}) {
       el(
         "p",
         { class: "field-hint openai-service-tier-scope" },
-        "Applies to OpenAI API-key requests. ChatGPT plan and Codex ACP use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
+        "Applies to OpenAI API-key requests. ChatGPT plan and the Codex agent use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
       )
     );
     tierBlock.dataset["testid"] = "openai-service-tier-block";
@@ -47157,12 +47157,12 @@ function createProvidersPanel(api2, opts = {}) {
     ];
     if (agentIds.length) {
       entries2.push({
-        title: "Codex ACP",
+        title: "Codex agent",
         configured: agentIds.some((id) => agentsPanel.isConfigured(id)),
-        description: "Codex\u2019s agent, running on this machine through ACP.",
+        description: "Codex\u2019s agent, running on this machine.",
         content: connectionDetails(
           "openai-codex-details",
-          "Configure Codex ACP",
+          "Configure Codex agent",
           agentBlock(agentIds)
         ),
         id: "codex"
@@ -49364,12 +49364,79 @@ function createModelRoutingSection(api2, options = {}) {
       loadOnMount: false
     })
   };
-  async function refresh() {
-    const localModel = optionalString(await api2.settings.get("localDefaultModel"));
-    const subagent = optionalString(await api2.settings.get("subagentModel"));
-    const safety = optionalString(await api2.settings.get("safetyModel"));
-    const review = optionalString(await api2.settings.get("reviewModel"));
-    const roleModels = stringRecordOrEmpty(await api2.settings.get("roleModels"));
+  const fieldTargets = {
+    coder: "localDefaultModel",
+    research: "subagentModel",
+    safety: "safetyModel",
+    review: "reviewModel"
+  };
+  for (const [key, picker] of Object.entries(modelPickers)) {
+    const target = fieldTargets[key];
+    if (target)
+      qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+        "data-model-setting-target",
+        target
+      );
+  }
+  let pendingRoles = {};
+  const additionalRoles = modelScope === "all" ? AGENT_ROLES.filter((role) => !["coder", "research", "small-tasks"].includes(role.id)).map(
+    (role) => {
+      const select = el("select", { name: `role:${role.id}` });
+      const field = routingField(
+        role.label,
+        select,
+        `${role.description}. An empty choice inherits the automatic role default.`
+      );
+      select.addEventListener("change", () => {
+        pendingRoles[role.id] = select.value;
+      });
+      const picker = mountModelSelectPicker(select, {
+        loadOptions: (current) => fetchRoleModelOptions(api2, current, "(automatic role default)"),
+        ariaLabel: `${role.label} role model`,
+        loadOnMount: false
+      });
+      qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+        "data-model-setting-target",
+        `role:${role.id}`
+      );
+      return { role, field, picker };
+    }
+  ) : [];
+  if (additionalRoles.length) {
+    fields.append(
+      el(
+        "details",
+        { class: "routing-additional-roles" },
+        disclosureSummary("Additional model roles"),
+        el(
+          "p",
+          { class: "settings-fieldset-desc" },
+          "These assignments are used by \u201CBy role\u201D model rules. The dedicated safety and post-turn review routes above remain separate."
+        ),
+        ...additionalRoles.map((entry) => entry.field)
+      )
+    );
+  }
+  function reset() {
+    pendingRoles = {};
+  }
+  async function refresh(snapshot) {
+    reset();
+    const localModel = optionalString(
+      snapshot ? snapshot.localDefaultModel : await api2.settings.get("localDefaultModel")
+    );
+    const subagent = optionalString(
+      snapshot ? snapshot.subagentModel : await api2.settings.get("subagentModel")
+    );
+    const safety = optionalString(
+      snapshot ? snapshot.safetyModel : await api2.settings.get("safetyModel")
+    );
+    const review = optionalString(
+      snapshot ? snapshot.reviewModel : await api2.settings.get("reviewModel")
+    );
+    const roleModels = stringRecordOrEmpty(
+      snapshot ? snapshot.roleModels : await api2.settings.get("roleModels")
+    );
     if (modelScope === "all") {
       const coder = roleModels["coder"] ?? localModel;
       const research = roleModels["research"] ?? subagent;
@@ -49381,7 +49448,10 @@ function createModelRoutingSection(api2, options = {}) {
         // Unset means the *rule*, not the model we recommend downloading —
         // showing a concrete local id here would misreport what actually runs.
         modelPickers.safety.refresh(safety ? canonicalRoleSelection(safety) : DEFAULT_SAFETY_MODEL),
-        modelPickers.review.refresh(canonicalRoleSelection(review ?? ""))
+        modelPickers.review.refresh(canonicalRoleSelection(review ?? "")),
+        ...additionalRoles.map(
+          (entry) => entry.picker.refresh(canonicalRoleSelection(roleModels[entry.role.id] ?? ""))
+        )
       ]);
       return;
     }
@@ -49409,7 +49479,13 @@ function createModelRoutingSection(api2, options = {}) {
       reviewModel: reviewModel.value.trim()
     };
   }
-  return { root, refresh, readValues };
+  return {
+    root,
+    reset,
+    refresh,
+    readValues,
+    readRoleModels: () => Object.keys(pendingRoles).length ? { ...pendingRoles } : void 0
+  };
 }
 function canonicalRoleSelection(value) {
   const trimmed2 = value.trim();
@@ -49431,6 +49507,8 @@ var init_model_routing_section = __esm({
     init_disclosure_summary();
     init_unknown_value3();
     init_ui();
+    init_agent_roles();
+    init_helpers();
   }
 });
 
@@ -64831,7 +64909,7 @@ function markNavigationRestored(restored) {
 function serializedNavigation(api2, navigation) {
   if (!ownsNavigation || !navigationRestored) return Promise.resolve();
   if (lastNavigation !== null && lastNavigation.activeProjectId === navigation.activeProjectId && lastNavigation.activeThreadId === navigation.activeThreadId) {
-    return Promise.resolve();
+    return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
   }
   lastNavigation = navigation;
   return serializedWrite("mainWindow:navigation", () => api2.windowState.setNavigation(navigation));
@@ -67559,6 +67637,22 @@ function cacheThreads(projectId, threads) {
   liveCacheProjectId = projectId;
   threadCache.set(projectId, threads);
 }
+async function preloadSidebarThreads(store2, api2) {
+  const pending = store2.getState().projects.filter((project2) => !project2.sshHost && !project2.missing).map((project2) => project2.id);
+  const unwanted = (id) => id === store2.getState().activeProjectId || threadCache.has(id) || !store2.getState().projects.some((project2) => project2.id === id);
+  for (const id of pending) {
+    if (unwanted(id)) continue;
+    let loaded;
+    try {
+      loaded = await loadThreads(api2, id);
+    } catch {
+      continue;
+    }
+    if (unwanted(id)) continue;
+    threadCache.set(id, loaded.map(compactSidebarThread));
+    store2.emit("sidebar_threads_loaded");
+  }
+}
 function attachProjectThreadCache(store2) {
   return store2.on("threads_changed", () => {
     const { activeProjectId, threads } = store2.getState();
@@ -67635,6 +67729,7 @@ async function removeProject(store2, api2, id) {
   if (!wasActive) {
     if (wasExpanded) cancelPendingSwitch(store2, api2);
     await saveProjects(api2, projects, state.activeProjectId, state.activeThreadId);
+    threadCache.delete(id);
     store2.setState({
       projects,
       expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId
@@ -68269,6 +68364,30 @@ function openSettingsDialog(section) {
   pendingSection = section ?? null;
   overlayEl.showModal();
   overlayEl.dispatchEvent(new Event("settings-open"));
+}
+function openModelSettings(target = "model") {
+  if (!overlayEl) return;
+  const pluginTarget = target.startsWith("plugin:") || target === "advisorModel";
+  const section = pluginTarget ? "customise" : target === "orchestrationWorkerModel" ? "experimental" : "general";
+  if (overlayEl.open) {
+    qsRequired(overlayEl, `.settings-nav-btn[data-section="${section}"]`).click();
+    if (pluginTarget) void revealPluginModel?.(target);
+    else focusModelSettings(overlayEl, target);
+    return;
+  }
+  pendingModelFocus = target;
+  openSettingsDialog(section);
+}
+function focusModelSettings(overlay, target) {
+  const control = [...overlay.querySelectorAll("[data-model-setting-target]")].find(
+    (element) => element.dataset["modelSettingTarget"] === target
+  );
+  if (!control) return;
+  for (let ancestor = control.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    if (ancestor.tagName === "DETAILS") ancestor.setAttribute("open", "");
+  }
+  control.scrollIntoView({ block: "center" });
+  control.focus({ preventScroll: true });
 }
 function openAutomationSettings(scheduleId) {
   if (!overlayEl || overlayEl.open) return;
@@ -69327,7 +69446,7 @@ function mountSettingsDialog(store2, api2) {
               <p class="field-hint">
                 Applies across Copse to new threads using automatic checkout. Eligible agents
                 start by reading your checkout without changing it, then get an isolated worktree
-                before writing. Explicit worktree choices and ACP agents still create one up front.
+                before writing. Explicit worktree choices and agents installed on this device still create one up front.
                 Projects with worktrees disabled and existing threads keep their checkout behavior.
               </p>
             </fieldset>
@@ -69553,6 +69672,12 @@ function mountSettingsDialog(store2, api2) {
       }
     )
   };
+  for (const [target, picker] of Object.entries(settingsModelPickers)) {
+    qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+      "data-model-setting-target",
+      target
+    );
+  }
   const usageSection = createUsageSection(api2, store2, closeSettingsDialog);
   qsRequired(overlay, "#settings-usage-host").append(usageSection.root);
   const aboutSection = createAboutSection(api2);
@@ -70982,6 +71107,10 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
         ariaLabel: field.title,
         loadOnMount: false
       });
+      qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+        "data-model-setting-target",
+        `plugin:${pluginId}:${field.id}`
+      );
       modelFieldPopulated.set(modelSelectInput, picker.refresh(modelFieldCurrent ?? ""));
     }
     if (field.description) {
@@ -71324,6 +71453,14 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     if (fold) fold.open = true;
     row2.scrollIntoView({ block: "start" });
   }
+  revealPluginModel = async (target) => {
+    const resolved3 = target === "advisorModel" ? `plugin:${ADVISOR_STRATEGY_PLUGIN_ID}:${ADVISOR_MODEL_SETTING_ID}` : target;
+    const pluginId = resolved3.split(":")[1];
+    if (!pluginId) return;
+    await revealPluginDetail({ pluginId });
+    if (overlay.open && overlay.querySelector(".settings-section.active")?.getAttribute("data-section") === "customise")
+      focusModelSettings(overlay, resolved3);
+  };
   const mcpSignInPending = /* @__PURE__ */ new Set();
   const mcpSignInErrors = /* @__PURE__ */ new Map();
   function mcpSignInButton(s16) {
@@ -71698,6 +71835,7 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     appearanceBaseline = currentAppearance();
     appearanceCommitted = false;
     resetDirtyState();
+    modelRoutingSection.reset();
     developerModeInput.checked = store2.getState().developerMode;
     syncDeveloperOnlySettings();
     searchContentLoaded = false;
@@ -71707,6 +71845,8 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     applySearch("");
     storageProjectId = null;
     const openedSection = pendingSection ?? "general";
+    const modelFocus = pendingModelFocus;
+    pendingModelFocus = null;
     showSection(openedSection);
     pendingSection = null;
     pluginDetail = pendingPluginDetail;
@@ -71719,13 +71859,16 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     if (openedSection === "experimental") void refreshPlugins();
     if (openedSection === "customise") {
       void refreshSources();
-      void revealPluginDetail();
+      if (modelFocus) void revealPluginModel?.(modelFocus);
+      else void revealPluginDetail();
     }
     if (openedSection === "storage") {
       void refreshWorktrees("", true);
       void storageMaintenance.refresh();
     }
-    searchInput.focus();
+    if (!modelFocus) {
+      searchInput.focus();
+    }
     void (async () => {
       failedRefreshStages.length = 0;
       delete overlay.dataset["settingsRefreshFailed"];
@@ -71814,6 +71957,8 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
         if (iconRadio) iconRadio.checked = true;
       });
       await refreshStage("local-models", () => refreshLocalModelSelects());
+      if (modelFocus && openedSection !== "customise" && overlay.open && overlay.querySelector(".settings-section.active")?.getAttribute("data-section") === openedSection)
+        focusModelSettings(overlay, modelFocus);
       await refreshStage("gh-cli", () => ghCliSection.refreshStatus());
       await refreshStage("mcp-servers", async () => {
         await refreshMcpServers();
@@ -71926,19 +72071,14 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
           })()
         );
       }
-      if (dirtyFieldNames.has("localDefaultModel") || dirtyFieldNames.has("subagentModel") || dirtyFieldNames.has("smallTasksModel")) {
-        writes.push(
-          (async () => {
-            const savedRoleModels = stringRecordOrEmpty(await api2.settings.get("roleModels"));
-            await api2.settings.set("roleModels", {
-              ...savedRoleModels,
-              coder: routingValues.localDefaultModel,
-              research: routingValues.subagentModel,
-              "small-tasks": formDataString(data, "smallTasksModel").trim()
-            });
-          })()
-        );
-      }
+      const roleAssignments = modelRoutingSection.readRoleModels() ?? {};
+      if (dirtyFieldNames.has("localDefaultModel"))
+        roleAssignments["coder"] = routingValues.localDefaultModel;
+      if (dirtyFieldNames.has("subagentModel"))
+        roleAssignments["research"] = routingValues.subagentModel;
+      if (dirtyFieldNames.has("smallTasksModel"))
+        roleAssignments["small-tasks"] = formDataString(data, "smallTasksModel").trim();
+      if (Object.keys(roleAssignments).length) writes.push(api2.settings.update({ roleAssignments }));
       const securityFieldNames = [
         "localServerUrl",
         "safetyModel",
@@ -72023,7 +72163,7 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
   qsRequired(overlay, "#settings-cancel").addEventListener("click", closeSettingsDialog);
   qsRequired(overlay, "#settings-close").addEventListener("click", closeSettingsDialog);
 }
-var isSettingsSection, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingPluginDetail;
+var isSettingsSection, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingModelFocus, revealPluginModel, pendingPluginDetail;
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
     init_storage_maintenance_panel();
@@ -72185,6 +72325,8 @@ var init_settings_dialog = __esm({
     ];
     overlayEl = null;
     pendingSection = null;
+    pendingModelFocus = null;
+    revealPluginModel = null;
     pendingPluginDetail = null;
   }
 });
@@ -77588,6 +77730,61 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "sidebar-other-projects",
+        label: "Sidebar listing threads of projects not opened yet",
+        project: project("demo-other-projects-active", "copse-demo", "/demo/copse"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          sidebarThreadGroup: "status"
+        },
+        // The open project has one thread; two more projects hold threads that are only
+        // read in the background after startup, so their titles must still be listed.
+        threads: [
+          {
+            id: "demo-other-projects-active-chat",
+            title: "Open project thread",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        otherProjects: [
+          {
+            project: project("demo-other-projects-docs", "docs-site", "/demo/docs-site"),
+            threads: ["Rewrite the install guide", "Fix broken anchors"].map((title, index) => ({
+              id: `demo-other-projects-docs-${String(index)}`,
+              title,
+              status: "idle",
+              messages: [],
+              messagesLoaded: false,
+              usage: { inputTokens: 0, outputTokens: 0 },
+              createdAt: FIXED_TIME - 10 - index,
+              updatedAt: FIXED_TIME - 10 - index
+            }))
+          },
+          {
+            project: project("demo-other-projects-api", "api-server", "/demo/api-server"),
+            threads: [
+              {
+                id: "demo-other-projects-api-0",
+                title: "Add pagination to the list endpoint",
+                status: "idle",
+                messages: [],
+                messagesLoaded: false,
+                usage: { inputTokens: 0, outputTokens: 0 },
+                createdAt: FIXED_TIME - 20,
+                updatedAt: FIXED_TIME - 20
+              }
+            ]
+          }
+        ]
+      },
+      {
         id: "sidebar-thread-sort",
         label: "Sidebar thread sort",
         project: project("demo-sidebar-sort-project"),
@@ -78802,6 +78999,13 @@ function createDemoApi(scenario, options = {}) {
     },
     openRouter: { models: emptyArray },
     models: {
+      invalidations: () => resolved2({
+        evaluated: true,
+        invalidations: [],
+        selections: [],
+        verifiedChoices: []
+      }),
+      recoverSetting: () => resolved2(false),
       bestValueDefault: () => resolved2("lmstudio:qwen/qwen3.6-35b-a3b"),
       resolveDynamic: (value) => resolved2(value.startsWith("auto:") ? "lmstudio:qwen/qwen3.6-35b-a3b" : value)
     },
@@ -79985,7 +80189,8 @@ function createStore(initial) {
     request_terminal_command: /* @__PURE__ */ new Set(),
     code_block_run_requested: /* @__PURE__ */ new Set(),
     code_block_run_finished: /* @__PURE__ */ new Set(),
-    attention_changed: /* @__PURE__ */ new Set()
+    attention_changed: /* @__PURE__ */ new Set(),
+    sidebar_threads_loaded: /* @__PURE__ */ new Set()
   };
   function on3(event, handler) {
     listeners[event].add(handler);
@@ -84078,6 +84283,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   store2.on("threads_changed", onChange);
   store2.on("thread_status_changed", onChange);
   store2.on("projects_changed", onChange);
+  store2.on("sidebar_threads_loaded", onChange);
   store2.on("agent_activity", onChange);
   function hide3() {
     cancelRender?.();
@@ -86923,6 +87129,7 @@ function mountProjectsPane(root, store2, api2) {
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", render),
+    store2.on("sidebar_threads_loaded", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", () => {
@@ -89226,7 +89433,7 @@ function containerRunResultMarkdown(progress) {
   const facts = [`model ${progress.model}`];
   if (result) {
     facts.push(
-      result.harness === "copse" ? "Copse harness" : `${result.harness.acp} agent`,
+      result.harness === "copse" ? "Copse agent" : `${result.harness.acp} agent`,
       `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`
     );
   }
@@ -113653,8 +113860,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       rows.push(row2("Outcome", result.stopReason));
       rows.push(
         row2(
-          "Harness",
-          result.harness === "copse" ? "Copse" : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (ACP agent)`
+          "Agent",
+          result.harness === "copse" ? "Copse" : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (coding agent)`
         )
       );
       rows.push(row2("Prompts reached a handler", String(result.promptsAttempted)));
@@ -115104,7 +115311,7 @@ ${description}
       usage: usage?.tooltip ?? null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
-      snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by ACP agent" : null
+      snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by the agent" : null
     });
     footerOverflow?.update();
     updateContextFitWarning();
@@ -153714,7 +153921,7 @@ function startAgentController(store2, api2) {
             }
             st2.toolSinceText = nextState.toolSinceText;
             st2.currentText = nextState.currentText ?? "";
-            if (st2.msgId === null) throw new Error("assistant message id missing for ACP text");
+            if (st2.msgId === null) throw new Error("assistant message id missing for agent text");
             appendToken(store2, st2.msgId, plan.text);
             st2.writing = plan.text.trim().length > 0;
             if (st2.writing) maybeNameThread(store2, api2, threadId);
@@ -154429,6 +154636,138 @@ var init_best_value_default = __esm({
   "src/renderer/controller/best-value-default.ts"() {
     init_thread_helpers();
     init_dynamic_model();
+    init_model_selection2();
+  }
+});
+
+// src/renderer/controller/provider-invalidation.ts
+function settingsTarget(invalid) {
+  switch (invalid.target) {
+    case "thread":
+      return "model";
+    case "role:coder":
+      return "localDefaultModel";
+    case "role:research":
+      return "subagentModel";
+    case "role:small-tasks":
+      return "smallTasksModel";
+    default:
+      return invalid.target;
+  }
+}
+function acknowledgement(store2, invalid) {
+  const thread = getActiveThread(store2);
+  if (invalid.target === "thread" && thread?.messages.length === 0 && !thread.modelSelections?.length && store2.getState().settings?.model === invalid.model)
+    return JSON.stringify(["model", invalid.model]);
+  return JSON.stringify(
+    invalid.target === "thread" ? [store2.getState().activeProjectId, getActiveThread(store2)?.id, invalid.model] : [invalid.target, invalid.model]
+  );
+}
+async function checkProviderInvalidation(store2, api2, ui2, acknowledged = /* @__PURE__ */ new Set()) {
+  const thread = getActiveThread(store2);
+  const project2 = store2.getState().activeProjectId;
+  const route = thread?.status === "idle" ? thread.model ?? store2.getState().settings?.model : void 0;
+  const alive = () => ui2.isActive?.() ?? true;
+  const stillSelected = () => {
+    const current = getActiveThread(store2);
+    return alive() && store2.getState().activeProjectId === project2 && current?.id === thread?.id && current?.status === "idle" && (current.model ?? store2.getState().settings?.model) === route;
+  };
+  const report = await api2.models.invalidations(route).catch(() => null);
+  if (!report?.evaluated || !alive() || route && !stillSelected()) return [];
+  const invalid = report.invalidations;
+  const selected = new Set(report.selections.map((choice) => acknowledgement(store2, choice)));
+  const verified = new Set(report.verifiedChoices.map((choice) => acknowledgement(store2, choice)));
+  for (const key of acknowledged) {
+    const parts = safeJsonParse(key, decodeWithSchema(external_exports.array(external_exports.string())));
+    if (!parts) continue;
+    const evaluatedSaved = parts.length === 2;
+    const evaluatedThread = route !== void 0 && parts.length === 3 && parts[0] === project2 && parts[1] === thread?.id;
+    if ((evaluatedSaved || evaluatedThread) && (!selected.has(key) || verified.has(key)))
+      acknowledged.delete(key);
+  }
+  const pending = invalid.filter((entry) => !acknowledged.has(acknowledgement(store2, entry)));
+  if (!pending.length) return [];
+  const keys = pending.map((entry) => acknowledgement(store2, entry));
+  const first = pending[0];
+  if (!first) return [];
+  const hasFallback = pending.some((entry) => entry.fallback);
+  const open2 = await ui2.warn({
+    message: "Model settings need attention",
+    detail: pending.map(
+      (entry) => `${entry.label}: ${entry.model}. ${entry.reason} ${entry.fallback ? `Dismiss to use ${entry.fallback.replace(/^lmstudio:/, "")} on this device.` : "No suitable on-device model is available; this choice will be preserved."}`
+    ).join("\n\n"),
+    confirmLabel: "Open Settings",
+    cancelLabel: hasFallback ? "Use local models" : "Dismiss"
+  });
+  if (!alive()) return keys;
+  if (open2) {
+    if (first.target !== "thread" || stillSelected()) ui2.openSettings(settingsTarget(first));
+    return keys;
+  }
+  for (const entry of pending) {
+    if (!alive() || !entry.fallback) continue;
+    if (entry.target === "thread") {
+      if (!thread || !stillSelected()) continue;
+      const latest = await api2.models.invalidations(route, true).catch(() => null);
+      if (!stillSelected() || !latest?.invalidations.some(
+        (item) => item.target === "thread" && item.model === route && item.fallback === entry.fallback
+      ))
+        continue;
+      commitThreadModelSelection(store2, api2, thread.id, "auto", route, entry.fallback);
+    } else {
+      const replaced = await api2.models.recoverSetting(entry.target, entry.model, entry.fallback).catch(() => false);
+      if (!replaced || !alive()) continue;
+      if (entry.target === "model" && store2.getState().settings?.model === entry.model) {
+        store2.setState({ settings: { ...store2.getState().settings, model: entry.fallback } });
+      }
+      store2.emit("settings_changed");
+    }
+  }
+  return keys;
+}
+function attachProviderInvalidationWarning(store2, api2, ui2) {
+  const acknowledged = /* @__PURE__ */ new Set();
+  let checking = false;
+  let pending = false;
+  let disposed = false;
+  const check2 = () => {
+    if (disposed) return;
+    if (checking) {
+      pending = true;
+      return;
+    }
+    checking = true;
+    void checkProviderInvalidation(store2, api2, { ...ui2, isActive: () => !disposed }, acknowledged).then((keys) => {
+      keys.forEach((key) => acknowledged.add(key));
+    }).catch((error62) => {
+      console.error("[models] could not check provider configuration", error62);
+    }).finally(() => {
+      checking = false;
+      if (pending) {
+        pending = false;
+        check2();
+      }
+    });
+  };
+  const unsubscribe = [
+    store2.on("workspace_changed", check2),
+    store2.on("threads_changed", check2),
+    store2.on("settings_changed", check2),
+    store2.on("thread_status_changed", check2)
+  ];
+  check2();
+  return () => {
+    disposed = true;
+    unsubscribe.forEach((stop) => {
+      stop();
+    });
+  };
+}
+var init_provider_invalidation = __esm({
+  "src/renderer/controller/provider-invalidation.ts"() {
+    init_zod();
+    init_safe_json2();
+    init_thread_helpers();
     init_model_selection2();
   }
 });
@@ -164776,6 +165115,10 @@ async function boot() {
     attachAutosave(store, api);
     attachMobileChat(store, api, mobileReady);
     attachBestValueDefaultResolver(store, api);
+    attachProviderInvalidationWarning(store, api, {
+      warn: showConfirmDialog,
+      openSettings: openModelSettings
+    });
     attachAutomationController(store, api);
     attachAutomationAppearance(store, api.appIcon);
     attachPrPanelFollow(store, api);
@@ -164875,6 +165218,7 @@ async function boot() {
     await restoreProject(store, api, active2.id, activeThreadId);
     endRestore();
     endBoot({ projects: projects.length });
+    void preloadSidebarThreads(store, api);
     startPerfAutopilot(store);
   } else {
     endBoot({ projects: 0 });
@@ -165183,6 +165527,7 @@ var init_main = __esm({
     init_automations2();
     init_automation_appearance();
     init_best_value_default();
+    init_provider_invalidation();
     init_persistence();
     init_perf();
     init_perf_autopilot();
