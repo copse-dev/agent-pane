@@ -22462,6 +22462,7 @@ function parseDynamicModel(value) {
   const selection2 = parseModelSelection(value);
   if (selection2.namespace !== "auto") return null;
   const body = selection2.id;
+  if (body === "match-prompt") return { kind: "match-prompt" };
   if (body === "best-value") return { kind: "best-value" };
   if (body === "best-intellect") return { kind: "best-intellect" };
   if (body === "best-local") return { kind: "best-local" };
@@ -22483,6 +22484,8 @@ function dynamicModelLabel(value) {
   const selector = parseDynamicModel(value);
   if (!selector) return null;
   switch (selector.kind) {
+    case "match-prompt":
+      return "Match task";
     case "best-value":
       return "Best value";
     case "best-intellect":
@@ -22530,7 +22533,7 @@ function dynamicModelChoices() {
     {
       value: BALANCED_MODEL_SELECTOR,
       label: "Balanced",
-      description: "Strong capability at a fair price; favors plans",
+      description: "Strong results at a fair price; favors plans",
       group: AUTOMATIC_GROUP
     },
     {
@@ -22558,13 +22561,14 @@ function dynamicModelChoices() {
   }
   return choices;
 }
-var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, BALANCED_INCLUDED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
+var BEST_VALUE_MODEL_SELECTOR, MATCH_PROMPT_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, BALANCED_INCLUDED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
 var init_dynamic_model = __esm({
   "packages/llm/src/dynamic-model.ts"() {
     init_agent_roles();
     init_model_selection();
     init_reserved_prefixes();
     BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
+    MATCH_PROMPT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}match-prompt`;
     BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
     BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
     CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
@@ -23566,7 +23570,7 @@ var init_acp_known_agents = __esm({
         // has been renamed to @agentclientprotocol/claude-agent-acp." It stopped
         // at 0.16.2 (2026-02-17); the renamed package carries on from 0.24.0.
         reason: "Renamed upstream to @agentclientprotocol/claude-agent-acp.",
-        title: "Claude Code (ACP, Zed)",
+        title: "Claude Code (Zed adapter)",
         command: "claude-code-acp",
         args: [],
         envHints: ["ANTHROPIC_API_KEY"],
@@ -23607,7 +23611,7 @@ var init_acp_known_agents = __esm({
         },
         sandboxedPermissionMode: "acceptEdits",
         docsUrl: "https://www.npmjs.com/package/@zed-industries/claude-code-acp",
-        note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or `ANTHROPIC_API_KEY`."
+        note: "Zed's adapter for Claude Code. Sign in with `claude /login` or set `ANTHROPIC_API_KEY`."
       }
     ];
     KNOWN_ACP_AGENTS = [
@@ -23686,7 +23690,7 @@ var init_acp_known_agents = __esm({
         setup: "claude setup-token",
         reauth: "claude /login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
-        note: "Claude Agent SDK over ACP. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`)."
+        note: "Runs Claude Code through its agent SDK. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`)."
       },
       {
         id: "cursor",
@@ -23712,7 +23716,7 @@ var init_acp_known_agents = __esm({
         setup: "cursor-agent login",
         reauth: "cursor-agent login",
         docsUrl: "https://docs.cursor.com/en/cli/overview",
-        note: "Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`."
+        note: "Runs the Cursor CLI (`cursor-agent acp`). Sign in with `cursor-agent login`."
       },
       {
         id: "codex-acp",
@@ -23753,7 +23757,7 @@ var init_acp_known_agents = __esm({
         // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
         reauth: "codex login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/codex-acp",
-        note: "OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
+        note: "Runs OpenAI Codex. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
       }
     ];
   }
@@ -34933,7 +34937,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: true,
       native,
       level: "info",
-      reason: "Advice comes from the configured external ACP agent, consulted on a bare one-off session. No capability annotations, so no strength comparison."
+      reason: "Advice comes from the configured external coding agent, consulted on a bare one-off session. Its strength is not rated, so there is no comparison."
     };
   }
   const executor = annotationFor(executorModel);
@@ -34963,7 +34967,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: true,
       native,
       level: "info",
-      reason: `Cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}; the executor isn\u2019t in the capability annotations, so no strength comparison is possible.`
+      reason: `Cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}; the executor has no strength rating, so no strength comparison is possible.`
     };
   }
   if (advisor.kind === "local") {
@@ -34995,7 +34999,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
     ok: true,
     native,
     level: "info",
-    reason: "Client-side pairing \u2014 any configured executor/advisor combination works. Neither model carries capability annotations, so no strength comparison is possible."
+    reason: "Client-side pairing \u2014 any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible."
   };
 }
 var NATIVE_ADVISOR_COMPAT, INTELLECT_PARITY;
@@ -43699,11 +43703,18 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
 }
 async function fetchModelOptions(api2, current, opts = {}) {
   const options = [];
+  if (opts.includeAgentModels !== false) {
+    options.push({
+      value: MATCH_PROMPT_MODEL_SELECTOR,
+      label: "Match task \u2014 Chooses a suitable model from your prompt",
+      group: "Automatic"
+    });
+  }
   if (opts.includeBestValue === true) {
     options.push({
       value: BEST_VALUE_CHAT_MODEL,
       label: `${BEST_VALUE_CHAT_MODEL_LABEL} \u2014 auto from plan / price frontier`,
-      group: CHAT_DEFAULT_GROUP
+      group: "Automatic"
     });
     for (const choice of dynamicModelChoices()) {
       if (choice.value === BEST_VALUE_CHAT_MODEL) continue;
@@ -43933,7 +43944,7 @@ function dynamicModelOptions(current, autoLabel) {
 function fetchDynamicModelOptions(current, autoLabel) {
   return Promise.resolve(dynamicModelOptions(current, autoLabel));
 }
-var ACP_GROUP, OPENROUTER_GROUP, CHAT_DEFAULT_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
+var ACP_GROUP, OPENROUTER_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
 var init_model_options = __esm({
   "src/renderer/views/model-options.ts"() {
     init_acp_retention();
@@ -43959,7 +43970,6 @@ var init_model_options = __esm({
     init_model_coverage();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
-    CHAT_DEFAULT_GROUP = "Chat default";
     KNOWN_TEXT_ONLY_MISTRAL_MODELS = [
       "mistral-small-latest",
       "open-mistral-nemo",
@@ -46349,7 +46359,7 @@ function createAcpAgentsSection(api2, opts = {}) {
         }
         return Promise.resolve(pickerOptions);
       },
-      ariaLabel: "ACP agent model",
+      ariaLabel: "Agent model",
       loadOnMount: false
     });
     void modelPicker.refresh(initialModel);
@@ -46964,7 +46974,7 @@ function createProvidersPanel(api2, opts = {}) {
       el(
         "p",
         { class: "field-hint openai-service-tier-scope" },
-        "Applies to OpenAI API-key requests. ChatGPT plan and Codex ACP use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
+        "Applies to OpenAI API-key requests. ChatGPT plan and the Codex agent use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
       )
     );
     tierBlock.dataset["testid"] = "openai-service-tier-block";
@@ -47143,12 +47153,12 @@ function createProvidersPanel(api2, opts = {}) {
     ];
     if (agentIds.length) {
       entries2.push({
-        title: "Codex ACP",
+        title: "Codex agent",
         configured: agentIds.some((id) => agentsPanel.isConfigured(id)),
-        description: "Codex\u2019s agent, running on this machine through ACP.",
+        description: "Codex\u2019s agent, running on this machine.",
         content: connectionDetails(
           "openai-codex-details",
-          "Configure Codex ACP",
+          "Configure Codex agent",
           agentBlock(agentIds)
         ),
         id: "codex"
@@ -53991,6 +54001,25 @@ var init_branch_ci_editor = __esm({
   }
 });
 
+// src/renderer/views/automation-retained-worktrees.ts
+function describeRetainedWorktrees(retained) {
+  return retained.map((run2) => {
+    const paths = run2.paths?.length ? ` (${run2.paths.join(", ")})` : "";
+    return `\u201C${run2.title}\u201D ${REASON_LABEL[run2.reason]}${paths}`;
+  }).join("; ");
+}
+var REASON_LABEL;
+var init_automation_retained_worktrees = __esm({
+  "src/renderer/views/automation-retained-worktrees.ts"() {
+    REASON_LABEL = {
+      "uncommitted-changes": "has uncommitted changes",
+      "unmerged-commits": "has commits that are not merged",
+      "unpushed-pull-request": "has a pull request branch that is not pushed",
+      "in-use": "still has a terminal or background process open"
+    };
+  }
+});
+
 // src/renderer/views/automation-plugin-settings.ts
 function cleanIpcError(error62) {
   return ipcErrorMessage(error62, "Automation request failed.");
@@ -54533,7 +54562,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
           el(
             "div",
             { class: "automation-row-blocked-message" },
-            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`
+            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.${schedule.lastWorktreeLimitBlockedBy?.length ? ` Held by ${describeRetainedWorktrees(schedule.lastWorktreeLimitBlockedBy)}.` : ""}`
           )
         );
       }
@@ -54576,7 +54605,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         void api2.automations.runNow(projectId, schedule.id).then(
           (event) => {
             showStatus(
-              event.disposition === "started" ? `Started \u201C${schedule.name}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${schedule.name}\u201D has reached its live worktree limit.` : `\u201C${schedule.name}\u201D is already pending or running.`
+              event.disposition === "started" ? `Started \u201C${schedule.name}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${schedule.name}\u201D has reached its live worktree limit.${event.blockedBy?.length ? ` Held by ${describeRetainedWorktrees(event.blockedBy)}.` : ""}` : `\u201C${schedule.name}\u201D is already pending or running.`
             );
             void refresh();
           },
@@ -54749,6 +54778,7 @@ var init_automation_plugin_settings = __esm({
     init_confirm_dialog();
     init_branch_ci_editor();
     init_ipc_error_message();
+    init_automation_retained_worktrees();
     WEEKDAYS = [
       "Sunday",
       "Monday",
@@ -64875,7 +64905,7 @@ function markNavigationRestored(restored) {
 function serializedNavigation(api2, navigation) {
   if (!ownsNavigation || !navigationRestored) return Promise.resolve();
   if (lastNavigation !== null && lastNavigation.activeProjectId === navigation.activeProjectId && lastNavigation.activeThreadId === navigation.activeThreadId) {
-    return Promise.resolve();
+    return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
   }
   lastNavigation = navigation;
   return serializedWrite("mainWindow:navigation", () => api2.windowState.setNavigation(navigation));
@@ -66882,16 +66912,22 @@ var init_thread_pr_status2 = __esm({
 
 // src/renderer/controller/sidebar-thread.ts
 function sidebarPrRefs(thread) {
+  const cached2 = [...thread.prRefs ?? [], ...(thread.prProductions ?? []).map((item) => item.pr)];
   if (thread.messages && thread.messagesLoaded !== false) {
     const scraped = collectThreadPrRefs({
       messages: thread.messages,
       ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}
     });
     const seen = new Set(scraped.map(githubPrKey));
-    const cachedOnly = (thread.prRefs ?? []).filter((ref) => !seen.has(githubPrKey(ref)));
+    const cachedOnly = cached2.filter((ref) => {
+      const key = githubPrKey(ref);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     return [...scraped, ...cachedOnly];
   }
-  return thread.prRefs ?? [];
+  return [...new Map(cached2.map((ref) => [githubPrKey(ref), ref])).values()];
 }
 function sidebarLastPromptAt(thread) {
   if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
@@ -66914,7 +66950,8 @@ function compactSidebarThread(thread) {
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
     ...thread.automation ? { automation: thread.automation } : {},
     ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {},
-    prRefs: sidebarPrRefs(thread)
+    prRefs: sidebarPrRefs(thread),
+    ...thread.prProductions ? { prProductions: thread.prProductions } : {}
   };
 }
 var init_sidebar_thread = __esm({
@@ -67596,6 +67633,22 @@ function cacheThreads(projectId, threads) {
   liveCacheProjectId = projectId;
   threadCache.set(projectId, threads);
 }
+async function preloadSidebarThreads(store2, api2) {
+  const pending = store2.getState().projects.filter((project2) => !project2.sshHost && !project2.missing).map((project2) => project2.id);
+  const unwanted = (id) => id === store2.getState().activeProjectId || threadCache.has(id) || !store2.getState().projects.some((project2) => project2.id === id);
+  for (const id of pending) {
+    if (unwanted(id)) continue;
+    let loaded;
+    try {
+      loaded = await loadThreads(api2, id);
+    } catch {
+      continue;
+    }
+    if (unwanted(id)) continue;
+    threadCache.set(id, loaded.map(compactSidebarThread));
+    store2.emit("sidebar_threads_loaded");
+  }
+}
 function attachProjectThreadCache(store2) {
   return store2.on("threads_changed", () => {
     const { activeProjectId, threads } = store2.getState();
@@ -67672,6 +67725,7 @@ async function removeProject(store2, api2, id) {
   if (!wasActive) {
     if (wasExpanded) cancelPendingSwitch(store2, api2);
     await saveProjects(api2, projects, state.activeProjectId, state.activeThreadId);
+    threadCache.delete(id);
     store2.setState({
       projects,
       expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId
@@ -69388,7 +69442,7 @@ function mountSettingsDialog(store2, api2) {
               <p class="field-hint">
                 Applies across Copse to new threads using automatic checkout. Eligible agents
                 start by reading your checkout without changing it, then get an isolated worktree
-                before writing. Explicit worktree choices and ACP agents still create one up front.
+                before writing. Explicit worktree choices and agents installed on this device still create one up front.
                 Projects with worktrees disabled and existing threads keep their checkout behavior.
               </p>
             </fieldset>
@@ -72298,6 +72352,162 @@ var init_announcement_fixtures = __esm({
 // src/renderer/demo/demo.css
 var init_demo = __esm({
   "src/renderer/demo/demo.css"() {
+  }
+});
+
+// packages/thread-store/src/thread-pr-relations.ts
+function parsePrRelationUrl(raw) {
+  try {
+    const url2 = new URL(raw);
+    const match = /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/.*)?$/u.exec(url2.pathname);
+    const [, owner, repo, number4] = match ?? [];
+    if (url2.protocol !== "https:" && url2.protocol !== "http:" || !owner || !repo || !number4)
+      return null;
+    if (!Number.isSafeInteger(Number(number4))) return null;
+    return { owner, repo, number: Number(number4), url: raw };
+  } catch {
+    return null;
+  }
+}
+function prRepositoryKey(pr2) {
+  return `${new URL(pr2.url).hostname.replace(/^www\./iu, "").toLowerCase()}/${pr2.owner.toLowerCase()}/${pr2.repo.toLowerCase()}`;
+}
+function prRelationKey(pr2) {
+  return `${prRepositoryKey(pr2)}#${String(pr2.number)}`;
+}
+function threadPrRelationships(thread, messages = []) {
+  const refs = /* @__PURE__ */ new Map();
+  const add2 = (pr2, kind) => {
+    const parsed2 = parsePrRelationUrl(pr2.url);
+    if (!parsed2 || parsed2.owner.toLowerCase() !== pr2.owner.toLowerCase() || parsed2.repo.toLowerCase() !== pr2.repo.toLowerCase() || parsed2.number !== pr2.number)
+      return;
+    const key = prRelationKey(pr2);
+    let entry = refs.get(key);
+    if (!entry) {
+      entry = { pr: pr2, kinds: [] };
+      refs.set(key, entry);
+    }
+    if (!entry.kinds.includes(kind)) entry.kinds.push(kind);
+  };
+  for (const pr2 of thread.prRefs ?? []) add2(pr2, "referenced");
+  for (const message2 of messages)
+    for (const pr2 of extractGithubPrUrls(message2.content)) add2(pr2, "referenced");
+  if (thread.remoteAgentLink?.prUrl) {
+    const pr2 = parseGithubPrUrl(thread.remoteAgentLink.prUrl);
+    if (pr2) add2(pr2, "agent-linked");
+  }
+  for (const production of thread.prProductions ?? []) add2(production.pr, "produced");
+  return [...refs.values()];
+}
+var prRefSchema, prProductionSchema, commitProductionSchema, ThreadPrRelationshipIndex;
+var init_thread_pr_relations = __esm({
+  "packages/thread-store/src/thread-pr-relations.ts"() {
+    init_zod();
+    init_github_pr_url();
+    prRefSchema = external_exports.object({
+      owner: external_exports.string().min(1),
+      repo: external_exports.string().min(1),
+      number: external_exports.number().int().positive(),
+      url: external_exports.url()
+    });
+    prProductionSchema = external_exports.object({
+      pr: prRefSchema,
+      eventId: external_exports.string().min(1),
+      source: external_exports.literal("pr-create"),
+      createdAt: external_exports.number().int().nonnegative()
+    });
+    commitProductionSchema = external_exports.object({
+      repository: external_exports.string().regex(/^[a-z0-9.-]+\/[a-z0-9_.-]+\/[a-z0-9_.-]+$/u),
+      sha: external_exports.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u),
+      eventId: external_exports.string().min(1),
+      source: external_exports.literal("git-commit"),
+      createdAt: external_exports.number().int().nonnegative()
+    });
+    ThreadPrRelationshipIndex = class {
+      #threads = /* @__PURE__ */ new Map();
+      #byPr = /* @__PURE__ */ new Map();
+      #byCommit = /* @__PURE__ */ new Map();
+      #refs = /* @__PURE__ */ new Map();
+      constructor(threads = []) {
+        for (const thread of threads) this.upsert(thread);
+      }
+      upsert(thread) {
+        this.remove(thread.id);
+        if (thread.archivedAt != null) return;
+        this.#threads.set(thread.id, thread);
+        const refs = threadPrRelationships(thread);
+        this.#refs.set(thread.id, refs);
+        for (const { pr: pr2 } of refs) this.#add(this.#byPr, prRelationKey(pr2), thread.id);
+        for (const commit of thread.commitProductions ?? []) {
+          this.#add(this.#byCommit, `${commit.repository}@${commit.sha}`, thread.id);
+        }
+      }
+      #add(map2, key, threadId) {
+        let ids = map2.get(key);
+        if (!ids) {
+          ids = /* @__PURE__ */ new Set();
+          map2.set(key, ids);
+        }
+        ids.add(threadId);
+      }
+      remove(threadId) {
+        const remove = (map2, key) => {
+          const ids = map2.get(key);
+          ids?.delete(threadId);
+          if (ids?.size === 0) map2.delete(key);
+        };
+        for (const { pr: pr2 } of this.#refs.get(threadId) ?? []) remove(this.#byPr, prRelationKey(pr2));
+        for (const commit of this.#threads.get(threadId)?.commitProductions ?? []) {
+          remove(this.#byCommit, `${commit.repository}@${commit.sha}`);
+        }
+        this.#threads.delete(threadId);
+        this.#refs.delete(threadId);
+      }
+      forPr(pr2) {
+        const key = prRelationKey(pr2);
+        const rows = [];
+        for (const id of this.#byPr.get(key) ?? []) {
+          const thread = this.#threads.get(id);
+          const ref = this.#refs.get(id)?.find((item) => prRelationKey(item.pr) === key);
+          if (!thread || !ref) continue;
+          rows.push({
+            threadId: id,
+            title: thread.title,
+            kinds: [...ref.kinds],
+            productions: (thread.prProductions ?? []).filter((item) => prRelationKey(item.pr) === key)
+          });
+        }
+        return rows.sort((a3, b4) => a3.threadId.localeCompare(b4.threadId));
+      }
+      forThread(threadId) {
+        return (this.#refs.get(threadId) ?? []).map((item) => ({
+          pr: { ...item.pr },
+          kinds: [...item.kinds]
+        }));
+      }
+      forCommit(repository, sha) {
+        const rows = [];
+        for (const id of this.#byCommit.get(`${repository.toLowerCase()}@${sha.toLowerCase()}`) ?? []) {
+          const thread = this.#threads.get(id);
+          if (!thread) continue;
+          rows.push({
+            threadId: id,
+            title: thread.title,
+            evidence: (thread.commitProductions ?? []).filter(
+              (item) => item.repository === repository.toLowerCase() && item.sha === sha.toLowerCase()
+            )
+          });
+        }
+        return rows;
+      }
+    };
+  }
+});
+
+// src/shared/git/thread-pr-relations.ts
+var init_thread_pr_relations2 = __esm({
+  "src/shared/git/thread-pr-relations.ts"() {
+    init_thread_pr_relations();
   }
 });
 
@@ -75925,11 +76135,12 @@ var init_demo_scenarios = __esm({
       "",
       "## What changed",
       "",
-      "- A readable column keeps long lines from crossing the entire window.",
+      "- **A readable column:** keeps long lines from crossing the entire window.",
       "- Paragraphs and sections have enough separation to scan.",
       "  - Nested details retain their indentation.",
       "  - A second nested item checks the list rhythm.",
       "- Pending markdown uses the same text size as the completed answer.",
+      "- A [**bold link**](https://example.com) keeps the link colour.",
       "",
       "### Review the details",
       "",
@@ -76067,6 +76278,7 @@ var init_demo_scenarios = __esm({
       ].join("")
     )}`;
     DEMO_SCENARIOS = [
+      // The first scenario remains the marketing landing walkthrough.
       {
         // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
         // visual-test fixture. It is also what the marketing hero iframe embeds.
@@ -76391,6 +76603,46 @@ var init_demo_scenarios = __esm({
                 createdAt: FIXED_TIME
               }
             ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
+        id: "prompt-model-first-ask",
+        label: "Prompt matching without transcript diagnostics",
+        trace: {
+          id: "prompt-model-first-ask",
+          label: "The first ask pins the model in the picker",
+          prompt: "Check for typos in the README",
+          steps: [
+            {
+              chunk: {
+                type: "turn_parameters",
+                model: "claude-haiku-4-5",
+                parameters: {},
+                requestedModel: "auto:match-prompt"
+              }
+            },
+            { delayMs: 2e3, chunk: { type: "text", text: "I\u2019ll check the README for typos." } },
+            { chunk: { type: "done", stopReason: "end_turn" } }
+          ]
+        },
+        project: project("demo-prompt-model-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "auto:match-prompt"
+        },
+        threads: [
+          {
+            id: "demo-prompt-model-thread",
+            title: "README typo check",
+            status: "idle",
+            model: "auto:match-prompt",
+            messages: [],
             usage: { inputTokens: 0, outputTokens: 0 },
             createdAt: FIXED_TIME,
             updatedAt: FIXED_TIME
@@ -77464,6 +77716,71 @@ var init_demo_scenarios = __esm({
         }))
       },
       {
+        id: "sidebar-empty-project",
+        label: "Empty unopened project in the sidebar",
+        project: project("demo-empty-active"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [],
+        otherProjects: [
+          { project: project("demo-empty-other", "empty-project", "/demo/empty"), threads: [] }
+        ]
+      },
+      {
+        id: "sidebar-other-projects",
+        label: "Sidebar listing threads of projects not opened yet",
+        project: project("demo-other-projects-active", "copse-demo", "/demo/copse"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          sidebarThreadGroup: "status"
+        },
+        // The open project has one thread; two more projects hold threads that are only
+        // read in the background after startup, so their titles must still be listed.
+        threads: [
+          {
+            id: "demo-other-projects-active-chat",
+            title: "Open project thread",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        otherProjects: [
+          {
+            project: project("demo-other-projects-docs", "docs-site", "/demo/docs-site"),
+            threads: ["Rewrite the install guide", "Fix broken anchors"].map((title, index) => ({
+              id: `demo-other-projects-docs-${String(index)}`,
+              title,
+              status: "idle",
+              messages: [],
+              messagesLoaded: false,
+              usage: { inputTokens: 0, outputTokens: 0 },
+              createdAt: FIXED_TIME - 10 - index,
+              updatedAt: FIXED_TIME - 10 - index
+            }))
+          },
+          {
+            project: project("demo-other-projects-api", "api-server", "/demo/api-server"),
+            threads: [
+              {
+                id: "demo-other-projects-api-0",
+                title: "Add pagination to the list endpoint",
+                status: "idle",
+                messages: [],
+                messagesLoaded: false,
+                usage: { inputTokens: 0, outputTokens: 0 },
+                createdAt: FIXED_TIME - 20,
+                updatedAt: FIXED_TIME - 20
+              }
+            ]
+          }
+        ]
+      },
+      {
         id: "sidebar-thread-sort",
         label: "Sidebar thread sort",
         project: project("demo-sidebar-sort-project"),
@@ -77523,6 +77840,64 @@ var init_demo_scenarios = __esm({
             usage: { inputTokens: 0, outputTokens: 0 },
             createdAt: FIXED_TIME - 5,
             updatedAt: FIXED_TIME - 5
+          }
+        ]
+      },
+      {
+        id: "sidebar-thread-changes",
+        label: "Sidebar changes glyph",
+        project: project("demo-sidebar-changes-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // Two finished threads with unlanded work, one clean, one still running.
+        threadChanges: {
+          "demo-sidebar-changes-commits": { dirty: false, unpushed: 2 },
+          "demo-sidebar-changes-dirty": { dirty: true },
+          "demo-sidebar-changes-clean": { dirty: false }
+        },
+        threads: [
+          {
+            id: "demo-sidebar-changes-clean",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-sidebar-changes-commits",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          {
+            id: "demo-sidebar-changes-dirty",
+            title: "Add a retry to uploads",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 3,
+            updatedAt: FIXED_TIME - 3
+          },
+          {
+            id: "demo-sidebar-changes-running",
+            title: "Run the schema migration",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 4,
+            updatedAt: FIXED_TIME - 4
           }
         ]
       },
@@ -77773,6 +78148,107 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "pr-relations",
+        label: "PR producing and related threads",
+        project: project("demo-pr-relations", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          filesPaneOpen: true,
+          rightPanelMode: "prs",
+          layout: {
+            projectsPaneWidth: 220,
+            filesPaneWidth: 660,
+            filesPaneHeight: 360,
+            fileTreeWidth: 220
+          }
+        },
+        threads: [
+          {
+            id: "pr-producer",
+            title: "Implement widget",
+            status: "idle",
+            messages: [],
+            prProductions: [
+              {
+                pr: {
+                  owner: "acme",
+                  repo: "widgets",
+                  number: 42,
+                  url: "https://github.com/acme/widgets/pull/42"
+                },
+                source: "pr-create",
+                eventId: "demo-create-42",
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "pr-reviewer",
+            title: "Review widget",
+            status: "idle",
+            messages: [
+              {
+                id: "review-refs",
+                role: "user",
+                content: "Review https://github.com/acme/widgets/pull/42 and https://github.com/acme/widgets/pull/43",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            prRefs: [42, 43].map((number4) => ({
+              owner: "acme",
+              repo: "widgets",
+              number: number4,
+              url: `https://github.com/acme/widgets/pull/${String(number4)}`
+            })),
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "pr-mentioned",
+            title: "Release planning",
+            status: "idle",
+            messages: [
+              {
+                id: "release-ref",
+                role: "user",
+                content: "Include https://github.com/acme/widgets/pull/42 in the release.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            prRefs: [
+              {
+                owner: "acme",
+                repo: "widgets",
+                number: 42,
+                url: "https://github.com/acme/widgets/pull/42"
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        pullRequests: [42, 43].map((number4) => ({
+          owner: "acme",
+          repo: "widgets",
+          number: number4,
+          url: `https://github.com/acme/widgets/pull/${String(number4)}`,
+          title: number4 === 42 ? "Add widget support" : "Follow up on widget review",
+          state: "OPEN",
+          body: "",
+          files: [],
+          checks: "success"
+        }))
+      },
+      {
         id: "chat-layout-styling",
         label: "Chat layout styling",
         project: project("demo-chat-layout-project"),
@@ -77964,11 +78440,15 @@ function createDemoApi(scenario, options = {}) {
   let mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
   const pendingMcpSignIns = /* @__PURE__ */ new Map();
   const storage = /* @__PURE__ */ new Map([
-    ["projects", [scenario.project]],
+    [
+      "projects",
+      [scenario.project, ...(scenario.otherProjects ?? []).map((other) => other.project)]
+    ],
     ["activeProjectId", scenario.project.id]
   ]);
   let workspaceRoot = scenario.project.path;
   let threads = structuredClone(scenario.threads);
+  const prRefsHandlers = /* @__PURE__ */ new Set();
   const showAutomationPermissions = scenario.id === "automation-permissions";
   const demoPlugins = showAutomationPermissions ? [...DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN] : DEMO_PLUGINS;
   const automationSchedules = showAutomationPermissions ? [
@@ -78426,16 +78906,34 @@ function createDemoApi(scenario, options = {}) {
         if (thread) thread.archivedAt = archivedAt;
         return resolved2({ status: "archived", archivedAt, worktree: thread?.worktree });
       },
-      loadProject: (projectId) => resolved2(projectId === scenario.project.id ? structuredClone(threads) : []),
+      loadProject: (projectId) => resolved2(
+        projectId === scenario.project.id ? structuredClone(threads) : structuredClone(
+          scenario.otherProjects?.find((other) => other.project.id === projectId)?.threads ?? []
+        )
+      ),
       // The demo always hands back whole threads, so nothing ever asks to
       // hydrate one; answering from the in-memory list keeps that true. The
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
       loadMessages: (_projectId, threadId) => scenario.holdThreadHydration === true ? new Promise(() => void 0) : scenario.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved2(structuredClone(threads.find((t2) => t2.id === threadId)?.messages ?? [])),
-      // Demo threads always arrive whole, so nothing is ever backfilled.
-      backfillPrRefs: () => resolvedVoid(),
-      onPrRefs: () => () => void 0,
+      // Demo threads link no PRs, so a backfill answers each one with an empty ref set —
+      // the settled "no PR" the sidebar waits for before it draws a row's changes glyph.
+      backfillPrRefs: (projectId, threadIds) => {
+        for (const handler of prRefsHandlers) {
+          handler(
+            projectId,
+            threadIds.map((threadId) => ({ threadId, prRefs: [] }))
+          );
+        }
+        return resolvedVoid();
+      },
+      onPrRefs: (handler) => {
+        prRefsHandlers.add(handler);
+        return () => {
+          prRefsHandlers.delete(handler);
+        };
+      },
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => void 0,
       create: (_projectId, thread) => {
@@ -78921,6 +79419,12 @@ function createDemoApi(scenario, options = {}) {
       isAvailable: () => resolved2(true),
       status: () => resolved2({ staged: [], unstaged: [] }),
       changeStats: () => resolved2(scenario.changeStats ? { ...scenario.changeStats } : null),
+      threadChangeSummary: (refs) => resolved2(
+        refs.map(({ threadId }) => {
+          const changes = scenario.threadChanges?.[threadId];
+          return changes ? { ...changes } : null;
+        })
+      ),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved2(null),
       workingFileDiff: () => resolved2(null),
@@ -78953,8 +79457,8 @@ function createDemoApi(scenario, options = {}) {
     },
     gh: {
       status: () => resolved2({
-        installed: false,
-        authenticated: false,
+        installed: Boolean(scenario.pullRequests),
+        authenticated: Boolean(scenario.pullRequests),
         username: null,
         message: "Unavailable in browser demo"
       }),
@@ -78962,12 +79466,18 @@ function createDemoApi(scenario, options = {}) {
       setListWatch: resolvedVoid,
       onListsTick: subscribe,
       listMyOpenPrs: () => resolved2([]),
-      listWorkspaceOpenPrs: emptyArray,
+      listWorkspaceOpenPrs: () => resolved2(scenario.pullRequests ?? []),
       prChecks: () => resolved2("no_checks"),
-      prDetails: () => resolved2(null),
+      prDetails: (owner, repo, number4) => resolved2(
+        scenario.pullRequests?.find(
+          (pr2) => pr2.owner === owner && pr2.repo === repo && pr2.number === number4
+        ) ?? null
+      ),
       prFileDiff: () => resolved2(null),
       resolvePrUrl: () => resolved2(null),
       agentPrLinks: emptyArray,
+      prThreadRelationships: (pr2) => resolved2(new ThreadPrRelationshipIndex(threads).forPr(pr2)),
+      threadPrRelationships: (threadId) => resolved2(new ThreadPrRelationshipIndex(threads).forThread(threadId)),
       createPrForThread: () => resolved2({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       rerunFailedRuns: () => resolved2({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       approvePr: () => resolved2({ ok: false, message: "Unavailable in demo", backend: "mock" }),
@@ -79040,6 +79550,7 @@ function createDemoApi(scenario, options = {}) {
 var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
+    init_thread_pr_relations2();
     init_automations_plugin();
     init_parse_agent_run_payload();
     init_advisor_strategy_plugin();
@@ -79674,7 +80185,8 @@ function createStore(initial) {
     request_terminal_command: /* @__PURE__ */ new Set(),
     code_block_run_requested: /* @__PURE__ */ new Set(),
     code_block_run_finished: /* @__PURE__ */ new Set(),
-    attention_changed: /* @__PURE__ */ new Set()
+    attention_changed: /* @__PURE__ */ new Set(),
+    sidebar_threads_loaded: /* @__PURE__ */ new Set()
   };
   function on3(event, handler) {
     listeners[event].add(handler);
@@ -81603,6 +82115,24 @@ var init_pr_status = __esm({
   }
 });
 
+// src/shared/git/thread-change-summary.ts
+function describeThreadChanges(summary) {
+  if (!summary) return null;
+  const unpushed = summary.unpushed ?? 0;
+  if (unpushed > 0) {
+    const commits = `${String(unpushed)} unpushed commit${unpushed === 1 ? "" : "s"}`;
+    return summary.dirty ? `${commits} and uncommitted changes` : commits;
+  }
+  return summary.dirty ? "Uncommitted changes" : null;
+}
+function sameThreadChangeSummary(a3, b4) {
+  return describeThreadChanges(a3) === describeThreadChanges(b4);
+}
+var init_thread_change_summary = __esm({
+  "src/shared/git/thread-change-summary.ts"() {
+  }
+});
+
 // src/renderer/views/automation-dialog.ts
 function hasAutomationDialog(plugin) {
   return plugin.id === AUTOMATIONS_PLUGIN_ID && plugin.trust === "first-party" && plugin.contributions.ui.some(
@@ -81756,6 +82286,9 @@ function buildForkedThread(source, options = {}) {
     title: forkThreadTitle(source.title),
     status: "idle",
     messages,
+    // References follow only the copied transcript; native production belongs
+    // to the source thread and is never inherited or inferred from tool text.
+    prRefs: collectThreadPrRefs({ messages }),
     // Usage is a ledger of what a thread spent. The fork has spent nothing yet;
     // the source keeps its own totals.
     usage: { inputTokens: 0, outputTokens: 0 },
@@ -81801,6 +82334,7 @@ function copyMessage(message2) {
 var randomUUID2, MAX_TITLE_LENGTH, FORK_SUFFIX;
 var init_fork_thread = __esm({
   "packages/thread-store/src/fork-thread.ts"() {
+    init_thread_pr_status();
     randomUUID2 = () => globalThis.crypto.randomUUID();
     MAX_TITLE_LENGTH = 120;
     FORK_SUFFIX = " (fork)";
@@ -83745,6 +84279,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   store2.on("threads_changed", onChange);
   store2.on("thread_status_changed", onChange);
   store2.on("projects_changed", onChange);
+  store2.on("sidebar_threads_loaded", onChange);
   store2.on("agent_activity", onChange);
   function hide3() {
     cancelRender?.();
@@ -84774,6 +85309,15 @@ function chatPrStatus(rollup, ciFailing, conflicts) {
     icon
   );
 }
+function chatChangesStatus(label) {
+  const icon = gitBranchIcon("ui-icon ui-icon-sm");
+  icon.setAttribute("aria-hidden", "true");
+  return el(
+    "span",
+    { class: "chat-changes-status", role: "img", "aria-label": label, "data-tooltip": label },
+    icon
+  );
+}
 function settingsIcon(className = "titlebar-btn-icon") {
   const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", className);
@@ -85116,6 +85660,36 @@ function mountProjectsPane(root, store2, api2) {
   const prBackfillRetryTimers = /* @__PURE__ */ new Set();
   let prBackfillRowsByKey = /* @__PURE__ */ new Map();
   let prBackfillObserver = null;
+  const THREAD_CHANGE_TTL_MS = 3e4;
+  const THREAD_CHANGE_MAX_PER_PASS = 60;
+  const threadChangeCache = /* @__PURE__ */ new Map();
+  const threadChangeInFlight = /* @__PURE__ */ new Set();
+  let threadChangeGeneration = 0;
+  let threadChangeTimer = null;
+  const threadChangeKey = (projectId, threadId) => `${projectId}\0${threadId}`;
+  let threadChangeRendered = [];
+  function refreshThreadChanges(refs, opts = {}) {
+    const batch = refs.filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId))).slice(0, THREAD_CHANGE_MAX_PER_PASS);
+    if (batch.length === 0) return;
+    const generation = threadChangeGeneration;
+    for (const ref of batch) threadChangeInFlight.add(threadChangeKey(ref.projectId, ref.threadId));
+    const settle2 = (results) => {
+      let changed = false;
+      for (const [i2, ref] of batch.entries()) {
+        const key = threadChangeKey(ref.projectId, ref.threadId);
+        threadChangeInFlight.delete(key);
+        const summary = results[i2] ?? null;
+        if (!sameThreadChangeSummary(threadChangeCache.get(key)?.summary ?? null, summary)) {
+          changed = true;
+        }
+        threadChangeCache.set(key, { summary, at: Date.now() });
+      }
+      if (changed && generation === threadChangeGeneration) render(true);
+    };
+    void api2.git.threadChangeSummary(batch, opts).then(settle2, () => {
+      settle2([]);
+    });
+  }
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
   const expandedFailedSchedules = /* @__PURE__ */ new Set();
@@ -85257,6 +85831,16 @@ function mountProjectsPane(root, store2, api2) {
         if (lifecycleChanged) render();
       });
     }
+  }
+  function recheckStaleThreadChanges() {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    const now = Date.now();
+    refreshThreadChanges(
+      threadChangeRendered.filter(({ projectId, threadId }) => {
+        const cached2 = threadChangeCache.get(threadChangeKey(projectId, threadId));
+        return !cached2 || now - cached2.at > THREAD_CHANGE_TTL_MS;
+      })
+    );
   }
   function ciFailingForThread(thread) {
     return sidebarPrRefs(thread).some((ref) => {
@@ -85660,6 +86244,9 @@ function mountProjectsPane(root, store2, api2) {
     prBackfillObserver = null;
     clear(list);
     const prBackfillRows = [];
+    const threadChangeWanted = [];
+    const threadChangeSeen = [];
+    const threadChangeSeenKeys = /* @__PURE__ */ new Set();
     syncFilterControls();
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
@@ -85841,6 +86428,19 @@ function mountProjectsPane(root, store2, api2) {
             prRollup.kind === "open" && conflictsForThread(thread)
           )
         );
+      } else if (thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
+        const key = threadChangeKey(project2.id, thread.id);
+        threadChangeSeen.push({ projectId: project2.id, threadId: thread.id });
+        threadChangeSeenKeys.add(key);
+        const cached2 = threadChangeCache.get(key);
+        const changesLabel = describeThreadChanges(cached2?.summary ?? null);
+        if (changesLabel) {
+          chatRow.classList.add("has-changes-status");
+          chatRow.append(chatChangesStatus(changesLabel));
+        }
+        if (!cached2 || Date.now() - cached2.at > THREAD_CHANGE_TTL_MS) {
+          threadChangeWanted.push({ projectId: project2.id, threadId: thread.id });
+        }
       }
       if (thread.prRefs === void 0) {
         prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
@@ -86100,6 +86700,31 @@ function mountProjectsPane(root, store2, api2) {
       }
       return section;
     }
+    function renderNewThreadButton(project2) {
+      const newThreadBtn = el(
+        "button",
+        {
+          type: "button",
+          class: "project-new-thread-btn",
+          "aria-label": "New thread",
+          "data-tooltip": "New thread"
+        },
+        plusIcon("ui-icon ui-icon-sm")
+      );
+      newThreadBtn.addEventListener("click", (e3) => {
+        e3.stopPropagation();
+        if (project2.id !== store2.getState().activeProjectId) {
+          switchProject(store2, api2, project2.id);
+          return;
+        }
+        if (!store2.getState().workspaceRoot) {
+          void addProject(store2, api2);
+          return;
+        }
+        openNewThread(store2);
+      });
+      return newThreadBtn;
+    }
     function renderProjectEntry(project2) {
       const entry = el("div", { class: "project-entry", "data-project-id": project2.id });
       const isExpanded = project2.id === expandedId;
@@ -86230,29 +86855,7 @@ function mountProjectsPane(root, store2, api2) {
         return entry;
       }
       if (isExpanded) {
-        const newThreadBtn = el(
-          "button",
-          {
-            type: "button",
-            class: "project-new-thread-btn",
-            "aria-label": "New thread",
-            "data-tooltip": "New thread"
-          },
-          plusIcon("ui-icon ui-icon-sm")
-        );
-        newThreadBtn.addEventListener("click", (e3) => {
-          e3.stopPropagation();
-          if (project2.id !== store2.getState().activeProjectId) {
-            switchProject(store2, api2, project2.id);
-            return;
-          }
-          if (!store2.getState().workspaceRoot) {
-            void addProject(store2, api2);
-            return;
-          }
-          openNewThread(store2);
-        });
-        projectLine.append(newThreadBtn);
+        projectLine.append(renderNewThreadButton(project2));
       }
       if (!isExpanded) return entry;
       const isFiltering = threadFilter.length > 0 && project2.id === activeProjectId;
@@ -86312,6 +86915,8 @@ function mountProjectsPane(root, store2, api2) {
         );
       } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
+      } else if (!isFiltering && visibleThreads.length === 0) {
+        chats.append(el("div", { class: "sidebar-empty" }, "No threads yet"));
       }
       for (const thread of visibleThreads) {
         chats.append(renderThreadRow(project2, thread));
@@ -86358,8 +86963,24 @@ function mountProjectsPane(root, store2, api2) {
       const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
       const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse);
       const sections = mode === "status" ? groupRowsByStatus(ordered, isThreadAwaitingAttention) : [{ id: "all", label: "", rows: ordered }];
+      const withThreads = new Set(ordered.map((row2) => row2.projectId));
+      const emptyProjectRows = Array.from(owners.values()).filter((project2) => !withThreads.has(project2.id)).map((project2) => {
+        const nameRow = el(
+          "button",
+          { class: "project-row", title: project2.path },
+          el("span", { class: "project-name" }, projectDisplayName(project2))
+        );
+        nameRow.addEventListener("click", () => {
+          switchProject(store2, api2, project2.id);
+        });
+        return el(
+          "div",
+          { class: "project-entry", "data-project-id": project2.id },
+          el("div", { class: "project-line" }, nameRow, renderNewThreadButton(project2))
+        );
+      });
       if (ordered.length === 0) {
-        return [el("div", { class: "sidebar-empty" }, "No threads yet")];
+        return [el("div", { class: "sidebar-empty" }, "No threads yet"), ...emptyProjectRows];
       }
       return sections.map((section) => {
         const block = el("div", { class: "thread-section", "data-section-id": section.id });
@@ -86383,7 +87004,9 @@ function mountProjectsPane(root, store2, api2) {
           const project2 = owners.get(byThread.get(thread)?.projectId ?? "");
           if (!project2) continue;
           const row2 = renderThreadRow(project2, thread);
-          row2.querySelector(".chat-title")?.after(el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project2)}`));
+          row2.querySelector(".chat-title")?.after(
+            el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project2)}`)
+          );
           chats.append(row2);
         }
         if (paged.hasMore) {
@@ -86400,7 +87023,7 @@ function mountProjectsPane(root, store2, api2) {
         }
         block.append(chats);
         return block;
-      });
+      }).concat(emptyProjectRows);
     }
     const groupMode = store2.getState().sidebarThreadGroup;
     if (groupMode !== "project" && threadFilter.length === 0) {
@@ -86474,13 +87097,35 @@ function mountProjectsPane(root, store2, api2) {
       prBackfillObserver = observer;
       for (const { row: row2 } of prBackfillRows) observer.observe(row2);
     }
+    threadChangeRendered = threadChangeSeen;
+    const pruneBefore = Date.now() - 2 * THREAD_CHANGE_TTL_MS;
+    for (const [key, entry] of threadChangeCache) {
+      if (entry.at < pruneBefore && !threadChangeSeenKeys.has(key)) threadChangeCache.delete(key);
+    }
+    refreshThreadChanges(threadChangeWanted);
     if (preserveScroll) list.scrollTop = scrollTop;
   }
+  const unsubWorkingTree = api2.git.onWorkingTreeChanged(() => {
+    if (threadChangeTimer !== null) clearTimeout(threadChangeTimer);
+    threadChangeTimer = setTimeout(() => {
+      threadChangeTimer = null;
+      const { activeProjectId, activeThreadId, projects } = store2.getState();
+      if (!activeProjectId || !activeThreadId) return;
+      if (projects.find((p2) => p2.id === activeProjectId)?.sshHost) return;
+      refreshThreadChanges([{ projectId: activeProjectId, threadId: activeThreadId }], {
+        fresh: true
+      });
+    }, 1500);
+  });
+  window.addEventListener("focus", recheckStaleThreadChanges);
+  document.addEventListener("visibilitychange", recheckStaleThreadChanges);
   const unsubs = [
+    unsubWorkingTree,
     store2.on("projects_changed", render),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", render),
+    store2.on("sidebar_threads_loaded", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", () => {
@@ -86510,6 +87155,13 @@ function mountProjectsPane(root, store2, api2) {
     prBackfillObserver = null;
     prBackfillRowsByKey.clear();
     prStatusGeneration += 1;
+    threadChangeGeneration += 1;
+    if (threadChangeTimer !== null) clearTimeout(threadChangeTimer);
+    threadChangeTimer = null;
+    window.removeEventListener("focus", recheckStaleThreadChanges);
+    document.removeEventListener("visibilitychange", recheckStaleThreadChanges);
+    threadChangeCache.clear();
+    threadChangeInFlight.clear();
     orphanScanGeneration += 1;
     dismissContextMenu();
     renaming = null;
@@ -86529,6 +87181,7 @@ var init_projects_pane = __esm({
     init_rename_blur();
     init_pr_status();
     init_icons();
+    init_thread_change_summary();
     init_thread_helpers();
     init_github_pr_url2();
     init_thread_pr_status2();
@@ -88776,7 +89429,7 @@ function containerRunResultMarkdown(progress) {
   const facts = [`model ${progress.model}`];
   if (result) {
     facts.push(
-      result.harness === "copse" ? "Copse harness" : `${result.harness.acp} agent`,
+      result.harness === "copse" ? "Copse agent" : `${result.harness.acp} agent`,
       `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`
     );
   }
@@ -94924,6 +95577,13 @@ function bindSelectionQuote(transcript, actions) {
     } else {
       updateControls();
     }
+  });
+  input2.addEventListener("copy", (event) => {
+    if (popup.hidden || input2.selectionStart !== input2.selectionEnd || !event.clipboardData) return;
+    const text2 = selectedRange?.toString();
+    if (!text2) return;
+    event.clipboardData.setData("text/plain", text2);
+    event.preventDefault();
   });
   input2.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.isComposing || event.shiftKey) return;
@@ -113196,8 +113856,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       rows.push(row2("Outcome", result.stopReason));
       rows.push(
         row2(
-          "Harness",
-          result.harness === "copse" ? "Copse" : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (ACP agent)`
+          "Agent",
+          result.harness === "copse" ? "Copse" : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (coding agent)`
         )
       );
       rows.push(row2("Prompts reached a handler", String(result.promptsAttempted)));
@@ -113896,6 +114556,9 @@ function mountInputBar(root, store2, api2, opts = {}) {
   }
   function footerModelDisplayLabel(current) {
     const resolved3 = footerResolvedModel(current);
+    if (current === MATCH_PROMPT_MODEL_SELECTOR) {
+      return resolved3 ? `Auto \u2014 ${modelDisplayLabel(resolved3)}` : "Match task";
+    }
     return resolved3 ? modelDisplayLabel(resolved3) : void 0;
   }
   function footerRecentModels() {
@@ -114591,6 +115254,9 @@ ${description}
     queueIndicator.hidden = false;
     queueIndicator.textContent = count === 1 ? "1 queued" : `${String(count)} queued`;
   }
+  function currentBreakdown() {
+    return breakdownModel === footerChatModel() ? lastBreakdown : null;
+  }
   function usageViews() {
     const thread = getActiveThread(store2);
     if (!thread) return null;
@@ -114600,7 +115266,7 @@ ${description}
       running: thread.status === "running",
       messages: thread.messages,
       contextSnapshot: thread.contextSnapshot,
-      breakdown: lastBreakdown
+      breakdown: currentBreakdown()
     });
     if (!display) return null;
     const priced = { model, measuredUsage: thread.usage, pricing: modelPricing };
@@ -114612,10 +115278,10 @@ ${description}
   }
   function updateContextFitWarning() {
     const model = footerChatModel();
-    const advice = breakdownModel === model ? contextFitAdvice(lastBreakdown, {
+    const advice = contextFitAdvice(currentBreakdown(), {
       modelLabel: modelDisplayLabel(model),
       lmStudioModel: isLocalModel(model)
-    }) : null;
+    });
     if (!advice) {
       contextFitWarning.hidden = true;
       return;
@@ -114628,18 +115294,20 @@ ${description}
     const thread = getActiveThread(store2);
     const running = thread?.status === "running";
     const acpContext = isAcpModel(footerChatModel());
+    const breakdown = currentBreakdown();
+    if (lastBreakdown && !breakdown) scheduleContextEstimate(0);
     const usage = usageViews();
     const snapshot = thread?.contextSnapshot;
     const snapshotUsable = !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01;
     const draftNonEmpty = composer.value.trim().length > 0 || attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0 || attachedArchives.length > 0 || attachedThreads.length > 0 || attachedShells.length > 0;
-    const showBreakdown = !acpContext && !running && !!lastBreakdown && lastBreakdown.totalTokens > 0 && (!snapshotUsable || draftNonEmpty);
-    const hoverBreakdown = !running && !acpContext ? lastBreakdown : null;
+    const showBreakdown = !acpContext && !running && !!breakdown && breakdown.totalTokens > 0 && (!snapshotUsable || draftNonEmpty);
+    const hoverBreakdown = !running && !acpContext ? breakdown : null;
     contextWheel.update(snapshot, running, {
       usageLine: usage?.detail ?? null,
       usage: usage?.tooltip ?? null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
-      snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by ACP agent" : null
+      snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by the agent" : null
     });
     footerOverflow?.update();
     updateContextFitWarning();
@@ -114684,6 +115352,7 @@ ${description}
   async function runContextEstimate() {
     if (!estimateEnabled) return;
     if (isAcpModel(footerChatModel())) {
+      estimateSeq++;
       if (lastBreakdown !== null) {
         lastBreakdown = null;
         breakdownModel = null;
@@ -114693,6 +115362,7 @@ ${description}
     }
     const id = getActiveThreadId();
     if (!id) {
+      estimateSeq++;
       if (lastBreakdown !== null) {
         lastBreakdown = null;
         breakdownModel = null;
@@ -128462,6 +129132,67 @@ var init_pr_pane_activity = __esm({
   }
 });
 
+// src/renderer/views/pr-thread-relationships.ts
+function renderPrThreadRelationships(rows, openThread) {
+  const host = el("section", {
+    class: "pr-thread-relationships",
+    "aria-label": "PR thread relationships"
+  });
+  const groups = [
+    {
+      label: "Producing threads",
+      kind: "produced",
+      rows: rows.filter((row2) => row2.kinds.includes("produced"))
+    },
+    {
+      label: "Related threads",
+      kind: "related",
+      rows: rows.filter((row2) => !row2.kinds.includes("produced"))
+    }
+  ];
+  for (const group of groups) {
+    const section = el(
+      "div",
+      { class: "pr-thread-group", "data-relationship-group": group.kind },
+      el("h5", {}, group.label)
+    );
+    if (group.rows.length === 0)
+      section.append(
+        el(
+          "p",
+          { class: "pr-thread-empty" },
+          group.kind === "produced" ? "No recorded producing thread." : "No related threads recorded."
+        )
+      );
+    for (const row2 of group.rows) {
+      const label = row2.kinds.includes("produced") ? "Created PR" : row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
+      const button = el(
+        "button",
+        {
+          type: "button",
+          class: "pr-open-thread-btn pr-thread-link",
+          "data-thread-id": row2.threadId,
+          "data-relationship": group.kind,
+          "aria-label": `Open thread: ${row2.title}`
+        },
+        el("span", { class: "pr-thread-title" }, row2.title),
+        el("span", { class: "pr-thread-kind" }, label)
+      );
+      button.addEventListener("click", () => {
+        openThread(row2.threadId);
+      });
+      section.append(button);
+    }
+    host.append(section);
+  }
+  return host;
+}
+var init_pr_thread_relationships = __esm({
+  "src/renderer/views/pr-thread-relationships.ts"() {
+    init_helpers();
+  }
+});
+
 // src/renderer/views/pr-pane.ts
 function agentProviderLabel(provider) {
   return AGENT_PROVIDER_LABEL[provider] ?? provider;
@@ -128470,7 +129201,7 @@ function indexAgentLinksByPrKey(entries2) {
   const map2 = /* @__PURE__ */ new Map();
   for (const entry of entries2) {
     const key = remoteAgentPrIndexKey(entry.prUrl);
-    if (key) map2.set(key, entry);
+    if (key) map2.set(key, [...map2.get(key) ?? [], entry]);
   }
   return map2;
 }
@@ -128481,35 +129212,26 @@ function prsModeActive(store2) {
 function collectLinkedPrs(store2) {
   const thread = getActiveThread(store2);
   if (!thread) return [];
-  const seen = /* @__PURE__ */ new Set();
-  const refs = [];
-  for (const message2 of thread.messages) {
-    for (const parsed2 of extractGithubPrUrls(message2.content)) {
-      const key = githubPrKey(parsed2);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      refs.push({ owner: parsed2.owner, repo: parsed2.repo, number: parsed2.number });
-    }
-  }
-  return refs;
+  return threadPrRelationships(thread, thread.messages).map(({ pr: pr2 }) => ({
+    owner: pr2.owner,
+    repo: pr2.repo,
+    number: pr2.number
+  }));
 }
 function indexThreadLinks(store2) {
   const links = /* @__PURE__ */ new Map();
   for (const thread of store2.getState().threads) {
-    for (const ref of thread.prRefs ?? []) {
-      const key = githubPrKey(ref);
-      if (!links.has(key)) links.set(key, { threadId: thread.id, title: thread.title });
-    }
-  }
-  const activeThread = getActiveThread(store2);
-  if (activeThread) {
-    for (const message2 of activeThread.messages) {
-      for (const ref of extractGithubPrUrls(message2.content)) {
-        const key = githubPrKey(ref);
-        if (!links.has(key)) {
-          links.set(key, { threadId: activeThread.id, title: activeThread.title });
-        }
-      }
+    if (thread.archivedAt != null) continue;
+    for (const { pr: pr2, kinds } of threadPrRelationships(thread, thread.messages)) {
+      const key = prRelationKey(pr2);
+      const rows = links.get(key) ?? [];
+      rows.push({
+        threadId: thread.id,
+        title: thread.title,
+        kinds,
+        productions: (thread.prProductions ?? []).filter((item) => prRelationKey(item.pr) === key)
+      });
+      links.set(key, rows);
     }
   }
   return links;
@@ -128570,7 +129292,65 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
-  let threadLinks = indexThreadLinks(store2);
+  let threadLinks = /* @__PURE__ */ new Map();
+  let prRelationships = null;
+  let relationshipError = false;
+  let relationshipRequest = 0;
+  let activeThreadRelations = null;
+  let threadRelationshipRequest = 0;
+  async function loadThreadRelationships() {
+    const thread = getActiveThread(store2);
+    const projectId = store2.getState().activeProjectId;
+    const request = ++threadRelationshipRequest;
+    if (!thread) {
+      activeThreadRelations = null;
+      return;
+    }
+    try {
+      const rows = await api2.gh.threadPrRelationships(thread.id);
+      if (disposed || request !== threadRelationshipRequest || store2.getState().activeProjectId !== projectId || getActiveThread(store2)?.id !== thread.id)
+        return;
+      activeThreadRelations = { projectId, threadId: thread.id, rows };
+      renderList();
+    } catch {
+      if (request === threadRelationshipRequest) activeThreadRelations = null;
+    }
+  }
+  async function loadPrRelationships(input2) {
+    const ref = input2 ?? (prDetails ? {
+      owner: prDetails.owner,
+      repo: prDetails.repo,
+      number: prDetails.number,
+      url: prDetails.url
+    } : selectedPr ? {
+      ...selectedPr,
+      url: `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`
+    } : null);
+    if (!ref) return null;
+    const projectId = store2.getState().activeProjectId;
+    const request = ++relationshipRequest;
+    try {
+      const rows = await api2.gh.prThreadRelationships(ref);
+      if (disposed || request !== relationshipRequest || store2.getState().activeProjectId !== projectId)
+        return null;
+      const byThread = new Map(rows.map((row2) => [row2.threadId, row2]));
+      for (const row2 of threadLinks.get(prRelationKey(ref)) ?? []) {
+        const current = byThread.get(row2.threadId);
+        if (current) current.kinds = [.../* @__PURE__ */ new Set([...current.kinds, ...row2.kinds])];
+        else byThread.set(row2.threadId, row2);
+      }
+      prRelationships = [...byThread.values()];
+      relationshipError = false;
+    } catch {
+      if (disposed || request !== relationshipRequest || store2.getState().activeProjectId !== projectId)
+        return null;
+      relationshipError = true;
+      prRelationships = null;
+    }
+    renderMeta();
+    renderList();
+    return prRelationships;
+  }
   let agentLinksGen = 0;
   let linkedRefs = [];
   let myPrs = [];
@@ -128699,16 +129479,22 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const state = knownChecks(pr2);
     applyPrStatus(ci2, pr2, state ?? "loading");
     ciEls.set(githubPrKey(pr2), ci2);
-    const agent = agentLinks.get(githubPrKey(pr2));
-    const agentBadge = agent ? el(
+    const agents = agentLinks.get(githubPrKey(pr2)) ?? [];
+    const agentBadge = agents.length > 0 ? el(
       "span",
       {
         class: "pr-list-agent-badge",
-        "data-tooltip": `Opened by a ${agentProviderLabel(agent.provider)} agent launched from this app`
+        "data-tooltip": `Linked to ${String(agents.length)} agent thread${agents.length === 1 ? "" : "s"}: ${[...new Set(agents.map((agent) => agentProviderLabel(agent.provider)))].join(", ")}`
       },
       "\u{1F916}"
     ) : null;
     const titleText = prListDisplayTitle(pr2);
+    const activeThread = getActiveThread(store2);
+    const currentKinds = prRelationships?.find((item) => item.threadId === activeThread?.id)?.kinds;
+    const producedInNative = activeThreadRelations !== null && activeThreadRelations.projectId === store2.getState().activeProjectId && activeThreadRelations.threadId === activeThread?.id && activeThreadRelations.rows.some(
+      (item) => prRelationKey(item.pr) === prRelationKey(pr2) && item.kinds.includes("produced")
+    );
+    const producedHere = (activeThread?.prProductions?.some((item) => prRelationKey(item.pr) === prRelationKey(pr2)) ?? false) || producedInNative || selectedPr !== null && githubPrKey(selectedPr) === githubPrKey(pr2) && (currentKinds?.includes("produced") ?? false);
     const row2 = el(
       "button",
       {
@@ -128723,6 +129509,16 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         { class: "pr-list-meta" },
         el("span", { class: "pr-list-number" }, `#${String(pr2.number)}`),
         el("span", { class: "pr-list-repo", title: `${pr2.owner}/${pr2.repo}` }, pr2.repo),
+        ...section === "linked" ? [
+          el(
+            "span",
+            {
+              class: "pr-list-relationship",
+              "data-relationship": producedHere ? "produced" : "related"
+            },
+            producedHere ? "Produced" : "Related"
+          )
+        ] : [],
         ...agentBadge ? [agentBadge] : [],
         ci2,
         el(
@@ -128804,7 +129600,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         el(
           "div",
           { class: "git-changes-section-title" },
-          `From chat (${String(linkedPrs.length)})`
+          `Related PRs \xB7 this thread (${String(linkedPrs.length)})`
         )
       );
       for (const pr2 of linkedPrs) section.append(renderPrRow(pr2, "linked"));
@@ -128947,7 +129743,35 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   function renderMeta() {
     clear(metaHost);
-    if (!prDetails || !selectedPr) return;
+    if (!selectedPr) return;
+    const relationships = prRelationships ? renderPrThreadRelationships(prRelationships, (id) => {
+      switchThread(store2, id);
+    }) : el(
+      "p",
+      { class: "pr-thread-empty", role: "status" },
+      relationshipError ? "Thread relationships unavailable." : "Loading thread relationships\u2026"
+    );
+    relationships.hidden = prDetails !== null && activeSection !== "overview";
+    if (!prDetails) {
+      metaHost.append(
+        el(
+          "div",
+          { class: "pr-viewer-title-row" },
+          el(
+            "h4",
+            { class: "pr-viewer-title" },
+            `#${String(selectedPr.number)} ${selectedPr.owner}/${selectedPr.repo}`
+          )
+        ),
+        el(
+          "div",
+          { class: "pr-viewer-subtitle" },
+          `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`
+        ),
+        relationships
+      );
+      return;
+    }
     const openBtn = el(
       "button",
       {
@@ -128962,27 +129786,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     openBtn.addEventListener("click", () => {
       void api2.shell.openExternal(prUrl);
     });
-    const agent = agentLinks.get(githubPrKey(selectedPr));
-    const producingThread = threadLinks.get(githubPrKey(selectedPr));
-    const producingThreadId = agent?.threadId ?? producingThread?.threadId;
-    const openThreadBtn = producingThreadId ? el(
-      "button",
-      {
-        type: "button",
-        class: "ui-btn ui-btn-ghost ui-btn-compact pr-open-thread-btn",
-        "data-tooltip": agent ? `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent` : "Go to the thread that opened this pull request"
-      },
-      el(
-        "span",
-        {},
-        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open chat"
-      )
-    ) : null;
-    if (openThreadBtn && producingThreadId) {
-      openThreadBtn.addEventListener("click", () => {
-        switchThread(store2, producingThreadId);
-      });
-    }
     const newThreadBtn = el(
       "button",
       {
@@ -129057,8 +129860,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     );
     const menu = el("div", { class: "pr-actions-menu" });
     overflow.append(summary, menu);
-    const actions = el("div", { class: "pr-viewer-actions" }, openThreadBtn ?? newThreadBtn);
-    if (openThreadBtn) menu.append(newThreadBtn);
+    const actions = el("div", { class: "pr-viewer-actions" }, newThreadBtn);
     if (prDetails.state === "OPEN") {
       const ref = { owner: prDetails.owner, repo: prDetails.repo, number: prDetails.number };
       const approve = actionButton(
@@ -129127,7 +129929,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       branch,
       badges,
       actions,
-      statusLine
+      statusLine,
+      relationships
     );
   }
   function renderDescription() {
@@ -129179,6 +129982,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       }
       button.addEventListener("click", () => {
         activeSection = section.key;
+        renderMeta();
         clearDiff();
         renderDescription();
         renderFiles();
@@ -129308,8 +130112,18 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       activeSection = "overview";
     }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number };
+    prRelationships = null;
+    relationshipError = false;
+    relationshipRequest++;
     prDetails = null;
     renderSections();
+    await loadPrRelationships({
+      owner: ref.owner,
+      repo: ref.repo,
+      number: ref.number,
+      url: `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`
+    });
+    if (disposed || requestId !== detailsRequestId) return;
     selectedFile = null;
     renderList();
     if (!ghStatus?.installed || !ghStatus.authenticated) {
@@ -129319,18 +130133,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       clearDiff();
       emptyState.hidden = false;
       emptyState.textContent = ghStatus?.installed ? "Sign in with GitHub CLI to load pull request details." : "Install GitHub CLI to load pull request details.";
-      metaHost.append(
-        el(
-          "div",
-          { class: "pr-viewer-title-row" },
-          el("h4", { class: "pr-viewer-title" }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`)
-        ),
-        el(
-          "div",
-          { class: "pr-viewer-subtitle" },
-          `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`
-        )
-      );
       return;
     }
     renderMeta();
@@ -129375,6 +130177,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     renderFiles();
     clearDiff();
     renderSections();
+    await loadPrRelationships();
   }
   function resetOther() {
     ciGen++;
@@ -129414,8 +130217,13 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
     const gen = ++agentLinksGen;
     threadLinks = indexThreadLinks(store2);
-    ghStatus = await api2.gh.status();
-    const entries2 = await api2.gh.agentPrLinks().catch(() => []);
+    const [, status, entries2] = await Promise.all([
+      loadThreadRelationships(),
+      api2.gh.status(),
+      // Agent links are local (no gh needed), so load them regardless of gh auth.
+      api2.gh.agentPrLinks().catch(() => [])
+    ]);
+    ghStatus = status;
     if (gen !== agentLinksGen) return;
     agentLinks = indexAgentLinksByPrKey(entries2);
     linkedRefs = collectLinkedPrs(store2);
@@ -129515,6 +130323,10 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (prsModeActive(store2)) void refresh();
     }),
     store2.on("workspace_changed", () => {
+      threadRelationshipRequest++;
+      activeThreadRelations = null;
+      relationshipRequest++;
+      prRelationships = null;
       detailsRequestId++;
       selectedPr = null;
       prDetails = null;
@@ -129526,7 +130338,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       workspacePrs = [];
       prList = [];
       agentLinks = /* @__PURE__ */ new Map();
-      threadLinks = indexThreadLinks(store2);
+      threadLinks = prsModeActive(store2) ? indexThreadLinks(store2) : /* @__PURE__ */ new Map();
       agentLinksGen++;
       titleGen++;
       titleInFlight.clear();
@@ -129543,7 +130355,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       linkedRefs = collectLinkedPrs(store2);
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
       renderList();
-      if (selectedPr && prDetails) renderMeta();
+      if (selectedPr) void loadPrRelationships();
+      void loadThreadRelationships();
       const gen = agentLinksGen;
       void api2.gh.agentPrLinks().then((entries2) => {
         if (gen !== agentLinksGen) return;
@@ -129630,6 +130443,8 @@ var init_pr_pane = __esm({
     init_ui_scale();
     init_git_image_diff();
     init_pr_pane_activity();
+    init_thread_pr_relations2();
+    init_pr_thread_relationships();
     STATUS_LABEL2 = {
       added: "A",
       modified: "M",
@@ -153102,7 +153917,7 @@ function startAgentController(store2, api2) {
             }
             st2.toolSinceText = nextState.toolSinceText;
             st2.currentText = nextState.currentText ?? "";
-            if (st2.msgId === null) throw new Error("assistant message id missing for ACP text");
+            if (st2.msgId === null) throw new Error("assistant message id missing for agent text");
             appendToken(store2, st2.msgId, plan.text);
             st2.writing = plan.text.trim().length > 0;
             if (st2.writing) maybeNameThread(store2, api2, threadId);
@@ -153233,7 +154048,8 @@ function startAgentController(store2, api2) {
         });
         if (patchThreadAnywhere(store2, threadId, (thread) => ({
           ...thread,
-          resolvedModel: chunk.model
+          resolvedModel: chunk.model,
+          ...chunk.requestedModel === MATCH_PROMPT_MODEL_SELECTOR && (thread.model === void 0 || thread.model === MATCH_PROMPT_MODEL_SELECTOR) ? { model: chunk.model } : {}
         }))) {
           store2.emit("thread_model_resolved", threadId);
         }
@@ -153540,6 +154356,7 @@ function tryOpenFileFromResult(_store, _result) {
 var pendingTurn;
 var init_agent = __esm({
   "src/renderer/controller/agent.ts"() {
+    init_dynamic_model();
     init_thread_helpers();
     init_sync_thread_branch_after_shell();
     init_sync_thread_branch();
@@ -153780,6 +154597,7 @@ async function resolveBestValueForActiveBlankThread(store2, api2) {
   const settingsModel = store2.getState().settings?.model;
   const current = thread.model ?? settingsModel;
   if (typeof current !== "string" || !isDynamicModel(current)) return;
+  if (current === MATCH_PROMPT_MODEL_SELECTOR) return;
   let resolved3;
   try {
     resolved3 = await api2.models.resolveDynamic(current);
@@ -153792,6 +154610,7 @@ async function resolveBestValueForActiveBlankThread(store2, api2) {
   if (!isBlankThread(latest) || hasUnsubmittedPrompt(latest)) return;
   const latestModel = latest.model ?? store2.getState().settings?.model;
   if (typeof latestModel !== "string" || !isDynamicModel(latestModel)) return;
+  if (latestModel === MATCH_PROMPT_MODEL_SELECTOR) return;
   commitThreadModelSelection(store2, api2, thread.id, "auto", latestModel, resolved3);
 }
 function attachBestValueDefaultResolver(store2, api2) {
@@ -164391,6 +165210,7 @@ async function boot() {
     await restoreProject(store, api, active2.id, activeThreadId);
     endRestore();
     endBoot({ projects: projects.length });
+    void preloadSidebarThreads(store, api);
     startPerfAutopilot(store);
   } else {
     endBoot({ projects: 0 });
