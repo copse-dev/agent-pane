@@ -9,6 +9,15 @@ standard, including interactive server and conversation actions. Preserve the
 existing MCP-UI HTML canvas as a compatibility path. This is a proposal, not
 evidence that Copse already supports the protocol or that #611 is complete.
 
+This revision audits original checkout HEAD
+`55efa389d51d5dbf6fa4af46d60b225f978ced16`, supplied as snapshot
+`2e3ef37645e43c8189ee856623e56721fc50560c`. The task is to make the design and
+delivery plan reviewable; implementation, dependency changes, plugin defaults,
+and closing the tracking issue are outside this documentation change. Acceptance
+for the plan is a verified baseline, concrete code ownership, ordered work
+packages, and observable release evidence. Validate this change with formatting,
+local-link checks and diff review; runtime checks belong to implementation.
+
 ## Goal and acceptance criteria
 
 Copse should run an unmodified standards-based MCP App: discover the UI attached
@@ -85,12 +94,32 @@ tested compatibility adapter if real servers need it. OpenAI-specific APIs such
 as `window.openai`, external-URL apps, and remote DOM are separate compatibility
 projects; they are not required by this baseline.
 
+### Expected user journey
+
+1. Enable the experimental canvas plugin in Settings > Plugins and connect an
+   MCP server through the existing MCP settings. No separate app installation is
+   needed for a UI supplied by that server.
+2. Invoke a model-visible tool with a linked UI. Show its readable result and an
+   attributed app card in the originating conversation, with a loading state
+   while the resource and handshake complete.
+3. Interact with the app. A refresh or form submission calls only an app-visible
+   tool on that server, shows any required approval in the owning thread, and
+   returns the complete result to the app without starting a model turn.
+4. An explicit app message starts or joins conversation work through the normal
+   scheduler. Context updates become attributed input to the next turn.
+5. Open the app in the Browser pane, then return to the conversation without
+   duplicating live actions. Closing, disabling, or disconnecting leaves the
+   readable result and a historical preview available.
+
+Use an official SDK data app plus a small form/refresh fixture to demonstrate
+this journey. The bundled HTML prototype remains a regression fixture; it does
+not demonstrate the standards-based bridge.
+
 ## What exists and what is missing
 
-This audit describes the supplied checkout (original HEAD
-`8edc67cc0fd7ad776728756ae88f46960df6486a`, snapshot
-`de1e1d13270dba526500ac658286988261684b2d`), rather
-than assuming all observations in the older default-on audit still apply.
+The following findings were checked against the supplied tree. Treat the older
+default-on audit as historical context, and assess fresh-profile and upgrade
+behavior separately before changing defaults.
 
 | Surface        | Existing implementation                                                      | Work needed                                                                               |
 | -------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -101,6 +130,26 @@ than assuming all observations in the older default-on audit still apply.
 | Rendering      | Canvas dispatch/store, Browser pane, inline artefacts, opaque HTML data URLs | Add a protocol-aware app container with a secure message transport                        |
 | Actions        | MCP tool permission targets and workspace trust already exist                | Route app calls through the same authorization path, with explicit owning thread          |
 | Persistence    | Thread-scoped canvas snapshots and transcript preview references             | Define app instance identity, safe historical display, and explicit reconnection          |
+
+Specific constraints from this checkout:
+
+- `connectServer` creates external clients with `capabilities: {}`.
+  `registerListedTools` copies annotations but does not retain `_meta.ui`, and
+  registers every listed tool for the model.
+- Its execution wrapper awaits `client.callTool`, then dispatches embedded UI
+  content and flattens `result.content`. It does not expose `structuredContent`
+  or result `_meta` to a live UI and converts `isError` into a thrown error.
+- `extractUiResources` recognizes `text/html` and `text/uri-list`; it does not
+  discover a linked MCP App resource or initialize a JSON-RPC app bridge.
+- `ToolRegistry.execute` applies the permission gate before the registered
+  execution wrapper. Calling a raw MCP client from an app session would bypass
+  that path; the permission catalogue alone does not authorize execution.
+- `reloadMcpServersForPluginToggle` already synchronizes the bundled canvas
+  server while keeping configured servers connected. External UI capability
+  renegotiation still needs to be added.
+- Inline HTML already runs in Electron webviews. Reuse presentation conventions,
+  but do not assume those guests implement app transport, session ownership, or
+  resource-specific network policy.
 
 Relevant integration points:
 
@@ -116,6 +165,8 @@ Relevant integration points:
   [preview CSP](../../src/shared/preview-csp.ts), and
   [browser network policy](../../src/main/services/browser/browser-network-policy.ts).
 - [Tool permissions](../../src/main/services/security/tool-permissions.ts),
+  [execution gate](../../src/main/services/tool-registry.ts),
+  [permission gate](../../src/main/services/security/permission-gate.ts),
   [thread execution context](../../src/main/services/thread-execution-context.ts),
   [generated renderer API](../api-protocol.md), and
   [default-on readiness](default-on-readiness.md).
@@ -180,10 +231,12 @@ URL fetch. A UI fetch failure must not erase an otherwise successful tool result
 ### Renderer transport and lifecycle
 
 Evaluate the official `@modelcontextprotocol/ext-apps` host `AppBridge` and
-transport helpers first. Copse currently uses `@modelcontextprotocol/sdk ^1.30.0`;
-upstream SDK documentation inspected for this plan describes split v2 MCP peers.
-Select a compatible pinned release or scope a tested MCP SDK migration before
-adding the dependency. Record the choice, bundle impact, and license obligations.
+transport helpers first. Copse currently declares
+`@modelcontextprotocol/sdk ^1.30.0`. Check the selected Apps SDK release's actual
+peer dependencies and browser entry points rather than assuming current online
+examples match this checkout. Select a compatible pinned release or scope a
+tested MCP SDK migration before adding the dependency. Record the choice,
+bundle impact, and license obligations.
 
 Use a host-owned container plus a separate-origin sandbox proxy and inner app
 iframe for the renderer implementation. The proxy is required for web hosts by
@@ -262,6 +315,15 @@ deny cross-server calls by default. Actions after the original agent run has
 finished need an explicit execution context and cancellation scope. They must
 not inherit the currently selected project or a global active-run pointer.
 
+Separate the server tool catalogue from the model's advertised tool list, so
+app-only tools can use an authorized execution path without becoming model tools.
+Extract a shared execution boundary or add an explicit caller kind to the
+existing boundary; preserve permission hooks, readonly restrictions, argument
+validation, cancellation, and audit records. Retain raw MCP results for the app
+before model flattening and provenance wrapping. Return permission rejection as
+a protocol error, rather than a successful text result saying the user rejected
+the call. Tests must assert both the denial response and zero server calls.
+
 Route `ui/message` through the owning thread's normal user-message submission
 path: queue or steer under that scheduler's existing active-run semantics and
 acknowledge only after acceptance. Preserve app attribution in both the visible
@@ -318,6 +380,23 @@ The current canvas mirror creates a second browser document for agent inspection
 Do not attach a second live bridge that could duplicate requests or side effects.
 For apps, use a screenshot of the actual instance or an explicitly inert preview
 until safe inspection of a live session is designed and tested.
+
+### Failure and recovery contract
+
+| Trigger                                                       | User-visible behavior                            | Recovery and authority                                                               |
+| ------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Invalid metadata, resource MIME, or oversized HTML            | Readable tool output plus an attributed UI error | Retry the UI only after validation succeeds; do not repeat the tool                  |
+| Handshake timeout or renderer failure                         | Error card with retry/open action                | Replace the failed bridge; reuse retained input/result within the same valid session |
+| Original invocation cancelled                                 | Cancelled state and protocol notification        | Do not fabricate a result or rerun the invocation                                    |
+| App request denied or timed out                               | Bounded request error that the app can display   | Keep the view available; do not automatically retry a mutation                       |
+| Server reload, workspace switch, disable, or trust revocation | Inert preview explaining why interaction stopped | Revoke immediately; require a new validated session before reconnecting              |
+| Restart, transcript fork/import, or historical reopen         | Historical preview and explicit reconnect action | No live authority, automatic tool replay, or restoration of outstanding requests     |
+
+For every awaited resource fetch, approval, and server call, check session and
+connection generation again before delivering a reply or beginning execution.
+Revocation while an approval is open must prevent the later approval from
+starting the call. A transport timeout cannot prove a mutation did not execute;
+report an unknown outcome and leave retry to an explicit user action.
 
 ## Delivery sequence and exit gates
 
