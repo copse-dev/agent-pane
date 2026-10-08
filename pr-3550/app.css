@@ -1422,7 +1422,7 @@ copse-ui-field input[type=password],
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
 }
-.chat-row .chat-thread-owner {
+.chats-list .chat-row .chat-thread-owner {
   flex: 0 0 auto;
   max-width: 45%;
 }
