@@ -13,7 +13,7 @@ import { createStore, type AppStore } from '@shared/store/store.ts'
 import type { PluginSummary, PluginsListResult } from '@shared/types/plugins.ts'
 import type { PluginInstallRecord } from '@shared/types/plugin-installs.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { mountSettingsDialog, openSettingsDialog } from './settings-dialog.ts'
+import { mountSettingsDialog, openSettingsDialog, openModelSettings } from './settings-dialog.ts'
 import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
@@ -409,6 +409,12 @@ it('reveals explainer settings when search already loaded Customise beside Exper
   mountSettingsDialog(createStore(), stubApi(initial, spy))
   openSettingsDialog('customise')
   await new Promise((resolve) => setTimeout(resolve, 0))
+  const browse = document.querySelector<HTMLButtonElement>('#plugins-browse-tab')
+  assert.ok(browse)
+  browse.click()
+  const installed = document.querySelector<HTMLElement>('#plugins-installed-panel')
+  assert.ok(installed)
+  assert.equal(installed.hidden, true)
   const search = document.querySelector<HTMLInputElement>('#settings-search-input')
   assert.ok(search)
   search.value = 'Animated explainers'
@@ -427,7 +433,18 @@ it('reveals explainer settings when search already loaded Customise beside Exper
     true,
     'the retained Customise owner must reveal despite aborted Experimental work',
   )
+  assert.equal(installed.hidden, false, 'Manage must reveal the Installed tab after Browse')
   assert.equal(search.value, '', 'Manage exits search so the revealed plugin row is visible')
+  const toggle = installed.querySelector<HTMLInputElement>('.plugin-toggle-input')
+  assert.ok(toggle)
+  toggle.checked = false
+  toggle.dispatchEvent(new Event('change', { bubbles: true }))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(
+    installed.querySelector('.plugin-row')?.getAttribute('data-enabled'),
+    'false',
+    'the revealed owner must refresh after a plugin mutation',
+  )
 })
 
 it('ignores a pre-toggle plugin refresh that completes after the updated list', async () => {
@@ -981,6 +998,22 @@ describe('settings → plugins list', () => {
     // It is not misrendered as the plain string/enum inputs.
     assert.equal(list.querySelector('.plugin-setting-string'), null)
     assert.equal(list.querySelector('.plugin-setting-enum'), null)
+  })
+
+  it('reveals a plugin model recovery target after Browse was selected', async () => {
+    await openPlugins({ plugins: [modelFieldPlugin] }, spy)
+    const browse = document.querySelector<HTMLButtonElement>('#plugins-browse-tab')
+    const installed = document.querySelector<HTMLElement>('#plugins-installed-panel')
+    assert.ok(browse && installed)
+    browse.click()
+    assert.equal(installed.hidden, true)
+    openModelSettings(`plugin:${modelFieldPlugin.id}:advisorModel`)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(installed.hidden, false)
+    assert.equal(
+      document.activeElement?.getAttribute('data-model-setting-target'),
+      `plugin:${modelFieldPlugin.id}:advisorModel`,
+    )
   })
 
   it('offers dynamic selections only, plus the pinned value already stored', async () => {

@@ -1289,6 +1289,9 @@ export function createPacksSection(
     signal: AbortSignal | undefined = activeSignal,
   ): Promise<void> {
     if (!target || signal?.aborted) return
+    // Search may retain Customise while cancelling the shared Experimental owner.
+    // Subsequent mutations must refresh under the visible section's lifetime.
+    activeSignal = signal
     if (!pluginEntries) await refreshPlugins(signal)
     if (signal?.aborted) return
     pluginDetail = null
@@ -1296,6 +1299,7 @@ export function createPacksSection(
       `.plugin-row[data-plugin-id="${CSS.escape(target.pluginId)}"]`,
     )
     if (!row) return
+    selectPluginView('installed')
     const fold = row.querySelector<HTMLDetailsElement>('.plugin-settings-fold')
     if (fold) fold.open = true
     row.scrollIntoView({ block: 'start' })

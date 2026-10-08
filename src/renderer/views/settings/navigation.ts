@@ -138,6 +138,9 @@ export function revealModelSettingsControl(
   const fallback = root.querySelector(`[name="${CSS.escape(resolved)}"]`)
   const control = matched ?? (fallback instanceof HTMLElement ? fallback : null)
   if (!control) return false
+  if (control.closest('#plugins-installed-panel')) {
+    root.querySelector<HTMLButtonElement>('#plugins-installed-tab')?.click()
+  }
   let ancestor = control.parentElement
   while (ancestor && ancestor !== root) {
     if (ancestor instanceof HTMLDetailsElement) ancestor.open = true
