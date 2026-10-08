@@ -4,6 +4,11 @@ Status: **Proposed** (2026-10-08). Implementation plan for the full MCP Apps
 enhancement tracked by [#611](https://github.com/copse-dev/agent-pane/issues/611).
 This document changes no runtime behavior or plugin defaults.
 
+Here, “full MCP UI support” means a complete host for the pinned MCP Apps
+standard, including interactive server and conversation actions. Preserve the
+existing MCP-UI HTML canvas as a compatibility path. This is a proposal, not
+evidence that Copse already supports the protocol or that #611 is complete.
+
 ## Goal and acceptance criteria
 
 Copse should run an unmodified standards-based MCP App: discover the UI attached
@@ -29,6 +34,36 @@ The observable acceptance criteria are:
 6. Focused protocol tests and Electron/browser visual evidence demonstrate these
    behaviors before Copse claims MCP Apps compatibility.
 
+### Release scope
+
+The first compatibility release includes tool-linked resource discovery,
+text/blob HTML, both supported server transports, full input/result delivery,
+app-visible tool calls, resource reads, links, conversation messages, model
+context updates, sizing, theme changes, cancellation, teardown, and safe history.
+It must work for a tool that finishes before the view initializes and for a view
+opened while its tool is still running. Both paths retain a readable tool result
+in the conversation.
+
+Use the Browser pane for the first rendering milestone. Before the compatibility
+release, also mount the same app container inline in the conversation, with an
+explicit action to open it in the Browser pane. Moving between surfaces keeps
+one instance and one bridge; never mount two copies that can duplicate actions.
+If moving a live frame is infeasible, tear it down and reinitialize with the
+retained input/result, without executing the original tool again.
+
+Map these surfaces to the specification's display semantics during the runtime
+spike; the Browser pane is not itself a protocol display-mode name. Advertise
+only supported modes shared with the app. Fullscreen, picture-in-picture,
+partial input streaming, list-change forwarding, custom fonts, and device grants
+are optional follow-ups. Their absence must be documented and must not prevent
+baseline rendering and interaction. Do not advertise their capabilities early.
+
+MCP servers connected by Copse are in scope, including selected plugin servers.
+An ACP agent's private MCP connections are outside Copse's authority: render
+standards-based apps only where Copse owns the originating connection and can
+retain metadata/results and enforce permissions. Document this boundary per
+adapter rather than implying all providers support the same app bridge.
+
 ## Protocol baseline
 
 Target [SEP-1865, stable 2026-01-26](https://github.com/modelcontextprotocol/ext-apps/blob/82221c0c8ce7661efa6771c9d461511b1650495f/specification/2026-01-26/apps.mdx),
@@ -52,24 +87,27 @@ projects; they are not required by this baseline.
 
 ## What exists and what is missing
 
-This audit describes the supplied checkout (original HEAD `b6ef895357e5`), rather
+This audit describes the supplied checkout (original HEAD
+`8edc67cc0fd7ad776728756ae88f46960df6486a`, snapshot
+`de1e1d13270dba526500ac658286988261684b2d`), rather
 than assuming all observations in the older default-on audit still apply.
 
-| Surface        | Existing implementation                                                           | Work needed                                                                               |
-| -------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Feature gate   | Experimental `copse.mcp-ui-canvas` plugin and capability                          | Gate protocol advertisement and every app entry point; revoke live sessions when disabled |
-| MCP connection | `mcp-registry.ts` creates external clients with empty capabilities                | Negotiate the UI extension and preserve server/tool UI metadata                           |
-| Tool execution | Lists tools, registers them for the agent, flattens `result.content`              | Separate model/app visibility and retain complete results for apps                        |
-| UI discovery   | `mcp-schema.ts` extracts embedded legacy HTML/URI-list resources from tool output | Resolve tool-linked resources with `resources/read`, validate App MIME type and policy    |
-| Rendering      | Canvas dispatch/store, Browser pane, inline artefacts, opaque HTML data URLs      | Add a protocol-aware app container with a secure message transport                        |
-| Actions        | MCP tool permission targets and workspace trust already exist                     | Route app calls through the same authorization path, with explicit owning thread          |
-| Persistence    | Thread-scoped canvas snapshots and transcript preview references                  | Define app instance identity, safe historical display, and explicit reconnection          |
+| Surface        | Existing implementation                                                      | Work needed                                                                               |
+| -------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Feature gate   | Experimental `copse.mcp-ui-canvas` plugin and capability                     | Gate protocol advertisement and every app entry point; revoke live sessions when disabled |
+| MCP connection | `mcp-registry.ts` creates external clients with empty capabilities           | Negotiate the UI extension and preserve server/tool UI metadata                           |
+| Tool execution | Lists tools, registers them for the agent, flattens `result.content`         | Separate model/app visibility and retain complete results for apps                        |
+| UI discovery   | Plugin SDK `mcp-schema.ts` extracts embedded legacy HTML/URI-list resources  | Resolve tool-linked resources with `resources/read`, validate App MIME type and policy    |
+| Rendering      | Canvas dispatch/store, Browser pane, inline artefacts, opaque HTML data URLs | Add a protocol-aware app container with a secure message transport                        |
+| Actions        | MCP tool permission targets and workspace trust already exist                | Route app calls through the same authorization path, with explicit owning thread          |
+| Persistence    | Thread-scoped canvas snapshots and transcript preview references             | Define app instance identity, safe historical display, and explicit reconnection          |
 
 Relevant integration points:
 
 - [Plugin declaration](../../packages/agent/src/plugins/mcp-ui-canvas-plugin.ts),
   [MCP registry](../../src/main/services/mcp/mcp-registry.ts), and
-  [content handling](../../src/main/services/mcp/mcp-schema.ts).
+  [content handling](../../packages/plugin-sdk/src/mcp-schema.ts) (re-exported
+  from `src/main/services/mcp/mcp-schema.ts`).
 - [Canvas dispatch](../../src/main/services/canvas-dispatch.ts),
   [canvas store](../../src/main/services/canvas-store.ts), and
   [thread-store canvas types](../../packages/thread-store/src/canvas-types.ts).
@@ -79,7 +117,8 @@ Relevant integration points:
   [browser network policy](../../src/main/services/browser/browser-network-policy.ts).
 - [Tool permissions](../../src/main/services/security/tool-permissions.ts),
   [thread execution context](../../src/main/services/thread-execution-context.ts),
-  and [default-on readiness](default-on-readiness.md).
+  [generated renderer API](../api-protocol.md), and
+  [default-on readiness](default-on-readiness.md).
 
 ## Proposed architecture
 
@@ -119,6 +158,13 @@ resource URI, negotiated protocol version, and approved policy. The resource URI
 and friendly title are not globally unique identities: two servers can publish
 the same URI and two invocations can render the same template.
 
+Capture this owner from the thread execution context at invocation start, before
+awaiting the server. The registry currently dispatches legacy results with
+`getActiveRunThread()` and canvas dispatch supplements the execution owner;
+new app sessions must carry explicit invocation ownership end to end. Bind each
+later app action with `runWithThreadExecutionContext` after resolving its owning
+thread's current execution context. Reject missing, deleted, or stale owners.
+
 Retain tool UI metadata separately from model-facing tool definitions. Register
 permission targets for app-only tools without exposing them to the model. Keep
 the complete `CallToolResult` (`content`, `structuredContent`, `_meta`, `isError`)
@@ -154,6 +200,13 @@ sandbox notifications must not be accepted from arbitrary app messages. Expose
 only a narrow validated IPC API; main resolves the session rather than trusting
 server/thread IDs supplied by the frame.
 
+Add the app-session facade through `ApiClient`, preload bindings, and guarded
+main handlers; regenerate `schemas/api-protocol.manifest.json` as required by
+the generated API contract. Keep Electron imports out of the reusable renderer
+container. The sidecar/WebSocket path must either enforce the same ownership and
+sandbox contract or explicitly report app hosting unavailable. Do not expose a
+generic IPC forwarding method to the iframe.
+
 Implement an explicit state machine: loading → initializing → ready → tearing
 down → closed/failed. Queue inputs/results until `ui/notifications/initialized`;
 send complete `tool-input` at most once and before `tool-result`. Partial input is
@@ -161,12 +214,25 @@ optional and stops after complete input. Preserve error results, report cancelle
 invocations, enforce handshake/request timeouts, and bound teardown waiting.
 Handle late replies and duplicate initialization safely.
 
+Start resource loading once validated tool metadata and complete arguments are
+available, independently of the tool result. When the view is ready first, send
+input and later result or `ui/notifications/tool-cancelled`. When the result is
+ready first, retain it and deliver it after initialization. Cancel only the UI
+fetch/session on a rendering failure; preserve the underlying tool's outcome.
+Distinguish cancelling an app-origin request from cancelling the original agent
+turn, so closing a view does not silently cancel unrelated thread work.
+
 Initially render apps in the Browser pane with a transcript preview/open action.
-Share the container with a later inline surface. Advertise the actual display
-mode and container dimensions; support only modes understood by both app and
-host. Apply size changes only for flexible dimensions and clamp them to usable
-bounds. Supply theme, locale, time zone, dimensions, and relevant CSS variables;
-notify the app when host context changes.
+Share the container with the inline surface before release. Advertise the actual
+display mode and container dimensions; support only modes understood by both
+app and host. Apply size changes only for flexible dimensions and clamp them to
+usable bounds. Supply theme, locale, time zone, dimensions, and relevant CSS
+variables; notify the app when host context changes.
+
+Keep tool text, app title/server attribution, loading state, and an accessible
+retry/open action visible outside the untrusted frame. Provide a keyboard path
+back to the conversation and test focus when opening, moving, and closing apps.
+Retry resource loading or initialization without repeating a mutating tool call.
 
 ### Host methods and authorization
 
@@ -181,12 +247,29 @@ notify the app when host context changes.
 | `notifications/message`, `ping` | Accept bounded diagnostic logging and health checks without exposing secrets                                                                                                   |
 | `ui/resource-teardown`          | Request cleanup with a deadline; cancel pending operations and dispose listeners, frame, policy and connection bindings                                                        |
 
+Maintain a checked method/capability matrix against the pinned schema in phase
+1, including inherited MCP requests, negotiated versions, and unsupported-method
+errors. Every request must receive a bounded success or JSON-RPC error response;
+unsupported requests must not hang. Return permission denials and validation
+failures to the calling app without breaking another session. If list-change
+support is added, revalidate visibility and resource policy on changes, forward
+only negotiated notifications, and revoke access to removed tools.
+
 App clicks are not blanket tool authorization. A frame must never call
 `Client.callTool` through a path that skips Copse's permission gate. Attribute
 approval prompts and execution records to the app, server, and owning thread;
 deny cross-server calls by default. Actions after the original agent run has
 finished need an explicit execution context and cancellation scope. They must
 not inherit the currently selected project or a global active-run pointer.
+
+Route `ui/message` through the owning thread's normal user-message submission
+path: queue or steer under that scheduler's existing active-run semantics and
+acknowledge only after acceptance. Preserve app attribution in both the visible
+transcript and model context; never treat an app message as system authority.
+Keep only the latest bounded `ui/update-model-context` value per instance and
+include it as untrusted context in that thread's next turn. Revoke live context
+when its session closes; persistence is limited to the historical transcript
+policy, not a grant for future app actions.
 
 ### Sandbox and network policy
 
@@ -219,6 +302,13 @@ or imported transcripts do not inherit live app authority.
 
 Close or invalidate sessions when their server disconnects, the plugin/server is
 disabled, workspace trust is revoked, or the owning thread/project is removed.
+
+The registry currently maintains process-wide active server clients. Bind an
+app session to a connection generation and invalidate it when a workspace switch
+reloads those clients; never route an old app through a replacement connection
+with the same server name. Keep the inert historical view available and offer
+explicit reconnection only after the owning workspace and server are available.
+
 Reconnect external clients when the plugin capability changes, since servers
 can choose different tool definitions during initialization. The checkout already
 has bundled-server toggle synchronization; extend it to capability-negotiated
@@ -237,13 +327,41 @@ until safe inspection of a live session is designed and tested.
 | 2. Discovery and result plumbing | Capability negotiation, UI metadata, visibility, resource loading and instance descriptors                | Stdio/HTTP fixture tests; app-only/model-only enforcement; full results retained and model output bounded        |
 | 3. Read-only app host            | Container, handshake, input/result/cancellation, context, sizing, teardown and text fallback              | Official chart/data app displays its result; focused DOM assertions and Electron screenshots                     |
 | 4. Interactive actions           | Permission-aware tools/resources, links, conversation messages and model context                          | Refresh/form fixture works; denied actions and cross-thread/server isolation tested; prompts visibly attributed  |
-| 5. Lifecycle hardening           | Revocation, external reconnect, history, multiple instances and safe inspection                           | Toggle/disconnect/race tests and restart/background-thread e2e; no automatic replay or duplicated actions        |
+| 5. Presentation and lifecycle    | Inline/pane presentation, revocation, external reconnect, history, multiple instances and safe inspection | Surface-switch, toggle/disconnect/race and restart/background-thread e2e; no replay or duplicated actions        |
 | 6. Compatibility release         | Method/capability matrix, independent app trials, user/server author docs                                 | All baseline MUST requirements audited; supported capabilities documented; security and visual evidence reviewed |
 
 Phases 1–3 are a useful rendering milestone but do not justify claiming complete
 interactive host support. Keep the plugin experimental through the full release
 gate. Default-on readiness is a separate decision, including profile migration,
 existing canvas readiness follow-ups, and the broader network exposure.
+
+### Implementation work packages
+
+Each row is a reviewable work package with its own exit evidence, not a promise
+to ship all the changes in one PR. Paths marked “new” are proposed ownership.
+
+| Package                     | Code ownership                                                                                                                                                                    | Concrete output                                                                                                                                                                                                           |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A. Runtime proof            | New `src/renderer/mcp-apps/` spike; build entry points; selected SDK dependency                                                                                                   | Official app handshake in the isolated proxy; documented origins, CSP delivery, display mapping, SDK version and limits. Replace spike scaffolding with the production container in D.                                    |
+| B. Protocol types           | New `packages/plugin-sdk/src/mcp-apps-schema.ts`; SDK exports and tests                                                                                                           | Decoders for metadata, visibility, resources and supported messages; fixtures for valid and malformed input. Keep the legacy `mcp-schema.ts` parser separate.                                                             |
+| C. Discovery and sessions   | `src/main/services/mcp/mcp-registry.ts`; new `src/main/services/mcp/mcp-app-session-service.ts`                                                                                   | Negotiated external connections, server-side tool catalogue, resource cache, owned session descriptors, input/result side channel, and visibility filtering. Lifecycle generation checks apply after every awaited fetch. |
+| D. Host and bridge          | New `src/renderer/mcp-apps/`; `src/preload/api.d.ts`, `src/preload/index.ts`; guarded handlers under `src/main/ipc/`; generated manifest                                          | Production proxy/container, typed session API, ordered notifications, theme/sizing and accessible errors. Frame messages cannot select arbitrary IPC methods or owners.                                                   |
+| E. Interactive execution    | App session service; `src/main/services/security/tool-permissions.ts`; `src/main/services/thread-execution-context.ts`; existing thread submission path                           | App requests pass through the actual permission gate and thread scheduler with audit attribution. App-only tools have permission identities independently of model registration.                                          |
+| F. Presentation and history | `src/renderer/views/browser-pane.ts`; `src/renderer/canvas/inline-artefact.ts` or a separate app component; `packages/thread-store/src/canvas-types.ts` and store readers/writers | One live instance per invocation across surfaces; versioned inert references and previews; old transcripts remain readable. Legacy title-based canvas identity is not reused as app authority.                            |
+| G. Release evidence         | Focused protocol/security tests; `tests/e2e/` fixtures; user and server-author docs                                                                                               | Reproducible interoperability matrix, screenshots, supported-method table, provider boundaries, remaining optional features, and full implementation checks.                                                              |
+
+A selects the runtime/dependency contract before B–D settle it. B and the
+deterministic server fixture can proceed together; C then supplies the sessions
+that D hosts. E depends on C/D and must pass denial/isolation tests before F
+enables interaction across presentation/history paths. G collects evidence
+throughout, then gates the compatibility claim after all preceding packages.
+
+Phase 1 must record numeric budgets for resource bytes, result/context bytes,
+concurrent live frames, queued messages, request duration and teardown duration.
+Use the existing 512 KiB legacy HTML cap as a starting point, not an accidental
+protocol promise. Test UTF-8 and decoded blob sizes, eviction and timeouts; keep
+these limits host-controlled. Treat live HTML/results as sensitive session data
+and define which preview/reference fields may enter durable storage.
 
 ## Validation plan
 
@@ -259,7 +377,8 @@ also test raw JSON-RPC so shared SDK assumptions do not hide protocol mistakes.
   destinations/redirects, browser permissions, stale connections and revocation.
 - Focused browser/Electron e2e: initial render, refresh and approval denial,
   resizing/theme, concurrent instances with identical URIs/titles, background
-  ownership, toggle/disconnect, historical reopen, and accessible error fallback.
+  ownership, workspace switches, toggle/disconnect, historical reopen, inline/pane
+  transitions, keyboard focus, and accessible error fallback.
   Assert behavior and save screenshots per [testing strategy](../testing-strategy.md).
 - Regression checks: bundled `render_html_artefact`, existing canvas preview/store
   behavior, ordinary MCP text/image output, disabled support, and ACP/provider
@@ -284,5 +403,5 @@ implementation exit evidence exists.
   user surface is needed for exceptional grants?
 - Which conversation roles/message types can Copse represent faithfully, and how
   are app requests queued when the owning thread already has an active run?
-- Is inline presentation required for the first release, or is Browser-pane
-  presentation sufficient for the selected interoperability examples?
+- How do inline and Browser-pane surfaces map to standard display modes, and
+  can they transfer a live frame safely or must they reinitialize its bridge?
