@@ -1536,7 +1536,8 @@ copse-ui-field input[type=password],
     opacity: 1;
   }
 }
-.chat-pr-status {
+.chat-pr-status,
+.chat-changes-status {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
