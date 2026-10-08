@@ -855,7 +855,8 @@ async function backfillSelectedThreadPrRefs(
           }
           return merged.refs
         })
-        if (committedRefs && committedRefs.length > 0) {
+        // Empty refs also settle the renderer's "not scanned yet" state.
+        if (committedRefs !== null) {
           batch.push({ threadId, prRefs: committedRefs })
         }
         if (batch.length >= 25) flush()

@@ -11,6 +11,16 @@ export interface GitChange {
   isDirectory?: boolean
 }
 
+/**
+ * What a sidebar row needs to say a thread has work not yet landed: the working
+ * tree is not clean, and/or commits exist that no remote ref carries. `unpushed`
+ * is absent when it could not be read or is zero.
+ */
+export interface ThreadChangeSummary {
+  dirty: boolean
+  unpushed?: number
+}
+
 export interface GitStatusResult {
   staged: GitChange[]
   unstaged: GitChange[]
