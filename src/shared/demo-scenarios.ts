@@ -29,6 +29,8 @@ export interface DemoScenario {
   chatGptPlan?: ChatGptPlanStatus
   project: Project
   threads: Thread[]
+  /** Other projects exposed by the demo boundary, compatible with #3541. */
+  otherProjects?: ReadonlyArray<{ project: Project; threads: Thread[] }>
   settings: Readonly<Record<string, unknown>>
   /** Optional read-only PR showcase data for the browser demo's PR panel. */
   pullRequests?: GhPrDetails[]
@@ -2094,6 +2096,16 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       body: 'node scripts/check-docs.mjs',
       type: 'shell',
     })),
+  },
+  {
+    id: 'sidebar-empty-project',
+    label: 'Empty unopened project in the sidebar',
+    project: project('demo-empty-active'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [],
+    otherProjects: [
+      { project: project('demo-empty-other', 'empty-project', '/demo/empty'), threads: [] },
+    ],
   },
   {
     id: 'sidebar-thread-sort',
