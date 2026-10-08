@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
+import { delimiter, join } from 'node:path'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { CURSOR_AGENTS_WEB_URL } from '../../src/shared/remote-agent.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -8,20 +10,45 @@ import { assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 import { assertLegendInsideCard } from './helpers/settings-geometry.ts'
 
 describe('Cursor Cloud Agent settings list hint', () => {
+  const originalPath = process.env['PATH']
+  const originalPreservePath = process.env['COPSE_PRESERVE_PATH']
+
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-settings-cursor-agents-hint')
+    // Make fresh-install consent deterministic across host CLI installations.
+    writeE2eEnv({
+      COPSE_PRESERVE_PATH: '1',
+      PATH: (process.platform === 'win32'
+        ? [join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32')]
+        : ['/usr/bin', '/bin']
+      ).join(delimiter),
+    })
+    seedEmptyProject(process.cwd(), 'e2e-settings-cursor-agents-hint', {
+      registeredAcpAgents: [
+        { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
+      ],
+    })
     await browser.reloadSession()
   })
 
   after(() => {
+    writeE2eEnv({ COPSE_PRESERVE_PATH: originalPreservePath, PATH: originalPath })
     resetUserData()
   })
 
   it('explains Filter → Source → API and links to cursor.com/agents', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     await $('[aria-label="Settings"]').click()
+
+    await $('#settings-providers-host .provider-chip[data-provider="openai"]').click()
+    const approval = $('#approval-dialog')
+    await approval.waitForDisplayed({ timeout: 10_000 })
+    await expect(approval.$('.approval-heading')).toHaveText(
+      'Install software to connect your coding agents?',
+    )
+    await approval.$('.approval-reject').click()
+    await expect(approval).not.toBeDisplayed()
 
     const general = $('.settings-section[data-section="general"]')
     await expect(general).toBeDisplayed()
@@ -65,6 +92,7 @@ describe('Cursor Cloud Agent settings list hint', () => {
       'cursor-agent login',
     ])
 
+    await expect(approval).not.toBeDisplayed()
     await browser.pause(100)
     await saveElementScreenshot('#settings-dialog', 'settings-cursor-agents-hint.png')
   })
