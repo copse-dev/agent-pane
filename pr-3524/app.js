@@ -71293,6 +71293,7 @@ function createPacksSection(overlay, api2, store2, getActiveSection, onNavigate,
   }
   async function revealPluginDetail(target = pluginDetail, signal = activeSignal) {
     if (!target || signal?.aborted) return;
+    activeSignal = signal;
     if (!pluginEntries) await refreshPlugins(signal);
     if (signal?.aborted) return;
     pluginDetail = null;
@@ -71300,6 +71301,7 @@ function createPacksSection(overlay, api2, store2, getActiveSection, onNavigate,
       `.plugin-row[data-plugin-id="${CSS.escape(target.pluginId)}"]`
     );
     if (!row2) return;
+    selectPluginView("installed");
     const fold = row2.querySelector(".plugin-settings-fold");
     if (fold) fold.open = true;
     row2.scrollIntoView({ block: "start" });
@@ -72766,6 +72768,9 @@ function revealModelSettingsControl(root, target) {
   const fallback = root.querySelector(`[name="${CSS.escape(resolved3)}"]`);
   const control = matched ?? (fallback instanceof HTMLElement ? fallback : null);
   if (!control) return false;
+  if (control.closest("#plugins-installed-panel")) {
+    root.querySelector("#plugins-installed-tab")?.click();
+  }
   let ancestor = control.parentElement;
   while (ancestor && ancestor !== root) {
     if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
