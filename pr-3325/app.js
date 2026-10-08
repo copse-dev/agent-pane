@@ -53927,6 +53927,25 @@ var init_branch_ci_editor = __esm({
   }
 });
 
+// src/renderer/views/automation-retained-worktrees.ts
+function describeRetainedWorktrees(retained) {
+  return retained.map((run2) => {
+    const paths = run2.paths?.length ? ` (${run2.paths.join(", ")})` : "";
+    return `\u201C${run2.title}\u201D ${REASON_LABEL[run2.reason]}${paths}`;
+  }).join("; ");
+}
+var REASON_LABEL;
+var init_automation_retained_worktrees = __esm({
+  "src/renderer/views/automation-retained-worktrees.ts"() {
+    REASON_LABEL = {
+      "uncommitted-changes": "has uncommitted changes",
+      "unmerged-commits": "has commits that are not merged",
+      "unpushed-pull-request": "has a pull request branch that is not pushed",
+      "in-use": "still has a terminal or background process open"
+    };
+  }
+});
+
 // src/renderer/views/automation-plugin-settings.ts
 function cleanIpcError(error62) {
   return ipcErrorMessage(error62, "Automation request failed.");
@@ -54469,7 +54488,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
           el(
             "div",
             { class: "automation-row-blocked-message" },
-            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`
+            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.${schedule.lastWorktreeLimitBlockedBy?.length ? ` Held by ${describeRetainedWorktrees(schedule.lastWorktreeLimitBlockedBy)}.` : ""}`
           )
         );
       }
@@ -54512,7 +54531,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         void api2.automations.runNow(projectId, schedule.id).then(
           (event) => {
             showStatus(
-              event.disposition === "started" ? `Started \u201C${schedule.name}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${schedule.name}\u201D has reached its live worktree limit.` : `\u201C${schedule.name}\u201D is already pending or running.`
+              event.disposition === "started" ? `Started \u201C${schedule.name}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${schedule.name}\u201D has reached its live worktree limit.${event.blockedBy?.length ? ` Held by ${describeRetainedWorktrees(event.blockedBy)}.` : ""}` : `\u201C${schedule.name}\u201D is already pending or running.`
             );
             void refresh();
           },
@@ -54685,6 +54704,7 @@ var init_automation_plugin_settings = __esm({
     init_confirm_dialog();
     init_branch_ci_editor();
     init_ipc_error_message();
+    init_automation_retained_worktrees();
     WEEKDAYS = [
       "Sunday",
       "Monday",
