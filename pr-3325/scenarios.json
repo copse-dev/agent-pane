@@ -128,8 +128,16 @@
     "label": "Sidebar automation fold"
   },
   {
+    "id": "sidebar-empty-project",
+    "label": "Empty unopened project in the sidebar"
+  },
+  {
     "id": "sidebar-thread-sort",
     "label": "Sidebar thread sort"
+  },
+  {
+    "id": "sidebar-thread-changes",
+    "label": "Sidebar changes glyph"
   },
   {
     "id": "activity-home",
