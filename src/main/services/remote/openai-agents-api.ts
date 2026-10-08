@@ -257,6 +257,29 @@ export class OpenAiAgentsApi {
     }
   }
 
+  /** Read only the bounded diagnostic directory, never repository file contents. */
+  async setupDiagnosticFiles(state: OpenAiAgentState, signal: AbortSignal): Promise<string[]> {
+    if (!state.environmentId) throw new Error('Hosted environment ID is missing.')
+    const query = new URLSearchParams({ path: '/workspace/copse-diagnostics', limit: '100' })
+    const result = await this.json(
+      await this.request(
+        `/${encodeURIComponent(state.environmentId)}/files?${query}`,
+        signal,
+        undefined,
+        'GET',
+        undefined,
+        false,
+        '/agents/environments',
+      ),
+      z.object({
+        data: z.array(z.object({ path: z.string() })).max(100),
+        has_more: z.boolean().optional(),
+      }),
+    )
+    if (result.has_more) throw new Error('Unexpected diagnostic file count.')
+    return result.data.map((file) => file.path)
+  }
+
   private path(state: OpenAiAgentState): string {
     return `/${encodeURIComponent(state.sessionId)}`
   }

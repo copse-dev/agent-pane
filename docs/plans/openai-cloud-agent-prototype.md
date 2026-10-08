@@ -226,3 +226,25 @@ fresh-state refusal, conflicting modes and deletion after either outcome. Focuse
 ESLint and formatting passed. Full check still stops at the existing LM Studio
 TS2554. This is CLI-only; no renderer changes or live provider calls. The user's
 startup failure remains unresolved pending the empty-sandbox control.
+
+## Repository diagnostic brief
+
+The user's empty sandbox connected and was deleted successfully. Add one no-inference
+repository diagnostic using the same snapshot and hosted bootstrap as the app. Catch
+bootstrap failures only in this diagnostic, expose fixed status filenames through the
+environment files API, and report the furthest setup stage without URLs, credentials
+or raw command output. Keep production setup fail-closed. Persist diagnostic state
+and uploads for explicit cleanup; forbid inference on diagnostic checkpoints. Cover
+real bootstrap failure/success markers and CLI cleanup/guards. A live run still
+requires the user's local provider credentials.
+
+Repository diagnostic completion evidence: 40 focused tests passed, including
+real Git/archive restoration, app recovery, CLI mode/checkpoint guards, worker
+marker redaction and cleanup after successful setup, failed setup, failed
+connection and a failed cleanup retried explicitly. Production build, standalone
+probe/worker bundling, focused ESLint, formatting, diff and dead-code checks passed.
+Snapshot preparation and environment-file construction are shared with the app;
+only the diagnostic wraps setup failure, and it cannot submit inference. No DOM
+changes. Full check still stops at the unchanged LM Studio TS2554. Live repository
+provisioning remains unverified here; the user's empty-sandbox success is the only
+new live provider evidence.

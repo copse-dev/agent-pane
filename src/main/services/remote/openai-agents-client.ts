@@ -1,3 +1,4 @@
+import { repositoryEnvironment } from './openai-repository-environment.ts'
 import { githubArchiveBase, githubArchiveUrl } from './openai-archive.ts'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
@@ -176,32 +177,11 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
         options.signal,
         options.fetchImpl,
       )
-      state = await client.create(model, options.signal, {
-        type: 'openai_hosted',
-        network: { access: 'enabled' },
-        files: [
-          {
-            type: 'inline',
-            data: Buffer.from(JSON.stringify({ ...parsed, url })).toString('base64'),
-            path: '/workspace/inputs/archive.json',
-          },
-          ...sourceFileIds.map((file_id, index) => ({
-            type: 'file_id' as const,
-            file_id,
-            path: `/workspace/inputs/source.part-${String(index)}`,
-          })),
-          {
-            type: 'inline',
-            data: worker.toString('base64'),
-            path: '/workspace/inputs/copse-git.cjs',
-          },
-        ],
-        setup_commands: [
-          {
-            command: `node /workspace/inputs/copse-git.cjs archive ${transfer.base} ${transfer.ref} ${String(sourceFileIds.length)}`,
-          },
-        ],
-      })
+      state = await client.create(
+        model,
+        options.signal,
+        repositoryEnvironment(worker, parsed, transfer, sourceFileIds, url),
+      )
     } catch (error) {
       await Promise.all(
         sourceFileIds.map((id) =>

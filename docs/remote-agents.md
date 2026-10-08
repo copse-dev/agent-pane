@@ -117,6 +117,40 @@ printed session/environment IDs for provider support. Run the deletion command
 after either outcome; interrupted probes also retain their checkpoint. Do not
 share your API key or private checkpoint contents.
 
+If the empty sandbox connects but repository setup fails, run the repository
+diagnostic from the checkout you want to provision (with `OPENAI_API_KEY` still
+configured):
+
+```sh
+pnpm run probe:openai-agents --setup-repository . --state .tmp/openai-repository-diagnostic.json
+```
+
+This builds its workers automatically, snapshots the checkout with the app's
+Git/LFS checks, obtains a fresh archive URL using local GitHub authentication
+(`GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`), and runs the real bootstrap.
+It uploads repository contents; container charges can apply. It sends no inference
+task and does not import changes or push to GitHub.
+
+Only this diagnostic catches setup failure to allow the environment to connect
+and expose fixed status filenames. Production setup remains fail-closed. Share
+the `Setup:` lines and session/environment IDs: they distinguish missing inputs,
+Node/Git availability, archive download (including HTTP status when available),
+extraction, tree verification, overlay application and checkout. Runtime markers
+report only the Node major version and presence of fetch/proxy configuration,
+never proxy values. A connection failure without markers still cannot establish
+which bootstrap stage ran. Success validates repository provisioning for that
+attempt, not inference or export.
+
+The probe automatically deletes the session and uploaded files after either
+outcome. If cleanup fails or the process is killed, retry cleanup explicitly:
+
+```sh
+pnpm run probe:openai-agents --delete --state .tmp/openai-repository-diagnostic.json
+```
+
+Diagnostic checkpoints cannot be reused for inference. Repeating the diagnostic
+after successful cleanup uses a fresh session and URL.
+
 ## Cursor stream resume
 
 Cursor run streams are run-scoped SSE
