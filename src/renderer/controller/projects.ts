@@ -236,6 +236,39 @@ function cacheThreads(projectId: string, threads: Thread[]): void {
   threadCache.set(projectId, threads)
 }
 
+/**
+ * Read the thread titles of every project the session has not opened, so the
+ * sidebar and Activity can list them without a switch. Metadata only (the same
+ * rows a switch would cache, compacted), one project at a time so a large
+ * profile never competes with the active project's own load. Skips the active
+ * project, SSH projects (reading them needs a connection) and anything already
+ * cached, and never replaces an entry a switch filled in meanwhile.
+ */
+export async function preloadSidebarThreads(store: AppStore, api: ApiClient): Promise<void> {
+  const pending = store
+    .getState()
+    .projects.filter((project) => !project.sshHost && !project.missing)
+    .map((project) => project.id)
+  // A project removed while an earlier read was pending must not be read or cached.
+  const unwanted = (id: string): boolean =>
+    id === store.getState().activeProjectId ||
+    threadCache.has(id) ||
+    !store.getState().projects.some((project) => project.id === id)
+  for (const id of pending) {
+    if (unwanted(id)) continue
+    let loaded: Thread[]
+    try {
+      loaded = await loadThreads(api, id)
+    } catch {
+      // One unreadable project must not hide the rest; a switch still loads it.
+      continue
+    }
+    if (unwanted(id)) continue
+    threadCache.set(id, loaded.map(compactSidebarThread))
+    store.emit('sidebar_threads_loaded')
+  }
+}
+
 /** Keep the sidebar cache aligned with the active workspace thread list. */
 export function attachProjectThreadCache(store: AppStore): () => void {
   return store.on('threads_changed', () => {
@@ -379,6 +412,9 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
     // workspace back on the project that stays active.
     if (wasExpanded) cancelPendingSwitch(store, api)
     await saveProjects(api, projects, state.activeProjectId, state.activeThreadId)
+    // A background preload can finish while persistence is pending and the
+    // project is still listed. Discard that entry before removing its owner.
+    threadCache.delete(id)
     store.setState({
       projects,
       expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId,

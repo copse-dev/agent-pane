@@ -1582,7 +1582,7 @@ export function mountInputBar(
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource:
-        acpContext && snapshot?.source === 'agent-reported' ? 'Reported by ACP agent' : null,
+        acpContext && snapshot?.source === 'agent-reported' ? 'Reported by the agent' : null,
     })
     footerOverflow?.update()
     updateContextFitWarning()

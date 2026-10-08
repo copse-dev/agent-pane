@@ -357,8 +357,8 @@ describe('approved env forwarding (stdin preamble)', () => {
     assert.match(script, /^export B='plain'$/m)
   })
 
-  it('rejects env names that are not shell identifiers instead of interpolating them', () => {
-    assert.throws(() => buildRemoteEnvPreamble({ 'evil; rm -rf /': 'x' }), /shell identifier/)
+  it('rejects env names that are not valid identifiers instead of interpolating them', () => {
+    assert.throws(() => buildRemoteEnvPreamble({ 'evil; rm -rf /': 'x' }), /not valid/)
   })
 
   it('adds the stdin read/eval preamble only when env is forwarded, and never puts values on argv', () => {

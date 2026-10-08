@@ -1643,11 +1643,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
      *
      * Automation data is strictly project-owned (`AutomationSchedule.projectId`,
      * `SidebarThread.automation`); there is no workspace-level store to read
-     * instead. `getSidebarThreads` only has data for the active project plus
-     * any project switched to earlier this session (see its docs in
-     * controller/projects.ts), so a project never opened this session
-     * contributes nothing here yet — the same limit the per-project heading
-     * already had for a collapsed, unvisited project.
+     * instead. `getSidebarThreads` has data for the active project plus every
+     * project switched to or read in the background after startup (see
+     * `preloadSidebarThreads` in controller/projects.ts), so a project whose
+     * background read has not finished yet contributes nothing until it does.
      */
     function renderAutomationsSection(): HTMLElement | null {
       const scheduleOwners = new Map<
@@ -2207,7 +2206,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     if (automationsSection) list.append(automationsSection)
 
     /**
-     * Threads from every visited project, laid out without the project tree:
+     * Threads from every project with loaded data, laid out without the project tree:
      * sections by status, or one flat list. Each row names its project, since
      * the tree that used to say so is gone. A search filter is scoped to the
      * open project, so it keeps the tree.
@@ -2409,6 +2408,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store.on('threads_changed', render),
+    store.on('sidebar_threads_loaded', render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store.on('thread_status_changed', () => {

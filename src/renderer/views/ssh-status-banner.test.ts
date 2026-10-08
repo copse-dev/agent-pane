@@ -20,12 +20,12 @@ describe('capabilityWarnings', () => {
         shell: '/bin/bash',
         git: true,
         rg: true,
-        warnings: ['Capability probe command failed — remote tooling may be unavailable.'],
+        warnings: ['Checking the remote machine failed — remote tools may be unavailable.'],
       },
     })
     assert.deepEqual(warnings, [
       'external file edits may not appear immediately — remote file watching is not yet supported',
-      'Capability probe command failed — remote tooling may be unavailable.',
+      'Checking the remote machine failed — remote tools may be unavailable.',
     ])
   })
 })

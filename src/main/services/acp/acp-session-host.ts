@@ -89,7 +89,7 @@ export function spawnSandboxedAcpSessionHost(config: AcpAgentSpawnConfig): Promi
     const timer = setTimeout(() => {
       fail(
         new Error(
-          `ACP session host did not start within ${String(SESSION_HOST_START_TIMEOUT_MS)}ms`,
+          `The agent session did not start within ${String(SESSION_HOST_START_TIMEOUT_MS)}ms`,
         ),
       )
     }, SESSION_HOST_START_TIMEOUT_MS)
@@ -117,7 +117,7 @@ export function spawnSandboxedAcpSessionHost(config: AcpAgentSpawnConfig): Promi
     child.once('close', (code, signal) => {
       fail(
         new Error(
-          `ACP session host exited before startup (code ${String(code)}, signal ${String(signal)})`,
+          `The agent session exited before startup (code ${String(code)}, signal ${String(signal)})`,
         ),
       )
     })

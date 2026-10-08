@@ -1,0 +1,18 @@
+name: Copse review request
+
+# This PR-side signal executes no checkout or contributor code and has no secrets.
+# The reviewer runs separately from main after this workflow completes.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions: {}
+
+jobs:
+  request:
+    if: github.event.pull_request.head.repo.id == github.event.repository.id
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Request a review from the trusted default-branch workflow
+        run: echo 'Copse review requested'

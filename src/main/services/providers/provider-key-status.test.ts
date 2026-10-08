@@ -5,6 +5,7 @@ import {
   invalidateProviderKeyStatus,
   isProviderKeyUsable,
   recordProviderKeyValidation,
+  providerKeyStatus,
 } from './provider-key-status.ts'
 import { setApiKey, deleteApiKey } from '../storage/settings.ts'
 
@@ -31,6 +32,26 @@ describe('provider-key-status', () => {
 
   it('returns false when no key is configured', async () => {
     assert.equal(await isProviderKeyUsable('cursor'), false)
+  })
+  it('distinguishes rejected credentials from transient failures for recovery', async () => {
+    setApiKey('cursor', 'cur_test_key')
+    for (const status of [401, 403, 429, 500]) {
+      clearProviderKeyStatusCache()
+      restoreFetch?.()
+      restoreFetch = stubFetch(async () => new Response(null, { status }))
+      assert.equal(
+        await providerKeyStatus('cursor'),
+        status === 401 || status === 403 ? 'invalid' : 'unknown',
+      )
+    }
+    clearProviderKeyStatusCache()
+    restoreFetch?.()
+    restoreFetch = stubFetch(async () => {
+      throw new Error('offline')
+    })
+    assert.equal(await providerKeyStatus('cursor'), 'unknown')
+    deleteApiKey('cursor')
+    assert.equal(await providerKeyStatus('cursor'), 'missing')
   })
 
   it('returns a recorded validation result when a key is present', async () => {

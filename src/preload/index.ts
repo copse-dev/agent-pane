@@ -899,6 +899,10 @@ const api: ApiClient = {
     models: () => ipcRenderer.invoke('open-router:models'),
   },
   models: {
+    invalidations: (threadModel?: string, freshLocal?: boolean) =>
+      ipcRenderer.invoke('models:invalidations', threadModel, freshLocal),
+    recoverSetting: (target, expected, fallback) =>
+      ipcRenderer.invoke('models:recover-setting', target, expected, fallback),
     bestValueDefault: () => ipcRenderer.invoke('models:best-value-default'),
     resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolve-dynamic', value),
   },

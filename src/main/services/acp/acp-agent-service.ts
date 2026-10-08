@@ -352,7 +352,7 @@ export function isTransientProviderError(err: unknown): boolean {
  * session ID only when the agent advertised `session/resume`. The next user
  * turn then restores that session without replaying work already accepted by
  * the agent; otherwise it opens a fresh session and replays history. This is
- * the `"ACP connection closed"` case that previously surfaced straight to the
+ * the "coding agent connection closed" case that previously surfaced straight to the
  * user with no recovery path.
  */
 export function isAcpConnectionDropped(err: unknown): boolean {
@@ -364,7 +364,7 @@ export function isAcpConnectionDropped(err: unknown): boolean {
   if (/process(?:transport)? is not ready for writing/i.test(msg)) return true
   if (/query closed before response received/i.test(msg)) return true
   if (/process exited with (?:code|signal)/i.test(msg)) return true
-  if (/ACP agent .+ exited with (?:code|signal)/i.test(msg)) return true
+  if (/coding agent .+ exited with (?:code|signal)/i.test(msg)) return true
   return false
 }
 
@@ -537,7 +537,7 @@ async function runAcpAgentTurn(
   const agent = getAcpAgent(options.agentId)
   if (!agent) {
     throw new Error(
-      `ACP agent "${options.agentId}" is not configured or is disabled. Add it in Settings → ACP agents.`,
+      `The coding agent "${options.agentId}" is not configured or is disabled. Add it in Settings → General → Providers.`,
     )
   }
 
@@ -558,7 +558,7 @@ async function runAcpAgentTurn(
   const readonlyCheckout = isThreadCheckoutDeferred()
   const cwd = getAgentExecutionRoot()
   if (!cwd) {
-    throw new Error('Open a folder before running an ACP agent so it has a workspace to act in.')
+    throw new Error('Open a folder before running a coding agent so it has a workspace to act in.')
   }
   const projectRoot = getAgentProjectRoot()
   // The turn's trusted context, resolved once by the dispatcher before this
@@ -588,7 +588,7 @@ async function runAcpAgentTurn(
   const hasText = Boolean(outboundPayload.text.trim())
   const hasImages = (outboundPayload.images?.length ?? 0) > 0
   if (!hasText && !hasImages) {
-    throw new Error('ACP agent prompt cannot be empty.')
+    throw new Error('The prompt for the coding agent cannot be empty.')
   }
 
   const model = options.model ?? agent.model
@@ -761,7 +761,7 @@ async function runAcpAgentTurn(
     const includeImages = entry.open.promptImage && hasImages
     if (!hasText && !includeImages) {
       throw new Error(
-        'This ACP agent does not support image prompts. Add text, or use an agent that advertises prompt.image.',
+        'This coding agent does not support image prompts. Add text, or use an agent that accepts images.',
       )
     }
     const promptBlocks = buildAcpPromptContent(
@@ -886,7 +886,7 @@ export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgen
   if (!agent) return { models: null, modes: null }
   const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
   if (!cwd) {
-    throw new Error('Open a folder before detecting an ACP agent’s models.')
+    throw new Error('Open a folder before detecting a coding agent’s models.')
   }
   const sandbox = resolveAcpSandbox(agent)
   // A probe only runs `initialize` to enumerate models/modes — it needs no
@@ -1277,7 +1277,7 @@ async function emitBypassedWriteAudit(
     type: 'tool_result',
     toolCallId: id,
     result:
-      'Warning: these files changed on disk during the ACP turn outside the approved ' +
+      'Warning: these files changed on disk during the agent’s turn outside the approved ' +
       "sphere — no diff was reviewed for them. The write came from the agent's own " +
       'tools (e.g. its shell) or from something else entirely:\n' +
       bypassed.map((p) => `- ${p}`).join('\n') +

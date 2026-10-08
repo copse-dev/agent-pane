@@ -262,7 +262,7 @@ describe('ACP package install approval', () => {
       { agent: claude, action: 'install' },
     ]
     assert.equal(await requestAcpPackageInstallApproval(changes), false)
-    assert.equal(title, 'Install ACP adapters globally?')
+    assert.equal(title, 'Install software to connect your coding agents?')
     assert.match(body, /@agentclientprotocol\/codex-acp/)
     assert.match(body, /@agentclientprotocol\/claude-agent-acp/)
     assert.match(body, /Socket Firewall \(sfw\).*first install it globally/)
@@ -311,7 +311,10 @@ describe('ACP package install approval', () => {
     assert.equal(await requestAcpPackageInstallApproval(changes, true), false)
     assert.match(body, /claude-agent-acp/)
     assert.doesNotMatch(body, /codex-acp/)
-    assert.equal(formatAcpPackageApproval(changes, true).title, 'Install ACP adapters globally?')
+    assert.equal(
+      formatAcpPackageApproval(changes, true).title,
+      'Install software to connect your coding agents?',
+    )
   })
 })
 
@@ -328,7 +331,7 @@ describe('ACP package mutations and Socket Firewall bootstrap consent', () => {
       const installed: string[] = []
       setApprovalHandler(async (request) => {
         assert.match(request.body, /claude-agent-acp/)
-        assert.match(request.body, /also update these installed adapters/)
+        assert.match(request.body, /also update these installed packages/)
         assert.match(request.body, /codex-acp \(1\.1\.0 → 1\.1\.7\)/)
         assert.match(request.body, /first install it globally/)
         return { approved, remember: false }

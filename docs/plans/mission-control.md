@@ -95,8 +95,9 @@ and its turn to finish while another thread keeps working (screenshots
 - Cross-window aggregation: a prompt routed to a pop-out window's renderer is listed there,
   not in the main window's panel.
 - Threads from projects not opened this session. The panel sees exactly what the sidebar
-  sees (`getSidebarThreads` reads the active project plus projects visited this session), so
-  an unvisited project's threads — and the project name of a request from one — are absent.
+  sees (`getSidebarThreads` reads the active project plus projects switched to or preloaded in
+  the background after startup), so until a project's background read finishes (and always for
+  SSH projects) its threads — and the project name of a request from one — are absent.
 - Broader answers the prompt offers (such as "Always allow" or a task lease) are not
   offered in the panel; the prompt in the thread remains one click away.
 

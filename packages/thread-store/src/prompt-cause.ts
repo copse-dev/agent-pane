@@ -205,9 +205,9 @@ const LABELS: Readonly<Record<PromptCause, string>> = {
   'review-spend': 'Spend on a review run',
   'hook-ask': 'A hook asked for confirmation',
   'terminal-output-share': 'Sharing terminal output with the model',
-  'acp-permission': 'ACP agent permission request',
-  'acp-package-setup': 'ACP agent package setup',
-  'acp-remote-env': 'Forwarding ACP agent env to a remote host',
+  'acp-permission': 'Coding agent permission request',
+  'acp-package-setup': 'Coding agent package setup',
+  'acp-remote-env': 'Forwarding coding agent environment to a remote host',
   'gui-app-launch': 'Launch a host GUI app',
   'mode-arming': 'Arming a mode (user-initiated, not an interruption)',
 }

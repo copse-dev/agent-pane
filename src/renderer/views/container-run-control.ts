@@ -750,10 +750,10 @@ export function mountContainerRunControl(
       // say which harness it is describing before anyone reads the counts.
       rows.push(
         row(
-          'Harness',
+          'Agent',
           result.harness === 'copse'
             ? 'Copse'
-            : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (ACP agent)`,
+            : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (coding agent)`,
         ),
       )
       rows.push(row('Prompts reached a handler', String(result.promptsAttempted)))
