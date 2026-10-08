@@ -41,103 +41,6 @@
     mod
   ));
 
-  // src/renderer/markdown/mermaid-fallback.ts
-  function renderMermaidFallback(container2, source) {
-    container2.classList.remove("mermaid-diagram--pending", "mermaid-diagram--folded");
-    container2.dataset["mermaidUi"] = "true";
-    container2.removeAttribute("role");
-    container2.removeAttribute("tabindex");
-    container2.removeAttribute("aria-label");
-    const title2 = document.createElement("p");
-    title2.className = "mermaid-fallback-title";
-    title2.textContent = "Diagram could not be rendered";
-    const hint = document.createElement("p");
-    hint.className = "mermaid-fallback-hint";
-    hint.textContent = "The Mermaid source may use syntax this version does not accept.";
-    const details = document.createElement("details");
-    details.className = "mermaid-fallback-source";
-    const summary = document.createElement("summary");
-    summary.textContent = "View diagram source";
-    const pre = document.createElement("pre");
-    pre.textContent = source;
-    details.append(summary, pre);
-    container2.replaceChildren(title2, hint, details);
-  }
-  var init_mermaid_fallback = __esm({
-    "src/renderer/markdown/mermaid-fallback.ts"() {
-    }
-  });
-
-  // node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
-  function decodeMermaidHtmlEntities(text4) {
-    return text4.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-  }
-  function normalizeMermaidTypography(source) {
-    return source.replace(/\u201c|\u201d/g, '"').replace(/\u2018|\u2019/g, "'").replace(/\r\n/g, "\n");
-  }
-  function labelNeedsQuotes(label) {
-    if (/[()]/.test(label))
-      return true;
-    if (/[+/:,&#|]/.test(label))
-      return true;
-    if (/[^\w \t.-]/.test(label))
-      return true;
-    return false;
-  }
-  function stabilizeMermaidSource(source) {
-    return source.replace(/^(\s*(?:subgraph\s+)?[\w-]+)\[([^\]"(][^\]]*)\]/gm, (match3, prefix, label) => {
-      if (label.startsWith("("))
-        return match3;
-      if (!labelNeedsQuotes(label))
-        return match3;
-      const safe = label.replace(/"/g, "'");
-      return `${prefix}["${safe}"]`;
-    });
-  }
-  function stabilizeMermaidSourceAggressive(source) {
-    return source.replace(/^(\s*(?:subgraph\s+)?[\w-]+)\[([^\]"(][^\]]*)\]/gm, (match3, prefix, label) => {
-      if (label.startsWith("("))
-        return match3;
-      const safe = label.replace(/"/g, "'");
-      return `${prefix}["${safe}"]`;
-    });
-  }
-  function prepareMermaidSource(raw) {
-    const normalized = normalizeMermaidTypography(decodeMermaidHtmlEntities(raw).trimEnd());
-    return stabilizeMermaidSource(normalized);
-  }
-  function mermaidSourceCandidates(raw) {
-    const normalized = normalizeMermaidTypography(decodeMermaidHtmlEntities(raw).trimEnd());
-    const gentle = stabilizeMermaidSource(normalized);
-    const aggressive = stabilizeMermaidSourceAggressive(stabilizeMermaidSource(normalized));
-    return [...new Set([gentle, aggressive].filter(Boolean))];
-  }
-  var init_mermaid_source = __esm({
-    "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
-    }
-  });
-
-  // node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
-  var init_dist = __esm({
-    "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
-      init_mermaid_source();
-    }
-  });
-
-  // src/renderer/markdown/mermaid-frame-protocol.ts
-  function parseDiagramSource(value2) {
-    if (typeof value2 !== "object" || value2 === null) return null;
-    if (!("type" in value2) || value2.type !== "render") return null;
-    if (!("source" in value2) || typeof value2.source !== "string") return null;
-    return value2.source.length <= MAX_DIAGRAM_SOURCE_LENGTH ? value2.source : null;
-  }
-  var MAX_DIAGRAM_SOURCE_LENGTH;
-  var init_mermaid_frame_protocol = __esm({
-    "src/renderer/markdown/mermaid-frame-protocol.ts"() {
-      MAX_DIAGRAM_SOURCE_LENGTH = 5e4;
-    }
-  });
-
   // node_modules/.pnpm/mermaid@11.17.2/node_modules/mermaid/dist/chunks/mermaid.core/chunk-Y2CYZVJY.mjs
   var __defProp2, __name, __export2;
   var init_chunk_Y2CYZVJY = __esm({
@@ -1429,7 +1332,7 @@
   });
 
   // node_modules/.pnpm/khroma@2.1.0/node_modules/khroma/dist/index.js
-  var init_dist2 = __esm({
+  var init_dist = __esm({
     "node_modules/.pnpm/khroma@2.1.0/node_modules/khroma/dist/index.js"() {
       init_methods();
     }
@@ -17948,18 +17851,18 @@
     "node_modules/.pnpm/mermaid@11.17.2/node_modules/mermaid/dist/chunks/mermaid.core/chunk-DU6HZSFF.mjs"() {
       init_chunk_X3CZISLH();
       init_chunk_Y2CYZVJY();
-      init_dist2();
-      init_dist2();
-      init_dist2();
-      init_dist2();
-      init_dist2();
-      init_dist2();
-      init_dist2();
-      init_dist2();
-      init_dist2();
-      init_dist2();
-      init_dist2();
-      init_dist2();
+      init_dist();
+      init_dist();
+      init_dist();
+      init_dist();
+      init_dist();
+      init_dist();
+      init_dist();
+      init_dist();
+      init_dist();
+      init_dist();
+      init_dist();
+      init_dist();
       init_purify_es();
       assignWithDepth = /* @__PURE__ */ __name((dst, src, { depth = 2 } = {}) => {
         const config22 = { depth };
@@ -102580,7 +102483,7 @@ ${elementFontStyles()}
       init_chunk_Y2CYZVJY();
       init_src32();
       init_purify_es();
-      init_dist2();
+      init_dist();
       MERMAID_DOM_ID_PREFIX = "flowchart-";
       FlowDB = class {
         // cspell:ignore funs
@@ -105207,7 +105110,7 @@ You have to call mermaid.initialize.`
       init_chunk_X3CZISLH();
       init_chunk_Y2CYZVJY();
       init_src32();
-      init_dist2();
+      init_dist();
       parser3 = (function() {
         var o2 = /* @__PURE__ */ __name(function(k3, v3, o22, l4) {
           for (o22 = o22 || {}, l4 = k3.length; l4--; o22[k3[l4]] = v3) ;
@@ -159544,7 +159447,7 @@ g.stateGroup line {
       init_chunk_Y2CYZVJY();
       init_src32();
       init_src32();
-      init_dist2();
+      init_dist();
       parser15 = (function() {
         var o2 = /* @__PURE__ */ __name(function(k3, v3, o22, l4) {
           for (o22 = o22 || {}, l4 = k3.length; l4--; o22[k3[l4]] = v3) ;
@@ -161204,7 +161107,7 @@ g.stateGroup line {
   });
 
   // node_modules/.pnpm/uuid@14.0.2/node_modules/uuid/dist/index.js
-  var init_dist3 = __esm({
+  var init_dist2 = __esm({
     "node_modules/.pnpm/uuid@14.0.2/node_modules/uuid/dist/index.js"() {
       init_v4();
     }
@@ -161232,8 +161135,8 @@ g.stateGroup line {
       init_chunk_DU6HZSFF();
       init_chunk_X3CZISLH();
       init_chunk_Y2CYZVJY();
-      init_dist3();
       init_dist2();
+      init_dist();
       parser16 = (function() {
         var o2 = /* @__PURE__ */ __name(function(k3, v3, o22, l4) {
           for (o22 = o22 || {}, l4 = k3.length; l4--; o22[k3[l4]] = v3) ;
@@ -162442,7 +162345,7 @@ g.stateGroup line {
       init_chunk_DU6HZSFF();
       init_chunk_X3CZISLH();
       init_chunk_Y2CYZVJY();
-      init_dist2();
+      init_dist();
       parser17 = (function() {
         var o2 = /* @__PURE__ */ __name(function(k3, v3, o22, l4) {
           for (o22 = o22 || {}, l4 = k3.length; l4--; o22[k3[l4]] = v3) ;
@@ -166067,7 +165970,7 @@ ${prefix}${Math.round(value2 * 100) / 100}${suffix}`;
       init_chunk_X3CZISLH();
       init_chunk_Y2CYZVJY();
       init_compat();
-      init_dist2();
+      init_dist();
       init_src32();
       init_graphlib();
       parser21 = (function() {
@@ -180218,7 +180121,7 @@ ${prefix}${Math.round(value2 * 100) / 100}${suffix}`;
       init_chunk_X3CZISLH();
       init_chunk_Y2CYZVJY();
       init_src32();
-      init_dist2();
+      init_dist();
       init_venn_esm();
       init_rough_esm();
       parser26 = (function() {
@@ -184587,14 +184490,6 @@ ${prefix}${Math.round(value2 * 100) / 100}${suffix}`;
   });
 
   // node_modules/.pnpm/mermaid@11.17.2/node_modules/mermaid/dist/mermaid.core.mjs
-  var mermaid_core_exports = {};
-  __export(mermaid_core_exports, {
-    clearLayoutRenderState: () => clearLayoutRenderState,
-    createCommonLayoutRenderer: () => createCommonLayoutRenderer,
-    default: () => mermaid_default,
-    defaultMeasureLayout: () => defaultMeasureLayout,
-    paintLayoutData: () => paintLayoutData
-  });
   function setA11yDiagramInfo(svg2, diagramType) {
     svg2.attr("role", SVG_ROLE);
     if (diagramType !== "") {
@@ -186084,76 +185979,178 @@ ${prefix}${Math.round(value2 * 100) / 100}${suffix}`;
     }
   });
 
-  // src/renderer/markdown/mermaid-render.ts
-  async function loadMermaid() {
-    mermaidPromise ??= mermaidLoader();
-    return mermaidPromise;
+  // node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+  function decodeMermaidHtmlEntities(text4) {
+    return text4.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
   }
-  function initMermaid(mermaid2) {
-    if (initialized) return;
-    mermaid2.initialize({
-      startOnLoad: false,
-      theme: "dark",
-      fontFamily: "Pliant",
-      themeVariables: { fontFamily: "Pliant" },
-      // Keep sanitization inside the boundary as defense in depth. The opaque
-      // frame, CSP and native navigation guard are independently enforced.
-      securityLevel: "strict",
-      maxTextSize: MAX_DIAGRAM_SOURCE_LENGTH
+  function normalizeMermaidTypography(source) {
+    return source.replace(/\u201c|\u201d/g, '"').replace(/\u2018|\u2019/g, "'").replace(/\r\n/g, "\n");
+  }
+  function labelNeedsQuotes(label) {
+    if (/[()]/.test(label))
+      return true;
+    if (/[+/:,&#|]/.test(label))
+      return true;
+    if (/[^\w \t.-]/.test(label))
+      return true;
+    return false;
+  }
+  function stabilizeMermaidSource(source) {
+    return source.replace(/^(\s*(?:subgraph\s+)?[\w-]+)\[([^\]"(][^\]]*)\]/gm, (match3, prefix, label) => {
+      if (label.startsWith("("))
+        return match3;
+      if (!labelNeedsQuotes(label))
+        return match3;
+      const safe = label.replace(/"/g, "'");
+      return `${prefix}["${safe}"]`;
     });
-    initialized = true;
   }
-  function diagramRenderFailed(container2) {
-    const svg2 = container2.querySelector("svg");
-    if (svg2 && !container2.querySelector(".error-icon")) return false;
-    if (container2.querySelector(".error-icon")) return true;
-    if (container2.textContent.includes("Syntax error in text")) return true;
-    return !svg2;
+  function stabilizeMermaidSourceAggressive(source) {
+    return source.replace(/^(\s*(?:subgraph\s+)?[\w-]+)\[([^\]"(][^\]]*)\]/gm, (match3, prefix, label) => {
+      if (label.startsWith("("))
+        return match3;
+      const safe = label.replace(/"/g, "'");
+      return `${prefix}["${safe}"]`;
+    });
   }
-  async function runMermaidNodes(mermaid2, nodes5) {
-    if (nodes5.length === 0) return;
-    await mermaid2.run({ nodes: nodes5, suppressErrors: true });
+  function prepareMermaidSource(raw) {
+    const normalized = normalizeMermaidTypography(decodeMermaidHtmlEntities(raw).trimEnd());
+    return stabilizeMermaidSource(normalized);
   }
-  async function renderMermaidInFrame(root4) {
-    const nodes5 = root4.querySelectorAll("pre.mermaid:not([data-processed])");
-    if (nodes5.length === 0) return;
-    const mermaid2 = await loadMermaid();
-    initMermaid(mermaid2);
-    const elements2 = Array.from(nodes5);
-    const sourceByNode = /* @__PURE__ */ new Map();
-    for (const node2 of elements2) {
-      const raw = node2.textContent;
-      const source = prepareMermaidSource(raw);
-      sourceByNode.set(node2, source);
-      node2.textContent = source;
+  function mermaidSourceCandidates(raw) {
+    const normalized = normalizeMermaidTypography(decodeMermaidHtmlEntities(raw).trimEnd());
+    const gentle = stabilizeMermaidSource(normalized);
+    const aggressive = stabilizeMermaidSourceAggressive(stabilizeMermaidSource(normalized));
+    return [...new Set([gentle, aggressive].filter(Boolean))];
+  }
+  var init_mermaid_source = __esm({
+    "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
     }
-    await runMermaidNodes(mermaid2, elements2);
-    for (const node2 of elements2) {
-      const container2 = node2.closest(".mermaid-diagram");
-      if (!container2 || container2.querySelector(".mermaid-fallback-title")) continue;
-      if (!diagramRenderFailed(container2)) continue;
-      const candidates = mermaidSourceCandidates(sourceByNode.get(node2) ?? node2.textContent);
-      const retrySource = candidates.find((c3) => c3 !== node2.textContent);
-      if (retrySource) {
-        node2.textContent = retrySource;
-        node2.removeAttribute("data-processed");
-        await runMermaidNodes(mermaid2, [node2]);
-        if (!diagramRenderFailed(container2)) continue;
+  });
+
+  // node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
+  function parseDiagramSource(value2) {
+    if (typeof value2 !== "object" || value2 === null)
+      return null;
+    if (!Object.hasOwn(value2, "type") || Reflect.get(value2, "type") !== "render")
+      return null;
+    const source = Object.hasOwn(value2, "source") ? Reflect.get(value2, "source") : null;
+    return typeof source === "string" && source.length <= MAX_DIAGRAM_SOURCE_LENGTH ? source : null;
+  }
+  var MAX_DIAGRAM_SOURCE_LENGTH;
+  var init_mermaid_frame_protocol = __esm({
+    "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
+      MAX_DIAGRAM_SOURCE_LENGTH = 5e4;
+    }
+  });
+
+  // node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-runtime.js
+  function createMermaidRunner(mermaid2, options2 = {}) {
+    let initialized = false;
+    return async (root4) => {
+      const nodes5 = Array.from(root4.querySelectorAll("pre.mermaid:not([data-processed])"));
+      if (!nodes5.length)
+        return;
+      if (!initialized) {
+        const fontFamily = options2.fontFamily ?? "sans-serif";
+        mermaid2.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          maxTextSize: MAX_DIAGRAM_SOURCE_LENGTH,
+          theme: options2.theme ?? "default",
+          fontFamily,
+          themeVariables: { fontFamily }
+        });
+        initialized = true;
       }
-      renderMermaidFallback(container2, sourceByNode.get(node2) ?? node2.textContent);
-      node2.remove();
-    }
+      for (const node2 of nodes5) {
+        const container2 = node2.closest(".mermaid-diagram");
+        if (!container2)
+          continue;
+        const source = prepareMermaidSource(node2.textContent ?? "");
+        let rendered = false;
+        if (source.length <= MAX_DIAGRAM_SOURCE_LENGTH) {
+          for (const candidate of mermaidSourceCandidates(source)) {
+            node2.textContent = candidate;
+            node2.removeAttribute("data-processed");
+            try {
+              await mermaid2.run({ nodes: [node2], suppressErrors: true });
+              if (container2.querySelector("svg") && !container2.querySelector(".error-icon")) {
+                node2.dataset["processed"] = "true";
+                rendered = true;
+                break;
+              }
+            } catch {
+            }
+          }
+        }
+        if (!rendered) {
+          if (options2.onError)
+            options2.onError(container2, source);
+          else
+            throw new Error("Diagram could not be rendered");
+        }
+      }
+    };
   }
-  var mermaidPromise, initialized, defaultMermaidLoader, mermaidLoader;
-  var init_mermaid_render = __esm({
-    "src/renderer/markdown/mermaid-render.ts"() {
-      init_mermaid_fallback();
-      init_dist();
+  function startMermaidFrame(options2) {
+    const run5 = createMermaidRunner(options2.mermaid, options2);
+    let disposed = false;
+    let activePort;
+    const receive = (event3) => {
+      if (event3.source !== window.parent || event3.ports.length !== 1)
+        return;
+      const source = parseDiagramSource(event3.data);
+      const port = event3.ports[0];
+      if (source === null || !port)
+        return;
+      window.removeEventListener("message", receive);
+      activePort = port;
+      void (async () => {
+        try {
+          await options2.prepare?.();
+          if (disposed)
+            return;
+          const diagram38 = document.createElement("div");
+          diagram38.className = "mermaid-diagram";
+          const pre = document.createElement("pre");
+          pre.className = "mermaid";
+          pre.textContent = source;
+          diagram38.append(pre);
+          document.body.replaceChildren(diagram38);
+          await run5(diagram38);
+          if (disposed)
+            return;
+          const svg2 = diagram38.querySelector("svg");
+          if (!svg2)
+            throw new Error("No diagram");
+          const box = svg2.viewBox.baseVal;
+          const width3 = box.width || svg2.getBoundingClientRect().width;
+          const height2 = box.height || svg2.getBoundingClientRect().height;
+          svg2.style.width = "100%";
+          svg2.style.height = "100%";
+          svg2.style.maxWidth = "none";
+          port.postMessage({ type: "rendered", width: width3, height: height2 });
+        } catch {
+          if (!disposed)
+            port.postMessage({ type: "failed" });
+        } finally {
+          port.close();
+          activePort = void 0;
+        }
+      })();
+    };
+    window.addEventListener("message", receive);
+    return () => {
+      disposed = true;
+      window.removeEventListener("message", receive);
+      activePort?.close();
+    };
+  }
+  var init_mermaid_frame_runtime = __esm({
+    "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-runtime.js"() {
+      init_mermaid_source();
       init_mermaid_frame_protocol();
-      mermaidPromise = null;
-      initialized = false;
-      defaultMermaidLoader = () => Promise.resolve().then(() => (init_mermaid_core(), mermaid_core_exports)).then((mod) => mod.default);
-      mermaidLoader = defaultMermaidLoader;
     }
   });
 
@@ -186176,8 +186173,8 @@ ${prefix}${Math.round(value2 * 100) / 100}${suffix}`;
   // src/renderer/markdown/mermaid-frame-entry.ts
   var require_mermaid_frame_entry = __commonJS({
     "src/renderer/markdown/mermaid-frame-entry.ts"() {
-      init_mermaid_render();
-      init_mermaid_frame_protocol();
+      init_mermaid_core();
+      init_mermaid_frame_runtime();
       init_Pliant_Variable();
       init_Pliant_Italic_Variable();
       async function loadPliant() {
@@ -186193,41 +186190,7 @@ ${prefix}${Math.round(value2 * 100) / 100}${suffix}`;
           })
         );
       }
-      async function render8(source, port) {
-        try {
-          await loadPliant();
-          const diagram38 = document.createElement("div");
-          diagram38.className = "mermaid-diagram";
-          const pre = document.createElement("pre");
-          pre.className = "mermaid";
-          pre.textContent = source;
-          diagram38.append(pre);
-          document.body.replaceChildren(diagram38);
-          await renderMermaidInFrame(diagram38);
-          const svg2 = diagram38.querySelector("svg");
-          if (!svg2 || diagram38.querySelector(".mermaid-fallback-title")) throw new Error("No diagram");
-          const box = svg2.viewBox.baseVal;
-          const width3 = box.width || svg2.getBoundingClientRect().width;
-          const height2 = box.height || svg2.getBoundingClientRect().height;
-          svg2.style.width = "100%";
-          svg2.style.height = "100%";
-          svg2.style.maxWidth = "none";
-          port.postMessage({ type: "rendered", width: width3, height: height2 });
-        } catch {
-          port.postMessage({ type: "failed" });
-        } finally {
-          port.close();
-        }
-      }
-      function receive(event3) {
-        if (event3.source !== window.parent || event3.ports.length !== 1) return;
-        const source = parseDiagramSource(event3.data);
-        const port = event3.ports[0];
-        if (source === null || !port) return;
-        window.removeEventListener("message", receive);
-        void render8(source, port);
-      }
-      window.addEventListener("message", receive);
+      startMermaidFrame({ mermaid: mermaid_default, theme: "dark", fontFamily: "Pliant", prepare: loadPliant });
     }
   });
   require_mermaid_frame_entry();

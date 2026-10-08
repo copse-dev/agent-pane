@@ -35117,7 +35117,7 @@ var init_advisor_strategy_plugin = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -35141,14 +35141,14 @@ function withConfig(config2, fn2) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -35188,7 +35188,7 @@ function decodeHtmlEntities(text2) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -35479,7 +35479,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s16, from) {
   let i2 = from;
   while (i2 < s16.length && s16[i2] !== "`")
@@ -35560,12 +35560,12 @@ function renderInlineCode(text2) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -35641,7 +35641,7 @@ function canonicalizeEscapedPunctuation(text2) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -35662,7 +35662,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -35940,7 +35940,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -35949,7 +35949,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i2 = 0; i2 < line.length; i2++) {
@@ -36099,7 +36099,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -36110,17 +36110,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text2) {
   return text2.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -36216,7 +36216,7 @@ function decodeSafeMarkdownEntities(text2) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -36252,7 +36252,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter) {
   const [open2, close] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close))
@@ -36347,7 +36347,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -36361,7 +36361,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -36497,7 +36497,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -36508,17 +36508,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m2 = line.match(ORDERED_LIST_MARKER_RE);
   if (!m2?.[1])
@@ -37285,7 +37285,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -37302,7 +37302,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -37323,7 +37323,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -37336,7 +37336,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -37362,7 +37362,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -37414,7 +37414,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
 function resolveLanguage(lang) {
   const key = lang.trim().toLowerCase();
   if (!key)
@@ -37446,7 +37446,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_ALIASES;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -37485,7 +37485,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -37507,13 +37507,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -37546,7 +37546,7 @@ function restoreRawImages(text2, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -37556,17 +37556,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -37619,13 +37619,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -37828,7 +37828,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -37857,7 +37857,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -37876,7 +37876,7 @@ function restoreInlinePassHtml(text2) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -37895,7 +37895,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -38093,7 +38093,7 @@ function mathHoldStart(s16, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -38104,7 +38104,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -38199,12 +38199,12 @@ function strikethroughHoldStart(s16, mask) {
   return cut;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -38501,7 +38501,7 @@ function renderEmphasisOutsideInlineHtml(text2, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -38518,7 +38518,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -38568,7 +38568,7 @@ function renderAngleAutolinks(text2) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -38578,7 +38578,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t2, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -38797,7 +38797,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -38817,7 +38817,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text2) {
   return text2.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -38913,7 +38913,7 @@ function renderProseBlock(text2, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -38923,7 +38923,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler)
@@ -39372,7 +39372,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -39390,7 +39390,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -39490,7 +39490,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -39498,16 +39498,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -39554,7 +39554,7 @@ function sanitizeIntoElement(target, html2, config2) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -39578,7 +39578,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -39647,7 +39647,7 @@ function sanitizeRenderedMarkdownInto(target, html2) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -39729,9 +39729,12 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+function topLevelRenderOpts() {
+  return { htmlFromIndent: true, indentedCode: activeConfig().indentedCode !== false };
+}
 function scopedConfig(options) {
-  const { tokens, indentedCode, ...config2 } = options;
+  const { tokens, ...config2 } = options;
   return config2;
 }
 function renderMarkdown(raw, options = {}) {
@@ -39743,11 +39746,7 @@ function renderMarkdownUnsafe(raw, options = {}) {
 function renderMarkdownCore(raw, options) {
   const tokens = options.tokens ?? tokenizeBlocks(raw);
   const linkRefs = collectLinkReferenceDefinitions(raw, tokens);
-  const renderOpts = {
-    linkRefs,
-    htmlFromIndent: TOP_LEVEL_RENDER_OPTS.htmlFromIndent,
-    indentedCode: options.indentedCode ?? TOP_LEVEL_RENDER_OPTS.indentedCode
-  };
+  const renderOpts = { linkRefs, ...topLevelRenderOpts() };
   const footnoteDefs = collectFootnoteDefinitions(raw, tokens);
   if (footnoteDefs.size === 0)
     return renderBlocks(raw, tokens, renderOpts);
@@ -39765,19 +39764,17 @@ ${section}`;
     setActiveFootnoteContext(previousFootnotes);
   }
 }
-var TOP_LEVEL_RENDER_OPTS;
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
     init_render_blocks();
     init_sanitize();
-    TOP_LEVEL_RENDER_OPTS = { htmlFromIndent: true, indentedCode: true };
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text2) {
   if (!text2.includes("["))
     return text2;
@@ -39951,7 +39948,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -39965,7 +39962,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -40080,14 +40077,14 @@ function splitForStreamingCore(content, blocks) {
   };
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -40139,7 +40136,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -40324,7 +40321,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -40353,11 +40350,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -40406,13 +40403,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -40456,13 +40453,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text2) {
   return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -40503,11 +40500,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -40557,14 +40554,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -40670,7 +40667,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -40683,7 +40680,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function renderFormingFenceInner(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -40728,7 +40725,7 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -40737,18 +40734,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a3, b4) {
   const aAttrs = a3.attributes;
   const bAttrs = b4.attributes;
@@ -40850,7 +40847,7 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_html_sink();
     TEXT_NODE = 3;
     ELEMENT_NODE = 1;
@@ -40858,7 +40855,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -41043,9 +41040,9 @@ function detailsBalance(html2) {
   const closes = html2.match(DETAILS_CLOSE_RE)?.length ?? 0;
   return opens - closes;
 }
-var RENDER_OPTS, INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
+var INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -41055,7 +41052,6 @@ var init_streaming_frozen_tail = __esm({
     init_html_sink();
     init_renderer();
     init_streaming_dom_morph();
-    RENDER_OPTS = TOP_LEVEL_RENDER_OPTS;
     INTRA_LIST_MIN_ITEMS = 4;
     MAX_LINK_REF_PATCH_PARTS = 8;
     BENIGN_BALANCED_TAGS = ["b", "i", "u", "s", "del", "ins", "sub", "sup", "kbd", "mark"];
@@ -41398,7 +41394,7 @@ var init_streaming_frozen_tail = __esm({
           const to = lowerBound(tokens, part.end);
           const rendered = renderBlocksToParts(complete, tokens.slice(from, to), {
             linkRefs,
-            ...RENDER_OPTS
+            ...topLevelRenderOpts()
           });
           if (rendered.length !== 1)
             return false;
@@ -41624,7 +41620,10 @@ var init_streaming_frozen_tail = __esm({
         const memo2 = this.tailMemo;
         const deltaRenderTokens = filterRenderTokens(deltaTokens);
         if (memo2 !== null && this.openFrames.length === 0 && deltaRenderTokens.length > 0 && memo2.root === completedEl && memo2.atNodeCount === this.frozenNodeCount && memo2.lead === (this.frozenHasHtml ? "\n" : "") && memo2.linkRefKey === linkRefKey && sameRenderTokens(memo2.renderTokens, deltaRenderTokens) && complete.startsWith(memo2.srcText, memo2.srcStart) && !hasUnfreezableRawHtml(memo2.rawHtml)) {
-          const tailParts = renderBlocksToParts(complete, tailTokens, { linkRefs, ...RENDER_OPTS });
+          const tailParts = renderBlocksToParts(complete, tailTokens, {
+            linkRefs,
+            ...topLevelRenderOpts()
+          });
           const tailHtml = tailParts.map((p2) => p2.html).join("\n");
           this.renderedChars += tailHtml.length;
           this.frozenNodeCount += memo2.nodeCount;
@@ -41639,8 +41638,8 @@ var init_streaming_frozen_tail = __esm({
           this.frozenDetailsBalance += detailsBalance(memo2.rawHtml);
           this.committedHasOpenDetails = this.frozenDetailsBalance > 0 || hasOpenDetailsElement(tailHtml);
         } else {
-          const deltaParts = deltaTokens.length ? renderBlocksToParts(complete, deltaTokens, { linkRefs, ...RENDER_OPTS }) : [];
-          const tailParts = tailTokens.length ? renderBlocksToParts(complete, tailTokens, { linkRefs, ...RENDER_OPTS }) : [];
+          const deltaParts = deltaTokens.length ? renderBlocksToParts(complete, deltaTokens, { linkRefs, ...topLevelRenderOpts() }) : [];
+          const tailParts = tailTokens.length ? renderBlocksToParts(complete, tailTokens, { linkRefs, ...topLevelRenderOpts() }) : [];
           const deltaHtml = deltaParts.map((p2) => p2.html).join("\n");
           const tailHtml = tailParts.map((p2) => p2.html).join("\n");
           if (this.openFrames.length > 0 && this.frameCloseAppeared(deltaHtml, tailHtml)) {
@@ -42030,7 +42029,7 @@ var init_streaming_frozen_tail = __esm({
         const previous = getActiveFootnoteContext();
         setActiveFootnoteContext(ctx);
         try {
-          const parts = renderBlocksToParts(complete, tokens, { linkRefs, ...RENDER_OPTS });
+          const parts = renderBlocksToParts(complete, tokens, { linkRefs, ...topLevelRenderOpts() });
           const items = renderFootnoteSectionItems(ctx, linkRefs);
           return { parts, items, ctx };
         } finally {
@@ -42190,7 +42189,10 @@ ${section}`;
             if (!labels || !cached2 || !labels.some((label) => newSet.has(label)))
               continue;
             const partTokens = tokens.filter((t2) => t2.start >= cached2.start && t2.end <= cached2.end);
-            const html2 = renderBlocksToParts(complete, partTokens, { linkRefs, ...RENDER_OPTS }).map((p2) => p2.html).join("\n");
+            const html2 = renderBlocksToParts(complete, partTokens, {
+              linkRefs,
+              ...topLevelRenderOpts()
+            }).map((p2) => p2.html).join("\n");
             if (html2 !== "" && hasUnfreezableRawHtml(html2))
               return "rebuild";
             if (!this.morphPartElement(completedEl, cached2.el, html2))
@@ -42281,7 +42283,7 @@ ${section}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
@@ -42723,7 +42725,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -42991,9 +42993,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -80074,9 +80076,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -89883,12 +89885,16 @@ var init_table_copy = __esm({
   }
 });
 
-// src/renderer/markdown/mermaid-frame-protocol.ts
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
 function parseDiagramSize(value) {
-  if (typeof value !== "object" || value === null) return null;
-  if (!("type" in value) || value.type !== "rendered") return null;
-  if (!("width" in value) || !("height" in value)) return null;
-  const { width, height } = value;
+  if (typeof value !== "object" || value === null)
+    return null;
+  if (!Object.hasOwn(value, "type") || Reflect.get(value, "type") !== "rendered")
+    return null;
+  if (!Object.hasOwn(value, "width") || !Object.hasOwn(value, "height"))
+    return null;
+  const width = Reflect.get(value, "width");
+  const height = Reflect.get(value, "height");
   if (typeof width !== "number" || typeof height !== "number" || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0)
     return null;
   return {
@@ -89898,35 +89904,48 @@ function parseDiagramSize(value) {
 }
 var MAX_DIAGRAM_SOURCE_LENGTH, MAX_DIAGRAM_DIMENSION;
 var init_mermaid_frame_protocol = __esm({
-  "src/renderer/markdown/mermaid-frame-protocol.ts"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
     MAX_DIAGRAM_SOURCE_LENGTH = 5e4;
     MAX_DIAGRAM_DIMENSION = 4096;
   }
 });
 
-// src/renderer/markdown/mermaid-frame.ts
-function createMermaidFrame(source, layoutWidth = 300) {
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
+function createMermaidFrame(source, options) {
   const element = document.createElement("iframe");
   element.className = "mermaid-frame";
   element.title = "Mermaid diagram";
   element.setAttribute("sandbox", "allow-scripts");
   element.setAttribute("referrerpolicy", "no-referrer");
   element.setAttribute("tabindex", "-1");
-  element.setAttribute(
-    "allow",
-    "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"
-  );
+  element.setAttribute("allow", "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'");
+  const layoutWidth = options.layoutWidth ?? 300;
   const width = Number.isFinite(layoutWidth) && layoutWidth > 0 ? Math.min(layoutWidth, MAX_DIAGRAM_DIMENSION) : 300;
   element.style.width = `${String(width)}px`;
-  sources2.set(element, { source, layoutWidth: width });
+  let cancel = () => {
+  };
+  const dispose = () => {
+    cancel();
+    element.remove();
+  };
   const ready3 = new Promise((resolve, reject) => {
-    if (source.length > MAX_DIAGRAM_SOURCE_LENGTH) {
-      reject(new Error("Diagram source is too large"));
+    if (source.length > MAX_DIAGRAM_SOURCE_LENGTH || options.signal?.aborted) {
+      reject(new Error("Diagram source is too large or rendering was cancelled"));
       return;
     }
     const channel = new MessageChannel();
+    let settled = false;
+    const observer = new MutationObserver((records) => {
+      if (!element.isConnected && records.some((record2) => Array.from(record2.removedNodes).some((node2) => node2 === element || node2.contains(element))))
+        dispose();
+    });
     const finish = (size) => {
+      if (settled)
+        return;
+      settled = true;
       clearTimeout(timer);
+      observer.disconnect();
+      options.signal?.removeEventListener("abort", dispose);
       channel.port1.close();
       channel.port2.close();
       element.onload = null;
@@ -89937,39 +89956,51 @@ function createMermaidFrame(source, layoutWidth = 300) {
         element.style.height = "auto";
         element.dataset["rendered"] = "true";
         resolve(size);
-      } else {
+      } else
         reject(new Error("Diagram frame did not render"));
+    };
+    const timer = setTimeout(() => finish(null), 3e4);
+    cancel = () => finish(null);
+    channel.port1.onmessage = (event) => finish(parseDiagramSize(event.data));
+    channel.port1.onmessageerror = cancel;
+    element.onerror = cancel;
+    element.onload = () => {
+      element.onload = null;
+      try {
+        element.contentWindow?.postMessage({ type: "render", source }, "*", [channel.port2]);
+      } catch {
+        finish(null);
       }
     };
-    const timer = setTimeout(() => {
-      finish(null);
-    }, FRAME_TIMEOUT_MS);
-    channel.port1.onmessage = (event) => {
-      const size = parseDiagramSize(event.data);
-      if (size) finish(size);
-      else if (typeof event.data === "object" && event.data !== null && "type" in event.data && event.data.type === "failed")
-        finish(null);
-    };
-    element.onerror = () => {
-      finish(null);
-    };
-    element.onload = () => {
-      element.contentWindow?.postMessage({ type: "render", source }, "*", [channel.port2]);
-      element.onload = null;
-    };
-    element.src = new URL("./mermaid-frame.html", window.location.href).href;
+    options.signal?.addEventListener("abort", dispose, { once: true });
+    observer.observe(document, { childList: true, subtree: true });
+    element.src = options.url;
   });
-  return { element, ready: ready3 };
+  return { element, ready: ready3, dispose };
+}
+var init_mermaid_isolated = __esm({
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
+    init_mermaid_frame_protocol();
+  }
+});
+
+// src/renderer/markdown/mermaid-frame.ts
+function createMermaidFrame2(source, layoutWidth = 300) {
+  const frame = createMermaidFrame(source, {
+    url: new URL("./mermaid-frame.html", window.location.href).href,
+    layoutWidth
+  });
+  sources2.set(frame.element, { source, layoutWidth });
+  return frame;
 }
 function recreateMermaidFrame(element) {
   const saved = sources2.get(element);
-  return saved === void 0 ? null : createMermaidFrame(saved.source, saved.layoutWidth);
+  return saved === void 0 ? null : createMermaidFrame2(saved.source, saved.layoutWidth);
 }
-var FRAME_TIMEOUT_MS, sources2;
+var sources2;
 var init_mermaid_frame = __esm({
   "src/renderer/markdown/mermaid-frame.ts"() {
-    init_mermaid_frame_protocol();
-    FRAME_TIMEOUT_MS = 3e4;
+    init_mermaid_isolated();
     sources2 = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -90122,6 +90153,8 @@ function ensureExpandDialog() {
   });
   expandDialog.addEventListener("close", () => {
     resetTransform();
+    expandedFrame?.dispose();
+    expandedFrame = null;
     stageEl?.replaceChildren();
   });
   return expandDialog;
@@ -90132,7 +90165,12 @@ function openMermaidExpand(source, recreate) {
   const frame = recreate(sourceFrame);
   if (!frame) return;
   const dialog2 = ensureExpandDialog();
-  if (!stageEl) return;
+  if (!stageEl) {
+    frame.dispose();
+    return;
+  }
+  expandedFrame?.dispose();
+  expandedFrame = frame;
   stageEl.replaceChildren(frame.element);
   dialog2.showModal();
   void frame.ready.then(() => {
@@ -90163,7 +90201,7 @@ function attachMermaidExpand(root, recreate = recreateMermaidFrame) {
     });
   }
 }
-var MIN_SCALE, MAX_SCALE, ZOOM_STEP, expandDialog, viewportEl, stageEl, zoomLabelEl, scale, translateX, translateY;
+var MIN_SCALE, MAX_SCALE, ZOOM_STEP, expandDialog, viewportEl, stageEl, zoomLabelEl, expandedFrame, scale, translateX, translateY;
 var init_mermaid_expand = __esm({
   "src/renderer/markdown/mermaid-expand.ts"() {
     init_helpers();
@@ -90176,6 +90214,7 @@ var init_mermaid_expand = __esm({
     viewportEl = null;
     stageEl = null;
     zoomLabelEl = null;
+    expandedFrame = null;
     scale = 1;
     translateX = 0;
     translateY = 0;
@@ -90220,13 +90259,13 @@ async function renderMermaidIn(root) {
       const source = node2.textContent;
       const style = getComputedStyle(node2);
       const layoutWidth = node2.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-      const frame = createMermaidFrame(source, layoutWidth);
+      const frame = createMermaidFrame2(source, layoutWidth);
       node2.replaceChildren(frame.element);
       try {
         await frame.ready;
         attachMermaidExpand(container.parentElement ?? root);
       } catch {
-        frame.element.remove();
+        frame.dispose();
         renderMermaidFallback(container, source);
       }
     })
@@ -90240,7 +90279,7 @@ var init_mermaid2 = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
 function defaultNow() {
   const perf = globalThis.performance;
   return typeof perf?.now === "function" ? perf.now() : Date.now();
@@ -90424,7 +90463,7 @@ function createInputSmoother(options) {
 }
 var DEFAULT_CHARS_PER_SECOND3, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
 var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
     DEFAULT_CHARS_PER_SECOND3 = 600;
     DEFAULT_LAG_MS = 120;
     VELOCITY_SMOOTHING_MS = 180;
@@ -90962,9 +91001,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -158100,7 +158139,7 @@ var init_purify_es = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend
@@ -158124,7 +158163,7 @@ function withGate(config2, run2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
@@ -164922,7 +164961,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -164933,7 +164972,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();
