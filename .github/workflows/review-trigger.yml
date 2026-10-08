@@ -38,7 +38,8 @@ jobs:
     with:
       reviewer-ref: ${{ github.sha }}
       preparation: copse-pnpm
-      pr: ${{ github.event.workflow_run.pull_requests[0].number || inputs.pr || 0 }}
+      # Dispatch inputs arrive as strings; the reusable interface requires a number.
+      pr: ${{ github.event.workflow_run.pull_requests[0].number || fromJSON(inputs.pr || '0') }}
     # Same-repository inheritance enables the protected job's environment secrets
     # (actions/runner#4453); naming an empty value does not. Grounding references
     # no secrets, and only the guarded Copse findings job reads RELEASE_APP_*.
