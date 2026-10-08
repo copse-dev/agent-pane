@@ -80,6 +80,9 @@ export function pickDynamicModel(
 ): FrontierPoint | null {
   if (pool.length === 0) return null
   switch (selector.kind) {
+    // Non-primary consumers have no task to assess. Never recursively invoke
+    // the classifier when resolving its own small-tasks fallback route.
+    case 'match-prompt':
     case 'best-value':
       // The frontier-aware pick (plan/local first, then intellect per pound).
       // Falls back to a plain value ranking when nothing sits on the frontier.

@@ -33,6 +33,17 @@ function mockApi(resolved = 'claude-sonnet-4-6'): {
 }
 
 describe('resolveBestValueForActiveBlankThread', () => {
+  it('keeps prompt matching unresolved until submission', async () => {
+    const store = createStore()
+    store.setState({ settings: { model: 'auto:match-prompt' } })
+    createThread(store)
+    const api = mockApi()
+    api.models.resolveDynamic = async (): Promise<string> => {
+      throw new Error('must not resolve before submit')
+    }
+    await resolveBestValueForActiveBlankThread(store, api)
+    assert.equal(getActiveThread(store)?.model, 'auto:match-prompt')
+  })
   it('replaces the best-value sentinel on a blank thread with the concrete route', async () => {
     const store = createStore()
     store.setState({ settings: { model: 'auto:best-value' } })
