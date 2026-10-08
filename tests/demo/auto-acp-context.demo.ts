@@ -41,7 +41,7 @@ describe('Auto to ACP context estimate lifecycle', () => {
     await wheel.waitForDisplayed()
     await wheel.moveTo()
     await expect($('.context-wheel-popover-header')).toHaveText('Context · 80.0k / 200.0k (40%)')
-    await expect($('.context-wheel-popover-note')).toHaveText('Reported by ACP agent')
+    await expect($('.context-wheel-popover-note')).toHaveText('Reported by the agent')
     await expect($('.context-wheel-popover-row')).not.toExist()
     assert.equal(await $('#fixture-controls').getAttribute('data-estimates'), '1')
     await saveElementScreenshot('#app', 'auto-acp-context-reported.png', { frame: 'document' })

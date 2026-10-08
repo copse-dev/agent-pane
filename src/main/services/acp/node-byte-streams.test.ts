@@ -23,7 +23,7 @@ describe('Node byte stream bridge', () => {
     source.destroy()
 
     assert.equal(Buffer.from((await reader.read()).value ?? []).toString(), 'partial')
-    await assert.rejects(reader.read(), /closed before it ended/)
+    await assert.rejects(reader.read(), /stopped sending data before it finished/)
   })
 
   it('reports the source error once, not a later premature close', async () => {

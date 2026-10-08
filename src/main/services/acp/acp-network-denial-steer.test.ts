@@ -30,7 +30,7 @@ describe('formatSandboxNetworkDenialAudit', () => {
       out.indexOf('bridged tools') < out.indexOf('sandbox.allowedDomains'),
       'the allowlist override must read as the fallback, after the bridged tools',
     )
-    assert.match(out, /Settings → ACP/)
+    assert.match(out, /Settings → General → Providers/)
   })
 
   it('names the bridged GitHub tools when GitHub was blocked, including content subdomains', () => {

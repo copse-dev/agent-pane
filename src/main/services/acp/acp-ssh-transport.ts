@@ -274,7 +274,7 @@ export function formatRemoteAcpInstallApproval(input: {
   npmBinDir: string | null
 }): { title: string; body: string } {
   const lines = [
-    `Copse could not find the ACP agent on ${input.hostLabel}, and wants to install this global npm package on that host:`,
+    `Copse could not find the coding agent on ${input.hostLabel}. It wants to install this npm package on that host so Copse can communicate with the agent, outside any project:`,
     '',
     `• ${input.pkg}`,
     '',
@@ -284,7 +284,10 @@ export function formatRemoteAcpInstallApproval(input: {
     '',
     'Lifecycle scripts are disabled (`--ignore-scripts`). Unlike a local install, this one does NOT go through Socket Firewall — it runs on the remote host, where Socket Firewall is not available.',
   ]
-  return { title: `Install ACP adapter on ${input.hostLabel}?`, body: lines.join('\n') }
+  return {
+    title: `Install software to connect your coding agent on ${input.hostLabel}?`,
+    body: lines.join('\n'),
+  }
 }
 
 /**
@@ -427,7 +430,7 @@ async function resolveRemoteAgentPath(
 
   if (!probeRan) {
     throw new Error(
-      `Could not check for ACP agent "${command}" on the remote host: the SSH probe failed to run. ` +
+      `Could not check for the coding agent "${command}" on the remote host: the SSH probe failed to run. ` +
         'Check the SSH workspace connection and try again.',
     )
   }
@@ -445,7 +448,7 @@ async function resolveRemoteAgentPath(
   const hint = known?.install
     ? ` Install it on the remote host, e.g. \`${known.install}\`.`
     : ' Install the agent binary on the remote host and ensure it is on your login PATH.'
-  throw new Error(`ACP agent "${command}" was not found on the remote host's PATH.${hint}`)
+  throw new Error(`The coding agent "${command}" was not found on the remote host's PATH.${hint}`)
 }
 
 /**
@@ -596,7 +599,7 @@ export function buildRemoteEnvPreamble(env: Record<string, string> | undefined):
     .map(([key, value]) => {
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
         throw new Error(
-          `ACP agent env name is not a valid shell identifier: ${JSON.stringify(key)}`,
+          `Agent environment variable name is not valid (use letters, digits and underscores only): ${JSON.stringify(key)}`,
         )
       }
       return `export ${key}=${posixQuote(value)}`

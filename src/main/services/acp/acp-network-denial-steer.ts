@@ -87,8 +87,8 @@ export function formatSandboxNetworkDenialAudit(denied: readonly DeniedDestinati
     "Retrying the same destination from the agent's own shell will fail the same way — approval cannot unsandbox it.",
     '',
     'If no bridged tool covers the need — an agent signing itself in, say — add the ' +
-      "domain to this agent's sandbox.allowedDomains override under Settings → ACP " +
-      'agents. That grants the agent process egress to it for the whole session.',
+      "domain to this agent's sandbox.allowedDomains override under Settings → General → " +
+      'Providers. That grants the agent process egress to it for the whole session.',
   )
 
   return lines.join('\n')

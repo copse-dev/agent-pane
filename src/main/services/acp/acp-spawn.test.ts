@@ -123,7 +123,7 @@ describe('a read-only checkout', () => {
         cwd: process.cwd(),
         readonlyCheckout: true,
       }),
-      /read-only checkout cannot run an ACP agent outside the project sandbox/,
+      /read-only checkout cannot run a coding agent outside the project sandbox/,
     )
   })
 })

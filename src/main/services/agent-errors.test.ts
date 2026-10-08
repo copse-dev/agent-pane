@@ -60,7 +60,8 @@ describe('classifyAgentError', () => {
   it('surfaces other ACP JSON-RPC errors with code and optional data', () => {
     const err = new RequestError(-32002, 'Resource not found', { uri: 'file:///missing' })
     const out = classifyAgentError(err, { acpAgentId: 'cursor' })
-    assert.match(out, /ACP error -32002 \(Resource not found\)/)
+    assert.match(out, /The agent reported an error \(code -32002, Resource not found\)/)
+    assert.doesNotMatch(out, /ACP|JSON-RPC/)
     assert.match(out, /file:\/\/\/missing/)
   })
 

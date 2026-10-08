@@ -77,7 +77,7 @@ describe('settings usage model value map cost axis', () => {
     assert.equal(
       await fieldset.$('circle.frontier-point.plan[data-model-id^="gpt-"]').isExisting(),
       false,
-      'only the Codex ACP route should be marked as plan included',
+      'only the Codex agent route should be marked as plan included',
     )
     assert.match(await chart.getText(), /GPT-6 Astra \(~\) · plan/)
     assert.equal(await fieldset.$('details.frontier-unpriced-list').isExisting(), false)

@@ -116,7 +116,7 @@ describe('unattended container run (browser-hosted)', () => {
     expect(summary).toMatch(/Prompts reached a handler\s*0/)
     // Which harness ran the loop is stated before the counts are read: under an
     // agent the deferral row would mean something different.
-    expect(summary).toMatch(/Harness\s*Copse/)
+    expect(summary).toMatch(/Agent\s*Copse/)
     // What the guest held to authenticate: a scoped key here, never a login
     // unless the user opted into carrying one in.
     expect(summary).toMatch(/Credential\s*one API key, scoped to the run/)
