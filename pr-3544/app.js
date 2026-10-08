@@ -22462,6 +22462,7 @@ function parseDynamicModel(value) {
   const selection2 = parseModelSelection(value);
   if (selection2.namespace !== "auto") return null;
   const body = selection2.id;
+  if (body === "match-prompt") return { kind: "match-prompt" };
   if (body === "best-value") return { kind: "best-value" };
   if (body === "best-intellect") return { kind: "best-intellect" };
   if (body === "best-local") return { kind: "best-local" };
@@ -22483,6 +22484,8 @@ function dynamicModelLabel(value) {
   const selector = parseDynamicModel(value);
   if (!selector) return null;
   switch (selector.kind) {
+    case "match-prompt":
+      return "Match task";
     case "best-value":
       return "Best value";
     case "best-intellect":
@@ -22558,13 +22561,14 @@ function dynamicModelChoices() {
   }
   return choices;
 }
-var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, BALANCED_INCLUDED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
+var BEST_VALUE_MODEL_SELECTOR, MATCH_PROMPT_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, BALANCED_INCLUDED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
 var init_dynamic_model = __esm({
   "packages/llm/src/dynamic-model.ts"() {
     init_agent_roles();
     init_model_selection();
     init_reserved_prefixes();
     BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
+    MATCH_PROMPT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}match-prompt`;
     BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
     BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
     CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
@@ -43699,11 +43703,18 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
 }
 async function fetchModelOptions(api2, current, opts = {}) {
   const options = [];
+  if (opts.includeAgentModels !== false) {
+    options.push({
+      value: MATCH_PROMPT_MODEL_SELECTOR,
+      label: "Match task \u2014 Chooses a suitable model from your prompt",
+      group: "Automatic"
+    });
+  }
   if (opts.includeBestValue === true) {
     options.push({
       value: BEST_VALUE_CHAT_MODEL,
       label: `${BEST_VALUE_CHAT_MODEL_LABEL} \u2014 auto from plan / price frontier`,
-      group: CHAT_DEFAULT_GROUP
+      group: "Automatic"
     });
     for (const choice of dynamicModelChoices()) {
       if (choice.value === BEST_VALUE_CHAT_MODEL) continue;
@@ -43933,7 +43944,7 @@ function dynamicModelOptions(current, autoLabel) {
 function fetchDynamicModelOptions(current, autoLabel) {
   return Promise.resolve(dynamicModelOptions(current, autoLabel));
 }
-var ACP_GROUP, OPENROUTER_GROUP, CHAT_DEFAULT_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
+var ACP_GROUP, OPENROUTER_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
 var init_model_options = __esm({
   "src/renderer/views/model-options.ts"() {
     init_acp_retention();
@@ -43959,7 +43970,6 @@ var init_model_options = __esm({
     init_model_coverage();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
-    CHAT_DEFAULT_GROUP = "Chat default";
     KNOWN_TEXT_ONLY_MISTRAL_MODELS = [
       "mistral-small-latest",
       "open-mistral-nemo",
@@ -76431,6 +76441,46 @@ var init_demo_scenarios = __esm({
                 createdAt: FIXED_TIME
               }
             ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
+        id: "prompt-model-first-ask",
+        label: "Prompt matching without transcript diagnostics",
+        trace: {
+          id: "prompt-model-first-ask",
+          label: "The first ask pins the model in the picker",
+          prompt: "Check for typos in the README",
+          steps: [
+            {
+              chunk: {
+                type: "turn_parameters",
+                model: "claude-haiku-4-5",
+                parameters: {},
+                requestedModel: "auto:match-prompt"
+              }
+            },
+            { delayMs: 2e3, chunk: { type: "text", text: "I\u2019ll check the README for typos." } },
+            { chunk: { type: "done", stopReason: "end_turn" } }
+          ]
+        },
+        project: project("demo-prompt-model-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "auto:match-prompt"
+        },
+        threads: [
+          {
+            id: "demo-prompt-model-thread",
+            title: "README typo check",
+            status: "idle",
+            model: "auto:match-prompt",
+            messages: [],
             usage: { inputTokens: 0, outputTokens: 0 },
             createdAt: FIXED_TIME,
             updatedAt: FIXED_TIME
@@ -114239,6 +114289,9 @@ function mountInputBar(root, store2, api2, opts = {}) {
   }
   function footerModelDisplayLabel(current) {
     const resolved3 = footerResolvedModel(current);
+    if (current === MATCH_PROMPT_MODEL_SELECTOR) {
+      return resolved3 ? `Auto \u2014 ${modelDisplayLabel(resolved3)}` : "Match task";
+    }
     return resolved3 ? modelDisplayLabel(resolved3) : void 0;
   }
   function footerRecentModels() {
@@ -153728,7 +153781,8 @@ function startAgentController(store2, api2) {
         });
         if (patchThreadAnywhere(store2, threadId, (thread) => ({
           ...thread,
-          resolvedModel: chunk.model
+          resolvedModel: chunk.model,
+          ...chunk.requestedModel === MATCH_PROMPT_MODEL_SELECTOR && (thread.model === void 0 || thread.model === MATCH_PROMPT_MODEL_SELECTOR) ? { model: chunk.model } : {}
         }))) {
           store2.emit("thread_model_resolved", threadId);
         }
@@ -154035,6 +154089,7 @@ function tryOpenFileFromResult(_store, _result) {
 var pendingTurn;
 var init_agent = __esm({
   "src/renderer/controller/agent.ts"() {
+    init_dynamic_model();
     init_thread_helpers();
     init_sync_thread_branch_after_shell();
     init_sync_thread_branch();
@@ -154275,6 +154330,7 @@ async function resolveBestValueForActiveBlankThread(store2, api2) {
   const settingsModel = store2.getState().settings?.model;
   const current = thread.model ?? settingsModel;
   if (typeof current !== "string" || !isDynamicModel(current)) return;
+  if (current === MATCH_PROMPT_MODEL_SELECTOR) return;
   let resolved3;
   try {
     resolved3 = await api2.models.resolveDynamic(current);
@@ -154287,6 +154343,7 @@ async function resolveBestValueForActiveBlankThread(store2, api2) {
   if (!isBlankThread(latest) || hasUnsubmittedPrompt(latest)) return;
   const latestModel = latest.model ?? store2.getState().settings?.model;
   if (typeof latestModel !== "string" || !isDynamicModel(latestModel)) return;
+  if (latestModel === MATCH_PROMPT_MODEL_SELECTOR) return;
   commitThreadModelSelection(store2, api2, thread.id, "auto", latestModel, resolved3);
 }
 function attachBestValueDefaultResolver(store2, api2) {
