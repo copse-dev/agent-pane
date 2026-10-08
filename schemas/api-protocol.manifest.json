@@ -2117,6 +2117,13 @@
           2
         ]
       },
+      "threads:backlinks": {
+        "api": "threads.backlinks",
+        "args": [
+          3,
+          3
+        ]
+      },
       "threads:catalog": {
         "api": "threads.catalog",
         "args": [
