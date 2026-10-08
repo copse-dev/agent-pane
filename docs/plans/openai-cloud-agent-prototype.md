@@ -154,3 +154,17 @@ files are not excluded to fit the old limit.
   `pnpm run check` still stops at the unchanged LM Studio TS2554 error noted above.
 - Live API vision/provisioning remains unverified without a Platform key. The
   larger whole-project budget is 1568 MiB; each API file stays below its 50 MiB cap.
+
+## HTTP 400 diagnostics brief
+
+The screenshot cannot identify the rejected endpoint or parameter because the
+client discards upstream errors. Decode bounded structured error responses and
+include the operation, safe provider reason/code/parameter and request ID without
+exposing keys or raw response bodies. Cover creation, upload and malformed/oversized
+errors. Do not claim the underlying live 400 is fixed without its response detail.
+
+Diagnostics validation: 22 focused API/adapter/recovery/upload tests passed; the four new
+error tests also passed after lint cleanup. Production build, focused type-aware lint,
+formatting and diff checks passed. Full `pnpm run check` still stops at the unchanged
+LM Studio test TS2554. This changes error data through the existing error card, with no
+renderer/DOM changes. The live HTTP 400 remains unconfirmed without its provider detail.

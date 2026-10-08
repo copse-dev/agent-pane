@@ -1,3 +1,4 @@
+import { openAiApiError } from './openai-api-error.ts'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
@@ -120,10 +121,10 @@ export class OpenAiAgentsApi {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
     if (!response.ok && !(method === 'DELETE' && response.status === 404)) {
-      // Do not echo arbitrary upstream bodies, which can contain prompts or credentials.
-      await response.body?.cancel()
-      throw new Error(
-        `OpenAI Agents API HTTP ${String(response.status)}${response.status === 401 || response.status === 403 ? ': check Platform key permissions (api.agents.read/write and api.responses.write).' : '.'}`,
+      throw await openAiApiError(
+        response,
+        `${method} ${resource}${path.split('?')[0] ?? ''}`,
+        this.apiKey,
       )
     }
     return response
@@ -148,8 +149,7 @@ export class OpenAiAgentsApi {
       body: form,
     })
     if (!response.ok) {
-      await response.body?.cancel()
-      throw new Error(`OpenAI file upload HTTP ${String(response.status)}.`)
+      throw await openAiApiError(response, 'POST /files (source upload)', this.apiKey)
     }
     return (await this.json(response, z.object({ id: z.string().min(1) }))).id
   }
