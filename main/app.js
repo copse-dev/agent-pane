@@ -21572,6 +21572,152 @@ var init_source_row = __esm({
   }
 });
 
+// src/renderer/views/settings-sources-skills.ts
+function metadataDetails(skill) {
+  const entries2 = [];
+  if (skill.license !== void 0) entries2.push(["License", skill.license]);
+  if (skill.compatibility !== void 0) entries2.push(["Compatibility", skill.compatibility]);
+  if (skill.allowedTools !== void 0)
+    entries2.push(["Declared tools (descriptive only)", skill.allowedTools]);
+  for (const [key, value] of Object.entries(skill.metadata ?? {}).sort(
+    ([a3], [b4]) => a3.localeCompare(b4)
+  ))
+    entries2.push([`Metadata: ${key}`, value]);
+  if (entries2.length === 0) return null;
+  const details = document.createElement("details");
+  details.className = "sources-skill-metadata";
+  const summary = document.createElement("summary");
+  summary.textContent = "Compatibility metadata";
+  const list = document.createElement("dl");
+  for (const [key, value] of entries2) {
+    const term = document.createElement("dt");
+    term.textContent = key;
+    const definition = document.createElement("dd");
+    definition.textContent = value;
+    list.append(term, definition);
+  }
+  details.append(summary, list);
+  return details;
+}
+function mountSkillsSources({
+  root,
+  api: api2,
+  makeSourceRow: makeSourceRow2
+}) {
+  const list = root.querySelector("#sources-skills-list");
+  const diagnostics = root.querySelector("#sources-skills-diagnostics");
+  const folders = root.querySelector("#sources-skill-roots");
+  const save = root.querySelector("#sources-skill-roots-save");
+  const reload = root.querySelector("#sources-skills-reload");
+  const status = root.querySelector("#sources-skills-status");
+  if (!list || !diagnostics || !folders || !save || !reload || !status)
+    throw new Error("Missing skills Sources elements");
+  let generation = 0;
+  const render = (result) => {
+    if (!root.isConnected) return;
+    list.replaceChildren();
+    diagnostics.replaceChildren();
+    folders.value = result.extraRoots.join("\n");
+    for (const skill of result.skills) {
+      const controls = `${skill.userInvocable === false ? "Manual off" : "Manual on"} \xB7 ${skill.disableModelInvocation ? "Model off" : "Model on"}`;
+      const row2 = makeSourceRow2(skill.name, skill.source, skill.description, {
+        titleAttr: skill.skillPath,
+        hoverDetail: skill.skillPath
+      });
+      const eligibility = document.createElement("span");
+      eligibility.className = "sources-skill-controls";
+      eligibility.textContent = controls;
+      row2.append(eligibility);
+      const details = metadataDetails(skill);
+      if (details) row2.append(details);
+      list.append(row2);
+    }
+    if (result.skills.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "sources-empty";
+      empty.textContent = "No skills discovered.";
+      list.append(empty);
+    }
+    for (const diagnostic of result.diagnostics) {
+      diagnostics.append(
+        makeSourceRow2(diagnostic.name || "Skill source", diagnostic.kind, diagnostic.reason, {
+          titleAttr: diagnostic.skillPath,
+          hoverDetail: diagnostic.skillPath
+        })
+      );
+    }
+    window.dispatchEvent(new Event("copse:skills-changed"));
+  };
+  const perform = async (request, pending, completed) => {
+    const revision = ++generation;
+    save.disabled = true;
+    reload.disabled = true;
+    status.textContent = pending;
+    try {
+      const result = await request();
+      if (!root.isConnected || revision !== generation) return;
+      render(result);
+      status.textContent = completed;
+    } catch (error62) {
+      if (root.isConnected && revision === generation)
+        status.textContent = error62 instanceof Error ? error62.message : "Could not refresh skills.";
+    } finally {
+      if (root.isConnected && revision === generation) {
+        save.disabled = false;
+        reload.disabled = false;
+      }
+    }
+  };
+  save.addEventListener("click", () => {
+    const paths = folders.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+    void perform(
+      () => api2.skills.setRoots(paths),
+      "Saving folders\u2026",
+      "Folders saved. Skills reloaded."
+    );
+  });
+  reload.addEventListener("click", () => {
+    void perform(() => api2.skills.sources(), "Reloading skills\u2026", "Skills reloaded.");
+  });
+  return {
+    invalidate() {
+      generation++;
+      save.disabled = false;
+      reload.disabled = false;
+      status.textContent = "";
+    },
+    refresh(result) {
+      generation++;
+      if (!root.isConnected) return;
+      render(result);
+      save.disabled = false;
+      reload.disabled = false;
+      status.textContent = "";
+    }
+  };
+}
+var skillsSourcesMarkup;
+var init_settings_sources_skills = __esm({
+  "src/renderer/views/settings-sources-skills.ts"() {
+    skillsSourcesMarkup = `
+  <fieldset id="sources-skills-fieldset">
+    <legend>Skills</legend>
+    <p class="settings-fieldset-desc">Skill origins, invocation controls, and validation. Files refresh when Sources opens or you reload; changes apply to future turns.</p>
+    <div id="sources-skills-list" class="sources-group"></div>
+    <div id="sources-skills-diagnostics" class="sources-group" aria-label="Skill validation diagnostics"></div>
+    <details class="sources-skill-folders">
+      <summary>Extra skill folders</summary>
+      <label for="sources-skill-roots">Absolute folder paths, one per line, in precedence order</label>
+      <textarea id="sources-skill-roots" rows="3" spellcheck="false"></textarea>
+      <p class="settings-fieldset-desc">Folders may contain skills directly or a Cursor plugin. These sources remain untrusted; adding a folder grants no tool permissions. Earlier sources win duplicate names.</p>
+      <button type="button" class="ui-btn ui-btn-secondary" id="sources-skill-roots-save">Save folders</button>
+    </details>
+    <button type="button" class="ui-btn ui-btn-secondary" id="sources-skills-reload">Reload skills</button>
+    <span id="sources-skills-status" role="status" aria-live="polite"></span>
+  </fieldset>`;
+  }
+});
+
 // src/renderer/views/settings/sources-section.ts
 function createSourcesSection({
   root,
@@ -21580,6 +21726,7 @@ function createSourcesSection({
   onHeadingsChanged
 }) {
   let generation = 0;
+  const skillSources = mountSkillsSources({ root, api: api2, makeSourceRow });
   function makeAgentRows(result) {
     const rows = [];
     for (const agent of result.agents) {
@@ -21850,7 +21997,7 @@ function createSourcesSection({
       const [instructions, cursorRules, skills, agents, hooks] = await Promise.all([
         api2.instructions.list(),
         api2.cursorRules.list(),
-        api2.skills.list(),
+        api2.skills.sources(),
         api2.agents.list(),
         api2.hooks.list()
       ]);
@@ -21887,19 +22034,7 @@ function createSourcesSection({
       qsRequired(root, "#cursor-rules-fieldset").hidden = cursorRules.length === 0;
       if (!root.querySelector(".settings-content")?.classList.contains("settings-searching"))
         onHeadingsChanged();
-      fillSourceList(
-        "#sources-skills-list",
-        skills.map(
-          (s16) => makeSourceRow(s16.name, s16.source, s16.description || null, {
-            // Keep the resting list uncluttered: path lives on hover (and as a
-            // native tooltip fallback). Description stays as the always-visible
-            // detail; when a skill has none, the hover line is the only path.
-            titleAttr: s16.skillPath,
-            hoverDetail: s16.skillPath
-          })
-        ),
-        "No skills discovered."
-      );
+      skillSources.refresh(skills);
       fillSourceList("#sources-agents-list", makeAgentRows(agents), "No agents discovered.");
       fillSourceList(
         "#sources-hooks-list",
@@ -21919,6 +22054,7 @@ function createSourcesSection({
     refresh: refreshSources,
     invalidate: () => {
       generation += 1;
+      skillSources.invalidate();
     }
   };
 }
@@ -21931,6 +22067,7 @@ var init_sources_section = __esm({
     init_attachment_preview();
     init_confirm_dialog();
     init_source_row();
+    init_settings_sources_skills();
   }
 });
 
@@ -69052,17 +69189,7 @@ function mountSettingsDialog(store2, api2) {
               </div>
             </fieldset>
 
-            <fieldset>
-              <legend>Skills</legend>
-              <p class="settings-fieldset-desc">
-                Skills found on this machine, tagged by where they came from. Hover a row to see
-                its path. Choose whether to include the ones that ship with Copse under
-                Agent \u2192 Skills.
-              </p>
-              <div id="sources-skills-list" class="sources-group">
-                <span class="sources-empty">Loading\u2026</span>
-              </div>
-            </fieldset>
+            ${skillsSourcesMarkup}
 
             <fieldset data-developer-only="hooks" hidden>
               <legend>Hooks</legend>
@@ -72166,6 +72293,7 @@ var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
     init_storage_maintenance_panel();
     init_sources_section();
+    init_settings_sources_skills();
     init_source_row();
     init_errors4();
     init_ipc_error_message();
@@ -79315,7 +79443,16 @@ function createDemoApi(scenario, options = {}) {
       remove: unsupported
     },
     agents: { list: () => resolved2({ agents: [], skipped: [], shadowed: [] }) },
-    skills: { list: emptyArray },
+    skills: {
+      list: emptyArray,
+      sources: () => resolved2({ skills: [], diagnostics: [], extraRoots: [], reload: "manual" }),
+      setRoots: (extraRoots) => resolved2({
+        skills: [],
+        diagnostics: [],
+        extraRoots,
+        reload: "manual"
+      })
+    },
     cursorPlugins: { list: emptyArray },
     bundledSkillPlugins: { list: emptyArray },
     hooks: {
