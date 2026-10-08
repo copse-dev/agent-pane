@@ -1540,7 +1540,8 @@ copse-ui-field input[type=password],
     opacity: 1;
   }
 }
-.chat-pr-status {
+.chat-pr-status,
+.chat-changes-status {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -3418,6 +3419,59 @@ summary.pr-check-group-heading::-webkit-details-marker {
 .git-changes-review-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* src/renderer/styles/global/pr-thread-relationships.css */
+.pr-thread-relationships {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.pr-thread-group h5 {
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: calc(11px * var(--ui-scale));
+  font-weight: 600;
+}
+.pr-thread-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  text-align: left;
+  cursor: pointer;
+}
+.pr-thread-link + .pr-thread-link {
+  margin-top: 4px;
+}
+.pr-thread-link:hover {
+  background: var(--bg-hover);
+}
+.pr-thread-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-thread-kind {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: calc(10px * var(--ui-scale));
+}
+.pr-thread-empty {
+  margin: 4px 0;
+  color: var(--text-secondary);
+  font-size: calc(11px * var(--ui-scale));
+}
+.pr-list-relationship {
+  color: var(--text-secondary);
+  font-size: calc(10px * var(--ui-scale));
+  flex-shrink: 0;
 }
 
 /* src/renderer/styles/global/titlebar.css */
