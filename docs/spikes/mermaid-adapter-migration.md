@@ -86,7 +86,6 @@ that released version directly, remove the temporary adapter patch and its fixtu
 and verify the package exports, build, full static/unit gate, and focused Mermaid
 and markdown Electron coverage against the published artifact.
 
-
 ### v1.3.0 completion evidence (2026-10-08)
 
 - [Release workflow](https://github.com/copse-dev/streaming-markdown/actions/runs/37784389017): success; npm installation resolves v1.3.0 with all three isolated Mermaid exports.
