@@ -973,6 +973,46 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'prompt-model-first-ask',
+    label: 'Prompt matching without transcript diagnostics',
+    trace: {
+      id: 'prompt-model-first-ask',
+      label: 'The first ask pins the model in the picker',
+      prompt: 'Check for typos in the README',
+      steps: [
+        {
+          chunk: {
+            type: 'turn_parameters',
+            model: 'claude-haiku-4-5',
+            parameters: {},
+            requestedModel: 'auto:match-prompt',
+          },
+        },
+        { delayMs: 2000, chunk: { type: 'text', text: 'I’ll check the README for typos.' } },
+        { chunk: { type: 'done', stopReason: 'end_turn' } },
+      ],
+    },
+    project: project('demo-prompt-model-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'auto:match-prompt',
+    },
+    threads: [
+      {
+        id: 'demo-prompt-model-thread',
+        title: 'README typo check',
+        status: 'idle',
+        model: 'auto:match-prompt',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
     id: 'footer-compact',
     label: 'Responsive composer footer',
     project: project('demo-footer-project'),

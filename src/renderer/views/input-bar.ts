@@ -90,7 +90,7 @@ import {
   FALLBACK_APP_CHAT_MODEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
-import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
+import { isDynamicModel, MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import { mountNextStepHint } from './next-step-hint.ts'
 import {
@@ -494,6 +494,9 @@ export function mountInputBar(
 
   function footerModelDisplayLabel(current: string): string | undefined {
     const resolved = footerResolvedModel(current)
+    if (current === MATCH_PROMPT_MODEL_SELECTOR) {
+      return resolved ? `Auto — ${modelDisplayLabel(resolved)}` : 'Match task'
+    }
     // Run the resolved route through the same label formatter the picker uses
     // (OpenRouter/cloud friendly), so `openrouter:minimax/minimax-m3` renders
     // as "MiniMax M3" rather than the raw id.
