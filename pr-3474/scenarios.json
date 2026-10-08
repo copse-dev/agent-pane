@@ -24,6 +24,10 @@
     "label": "Balanced model rule label"
   },
   {
+    "id": "prompt-model-first-ask",
+    "label": "Prompt matching without transcript diagnostics"
+  },
+  {
     "id": "footer-compact",
     "label": "Responsive composer footer"
   },
@@ -146,6 +150,10 @@
   {
     "id": "activity-home-empty",
     "label": "Activity home with nothing to list"
+  },
+  {
+    "id": "pr-relations",
+    "label": "PR producing and related threads"
   },
   {
     "id": "chat-layout-styling",
