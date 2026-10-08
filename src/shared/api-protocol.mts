@@ -81,5 +81,5 @@
 // v51 versions the context_compacted agent chunk (OpenAI server-side compaction).
 // v52 adds `threads:backlinks`, and versions the optional `sideChat` link and the
 // recorded `links` on thread payloads.
+// v52 adds the `side-chat` right-panel mode to the pane and pop-out channels.
 export const API_PROTOCOL_VERSION = 52 as const
-export const API_PROTOCOL_VERSION = 51 as const

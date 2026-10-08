@@ -332,7 +332,8 @@ export function collectActivityThreads(store: AppStore): ActivityThread[] {
   }
   for (const carried of backgroundThreads) {
     const project = projects.find((p) => p.id === carried.projectId)
-    if (!project || carried.thread.archivedAt != null) continue
+    if (!project || carried.thread.archivedAt != null || carried.thread.sideChat !== undefined)
+      continue
     out.set(carried.thread.id, {
       id: carried.thread.id,
       title: carried.thread.title,

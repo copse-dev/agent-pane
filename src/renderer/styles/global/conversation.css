@@ -1673,3 +1673,28 @@ span.acp-resource-title {
     animation: none;
   }
 }
+/* Chip under a message that has side chats branched from it (prototype #3538). */
+.msg-side-chat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 1px 8px;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font: inherit;
+  font-size: var(--font-size-2xs);
+  cursor: pointer;
+}
+.msg-side-chat-chip:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.msg-side-chat-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}

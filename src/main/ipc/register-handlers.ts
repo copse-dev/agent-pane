@@ -3345,7 +3345,17 @@ export function registerAllHandlers(
   ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     createPanePopoutWindow(parsed, seed)
@@ -3354,7 +3364,17 @@ export function registerAllHandlers(
   ipcMain.handle('panes:take-popout-seed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     return takePopoutSeed(parsed)
