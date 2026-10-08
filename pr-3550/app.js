@@ -22533,7 +22533,7 @@ function dynamicModelChoices() {
     {
       value: BALANCED_MODEL_SELECTOR,
       label: "Balanced",
-      description: "Strong capability at a fair price; favors plans",
+      description: "Strong results at a fair price; favors plans",
       group: AUTOMATIC_GROUP
     },
     {
@@ -23570,7 +23570,7 @@ var init_acp_known_agents = __esm({
         // has been renamed to @agentclientprotocol/claude-agent-acp." It stopped
         // at 0.16.2 (2026-02-17); the renamed package carries on from 0.24.0.
         reason: "Renamed upstream to @agentclientprotocol/claude-agent-acp.",
-        title: "Claude Code (ACP, Zed)",
+        title: "Claude Code (Zed adapter)",
         command: "claude-code-acp",
         args: [],
         envHints: ["ANTHROPIC_API_KEY"],
@@ -23611,7 +23611,7 @@ var init_acp_known_agents = __esm({
         },
         sandboxedPermissionMode: "acceptEdits",
         docsUrl: "https://www.npmjs.com/package/@zed-industries/claude-code-acp",
-        note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or `ANTHROPIC_API_KEY`."
+        note: "Zed's adapter for Claude Code. Sign in with `claude /login` or set `ANTHROPIC_API_KEY`."
       }
     ];
     KNOWN_ACP_AGENTS = [
@@ -23690,7 +23690,7 @@ var init_acp_known_agents = __esm({
         setup: "claude setup-token",
         reauth: "claude /login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
-        note: "Claude Agent SDK over ACP. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`)."
+        note: "Runs Claude Code through its agent SDK. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`)."
       },
       {
         id: "cursor",
@@ -23716,7 +23716,7 @@ var init_acp_known_agents = __esm({
         setup: "cursor-agent login",
         reauth: "cursor-agent login",
         docsUrl: "https://docs.cursor.com/en/cli/overview",
-        note: "Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`."
+        note: "Runs the Cursor CLI (`cursor-agent acp`). Sign in with `cursor-agent login`."
       },
       {
         id: "codex-acp",
@@ -23757,7 +23757,7 @@ var init_acp_known_agents = __esm({
         // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
         reauth: "codex login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/codex-acp",
-        note: "OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
+        note: "Runs OpenAI Codex. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
       }
     ];
   }
@@ -34937,7 +34937,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: true,
       native,
       level: "info",
-      reason: "Advice comes from the configured external ACP agent, consulted on a bare one-off session. No capability annotations, so no strength comparison."
+      reason: "Advice comes from the configured external coding agent, consulted on a bare one-off session. Its strength is not rated, so there is no comparison."
     };
   }
   const executor = annotationFor(executorModel);
@@ -34967,7 +34967,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: true,
       native,
       level: "info",
-      reason: `Cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}; the executor isn\u2019t in the capability annotations, so no strength comparison is possible.`
+      reason: `Cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}; the executor has no strength rating, so no strength comparison is possible.`
     };
   }
   if (advisor.kind === "local") {
@@ -34999,7 +34999,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
     ok: true,
     native,
     level: "info",
-    reason: "Client-side pairing \u2014 any configured executor/advisor combination works. Neither model carries capability annotations, so no strength comparison is possible."
+    reason: "Client-side pairing \u2014 any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible."
   };
 }
 var NATIVE_ADVISOR_COMPAT, INTELLECT_PARITY;
@@ -46359,7 +46359,7 @@ function createAcpAgentsSection(api2, opts = {}) {
         }
         return Promise.resolve(pickerOptions);
       },
-      ariaLabel: "ACP agent model",
+      ariaLabel: "Agent model",
       loadOnMount: false
     });
     void modelPicker.refresh(initialModel);
@@ -46974,7 +46974,7 @@ function createProvidersPanel(api2, opts = {}) {
       el(
         "p",
         { class: "field-hint openai-service-tier-scope" },
-        "Applies to OpenAI API-key requests. ChatGPT plan and Codex ACP use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
+        "Applies to OpenAI API-key requests. ChatGPT plan and the Codex agent use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
       )
     );
     tierBlock.dataset["testid"] = "openai-service-tier-block";
@@ -47153,12 +47153,12 @@ function createProvidersPanel(api2, opts = {}) {
     ];
     if (agentIds.length) {
       entries2.push({
-        title: "Codex ACP",
+        title: "Codex agent",
         configured: agentIds.some((id) => agentsPanel.isConfigured(id)),
-        description: "Codex\u2019s agent, running on this machine through ACP.",
+        description: "Codex\u2019s agent, running on this machine.",
         content: connectionDetails(
           "openai-codex-details",
-          "Configure Codex ACP",
+          "Configure Codex agent",
           agentBlock(agentIds)
         ),
         id: "codex"
@@ -64827,7 +64827,7 @@ function markNavigationRestored(restored) {
 function serializedNavigation(api2, navigation) {
   if (!ownsNavigation || !navigationRestored) return Promise.resolve();
   if (lastNavigation !== null && lastNavigation.activeProjectId === navigation.activeProjectId && lastNavigation.activeThreadId === navigation.activeThreadId) {
-    return Promise.resolve();
+    return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
   }
   lastNavigation = navigation;
   return serializedWrite("mainWindow:navigation", () => api2.windowState.setNavigation(navigation));
@@ -67555,6 +67555,22 @@ function cacheThreads(projectId, threads) {
   liveCacheProjectId = projectId;
   threadCache.set(projectId, threads);
 }
+async function preloadSidebarThreads(store2, api2) {
+  const pending = store2.getState().projects.filter((project2) => !project2.sshHost && !project2.missing).map((project2) => project2.id);
+  const unwanted = (id) => id === store2.getState().activeProjectId || threadCache.has(id) || !store2.getState().projects.some((project2) => project2.id === id);
+  for (const id of pending) {
+    if (unwanted(id)) continue;
+    let loaded;
+    try {
+      loaded = await loadThreads(api2, id);
+    } catch {
+      continue;
+    }
+    if (unwanted(id)) continue;
+    threadCache.set(id, loaded.map(compactSidebarThread));
+    store2.emit("sidebar_threads_loaded");
+  }
+}
 function attachProjectThreadCache(store2) {
   return store2.on("threads_changed", () => {
     const { activeProjectId, threads } = store2.getState();
@@ -67631,6 +67647,7 @@ async function removeProject(store2, api2, id) {
   if (!wasActive) {
     if (wasExpanded) cancelPendingSwitch(store2, api2);
     await saveProjects(api2, projects, state.activeProjectId, state.activeThreadId);
+    threadCache.delete(id);
     store2.setState({
       projects,
       expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId
@@ -69323,7 +69340,7 @@ function mountSettingsDialog(store2, api2) {
               <p class="field-hint">
                 Applies across Copse to new threads using automatic checkout. Eligible agents
                 start by reading your checkout without changing it, then get an isolated worktree
-                before writing. Explicit worktree choices and ACP agents still create one up front.
+                before writing. Explicit worktree choices and agents installed on this device still create one up front.
                 Projects with worktrees disabled and existing threads keep their checkout behavior.
               </p>
             </fieldset>
@@ -77584,6 +77601,61 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "sidebar-other-projects",
+        label: "Sidebar listing threads of projects not opened yet",
+        project: project("demo-other-projects-active", "copse-demo", "/demo/copse"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          sidebarThreadGroup: "status"
+        },
+        // The open project has one thread; two more projects hold threads that are only
+        // read in the background after startup, so their titles must still be listed.
+        threads: [
+          {
+            id: "demo-other-projects-active-chat",
+            title: "Open project thread",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        otherProjects: [
+          {
+            project: project("demo-other-projects-docs", "docs-site", "/demo/docs-site"),
+            threads: ["Rewrite the install guide", "Fix broken anchors"].map((title, index) => ({
+              id: `demo-other-projects-docs-${String(index)}`,
+              title,
+              status: "idle",
+              messages: [],
+              messagesLoaded: false,
+              usage: { inputTokens: 0, outputTokens: 0 },
+              createdAt: FIXED_TIME - 10 - index,
+              updatedAt: FIXED_TIME - 10 - index
+            }))
+          },
+          {
+            project: project("demo-other-projects-api", "api-server", "/demo/api-server"),
+            threads: [
+              {
+                id: "demo-other-projects-api-0",
+                title: "Add pagination to the list endpoint",
+                status: "idle",
+                messages: [],
+                messagesLoaded: false,
+                usage: { inputTokens: 0, outputTokens: 0 },
+                createdAt: FIXED_TIME - 20,
+                updatedAt: FIXED_TIME - 20
+              }
+            ]
+          }
+        ]
+      },
+      {
         id: "sidebar-thread-sort",
         label: "Sidebar thread sort",
         project: project("demo-sidebar-sort-project"),
@@ -79981,7 +80053,8 @@ function createStore(initial) {
     request_terminal_command: /* @__PURE__ */ new Set(),
     code_block_run_requested: /* @__PURE__ */ new Set(),
     code_block_run_finished: /* @__PURE__ */ new Set(),
-    attention_changed: /* @__PURE__ */ new Set()
+    attention_changed: /* @__PURE__ */ new Set(),
+    sidebar_threads_loaded: /* @__PURE__ */ new Set()
   };
   function on3(event, handler) {
     listeners[event].add(handler);
@@ -84074,6 +84147,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   store2.on("threads_changed", onChange);
   store2.on("thread_status_changed", onChange);
   store2.on("projects_changed", onChange);
+  store2.on("sidebar_threads_loaded", onChange);
   store2.on("agent_activity", onChange);
   function hide3() {
     cancelRender?.();
@@ -86919,6 +86993,7 @@ function mountProjectsPane(root, store2, api2) {
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", render),
+    store2.on("sidebar_threads_loaded", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", () => {
@@ -89222,7 +89297,7 @@ function containerRunResultMarkdown(progress) {
   const facts = [`model ${progress.model}`];
   if (result) {
     facts.push(
-      result.harness === "copse" ? "Copse harness" : `${result.harness.acp} agent`,
+      result.harness === "copse" ? "Copse agent" : `${result.harness.acp} agent`,
       `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`
     );
   }
@@ -113649,8 +113724,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       rows.push(row2("Outcome", result.stopReason));
       rows.push(
         row2(
-          "Harness",
-          result.harness === "copse" ? "Copse" : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (ACP agent)`
+          "Agent",
+          result.harness === "copse" ? "Copse" : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (coding agent)`
         )
       );
       rows.push(row2("Prompts reached a handler", String(result.promptsAttempted)));
@@ -115100,7 +115175,7 @@ ${description}
       usage: usage?.tooltip ?? null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
-      snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by ACP agent" : null
+      snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by the agent" : null
     });
     footerOverflow?.update();
     updateContextFitWarning();
@@ -153710,7 +153785,7 @@ function startAgentController(store2, api2) {
             }
             st2.toolSinceText = nextState.toolSinceText;
             st2.currentText = nextState.currentText ?? "";
-            if (st2.msgId === null) throw new Error("assistant message id missing for ACP text");
+            if (st2.msgId === null) throw new Error("assistant message id missing for agent text");
             appendToken(store2, st2.msgId, plan.text);
             st2.writing = plan.text.trim().length > 0;
             if (st2.writing) maybeNameThread(store2, api2, threadId);
@@ -164867,6 +164942,7 @@ async function boot() {
     await restoreProject(store, api, active2.id, activeThreadId);
     endRestore();
     endBoot({ projects: projects.length });
+    void preloadSidebarThreads(store, api);
     startPerfAutopilot(store);
   } else {
     endBoot({ projects: 0 });
