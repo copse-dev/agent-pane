@@ -130,20 +130,24 @@ describe('Attaching an archive to the chat', () => {
     })
     await $('.submit-btn').click()
 
-    const sentChip = await $(
-      '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-archive',
-    )
-    await sentChip.waitForExist({ timeout: 10_000 })
-    await expect(await sentChip.$('svg[data-icon="archive"]').isExisting()).toBe(true)
-    await expect(await sentChip.getText()).toContain(ARCHIVE_NAME)
+    const sentChip =
+      '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-archive'
+    // Streaming can replace the transcript nodes between assertions. Resolve
+    // each selector afresh and let the DOM matcher retry during that update.
+    await expect($(sentChip)).toExist({ wait: 10_000 })
+    await expect($(`${sentChip} svg[data-icon="archive"]`)).toExist()
+    await expect($(sentChip)).toHaveText(expect.stringContaining(ARCHIVE_NAME))
 
     // The user sees their own words, not the steering block the agent gets.
-    const shown = await $('.messages-list .msg-user .message-text').getText()
-    await expect(shown).toContain('what is in this bundle?')
-    await expect(shown).not.toContain('read_archive')
+    await expect($('.messages-list .msg-user .message-text')).toHaveText(
+      expect.stringContaining('what is in this bundle?'),
+    )
+    await expect($('.messages-list .msg-user .message-text')).not.toHaveText(
+      expect.stringContaining('read_archive'),
+    )
 
     // The composer clears its chips once the message is sent.
-    await expect(await $('.attachment-chips .archive-chip').isExisting()).toBe(false)
+    await expect($('.attachment-chips .archive-chip')).not.toExist()
 
     await expectAssistantReply(
       'The archive is attached, but I can’t inspect its contents with the tools available in this session.',
