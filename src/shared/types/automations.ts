@@ -43,6 +43,8 @@ export interface AutomationSchedule {
   lastCreatedThreadId?: string
   /** Most recent trigger skipped because retained worktrees filled the limit. */
   lastWorktreeLimitAt?: number
+  /** The runs that held the worktree slots at that skip, so the user can act on them. */
+  lastWorktreeLimitBlockedBy?: AutomationRetainedWorktree[]
   /** Most recent trigger that failed or was skipped for a reason the user should see. */
   lastProblem?: AutomationProblem
 }
@@ -100,6 +102,24 @@ export interface BranchCiAutomationInput {
   maxLiveWorktrees?: AutomationLiveWorktreeLimit
 }
 
+/** Why a finished run's worktree could not be recycled. */
+export const AUTOMATION_RETAINED_REASONS = [
+  'uncommitted-changes',
+  'unmerged-commits',
+  'unpushed-pull-request',
+  'in-use',
+] as const
+export type AutomationRetainedReason = (typeof AUTOMATION_RETAINED_REASONS)[number]
+
+/** A previous run whose checkout is still holding one of the schedule's worktree slots. */
+export interface AutomationRetainedWorktree {
+  threadId: string
+  title: string
+  reason: AutomationRetainedReason
+  /** A few changed paths for `uncommitted-changes`, so the user can judge what is at stake. */
+  paths?: string[]
+}
+
 export interface AutomationTriggerEvent {
   projectId: string
   scheduleId: string
@@ -109,4 +129,6 @@ export interface AutomationTriggerEvent {
   disposition: 'started' | 'coalesced'
   /** Why a fresh task could not safely start. Present only when coalesced. */
   coalescedReason?: 'busy' | 'worktree-limit'
+  /** The runs holding worktree slots. Present only when coalesced for `worktree-limit`. */
+  blockedBy?: AutomationRetainedWorktree[]
 }

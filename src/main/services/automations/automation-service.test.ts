@@ -145,7 +145,7 @@ describe('AutomationService', () => {
         return Promise.resolve()
       },
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
 
     const schedule = await service.upsert('project-a', {
@@ -183,7 +183,7 @@ describe('AutomationService', () => {
         return Promise.resolve()
       },
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
     const approve: AutomationPermission = { kind: 'copse-action', toolName: 'gh_pr_approve' }
     const autoMerge: AutomationPermission = {
@@ -285,7 +285,7 @@ describe('AutomationService', () => {
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
     await assert.rejects(
       () =>
@@ -341,7 +341,7 @@ describe('AutomationService', () => {
         return Promise.resolve()
       },
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
     const schedule = await service.upsert('project-a', {
       name: 'Review',
@@ -367,7 +367,7 @@ describe('AutomationService', () => {
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
     const schedule = await service.upsert('project-a', {
       name: 'Review',
@@ -404,7 +404,7 @@ describe('AutomationService', () => {
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
       loadProjectThreads: () => pendingThreads,
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
     const schedule = await service.upsert('project-a', {
       name: 'Review',
@@ -433,7 +433,7 @@ describe('AutomationService', () => {
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
       loadProjectThreads: () => pendingThreads,
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
     const schedule = await service.upsert('project-a', {
       name: 'Old review',
@@ -481,7 +481,7 @@ describe('AutomationService', () => {
         return attempts === 1 ? Promise.reject(new Error('disk unavailable')) : Promise.resolve()
       },
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
     await service.upsert('project-a', {
       name: 'First',
@@ -515,7 +515,7 @@ describe('AutomationService', () => {
         return Promise.resolve()
       },
       loadProjectThreads: () => Promise.resolve([...threads.values()]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
     const schedule = await service.upsert('project-a', {
       name: 'Project health',
@@ -575,7 +575,8 @@ describe('AutomationService', () => {
         return Promise.resolve()
       },
       loadProjectThreads: () => Promise.resolve([...threads.values()]),
-      releasePreviousRun: () => Promise.resolve(false),
+      releasePreviousRun: () =>
+        Promise.resolve({ released: false, reason: 'uncommitted-changes', paths: ['notes.md'] }),
       supervisor: () => supervisor,
     })
     service.start((event) => {
@@ -606,13 +607,19 @@ describe('AutomationService', () => {
     })
 
     now += 60_000
-    const blocked = await service.runNow('project-a', schedule.id)
-    assert.equal(blocked.disposition, 'coalesced')
-    assert.equal(blocked.coalescedReason, 'worktree-limit')
-    assert.equal(blocked.threadId, first.threadId)
+    await service.tick()
     assert.equal(threads.size, 1)
     assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, now)
     assert.equal(events.at(-1)?.coalescedReason, 'worktree-limit')
+    assert.equal(events.at(-1)?.threadId, first.threadId)
+    assert.deepEqual(events.at(-1)?.blockedBy, [
+      {
+        threadId: first.threadId,
+        title: 'Project health',
+        reason: 'uncommitted-changes',
+        paths: ['notes.md'],
+      },
+    ])
     now += 60_000
     await service.tick()
     assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, now)
@@ -647,7 +654,8 @@ describe('AutomationService', () => {
         return Promise.resolve()
       },
       loadProjectThreads: () => Promise.resolve([...threads.values()]),
-      releasePreviousRun: () => Promise.resolve(false),
+      releasePreviousRun: () =>
+        Promise.resolve({ released: false, reason: 'uncommitted-changes', paths: ['notes.md'] }),
     })
     const schedule = await service.upsert('project-a', {
       name: 'Project health',
@@ -678,16 +686,72 @@ describe('AutomationService', () => {
     const first = await service.runNow('project-a', schedule.id)
     attachWorktree(first.threadId)
     now += 60_000
-    const second = await service.runNow('project-a', schedule.id)
-    assert.equal(second.disposition, 'started')
-    assert.notEqual(second.threadId, first.threadId)
-
-    attachWorktree(second.threadId)
-    now += 60_000
-    const third = await service.runNow('project-a', schedule.id)
-    assert.equal(third.disposition, 'coalesced')
-    assert.equal(third.coalescedReason, 'worktree-limit')
+    await service.tick()
     assert.equal(threads.size, 2)
+    const second = [...threads.keys()].at(-1)
+    assert.ok(second)
+    assert.notEqual(second, first.threadId)
+
+    attachWorktree(second)
+    now += 60_000
+    await service.tick()
+    assert.equal(threads.size, 2)
+    assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, now)
+  })
+
+  it('starts a manual run past the live worktree limit and still names what is retained', async () => {
+    let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+    const threads = new Map<string, Thread>()
+    const events: AutomationTriggerEvent[] = []
+    const service = createAutomationService({
+      now: () => now,
+      isPluginEnabled: () => true,
+      createProjectThread: (_projectId, thread) => {
+        threads.set(thread.id, thread)
+        return Promise.resolve()
+      },
+      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      releasePreviousRun: () => Promise.resolve({ released: false, reason: 'unmerged-commits' }),
+    })
+    service.start((event) => {
+      events.push(event)
+    })
+    const schedule = await service.upsert('project-a', {
+      name: 'Project health',
+      cron: '* * * * *',
+      prompt: 'Check project health.',
+      model: 'gpt-5.4',
+      enabled: true,
+    })
+    const first = await service.runNow('project-a', schedule.id)
+    const pending = threads.get(first.threadId)
+    assert.ok(pending)
+    threads.set(first.threadId, {
+      ...pending,
+      status: 'idle',
+      draftPrompt: '',
+      worktree: {
+        path: '/worktrees/first',
+        branch: 'codex/first',
+        baseBranch: 'main',
+        baseCommit: 'a'.repeat(40),
+        createdAt: now,
+        seededFromDirtyProject: false,
+      },
+    })
+
+    now += 60_000
+    await service.tick()
+    assert.equal(events.at(-1)?.coalescedReason, 'worktree-limit')
+    assert.equal(threads.size, 1)
+    assert.ok(service.list('project-a')[0]?.lastWorktreeLimitAt)
+
+    now += 60_000
+    const manual = await service.runNow('project-a', schedule.id)
+    assert.equal(manual.disposition, 'started')
+    assert.equal(threads.size, 2)
+    assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, undefined)
+    service.stop()
   })
   it('adopts the durable scheduler task instead of enqueuing one per launch', async () => {
     const scheduleId = 'schedule-1'
@@ -712,7 +776,7 @@ describe('AutomationService', () => {
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
     })
 
@@ -748,7 +812,7 @@ describe('AutomationService', () => {
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
     })
     service.start(() => {})
@@ -797,7 +861,7 @@ describe('AutomationService', () => {
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
     })
 
@@ -830,7 +894,7 @@ describe('AutomationService', () => {
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
     })
 
@@ -869,7 +933,7 @@ describe('AutomationService', () => {
         isPluginEnabled: () => true,
         createProjectThread: () => Promise.resolve(),
         loadProjectThreads: () => Promise.resolve([]),
-        releasePreviousRun: () => Promise.resolve(true),
+        releasePreviousRun: () => Promise.resolve({ released: true }),
         supervisor: () => supervisor,
         recoveryDelayMs: 0,
       })
@@ -992,7 +1056,7 @@ describe('AutomationService', () => {
         await barrier
       },
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
 
     const outcome = await Promise.race([
@@ -1031,7 +1095,7 @@ describe('AutomationService', () => {
           return Promise.resolve()
         },
         loadProjectThreads: () => Promise.resolve([...threads.values()]),
-        releasePreviousRun: () => Promise.resolve(true),
+        releasePreviousRun: () => Promise.resolve({ released: true }),
       })
       return {
         threads,
@@ -1157,7 +1221,7 @@ describe('AutomationService', () => {
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
 
     const mine = await service.upsert('project-a', {
@@ -1203,7 +1267,7 @@ describe('AutomationService', () => {
           return Promise.resolve()
         },
         loadProjectThreads: () => Promise.resolve(created),
-        releasePreviousRun: () => Promise.resolve(true),
+        releasePreviousRun: () => Promise.resolve({ released: true }),
         supervisor: () => supervisor,
       })
       return { created, service, supervisor }

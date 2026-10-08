@@ -45,6 +45,7 @@ import {
   renameThreadWorktreeBranch,
   restoreRetiredThreadWorktree,
   retireDeletedThreadWorktree,
+  MissingThreadWorktreeError,
   retireThreadWorktree,
   sameWorktreePath,
   ThreadWorktreeDetachedError,
@@ -1178,7 +1179,7 @@ describe('worktree manager', () => {
         projectRoot: repo,
         worktree,
       }),
-      /missing/,
+      MissingThreadWorktreeError,
     )
   })
 
@@ -1274,6 +1275,41 @@ describe('worktree manager', () => {
       ),
     )
     assert.equal(await readFile(artifact, 'utf-8'), 'keep me\n')
+  })
+
+  it('retires a checkout holding only ignored files when asked to ignore them', async () => {
+    const { repo } = await setup()
+    await writeFile(join(repo, '.gitignore'), 'ignored/\n')
+    git(repo, ['add', '.gitignore'])
+    git(repo, ['commit', '-q', '-m', 'ignore local artifacts'])
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-regenerable',
+      projectRoot: repo,
+      prompt: 'Regenerable output',
+      baseBranch: 'main',
+    })
+    await mkdir(join(worktree.path, 'ignored'))
+    await writeFile(join(worktree.path, 'ignored', 'build.txt'), 'output\n')
+    const input = {
+      projectId: 'project-1',
+      threadId: 'thread-regenerable',
+      projectRoot: repo,
+      worktree,
+    }
+
+    await writeFile(join(worktree.path, 'untracked.txt'), 'real work\n')
+    assert.equal(
+      (await retireThreadWorktree(input, { ignoreIgnoredFiles: true })).status,
+      'blocked-dirty',
+    )
+    await rm(join(worktree.path, 'untracked.txt'))
+
+    assert.equal(
+      (await retireThreadWorktree(input, { ignoreIgnoredFiles: true })).status,
+      'removed',
+    )
+    await assert.rejects(() => lstat(worktree.path), { code: 'ENOENT' })
   })
 
   it('prunes only clean merged ownerless worktrees and itemizes retained recovery cases', async () => {

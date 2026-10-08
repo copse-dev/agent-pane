@@ -195,6 +195,14 @@ describe('automation plugin settings detail', () => {
         updatedAt: 1,
         lastRunAt: 2,
         lastWorktreeLimitAt: 3,
+        lastWorktreeLimitBlockedBy: [
+          {
+            threadId: 'thread-a',
+            title: 'Morning review',
+            reason: 'uncommitted-changes',
+            paths: ['notes.md'],
+          },
+        ],
       },
     ])
     const store = createStore({
@@ -211,7 +219,7 @@ describe('automation plugin settings detail', () => {
     )
     assert.match(
       root.querySelector('.automation-row-blocked-message')?.textContent ?? '',
-      /Last attempt skipped/,
+      /Last attempt skipped.*Held by “Morning review” has uncommitted changes \(notes\.md\)\./,
     )
     assert.ok(root.querySelector('.automation-row-blocked'))
   })
