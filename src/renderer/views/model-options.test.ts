@@ -178,6 +178,15 @@ function mockApi(opts: MockOpts = {}): ApiClient {
 }
 
 describe('fetchModelOptions visibility', () => {
+  it('offers prompt matching for primary agents only', async () => {
+    const primary = await fetchModelOptions(mockApi(), '')
+    const auxiliary = await fetchModelOptions(mockApi(), '', { includeAgentModels: false })
+    assert.equal(primary.filter((option) => option.value === 'auto:match-prompt').length, 1)
+    assert.equal(
+      auxiliary.some((option) => option.value === 'auto:match-prompt'),
+      false,
+    )
+  })
   it('marks only catalog routes with both known zero token prices as free', async () => {
     const options = await fetchModelOptions(
       mockApi({
@@ -295,8 +304,9 @@ describe('fetchModelOptions visibility', () => {
 
   it('shows a guiding message when nothing is configured (footer / default)', async () => {
     const options = await fetchModelOptions(mockApi(), '')
-    assert.equal(options.length, 1)
-    const [option] = options
+    const concrete = options.filter((option) => option.value !== 'auto:match-prompt')
+    assert.equal(concrete.length, 1)
+    const [option] = concrete
     assert.ok(option)
     assert.match(option.label, /No models available/)
     assert.equal(option.disabled, true)

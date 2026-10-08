@@ -1,4 +1,5 @@
 import type { AppStore } from '@shared/store/store.ts'
+import { MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   addMessage,
@@ -441,6 +442,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           patchThreadAnywhere(store, threadId, (thread) => ({
             ...thread,
             resolvedModel: chunk.model,
+            ...(chunk.requestedModel === MATCH_PROMPT_MODEL_SELECTOR &&
+            (thread.model === undefined || thread.model === MATCH_PROMPT_MODEL_SELECTOR)
+              ? { model: chunk.model }
+              : {}),
           }))
         ) {
           store.emit('thread_model_resolved', threadId)

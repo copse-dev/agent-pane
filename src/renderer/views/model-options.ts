@@ -67,6 +67,7 @@ import {
 } from '@shared/lm-studio-defaults.ts'
 import {
   AUTO_MODEL_PREFIX,
+  MATCH_PROMPT_MODEL_SELECTOR,
   dynamicModelChoices,
   dynamicModelLabel,
 } from '@copse/llm/dynamic-model.ts'
@@ -80,8 +81,6 @@ import { modelCoverage, type ModelCoverage } from './model-coverage.ts'
 const ACP_GROUP = 'Agents on this device'
 
 const OPENROUTER_GROUP = 'OpenRouter'
-
-const CHAT_DEFAULT_GROUP = 'Chat default'
 
 const KNOWN_TEXT_ONLY_MISTRAL_MODELS = [
   'mistral-small-latest',
@@ -468,16 +467,23 @@ export async function fetchModelOptions(
   opts: FetchModelOptionsOpts = {},
 ): Promise<ModelOption[]> {
   const options: ModelOption[] = []
+  if (opts.includeAgentModels !== false) {
+    options.push({
+      value: MATCH_PROMPT_MODEL_SELECTOR,
+      label: 'Match task — Chooses a suitable model from your prompt',
+      group: 'Automatic',
+    })
+  }
   if (opts.includeBestValue === true) {
     options.push({
       value: BEST_VALUE_CHAT_MODEL,
       label: `${BEST_VALUE_CHAT_MODEL_LABEL} — auto from plan / price frontier`,
-      group: CHAT_DEFAULT_GROUP,
+      group: 'Automatic',
     })
     // The Settings chat model can also be a rule, not just a pinned model: offer
     // the other automatic selectors (balanced, most capable, cheapest) so the
     // user can pick how the default resolves. auto:best-value is already the
-    // row above; the rest ride in their own Automatic group.
+    // row above; all rules share the Automatic group.
     for (const choice of dynamicModelChoices()) {
       if (choice.value === BEST_VALUE_CHAT_MODEL) continue
       if (choice.group !== 'Automatic') continue
