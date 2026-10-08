@@ -1,4 +1,4 @@
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 describe('OpenAI cloud agent prototype picker', () => {
@@ -11,7 +11,19 @@ describe('OpenAI cloud agent prototype picker', () => {
     await picker.$('.model-picker-filter').setValue('OpenAI Cloud Agent')
     const option = picker.$('.model-picker-option[data-value="remote-agent:openai#gpt-6.1-sol"]')
     await expect(option).toBeDisplayed()
-    await expect(picker.$('.model-picker-menu')).toHaveText(/prototype.*API billed.*no ZDR/i)
+    await expect(picker.$('.model-picker-menu')).not.toHaveText(/API billed|no ZDR/i)
+    await expect(option.$('.model-picker-retention')).toHaveAttribute('aria-label', 'No ZDR')
+    await expect(option.$('.model-picker-retention')).toHaveAttribute(
+      'title',
+      /not eligible for zero data retention/,
+    )
+    await expect(option.$('.model-picker-retention svg')).toExist()
+    await expect(
+      $$('.model-picker-option[data-value^="remote-agent:openai#"]'),
+    ).toBeElementsArrayOfSize(11)
+    await expect(
+      picker.$('.model-picker-option[data-value="remote-agent:openai#gpt-6-astra"]'),
+    ).toExist()
     await saveElementScreenshot(
       '.footer-model-host .model-picker-menu',
       'openai-cloud-agent-picker.png',

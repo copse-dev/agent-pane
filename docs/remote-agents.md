@@ -17,7 +17,10 @@ retention.
 ## OpenAI prototype
 
 Save an OpenAI **Platform API key** in Settings, open a project, and select
-**OpenAI Cloud Agent (prototype · API billed · no ZDR)** in the model picker.
+**OpenAI Cloud Agent (prototype)** in the model picker. Each model row shows billing
+and a retention icon; hover the retention icon for the No ZDR details. The picker
+includes all OpenAI chat models in Copse’s catalog, with GPT-6.1 Sol first. Catalog
+choices are not a guarantee of Agents API access for your account.
 ChatGPT OAuth does not authorize this integration. The key needs Agents read/write
 Responses write, and Files upload/delete permissions. Hosted sessions retain data in the US and are
 not eligible for Zero Data Retention. Model usage appears in the chat; container

@@ -376,3 +376,20 @@ formatting, diff and dead-code checks pass. Full `pnpm run check` still stops at
 unchanged LM Studio TS2554. No renderer DOM/copy/layout changed: the existing Retry
 component tests exercise the click and shared continuation contract; the adapter
 regression consumes that same instruction. No live provider call was made here.
+
+## Picker catalog and retention brief
+
+Replace the verbose OpenAI cloud heading with the existing row retention icon,
+labelled No ZDR with an accessible tooltip. Keep billing in the existing billing
+badge. Offer every OpenAI chat model in Copse's catalog, default Sol first, retain
+unknown current selections without duplication, and preserve image capability for
+known models. The API accepts a string model ID but documents no exhaustive Agents
+compatibility enum: catalog inclusion is not a live eligibility guarantee. Validate
+model choices/key gating, selected fallback privacy and a focused browser screenshot.
+
+Completion: 80 focused model-option/picker tests and the focused WDIO browser spec
+pass. Inspected the expanded catalog with row retention/billing icons and the image
+attachment composer. Demo build, focused type-aware lint, formatting and diff checks
+pass. Full check still stops at the unchanged LM Studio TS2554. The 11 choices come
+from the existing OpenAI chat catalog, not live per-account Agents eligibility; no
+billable compatibility probes were run.
