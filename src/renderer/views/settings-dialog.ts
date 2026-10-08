@@ -1,5 +1,6 @@
 import { createStorageMaintenancePanel } from './storage-maintenance-panel.ts'
 import { createSourcesSection } from './settings/sources-section.ts'
+import { skillsSourcesMarkup } from './settings-sources-skills.ts'
 import { makeSourceRow } from './settings/source-row.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
@@ -1223,17 +1224,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </div>
             </fieldset>
 
-            <fieldset>
-              <legend>Skills</legend>
-              <p class="settings-fieldset-desc">
-                Skills found on this machine, tagged by where they came from. Hover a row to see
-                its path. Choose whether to include the ones that ship with Copse under
-                Agent → Skills.
-              </p>
-              <div id="sources-skills-list" class="sources-group">
-                <span class="sources-empty">Loading…</span>
-              </div>
-            </fieldset>
+            ${skillsSourcesMarkup}
 
             <fieldset data-developer-only="hooks" hidden>
               <legend>Hooks</legend>

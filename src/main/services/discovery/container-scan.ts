@@ -95,7 +95,7 @@ export async function walkForContainerRoots(
   // *file* in a worktree, so match on the name and not on its type.
   if (depth > 0 && entries.some((entry) => entry.name === '.git')) return
 
-  for (const entry of entries) {
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isDirectory() || SKIP_DIRS.has(entry.name)) continue
     const full = join(dir, entry.name)
     if (entry.name === opts.leafName) {
@@ -124,7 +124,7 @@ export async function walkForFiles(
     return
   }
 
-  for (const entry of entries) {
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     const full = join(root, entry.name)
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue

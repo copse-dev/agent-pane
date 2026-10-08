@@ -293,7 +293,8 @@ describe('Cursor rules block visibility', () => {
       createPendingApi({
         'instructions.list': () => Promise.resolve([]),
         'cursorRules.list': () => Promise.resolve(rules),
-        'skills.list': () => Promise.resolve([]),
+        'skills.sources': () =>
+          Promise.resolve({ skills: [], diagnostics: [], extraRoots: [], reload: 'manual' }),
         'agents.list': () => Promise.resolve({ agents: [], skipped: [], shadowed: [] }),
         'hooks.list': () => Promise.resolve({ hooks: [], warnings: [] }),
       }),

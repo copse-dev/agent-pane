@@ -1,6 +1,6 @@
 // Test-only bundle: deliberately runs the same renderer in the parent to compare
 // the previous DOM placement with the isolated integration on the same machine.
-import { renderMermaidInFrame } from '../../../src/renderer/markdown/mermaid-render.ts'
+import { renderMermaidInFrame } from '../../mermaid-render.ts'
 import { renderMermaidIn } from '../../../src/renderer/markdown/mermaid.ts'
 import { renderMarkdown, StreamingMarkdownRenderer } from '@copse/streaming-markdown'
 

@@ -1388,7 +1388,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       remove: unsupported,
     },
     agents: { list: () => resolved({ agents: [], skipped: [], shadowed: [] }) },
-    skills: { list: emptyArray },
+    skills: {
+      list: emptyArray,
+      sources: () => resolved({ skills: [], diagnostics: [], extraRoots: [], reload: 'manual' }),
+      setRoots: (extraRoots) =>
+        resolved({
+          skills: [],
+          diagnostics: [],
+          extraRoots,
+          reload: 'manual',
+        }),
+    },
     cursorPlugins: { list: emptyArray },
     bundledSkillPlugins: { list: emptyArray },
     hooks: {

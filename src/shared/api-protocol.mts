@@ -77,5 +77,6 @@
 // v47 conservatively versions optional PR/commit production evidence on thread payloads.
 // v48 conservatively versions retained-worktree blockers on automation schedules and triggers.
 // v49 versions saved-model invalidation reports and guarded recovery IPC.
-// v50 versions the context_compacted agent chunk (OpenAI server-side compaction).
-export const API_PROTOCOL_VERSION = 50 as const
+// v50 versions skill-source diagnostics and validated extra-root updates.
+// v51 versions the context_compacted agent chunk (OpenAI server-side compaction).
+export const API_PROTOCOL_VERSION = 51 as const

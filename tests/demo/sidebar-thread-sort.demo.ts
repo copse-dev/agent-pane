@@ -26,6 +26,25 @@ async function choose(label: string): Promise<void> {
   throw new Error(`The sort menu has no "${label}"`)
 }
 
+// The project label must stay readable at the default sidebar width: the title
+// ellipsizes before the label does.
+async function expectOwnerLabelsFit(): Promise<void> {
+  const fits = await browser.execute(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('.chats-list .chat-thread-owner')).map(
+      (owner) => ({
+        text: owner.textContent,
+        scrollWidth: owner.scrollWidth,
+        clientWidth: owner.clientWidth,
+      }),
+    ),
+  )
+  expect(fits.length).toBeGreaterThan(0)
+  for (const fit of fits) {
+    expect(fit.text).toBe('· copse-demo')
+    expect(fit.scrollWidth).toBeLessThanOrEqual(fit.clientWidth)
+  }
+}
+
 describe('sidebar thread sort', () => {
   before(async () => {
     await browser.url('about:blank')
@@ -106,15 +125,44 @@ describe('sidebar thread sort', () => {
     expect(headings).toEqual(['Working', 'Recent'])
     await expect($('.project-row')).not.toExist()
     await expect($('.chat-thread-owner')).toExist()
+    await expectOwnerLabelsFit()
     await saveAppScreenshot('sidebar-thread-group-status.png')
 
     await openMenu()
     await choose('None')
     await browser.waitUntil(async () => (await $$('.thread-section-heading')).length === 0)
     expect((await titles()).length).toBe(5)
+    await expectOwnerLabelsFit()
+    await saveAppScreenshot('sidebar-thread-group-none.png')
 
     await openMenu()
     await choose('Project')
     await $('.project-row').waitForExist({ timeout: 5_000 })
+  })
+
+  it('keeps owner labels readable after widening the sidebar', async () => {
+    const divider = await $('#resizer-projects').getLocation()
+    await browser.performActions([
+      {
+        type: 'pointer',
+        id: 'sidebar-width',
+        parameters: { pointerType: 'mouse' },
+        actions: [
+          { type: 'pointerMove', duration: 0, x: Math.round(divider.x), y: 300 },
+          { type: 'pointerDown', button: 0 },
+          { type: 'pointerMove', duration: 200, x: 380, y: 300 },
+          { type: 'pointerUp', button: 0 },
+        ],
+      },
+    ])
+    await browser.releaseActions()
+    const width = await $('#pane-projects').getSize('width')
+    expect(width).toBeGreaterThan(350)
+    for (const group of ['Status', 'None']) {
+      await openMenu()
+      await choose(group)
+      await expectOwnerLabelsFit()
+      await saveAppScreenshot(`sidebar-thread-group-${group.toLowerCase()}-wide.png`)
+    }
   })
 })

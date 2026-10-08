@@ -580,6 +580,13 @@
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
 }
+/* On a thread row the project label is the part that tells rows apart, so the
+   title gives way first: the label keeps its natural width up to a cap and only
+   a very long project name ellipsizes. */
+.chats-list .chat-row .chat-thread-owner {
+  flex: 0 0 auto;
+  max-width: 45%;
+}
 /* One row standing for several runs of a schedule: "N need you" or "N failed". */
 .automation-fold-row {
   display: flex;
