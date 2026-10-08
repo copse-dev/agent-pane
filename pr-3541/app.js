@@ -67627,6 +67627,7 @@ async function removeProject(store2, api2, id) {
   if (!wasActive) {
     if (wasExpanded) cancelPendingSwitch(store2, api2);
     await saveProjects(api2, projects, state.activeProjectId, state.activeThreadId);
+    threadCache.delete(id);
     store2.setState({
       projects,
       expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId
