@@ -1,3 +1,4 @@
+import { githubArchiveBase, githubArchiveUrl } from './openai-archive.ts'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import { mkdir, readFile, realpath, stat, writeFile, rename } from 'node:fs/promises'
@@ -22,6 +23,7 @@ import { resolveApiKey } from '../storage/settings.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import {
   OpenAiAgentsApi,
+  OpenAiSetupError,
   openAiAgentStateSchema,
   openAiAgentResultSchema,
   type OpenAiAgentResult,
@@ -131,9 +133,10 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
     )
   const recovering = prior.success && prior.data.transfer && !prior.data.transfer.imported
   const transferDirectory = join(directory, 'blobs', 'openai-git')
+  const archive = recovering ? undefined : await githubArchiveBase(root)
   const transfer = recovering
     ? prior.data.transfer
-    : await prepareGitTransfer(root, transferDirectory)
+    : await prepareGitTransfer(root, transferDirectory, archive?.commit)
   if (!transfer) throw new Error('Hosted snapshot is unavailable.')
   let sourceFileIds = recovering
     ? (prior.data.sourceFileIds ?? (prior.data.sourceFileId ? [prior.data.sourceFileId] : []))
@@ -143,16 +146,45 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   if (recovering) state = prior.data.state
   else {
     const worker = await fs.readFile(join(__dirname, 'openai-git-worker.cjs'))
+    const metadata = await fs.readFile(join(transferDirectory, 'archive-metadata.json'), 'utf8')
+    const parsed = safeJsonParse(
+      metadata,
+      decodeWithSchema(
+        z.object({ tree: z.string(), snapshotTree: z.string(), commit: z.string() }),
+      ),
+    )
+    if (!parsed || !archive) throw new Error('Archive provisioning metadata is missing.')
+    if (
+      (await stat(join(transferDirectory, 'source.bundle'))).size +
+        worker.length +
+        Buffer.byteLength(metadata) +
+        16_384 >
+      50 * 1024 * 1024
+    )
+      throw new Error(
+        'Local changes exceed the 50 MiB hosted upload budget. Push them to GitHub and fetch origin before retrying.',
+      )
     sourceFileIds = await uploadSourceBundle(
       client,
       join(transferDirectory, 'source.bundle'),
       options.signal,
     )
     try {
+      const url = await githubArchiveUrl(
+        archive.repository,
+        archive.commit,
+        options.signal,
+        options.fetchImpl,
+      )
       state = await client.create(model, options.signal, {
         type: 'openai_hosted',
         network: { access: 'enabled' },
         files: [
+          {
+            type: 'inline',
+            data: Buffer.from(JSON.stringify({ ...parsed, url })).toString('base64'),
+            path: '/workspace/inputs/archive.json',
+          },
           ...sourceFileIds.map((file_id, index) => ({
             type: 'file_id' as const,
             file_id,
@@ -166,7 +198,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
         ],
         setup_commands: [
           {
-            command: `node /workspace/inputs/copse-git.cjs setup ${transfer.base} ${transfer.ref} ${String(sourceFileIds.length)}`,
+            command: `node /workspace/inputs/copse-git.cjs archive ${transfer.base} ${transfer.ref} ${String(sourceFileIds.length)}`,
           },
         ],
       })
@@ -223,7 +255,20 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
     })
   }
   if (!terminalResult) {
-    await client.waitForEnvironment(state, options.signal)
+    try {
+      await client.waitForEnvironment(state, options.signal)
+    } catch (error) {
+      if (error instanceof OpenAiSetupError && !state.pending) {
+        await client.delete(state, AbortSignal.timeout(20_000)).catch(() => {})
+        await Promise.all(
+          sourceFileIds.map((id) =>
+            client.deleteSource(id, AbortSignal.timeout(20_000)).catch(() => {}),
+          ),
+        )
+        await fs.rm(path, { force: true })
+      }
+      throw error
+    }
     if (sourceFileIds.length) {
       for (const id of sourceFileIds) await client.deleteSource(id, options.signal)
       sourceFileIds = []

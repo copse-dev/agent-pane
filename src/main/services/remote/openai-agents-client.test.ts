@@ -1,3 +1,4 @@
+import { setupHostedArchive } from './openai-archive-worker.ts'
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs'
@@ -44,6 +45,10 @@ describe('OpenAI cloud adapter', () => {
     )
     execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo })
     execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repo })
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/project.git'], {
+      cwd: repo,
+    })
+    execFileSync('git', ['update-ref', 'refs/remotes/origin/feature', 'HEAD'], { cwd: repo })
     restoreWorkspace = setWorkspaceRootForTest(repo)
     const originalRead = fs.readFile
     mock.method(fs, 'readFile', (...args: Parameters<typeof fs.readFile>) =>
@@ -67,6 +72,64 @@ describe('OpenAI cloud adapter', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
+  it('refuses LFS before any remote request', async () => {
+    writeFileSync(join(root, 'repo/.gitattributes'), '*.bin filter=lfs\n')
+    let requests = 0
+    await assert.rejects(
+      runRemoteAgentFromSettings({
+        threadId: 'thread',
+        provider: 'openai',
+        userPrompt: 'edit',
+        signal: AbortSignal.timeout(5000),
+        fetchImpl: async () => {
+          requests++
+          throw new Error('Unexpected network request')
+        },
+        onChunk: () => {},
+      }),
+      /Git LFS repositories/,
+    )
+    assert.equal(requests, 0)
+  })
+
+  it('discards failed setup before inference so retry obtains a fresh archive URL and session', async () => {
+    let creates = 0,
+      urls = 0
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+      if (url.hostname === 'api.github.com') {
+        urls++
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: 'https://codeload.github.com/example/project/archive?token=temporary',
+          },
+        })
+      }
+      if (init?.method === 'DELETE') return Response.json({ deleted: true })
+      if (url.pathname === '/v1/agents/sessions') {
+        creates++
+        return Response.json({ id: 'session', status: 'idle', environment: { id: 'env' } })
+      }
+      if (url.pathname.endsWith('/environments/env')) return Response.json({ status: 'failed' })
+      throw new Error(`Unexpected request ${url.pathname}`)
+    }
+    for (let attempt = 0; attempt < 2; attempt++)
+      await assert.rejects(
+        runRemoteAgentFromSettings({
+          threadId: 'thread',
+          provider: 'openai',
+          userPrompt: 'edit',
+          signal: AbortSignal.timeout(5000),
+          fetchImpl,
+          onChunk: () => {},
+        }),
+        /setup failed or expired/,
+      )
+    assert.equal(creates, 2)
+    assert.equal(urls, 2)
+  })
+
   it('dispatches OpenAI, saves its checkpoint in the thread, projects tools, and downloads a safely named artifact', async () => {
     const imagePrompt = [{ type: 'image' as const, dataUrl: 'data:image/png;base64,aGVsbG8=' }]
     let submitted = false
@@ -77,6 +140,14 @@ describe('OpenAI cloud adapter', () => {
     const requests: string[] = []
     const fetchImpl: typeof fetch = async (input, init) => {
       const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+      if (url.hostname === 'api.github.com')
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location:
+              'https://codeload.github.com/example/project/legacy.tar.gz/base?token=temporary',
+          },
+        })
       requests.push(url.pathname)
       assert.equal(url.origin, 'https://api.openai.com')
       assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer adapter-test-key')
@@ -284,6 +355,14 @@ describe('OpenAI cloud adapter', () => {
     let uploaded = Buffer.alloc(0)
     const fetchImpl: typeof fetch = async (input, init) => {
       const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+      if (url.hostname === 'api.github.com')
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location:
+              'https://codeload.github.com/example/project/legacy.tar.gz/base?token=temporary',
+          },
+        })
       if (url.pathname === '/v1/files') {
         assert.ok(init?.body instanceof FormData)
         const file = init.body.get('file')
@@ -304,13 +383,27 @@ describe('OpenAI cloud adapter', () => {
           init.body,
           decodeWithSchema(
             z.object({
-              environment: z.object({ setup_commands: z.array(z.object({ command: z.string() })) }),
+              environment: z.object({
+                setup_commands: z.array(z.object({ command: z.string() })),
+                files: z.array(z.object({ path: z.string(), data: z.string().optional() })),
+              }),
             }),
           ),
         )
         const args = request?.environment.setup_commands[0]?.command.split(' ')
         base = args?.[3] ?? ''
-        runHostedGitTransfer(guest, 'setup', base, args?.[4], Number(args?.[5]))
+        const metadata = request?.environment.files.find((file) =>
+          file.path.endsWith('/archive.json'),
+        )?.data
+        assert.ok(metadata)
+        writeFileSync(join(guest, 'inputs/archive.json'), Buffer.from(metadata, 'base64'))
+        runHostedGitTransfer(guest, 'assemble', base, args?.[4], Number(args?.[5]))
+        const archive = execFileSync(
+          'git',
+          ['archive', '--format=tar.gz', '--prefix=source/', 'refs/remotes/origin/feature'],
+          { cwd: join(root, 'repo') },
+        )
+        await setupHostedArchive(guest, base, async () => new Response(archive))
         if (session === 2)
           assert.equal(readFileSync(join(guest, 'repo/local.txt'), 'utf8'), 'fresh local code')
       }

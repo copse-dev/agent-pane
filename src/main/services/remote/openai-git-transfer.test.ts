@@ -164,7 +164,7 @@ it('does not overwrite ignored local files when the guest force-adds the same pa
   }
 })
 
-it('provisions a Git snapshot larger than 50 MiB using bounded uploaded parts', async () => {
+it('reassembles a legacy multipart snapshot locally without modeling provider limits', async () => {
   const f = await fixture()
   try {
     writeFileSync(join(f.host, 'large.bin'), randomBytes(51 * 1024 * 1024))

@@ -168,3 +168,26 @@ error tests also passed after lint cleanup. Production build, focused type-aware
 formatting and diff checks passed. Full `pnpm run check` still stops at the unchanged
 LM Studio test TS2554. This changes error data through the existing error card, with no
 renderer/DOM changes. The live HTTP 400 remains unconfirmed without its provider detail.
+
+## GitHub archive provisioning brief
+
+Replace full snapshot provisioning with a host-authenticated GitHub archive redirect,
+pinned to a locally known remote commit, plus a binary local-working-tree overlay.
+Reject LFS attributes/pointers and submodules before requesting a URL or creating a
+session. Never forward GitHub authorization to the archive URL. Validate the restored
+Git tree and synthetic commit before inference; keep existing export/adoption semantics.
+Bound uploaded overlay plus bootstrap below 50 MiB. Expired URLs fail setup without
+inference and must be recoverable with fresh provisioning. Test real Git restoration,
+private redirect handling, LFS refusal, tampering and aggregate bounds. No live OpenAI
+acceptance can be claimed without a provider-key test.
+
+Archive completion evidence: production build and focused type-aware lint passed.
+37 focused API/adapter/Git-transfer/cancellation/error/invariant tests passed; the
+final archive-only run passed all 5 tests including a subsequent oversized-overlay
+regression. The real 51 MiB archive test restores unpushed/binary/deleted/executable/
+symlink/untracked changes and verifies the exact Git tree and commit. Adapter tests
+cover zero network requests for LFS and fresh provisioning after setup failure.
+Full `pnpm run check` still stops only at the existing LM Studio TS2554. No renderer
+or DOM changes. Live private GitHub redirect/OpenAI provisioning remains unverified:
+this environment has no provider credentials and its network policy excludes the API
+hosts. No billable call was made.

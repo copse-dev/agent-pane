@@ -23,16 +23,27 @@ Responses write, and Files upload/delete permissions. Hosted sessions retain dat
 not eligible for Zero Data Retention. Model usage appears in the chat; container
 and tool charges are additional, so that display is not the complete invoice.
 
-Copse snapshots the chat's current Git working tree, including staged, unstaged,
-and nonignored untracked files. A history-free Git bundle provisions `/workspace/repo`
-through `environment.files` and a deterministic `setup_commands` script. The script
-verifies the snapshot commit before inference starts. No GitHub credentials or Git
-configuration enter the hosted workspace. Snapshots upload in 32 MiB parts, reassembled before checkout verification.
-Copse supports up to 49 parts (1568 MiB), reserving the 50th provisioning file for
-the worker; this avoids applying the provider’s 50 MiB per-file copy cap to the
-entire project.
-An initial Git commit is required; Git submodules are currently unsupported. Ignored files and Git LFS object contents
-are not transferred.
+Copse uses the GitHub archive API with the host's existing GitHub login to obtain
+an expiring download URL for a pinned commit. The GitHub token stays on the host;
+only the temporary archive URL is sent to deterministic setup. A binary overlay
+preserves unpushed commits, staged/unstaged edits and nonignored untracked files.
+Setup downloads the archive without an authorization header, removes the URL file,
+checks the archive tree, applies the overlay, and verifies the exact snapshot commit
+before inference. The existing history-free Git export and host-side adoption remain.
+
+The checkout needs a github.com `origin` and a fetched remote branch sharing history
+with HEAD. No GitHub App, vault or object-storage account is required. Git LFS
+attributes, pointers or `.lfsconfig` in the snapshot or archive base block launch
+before remote requests. Submodules are unsupported. Archive attributes that change
+the tree (such as `export-ignore`) fail verification rather than silently omit files.
+
+Only the overlay and bootstrap count toward the 50 MiB aggregate creation budget;
+large local overlays require pushing the changes and fetching origin first.
+Downloads are bounded at 2 GiB compressed, 4 GiB extracted and 200,000 entries.
+GitHub private archive URLs expire after five minutes; the URL is requested after
+preparing/uploading the overlay. A failed setup is discarded before inference so
+retry can provision a fresh session and URL. GitHub Enterprise hosts and SHA-256 Git
+repositories are not supported by this prototype.
 
 The hosted exporter commits remaining edits and publishes a Git bundle. Copse checks
 the recorded base, exported ref and ancestry, then uses the container adoption path

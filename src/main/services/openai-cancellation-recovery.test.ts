@@ -39,6 +39,10 @@ for (const endpoint of ['/turns', '/session', '/items', '/artifacts']) {
       ],
       { cwd: repo },
     )
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/project.git'], {
+      cwd: repo,
+    })
+    execFileSync('git', ['update-ref', 'refs/remotes/origin/feature', 'HEAD'], { cwd: repo })
     const originalRead = fs.readFile
     const workerMock = mock.method(fs, 'readFile', (...args: Parameters<typeof fs.readFile>) =>
       typeof args[0] === 'string' && args[0].endsWith('openai-git-worker.cjs')
@@ -61,6 +65,13 @@ for (const endpoint of ['/turns', '/session', '/items', '/artifacts']) {
       Response.json({ data, has_more: false, last_id: null })
     const fetchImpl: typeof fetch = async (input, init) => {
       const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+      if (url.hostname === 'api.github.com')
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: 'https://codeload.github.com/example/project/archive?token=temporary',
+          },
+        })
       assert.equal(url.origin, 'https://api.openai.com')
       if (url.pathname === '/v1/files') return Response.json({ id: 'source' })
       if (url.pathname === '/v1/files/source') return Response.json({ deleted: true })

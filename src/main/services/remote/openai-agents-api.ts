@@ -81,6 +81,8 @@ export type OpenAiHostedEnvironment = Extract<
   { type: 'openai_hosted' }
 >
 
+export class OpenAiSetupError extends Error {}
+
 export class OpenAiCancellationError extends Error {}
 export class OpenAiCancellationUnconfirmedError extends OpenAiCancellationError {}
 export class OpenAiCancellationRecoveryError extends OpenAiCancellationError {
@@ -184,7 +186,9 @@ export class OpenAiAgentsApi {
       )
       if (environment.status === 'connected') return
       if (environment.status !== 'pending' && environment.status !== 'provisioning')
-        throw new Error('Hosted repository setup failed or expired.')
+        throw new OpenAiSetupError(
+          'Hosted repository setup failed or expired. Retry to provision a fresh archive URL.',
+        )
       await delay(1000, undefined, { signal: bounded })
     }
   }

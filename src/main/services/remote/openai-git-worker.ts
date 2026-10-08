@@ -19,11 +19,11 @@ export function runHostedGitTransfer(
 ): void {
   if (!base || !/^[a-f0-9]{40,64}$/.test(base)) throw new Error('Invalid snapshot base')
   const root = join(workspace, 'repo')
-  if (mode === 'setup') {
+  if (mode === 'setup' || mode === 'assemble') {
     if (!ref || !/^refs\/copse\/carry-in\/[a-f0-9-]+$/.test(ref))
       throw new Error('Invalid input ref')
     if (parts !== undefined) {
-      if (!Number.isInteger(parts) || parts < 1 || parts > 49)
+      if (!Number.isInteger(parts) || parts < (mode === 'assemble' ? 0 : 1) || parts > 49)
         throw new Error('Invalid source part count')
       const output = openSync(join(workspace, 'inputs/source.bundle'), 'w')
       try {
@@ -45,6 +45,7 @@ export function runHostedGitTransfer(
         closeSync(output)
       }
     }
+    if (mode === 'assemble') return
     mkdirSync(root, { recursive: true })
     git(root, ['init'])
     git(root, ['fetch', '--no-tags', join(workspace, 'inputs/source.bundle'), ref])
