@@ -1,5 +1,5 @@
 import { openAiApiError, redactOpenAiDiagnostic } from './openai-api-error.ts'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import type { SessionCreateParamsNonStreaming } from 'openai/resources/beta/agents/sessions/sessions'
@@ -11,12 +11,33 @@ const usageSchema = z.object({
   output_tokens: z.number().nonnegative(),
   input_tokens_details: z.object({ cached_tokens: z.number().nonnegative() }).optional(),
 })
+export const openAiFunctionCallSchema = z.object({
+  type: z.literal('function_call'),
+  turn_id: z.string().min(1),
+  call_id: z.string().min(1),
+  name: z.string().min(1),
+  arguments: z.unknown(),
+})
+export type OpenAiFunctionCall = z.infer<typeof openAiFunctionCallSchema>
+export const openAiFunctionResultSchema = z.object({
+  success: z.boolean(),
+  output: z.string().optional(),
+  error: z.string().optional(),
+})
+export type OpenAiFunctionResult = z.infer<typeof openAiFunctionResultSchema>
+export interface OpenAiFunctionTool {
+  type: 'function'
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
 const sessionSchema = z.object({
   id: z.string().min(1),
   status: z.enum(['idle', 'in_progress', 'requires_action', 'failed']),
   error: z.string().nullish(),
   usage: usageSchema.nullish(),
   environment: z.object({ id: z.string() }).nullish(),
+  required_actions: z.array(z.unknown()).max(64).nullish(),
 })
 const turnSchema = z.object({
   id: z.string().min(1),
@@ -64,6 +85,17 @@ export const openAiAgentStateSchema = z.object({
   usageInput: z.number().nonnegative(),
   usageOutput: z.number().nonnegative(),
   usageCacheRead: z.number().nonnegative(),
+  functionResults: z
+    .array(
+      z.object({
+        turnId: z.string(),
+        callId: z.string(),
+        fingerprint: z.string(),
+        result: openAiFunctionResultSchema,
+      }),
+    )
+    .max(128)
+    .optional(),
 })
 export type OpenAiAgentState = z.infer<typeof openAiAgentStateSchema>
 export type OpenAiAgentArtifact = z.infer<typeof artifactSchema>
@@ -234,10 +266,12 @@ export class OpenAiAgentsApi {
     model: string,
     signal: AbortSignal,
     environment?: OpenAiHostedEnvironment,
+    tools?: OpenAiFunctionTool[],
   ): Promise<OpenAiAgentState> {
     const body = {
       agent: {
         model,
+        ...(tools?.length ? { tools } : {}),
         instructions:
           'Work only on the requested task. When a repository is provisioned, use /workspace/repo and follow the supplied export command before finishing. The host imports your Git commits and handles GitHub authentication. Never claim a push or PR without evidence. Put other deliverables under /workspace/outputs.',
       },
@@ -386,6 +420,10 @@ export class OpenAiAgentsApi {
       onProgress?: (type: string) => void
       onItem?: (item: OpenAiAgentItem) => void
       onResult?: (result: OpenAiAgentResult) => void | Promise<void>
+      onFunctionCall?: (
+        call: OpenAiFunctionCall,
+        signal: AbortSignal,
+      ) => Promise<OpenAiFunctionResult>
     },
   ): Promise<OpenAiAgentResult> {
     if (!prompt.trim()) throw new Error('OpenAI Cloud Agent prompt cannot be empty.')
@@ -531,7 +569,61 @@ export class OpenAiAgentsApi {
           return await finish({ ...turn, status: turn.status }, items, session, signal)
         }
         if (session.status === 'failed') throw new Error(session.error ?? 'OpenAI session failed.')
-        if (session.status === 'requires_action' || turn?.status === 'waiting')
+        if (session.status === 'requires_action' && turn && options.onFunctionCall) {
+          if (!session.required_actions?.length)
+            throw new Error('OpenAI supplied no pending action details.')
+          for (const raw of session.required_actions) {
+            const parsed = openAiFunctionCallSchema.safeParse(raw)
+            if (!parsed.success || parsed.data.turn_id !== turn.id)
+              throw new Error('OpenAI requested an unsupported action or a tool for another turn.')
+            const call = parsed.data
+            const fingerprint = createHash('sha256')
+              .update(JSON.stringify([call.name, call.arguments]))
+              .digest('hex')
+            const results = (state.functionResults ??= [])
+            let saved = results.find(
+              (entry) => entry.turnId === call.turn_id && entry.callId === call.call_id,
+            )
+            if (saved && saved.fingerprint !== fingerprint)
+              throw new Error('OpenAI changed a pending tool call; execution refused.')
+            if (!saved) {
+              if (results.length >= 128) throw new Error('OpenAI host tool call limit reached.')
+              const result = await options.onFunctionCall(call, signal)
+              saved = {
+                turnId: call.turn_id,
+                callId: call.call_id,
+                fingerprint,
+                result: {
+                  success: result.success,
+                  ...(result.output !== undefined
+                    ? { output: result.output.slice(0, 128_000) }
+                    : {}),
+                  ...(result.error !== undefined ? { error: result.error.slice(0, 8_000) } : {}),
+                },
+              }
+              results.push(saved)
+              await options.save(state)
+            }
+            await this.request(
+              `${path}/events`,
+              signal,
+              {
+                events: [
+                  {
+                    type: 'agent.session.input.tool_result',
+                    turn_id: call.turn_id,
+                    call_id: call.call_id,
+                    ...saved.result,
+                  },
+                ],
+              },
+              'POST',
+              createHash('sha256')
+                .update(JSON.stringify([state.sessionId, call.turn_id, call.call_id]))
+                .digest('hex'),
+            )
+          }
+        } else if (session.status === 'requires_action' || turn?.status === 'waiting')
           throw new Error(
             'OpenAI requires an action this prototype cannot handle. The task remains linked for recovery.',
           )

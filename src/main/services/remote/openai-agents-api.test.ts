@@ -362,3 +362,92 @@ it('uploads a bounded source file and passes deterministic setup to a verified e
   await assert.rejects(api.waitForEnvironment(state, signal()), /setup stopped \(failed\)/)
   await assert.rejects(api.uploadSource(new Uint8Array(50 * 1024 * 1024 + 1), signal()), /50 MiB/)
 })
+
+describe('OpenAI function action transport', () => {
+  it('advertises functions and replays a saved result after lost delivery without repeating execution', async () => {
+    let submitted = false
+    let completed = false
+    let loseReply = true
+    let calls = 0
+    let actionTurn = 'turn'
+    let actionName = 'gh_pr_list'
+    const keys: Array<string | null> = []
+    let persisted: OpenAiAgentState | undefined
+    const api = new OpenAiAgentsApi('test', async (input, init) => {
+      const path = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+        .pathname
+      const body = typeof init?.body === 'string' ? init.body : ''
+      if (path === '/v1/agents/sessions') {
+        assert.match(body, /"tools":\[/)
+        return json({ id: 'session', status: 'idle' })
+      }
+      if (path.endsWith('/events') && init?.method === 'GET') return new Response('')
+      if (path.endsWith('/events')) {
+        if (body.includes('agent.session.input.tool_result')) {
+          assert.equal(persisted?.functionResults?.length, 1)
+          keys.push(new Headers(init?.headers).get('Idempotency-Key'))
+          assert.match(body, /"call_id":"call"/)
+          if (loseReply) {
+            loseReply = false
+            throw new Error('lost delivery')
+          }
+          completed = true
+        } else submitted = true
+        return new Response(null, { status: 202 })
+      }
+      if (path.endsWith('/turns'))
+        return page(
+          submitted
+            ? [{ id: 'turn', subagent_id: null, status: completed ? 'completed' : 'waiting' }]
+            : [],
+        )
+      if (path.endsWith('/items') || path.endsWith('/artifacts')) return page([])
+      return json({
+        id: 'session',
+        status: completed ? 'idle' : 'requires_action',
+        required_actions: [
+          {
+            type: 'function_call',
+            turn_id: actionTurn,
+            call_id: 'call',
+            name: actionName,
+            arguments: {},
+          },
+        ],
+      })
+    })
+    const state = await api.create('model', signal(), undefined, [
+      { type: 'function', name: 'gh_pr_list', description: 'List', parameters: {} },
+    ])
+    const options = {
+      signal: signal(),
+      onText: (): void => {},
+      save: (s: OpenAiAgentState): void => {
+        persisted = structuredClone(s)
+      },
+      onFunctionCall: async (): Promise<{ success: boolean; output: string }> => {
+        calls++
+        return { success: true, output: 'list' }
+      },
+    }
+    await assert.rejects(api.run(state, 'prompt', options), /lost delivery/)
+    assert.ok(persisted)
+    actionTurn = 'other-turn'
+    await assert.rejects(
+      api.run(openAiAgentStateSchema.parse(persisted), 'prompt', options),
+      /another turn/,
+    )
+    actionTurn = 'turn'
+    actionName = 'gh_pr_view'
+    await assert.rejects(
+      api.run(openAiAgentStateSchema.parse(persisted), 'prompt', options),
+      /changed a pending tool call/,
+    )
+    actionName = 'gh_pr_list'
+    await api.run(openAiAgentStateSchema.parse(persisted), 'prompt', options)
+    assert.equal(calls, 1)
+    assert.equal(keys.length, 2)
+    assert.ok(keys[0])
+    assert.equal(keys[0], keys[1])
+  })
+})

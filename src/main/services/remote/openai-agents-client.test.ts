@@ -1,3 +1,4 @@
+import type { OpenAiHostTools } from './openai-host-tools.ts'
 import { setupHostedArchive } from './openai-archive-worker.ts'
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it, mock } from 'node:test'
@@ -135,6 +136,22 @@ describe('OpenAI cloud adapter', () => {
     let submitted = false
     let failDownload = true
     let submissions = 0
+    let acknowledged = false
+    let published = 0
+    const hostTools: OpenAiHostTools = {
+      definitions: [
+        { type: 'function', name: 'gh_pr_create', description: 'Queue PR', parameters: {} },
+      ],
+      async execute() {
+        const checkpoint = readFileSync(
+          join(threadDirectoryPath('project', 'thread'), 'openai-agent-session.json'),
+          'utf8',
+        )
+        assert.match(checkpoint, /"imported":true/)
+        published++
+        return { success: true, output: 'Done: https://github.com/example/project/pull/1' }
+      },
+    }
     let base = ''
     const manifest = (): string => JSON.stringify({ base, head: base, changed: false })
     const requests: string[] = []
@@ -176,6 +193,14 @@ describe('OpenAI cloud adapter', () => {
       if (url.pathname.endsWith('/events') && init?.method === 'GET')
         return new Response('', { headers: { 'Content-Type': 'text/event-stream' } })
       if (url.pathname.endsWith('/events')) {
+        if (
+          typeof init?.body === 'string' &&
+          init.body.includes('agent.session.input.tool_result')
+        ) {
+          acknowledged = true
+          assert.equal(published, 0)
+          return new Response(null, { status: 202 })
+        }
         assert.ok(
           typeof init?.body === 'string' &&
             init.body.includes('input_image') &&
@@ -187,7 +212,16 @@ describe('OpenAI cloud adapter', () => {
       }
       if (url.pathname.endsWith('/turns'))
         return page(
-          submitted ? [{ id: 'turn', status: 'completed', subagent_id: null, error: null }] : [],
+          submitted
+            ? [
+                {
+                  id: 'turn',
+                  status: acknowledged ? 'completed' : 'waiting',
+                  subagent_id: null,
+                  error: null,
+                },
+              ]
+            : [],
         )
       if (url.pathname.endsWith('/items'))
         return page([
@@ -237,7 +271,19 @@ describe('OpenAI cloud adapter', () => {
       return Response.json({
         id: 'session',
         environment: { id: 'env' },
-        status: 'idle',
+        status: submitted && !acknowledged ? 'requires_action' : 'idle',
+        required_actions:
+          submitted && !acknowledged
+            ? [
+                {
+                  type: 'function_call',
+                  turn_id: 'turn',
+                  call_id: 'pr',
+                  name: 'gh_pr_create',
+                  arguments: { title: 'Title', body: 'Body', draft: true },
+                },
+              ]
+            : [],
         usage: { input_tokens: 12, output_tokens: 3 },
       })
     }
@@ -246,6 +292,7 @@ describe('OpenAI cloud adapter', () => {
       runRemoteAgentFromSettings({
         threadId: 'thread',
         provider: 'openai',
+        hostTools,
         userPrompt: imagePrompt,
         signal: AbortSignal.timeout(10_000),
         fetchImpl,
@@ -255,10 +302,12 @@ describe('OpenAI cloud adapter', () => {
       }),
       /503/,
     )
+    assert.equal(published, 0)
     await assert.rejects(
       runRemoteAgentFromSettings({
         threadId: 'thread',
         provider: 'openai',
+        hostTools,
         userPrompt: [{ type: 'image', dataUrl: 'data:image/png;base64,Ynl0ZXM=' }],
         signal: AbortSignal.timeout(10_000),
         fetchImpl,
@@ -269,6 +318,7 @@ describe('OpenAI cloud adapter', () => {
     const result = await runRemoteAgentFromSettings({
       threadId: 'thread',
       provider: 'openai',
+      hostTools,
       userPrompt: imagePrompt,
       signal: AbortSignal.timeout(10_000),
       fetchImpl,
@@ -280,6 +330,7 @@ describe('OpenAI cloud adapter', () => {
     assert.doesNotMatch(result.assistantText, /billed to your API key|US session retention/)
     assert.equal(result.inputTokens, 0)
     assert.equal(submissions, 1)
+    assert.equal(published, 1)
     assert.equal(chunks.filter((chunk) => chunk.type === 'usage').length, 1)
     assert.ok(
       chunks.some((chunk) => chunk.type === 'tool_call' && chunk.toolCall.name === 'run_shell'),
@@ -323,6 +374,7 @@ describe('OpenAI cloud adapter', () => {
       runRemoteAgentFromSettings({
         threadId: 'thread',
         provider: 'openai',
+        hostTools,
         userPrompt: 'follow-up',
         signal: AbortSignal.timeout(1_000),
         fetchImpl,
@@ -339,6 +391,7 @@ describe('OpenAI cloud adapter', () => {
       runRemoteAgentFromSettings({
         threadId: 'thread',
         provider: 'openai',
+        hostTools,
         userPrompt: 'follow-up',
         signal: AbortSignal.timeout(1_000),
         fetchImpl,

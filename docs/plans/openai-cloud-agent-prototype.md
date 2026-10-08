@@ -71,8 +71,8 @@ patch generation, and production retention/billing behavior still require a live
 smoke test. Usage is token accounting, not a complete container/tool invoice.
 
 See [usage and limitations](../remote-agents.md#openai-prototype). The prototype
-does not claim parity for private repository setup, PR creation, token-level
-streaming, approval-required tools, or automatic background recovery. Recovery
+does not claim parity for token-level streaming or automatic background recovery.
+Host function support added below covers GitHub/CI reads and approved PR creation. Recovery
 after reopening currently requires resending the pending message. Local deletion
 does not delete the remote session; the standalone probe supports explicit remote
 deletion of its own checkpointed session.
@@ -287,3 +287,59 @@ traversal and escaping symlinks. Focused lint and formatting passed. Full check
 still stops at the unchanged LM Studio TS2554. No IPC shape, renderer or DOM
 change; existing click handlers retain line/column handling. Live click testing
 in the user's desktop remains unverified here.
+
+## Host function bridge brief
+
+Expose registered GitHub/CI read tools and a narrow gh_pr_create function to OpenAI.
+Dispatch only pending required_actions for the active turn through Copse's registry
+with the owning thread and existing approval gate. Persist call results before
+acknowledging them to OpenAI; never treat history items as pending calls. PR calls
+queue typed title/body/draft data and return queued, not created. Only a completed,
+imported hosted turn can execute that queue locally. Save execution intent before
+mutation; ambiguous interrupted writes must never auto-replay. Preserve queued PR
+recovery even after Git import, block a different prompt while recovery is pending,
+and show the local result in the transcript. Test unsupported tools, call replay,
+changed arguments, import ordering, denial, cancellation, and restart boundaries.
+No local shell/files exposed; GitHub credentials remain local. Reuse existing tool
+cards and validate their queued/result states visually.
+
+### Host function implementation
+
+The session advertises a curated `agent.tools` catalog. Only `required_actions`
+for the active turn are dispatched; historical items never trigger execution.
+Copse saves results before posting `agent.session.input.tool_result`, with a stable
+idempotency key. The registry retains thread identity, readonly checks, permission
+gates and hooks. No localhost server or public callback URL is required.
+
+`gh_pr_create` accepts only title, body and draft. Its immediate result says queued;
+the hosted agent must export and finish. After successful Git import, Copse asks
+for the normal local approval and uses the same PR service as Create PR, including
+pushing the whole current branch and linking the PR. The final result appears as a
+local tool card and transcript text, not a second inference call. Follow-up context
+contains that result. Failed/cancelled hosted turns cannot publish.
+
+Requests, intent and results survive restart. Resend the previous prompt to finish
+recovery. If a crash happens during a GitHub write, Copse reports an uncertain
+outcome and does not automatically repeat it; check GitHub before requesting again.
+Read calls may be retried if execution completed but its result was never saved.
+
+API references: [functions](https://developers.openai.com/api/docs/guides/agents-api/tools/functions)
+and [hosted files](https://developers.openai.com/api/docs/guides/agents-api/environments/files).
+The turn-end artifact boundary is why PR publishing is deferred.
+
+### Host bridge completion evidence
+
+- 22 focused API/adapter/queue/registry tests pass. They cover saved-result replay,
+  wrong-turn/changed-call refusal, import failure before publication, queue deduplication,
+  crash ambiguity, cancellation, narrow arguments, thread identity and permission denial.
+- Production/demo builds, focused type-aware lint, formatting and dead-code checks pass.
+- Full `pnpm run check` stops at the unchanged LM Studio test TS2554. Full lint also
+  reports an unchanged ACP test `no-meaningless-void-operator` error. Separately running
+  the full unit suite produced 13,570 passes, 20 failures, 9 cancellations and 24 skips;
+  failures are in sandbox/process/toolchain/container and other pre-existing test files.
+  This is not a clean full-suite result and those failures were not suppressed.
+- The host PR demo checks the imported-change message, expanded tool arguments and
+  PR result in the existing renderer. No new renderer component or permission policy.
+- No live provider function call or authenticated GitHub publish was run in this
+  environment. A live smoke test must still confirm OpenAI admission, queued acknowledgement,
+  normal approval and the final GitHub link.

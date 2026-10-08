@@ -66,8 +66,19 @@ decoded image data per message. Recent prior images fill unused capacity when a
 follow-up gets a fresh session. Pending attachments are saved asynchronously with
 the submission; recovery requires the same current message and images.
 
-Keys/models cannot change within an existing chat. Approval-required tool
-flows and automatic background recovery remain outside this prototype.
+Keys/models cannot change within an existing chat. Automatic background recovery
+remains outside this prototype.
+
+The hosted agent can call Copse's GitHub/CI read tools. Asking it to create a PR
+queues a local action: after the hosted turn exports and Copse imports its changes,
+the normal approval prompt appears. Copse then pushes the whole current branch and
+creates/links the PR using your local GitHub login. GitHub credentials stay local.
+The queued acknowledgement is not confirmation that a PR exists; the later local
+tool result contains the outcome. No second local agent is involved.
+
+If interrupted, resend the previous message to recover. A write interrupted during
+PR creation is not automatically repeated: Copse reports an uncertain outcome so
+you can check GitHub first. Failed or cancelled hosted turns do not publish.
 
 The client subscribes before submission but uses saved turns
 and items as the recovery authority: OpenAI event streams do not replay. Progress

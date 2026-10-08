@@ -1,4 +1,9 @@
 import { repositoryEnvironment } from './openai-repository-environment.ts'
+import {
+  openAiHostActionsSchema,
+  handleOpenAiHostCall,
+  finishOpenAiHostActions,
+} from './openai-host-actions.ts'
 import { githubArchiveBase, githubArchiveUrl } from './openai-archive.ts'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
@@ -48,6 +53,8 @@ const savedSchema = z.object({
   sourceFileIds: z.array(z.string()).optional(),
   usageReported: z.boolean().default(false),
   exportUsageReported: z.boolean().default(false),
+  hostActions: openAiHostActionsSchema.default([]),
+  hostActionsReported: z.boolean().default(false),
 })
 const active = new Set<string>()
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
@@ -132,7 +139,11 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
     throw new Error(
       'This older cloud session has a pending task. Recover it with the previous prototype before starting a provisioned chat.',
     )
-  const recovering = prior.success && prior.data.transfer && !prior.data.transfer.imported
+  const recovering =
+    prior.success &&
+    prior.data.transfer &&
+    (!prior.data.transfer.imported ||
+      (prior.data.hostActions.length > 0 && !prior.data.hostActionsReported))
   const transferDirectory = join(directory, 'blobs', 'openai-git')
   const archive = recovering ? undefined : await githubArchiveBase(root)
   const transfer = recovering
@@ -181,6 +192,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
         model,
         options.signal,
         repositoryEnvironment(worker, parsed, transfer, sourceFileIds, url),
+        options.hostTools?.definitions,
       )
     } catch (error) {
       await Promise.all(
@@ -198,6 +210,8 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   let reportedInput = 0
   let reportedOutput = 0
   let exportResult = recovering ? prior.data.exportResult : undefined
+  const hostActions = recovering ? prior.data.hostActions : []
+  let hostActionsReported = recovering ? prior.data.hostActionsReported : false
   if (recovering && prior.data.promptHash !== promptHash) {
     throw new Error(
       'The previous hosted task needs recovery. Resend its message to import its commits before starting another task.',
@@ -217,6 +231,8 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
         sourceFileIds,
         usageReported,
         exportUsageReported,
+        hostActions,
+        hostActionsReported,
       }),
       { mode: 0o600 },
     )
@@ -264,6 +280,14 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
     terminalResult ??
     (await client.run(state, prompt, {
       images: state.pending?.images ?? imageUrls,
+      onFunctionCall: (call, signal) =>
+        handleOpenAiHostCall(call, {
+          actions: hostActions,
+          tools: options.hostTools,
+          save,
+          onChunk: options.onChunk,
+          signal,
+        }),
       onResult: async (completed) => {
         terminalResult = completed
         await save()
@@ -413,12 +437,35 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   if (result.artifacts.length > 20)
     artifactText += '\nAdditional artifacts remain in the OpenAI session.\n'
   if (artifactText) options.onChunk({ type: 'text', text: artifactText })
+  let hostText = ''
+  if (hostActions.length && !hostActionsReported) {
+    if (result.status !== 'completed') {
+      for (const action of hostActions) {
+        action.phase = 'done'
+        action.result = {
+          success: false,
+          error:
+            'PR request was not executed because the hosted turn did not complete successfully.',
+        }
+      }
+      await save()
+    }
+    hostText = await finishOpenAiHostActions({
+      actions: hostActions,
+      tools: options.hostTools,
+      save,
+      onChunk: options.onChunk,
+      signal: options.signal,
+    })
+    hostActionsReported = true
+    await save()
+  }
   if (result.status === 'failed') throw new Error(result.error ?? 'OpenAI cloud turn failed.')
   options.onChunk({
     type: 'done',
     stopReason: result.status === 'cancelled' ? 'CANCELLED' : 'END_TURN',
   })
-  const assistantText = result.text + artifactText
+  const assistantText = result.text + artifactText + hostText
   return {
     assistantText,
     inputTokens: reportedInput,
