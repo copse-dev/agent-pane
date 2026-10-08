@@ -67555,6 +67555,22 @@ function cacheThreads(projectId, threads) {
   liveCacheProjectId = projectId;
   threadCache.set(projectId, threads);
 }
+async function preloadSidebarThreads(store2, api2) {
+  const pending = store2.getState().projects.filter((project2) => !project2.sshHost && !project2.missing).map((project2) => project2.id);
+  const unwanted = (id) => id === store2.getState().activeProjectId || threadCache.has(id) || !store2.getState().projects.some((project2) => project2.id === id);
+  for (const id of pending) {
+    if (unwanted(id)) continue;
+    let loaded;
+    try {
+      loaded = await loadThreads(api2, id);
+    } catch {
+      continue;
+    }
+    if (unwanted(id)) continue;
+    threadCache.set(id, loaded.map(compactSidebarThread));
+    store2.emit("sidebar_threads_loaded");
+  }
+}
 function attachProjectThreadCache(store2) {
   return store2.on("threads_changed", () => {
     const { activeProjectId, threads } = store2.getState();
@@ -67631,6 +67647,7 @@ async function removeProject(store2, api2, id) {
   if (!wasActive) {
     if (wasExpanded) cancelPendingSwitch(store2, api2);
     await saveProjects(api2, projects, state.activeProjectId, state.activeThreadId);
+    threadCache.delete(id);
     store2.setState({
       projects,
       expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId
@@ -77584,6 +77601,61 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "sidebar-other-projects",
+        label: "Sidebar listing threads of projects not opened yet",
+        project: project("demo-other-projects-active", "copse-demo", "/demo/copse"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          sidebarThreadGroup: "status"
+        },
+        // The open project has one thread; two more projects hold threads that are only
+        // read in the background after startup, so their titles must still be listed.
+        threads: [
+          {
+            id: "demo-other-projects-active-chat",
+            title: "Open project thread",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        otherProjects: [
+          {
+            project: project("demo-other-projects-docs", "docs-site", "/demo/docs-site"),
+            threads: ["Rewrite the install guide", "Fix broken anchors"].map((title, index) => ({
+              id: `demo-other-projects-docs-${String(index)}`,
+              title,
+              status: "idle",
+              messages: [],
+              messagesLoaded: false,
+              usage: { inputTokens: 0, outputTokens: 0 },
+              createdAt: FIXED_TIME - 10 - index,
+              updatedAt: FIXED_TIME - 10 - index
+            }))
+          },
+          {
+            project: project("demo-other-projects-api", "api-server", "/demo/api-server"),
+            threads: [
+              {
+                id: "demo-other-projects-api-0",
+                title: "Add pagination to the list endpoint",
+                status: "idle",
+                messages: [],
+                messagesLoaded: false,
+                usage: { inputTokens: 0, outputTokens: 0 },
+                createdAt: FIXED_TIME - 20,
+                updatedAt: FIXED_TIME - 20
+              }
+            ]
+          }
+        ]
+      },
+      {
         id: "sidebar-thread-sort",
         label: "Sidebar thread sort",
         project: project("demo-sidebar-sort-project"),
@@ -79981,7 +80053,8 @@ function createStore(initial) {
     request_terminal_command: /* @__PURE__ */ new Set(),
     code_block_run_requested: /* @__PURE__ */ new Set(),
     code_block_run_finished: /* @__PURE__ */ new Set(),
-    attention_changed: /* @__PURE__ */ new Set()
+    attention_changed: /* @__PURE__ */ new Set(),
+    sidebar_threads_loaded: /* @__PURE__ */ new Set()
   };
   function on3(event, handler) {
     listeners[event].add(handler);
@@ -84074,6 +84147,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   store2.on("threads_changed", onChange);
   store2.on("thread_status_changed", onChange);
   store2.on("projects_changed", onChange);
+  store2.on("sidebar_threads_loaded", onChange);
   store2.on("agent_activity", onChange);
   function hide3() {
     cancelRender?.();
@@ -86919,6 +86993,7 @@ function mountProjectsPane(root, store2, api2) {
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", render),
+    store2.on("sidebar_threads_loaded", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", () => {
@@ -164867,6 +164942,7 @@ async function boot() {
     await restoreProject(store, api, active2.id, activeThreadId);
     endRestore();
     endBoot({ projects: projects.length });
+    void preloadSidebarThreads(store, api);
     startPerfAutopilot(store);
   } else {
     endBoot({ projects: 0 });
