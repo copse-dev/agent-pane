@@ -1,11 +1,13 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import {
   refreshSkillsRegistry,
   listSkills,
+  listSkillSources,
   listModelInvocableSkills,
   readSkill,
   getSkill,
@@ -146,14 +148,171 @@ description: Installed by the Codex CLI
   })
 
   it('lists user skill roots in container precedence order, including ~/.codex', () => {
-    assert.deepEqual(SKILL_CONTAINER_DIRS, ['.cursor', '.agents', '.claude', '.codex'])
+    assert.deepEqual(SKILL_CONTAINER_DIRS, ['.cursor', '.agents', '.claude', '.codex', '.github'])
     assert.deepEqual(userSkillRoots('/home/copse'), [
       '/home/copse/.cursor/skills',
       '/home/copse/.agents/skills',
       '/home/copse/.claude/skills',
       '/home/copse/.codex/skills',
+      '/home/copse/.copilot/skills',
     ])
   })
+
+  it('discovers GitHub/Copilot skills and preserves standard metadata without authorization', async () => {
+    const github = join(tempRoot, '.github', 'skills', 'github-skill')
+    const copilot = join(tempRoot, 'home', '.copilot', 'skills', 'copilot-skill')
+    await mkdir(github, { recursive: true })
+    await mkdir(copilot, { recursive: true })
+    const optional =
+      '\nlicense: MIT\ncompatibility: Requires Python\nmetadata: {author: Example, version: "1"}\nallowed-tools: Bash(*) Read\n'
+    await writeFile(
+      join(github, 'SKILL.md'),
+      `---\nname: github-skill\ndescription: GitHub\n${optional}---\nInstructions`,
+    )
+    await writeFile(
+      join(copilot, 'SKILL.md'),
+      '---\nname: copilot-skill\ndescription: Copilot\n---\nInstructions',
+    )
+    await refreshSkillsRegistry()
+    assert.equal(getSkill('github-skill')?.source, 'project')
+    assert.equal(getSkill('copilot-skill')?.source, 'user')
+    const meta = getSkill('github-skill')
+    assert.ok(meta)
+    assert.deepEqual(meta.metadata, { author: 'Example', version: '1' })
+    assert.equal(meta.license, 'MIT')
+    assert.equal(meta.compatibility, 'Requires Python')
+    assert.equal(meta.allowedTools, 'Bash(*) Read')
+    assert.deepEqual(meta.paths, [], 'allowed-tools never turns into read roots')
+    assert.ok((await readSkill('github-skill')).body.includes('allowed-tools: Bash(*) Read'))
+  })
+
+  it('keeps manual and model invocation eligibility independent and Sources lists both', async () => {
+    for (const [name, flags] of [
+      ['model-only', 'user-invocable: false'],
+      ['manual-only', 'disable-model-invocation: true'],
+      ['neither', 'user-invocable: false\ndisable-model-invocation: true'],
+    ]) {
+      assert.ok(name && flags)
+      const root = join(tempRoot, '.agents', 'skills', name)
+      await mkdir(root, { recursive: true })
+      await writeFile(
+        join(root, 'SKILL.md'),
+        `---\nname: ${name}\ndescription: Eligibility\n${flags}\n---\nBody`,
+      )
+    }
+    await refreshSkillsRegistry()
+    const manual = listSkills().map((skill) => skill.name)
+    const model = listModelInvocableSkills().map((skill) => skill.name)
+    assert.ok(
+      manual.includes('manual-only') &&
+        !manual.includes('model-only') &&
+        !manual.includes('neither'),
+    )
+    assert.ok(
+      model.includes('model-only') && !model.includes('manual-only') && !model.includes('neither'),
+    )
+    assert.ok(listSkillSources().skills.some((skill) => skill.name === 'neither'))
+  })
+
+  it('reports deterministic duplicate/invalid/unsupported diagnostics and extra-root reload', async () => {
+    const extra = join(tempRoot, 'extra-skills')
+    const duplicate = join(extra, 'demo-skill')
+    const invalid = join(extra, 'invalid')
+    const good = join(extra, 'extra-only')
+    for (const path of [duplicate, invalid, good]) await mkdir(path, { recursive: true })
+    await writeFile(
+      join(duplicate, 'SKILL.md'),
+      '---\nname: demo-skill\ndescription: Loser\n---\nBody',
+    )
+    await writeFile(
+      join(invalid, 'SKILL.md'),
+      `---\nname: invalid\ndescription: ${'x'.repeat(1025)}\n---\nBody`,
+    )
+    await writeFile(
+      join(good, 'SKILL.md'),
+      '---\nname: extra-only\ndescription: Before\nfuture-field: ignored\n---\nBody',
+    )
+    const nonFolder = join(tempRoot, 'not-a-folder')
+    await writeFile(nonFolder, 'ordinary file')
+    setSetting('skillPluginPaths', [extra, join(tempRoot, 'missing'), nonFolder])
+    await refreshSkillsRegistry()
+    const before = listSkillSources()
+    assert.equal(before.reload, 'manual')
+    assert.deepEqual(before.extraRoots, [extra, join(tempRoot, 'missing'), nonFolder])
+    assert.ok(
+      before.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.kind === 'shadowed' &&
+          diagnostic.shadowedBy === getSkill('demo-skill')?.skillPath,
+      ),
+    )
+    assert.ok(
+      before.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.kind === 'invalid' &&
+          diagnostic.name === 'invalid' &&
+          diagnostic.reason.includes('1024'),
+      ),
+    )
+    assert.ok(
+      before.diagnostics.some(
+        (diagnostic) => diagnostic.kind === 'unsupported' && diagnostic.name === 'extra-only',
+      ),
+    )
+    assert.ok(
+      before.diagnostics.some((diagnostic) => diagnostic.reason.includes('missing, unreadable')),
+    )
+    assert.ok(
+      before.diagnostics.some(
+        (diagnostic) => diagnostic.skillPath === nonFolder && diagnostic.kind === 'invalid',
+      ),
+    )
+    await refreshSkillsRegistry()
+    assert.deepEqual(listSkillSources().diagnostics, before.diagnostics)
+    await writeFile(join(good, 'SKILL.md'), '---\nname: extra-only\ndescription: After\n---\nBody')
+    assert.equal(
+      getSkill('extra-only')?.description,
+      'Before',
+      'disk edits wait for explicit refresh',
+    )
+    await refreshSkillsRegistry()
+    assert.equal(getSkill('extra-only')?.description, 'After')
+  })
+
+  it('skips symlink skill files with a visible reason', async () => {
+    const root = join(tempRoot, '.github', 'skills', 'symlink-skill')
+    await mkdir(root, { recursive: true })
+    await symlink(
+      join(tempRoot, '.cursor', 'skills', 'demo-skill', 'SKILL.md'),
+      join(root, 'SKILL.md'),
+    )
+    await refreshSkillsRegistry()
+    assert.equal(getSkill('symlink-skill'), null)
+    assert.ok(
+      listSkillSources().diagnostics.some(
+        (diagnostic) =>
+          diagnostic.name === 'symlink-skill' && diagnostic.reason.includes('symlink'),
+      ),
+    )
+  })
+
+  it(
+    'skips non-regular skill files without blocking discovery',
+    { skip: process.platform === 'win32', timeout: 3000 },
+    async () => {
+      const folder = join(tempRoot, '.github/skills/fifo-skill')
+      await mkdir(folder, { recursive: true })
+      execFileSync('mkfifo', [join(folder, 'SKILL.md')])
+      await refreshSkillsRegistry()
+      assert.equal(getSkill('fifo-skill'), null)
+      assert.ok(
+        listSkillSources().diagnostics.some(
+          (diagnostic) =>
+            diagnostic.name === 'fifo-skill' && diagnostic.reason.includes('regular file'),
+        ),
+      )
+    },
+  )
 
   it('does not descend into a nested repository (git worktree or clone)', async () => {
     // A worktree under `.claude/worktrees/<name>` is a checkout of this same
@@ -298,6 +457,43 @@ description: Run a Copse setup health check
     assert.equal(skill.source, 'bundled')
 
     await rm(builtinRoot, { recursive: true, force: true })
+  })
+
+  it('adapts only immutable bundled headers and rejects identical untrusted copies', async () => {
+    const vendor = resolve('vendor/bundled-cursor-skills')
+    const original = await readFile(
+      join(vendor, 'plugins/cursor-sdk/skills/cursor-sdk/SKILL.md'),
+      'utf8',
+    )
+    setSetting('bundledCursorSkillsEnabled', true)
+    setBundledCursorSkillsRootForTest(vendor)
+    await refreshSkillsRegistry()
+    assert.equal(getSkill('cursor-sdk')?.source, 'bundled')
+    assert.ok(
+      listSkillSources().diagnostics.some(
+        (diagnostic) => diagnostic.name === 'cursor-sdk' && diagnostic.kind === 'compatibility',
+      ),
+    )
+    assert.equal(
+      (await readSkill('cursor-sdk')).body,
+      original,
+      'original skill bytes remain readable',
+    )
+
+    const projectFolder = join(tempRoot, '.github/skills/cursor-sdk')
+    await mkdir(projectFolder, { recursive: true })
+    await writeFile(join(projectFolder, 'SKILL.md'), original)
+    setSetting('bundledCursorSkillsEnabled', false)
+    await refreshSkillsRegistry()
+    assert.equal(getSkill('cursor-sdk'), null)
+    assert.ok(
+      listSkillSources().diagnostics.some(
+        (diagnostic) =>
+          diagnostic.name === 'cursor-sdk' &&
+          diagnostic.kind === 'invalid' &&
+          diagnostic.reason.includes('1024'),
+      ),
+    )
   })
 
   it('ships reconcile-worktrees with its readable audit helper', async () => {
@@ -677,6 +873,57 @@ description: Broken — folder was renamed after install
           return true
         },
       )
+    }
+  })
+
+  it('excludes invalid required fields and explains the constraint for either attempted name', async () => {
+    const cases = [
+      {
+        folder: 'bad-name',
+        name: 'Bad-Name',
+        description: 'Demo',
+        reason: /lowercase letters, digits, and single hyphens/,
+      },
+      {
+        folder: 'missing-description',
+        name: 'missing-description',
+        description: '',
+        reason: /requires a non-empty description/,
+      },
+      {
+        folder: 'long-name',
+        name: 'x'.repeat(65),
+        description: 'Demo',
+        reason: /name: must be at most 64 characters/,
+      },
+    ]
+    for (const fixture of cases) {
+      const root = join(tempRoot, '.agents', 'skills', fixture.folder)
+      await mkdir(root, { recursive: true })
+      await writeFile(
+        join(root, 'SKILL.md'),
+        `---\nname: ${fixture.name}\ndescription: ${fixture.description}\n---\nDo the task.`,
+      )
+    }
+    await refreshSkillsRegistry()
+    assert.ok(getSkill('demo-skill'), 'valid skills remain available alongside invalid entries')
+    for (const fixture of cases) {
+      assert.equal(getSkill(fixture.name), null)
+      assert.equal(
+        listModelInvocableSkills().some((skill) => skill.name === fixture.name),
+        false,
+      )
+      for (const name of new Set([fixture.name, fixture.folder])) {
+        await assert.rejects(
+          () => readSkill(name),
+          (error) => {
+            assert.ok(error instanceof Error)
+            assert.match(error.message, /installed but failed to load/)
+            assert.match(error.message, fixture.reason)
+            return true
+          },
+        )
+      }
     }
   })
 

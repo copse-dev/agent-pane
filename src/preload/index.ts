@@ -1390,6 +1390,8 @@ const api: ApiClient = {
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
+    sources: () => ipcRenderer.invoke('skills:sources'),
+    setRoots: (roots: string[]) => ipcRenderer.invoke('skills:set-roots', roots),
   },
   // Cursor's read-only plugin cache. Distinct from `plugins` below (the plugin
   // registry) until C1 merges the two Settings surfaces; the channel is named

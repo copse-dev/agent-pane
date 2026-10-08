@@ -18,6 +18,7 @@ import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
+import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
@@ -235,6 +236,7 @@ import { showSimulatorDesktop } from '../services/simulator-desktop/simulator-de
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import {
   listSkills,
+  listSkillSources,
   initSkillsRegistry,
   waitForSkillsRegistryRefresh,
 } from '../services/skills/skills-registry.ts'
@@ -2285,6 +2287,20 @@ export function registerAllHandlers(
   ipcMain.handle('skills:list', async () => {
     await waitForSkillsRegistryRefresh()
     return listSkills()
+  })
+  ipcMain.handle('skills:sources', async () => {
+    await initSkillsRegistry()
+    return listSkillSources()
+  })
+  ipcMain.handle('skills:set-roots', async (_event, value: unknown) => {
+    const roots = skillRootsSchema.safeParse(value)
+    if (!roots.success)
+      throw new IpcValidationError(
+        'Extra skill folders must be at most 64 absolute paths, one per line',
+      )
+    await setSetting('skillPluginPaths', roots.data)
+    await initSkillsRegistry()
+    return listSkillSources()
   })
   ipcMain.handle('agents:list', async () => {
     await waitForAgentsRegistryRefresh()

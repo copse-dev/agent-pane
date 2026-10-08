@@ -21,7 +21,7 @@ import type {
 } from '@shared/types'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
-import type { SkillSummary } from '@shared/types/skills.ts'
+import type { SkillSummary, SkillsSourcesResult } from '@shared/types/skills.ts'
 import type { AgentsListResult } from '@shared/types/agents.ts'
 import type {
   BundledSkillPluginSummary,
@@ -1174,6 +1174,8 @@ export interface ApiClient {
   }
   skills: {
     list: () => Promise<SkillSummary[]>
+    sources: () => Promise<SkillsSourcesResult>
+    setRoots: (roots: string[]) => Promise<SkillsSourcesResult>
   }
   /**
    * Cursor's read-only plugin cache. Distinct from `plugins` below (the plugin

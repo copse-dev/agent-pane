@@ -1,0 +1,16 @@
+:root {
+  color-scheme: dark;
+}
+body {
+  font-family:
+    'Pliant',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  color: #ddd;
+  line-height: 1.55;
+}
+strong {
+  font-weight: 600;
+}
