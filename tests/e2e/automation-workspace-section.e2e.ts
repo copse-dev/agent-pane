@@ -96,7 +96,7 @@ describe('workspace-level automations section', function () {
     const workspaceRoot = seedStableWorkspace()
     writeSeedConfig({
       projects: [
-        { id: PROJECT_A_ID, path: workspaceRoot, name: 'Docs project' },
+        { id: PROJECT_A_ID, path: workspaceRoot, name: 'Documentation infrastructure project' },
         { id: PROJECT_B_ID, path: workspaceRoot, name: 'Ops project' },
       ],
       activeProjectId: PROJECT_A_ID,
@@ -121,7 +121,7 @@ describe('workspace-level automations section', function () {
         },
         {
           id: 'a-docs-run',
-          title: 'Docs freshness',
+          title: 'Documentation freshness',
           status: 'idle',
           messages: [
             {
@@ -135,7 +135,7 @@ describe('workspace-level automations section', function () {
           usage: { inputTokens: 100, outputTokens: 25 },
           automation: {
             scheduleId: SCHEDULE_A_ID,
-            scheduleName: 'Docs freshness',
+            scheduleName: 'Documentation freshness',
             triggeredAt: 1_786_000_120_000,
           },
           createdAt: 1_786_000_120_000,
@@ -175,7 +175,7 @@ describe('workspace-level automations section', function () {
               {
                 id: SCHEDULE_A_ID,
                 projectId: PROJECT_A_ID,
-                name: 'Docs freshness',
+                name: 'Documentation freshness',
                 cron: '0 9 * * 1-5',
                 prompt: 'Check the docs against the code and report anything stale.',
                 model: 'claude-sonnet-4-6',
@@ -257,9 +257,19 @@ describe('workspace-level automations section', function () {
       })),
     )
     assert.deepEqual(collated, [
-      { title: 'Docs freshness', owner: '· Docs project' },
+      { title: 'Documentation freshness', owner: '· Documentation infrastructure project' },
       { title: 'Ops review', owner: '· Ops project' },
     ])
+
+    const titleWidths = await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('.automation-thread-rows .chat-title')).map(
+        (title) => ({ visible: title.clientWidth, natural: title.scrollWidth }),
+      ),
+    )
+    assert.equal(titleWidths.length, 2)
+    for (const width of titleWidths) {
+      assert.ok(width.visible >= width.natural, 'automation owners must yield before run titles')
+    }
 
     // Runs under the Automations heading start where a project's own threads
     // do under their project heading.
@@ -309,7 +319,9 @@ describe('workspace-level automations section', function () {
       expect.stringContaining('Project: Ops project'),
     )
     // Opening a background project's setup must not move the active project.
-    await expect($('.project-row.active')).toHaveText(expect.stringContaining('Docs project'))
+    await expect($('.project-row.active')).toHaveText(
+      expect.stringContaining('Documentation infrastructure project'),
+    )
     await dialog.$('[aria-label="Close automations"]').click()
   })
 })

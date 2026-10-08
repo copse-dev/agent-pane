@@ -583,7 +583,7 @@
 /* On a thread row the project label is the part that tells rows apart, so the
    title gives way first: the label keeps its natural width up to a cap and only
    a very long project name ellipsizes. */
-.chat-row .chat-thread-owner {
+.chats-list .chat-row .chat-thread-owner {
   flex: 0 0 auto;
   max-width: 45%;
 }
