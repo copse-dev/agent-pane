@@ -214,6 +214,12 @@ const ALLOWED: readonly Allowance[] = [
     reason: REASON.modelPrompt,
   },
   {
+    file: 'src/main/services/providers/prompt-model-routing.ts',
+    term: 'capability',
+    count: 2,
+    reason: REASON.modelPrompt,
+  },
+  {
     file: 'src/main/services/coordination-demo.ts',
     term: 'capability',
     count: 1,
