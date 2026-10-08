@@ -13,6 +13,7 @@ import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin
 
 export type PanelControlId =
   | 'explorer'
+  | 'context'
   | 'side-chat'
   | 'terminal'
   | 'changes'
@@ -43,6 +44,14 @@ function panelIcon(): SVGSVGElement {
   return outlineIcon(
     'panel',
     ['M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z', 'M9 4v16'],
+    'titlebar-btn-icon',
+  )
+}
+
+function contextIcon(): SVGSVGElement {
+  return outlineIcon(
+    'context',
+    ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z', 'M12 16v-4', 'M12 8h.01'],
     'titlebar-btn-icon',
   )
 }
@@ -127,6 +136,13 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
     ariaLabel: 'Toggle right panel',
     label: 'Panel',
     icon: panelIcon,
+  },
+  {
+    id: 'context',
+    mode: 'context',
+    ariaLabel: 'Open thread context',
+    label: 'Context',
+    icon: contextIcon,
   },
   {
     id: 'side-chat',

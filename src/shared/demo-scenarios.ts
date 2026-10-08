@@ -2850,6 +2850,25 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     threads: SIDE_CHATS_THREADS,
   },
   {
+    id: 'thread-context',
+    label: 'The thread Context panel',
+    project: project('demo-thread-context', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      filesPaneOpen: true,
+      rightPanelMode: 'context',
+      layout: {
+        projectsPaneWidth: 240,
+        filesPaneWidth: 680,
+        filesPaneHeight: 360,
+        fileTreeWidth: 180,
+      },
+    },
+    threads: SIDE_CHATS_THREADS,
+  },
+  {
     id: 'side-chat-approval',
     label: 'A side chat asks for approval over its parent thread',
     project: project('demo-side-chat-approval', 'Widgets', '/demo/widgets'),
