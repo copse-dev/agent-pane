@@ -13,6 +13,7 @@ import {
   chevronDownIcon,
   chevronRightIcon,
   gitMergeIcon,
+  gitBranchIcon,
   gitPullRequestIcon,
   moreHorizontalIcon,
   moreVerticalIcon,
@@ -24,7 +25,11 @@ import {
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, ProjectGroup } from '@shared/types'
-import type { GhPrChecksState } from '@shared/types/git.ts'
+import type { GhPrChecksState, ThreadChangeSummary } from '@shared/types/git.ts'
+import {
+  describeThreadChanges,
+  sameThreadChangeSummary,
+} from '@shared/git/thread-change-summary.ts'
 import {
   archiveThread,
   deleteThread,
@@ -174,6 +179,17 @@ function chatPrStatus(rollup: ThreadPrRollup, ciFailing: boolean, conflicts: boo
       'aria-label': label,
       'data-tooltip': label,
     },
+    icon,
+  )
+}
+
+/** Muted branch glyph for a finished thread with unlanded work and no PR; detail is tooltip-only. */
+function chatChangesStatus(label: string): HTMLElement {
+  const icon = gitBranchIcon('ui-icon ui-icon-sm')
+  icon.setAttribute('aria-hidden', 'true')
+  return el(
+    'span',
+    { class: 'chat-changes-status', role: 'img', 'aria-label': label, 'data-tooltip': label },
     icon,
   )
 }
@@ -609,6 +625,49 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const prBackfillRetryTimers = new Set<ReturnType<typeof setTimeout>>()
   let prBackfillRowsByKey = new Map<string, Element>()
   let prBackfillObserver: IntersectionObserver | null = null
+  // Sidebar "changes" glyph: per-thread unlanded-work summaries, fetched once the
+  // rows are drawn. A read per working-tree event would be 40 reads for one event
+  // (#3386), so only the active thread follows those events; the rest age out.
+  const THREAD_CHANGE_TTL_MS = 30_000
+  const THREAD_CHANGE_MAX_PER_PASS = 60
+  const threadChangeCache = new Map<string, { summary: ThreadChangeSummary | null; at: number }>()
+  const threadChangeInFlight = new Set<string>()
+  let threadChangeGeneration = 0
+  let threadChangeTimer: ReturnType<typeof setTimeout> | null = null
+  const threadChangeKey = (projectId: string, threadId: string): string =>
+    `${projectId}\0${threadId}`
+
+  // Rows drawn by the latest render, so an idle sidebar can re-check them.
+  let threadChangeRendered: Array<{ projectId: string; threadId: string }> = []
+
+  function refreshThreadChanges(
+    refs: Array<{ projectId: string; threadId: string }>,
+    opts: { fresh?: boolean } = {},
+  ): void {
+    const batch = refs
+      .filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId)))
+      .slice(0, THREAD_CHANGE_MAX_PER_PASS)
+    if (batch.length === 0) return
+    const generation = threadChangeGeneration
+    for (const ref of batch) threadChangeInFlight.add(threadChangeKey(ref.projectId, ref.threadId))
+    const settle = (results: Array<ThreadChangeSummary | null>): void => {
+      let changed = false
+      for (const [i, ref] of batch.entries()) {
+        const key = threadChangeKey(ref.projectId, ref.threadId)
+        threadChangeInFlight.delete(key)
+        const summary = results[i] ?? null
+        if (!sameThreadChangeSummary(threadChangeCache.get(key)?.summary ?? null, summary)) {
+          changed = true
+        }
+        threadChangeCache.set(key, { summary, at: Date.now() })
+      }
+      // Only an unmounted pane must not redraw from a late answer.
+      if (changed && generation === threadChangeGeneration) render(true)
+    }
+    void api.git.threadChangeSummary(batch, opts).then(settle, () => {
+      settle([])
+    })
+  }
   // Automation history is collated in one workspace-level section (#2511)
   // rather than tucked inside each project, so it reads as one place to check
   // every schedule regardless of which project it belongs to. Expansion is
@@ -801,6 +860,20 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           if (lifecycleChanged) render()
         })
     }
+  }
+
+  // A sidebar left idle keeps its glyphs honest after a commit or push elsewhere:
+  // the TTL is otherwise only checked when something redraws, so re-check when the
+  // window regains focus or becomes visible, which is when someone looks again.
+  function recheckStaleThreadChanges(): void {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    const now = Date.now()
+    refreshThreadChanges(
+      threadChangeRendered.filter(({ projectId, threadId }) => {
+        const cached = threadChangeCache.get(threadChangeKey(projectId, threadId))
+        return !cached || now - cached.at > THREAD_CHANGE_TTL_MS
+      }),
+    )
   }
 
   function ciFailingForThread(thread: SidebarThread): boolean {
@@ -1299,6 +1372,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     prBackfillObserver = null
     clear(list)
     const prBackfillRows: Array<{ row: HTMLElement; projectId: string; threadId: string }> = []
+    const threadChangeWanted: Array<{ projectId: string; threadId: string }> = []
+    const threadChangeSeen: Array<{ projectId: string; threadId: string }> = []
+    const threadChangeSeenKeys = new Set<string>()
     syncFilterControls()
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
       store.getState()
@@ -1514,6 +1590,19 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             prRollup.kind === 'open' && conflictsForThread(thread),
           ),
         )
+      } else if (thread.status !== 'running' && thread.prRefs !== undefined && !project.sshHost) {
+        const key = threadChangeKey(project.id, thread.id)
+        threadChangeSeen.push({ projectId: project.id, threadId: thread.id })
+        threadChangeSeenKeys.add(key)
+        const cached = threadChangeCache.get(key)
+        const changesLabel = describeThreadChanges(cached?.summary ?? null)
+        if (changesLabel) {
+          chatRow.classList.add('has-changes-status')
+          chatRow.append(chatChangesStatus(changesLabel))
+        }
+        if (!cached || Date.now() - cached.at > THREAD_CHANGE_TTL_MS) {
+          threadChangeWanted.push({ projectId: project.id, threadId: thread.id })
+        }
       }
 
       if (thread.prRefs === undefined) {
@@ -2289,10 +2378,33 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       prBackfillObserver = observer
       for (const { row } of prBackfillRows) observer.observe(row)
     }
+    threadChangeRendered = threadChangeSeen
+    const pruneBefore = Date.now() - 2 * THREAD_CHANGE_TTL_MS
+    for (const [key, entry] of threadChangeCache) {
+      if (entry.at < pruneBefore && !threadChangeSeenKeys.has(key)) threadChangeCache.delete(key)
+    }
+    refreshThreadChanges(threadChangeWanted)
     if (preserveScroll) list.scrollTop = scrollTop
   }
 
+  const unsubWorkingTree = api.git.onWorkingTreeChanged(() => {
+    if (threadChangeTimer !== null) clearTimeout(threadChangeTimer)
+    threadChangeTimer = setTimeout(() => {
+      threadChangeTimer = null
+      const { activeProjectId, activeThreadId, projects } = store.getState()
+      if (!activeProjectId || !activeThreadId) return
+      if (projects.find((p) => p.id === activeProjectId)?.sshHost) return
+      refreshThreadChanges([{ projectId: activeProjectId, threadId: activeThreadId }], {
+        fresh: true,
+      })
+    }, 1_500)
+  })
+
+  window.addEventListener('focus', recheckStaleThreadChanges)
+  document.addEventListener('visibilitychange', recheckStaleThreadChanges)
+
   const unsubs = [
+    unsubWorkingTree,
     store.on('projects_changed', render),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
@@ -2331,6 +2443,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     prBackfillObserver = null
     prBackfillRowsByKey.clear()
     prStatusGeneration += 1
+    threadChangeGeneration += 1
+    if (threadChangeTimer !== null) clearTimeout(threadChangeTimer)
+    threadChangeTimer = null
+    window.removeEventListener('focus', recheckStaleThreadChanges)
+    document.removeEventListener('visibilitychange', recheckStaleThreadChanges)
+    threadChangeCache.clear()
+    threadChangeInFlight.clear()
     orphanScanGeneration += 1
     dismissContextMenu()
     renaming = null

@@ -50,6 +50,11 @@ Worth lifting from [#3386](https://github.com/copse-dev/agent-pane/pull/3386): t
 any working-tree event, 40 reads for one event). Any sidebar that shows status for inactive
 threads must avoid that.
 
+**Done for the row glyph:** the sidebar's "changes" icon uses the inspect-only
+`git:thread-change-summary` channel (no watcher, one read per shared checkout, TTL cache, active
+thread follows working-tree events). Rows past the first 60 per pass are not asked about until a
+later redraw, and SSH projects are skipped.
+
 ## What the app already has
 
 Verified in code, so these are re-skins or small edits, not new builds:

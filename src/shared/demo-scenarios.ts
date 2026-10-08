@@ -142,6 +142,8 @@ export interface DemoScenario {
   prBody?: string
   /** Uncommitted line counts the demo's working tree reports for the Changes chip. */
   changeStats?: { readonly additions: number; readonly deletions: number }
+  /** Unlanded work per thread id, for the sidebar's "changes" glyph. */
+  threadChanges?: Readonly<Record<string, { readonly dirty: boolean; readonly unpushed?: number }>>
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -2167,6 +2169,64 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME - 5,
         updatedAt: FIXED_TIME - 5,
+      },
+    ],
+  },
+  {
+    id: 'sidebar-thread-changes',
+    label: 'Sidebar changes glyph',
+    project: project('demo-sidebar-changes-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // Two finished threads with unlanded work, one clean, one still running.
+    threadChanges: {
+      'demo-sidebar-changes-commits': { dirty: false, unpushed: 2 },
+      'demo-sidebar-changes-dirty': { dirty: true },
+      'demo-sidebar-changes-clean': { dirty: false },
+    },
+    threads: [
+      {
+        id: 'demo-sidebar-changes-clean',
+        title: 'Update onboarding copy',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+      {
+        id: 'demo-sidebar-changes-commits',
+        title: 'Refactor auth',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 2,
+        updatedAt: FIXED_TIME - 2,
+      },
+      {
+        id: 'demo-sidebar-changes-dirty',
+        title: 'Add a retry to uploads',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 3,
+        updatedAt: FIXED_TIME - 3,
+      },
+      {
+        id: 'demo-sidebar-changes-running',
+        title: 'Run the schema migration',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 4,
+        updatedAt: FIXED_TIME - 4,
       },
     ],
   },

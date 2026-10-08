@@ -431,6 +431,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   ])
   let workspaceRoot = scenario.project.path
   let threads: Thread[] = structuredClone(scenario.threads)
+  const prRefsHandlers = new Set<Parameters<ApiClient['threads']['onPrRefs']>[0]>()
   const showAutomationPermissions = scenario.id === 'automation-permissions'
   const demoPlugins = showAutomationPermissions
     ? [...DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN]
@@ -963,9 +964,23 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           : scenario.failThreadHydration === true
             ? Promise.reject(new Error('demo: transcript read failed'))
             : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
-      // Demo threads always arrive whole, so nothing is ever backfilled.
-      backfillPrRefs: () => resolvedVoid(),
-      onPrRefs: () => () => undefined,
+      // Demo threads link no PRs, so a backfill answers each one with an empty ref set —
+      // the settled "no PR" the sidebar waits for before it draws a row's changes glyph.
+      backfillPrRefs: (projectId: string, threadIds: string[]) => {
+        for (const handler of prRefsHandlers) {
+          handler(
+            projectId,
+            threadIds.map((threadId) => ({ threadId, prRefs: [] })),
+          )
+        }
+        return resolvedVoid()
+      },
+      onPrRefs: (handler) => {
+        prRefsHandlers.add(handler)
+        return (): void => {
+          prRefsHandlers.delete(handler)
+        }
+      },
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => undefined,
       create: (_projectId: string, thread: Thread) => {
@@ -1483,6 +1498,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
       changeStats: () => resolved(scenario.changeStats ? { ...scenario.changeStats } : null),
+      threadChangeSummary: (refs) =>
+        resolved(
+          refs.map(({ threadId }) => {
+            const changes = scenario.threadChanges?.[threadId]
+            return changes ? { ...changes } : null
+          }),
+        ),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
