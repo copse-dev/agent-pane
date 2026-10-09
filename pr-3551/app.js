@@ -84523,7 +84523,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const listScrollAnchor = captureListScrollAnchor();
     if (host.projectStrip && projectFilter !== null) {
       const filterId = projectFilter;
-      if (!listedProjects().some((project2) => project2.id === filterId)) projectFilter = null;
+      const listed = listedProjects();
+      if (listed.length < 2 || !listed.some((project2) => project2.id === filterId)) {
+        projectFilter = null;
+      }
     }
     const allThreads = collectActivityThreads(store2);
     const approvals = sources3.approvals.pending();
