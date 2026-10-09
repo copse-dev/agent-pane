@@ -57,7 +57,9 @@ describe('PR panel agent-owned PR (mock gh)', () => {
     // This is the only intentional thread handoff for a Cursor agent run —
     // browser/chat navigation to cursor.com/agents stays on the web page.
     await $('.pr-list-row[data-pr-section="linked"]').click()
-    const openThreadBtn = await $('.pr-open-thread-btn[data-thread-id="e2e-pr-agent-link-thread"]').getElement()
+    const openThreadBtn = await $(
+      '.pr-open-thread-btn[data-thread-id="e2e-pr-agent-link-thread"]',
+    ).getElement()
     await openThreadBtn.waitForDisplayed({ timeout: 15_000 })
     expect(await openThreadBtn.getText()).toMatch(/agent-linked/i)
     await expect($('.pr-thread-group[data-relationship-group="produced"]')).toHaveText(

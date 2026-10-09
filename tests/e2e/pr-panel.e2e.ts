@@ -77,7 +77,9 @@ describe('PR panel (mock gh)', () => {
       timeout: 10_000,
       timeoutMsg: 'expected the filter to narrow to a single matching row',
     })
-    await expect(await $('.pr-list-title*=Tidy up workspace status polling').getElement()).toBeDisplayed()
+    await expect(
+      await $('.pr-list-title*=Tidy up workspace status polling').getElement(),
+    ).toBeDisplayed()
     await expect(await $('.git-changes-section-title*=Related PRs').getElement()).not.toBeExisting()
     await saveElementScreenshot('#pane-files', 'pr-panel-filter-match.png')
 
