@@ -9589,6 +9589,9 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   font-weight: 500;
 }
+.usage-classifier-table td code {
+  overflow-wrap: anywhere;
+}
 .usage-estimated {
   color: var(--text-muted);
   font-style: italic;
