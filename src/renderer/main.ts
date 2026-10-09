@@ -249,7 +249,8 @@ window.addEventListener('unhandledrejection', (event) => {
 
 let layoutMounted = false
 let unmountPopoutTitlebar: (() => void) | null = null
-let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
+let handleStopShortcut: ((key: 'Escape' | 'Enter', target: EventTarget | null) => boolean) | null =
+  null
 let openProcessManager: (() => void) | null = null
 // The two request queues the Activity views read; set once the dialogs are mounted.
 let activitySources: ActivitySources | null = null
@@ -829,9 +830,9 @@ function registerKeyboardShortcuts(): void {
         closeSettingsDialog()
         return
       }
-      if (handleStopShortcut?.('Escape')) e.preventDefault()
+      if (handleStopShortcut?.('Escape', e.target)) e.preventDefault()
     }
-    if (e.key === 'Enter' && handleStopShortcut?.('Enter')) {
+    if (e.key === 'Enter' && handleStopShortcut?.('Enter', e.target)) {
       e.preventDefault()
     }
     // Ctrl+Tab / Ctrl+Shift+Tab cycle threads, matching browser and other

@@ -206,3 +206,11 @@ export const contextBridge = {
     Reflect.set(window, key, value)
   },
 }
+
+// A page in a browser engine has no disk paths behind its `File`s; '' is
+// Electron's own answer for a file without one (a pasted blob).
+export const webUtils = {
+  getPathForFile(_file: File): string {
+    return ''
+  },
+}

@@ -268,6 +268,38 @@ describe('ToolRegistry', () => {
       assert.equal(executed, false)
     })
 
+    it('types recovered text args from the schema, keeping numeric-looking strings', () => {
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'str_replace',
+        description: 'edit',
+        parameters: z.object({
+          path: z.string(),
+          old_string: z.string(),
+          new_string: z.string(),
+          replace_all: z.boolean().optional(),
+        }),
+        execute: async () => 'ok',
+      })
+      reg.register({
+        name: 'read_file',
+        description: 'read',
+        parameters: z.object({ path: z.string(), start_line: z.number().int().optional() }),
+        execute: async () => 'ok',
+      })
+      const text =
+        '<tool_call><function=str_replace><parameter=path>f.ts</parameter><parameter=old_string>3000</parameter><parameter=new_string>true</parameter><parameter=replace_all>true</parameter></function></tool_call>' +
+        '<tool_call><function=read_file><parameter=path>42</parameter><parameter=start_line>10</parameter></function></tool_call>'
+      const recovered = recoverTextToolCalls(text, (name, args) => reg.tryCoerceArgs(name, args))
+      assert.deepEqual(
+        recovered.toolCalls.map((call) => call.args),
+        [
+          { path: 'f.ts', old_string: '3000', new_string: 'true', replace_all: true },
+          { path: '42', start_line: 10 },
+        ],
+      )
+    })
+
     it('reports a clamp for a recovered text call through the same execution path', async () => {
       setPermissionGateForTests(async () => true)
       const reg = new ToolRegistry()

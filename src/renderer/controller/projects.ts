@@ -261,6 +261,10 @@ export function isProjectSwitchInFlight(store: AppStore, projectId: string): boo
   return activeProjectId === projectId && !workspaceRoot
 }
 
+function isListedProject(store: AppStore, projectId: string): boolean {
+  return store.getState().projects.some((project) => project.id === projectId)
+}
+
 function cacheThreads(projectId: string, threads: Thread[]): void {
   // A different project is taking over the live entry — compact the outgoing one
   // so its transcripts stop being reachable from here.
@@ -309,7 +313,9 @@ export async function preloadSidebarThreads(store: AppStore, api: ApiClient): Pr
 export function attachProjectThreadCache(store: AppStore): () => void {
   return store.on('threads_changed', () => {
     const { activeProjectId, threads } = store.getState()
-    if (activeProjectId) cacheThreads(activeProjectId, threads)
+    if (activeProjectId && isListedProject(store, activeProjectId)) {
+      cacheThreads(activeProjectId, threads)
+    }
   })
 }
 
@@ -717,7 +723,9 @@ function activate(
   pendingSwitch = { gen, projectId: id, dispatched: false }
   const outgoingId = activeProjectId
   const outgoingThreads = threads
-  if (outgoingId) {
+  // An outgoing project that was just removed (removeProject switching away
+  // from it) must not be cached back in or have its view state recorded.
+  if (outgoingId && isListedProject(store, outgoingId)) {
     cacheThreads(outgoingId, outgoingThreads)
     // Snapshot the outgoing project's panel visibility so switching back restores it.
     recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store.getState()))
