@@ -1555,6 +1555,8 @@ export function mountInputBar(
       classifierUseKey = ''
       classifierUseOwner = null
       classifierUseSeq++
+      // Whatever was pending is superseded and will not clear the flag itself.
+      classifierUseInFlight = false
       return
     }
     const last = thread.messages.at(-1)
@@ -1569,9 +1571,10 @@ export function mountInputBar(
     classifierUseInFlight = true
     api.usage.getThreadClassifierUse(projectId, thread.id).then(
       (use) => {
-        classifierUseInFlight = false
-        // A newer fetch (or a thread switch) has superseded this answer.
+        // A newer fetch (or a thread switch) has superseded this answer, and the
+        // flag now belongs to that newer fetch.
         if (seq !== classifierUseSeq) return
+        classifierUseInFlight = false
         // A re-read that finds the same figures must not repaint: a repaint drops
         // the wheel's tabindex, which blurs it and closes a keyboard-opened hover.
         // A thread that asked no classifier shows nothing, the same as before the
@@ -1582,7 +1585,7 @@ export function mountInputBar(
         updateFooter()
       },
       () => {
-        classifierUseInFlight = false
+        if (seq === classifierUseSeq) classifierUseInFlight = false
       },
     )
   }

@@ -4023,6 +4023,58 @@ describe('input bar footer classifier use', () => {
     assert.equal(asks, 2)
   })
 
+  it('keeps guarding against stacked reads when a superseded fetch settles first', async () => {
+    const asked: string[] = []
+    const release = new Map<string, () => void>()
+    const { host, store } = mountWith(
+      (_projectId, threadId) =>
+        new Promise((resolve) => {
+          asked.push(threadId)
+          release.set(threadId, () => {
+            resolve(classifierUse)
+          })
+        }),
+    )
+    await settle()
+    assert.deepEqual(asked, ['thread-1'])
+
+    // Switch threads while the first read is still pending: a second read starts.
+    store.setState({
+      threads: [
+        {
+          ...thread(),
+          model: 'claude-sonnet-4-6',
+          usage: { inputTokens: 1200, outputTokens: 300 },
+        },
+        {
+          ...thread(),
+          id: 'thread-2',
+          model: 'claude-sonnet-4-6',
+          usage: { inputTokens: 1200, outputTokens: 300 },
+        },
+      ],
+      activeThreadId: 'thread-2',
+    })
+    store.emit('threads_changed')
+    await settle()
+    assert.deepEqual(asked, ['thread-1', 'thread-2'])
+
+    // The superseded read settles while the newer one is still pending. Hovering
+    // must not start a third read for the same thread.
+    release.get('thread-1')?.()
+    await settle()
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.deepEqual(asked, ['thread-1', 'thread-2'])
+
+    release.get('thread-2')?.()
+    await settle()
+    wheel.dispatchEvent(new Event('mouseleave'))
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.deepEqual(asked, ['thread-1', 'thread-2', 'thread-2'])
+  })
+
   it('shows no classifier section when the thread asked none', async () => {
     const { host } = mountWith(async () => ({ calls: 0, rows: [] }))
     await settle()
