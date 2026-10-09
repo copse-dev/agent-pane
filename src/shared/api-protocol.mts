@@ -80,7 +80,8 @@
 // v50 versions skill-source diagnostics and validated extra-root updates.
 // v51 versions the context_compacted agent chunk (OpenAI server-side compaction).
 // v52 versions the OpenAI remote-agent provider in thread and agent-PR-link payloads.
-// v53 adds `threads:backlinks`, and versions the optional `sideChat` link and the
+// v53 versions agentBusy on worktree attachment status.
+// v54 adds `threads:backlinks`, and versions the optional `sideChat` link and the
 // recorded `links` on thread payloads.
-// v54 adds the `side-chat` right-panel mode to the pane and pop-out channels.
-export const API_PROTOCOL_VERSION = 54 as const
+// v55 adds the `side-chat` right-panel mode to the pane and pop-out channels.
+export const API_PROTOCOL_VERSION = 55 as const
