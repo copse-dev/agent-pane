@@ -60,7 +60,7 @@ export function createInlineVisualizationStreamFilter(
         if (final) {
           // A stream cut mid-operator (`\u{e200}visu`) is control data; anything else
           // is prose after a stray PUA character and must reach the transcript.
-          if (/^[a-z_-]*$/i.test(pending.slice(FRAME_START.length))) {
+          if (VISUALIZE_OPERATOR.startsWith(pending.slice(FRAME_START.length))) {
             pending = ''
             return visible
           }

@@ -51,6 +51,7 @@ describe('inline visualization content references', () => {
     const cases: Array<[string, string]> = [
       ['Short \u{e200} tail.', 'Short \u{e200} tail.'],
       ['Short \u{e200}tail.', 'Short \u{e200}tail.'],
+      ['Short \u{e200}tail', 'Short \u{e200}tail'],
       ['Cut \u{e200}visu', 'Cut '],
       ['Cut \u{e200}', 'Cut '],
     ]
