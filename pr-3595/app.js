@@ -83657,7 +83657,7 @@ async function startSideChat(store2, api2, parentThreadId, options = {}) {
 function sendSideChatMessage(store2, api2, sideThreadId, text2) {
   const side = getThreadById(store2, sideThreadId);
   const prompt = text2.trim();
-  if (!side || side.sideChat === void 0 || prompt === "") return null;
+  if (!side || side.sideChat === void 0 || side.archivedAt != null || prompt === "") return null;
   const messageId = addMessage(store2, sideThreadId, "user", prompt);
   const payload = {
     content: prompt,
@@ -131949,8 +131949,12 @@ function renderSideChat(input2) {
       el(
         "div",
         { class: "side-chat-empty" },
-        el("p", {}, "Ask anything about this message without touching the main thread."),
-        ...SIDE_CHAT_SUGGESTIONS.map((text2) => {
+        el(
+          "p",
+          {},
+          archived ? "This side chat is archived. Restore it to ask a question." : "Ask anything about this message without touching the main thread."
+        ),
+        ...(archived ? [] : SIDE_CHAT_SUGGESTIONS).map((text2) => {
           const button = el(
             "button",
             { type: "button", class: "side-chat-suggestion", "data-suggestion": "" },
