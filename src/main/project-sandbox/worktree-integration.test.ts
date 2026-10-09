@@ -20,8 +20,10 @@ import {
 import { createWorktreeBackup, getGitStatus } from '../services/github/git-service.ts'
 import { setGitAvailableForTest } from '../services/tool-availability.ts'
 import {
+  allocateThreadWorktree,
   inspectThreadWorktreeAttachment,
   reattachThreadWorktree,
+  retireThreadWorktree,
   validateThreadWorktree,
 } from '../services/worktree-manager.ts'
 import { gitBackupSandboxOverlay, workspaceTmpDir } from './config.ts'
@@ -555,6 +557,97 @@ describe('linked-worktree sandbox integration', () => {
     const [reattached] = await Promise.all([reattachThreadWorktree(input), ...probes])
     assert.deepEqual(reattached, { branch, keptDetachedCommits: false, backupBranch: null })
     assert.equal(git(checkout, ['symbolic-ref', '--short', 'HEAD']).trim(), branch)
+  })
+
+  it('populates, works in, and retires submodules of a home-contained thread checkout', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('project sandbox integration is not enabled on Windows')
+      return
+    }
+    // Population clones from the project's own module repository into the
+    // thread's administration directory, and the agent then commits inside
+    // that clone: both must work under the same grants as the superproject.
+    const parent = await mkdtemp(join(homedir(), 'copse-submodule-home-'))
+    cleanups.push(parent)
+    const previousWorktreesDir = process.env['COPSE_WORKTREES_DIR']
+    process.env['COPSE_WORKTREES_DIR'] = join(parent, 'worktrees')
+    t.after(() => {
+      if (previousWorktreesDir === undefined) delete process.env['COPSE_WORKTREES_DIR']
+      else process.env['COPSE_WORKTREES_DIR'] = previousWorktreesDir
+    })
+    const upstream = join(parent, 'lib')
+    const repo = join(parent, 'project')
+    await mkdir(upstream)
+    await mkdir(repo)
+    git(upstream, ['init', '-q', '-b', 'main'])
+    await writeFile(join(upstream, 'lib.txt'), 'lib\n')
+    git(upstream, ['add', '.'])
+    git(upstream, ['commit', '-q', '-m', 'lib'])
+    git(repo, ['init', '-q', '-b', 'main'])
+    await writeFile(join(repo, 'README.md'), 'base\n')
+    git(repo, ['add', '.'])
+    git(repo, ['commit', '-q', '-m', 'initial'])
+    git(repo, [
+      '-c',
+      'protocol.file.allow=always',
+      'submodule',
+      'add',
+      '-q',
+      upstream,
+      'vendor/lib',
+    ])
+    git(repo, ['commit', '-q', '-m', 'submodule'])
+    setGitAvailableForTest(true)
+    await initProjectSandbox()
+    if (!isProjectSandboxEnabled()) {
+      t.skip('ASRT sandbox unavailable')
+      return
+    }
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      prompt: 'Work in a submodule',
+      baseBranch: 'main',
+    })
+    const lib = join(worktree.path, 'vendor', 'lib')
+    assert.equal(await readFile(join(lib, 'lib.txt'), 'utf8'), 'lib\n')
+    const base = git(lib, ['rev-parse', 'HEAD']).trim()
+
+    const inSubmodule = (args: string[]): Promise<CommandResult> =>
+      runSandboxed(
+        'git',
+        ['-c', 'commit.gpgSign=false', '-C', 'vendor/lib', ...args],
+        worktree.path,
+      )
+    await validateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      worktree,
+    })
+    for (const args of [
+      ['switch', '-q', '-c', 'work'],
+      ['add', 'lib.txt'],
+    ]) {
+      if (args[0] === 'add') await writeFile(join(lib, 'lib.txt'), 'thread\n')
+      const result = await inSubmodule(args)
+      assert.equal(result.code, 0, result.stderr)
+    }
+    const commit = await inSubmodule(['commit', '-q', '-m', 'thread work'])
+    assert.equal(commit.code, 0, commit.stderr)
+    const detach = await inSubmodule(['switch', '-q', '--detach', base])
+    assert.equal(detach.code, 0, detach.stderr)
+
+    const input = { projectId: 'project-1', threadId: 'thread-1', projectRoot: repo, worktree }
+    assert.deepEqual(await retireThreadWorktree(input), {
+      status: 'blocked-dirty',
+      paths: ['vendor/lib'],
+    })
+    git(lib, ['update-ref', 'refs/remotes/origin/work', 'work'])
+    assert.equal((await retireThreadWorktree(input)).status, 'removed')
+    assert.equal(existsSync(worktree.path), false)
   })
 
   it('starts Node in a home-contained workspace while keeping sibling files unreadable', async (t) => {

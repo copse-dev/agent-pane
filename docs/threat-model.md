@@ -147,7 +147,9 @@ submodule recursion, signing and signature display. Diff/log/show request raw ou
 without external diff or textconv. Included and worktree configuration cannot undo
 these overrides. Inherited Git config/executable injection is removed. Implicit
 partial-clone fetches are disabled. Explicit fetch/push retain their existing caller
-authorization and only built-in HTTP(S), SSH and file transports are enabled.
+authorization and only built-in HTTP(S), SSH and file transports are enabled. The one
+`clone` is the worktree manager's local submodule copy: no checkout, no templates, no
+option that names a program, and the `file` transport alone.
 Configuration inspection reads real values without invoking the configured helpers.
 
 Worktree bookkeeping uses the available project sandbox, with grants for Git

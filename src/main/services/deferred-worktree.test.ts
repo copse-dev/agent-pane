@@ -87,7 +87,6 @@ function fixture(
       currentBranch: 'main',
       defaultBranch: 'main',
       isDirty: false,
-      hasSubmodules: false,
     }),
     allocate: async (input) => {
       allocations.push(input)
@@ -287,7 +286,6 @@ describe('deferred worktree allocation', () => {
           currentBranch: 'main',
           defaultBranch: 'main',
           isDirty: true,
-          hasSubmodules: false,
         }),
       },
       deferredThread,

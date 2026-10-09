@@ -26,8 +26,6 @@ import {
   parseAheadBehind,
   parseOriginHeadSymbolicRef,
   parsePorcelainV1,
-  findSubmoduleDeclaration,
-  repositoryHasSubmodules,
   resetDefaultBranchCache,
   resolveWorkspaceRelativeGitPath,
   sumDiffNumstat,
@@ -350,71 +348,6 @@ describe('pushBranchToOrigin', { skip: !gitOk && 'git not installed' }, () => {
         }).stdout.trim(),
         remoteHead,
       )
-    } finally {
-      await rm(parent, { recursive: true, force: true })
-    }
-  })
-})
-
-describe('repositoryHasSubmodules', { skip: !gitOk && 'git not installed' }, () => {
-  it('finds the repository declaration from a nested project root', async () => {
-    const repo = await mkdtemp(join(tmpdir(), 'copse-git-submodules-'))
-    try {
-      spawnSync('git', ['init', '-q'], { cwd: repo })
-      const project = join(repo, 'packages', 'widget')
-      await mkdir(project, { recursive: true })
-
-      assert.equal(await repositoryHasSubmodules(project), false)
-      await writeFile(join(repo, '.gitmodules'), '[submodule "fixture"]\n')
-      assert.equal(await repositoryHasSubmodules(project), true)
-    } finally {
-      await rm(repo, { recursive: true, force: true })
-    }
-  })
-
-  it('names the declaration it found so a refusal can be checked afterwards', async () => {
-    const repo = await mkdtemp(join(tmpdir(), 'copse-git-submodule-path-'))
-    try {
-      spawnSync('git', ['init', '-q'], { cwd: repo })
-      const project = join(repo, 'packages', 'widget')
-      await mkdir(project, { recursive: true })
-
-      assert.equal(await findSubmoduleDeclaration(project), null)
-      await writeFile(join(repo, '.gitmodules'), '[submodule "fixture"]\n')
-      // realpath, so compare against the resolved repository rather than the
-      // temp path, which is a symlink on macOS.
-      assert.equal(
-        await findSubmoduleDeclaration(project),
-        join(await realpath(repo), '.gitmodules'),
-      )
-    } finally {
-      await rm(repo, { recursive: true, force: true })
-    }
-  })
-
-  it('ignores an empty sandbox sentinel that declares no submodules', async () => {
-    const repo = await mkdtemp(join(tmpdir(), 'copse-git-empty-submodules-'))
-    try {
-      spawnSync('git', ['init', '-q'], { cwd: repo })
-      await writeFile(join(repo, '.gitmodules'), '')
-
-      assert.equal(await findSubmoduleDeclaration(repo), null)
-      assert.equal(await repositoryHasSubmodules(repo), false)
-    } finally {
-      await rm(repo, { recursive: true, force: true })
-    }
-  })
-
-  it('stops at the nearest repository instead of inheriting parent metadata', async () => {
-    const parent = await mkdtemp(join(tmpdir(), 'copse-git-parent-submodules-'))
-    try {
-      spawnSync('git', ['init', '-q'], { cwd: parent })
-      await writeFile(join(parent, '.gitmodules'), '[submodule "parent-only"]\n')
-      const child = join(parent, 'child')
-      await mkdir(child)
-      spawnSync('git', ['init', '-q'], { cwd: child })
-
-      assert.equal(await repositoryHasSubmodules(child), false)
     } finally {
       await rm(parent, { recursive: true, force: true })
     }
