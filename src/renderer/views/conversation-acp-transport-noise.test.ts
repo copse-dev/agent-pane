@@ -98,4 +98,22 @@ describe('Cursor ACP transport noise demotion', () => {
     assert.match(textEl.textContent, /WritableIterable/)
     assert.equal(document.querySelector('.acp-transport-noise'), null)
   })
+
+  it('keeps a closing sentence that only quotes the error in the answer', () => {
+    const store = createStore({ developerMode: true })
+    const threadId = createThread(store)
+    const answer = 'Fixed it. The crash was Error: RetriableError: WritableIterable is closed'
+    addMessage(store, threadId, 'assistant', answer)
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const textEl = document.querySelector('.msg-assistant .message-text')
+    assert.ok(textEl)
+    assert.match(
+      textEl.textContent,
+      /The crash was Error: RetriableError: WritableIterable is closed/,
+    )
+    assert.equal(document.querySelector('.acp-transport-noise'), null)
+  })
 })

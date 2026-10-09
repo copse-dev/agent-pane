@@ -39,6 +39,17 @@ describe('normalizeBrowserUrl', () => {
       duckDuckGoSearch('javascript:alert(1)'),
     )
   })
+
+  it('does not turn a non-http scheme or email into userinfo on an https URL', () => {
+    for (const input of [
+      'mailto:a@b.com',
+      'a@b.com',
+      'tel:12@example.com',
+      'user:pass@example.com',
+    ]) {
+      assert.equal(normalizeBrowserUrl(input), duckDuckGoSearch(input), input)
+    }
+  })
 })
 
 describe('browserTabLabel', () => {

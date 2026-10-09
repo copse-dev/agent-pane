@@ -47,6 +47,22 @@ describe('inline visualization content references', () => {
     assert.equal(stripInlineVisualizationReferences(text), 'Start\n\n\n')
   })
 
+  it('keeps text after a lone frame-start character when the stream finishes', () => {
+    const cases: Array<[string, string]> = [
+      ['Short \u{e200} tail.', 'Short \u{e200} tail.'],
+      ['Short \u{e200}tail.', 'Short \u{e200}tail.'],
+      ['Cut \u{e200}visu', 'Cut '],
+      ['Cut \u{e200}', 'Cut '],
+    ]
+    for (const [text, expected] of cases) {
+      assert.equal(stripInlineVisualizationReferences(text), expected, text)
+      const filter = createInlineVisualizationStreamFilter(() => {})
+      let visible = ''
+      for (const char of text) visible += filter.push(char)
+      assert.equal(visible + filter.finish(), expected, `chunked: ${text}`)
+    }
+  })
+
   it('leaves ordinary text unchanged', () => {
     assert.equal(stripInlineVisualizationReferences('A normal answer.'), 'A normal answer.')
   })

@@ -108,6 +108,24 @@ describe('cursor-rules', () => {
     assert.deepEqual(parseRuleGlobs('globs: ["*.ts", "src/**/*.tsx"]\n'), ['*.ts', 'src/**/*.tsx'])
   })
 
+  it('keeps brace sets whole and reads YAML block lists', () => {
+    const cases: Array<[string, string[]]> = [
+      ['globs: src/**/*.{ts,tsx}\n', ['src/**/*.{ts,tsx}']],
+      ['globs: src/**/*.{ts,tsx}, docs/*.md\n', ['src/**/*.{ts,tsx}', 'docs/*.md']],
+      ['globs: [src/**/*.{ts,tsx}, "*.md"]\n', ['src/**/*.{ts,tsx}', '*.md']],
+      ['globs: "a/*.ts, b/*.ts"\n', ['a/*.ts', 'b/*.ts']],
+      [
+        'globs:\n  - "src/**/*.ts"\n  - docs/*.{md,mdx}\nalwaysApply: false\n',
+        ['src/**/*.ts', 'docs/*.{md,mdx}'],
+      ],
+      ['globs:\nalwaysApply: false\n', []],
+    ]
+    for (const [frontmatter, expected] of cases) {
+      assert.deepEqual(parseRuleGlobs(frontmatter), expected, frontmatter)
+    }
+    assert.equal(classifyCursorRule('globs:\n  - src/**/*.ts\n').kind, 'auto')
+  })
+
   it('matches auto-attach globs against context paths', () => {
     assert.equal(contextMatchesGlobs(['src/main/index.ts'], ['src/**/*.ts']), true)
     assert.equal(contextMatchesGlobs(['src/main/index.ts'], ['*.ts']), true)
