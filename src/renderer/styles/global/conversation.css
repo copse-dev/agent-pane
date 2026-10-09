@@ -658,8 +658,30 @@
   opacity: 1;
 }
 .message-body:hover:has(.code-block-shell:hover) .msg-copy,
-.message-body:hover:has(.code-block-shell:focus-within) .msg-copy {
+.message-body:hover:has(.code-block-shell:focus-within) .msg-copy,
+.message-body:hover:has(.code-block-shell:hover) .msg-reply-actions .msg-action,
+.message-body:hover:has(.code-block-shell:focus-within) .msg-reply-actions .msg-action {
   opacity: 0;
+}
+/* A reply's actions share Copy's top-right corner, so none of them covers the
+   reply's last line (where a drag that selects text ends). */
+.msg-reply-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  gap: var(--spacing-xs);
+}
+.msg-reply-actions .msg-copy {
+  position: static;
+}
+.msg-reply-actions .msg-action {
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.message-body:hover .msg-reply-actions .msg-action,
+.msg-reply-actions .msg-action:focus-visible {
+  opacity: 1;
 }
 /* Per-prompt actions (fork the conversation from here / resend the prompt).
    Mirrors .msg-copy's hover affordance, anchored to the bubble's bottom-right

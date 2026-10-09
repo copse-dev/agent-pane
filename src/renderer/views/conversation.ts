@@ -4025,9 +4025,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     // Copy only when there is reply text — tool-only bubbles stay compact.
     if (msg.role === 'assistant' && msg.content.trim()) {
-      attachCopyButton(body, msgId, store)
-      const sideChat = buildSideChatAction(threadId, msgId)
-      if (sideChat) body.append(el('div', { class: 'msg-actions' }, sideChat))
+      attachReplyActions(body, threadId, msgId)
     }
     // Every settled prompt can start a fork of the conversation as it stood at
     // that point; only the latest one can be resent (see syncUserActions).
@@ -4138,6 +4136,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (!msgEl) return
     list.insertBefore(msgEl, before)
     finalizeMessageEl(threadId, msgId)
+  }
+
+  /**
+   * A reply's hover actions sit together in its top-right corner (Copy, and Side
+   * chat outside a side chat) so they never cover the reply's last line, where a
+   * drag that selects text would land on an invisible button.
+   */
+  function attachReplyActions(body: HTMLElement, threadId: string, msgId: string): void {
+    const sideChat = buildSideChatAction(threadId, msgId)
+    const host = sideChat ? el('div', { class: 'msg-reply-actions' }, sideChat) : body
+    attachCopyButton(host, msgId, store)
+    if (host !== body) body.append(host)
   }
 
   /**
@@ -5029,7 +5039,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         // release it from any anchor that absorbed it while it streamed.
         resyncRunMembership(thread, mid)
         const body = msgEl?.querySelector<HTMLElement>('.message-body')
-        if (body && !body.querySelector('.msg-copy')) attachCopyButton(body, mid, store)
+        if (body && thread && !body.querySelector('.msg-copy'))
+          attachReplyActions(body, thread.id, mid)
         // Answer is in: tuck a body-level reasoning trail away unless the user
         // opened it. Nested trails inside a tool rollup stay with that rollup.
         const reasoning = body?.querySelector<HTMLDetailsElement>(':scope > .message-reasoning')

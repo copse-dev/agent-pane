@@ -88,6 +88,32 @@ describe('Side chats beside the main thread', () => {
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
   })
 
+  it("keeps a reply's Side chat action beside Copy, clear of the reply's last line", async () => {
+    const reply = $('[data-message-id="sc-assistant-1"] .message-body')
+    await reply.scrollIntoView()
+    await reply.moveTo()
+    const action = reply.$('.msg-reply-actions .msg-side-chat')
+    await action.waitForDisplayed({ timeout: 5_000 })
+    const geometry = await browser.execute(() => {
+      const body = document.querySelector('[data-message-id="sc-assistant-1"] .message-body')
+      const side = body?.querySelector('.msg-reply-actions .msg-side-chat')
+      const copy = body?.querySelector('.msg-reply-actions .msg-copy')
+      if (!body || !side || !copy) throw new Error('reply actions missing')
+      const bodyRect = body.getBoundingClientRect()
+      const sideRect = side.getBoundingClientRect()
+      return {
+        sameRow: Math.abs(sideRect.top - copy.getBoundingClientRect().top) < 1,
+        inTopHalf: sideRect.bottom <= bodyRect.top + bodyRect.height / 2,
+        opacity: getComputedStyle(side).opacity,
+      }
+    })
+    expect(geometry).toEqual({ sameRow: true, inTopHalf: true, opacity: '1' })
+    await saveElementScreenshot(
+      '[data-message-id="sc-assistant-1"]',
+      'side-chat-reply-actions-top-right.png',
+    )
+  })
+
   it('starts a side chat from a hover action on a message and offers suggestions', async () => {
     await hoverClick('#conversation .msg-user', '.msg-side-chat')
     await $('.side-chat-empty').waitForDisplayed({ timeout: 10_000 })

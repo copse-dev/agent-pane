@@ -98,6 +98,11 @@ describe('per-prompt fork + resend actions (component)', () => {
     assert.equal(assistant.querySelector('.msg-resend'), null)
     assert.ok(assistant.querySelector('.msg-copy'))
     assert.ok(assistant.querySelector('.msg-side-chat'), 'a reply can start a side chat')
+    // Both share the top-right corner, never the bottom-right row over the last line.
+    const corner = assistant.querySelector('.message-body > .msg-reply-actions')
+    assert.ok(corner?.querySelector('.msg-side-chat'))
+    assert.ok(corner?.querySelector('.msg-copy'))
+    assert.equal(assistant.querySelector('.msg-actions'), null)
   })
 
   it('offers Side chat on a prompt and starts one anchored on it without leaving the thread', async () => {
