@@ -586,6 +586,39 @@ describe('Settings snapshot and submitted draft lifecycle', () => {
     assert.equal(snapshots, 1)
   })
 
+  it('retries a rejected snapshot without closing the dialog or enabling an empty save', async () => {
+    const base = createFakeApi()
+    const retry = deferred<{ theme: 'dark' }>()
+    let calls = 0
+    const dialog = mounted({
+      ...base,
+      settings: {
+        ...base.settings,
+        getSnapshot: async () => {
+          if (++calls === 1) throw new Error('Temporary failure')
+          return retry.promise
+        },
+      },
+    })
+    openSettingsDialog('appearance')
+    await tick()
+    assert.match(qsRequired(dialog, '#settings-save-status').textContent, /Temporary failure/)
+    assert.equal(qsRequired<HTMLButtonElement>(dialog, 'button[type="submit"]').disabled, true)
+    const button = qsRequired<HTMLButtonElement>(dialog, '#settings-load-retry')
+    assert.equal(button.hidden, false)
+    button.click()
+    assert.equal(button.hidden, true)
+    assert.equal(qsRequired<HTMLButtonElement>(dialog, 'button[type="submit"]').disabled, true)
+    retry.resolve({ theme: 'dark' })
+    await tick()
+    assert.equal(calls, 2)
+    assert.equal(dialog.open, true)
+    assert.equal(qsRequired(dialog, '#settings-save-status').hidden, true)
+    assert.equal(qsRequired<HTMLSelectElement>(dialog, '[name="theme"]').value, 'dark')
+    assert.equal(qsRequired(dialog, '[data-section="appearance"].settings-section').inert, false)
+    assert.equal(qsRequired<HTMLButtonElement>(dialog, 'button[type="submit"]').disabled, false)
+  })
+
   it('ignores a previous open snapshot after close and reopen', async () => {
     const base = createFakeApi()
     const first = deferred<{ theme: 'light' }>()

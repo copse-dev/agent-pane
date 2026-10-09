@@ -93,6 +93,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
           <div class="settings-buttons">
             <span id="settings-save-status" role="alert" hidden></span>
+            <button type="button" id="settings-load-retry" class="ui-btn ui-btn-secondary" hidden>Retry</button>
             <button type="submit" class="ui-btn ui-btn-primary">Save</button>
             <button type="button" id="settings-cancel" class="ui-btn ui-btn-secondary">Cancel</button>
           </div>
@@ -140,6 +141,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const form = qsRequired<HTMLFormElement>(overlay, 'form')
   const status = qsRequired(overlay, '#settings-save-status')
+  const loadRetry = qsRequired<HTMLButtonElement>(overlay, '#settings-load-retry')
   const saveButton = qsRequired<HTMLButtonElement>(form, 'button[type="submit"]')
   const closeButton = qsRequired<HTMLButtonElement>(overlay, '#settings-close')
   const body = qsRequired(overlay, '.settings-body')
@@ -318,6 +320,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     modelTarget = target.modelTarget
     nav.reset(target.section)
     packs.setDetail(target.pluginDetail)
+    loadSnapshot(mine)
+  })
+  loadRetry.addEventListener('click', () => {
+    if (!snapshot && !loadRetry.hidden) loadSnapshot(openGeneration)
+  })
+  function loadSnapshot(mine: number): void {
+    status.hidden = true
+    loadRetry.hidden = true
     void (async (): Promise<void> => {
       const values = await api.settings.getSnapshot()
       if (mine !== openGeneration || !isSettingsDialogOpen()) return
@@ -337,8 +347,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       if (mine !== openGeneration || !isSettingsDialogOpen()) return
       status.textContent = `Could not load settings: ${errorMessage(error)}`
       status.hidden = false
+      loadRetry.hidden = snapshot !== null
     })
-  })
+  }
   overlay.addEventListener('settings-reveal-model', () => {
     const target = consumeSettingsOpenTarget()
     modelTarget = target.modelTarget
