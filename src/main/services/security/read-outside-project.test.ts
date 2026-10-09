@@ -292,6 +292,14 @@ describe('analyzeReadOutsideProject — cd and sed', () => {
     }
   })
 
+  it('resolves each operand against the directory in effect when it runs', () => {
+    // The lexer-fallback repeat of `cat notes.txt` was resolved after the `cd`,
+    // adding /opt/data/notes.txt — a file the command never opens.
+    const analysis = analyze('cat notes.txt && cd /opt/data && cat x.txt')
+    assert.equal(analysis.eligible, true, analysis.blockers.join('; '))
+    assert.deepEqual(analysis.resolvedTargets, ['/opt/data/x.txt'])
+  })
+
   it('refuses a cd it cannot follow', () => {
     for (const command of [
       'cd /work/other | cat notes.md',

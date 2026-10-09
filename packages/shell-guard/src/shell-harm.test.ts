@@ -301,6 +301,8 @@ describe('Guarded YOLO shell harm gate', () => {
     assert.equal(action('rm -rf ~tester'), 'deny')
     assert.equal(action('cat ~tester/.ssh/id_rsa'), 'deny')
     assert.equal(action('cat ~tester/.env'), 'deny')
+    // Not caught by the secret-filename check, so this one was allowed outright.
+    assert.equal(action('cat ~tester/.aws/config'), 'deny')
     assert.equal(action('ls -la ~tester'), 'deny')
   })
 

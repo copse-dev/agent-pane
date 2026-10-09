@@ -7,6 +7,7 @@ import {
   printfAssignsShellVariable,
   shellInputRedirects,
   shellRedirects,
+  shellSegments,
   shellSegmentsQuoteAware,
   TRUST_TRANSPARENT_WRAPPERS,
   unwrapWrappers,
@@ -456,7 +457,9 @@ export function analyzeReadOutsideProject(
   // segments come first and in order, so only they move the working directory a
   // `cd` sets; the fallback lexer's repeats still add blockers, and add targets
   // only while no `cd` has moved the base (never a path resolved from a guess).
-  const ordered = shellSegmentsQuoteAware(trimmed).length
+  // Only the first lexer's segments: counting the fallback repeats too let a
+  // repeat of `cat notes.txt` resolve against a `cd` that came after it.
+  const ordered = shellSegments(trimmed, false).length
   let base = root
   let baseToken = '.'
   for (const [index, rawArgv] of shellSegmentsQuoteAware(trimmed).entries()) {
