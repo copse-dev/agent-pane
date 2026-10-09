@@ -253,7 +253,7 @@ Add a focused WebdriverIO Electron spec covering actual profile/key IPC and an e
 against a local fixture server, saving screenshots for inspection. Tests must use isolated app
 data and deterministic responses, without requiring a paid key or running model.
 
-For UI work, follow `.cursor/skills/screenshot-validate/SKILL.md`, `docs/ui-taste.md`, and
+For UI work, follow `.agents/skills/screenshot-validate/SKILL.md`, `docs/ui-taste.md`, and
 `docs/testing-strategy.md`. Prefer remote e2e where configured, retaining local coverage for the
 OS credential path. Run `pnpm run check`, `pnpm run build`, and the required Electron e2e checks;
 include the new spec in the test oracle. Before any commit run the repository's prescribed checks;

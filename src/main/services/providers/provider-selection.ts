@@ -1,7 +1,7 @@
 import { createProvider } from '@copse/llm/create-provider.ts'
 import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import { createChatGptPlanProvider } from './chatgpt-plan-provider.ts'
-import { getChatGptPlanService } from './chatgpt-plan-service.ts'
+import { getChatGptPlanService, type ChatGptPlanService } from './chatgpt-plan-service.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { buildProviderFromDescription, type ProviderDescription } from './provider-description.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
@@ -59,8 +59,11 @@ function knownLiteralSecrets(): string[] {
   return secrets
 }
 
-function redactedRemoteProvider(provider: LLMProvider): LLMProvider {
-  return withSecretRedaction(provider, knownLiteralSecrets())
+function redactedRemoteProvider(
+  provider: LLMProvider,
+  additionalSecrets: readonly string[] = [],
+): LLMProvider {
+  return withSecretRedaction(provider, [...knownLiteralSecrets(), ...additionalSecrets])
 }
 
 function localServerUrl(): string {
@@ -310,26 +313,47 @@ export async function buildProvider(
   const chatGpt = parseChatGptPlanModel(model)
   if (chatGpt) {
     assertModelMakerAllowed(model)
-    return redactedRemoteProvider(
-      createChatGptPlanProvider(
-        getChatGptPlanService(),
-        chatGpt,
-        model,
-        resolveTurnParameters(model, opts),
-        promptCacheKey,
-      ),
+    return buildResolvedChatGptPlanProvider(
+      getChatGptPlanService(),
+      chatGpt,
+      model,
+      resolveTurnParameters(model, opts),
+      promptCacheKey,
     )
   }
   const description = await describeProvider(model, opts)
+  return buildResolvedProvider(description, apiKeyForDescription(description), promptCacheKey)
+}
+
+/** Captured generation parameters with credentials refreshed only for this selection. */
+export function buildResolvedChatGptPlanProvider(
+  service: ChatGptPlanService,
+  selection: { clientId: string; model: string },
+  model: string,
+  params: ModelParameters,
+  promptCacheKey?: string,
+): LLMProvider {
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model, {}, promptCacheKey)
+  return redactedRemoteProvider(
+    createChatGptPlanProvider(service, selection, model, params, promptCacheKey),
+  )
+}
+
+/** Build a pinned desktop provider without resolving mutable model settings again. */
+export function buildResolvedProvider(
+  description: ProviderDescription,
+  apiKey: string | null,
+  promptCacheKey?: string,
+): LLMProvider {
   const provider = buildProviderFromDescription(description, {
-    apiKey: apiKeyForDescription(description),
+    apiKey,
     ...(promptCacheKey !== undefined ? { promptCacheKey } : {}),
     approvedHosts: getApprovedProviderHosts(),
   })
   const local =
     description.kind === 'lm-studio' ||
     (description.kind === 'openai-compatible' && description.local)
-  return local ? provider : redactedRemoteProvider(provider)
+  return local ? provider : redactedRemoteProvider(provider, apiKey ? [apiKey] : [])
 }
 
 /** The stored key a description is used with, or null when there is none. */

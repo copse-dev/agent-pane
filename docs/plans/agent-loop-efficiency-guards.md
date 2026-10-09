@@ -495,7 +495,7 @@ This thread is a strong corpus fixture for
 discipline, and false-completion simultaneously.
 
 **Effort.** Fits the existing `requireDoctrineCompliance` machinery
-(`.cursor/skills/agent-run-eval/SKILL.md`, `scripts/analyze-thread-jsonl.mts`). Mostly
+(`.agents/skills/agent-run-eval/SKILL.md`, `scripts/analyze-thread-jsonl.mts`). Mostly
 heuristic design plus fixtures.
 
 ---

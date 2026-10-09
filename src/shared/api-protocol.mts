@@ -82,4 +82,6 @@
 // v52 versions the OpenAI remote-agent provider in thread and agent-PR-link payloads.
 // v53 versions agentBusy on worktree attachment status.
 // v54 versions event automation shapes.
-export const API_PROTOCOL_VERSION = 54 as const
+// v55 versions host-owned container authentication.
+// v56 versions threads:archive stopProcesses and blocked-running live-work reports.
+export const API_PROTOCOL_VERSION = 56 as const

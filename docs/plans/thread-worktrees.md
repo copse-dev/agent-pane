@@ -385,8 +385,9 @@ submodules do not. `src/main/services/worktree-submodules.ts` owns this.
   enclosing thread checkout's overlay.
 - **Removal keeps the agent's submodule work.** Removing the checkout deletes its private
   module repositories. Retire, park, orphan pruning, Settings removal and archival
-  therefore also treat as material: changed, untracked and (unless the caller opted out)
-  ignored files inside each populated submodule, and any module repository whose HEAD or
+  therefore also treat as material: changed and untracked files inside each populated
+  submodule (and ignored ones wherever the superproject's own check counts them; archival
+  and fresh-per-run automations treat them as regenerable), and any module repository whose HEAD or
   branch tip is not contained by the commit population checked out
   (`refs/copse/submodule-base`) or a remote-tracking ref. Superproject status runs with
   `--ignore-submodules=none`, so a `.gitmodules` `ignore` setting cannot hide changes.
@@ -694,7 +695,7 @@ setting.
 - missing worktree blocks edits and presents recovery actions.
 
 Any visible change needs a focused WDIO Electron spec and screenshot following
-`.cursor/skills/screenshot-validate/SKILL.md`. Prefer remote e2e while iterating when
+`.agents/skills/screenshot-validate/SKILL.md`. Prefer remote e2e while iterating when
 configured. Before each PR, run the narrow tests while developing, then `npm run check`;
 for renderer work also run `npm run build` and the focused e2e specs.
 
