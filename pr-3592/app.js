@@ -95036,9 +95036,7 @@ function isConciseCollapsedMessage(messages, index, enabled) {
   if (!enabled || !msg || !isConciseMessage(msg)) return false;
   const process2 = isConciseWorkingMessage(msg) || isConciseStepsMessage(msg) && messages.slice(index + 1).some((m2) => m2.role === "assistant");
   if (!process2) return false;
-  const producesOutput = (msg.visualEvidence?.length ?? 0) > 0 || (msg.canvasArtefacts?.length ?? 0) > 0 || msg.toolCalls.some(
-    (toolCall) => (toolCall.images?.length ?? 0) > 0 || isOfferCall(toolCall)
-  );
+  const producesOutput = (msg.visualEvidence?.length ?? 0) > 0 || (msg.canvasArtefacts?.length ?? 0) > 0 || msg.toolCalls.some((toolCall) => (toolCall.images?.length ?? 0) > 0 || isOfferCall(toolCall));
   return !producesOutput;
 }
 function hasReasoning(msg) {
