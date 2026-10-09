@@ -2428,6 +2428,10 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     // The first thread is the active one and is empty, so the chat pane is the
     // Activity home. The others give it something to list: one waiting on an
     // approval, two running, one that finished while the user was elsewhere.
+    // A second project, so the strip lists projects at all (a lone one adds no card).
+    otherProjects: [
+      { project: project('demo-activity-other-docs', 'docs-site', '/demo/docs'), threads: [] },
+    ],
     threads: [
       {
         id: 'demo-activity-home-new',
@@ -2493,10 +2497,72 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'activity-home-many-projects',
+    label: 'Activity home listing twelve projects',
+    project: project('demo-activity-many-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    // Twelve projects overflow the strip, so it scrolls with an edge fade. Only the
+    // open one has thread data, so the rest read "All clear" and sort by name.
+    otherProjects: [
+      'Atlas',
+      'Billing API',
+      'Cobalt',
+      'Docs site',
+      'Edge workers',
+      'Flight deck',
+      'Gateway',
+      'Harbor',
+      'Ingest',
+      'Jupiter',
+      'Kiln',
+    ].map((name) => ({
+      project: {
+        id: `demo-activity-many-${name.toLowerCase().replace(/\W+/g, '-')}`,
+        path: `/demo/${name}`,
+        name,
+      },
+      threads: [],
+    })),
+    threads: [
+      {
+        id: 'demo-activity-many-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-many-refactor',
+        title: 'Refactor auth',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+    ],
+    approvalRequests: [
+      {
+        id: 'demo-activity-many-approval',
+        threadId: 'demo-activity-many-refactor',
+        title: 'Run shell command?',
+        body: "printf 'auth-check-passed\\n'",
+        type: 'shell',
+      },
+    ],
+  },
+  {
     id: 'activity-home-project-filter',
     label: 'Activity home after a project finishes waiting',
     project: project('demo-activity-home-filter-project'),
     settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    // A second project, so the strip lists projects at all (a lone one adds no card).
+    otherProjects: [
+      { project: project('demo-activity-other-docs', 'docs-site', '/demo/docs'), threads: [] },
+    ],
     threads: [
       {
         id: 'demo-activity-filter-new',
