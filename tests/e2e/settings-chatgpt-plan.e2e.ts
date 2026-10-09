@@ -40,7 +40,7 @@ describe('native ChatGPT plan connection settings', () => {
       ],
       usageEvents: [
         {
-          at: Date.now(),
+          at: Date.parse('2026-01-15T12:00:00.000Z'),
           model: 'chatgpt-plan:oaiapp_second#gpt-5.6-luna',
           source: 'agent',
           inputTokens: 1000,
@@ -49,7 +49,7 @@ describe('native ChatGPT plan connection settings', () => {
           projectId: 'e2e-chatgpt-plan',
         },
         {
-          at: Date.now(),
+          at: Date.parse('2026-01-15T12:00:00.000Z'),
           model: 'chatgpt-plan:oaiapp_fixture#gpt-5.6-luna',
           source: 'agent',
           inputTokens: 447300,
@@ -110,6 +110,9 @@ describe('native ChatGPT plan connection settings', () => {
   })
   it('shows a readable plan model label in Usage without its client ID', async () => {
     await $('.settings-nav-btn[data-section="usage"]').click()
+    // A fixed ledger date keeps the capture stable; All time keeps this fixture
+    // visible independently of the machine's current day/month.
+    await $('.usage-period-btn[data-period="allTime"]').click()
     const row = $('.usage-model-group tbody tr')
     await row.waitForExist()
     await expect(row.$('td')).toHaveText(/GPT-5\.6[- ]Luna · ChatGPT plan/)
