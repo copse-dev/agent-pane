@@ -38,6 +38,16 @@ describe('settings usage panel with a lapsed Claude token', () => {
     await expect(signIn).toBeDisplayed()
     assert.equal(await signIn.getText(), 'Sign in to Claude')
 
+    // A return from the login terminal asks the main process to bypass its
+    // five-minute plan cache. The expired fixture stays expired, but its new
+    // checkedAt proves the forced IPC read reached the loader.
+    const first = await browser.execute(() => window.api.usage.getPlanUsage())
+    const cached = await browser.execute(() => window.api.usage.getPlanUsage())
+    assert.equal(cached.checkedAt, first.checkedAt)
+    await browser.pause(20)
+    const fresh = await browser.execute(() => window.api.usage.getPlanUsage(true))
+    assert.notEqual(fresh.checkedAt, first.checkedAt)
+
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-token-expired.png')
   })
