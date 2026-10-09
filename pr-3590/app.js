@@ -52663,7 +52663,7 @@ function renderClassifierTable(host, rows, allTime) {
   const heading = document.createElement("h4");
   heading.textContent = "Classifiers";
   section.append(heading);
-  if (allTime || rows.length === 0) {
+  if (allTime || !rows || rows.length === 0) {
     const empty = document.createElement("p");
     empty.className = "usage-empty";
     empty.textContent = allTime ? "Classifier calls are listed for the day, month and 90-day windows only." : "No classifier usage in this period.";
