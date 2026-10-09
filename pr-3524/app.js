@@ -73134,6 +73134,7 @@ function mountSettingsDialog(store2, api2) {
 
           <div class="settings-buttons">
             <span id="settings-save-status" role="alert" hidden></span>
+            <button type="button" id="settings-load-retry" class="ui-btn ui-btn-secondary" hidden>Retry</button>
             <button type="submit" class="ui-btn ui-btn-primary">Save</button>
             <button type="button" id="settings-cancel" class="ui-btn ui-btn-secondary">Cancel</button>
           </div>
@@ -73171,6 +73172,7 @@ function mountSettingsDialog(store2, api2) {
   );
   const form = qsRequired(overlay, "form");
   const status = qsRequired(overlay, "#settings-save-status");
+  const loadRetry = qsRequired(overlay, "#settings-load-retry");
   const saveButton = qsRequired(form, 'button[type="submit"]');
   const closeButton = qsRequired(overlay, "#settings-close");
   const body = qsRequired(overlay, ".settings-body");
@@ -73340,6 +73342,14 @@ function mountSettingsDialog(store2, api2) {
     modelTarget = target.modelTarget;
     nav.reset(target.section);
     packs.setDetail(target.pluginDetail);
+    loadSnapshot(mine);
+  });
+  loadRetry.addEventListener("click", () => {
+    if (!snapshot && !loadRetry.hidden) loadSnapshot(openGeneration);
+  });
+  function loadSnapshot(mine) {
+    status.hidden = true;
+    loadRetry.hidden = true;
     void (async () => {
       const values = await api2.settings.getSnapshot();
       if (mine !== openGeneration || !isSettingsDialogOpen()) return;
@@ -73359,8 +73369,9 @@ function mountSettingsDialog(store2, api2) {
       if (mine !== openGeneration || !isSettingsDialogOpen()) return;
       status.textContent = `Could not load settings: ${errorMessage(error62)}`;
       status.hidden = false;
+      loadRetry.hidden = snapshot !== null;
     });
-  });
+  }
   overlay.addEventListener("settings-reveal-model", () => {
     const target = consumeSettingsOpenTarget();
     modelTarget = target.modelTarget;
