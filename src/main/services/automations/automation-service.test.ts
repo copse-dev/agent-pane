@@ -625,7 +625,7 @@ describe('AutomationService', () => {
         schedule,
         first,
         threads,
-        triggerNext: async () => {
+        triggerNext: async (): Promise<AutomationTriggerEvent> => {
           await service.tick()
           const event = events.at(-1)
           assert.ok(event)
