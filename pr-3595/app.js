@@ -84755,6 +84755,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
   }
   function captureListScrollAnchor() {
+    if (list.scrollTop <= 0) return null;
     const listRect = list.getBoundingClientRect();
     for (const row2 of list.querySelectorAll(".activity-row")) {
       const rowKey2 = row2.dataset["rowKey"];
@@ -96159,7 +96160,7 @@ function bindSelectionQuote(transcript, actions) {
     class: "transcript-selection-reply",
     placeholder: "Reply\u2026",
     "aria-label": "Reply to selected text",
-    rows: "2"
+    rows: "1"
   });
   input2.setAttribute("aria-keyshortcuts", "Enter Meta+Enter Control+Enter");
   const sendLabel = el("span", {}, "Send");
@@ -96198,6 +96199,11 @@ function bindSelectionQuote(transcript, actions) {
   let reservedSpace = false;
   let scrollingTo = null;
   const hasDraft = () => input2.value.length > 0 || sending;
+  const resizeInput = () => {
+    input2.style.height = "auto";
+    input2.style.height = `${String(Math.min(input2.scrollHeight, 200))}px`;
+    if (!popup.hidden) position2();
+  };
   const updateControls = () => {
     input2.disabled = sending;
     sendButton.disabled = sending || !input2.value.trim();
@@ -96221,6 +96227,7 @@ function bindSelectionQuote(transcript, actions) {
       highlight.clear();
     }
     input2.value = "";
+    input2.style.height = "";
     status.hidden = true;
     status.textContent = "";
     sending = false;
@@ -96301,6 +96308,7 @@ function bindSelectionQuote(transcript, actions) {
     }
     if (text2 !== selectedText) {
       input2.value = "";
+      input2.style.height = "";
       status.hidden = true;
       revision++;
     }
@@ -96354,6 +96362,7 @@ function bindSelectionQuote(transcript, actions) {
       dismiss();
     } else {
       updateControls();
+      resizeInput();
     }
   });
   input2.addEventListener("copy", (event) => {
