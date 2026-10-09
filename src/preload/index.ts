@@ -1576,6 +1576,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:worktree-attachment', projectId, threadId),
     reattachWorktree: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:reattach-worktree', projectId, threadId),
+    restoreWorktree: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:restore-worktree', projectId, threadId),
     promptState: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:prompt-state', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>

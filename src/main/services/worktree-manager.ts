@@ -413,7 +413,20 @@ export function expectedThreadWorktreePath(projectId: string, threadId: string):
 /** A repo-controlled symlink must not turn a checkout grant into a host-directory grant. */
 async function assertManagedWorktreePath(projectId: string, path: string): Promise<void> {
   const expectedParent = join(worktreesRoot(), projectId)
-  if ((await realpath(dirname(path))) !== expectedParent) {
+  const parent = await realpath(dirname(path)).catch((error: unknown) => {
+    if (ownErrorCode(error) === 'ENOENT') return null
+    throw error
+  })
+  if (parent === null) {
+    const parentStat = await lstat(dirname(path)).catch((error: unknown) => {
+      if (ownErrorCode(error) === 'ENOENT') return null
+      throw error
+    })
+    if (parentStat?.isSymbolicLink()) {
+      throw new Error('Managed worktree parent must not be a dangling symlink')
+    }
+  }
+  if (parent !== null && parent !== expectedParent) {
     throw new Error('Managed worktree parent is redirected outside its configured project path')
   }
   const stat = await lstat(path).catch((error: unknown) => {
@@ -1442,7 +1455,18 @@ export async function inspectThreadWorktreeAttachment(
   input: ValidateWorktreeInput,
 ): Promise<ThreadWorktreeAttachment> {
   const observedAt = reattachGeneration
-  const validated = await validateThreadWorktreeState(input)
+  let validated: ValidatedThreadWorktreeState
+  try {
+    validated = await validateThreadWorktreeState(input)
+  } catch (error) {
+    if (!(error instanceof MissingThreadWorktreeError)) throw error
+    const projectRoot = (await repositoryLocation(input.projectRoot)).repositoryRoot
+    return {
+      state: 'missing',
+      branch: input.worktree.branch,
+      reason: await missingWorktreeRestoreReason(projectRoot, input),
+    }
+  }
   if (validated.branch) return { state: 'attached' }
   try {
     const recovery = await activeGitRecovery(validated.gitDir)
@@ -1458,6 +1482,66 @@ export async function inspectThreadWorktreeAttachment(
   } finally {
     releaseDetachedWorktreeRoot(validated.root, observedAt)
   }
+}
+
+/** A deleted checkout is recoverable only from its own retained branch, never its base. */
+async function missingWorktreeRestoreReason(
+  projectRoot: string,
+  input: ValidateWorktreeInput,
+): Promise<string | null> {
+  await assertBranchName(projectRoot, input.worktree.branch, 'Thread branch')
+  if (!(await resolveCommit(projectRoot, branchRef(input.worktree.branch)))) {
+    return 'The saved branch is no longer available. Restore it in the repository before retrying.'
+  }
+  const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+  for (const record of await listRecords(projectRoot)) {
+    if (sameWorktreePath(record.path, target)) {
+      if (record.locked !== null) return 'This worktree is locked. Unlock it before restoring.'
+    } else if (record.branch === input.worktree.branch) {
+      return `The saved branch is already checked out at ${record.path}.`
+    }
+  }
+  return null
+}
+
+/** Explicit thread recovery. Existing paths, redirected parents and unavailable branches fail closed. */
+export async function restoreMissingThreadWorktree(
+  input: ValidateWorktreeInput,
+): Promise<ThreadWorktree> {
+  const projectRoot = (await repositoryLocation(input.projectRoot)).repositoryRoot
+  return runSerialized(`worktree-manager:${projectRoot}`, async () => {
+    try {
+      await validateThreadWorktreeState(input)
+      throw new Error('Thread worktree already exists')
+    } catch (error) {
+      if (!(error instanceof MissingThreadWorktreeError)) throw error
+    }
+    const reason = await missingWorktreeRestoreReason(projectRoot, input)
+    if (reason) throw new Error(reason)
+    const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+    // lstat also catches a dangling symlink that realpath reported as missing.
+    const existing = await lstat(target).catch((error: unknown) => {
+      if (ownErrorCode(error) === 'ENOENT') return null
+      throw error
+    })
+    if (existing) throw new Error('Restore destination already exists; its files were preserved')
+    const records = await listRecords(projectRoot)
+    const stale = records.some((record) => sameWorktreePath(record.path, target))
+    await prepareManagedWorktreeDestination(input.projectId, target)
+    const added = await git(
+      projectRoot,
+      ['worktree', 'add', ...(stale ? ['--force'] : []), target, input.worktree.branch],
+      undefined,
+      [target],
+    )
+    if (added.code !== 0) {
+      await rmdir(target).catch(() => undefined)
+      throw commandFailure('Cannot restore thread worktree', added, input.worktree.branch)
+    }
+    const restored = activeWorktreeMetadata(input.worktree, await realpath(target))
+    await validateThreadWorktree({ ...input, worktree: restored })
+    return restored
+  })
 }
 
 async function isAncestor(cwd: string, ancestor: string, descendant: string): Promise<boolean> {
