@@ -35,6 +35,7 @@ import {
 import {
   archiveThread,
   deleteThread,
+  isThreadArchived,
   openNewThread,
   setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
@@ -766,6 +767,20 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // Only the active project's in-memory thread list is mutable here; other
     // projects' rows are cache-backed until switched.
     if (projectId !== store.getState().activeProjectId || archivingThreads.has(threadId)) return
+    // Archiving takes a thread's side chats with it, and would hide a running one
+    // without stopping its run.
+    const runningSideChat = store
+      .getState()
+      .threads.some(
+        (t) =>
+          t.sideChat?.parentThreadId === threadId && !isThreadArchived(t) && t.status === 'running',
+      )
+    if (runningSideChat) {
+      showToast('Wait for this chat’s side chat to finish before archiving it.', {
+        variant: 'error',
+      })
+      return
+    }
     archivingThreads.add(threadId)
     try {
       await flushProjectThreads(api, projectId, store.getState().threads)

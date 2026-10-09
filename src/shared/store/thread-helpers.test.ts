@@ -23,6 +23,7 @@ import {
   updateToolCall,
   applyPreparedThreadCheckout,
   setThreadTitle,
+  setThreadStatus,
 } from './thread-helpers.ts'
 import type { AppStore } from './store.ts'
 import { buildSideChatThread } from '@copse/thread-store/side-chat.ts'
@@ -865,6 +866,20 @@ describe('archiveThread', () => {
 
       assert.equal(isThreadArchived(getThreadById(store, side) ?? failMissing()), true)
       assert.equal(store.getState().activeThreadId, second)
+    })
+
+    it("leaves a running side chat out of its parent's archive", () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      createThread(store)
+      const side = withSideChat(store, first)
+      setThreadStatus(store, side, 'running')
+
+      archiveThread(store, first)
+
+      assert.equal(isThreadArchived(getThreadById(store, first) ?? failMissing()), true)
+      assert.equal(isThreadArchived(getThreadById(store, side) ?? failMissing()), false)
     })
 
     it('returns focus to the parent when the active side chat is archived, leaving the parent alone', () => {

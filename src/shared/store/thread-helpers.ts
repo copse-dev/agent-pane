@@ -381,11 +381,12 @@ export function archiveThread(
   const now = persisted?.archivedAt ?? Date.now()
   // Archiving a thread takes its side chats with it: they only make sense beside
   // their parent. Archiving a side chat alone leaves the parent untouched. A side
-  // chat never owns a checkout, so only the archived thread itself carries the
-  // persisted worktree retirement.
+  // chat still running is left out, since archiving would hide its run without
+  // stopping it. A side chat never owns a checkout, so only the archived thread
+  // itself carries the persisted worktree retirement.
   const updated = threads.map((t) => {
     if (t.id !== id) {
-      return t.sideChat?.parentThreadId === id && !isThreadArchived(t)
+      return t.sideChat?.parentThreadId === id && !isThreadArchived(t) && t.status !== 'running'
         ? { ...t, archivedAt: now, updatedAt: now }
         : t
     }
