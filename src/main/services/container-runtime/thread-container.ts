@@ -1877,9 +1877,7 @@ async function runThreadInContainerLeased(
     [request.provider, request.acp, request.hostInference].filter((value) => value !== undefined)
       .length !== 1
   ) {
-    throw new Error(
-      'Choose exactly one model provider or coding agent for the run',
-    )
+    throw new Error('Choose exactly one model provider or coding agent for the run')
   }
   if (request.hostInference && !request.egressAllowlist.includes(HOST_INFERENCE_TARGET))
     throw new Error('Host inference target is not in the egress allowlist')
