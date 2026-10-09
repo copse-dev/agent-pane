@@ -1623,7 +1623,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 you to apply. Built-in models infer on the desktop; their keys and sign-in tokens stay there. When the run
                 installs dependencies (on by default, per run), it can reach the npm registry, GitHub and
                 Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
-                External ACP agents run in the container with their selected API key, or, if you opt in
+                External coding agents run in the container with their selected API key, or, if you opt in
                 per run, your Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>

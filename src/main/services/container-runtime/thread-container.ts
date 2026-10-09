@@ -1878,7 +1878,7 @@ async function runThreadInContainerLeased(
       .length !== 1
   ) {
     throw new Error(
-      'A run needs exactly one provider description, host inference provider or ACP agent',
+      'Choose exactly one model provider or coding agent for the run',
     )
   }
   if (request.hostInference && !request.egressAllowlist.includes(HOST_INFERENCE_TARGET))
