@@ -2544,6 +2544,17 @@ summary.pr-check-group-heading::-webkit-details-marker {
 .pr-viewer-files:empty {
   display: none;
 }
+.pr-auth-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  max-width: 34rem;
+  line-height: var(--line-height-base);
+}
+.pr-auth-hint {
+  color: var(--text-muted);
+}
 .pr-viewer-repo-line {
   display: flex;
   align-items: center;
