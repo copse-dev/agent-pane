@@ -5,7 +5,11 @@
 `copse-panel` (branded **Copse**) is one product: an Electron desktop AI coding assistant. There is
 no backend service; the main process talks directly to LLM providers. Launch it with `make run`,
 which verifies Node, content-addresses dependency and build inputs, validates the complete `dist/`
-outputs, and then starts the app. For everything else prefer the scripts in
+outputs, and then starts the app. That is for a human terminal: an agent running inside Copse must
+build with `make build` and open the branch through the `launch_gui_app` tool with an isolated
+`COPSE_DIR`, as described in
+[launching Copse from a Copse agent session](docs/agent-development.md#launching-copse-from-a-copse-agent-session).
+For everything else prefer the scripts in
 `package.json` (`dev`, `build`, `start`, `typecheck`, `lint`, `format:check`, `test`, `test:e2e`,
 `check:local`, `check`) rather than inventing parallel commands.
 

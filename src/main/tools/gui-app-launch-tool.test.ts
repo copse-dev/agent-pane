@@ -11,12 +11,12 @@ describe('launch_gui_app tool', () => {
     const parsed = launchGuiAppTool.parameters.parse({
       target: '/Applications/Safari.app',
       args: ['--foo'],
-      env: { COPSE_PANEL_USER_DATA: '/tmp/x' },
+      env: { COPSE_DIR: '/tmp/x' },
       new_instance: true,
     })
     assert.equal(parsed.target, '/Applications/Safari.app')
     assert.deepEqual(parsed.args, ['--foo'])
-    assert.equal(parsed.env?.['COPSE_PANEL_USER_DATA'], '/tmp/x')
+    assert.equal(parsed.env?.['COPSE_DIR'], '/tmp/x')
     assert.equal(parsed.new_instance, true)
   })
 
