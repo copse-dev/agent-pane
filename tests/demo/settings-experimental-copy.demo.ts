@@ -55,6 +55,7 @@ describe('browser-hosted Experimental settings copy', () => {
     const hint = await fieldset.$('.field-hint').getText()
     assert.match(hint, /above 50 on the Artificial Analysis Intelligence Index/)
     assert.match(hint, /Other models always show the full thread/)
+    assert.match(hint, /keeps all assistant messages and screenshots visible/)
 
     await saveElementScreenshot(CONCISE_FIELDSET, 'settings-experimental-concise-threads.png')
   })

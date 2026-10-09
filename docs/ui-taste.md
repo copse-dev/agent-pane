@@ -1559,3 +1559,12 @@ is approved for browsing. Data URL prototypes have no network access. Ordinary p
 including user-opened local development servers, retain their server's CSP. Bundle
 prototype assets locally; see [browser network policy](browser-network-policy.md) for
 the boundary and tests.
+
+### Concise thread content
+
+Concise view hides tool cards, reasoning and terminal references for eligible models, while
+keeping every assistant message visible, including progress text and answers that carry audit
+calls. Starting a tool, completing a turn or adding a later user/assistant message must not remove
+previously visible prose. Only bubbles with no user-facing content collapse. Produced images,
+visual evidence, canvas previews and user-input cards remain visible. Expanding a turn restores
+its ordinary tool and reasoning disclosures; full view is unchanged.

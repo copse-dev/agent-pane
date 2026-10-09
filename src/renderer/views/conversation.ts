@@ -3747,7 +3747,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // selector deliberately checks the live DOM, so a retained subagent card or
     // a canvas preview added later makes the bubble visible again automatically.
     msgEl.classList.toggle('msg-tool-run-member', isRunMember)
-    // Tool calls arriving mid-stream turn a concise bubble's text into narration.
+    // Refresh compact tool activity without changing assistant text visibility.
     const message = activeThread?.messages.find((m) => m.id === msgId)
     if (message) syncConciseMessageClasses(msgEl, message, conciseEnabledFor(activeThread, msgId))
 
