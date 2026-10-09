@@ -114,4 +114,16 @@ describe('release package invariants', () => {
     assert.match(afterPack, /repairVersionedMacosFrameworks/)
     assert.match(afterPack, /xcodebuildmcp[\s\S]*Frameworks/)
   })
+
+  it('prepares a signed vault helper that runs in either macOS package', () => {
+    const prepareVault = readFileSync(resolve('scripts/prepare-profile-vault.mts'), 'utf8')
+    const vaultSource = readFileSync(resolve('scripts/lib/profile-vault-source.mts'), 'utf8')
+    assert.match(vaultSource, /PROFILE_VAULT_ARCHITECTURES = \['arm64', 'x86_64'\] as const/)
+    assert.match(prepareVault, /PROFILE_VAULT_ARCHITECTURES\.map/)
+    assert.match(prepareVault, /'\/usr\/bin\/lipo', \['-create', \.\.\.slices, '-output', output\]/)
+    assert.match(prepareVault, /'\/usr\/bin\/lipo', \[output, '-verify_arch', architecture\]/)
+    const sign = prepareVault.indexOf("'/usr/bin/codesign'")
+    const combine = prepareVault.indexOf("'/usr/bin/lipo', ['-create'")
+    assert.ok(sign > combine, 'the combined universal helper must be signed after lipo')
+  })
 })

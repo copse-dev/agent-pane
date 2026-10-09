@@ -1,4 +1,5 @@
 import type { ChatGptPlanStatus } from './types/chatgpt-plan.ts'
+import type { ProfileVaultStatus } from './types/profile-vault.ts'
 import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
@@ -38,6 +39,8 @@ export interface DemoScenario {
   settings: Readonly<Record<string, unknown>>
   /** Optional read-only PR showcase data for the browser demo's PR panel. */
   pullRequests?: GhPrDetails[]
+  /** Static native-vault state for browser demonstrations; never unlocks real credentials. */
+  profileVault?: ProfileVaultStatus
   /**
    * A recorded turn the demo can replay when its prompt is submitted. Scenarios
    * without one are static fixtures for visual tests; a scenario with one is a
@@ -1655,6 +1658,44 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         updatedAt: FIXED_TIME - 60_000,
       },
     ],
+  },
+  {
+    id: 'vault-setup',
+    label: 'Saved-secret encryption: migration pending',
+    project: project('demo-vault-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [],
+    profileVault: {
+      state: 'disabled',
+      enabled: false,
+      available: true,
+      recovery: 'not-backed-up',
+      automatic: true,
+      migrationFailed: true,
+      migrationBlocker: 'saved API key “openai”',
+    },
+  },
+  {
+    id: 'vault-locked',
+    label: 'Saved-secret encryption: locked',
+    project: project('demo-vault-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [],
+    profileVault: { state: 'locked', enabled: true, available: true, recovery: 'not-backed-up' },
+  },
+  {
+    id: 'vault-verified',
+    label: 'Saved-secret encryption: verified',
+    project: project('demo-vault-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [],
+    profileVault: {
+      state: 'unlocked',
+      enabled: true,
+      available: true,
+      recovery: 'verified',
+      requireAuth: false,
+    },
   },
   {
     id: 'settings-footer',

@@ -2,6 +2,7 @@ import { createStorageMaintenancePanel } from './storage-maintenance-panel.ts'
 import { createSourcesSection } from './settings/sources-section.ts'
 import { skillsSourcesMarkup } from './settings-sources-skills.ts'
 import { makeSourceRow } from './settings/source-row.ts'
+import { createProfileVaultSection } from './settings-profile-vault.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
@@ -1293,10 +1294,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="storage">
             <h3>Storage</h3>
             <p class="settings-section-desc">
-              What Copse keeps on disk for each local project, and what it costs. Nothing here
-              changes how the agent behaves — it is where you go to see what has accumulated and
-              reclaim space.
+              Protect saved credentials, inspect what Copse keeps on disk, and reclaim project storage.
             </p>
+
+            <div id="settings-profile-vault-host" class="settings-mount"></div>
 
             <label class="storage-project-field">
               <span>Project</span>
@@ -1814,6 +1815,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       'Hide their models across OpenRouter, direct providers, and agents with a named model. Saved selections from blocked makers cannot run.',
     ),
     makerBlockList,
+  )
+
+  qsRequired(overlay, '#settings-profile-vault-host').append(
+    createProfileVaultSection(api.profileVault),
   )
 
   const ghCliSection = createGhCliSection(api)

@@ -1172,6 +1172,23 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             : [],
         }),
     },
+    profileVault: {
+      status: () =>
+        resolved(
+          scenario.profileVault ?? {
+            state: 'unavailable',
+            enabled: false,
+            available: false,
+            recovery: 'not-backed-up',
+          },
+        ),
+      // Native authentication is deliberately not simulated by the browser demo.
+      run: () =>
+        resolved({
+          ok: false,
+          reason: 'Native authentication requires the desktop app. No credentials were changed.',
+        }),
+    },
     settings: {
       getSnapshot: () => {
         const values: Record<string, unknown> = Object.fromEntries(settings)

@@ -45,7 +45,7 @@ import { registerBrowserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
 import { listSkills, listModelInvocableSkills } from './skills/skills-registry.ts'
-import { getSetting, resolveApiKey } from './storage/settings.ts'
+import { getSetting, resolveApiKeyIfUnlocked } from './storage/settings.ts'
 import { isGhAvailable } from './tool-availability.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,
@@ -232,7 +232,7 @@ export function createRegistry(): ToolRegistry {
 
 /** Keep the OpenAI-backed image tool aligned with live credential changes. */
 export function syncImageGenerationTools(registry: ToolRegistry): void {
-  if (resolveApiKey('openai')) {
+  if (resolveApiKeyIfUnlocked('openai')) {
     if (!registry.has(IMAGE_GEN_TOOL_NAME)) registry.register(imageGenTool)
   } else {
     registry.unregister(IMAGE_GEN_TOOL_NAME)
@@ -493,7 +493,7 @@ export function syncReadTerminalTools(registry: ToolRegistry): void {
 export function syncParallelSearchTools(registry: ToolRegistry): void {
   const available =
     getDefaultPluginRegistry().isEnabled(PARALLEL_SEARCH_PLUGIN_ID) &&
-    resolveApiKey(PARALLEL_SEARCH_PROVIDER_ID) !== null
+    resolveApiKeyIfUnlocked(PARALLEL_SEARCH_PROVIDER_ID) !== null
   if (available) {
     if (!registry.has(PARALLEL_SEARCH_TOOL_NAME)) registry.register(parallelSearchTool)
   } else {
@@ -540,7 +540,7 @@ export function pluginEnableRefusal(pluginId: string, enabled: boolean): string 
   if (
     enabled &&
     pluginId === PARALLEL_SEARCH_PLUGIN_ID &&
-    resolveApiKey(PARALLEL_SEARCH_PROVIDER_ID) === null
+    resolveApiKeyIfUnlocked(PARALLEL_SEARCH_PROVIDER_ID) === null
   ) {
     return 'Add a Parallel API key before enabling copse.parallel-search.'
   }
