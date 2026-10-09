@@ -152,7 +152,8 @@ export async function promoteSideChat(
         excludeMessageIds: queuedMessageIds(parent),
       })
     : null
-  const own = buildForkedThread(side)
+  // A follow-up still queued in the side chat was never sent, so it is not history yet.
+  const own = buildForkedThread(side, { excludeMessageIds: queuedMessageIds(side) })
   const base = own ?? prefix
   if (!base) {
     const { sideChat: _link, ...detached } = side

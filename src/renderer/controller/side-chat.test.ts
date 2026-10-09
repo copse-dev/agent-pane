@@ -210,6 +210,29 @@ test('promoting a side chat makes a thread of the parent slice plus its own turn
   assert.ok(answerId)
 })
 
+test('promoting a side chat leaves out a follow-up still queued behind its run', async () => {
+  const { store, parentId } = seed()
+  const { api } = fakeApi()
+  const id = await startSideChat(store, api, parentId)
+  assert.ok(id)
+  addMessage(store, id, 'user', 'Why?')
+  addMessage(store, id, 'assistant', 'Because.')
+  const queuedId = addMessage(store, id, 'user', 'And then?')
+  enqueueUserMessage(store, id, {
+    messageId: queuedId,
+    payload: { content: 'And then?' },
+    createdAt: 1,
+  })
+
+  const promotedId = await promoteSideChat(store, api, id)
+
+  assert.ok(promotedId)
+  assert.deepEqual(
+    thread(store, promotedId).messages.map((m) => m.content),
+    ['Why is it flaky?', 'A race.', 'Why?', 'Because.'],
+  )
+})
+
 test('promoting an empty side chat carries the parent slice and seeds from the parent', async () => {
   const { store, parentId, answerId } = seed()
   const { api, forks } = fakeApi()
