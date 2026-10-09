@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { projectStoreNamespaceDir } from './project-namespace.ts'
 import { storageSet } from './storage.ts'
-import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithWorkspaceRoot, setWorkspaceRootForTest } from '../workspace.ts'
 
 const cleanups: Array<() => void> = []
 
@@ -155,5 +155,24 @@ describe('projectStoreNamespaceDir', () => {
     const stray = '/repos/unknown'
 
     assert.equal(projectStoreNamespaceDir(base, stray), join(base, legacyName(stray)))
+  })
+
+  // A run scoped to B's root (runWithWorkspaceRoot) while A is the active
+  // project: the scoped root is B's, so the id must be B's too.
+  it("keys a root scoped with runWithWorkspaceRoot by that root's project", () => {
+    const base = tempBase()
+    const rootA = '/repos/alpha'
+    const rootB = '/repos/beta'
+    openProject('project-a', rootA)
+    storageSet('projects', [
+      { id: 'project-a', path: rootA, name: 'alpha' },
+      { id: 'project-b', path: rootB, name: 'beta' },
+    ])
+
+    const scoped = runWithWorkspaceRoot(rootB, () => [
+      projectStoreNamespaceDir(base),
+      projectStoreNamespaceDir(base, rootB),
+    ])
+    assert.deepEqual(scoped, [join(base, 'project-b'), join(base, 'project-b')])
   })
 })

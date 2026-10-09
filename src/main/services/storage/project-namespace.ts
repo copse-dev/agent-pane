@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { getActiveProjectId, getActiveProjectRoot, getProjectIdForRoot } from '../workspace.ts'
+import {
+  getActiveProjectId,
+  getActiveProjectRoot,
+  getProjectIdForRoot,
+  getProjectRoot,
+} from '../workspace.ts'
 
 /**
  * Per-project directory name for the small feature stores (knowledge, long
@@ -51,9 +56,15 @@ export function projectStoreNamespaceDir(
 ): string {
   if (!root) return join(baseDir, 'shared')
 
+  // Key by the project that owns `root`. The active project's id is only a
+  // fallback for its own root when that project has no persisted path; a
+  // `runWithWorkspaceRoot` scope can make another project's root "active".
   const activeId = getActiveProjectId()
   const projectId =
-    activeId !== null && root === getActiveProjectRoot() ? activeId : getProjectIdForRoot(root)
+    getProjectIdForRoot(root) ??
+    (activeId !== null && getProjectRoot(activeId) === null && root === getActiveProjectRoot()
+      ? activeId
+      : null)
   // No id to key by (headless runs scope by workspace root alone): keep the
   // legacy name so those profiles neither migrate nor lose their data.
   if (!projectId) return join(baseDir, legacyPathNamespace(root))
