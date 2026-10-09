@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { mock, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
@@ -723,6 +723,37 @@ test('an abandoned switch settles its waiter instead of hanging', async () => {
   releaseWorkspace()
 
   assert.equal(await opened, true)
+  assert.equal(store.getState().activeProjectId, 'a')
+})
+
+// A switch that throws after dispatch (here a failed thread load) never applies
+// the target project, so an activateAndWait caller must see the failure rather
+// than a resolved activation.
+test('a switch whose thread load fails rejects its waiter instead of resolving', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  const api = makeApi({
+    workspaceOpen: async () => '/b',
+    workspaceSet: async (path) => path,
+    loadProjectThreads: async (projectId) => {
+      if (projectId === 'a') return [thread('t-a')]
+      throw new Error('thread load failed')
+    },
+  })
+
+  const logged = mock.method(console, 'error', () => undefined)
+  try {
+    await assert.rejects(addProject(store, api), /thread load failed/)
+  } finally {
+    logged.mock.restore()
+  }
   assert.equal(store.getState().activeProjectId, 'a')
 })
 

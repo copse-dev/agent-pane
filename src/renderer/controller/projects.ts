@@ -728,9 +728,15 @@ function activate(
   ).catch((error: unknown) => {
     // A switch that throws (a failed thread load, say) never reaches endSwitch.
     // Retire it anyway, or its hold on navigation outlives it and drops every
-    // later write until the next switch.
-    endSwitch(gen, id)
-    throw error
+    // later write until the next switch. Its waiter fails rather than resolving:
+    // the target project was never applied.
+    if (pendingSwitch?.gen === gen) clearPendingSwitch()
+    if (gen === switchGeneration) {
+      settleActivationWaiter(id, error instanceof Error ? error : new Error(String(error)))
+    }
+    // `activate` discards this promise, so a rethrow would only become an
+    // unhandled rejection; waiting callers already received the error above.
+    console.error('[projects] project switch failed', error)
   })
 }
 
