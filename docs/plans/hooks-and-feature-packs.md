@@ -155,7 +155,9 @@ revisiting this document, not silently diverging in an implementation PR.
    foreign defaults for public-release safety: a crash, timeout, spawn failure, or invalid
    response denies a gated action. Cursor's `failClosed: true` remains honoured;
    `failClosed: false` is the explicit per-hook compatibility opt-out, while an omitted or
-   invalid value resolves closed. Claude has no equivalent field, so its command failures
+   invalid value resolves closed. A Cursor gate hook that exits non-zero is a failure even
+   if it printed a response (only an explicit `deny` in that output is honoured), matching
+   the `sessionStart` reading. Claude has no equivalent field, so its command failures
    resolve closed and users disable an incompatible hook set with the global, off-by-default
    Settings → Sources toggle. Claude exit-code-2 remains an explicit deny under its vendor
    contract. The Copse dialect defaults `onFailure` to `closed` and allows an explicit
@@ -189,6 +191,8 @@ revisiting this document, not silently diverging in an implementation PR.
     fixed 5s would kill real hooks. Blocking host waits pause the idle deadline and the
     absolute hard deadline. Ordinary model streaming and tool execution still spend the
     hard deadline, so only time explicitly registered as waiting on the host is excluded.
+    A per-hook timeout is clamped to `setTimeout`'s range (2^31−1 ms) at the spawn, and a
+    timeout kills the hook's whole process group (bug-hunt #14/#37).
     Async over-cap dispatches
     (concurrency cap ~8/thread) go
     into a pending-dispatch FIFO (deferred spawn, still detached, no ordering promises;

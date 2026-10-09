@@ -209,7 +209,3 @@ export function decideBrowserNavigation(input: BrowserNavInput): BrowserNavDecis
   }
   return { action: 'prompt', origin, reasons: ['new public web origin requires approval'] }
 }
-
-export function formatBrowserPromptBody(origin: string, url: string): string {
-  return `The agent wants to open a browser page at:\n\n${url}\n\nOrigin: ${origin}`
-}

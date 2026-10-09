@@ -48,11 +48,13 @@ function invocationTokenPattern(name: string): string {
   return `\\/${escapeRegExp(name)}(?![a-z0-9-])`
 }
 
+/** An inline `/name` must start the text or follow whitespace, so `src/review` is a path. */
+function inlineInvocationPattern(name: string): RegExp {
+  return new RegExp(`(^|\\s)${invocationTokenPattern(name)}`)
+}
+
 function stripInvocationToken(text: string, name: string): string {
-  return text
-    .replace(new RegExp(invocationTokenPattern(name)), '')
-    .replace(/\s+/g, ' ')
-    .trim()
+  return text.replace(inlineInvocationPattern(name), '$1').replace(/\s+/g, ' ').trim()
 }
 
 /** Parse a leading `/name` prefix, without checking that the name is known. */
@@ -88,8 +90,7 @@ export function resolveInvocation(
 
   const sorted = [...invocables].sort((a, b) => b.name.length - a.name.length)
   for (const { name, kind } of sorted) {
-    const re = new RegExp(`(?:^|\\s)${invocationTokenPattern(name)}`)
-    if (!re.test(trimmed)) continue
+    if (!inlineInvocationPattern(name).test(trimmed)) continue
     return { name, kind, remainder: stripInvocationToken(trimmed, name) }
   }
   return null

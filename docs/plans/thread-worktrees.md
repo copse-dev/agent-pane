@@ -74,9 +74,11 @@ These are acceptance criteria, not implementation suggestions.
    backups, diffs, todos, hooks, model state, terminals, or background processes.
 6. The user's checkout, current branch, index, and working files are not mutated when
    an isolated worktree is allocated.
-7. Dirty seeding preserves file content, including staged, unstaged, untracked, and
+7. ~~Dirty seeding preserves file content, including staged, unstaged, untracked, and
    deleted files. V1 does not promise to preserve the staged/unstaged partition inside
-   the new worktree; the UI and tests must state that limitation.
+   the new worktree; the UI and tests must state that limitation.~~ Superseded 2026-10:
+   dirty seeding is disabled — see [Dirty checkout seeding](#dirty-checkout-seeding). A
+   new worktree always starts clean.
 8. No dirty or unmerged worktree is deleted without an explicit, itemized confirmation.
 9. Old threads and non-git projects continue in shared mode without migration work.
 10. macOS sandboxing permits normal git operations in a linked worktree without
@@ -203,7 +205,19 @@ stale-content comparison — and creating a directory destroys nothing: it canno
 overwrite a file, cannot conflict, and an empty directory has no git-status
 footprint. It still respects the pending queue, so it never lands ahead of diffs
 the user is reviewing. The sweep is left to the first op that could actually lose
-work, which is where its three subprocesses are worth paying for.
+work, which is where its `git status` is worth paying for.
+
+That sweep runs once per run of ops, not once per op (#1700). In worktree mode the
+queue remembers a sweep after which every change in `git status` was Copse-owned
+or adopted, and later ops reuse it, because Copse records every path it writes
+itself. The remembered sweep is void as soon as anything else could have written:
+an agent shell command, a background task, a terminal open on the tree, a
+`prepare_worktree` install, an MCP call, an ACP prompt, a backup restore or a new
+turn. Each of these holds or notes a lease in `worktree-writers.ts`. The sweep is
+also void when `cursorHooksEnabled` is on, when an ownership snapshot is evicted,
+and after a 10-second backstop for writers nothing can observe, such as an external
+editor. The shared checkout never reuses a sweep. The per-path stale-content
+comparison still runs for every op.
 
 The state cache mirrors `root`: `DiffQueueState.checkoutMode` is refreshed from
 the execution context whenever one is bound, because the ACP native-tool bridge
@@ -260,7 +274,7 @@ table-driven tests.
 | -------------------------------------------------- | -------------------------------------------------------------------------- |
 | Local git checkout on the resolved default branch  | Worktree                                                                   |
 | Local git checkout on a non-default branch         | Shared                                                                     |
-| Dirty default-branch checkout                      | Worktree seeded with its file content                                      |
+| Dirty default-branch checkout                      | Worktree, starting clean (dirty seeding disabled 2026-10, see below)       |
 | Not a git repository                               | Shared, with reason                                                        |
 | Default branch unresolved or HEAD detached         | Shared, with reason                                                        |
 | Repository uses submodules                         | Worktree; see [Submodules](#submodules)                                    |
@@ -339,6 +353,15 @@ Implementation requirements:
 
 ### Dirty checkout seeding
 
+**2026-10: disabled.** `canSeedFromDirtyProject` (`src/shared/git/worktree-policy.ts`)
+always returns `false`, and both allocation call sites in
+`thread-checkout-transaction.ts` pass `seedFromDirtyProject: false`. Carrying the shared
+checkout's uncommitted/untracked files into a new thread's worktree was surprising with
+no warning before send, so a new thread now always starts clean regardless of the
+project checkout's dirty state. The snapshot/restore machinery below is retained in
+`worktree-manager.ts` (and still exercised directly by its unit tests) in case seeding
+needs to come back as an explicit, opt-in choice, but no product code path triggers it.
+
 Reuse or extract the non-mutating snapshot machinery in `worktree-backup.ts`, but make
 its lifecycle thread-scoped. Tests must cover staged, unstaged, untracked, deleted,
 renamed, binary, and ignored files. Ignored files are not copied unless a configured
@@ -367,9 +390,10 @@ permission policy; the classifier is not an authorization boundary.
 
 A new linked checkout has every submodule directory empty. The allocator (and the
 restore of a retired checkout) then checks out each submodule the project checkout has
-itself initialised, at the commit the base (or, when seeding, the snapshot) records, so a
-moved submodule pointer carries over. Uncommitted edits inside the project's own
-submodules do not. `src/main/services/worktree-submodules.ts` owns this.
+itself initialised, at the commit the base records. With dirty seeding disabled, neither
+a moved submodule pointer nor edits inside the project's own submodules carry over; if
+seeding returns, the manager populates from the snapshot, so the pointer would.
+`src/main/services/worktree-submodules.ts` owns this.
 
 - **Offline, from the project's module repository.** Each submodule is cloned from
   `<common>/modules/<name>` with `clone --no-checkout --template=` (hardlinked objects,

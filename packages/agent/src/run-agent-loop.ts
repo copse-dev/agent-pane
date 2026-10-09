@@ -24,6 +24,7 @@ import {
 import type { TodoItem } from './wire-types.ts'
 import {
   DUPLICATE_TOOL_RESULT_PREFIX,
+  EXPLORE_TOOL_NAMES,
   isDuplicateExploreCall,
   nextConsecutiveExploreWithoutRead,
   normalizeExploreArgs,
@@ -705,8 +706,10 @@ async function runToolEnabledNudgeTurn(
     onHistoryTrimmed,
   } = ctx
 
-  messages.push({ role: 'user', content: nudge })
+  // Reserve first: a nudge pushed with no call to answer it is left dangling,
+  // and each later closeout attempt would stack another user message on it.
   if (!reserveLlmCall(budget)) return { answerText: '', executedTools: false }
+  messages.push({ role: 'user', content: nudge })
 
   let assistantText = ''
   const pendingToolCalls: ToolCallChunk[] = []
@@ -818,6 +821,8 @@ async function closeOpenTodosBeforeFinalize(
     const result = await registry.emit('beforeFinalize', { openTodos, attempt }, hookContext)
     const nudge = mergeBlockingOutcomes(result.outcomes).injectContext
     if (!nudge) break
+    // No LLM call left to run the turn: the nudge would never be applied.
+    if (runBudgetExhausted(ctx.budget)) break
     // `beforeFinalize` outcomes are *concatenated* rather than one winning, so
     // the applied text can span several hooks and matches no single execution
     // line. Attribute it to every hook that contributed, and record it before
@@ -1056,6 +1061,11 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
         }
         const { result, editStats, resultFormat, images, visualEvidence, appendedReminderLengths } =
           normalizeToolExecuteResult(raw)
+        // Any other tool (an edit, a shell command, an MCP call) may have changed
+        // what an earlier read returned, so re-reading after it is fresh work,
+        // not a repeat: without this, `read_file` of a range just edited with
+        // `str_replace` was refused as a duplicate for the whole window.
+        if (!EXPLORE_TOOL_NAMES.has(tc.name)) recentFingerprints.length = 0
         recentToolProgress.push(duplicate ? null : fp)
         if (recentToolProgress.length > RECENT_FINGERPRINT_WINDOW) {
           recentToolProgress.shift()

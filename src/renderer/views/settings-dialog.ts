@@ -3676,6 +3676,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     input.dataset['pluginId'] = pluginId
     input.dataset['settingKey'] = field.id
 
+    // What an emptied number field reverts to: the last value it persisted.
+    let lastNumberValue = input.value
     // Persist on change so the manifest schema is the source of truth — no
     // Save-button plumbing needed, mirroring the MCP per-server toggle.
     input.addEventListener('change', () => {
@@ -3686,6 +3688,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         }
         value = input.checked
       } else if (field.kind === 'number') {
+        // An emptied number field is not 0 (`Number('')`): put the stored value back.
+        if (input.value.trim() === '' || !Number.isFinite(Number(input.value))) {
+          input.value = lastNumberValue
+          return
+        }
+        lastNumberValue = input.value
         value = Number(input.value)
       }
       void api.plugins.setSetting(pluginId, field.id, value).catch(() => {
@@ -4965,7 +4973,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : DEFAULT_THEME_PREFERENCE
       // `theme` is the concrete value panes render; `system` resolves against the OS.
       const theme = resolveTheme(themePreference)
-      const fontSize = parseInt(formDataString(data, 'fontSize'), 10)
+      // An emptied field is not a size; keep the current one rather than send NaN.
+      const fontSizeRaw = parseInt(formDataString(data, 'fontSize'), 10)
+      const fontSize = Number.isFinite(fontSizeRaw) ? fontSizeRaw : store.getState().fontSize
       const uiScaleField = data.get('uiScale')
       const uiScaleRaw = typeof uiScaleField === 'string' ? parseFloat(uiScaleField) : Number.NaN
       const uiScale = Number.isFinite(uiScaleRaw)

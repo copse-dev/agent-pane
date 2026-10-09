@@ -3352,10 +3352,25 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const listResizeObserver =
     typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncStickyImagePreview)
   listResizeObserver?.observe(list)
+  // A wheel-up that a nested scroller (a long code block, tool output) takes
+  // for itself leaves the transcript where it is; unpinning on it would stop
+  // autoscroll with the view still at the bottom and no jump button to resume.
+  function nestedScrollerTakesWheelUp(target: EventTarget | null): boolean {
+    for (
+      let node = target instanceof Element ? target : null;
+      node && node !== list;
+      node = node.parentElement
+    ) {
+      if (node.scrollTop <= 0 || node.scrollHeight <= node.clientHeight) continue
+      const { overflowY } = window.getComputedStyle(node)
+      if (overflowY === 'auto' || overflowY === 'scroll') return true
+    }
+    return false
+  }
   list.addEventListener(
     'wheel',
     (event) => {
-      if (event.deltaY < 0) {
+      if (event.deltaY < 0 && !nestedScrollerTakesWheelUp(event.target)) {
         userScrolledUpAt = Date.now()
         pinnedToBottom = false
         updateScrollButton()

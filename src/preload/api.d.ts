@@ -367,6 +367,7 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
@@ -1472,8 +1473,18 @@ export interface ApiClient {
   }
 }
 
+/**
+ * Local, synchronous file helpers from the preload — not IPC, so not part of
+ * `ApiClient`'s channel protocol. Absent outside Electron (browser tier, demo).
+ */
+export type FilePathBridge = {
+  /** The on-disk path of a dropped or picked `File`; '' when it has none. */
+  pathForFile: (file: File) => string
+}
+
 declare global {
   interface Window {
     api: ApiClient
+    copseFiles?: FilePathBridge
   }
 }

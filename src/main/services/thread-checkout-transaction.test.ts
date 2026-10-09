@@ -294,7 +294,7 @@ describe('first-message checkout transaction', () => {
       dirty: true,
     })
     assert.deepEqual(allocations, [
-      { baseBranch: 'copse/previous-thread', seedFromDirtyProject: true },
+      { baseBranch: 'copse/previous-thread', seedFromDirtyProject: false },
     ])
   })
 

@@ -72,7 +72,7 @@ describe('decideThreadWorktreePolicy', () => {
       {
         checkoutMode: 'worktree',
         reason: 'explicit-worktree',
-        seededFromDirtyProject: true,
+        seededFromDirtyProject: false,
         deferAllocation: false,
       },
     )
@@ -110,9 +110,9 @@ describe('decideThreadWorktreePolicy', () => {
     }
   })
 
-  it('seeds dirty project work from the selected local branch', () => {
+  it('never seeds dirty project work, regardless of branch', () => {
     const onDefault = decideThreadWorktreePolicy({ ...supported, isDirty: true })
-    assert.equal(onDefault.seededFromDirtyProject, true)
+    assert.equal(onDefault.seededFromDirtyProject, false)
 
     // The picker-selected feature branch is also the worktree base.
     const offDefault = decideThreadWorktreePolicy({
@@ -121,7 +121,7 @@ describe('decideThreadWorktreePolicy', () => {
       currentBranch: 'feature',
     })
     assert.equal(offDefault.checkoutMode, 'worktree')
-    assert.equal(offDefault.seededFromDirtyProject, true)
+    assert.equal(offDefault.seededFromDirtyProject, false)
   })
 
   it('blocks an explicit worktree choice in unsupported repositories', () => {

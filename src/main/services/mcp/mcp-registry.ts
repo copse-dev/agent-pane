@@ -69,6 +69,7 @@ import {
 import { isAppleDevelopmentProjectEnrolled } from '../apple-development/apple-development-service.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { prepareAgentPluginMcpConfigs } from '../plugins/agent-plugin-mcp-runtime.ts'
+import { withWorktreeWriter } from '../worktree-writers.ts'
 import {
   clearMcpToolPermissionTargets,
   migrateLegacyMcpToolGrants,
@@ -397,6 +398,26 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   })
 }
 
+/**
+ * Connect `client` within `ms`. A connect that fails or times out closes the
+ * client, and with it the transport: otherwise the SDK keeps initializing in the
+ * background and a stdio server's process outlives the attempt (one orphan per
+ * reload of a server that is slow to start).
+ */
+export async function connectMcpClient(
+  client: Client,
+  transport: Transport,
+  ms: number,
+  label: string,
+): Promise<void> {
+  try {
+    await withTimeout(client.connect(transport), ms, label)
+  } catch (err) {
+    await client.close().catch(() => {})
+    throw err
+  }
+}
+
 /** A configured `Authorization` header is the user's own auth; OAuth stays out of it. */
 function hasAuthorizationHeader(cfg: McpServerConfig): boolean {
   return Object.keys(cfg.headers ?? {}).some((key) => key.toLowerCase() === 'authorization')
@@ -571,13 +592,17 @@ function registerListedTools(
             : args
         let result: Awaited<ReturnType<Client['callTool']>>
         try {
-          result = await client.callTool(
-            {
-              name: tool.name,
-              arguments: isRecord(preparedArgs) ? preparedArgs : {},
-            },
-            undefined,
-            { signal },
+          // An MCP server is its own process and may write anywhere, so the
+          // call holds an unscoped worktree writer lease for its duration.
+          result = await withWorktreeWriter(null, () =>
+            client.callTool(
+              {
+                name: tool.name,
+                arguments: isRecord(preparedArgs) ? preparedArgs : {},
+              },
+              undefined,
+              { signal },
+            ),
           )
         } catch (error) {
           if (signInTargets.has(server.serverName) && isMcpSignInRequiredError(error)) {
@@ -732,8 +757,9 @@ async function connectServer(
     const created = createTransport(cfg, authProvider)
     stderrOutput = created.stderrOutput
     const client = new Client({ name: 'copse-panel', version: '0.1.0' }, { capabilities: {} })
-    await withTimeout(
-      client.connect(created.transport),
+    await connectMcpClient(
+      client,
+      created.transport,
       CONNECT_TIMEOUT_MS,
       `Connecting to "${cfg.name}"`,
     )

@@ -46,7 +46,7 @@ import type {
   DialectDiscoverOpts,
   DialectInterpretation,
 } from './dialect-adapter.ts'
-import { type HookSpawnResult } from './hook-spawn.ts'
+import { hookTimeoutMessage, type HookSpawnResult } from './hook-spawn.ts'
 import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import { isNonBlankString } from '@copse/std/nullish.ts'
@@ -900,7 +900,7 @@ function interpretPrelude(
         ...base,
         failed: true,
         parseOk: false,
-        runtimeError: `timed out after ${String(copseHookTimeoutMs / 1000)}s`,
+        runtimeError: hookTimeoutMessage(spawn),
       },
     }
   }

@@ -14,8 +14,11 @@
  * left intact so a real failed turn is not erased.
  */
 
-/** One trailing `Error: RetriableError: …` line, plus surrounding blank lines. */
-const TRAILING_RETRIABLE_ERROR_RE = /(?:\r?\n)*Error:\s*RetriableError:\s*[^\r\n]+(?:\r?\n)*$/
+/**
+ * One trailing line that *starts* with `Error: RetriableError: …`, plus surrounding blank
+ * lines. Line-anchored so a sentence that merely quotes the error keeps its text.
+ */
+const TRAILING_RETRIABLE_ERROR_RE = /(?:^|\n)\s*Error:[ \t]*RetriableError:[^\r\n]+\s*$/
 
 export function splitCursorAcpTransportNoise(text: string): {
   body: string

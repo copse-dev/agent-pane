@@ -122,4 +122,43 @@ describe('terminateProcessTree', () => {
       assert.equal(grandchildAlive, false, 'grandchild reaped via process-group kill')
     }
   })
+
+  it('still SIGKILLs the group when the leader exits but a member ignored SIGTERM', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('POSIX process groups')
+      return
+    }
+
+    // The leader dies on SIGTERM; its sleeper ignores SIGTERM (an ignored
+    // disposition survives exec) and holds the shared stdout pipe open, so the
+    // pipe closes only once the group SIGKILL reaches it.
+    const proc = spawn('/bin/sh', ['-c', "(trap '' TERM; exec sleep 30) & echo ready; wait"], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      detached: true,
+    })
+    await once(proc.stdout, 'data')
+    proc.stdout.resume()
+    const pipeClosed = once(proc.stdout, 'close')
+
+    const cancelKill = terminateProcessTree(proc, 100)
+    await once(proc, 'exit')
+    const closed = await Promise.race([
+      pipeClosed.then(() => true),
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => {
+          resolve(false)
+        }, 3_000)
+      }),
+    ])
+    cancelKill()
+    if (!closed && proc.pid !== undefined) {
+      try {
+        process.kill(-proc.pid, 'SIGKILL')
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+
+    assert.equal(closed, true, 'the member that outlived its leader is SIGKILLed')
+  })
 })
