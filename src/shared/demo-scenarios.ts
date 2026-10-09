@@ -2516,6 +2516,51 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'activity-home-read-history',
+    label: 'Activity home listing threads that finished before launch',
+    project: project('demo-activity-history-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first thread is the empty active one. Everything else is idle, read, and
+    // finished before this launch, so only the persisted write time puts it in
+    // Recently finished. Times follow the real clock because the recency window
+    // does; the last thread is older than the window and must stay out.
+    threads: [
+      {
+        id: 'demo-activity-history-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      ...(
+        [
+          ['refactor', 'Refactor auth', 'idle', 3_600_000 * 2],
+          ['flaky', 'Fix the flaky sandbox test', 'error', 3_600_000 * 30],
+          ['copy', 'Update onboarding copy', 'idle', 3_600_000 * 24 * 4],
+          // Legacy-shaped: written before lastPromptAt existed, so it only has usage.
+          ['legacy', 'Port the settings page', 'idle', 3_600_000 * 24 * 2],
+          ['ancient', 'Rename the config keys', 'idle', 3_600_000 * 24 * 30],
+        ] as const
+      ).map(([slug, title, status, ago], index) => ({
+        id: `demo-activity-history-${slug}`,
+        title,
+        status,
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 1200, outputTokens: 300 },
+        createdAt: Date.now() - ago - 60_000,
+        updatedAt: Date.now() - ago,
+        ...(slug === 'legacy' ? {} : { lastPromptAt: Date.now() - ago - 30_000 - index }),
+      })),
+    ],
+  },
+  {
     id: 'activity-home-empty',
     label: 'Activity home with nothing to list',
     project: project('demo-activity-home-empty-project'),

@@ -9,6 +9,8 @@ import {
   formatAge,
   formatAgeLong,
   RECENT_ROW_LIMIT,
+  FUTURE_SKEW_MS,
+  RECENT_WINDOW_MS,
   trackRunTimings,
   truncateText,
   UNTITLED_THREAD,
@@ -123,14 +125,14 @@ describe('deriveActivity', () => {
       group(groups, 'working').rows.map((row) => row.threadId),
       ['old-run'],
     )
-    // Failures outrank clean finishes; an idle thread with no end is not "recent".
+    // Failures outrank clean finishes; an idle thread with no end evidence is not "recent".
     assert.deepEqual(
       group(groups, 'recent').rows.map((row) => [row.threadId, row.state]),
       [['broken', 'failed']],
     )
   })
 
-  it('shows a clean finish only when this session saw it end or it completed unseen', () => {
+  it('shows a clean finish when this session saw it end, it completed unseen, or it persisted recently', () => {
     const groups = deriveActivity(
       input({
         threads: [info('watched'), info('unseen', { unreadAt: 700 }), info('stale')],
@@ -147,25 +149,92 @@ describe('deriveActivity', () => {
     )
   })
 
-  it('shows a failure only when this session saw it end or it failed unseen', () => {
-    // The stored status outlives a restart; an old error alone is not recent.
+  it('falls back to the persisted last write for threads that settled before launch', () => {
+    const now = 10 * RECENT_WINDOW_MS
     const groups = deriveActivity(
       input({
+        now,
         threads: [
-          info('watched', { status: 'error' }),
-          info('unseen', { status: 'error', unreadAt: 700 }),
-          info('stale', { status: 'error' }),
+          info('read-yesterday', { settledAt: now - 24 * 3_600_000 }),
+          info('read-edge', { settledAt: now - RECENT_WINDOW_MS }),
+          info('too-old', { settledAt: now - RECENT_WINDOW_MS - 1 }),
+          // No settledAt: a draft or the empty active thread, never prompted.
+          info('draft'),
+          // A session-seen end wins over the persisted time.
+          info('watched', { settledAt: now - 3_600_000 }),
         ],
-        runs: new Map([['watched', { startedAt: 1, endedAt: 900 }]]),
+        runs: new Map([['watched', { startedAt: 1, endedAt: now - 1000 }]]),
       }),
     )
     assert.deepEqual(
       group(groups, 'recent').rows.map((row) => [row.threadId, row.state, row.since]),
       [
-        ['watched', 'failed', 900],
+        ['watched', 'finished', now - 1000],
+        ['read-yesterday', 'finished', now - 24 * 3_600_000],
+        ['read-edge', 'finished', now - RECENT_WINDOW_MS],
+      ],
+    )
+  })
+
+  it('ignores a persisted time far in the future but tolerates small clock skew', () => {
+    const now = 10 * RECENT_WINDOW_MS
+    const groups = deriveActivity(
+      input({
+        now,
+        threads: [
+          info('skewed', { settledAt: now + FUTURE_SKEW_MS }),
+          info('bogus', { settledAt: now + FUTURE_SKEW_MS + 1 }),
+          info('way-ahead', { settledAt: now + RECENT_WINDOW_MS + 1 }),
+        ],
+      }),
+    )
+    assert.deepEqual(
+      group(groups, 'recent').rows.map((row) => row.threadId),
+      ['skewed'],
+    )
+  })
+
+  it('shows a stored failure only when seen this session or inside the window', () => {
+    // The stored status outlives a restart; an old error alone is not a fresh failure.
+    const now = 10 * RECENT_WINDOW_MS
+    const groups = deriveActivity(
+      input({
+        now,
+        threads: [
+          info('watched', { status: 'error' }),
+          info('unseen', { status: 'error', unreadAt: 700 }),
+          info('recent-stored', { status: 'error', settledAt: now - 3_600_000 }),
+          info('stale', { status: 'error', settledAt: now - RECENT_WINDOW_MS - 1 }),
+          info('no-evidence', { status: 'error' }),
+        ],
+        runs: new Map([['watched', { startedAt: 1, endedAt: now - 900 }]]),
+      }),
+    )
+    assert.deepEqual(
+      group(groups, 'recent').rows.map((row) => [row.threadId, row.state, row.since]),
+      [
+        ['watched', 'failed', now - 900],
+        ['recent-stored', 'failed', now - 3_600_000],
         ['unseen', 'failed', 700],
       ],
     )
+  })
+
+  it('folds persisted schedule runs like watched ones', () => {
+    const now = 1_000_000
+    const schedule = { id: 's', name: 'Nightly' }
+    const groups = deriveActivity(
+      input({
+        now,
+        threads: [
+          info('a', { settledAt: now - 10, schedule }),
+          info('b', { settledAt: now - 20, schedule }),
+        ],
+      }),
+    )
+    const recent = group(groups, 'recent')
+    assert.equal(recent.rows.length, 1)
+    assert.equal(recent.rows[0]?.fold?.runs.length, 2)
   })
 
   it('orders working runs newest first and puts unknown starts last', () => {
@@ -268,6 +337,36 @@ describe('deriveActivity', () => {
 })
 
 describe('collectActivityThreads', () => {
+  it('carries the persisted write time only for threads that ran', () => {
+    setThreadCacheForTest('p2', [
+      metadataOnly('cached-run', { updatedAt: 40, lastPromptAt: 30 }),
+      metadataOnly('cached-draft', { updatedAt: 50 }),
+      // Written before lastPromptAt existed: no prompt time, history on disk. It ran
+      // (usage), so it lists without its transcript being loaded.
+      metadataOnly('cached-legacy', {
+        updatedAt: 45,
+        usage: { inputTokens: 900, outputTokens: 50 },
+      }),
+    ])
+    const store = createStore({
+      projects: [
+        { id: 'p1', path: '/one', name: 'one' },
+        { id: 'p2', path: '/two', name: 'two' },
+      ],
+      activeProjectId: 'p1',
+      threads: [metadataOnly('active', { updatedAt: 60, lastPromptAt: 55 })],
+    })
+    assert.deepEqual(
+      collectActivityThreads(store).map((t) => [t.id, t.settledAt]),
+      [
+        ['active', 60],
+        ['cached-run', 40],
+        ['cached-draft', undefined],
+        ['cached-legacy', 45],
+      ],
+    )
+  })
+
   it('reads metadata from every loaded project without touching a transcript', () => {
     setThreadCacheForTest('p2', [metadataOnly('cached', { title: 'Cached run', unreadAt: 5 })])
     const store = createStore({

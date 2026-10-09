@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ThreadStatus } from '@shared/types'
 import { getSidebarThreads, projectDisplayName } from './projects.ts'
+import { sidebarHasRun, type RunSignals } from './sidebar-thread.ts'
 import type { PendingApprovalSummary } from '../views/approval-dialog.ts'
 import type { PendingQuestionSummary } from '../views/ask-user-dialog.ts'
 
@@ -26,6 +27,12 @@ export interface ActivityThread {
   status: ThreadStatus
   /** Latest completion that happened while the thread was not selected. */
   unreadAt?: number
+  /**
+   * Last persisted write to the thread: the best last-activity time that survives
+   * a restart. Only the fallback for when a settled run ended, and only set for a
+   * thread that has been prompted (see {@link persistedEndedAt}).
+   */
+  settledAt?: number
   projectId: string
   projectName: string
   /** The automation schedule that started the thread, when one did. */
@@ -86,10 +93,20 @@ export interface ActivityInput {
   approvals: readonly PendingApprovalSummary[]
   questions: readonly PendingQuestionSummary[]
   runs: ReadonlyMap<string, RunTiming>
+  /** Clock for the recency window; tests inject it. */
+  now?: number
 }
 
 /** Settled rows are a reminder, not a log: the group keeps only the latest few. */
 export const RECENT_ROW_LIMIT = 10
+/**
+ * How far back a thread that settled before this session still counts as "recent".
+ * A week keeps the group a reminder of the current stretch of work, not an archive;
+ * what is older is still one click away in the sidebar.
+ */
+export const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+/** A persisted time this far ahead of the clock is skew; any further is bad data, not recent. */
+export const FUTURE_SKEW_MS = 24 * 60 * 60 * 1000
 /** This many settled runs of one schedule fold into one row; a single run stays its own row. */
 export const SCHEDULE_FOLD_AT = 2
 /** Long enough to identify the request; the row's own CSS ellipsis does the rest. */
@@ -143,7 +160,25 @@ function questionWant(questions: readonly string[]): string {
  * first; then the recent settled runs, failures before clean finishes. A
  * thread appears once: waiting on the user outranks running.
  */
+/**
+ * When a settled thread last ended, for a run this session never watched.
+ *
+ * Falls back to the persisted last write, but only inside {@link RECENT_WINDOW_MS} (and not
+ * further ahead of the clock than {@link FUTURE_SKEW_MS})
+ * and only for a thread that was actually prompted — an untouched draft, or the
+ * empty active thread, never ran. The same window applies to a stored `error`: the
+ * status outlives restarts, so an old one is not a fresh failure, and only one
+ * inside the window (or seen this session) is shown as failed.
+ */
+function persistedEndedAt(thread: ActivityThread, now: number): number | undefined {
+  const at = thread.settledAt
+  if (at === undefined) return undefined
+  const age = now - at
+  return age <= RECENT_WINDOW_MS && age >= -FUTURE_SKEW_MS ? at : undefined
+}
+
 export function deriveActivity(input: ActivityInput): ActivityGroup[] {
+  const now = input.now ?? Date.now()
   const byId = new Map(input.threads.map((thread) => [thread.id, thread]))
 
   const needsYou: ActivityRow[] = [
@@ -208,10 +243,11 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
         ),
       )
     } else {
-      // An ended run is "recent" only when something says so: this session
-      // watched it end, or it ended unseen while another thread was open. The
-      // stored status outlives restarts, so an old error alone is not recent.
-      const endedAt = run?.endedAt ?? thread.unreadAt
+      // An ended run is "recent" when this session watched it end, it ended
+      // unseen while another thread was open, or its persisted last write is
+      // inside the recency window (a thread that finished before launch, or
+      // was already read). The stored status alone is never enough.
+      const endedAt = run?.endedAt ?? thread.unreadAt ?? persistedEndedAt(thread, now)
       if (endedAt === undefined) continue
       recent.push(
         thread.status === 'error'
@@ -298,6 +334,17 @@ export function foldScheduleRuns(
 }
 
 /**
+ * `settledAt` for a thread that ever ran; none for a draft that never did.
+ * Decided from metadata only (see {@link sidebarHasRun}), never the transcript, so
+ * threads written before `lastPromptAt` existed still list without being opened.
+ */
+function settledAtOf(thread: RunSignals): Pick<ActivityThread, 'settledAt'> {
+  return thread.updatedAt !== undefined && sidebarHasRun(thread)
+    ? { settledAt: thread.updatedAt }
+    : {}
+}
+
+/**
  * Every thread the renderer currently knows about, as metadata.
  *
  * The active project's list plus each project visited this session (the
@@ -317,6 +364,7 @@ export function collectActivityThreads(store: AppStore): ActivityThread[] {
         title: thread.title,
         status: thread.status,
         ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
+        ...settledAtOf(thread),
         projectId: project.id,
         projectName,
         ...(thread.automation
@@ -338,6 +386,7 @@ export function collectActivityThreads(store: AppStore): ActivityThread[] {
       title: carried.thread.title,
       status: carried.thread.status,
       ...(carried.thread.unreadAt !== undefined ? { unreadAt: carried.thread.unreadAt } : {}),
+      ...settledAtOf(carried.thread),
       projectId: project.id,
       projectName: projectDisplayName(project),
       ...(carried.thread.automation
