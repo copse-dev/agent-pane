@@ -72,6 +72,7 @@ export class OpenAIProvider implements LLMProvider {
   constructor(
     model: string,
     opts: {
+      fetch?: typeof globalThis.fetch
       baseURL?: string
       apiKey?: string
       includeUsage?: boolean
@@ -120,6 +121,7 @@ export class OpenAIProvider implements LLMProvider {
       // retries enabled would multiply that outer budget — most importantly,
       // one routing-policy replay could become six HTTP requests for a 503.
       maxRetries: 0,
+      ...(opts.fetch ? { fetch: opts.fetch } : {}),
     })
   }
 

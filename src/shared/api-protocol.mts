@@ -82,6 +82,7 @@
 // v52 versions the OpenAI remote-agent provider in thread and agent-PR-link payloads.
 // v53 versions agentBusy on worktree attachment status.
 // v54 versions event automation shapes.
-// v55 conservatively versions the optional classifier-call latency and token fields on
+// v55 versions host-owned container authentication.
+// v56 conservatively versions the optional classifier-call latency and token fields on
 // decision events, alongside the new `usage:get-thread-classifier-use` channel.
-export const API_PROTOCOL_VERSION = 55 as const
+export const API_PROTOCOL_VERSION = 56 as const
