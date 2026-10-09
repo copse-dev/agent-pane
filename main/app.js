@@ -129382,6 +129382,29 @@ var init_pr_thread_relationships = __esm({
   }
 });
 
+// src/renderer/views/pr-auth-error.ts
+function isGithubSamlError(message2) {
+  return /organization SAML enforcement|SAML SSO/i.test(message2);
+}
+function githubSamlAuthorizationUrl(message2, owner) {
+  if (!isGithubSamlError(message2)) return null;
+  const match = message2.match(/https:\/\/github\.com\/orgs\/[a-z\d-]+\/sso\?[^\s<>'"()]+/i);
+  if (!match) return null;
+  try {
+    const url2 = new URL(match[0].replace(/[.,;]+$/, ""));
+    if (url2.origin !== "https://github.com" || url2.username || url2.password || url2.pathname.toLowerCase() !== `/orgs/${owner.toLowerCase()}/sso` || !url2.search) {
+      return null;
+    }
+    return url2.href;
+  } catch {
+    return null;
+  }
+}
+var init_pr_auth_error = __esm({
+  "src/renderer/views/pr-auth-error.ts"() {
+  }
+});
+
 // src/renderer/views/pr-pane.ts
 function agentProviderLabel(provider) {
   return AGENT_PROVIDER_LABEL[provider] ?? provider;
@@ -130353,7 +130376,32 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     } catch (err2) {
       if (requestId !== detailsRequestId) return;
       emptyState.hidden = false;
-      emptyState.textContent = err2 instanceof Error ? err2.message : "Could not load pull request";
+      const message2 = ipcErrorMessage(err2, "Could not load pull request");
+      const ssoUrl = githubSamlAuthorizationUrl(message2, ref.owner);
+      if (ssoUrl) {
+        emptyState.replaceChildren(
+          el(
+            "div",
+            { class: "pr-auth-error" },
+            el("p", {}, `GitHub requires SSO authorization for ${ref.owner}.`),
+            el(
+              "button",
+              { class: "ui-btn ui-btn-primary pr-auth-button", type: "button" },
+              "Sign in with GitHub SSO"
+            ),
+            el("p", { class: "pr-auth-hint" }, "After authorizing, refresh pull requests.")
+          )
+        );
+        emptyState.querySelector(".pr-auth-button")?.addEventListener("click", () => {
+          if (requestId === detailsRequestId && isStillSelected(ref)) {
+            void api2.shell.openExternal(ssoUrl);
+          }
+        });
+      } else if (isGithubSamlError(message2)) {
+        emptyState.textContent = `GitHub requires SSO authorization for ${ref.owner}. Open this pull request on GitHub to authorize access.`;
+      } else {
+        emptyState.textContent = message2;
+      }
       return;
     }
     if (!prDetails) {
@@ -130634,6 +130682,8 @@ var init_pr_pane = __esm({
     init_pr_pane_activity();
     init_thread_pr_relations2();
     init_pr_thread_relationships();
+    init_pr_auth_error();
+    init_ipc_error_message();
     STATUS_LABEL2 = {
       added: "A",
       modified: "M",
