@@ -1498,7 +1498,8 @@ export function mountInputBar(
   // records after its answer arrives, so the hover also re-reads when it opens.
   let classifierUse: ThreadClassifierUse | null = null
   let classifierUseKey = ''
-  let classifierUseThreadId: string | null = null
+  // Which project's thread the figures belong to; thread ids alone are not unique across projects.
+  let classifierUseOwner: string | null = null
   let classifierUseSeq = 0
   let classifierUseInFlight = false
 
@@ -1507,7 +1508,7 @@ export function mountInputBar(
     if (!thread || projectId === null) {
       classifierUse = null
       classifierUseKey = ''
-      classifierUseThreadId = null
+      classifierUseOwner = null
       classifierUseSeq++
       return
     }
@@ -1515,8 +1516,9 @@ export function mountInputBar(
     const key = `${projectId}:${thread.id}:${thread.status}:${String(thread.messages.length)}:${String(last?.toolCalls.length ?? 0)}`
     if (force ? classifierUseInFlight : key === classifierUseKey) return
     // Another thread's figures must not show while this one's are in flight.
-    if (thread.id !== classifierUseThreadId) classifierUse = null
-    classifierUseThreadId = thread.id
+    const owner = `${projectId}:${thread.id}`
+    if (owner !== classifierUseOwner) classifierUse = null
+    classifierUseOwner = owner
     classifierUseKey = key
     const seq = ++classifierUseSeq
     classifierUseInFlight = true

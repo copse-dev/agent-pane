@@ -3909,6 +3909,37 @@ describe('input bar footer classifier use', () => {
     )
   })
 
+  it("drops one project's figures when another project reuses the thread id and its fetch fails", async () => {
+    const { host, store } = mountWith(async (projectId) => {
+      if (projectId === 'project-1') return classifierUse
+      throw new Error('boom')
+    })
+    await settle()
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.match(
+      host.querySelector('.context-wheel-popover')?.textContent ?? '',
+      /Classifiers · 2 calls/,
+    )
+
+    // Same thread id, different project: the first project's report must not linger.
+    store.setState({
+      projects: [
+        { id: 'project-1', name: 'Project', path: '/repo' },
+        { id: 'project-2', name: 'Other', path: '/other' },
+      ],
+      activeProjectId: 'project-2',
+    })
+    store.emit('threads_changed')
+    await settle()
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.doesNotMatch(
+      host.querySelector('.context-wheel-popover')?.textContent ?? '',
+      /Classifiers/,
+    )
+  })
+
   it('survives a failed fetch without breaking the hover', async () => {
     const { host } = mountWith(async () => {
       throw new Error('boom')
