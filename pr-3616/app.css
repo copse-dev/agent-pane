@@ -13675,6 +13675,9 @@ dialog.activity-panel-overlay {
   padding: 26px 0 calc(var(--chat-composer-height) + var(--spacing-md));
   overflow-y: auto;
 }
+#app.is-portrait-chrome .activity-home {
+  padding-bottom: calc(var(--chat-composer-height) + var(--chrome-action-band-height) + var(--spacing-md));
+}
 .activity-home[data-idle=true],
 .activity-home[hidden] {
   display: none;
@@ -13755,6 +13758,10 @@ dialog.activity-panel-overlay {
 .activity-strip-need {
   color: var(--text-primary);
   font-weight: 600;
+}
+.activity-panel-body:has(> .activity-detail[hidden]),
+.activity-home .activity-panel-body:has(> .activity-detail[hidden]) {
+  grid-template-columns: minmax(0, 1fr);
 }
 .activity-home .activity-panel-body {
   grid-template-columns: minmax(285px, 0.43fr) minmax(0, 0.57fr);
