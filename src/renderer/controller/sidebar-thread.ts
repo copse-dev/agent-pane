@@ -107,8 +107,8 @@ export type RunSignals = SidebarThread &
  * missed until it is opened.
  */
 export function sidebarHasRun(thread: RunSignals): boolean {
-  if (thread.everRan !== undefined) return thread.everRan
   if (thread.lastPromptAt !== undefined) return true
+  if (thread.everRan !== undefined) return thread.everRan
   if (thread.workingBrief !== undefined || thread.autoTitleCount !== undefined) return true
   return (thread.usage?.inputTokens ?? 0) + (thread.usage?.outputTokens ?? 0) > 0
 }
@@ -126,7 +126,8 @@ export function compactSidebarThread(thread: RunSignals): SidebarThread {
     ...(thread.updatedAt !== undefined ? { updatedAt: thread.updatedAt } : {}),
     ...(lastPromptAt !== undefined ? { lastPromptAt } : {}),
     status: thread.status,
-    everRan: sidebarHasRun(thread),
+    // A prompt found in the loaded transcript counts too, matching the `lastPromptAt` kept above.
+    everRan: lastPromptAt !== undefined || sidebarHasRun(thread),
     ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
     ...(thread.automation ? { automation: thread.automation } : {}),

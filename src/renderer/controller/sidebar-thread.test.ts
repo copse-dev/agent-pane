@@ -1,7 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Message, Thread } from '@shared/types'
-import { compactSidebarThread, sidebarPrRefs, type SidebarThread } from './sidebar-thread.ts'
+import {
+  compactSidebarThread,
+  sidebarHasRun,
+  sidebarPrRefs,
+  type SidebarThread,
+} from './sidebar-thread.ts'
 
 function message(id: string, content: string): Message {
   return { id, role: 'assistant', content, toolCalls: [], createdAt: 1 }
@@ -152,4 +157,26 @@ test('compaction records from metadata alone whether a thread ever ran', () => {
   const once = compactSidebarThread({ ...base, lastPromptAt: 3 })
   assert.deepEqual(compactSidebarThread(once), once)
   assert.equal(once.updatedAt, 5)
+})
+
+test('a prompt found in the transcript at compaction counts as having run, even with zero usage', () => {
+  const usage = { inputTokens: 0, outputTokens: 0 }
+  const prompt: Message = {
+    id: 'm1',
+    role: 'user',
+    content: 'hello',
+    toolCalls: [],
+    createdAt: 7,
+  }
+  const compacted = compactSidebarThread({
+    id: 't',
+    title: 't',
+    status: 'idle',
+    usage,
+    messages: [prompt],
+  })
+  assert.equal(compacted.lastPromptAt, 7)
+  assert.equal(compacted.everRan, true)
+  // An explicit everRan: false cannot override a prompt time that is now known.
+  assert.equal(sidebarHasRun({ ...compacted, everRan: false }), true)
 })
