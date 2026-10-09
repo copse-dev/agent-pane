@@ -123,9 +123,9 @@ projects; they are not required by this baseline.
    returns the complete result to the app without starting a model turn.
 4. An explicit app message appears in the owning thread's pending queue as an
    app-attributed message and drains when the thread is idle, within the thread's
-   auto-continuation budget. A context update appears as a held, app-attributed
-   queued message that the user can release, edit, or discard; it never starts a
-   turn by itself.
+   auto-continuation budget. A context update is retained as bounded app-attributed
+   data and included by a blocking hook at the next turn start; it never starts
+   a turn or changes one already running.
 5. Open the app in the Browser pane, then return to the conversation. The host
    tears down one session and starts another from the retained input and result;
    no action is duplicated. Closing, disabling, or disconnecting leaves the
@@ -141,17 +141,17 @@ The following findings were checked against `main` at the audited commit. Treat
 the older default-on audit as historical context, and assess fresh-profile and
 upgrade behavior separately before changing defaults.
 
-| Surface        | Existing implementation                                                       | Work needed                                                                               |
-| -------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Feature gate   | Experimental `copse.mcp-ui-canvas` plugin and capability                      | Gate protocol advertisement and every app entry point; revoke live sessions when disabled |
-| MCP connection | `mcp-registry.ts` creates external clients with empty capabilities            | Negotiate the UI extension and preserve server/tool UI metadata                           |
-| Tool execution | Lists tools, registers them for the agent, flattens `result.content`          | Separate model/app visibility on every model-facing list; retain complete results         |
-| ACP execution  | Native bridge advertises every registered `mcp__*` tool to ACP agents         | Apply the same visibility filter to the bridge's offered list and `tools/list`            |
-| UI discovery   | Plugin SDK `mcp-schema.ts` extracts embedded legacy HTML/URI-list resources   | Resolve tool-linked resources with `resources/read`, validate App MIME type and policy    |
-| Rendering      | Canvas dispatch/store, Browser pane, inline webview artefacts, HTML data URLs | Add a protocol-aware app container with a secure message transport                        |
-| Actions        | MCP tool permission targets, workspace trust and `toolGate` hooks exist       | Route app calls through the same authorization path, with explicit owning thread          |
-| Conversation   | Pending queue with held items, budget and `origin` provenance for hooks       | Add an `mcp-app` origin kind and route app messages and context through that queue        |
-| Persistence    | Thread-scoped canvas snapshots and transcript preview references              | Define app instance identity, safe historical display, and explicit reconnection          |
+| Surface        | Existing implementation                                                       | Work needed                                                                                        |
+| -------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Feature gate   | Experimental `copse.mcp-ui-canvas` plugin and capability                      | Gate protocol advertisement and every app entry point; revoke live sessions when disabled          |
+| MCP connection | `mcp-registry.ts` creates external clients with empty capabilities            | Negotiate the UI extension and preserve server/tool UI metadata                                    |
+| Tool execution | Lists tools, registers them for the agent, flattens `result.content`          | Separate model/app visibility on every model-facing list; retain complete results                  |
+| ACP execution  | Native bridge advertises every registered `mcp__*` tool to ACP agents         | Apply the same visibility filter to the bridge's offered list and `tools/list`                     |
+| UI discovery   | Plugin SDK `mcp-schema.ts` extracts embedded legacy HTML/URI-list resources   | Resolve tool-linked resources with `resources/read`, validate App MIME type and policy             |
+| Rendering      | Canvas dispatch/store, Browser pane, inline webview artefacts, HTML data URLs | Add a protocol-aware app container with a secure message transport                                 |
+| Actions        | MCP tool permission targets, workspace trust and `toolGate` hooks exist       | Route app calls through the same authorization path, with explicit owning thread                   |
+| Conversation   | Pending queue with held items, budget and `origin` provenance for hooks       | Add an `mcp-app` origin kind and queue app messages and assemble bounded app context at turn start |
+| Persistence    | Thread-scoped canvas snapshots and transcript preview references              | Define app instance identity, safe historical display, and explicit reconnection                   |
 
 Specific constraints from the audited tree:
 
@@ -402,7 +402,7 @@ mutating tool call.
 | `resources/read`                | Proxy to the originating server under session/resource limits; never grant arbitrary Copse file access                                                                                                              |
 | `ui/open-link`                  | Validate scheme and URL; use Copse's external-link policy; reject privileged schemes and implicit popup navigation                                                                                                  |
 | `ui/message`                    | Enqueue an `mcp-app`-origin message in the owning thread's pending queue (decision 4); never send-now; budgeted and held per decisions 5 and 16; reject unsupported roles and bound content                         |
-| `ui/update-model-context`       | Enqueue or replace one held `mcp-app`-origin queued message per instance (decision 11); never auto-dispatch; revoke when the session closes                                                                         |
+| `ui/update-model-context`       | Replace the bounded context value for the instance; a blocking `turnStart` hook injects and records a snapshot for the next turn (decision 11); revoke when the session closes                                      |
 | `ui/request-display-mode`       | Return the resulting supported mode and notify context changes; decline unsupported transitions                                                                                                                     |
 | `notifications/message`, `ping` | Accept bounded diagnostic logging and health checks without exposing secrets                                                                                                                                        |
 | `ui/resource-teardown`          | Request cleanup with a deadline; cancel pending operations and dispose listeners, frame, policy and connection bindings                                                                                             |
@@ -457,7 +457,9 @@ adding a channel.
   (`enqueueHookMessage` or a sibling built on it), never a mid-turn injection and
   never a steer. The host acknowledges `ui/message` once the item is enqueued,
   not when it dispatches. An app can never request send-now: send-now aborts the
-  active local run, and an app must not be able to abort a human's turn.
+  active local run, and an app must not be able to abort a human's turn. Allow
+  at most one pending message per app session; another request while one is
+  pending receives a bounded error.
 - **Budgeted (decision 5).** Every app message is a machine-initiated new turn
   and is counted against the auto-continuation budget of the turn tree that
   created the app instance, at drain time like a hook message. When the budget
@@ -476,15 +478,13 @@ adding a channel.
   server; because app messages are a product action rather than a harness
   internal, their card is not gated by developer mode, while the data-model rule
   is identical to the hook card family.
-- **Context becomes a queued message (decision 11).** The latest
-  `ui/update-model-context` value per instance is stored as one held
-  `mcp-app`-origin queued message. A newer update from the same instance replaces
-  that item while it is still pending (the specification's replacement
-  semantics); once a human releases it, the next update creates a new item. It
-  never auto-dispatches and never injects into a running turn, which also keeps
-  turn content deterministic for evals. If step 5 shows that users expect app
-  context to flow silently into their next prompt, that is a change to decision
-  11 made in the hooks document in the same PR, not a side channel in this plan.
+- **Model context is assembled at turn start (decision 11).** Deliver
+  `ui/update-model-context` through a first-party blocking `turnStart` hook
+  contributed by the MCP Apps pack. At turn assembly it reads the latest bounded
+  value for each live app session the thread owns and injects it with the
+  existing `injectContext` formatting and cap. Updates never start a turn and
+  never enter a running one. Record the injected snapshot on the thread spine, so
+  evals and replays see the same turn content.
 - **Epoch-scoped (decision 16).** The session descriptor records the human
   turn-tree ID of the invocation. An app message whose epoch is no longer the
   thread's current turn tree is enqueued held, exactly like a stale hook output,
@@ -507,8 +507,10 @@ the `toolGate` payload so hooks can abstain or tighten for app callers. A
 `haltRun` from such a hook cancels the app request and its session, never a
 human run that happens to be active in the thread. The `hook_run` spine record
 and the permission audit record attribute the call to the app instance, server
-and owning thread. No continuation grant is consumed, because no model turn
-starts. Bridged ACP calls already refuse to run without a bound execution
+and owning thread. The canonical `afterToolUse` event also fires on completion or failure, with
+the same app attribution. Async output from those hooks uses the queue and
+shared continuation budget. No continuation grant is consumed by the app tool
+call itself, because no model turn starts. Bridged ACP calls already refuse to run without a bound execution
 context; app calls follow the same rule and never borrow a live turn's context.
 
 ### Sandbox and network policy
@@ -661,9 +663,13 @@ also test raw JSON-RPC so shared SDK assumptions do not hide protocol mistakes.
 - Queue and budget tests in the house style of the hooks platform contract
   tests: app messages never send-now; an app message consumes one budget unit at
   drain; the item over budget is held and the note appears; a stale epoch is held;
-  a context update replaces its pending predecessor and never auto-dispatches;
-  the `mcp-app` origin survives spine full-save round trips.
-- Hook attribution tests: `toolGate` fires for an app-made call with the app
+  each app session admits at most one pending message; the `mcp-app` origin
+  survives spine full-save round trips.
+- Context-hook tests: each update replaces the bounded value for its session;
+  updates never dispatch or modify a running turn; the blocking `turnStart`
+  hook applies the existing injection cap and records the injected snapshot
+  for replay; closed sessions contribute no context.
+- Hook attribution tests: `toolGate` and `afterToolUse` fire for an app-made call with the app
   caller kind and owning thread; a `haltRun` cancels only the app request; a
   denial reaches the app as a protocol error with zero server calls.
 - Security tests: forged frame/source/instance messages, model-only tool calls,
@@ -699,7 +705,7 @@ exists.
 - Which network declarations can be approved under existing policy, and what
   user surface is needed for exceptional grants?
 - Which conversation roles/message types can Copse represent faithfully as
-  queued `mcp-app`-origin messages, and how is the held context item presented
-  so users understand what releasing it does?
+  queued `mcp-app`-origin messages, and how are injected app-context snapshots
+  presented so users can inspect what the next turn received?
 - How do inline and Browser-pane surfaces map to standard display modes, and
   what teardown deadline keeps the reinitialization acceptable?
