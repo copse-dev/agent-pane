@@ -45570,6 +45570,19 @@ var init_intellect_frontier_panel = __esm({
   }
 });
 
+// src/shared/openai-cloud-agent.ts
+var DEFAULT_OPENAI_AGENT_MODEL, OPENAI_AGENT_GROUP, OPENAI_AGENT_RETENTION_NOTICE;
+var init_openai_cloud_agent = __esm({
+  "src/shared/openai-cloud-agent.ts"() {
+    DEFAULT_OPENAI_AGENT_MODEL = "gpt-6.1-sol";
+    OPENAI_AGENT_GROUP = "OpenAI Cloud Agent (prototype)";
+    OPENAI_AGENT_RETENTION_NOTICE = {
+      label: "No ZDR",
+      detail: "OpenAI-hosted Agents API sessions retain session data and are not eligible for zero data retention (ZDR)."
+    };
+  }
+});
+
 // src/shared/acp-retention.ts
 var ACP_RETENTION_NOTICE;
 var init_acp_retention = __esm({
@@ -45705,13 +45718,15 @@ var init_managed_agents = __esm({
 });
 
 // packages/thread-store/src/remote-agent-provider.ts
-var REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, REMOTE_AGENT_PROVIDERS, isRemoteAgentProvider;
+var REMOTE_AGENT_PROVIDER_OPENAI, REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, REMOTE_AGENT_PROVIDERS, isRemoteAgentProvider;
 var init_remote_agent_provider = __esm({
   "packages/thread-store/src/remote-agent-provider.ts"() {
     init_member_of();
+    REMOTE_AGENT_PROVIDER_OPENAI = "openai";
     REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
     REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
     REMOTE_AGENT_PROVIDERS = [
+      REMOTE_AGENT_PROVIDER_OPENAI,
       REMOTE_AGENT_PROVIDER_CURSOR,
       REMOTE_AGENT_PROVIDER_ANTHROPIC
     ];
@@ -45758,6 +45773,11 @@ var init_remote_agent = __esm({
     CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
     REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
     REMOTE_AGENT_MODELS = [
+      {
+        provider: REMOTE_AGENT_PROVIDER_OPENAI,
+        value: "remote-agent:openai",
+        label: "OpenAI Cloud Agent"
+      },
       {
         provider: REMOTE_AGENT_PROVIDER_CURSOR,
         value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_CURSOR}`,
@@ -46048,7 +46068,7 @@ function modelMakerForSelection(value) {
   const selection2 = parseModelSelection(value);
   if (selection2.namespace === "auto" || selection2.namespace === "plugin-model") return null;
   if (selection2.namespace === "remote-agent" && !selection2.id) {
-    return selection2.agent === "anthropic" ? "anthropic" : null;
+    return selection2.agent === "anthropic" ? "anthropic" : selection2.agent === "openai" ? "openai" : null;
   }
   if (selection2.namespace === "acp" && !selection2.id) return makerFromAgent(selection2.agent);
   const id = selection2.id.toLowerCase();
@@ -46295,6 +46315,31 @@ function extraProviderOptions(provider, available, current) {
 }
 async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude = false) {
   const options = [];
+  if (isAvailable("openai")) {
+    const models = CLOUD_MODELS.filter(([, , provider]) => provider === "openai");
+    models.sort(
+      ([a3], [b4]) => Number(b4 === DEFAULT_OPENAI_AGENT_MODEL) - Number(a3 === DEFAULT_OPENAI_AGENT_MODEL)
+    );
+    for (const [id, label] of models) {
+      options.push({
+        value: remoteAgentModelValue("openai", id),
+        label,
+        group: OPENAI_AGENT_GROUP,
+        retention: OPENAI_AGENT_RETENTION_NOTICE,
+        supportsImages: true
+      });
+    }
+    const selected = parseRemoteAgentModelSelection(current);
+    if (selected?.provider === "openai" && !options.some((option) => option.value === current)) {
+      options.push({
+        value: current,
+        label: selected.model ?? "Default",
+        group: OPENAI_AGENT_GROUP,
+        retention: OPENAI_AGENT_RETENTION_NOTICE,
+        supportsImages: false
+      });
+    }
+  }
   if (isAvailable(REMOTE_AGENT_PROVIDER_CURSOR)) {
     const group = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_CURSOR);
     let liveModels = [];
@@ -46473,7 +46518,8 @@ async function fetchModelOptions(api2, current, opts = {}) {
       options.push({
         value: current,
         label: `${modelDisplayLabel(current)} (no valid key)`,
-        group: selection2 ? remoteAgentGroupLabel(selection2.provider) : "Remote agents"
+        group: selection2?.provider === "openai" ? OPENAI_AGENT_GROUP : selection2 ? remoteAgentGroupLabel(selection2.provider) : "Remote agents",
+        ...selection2?.provider === "openai" ? { retention: OPENAI_AGENT_RETENTION_NOTICE } : {}
       });
     } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
       const selection2 = parseAcpModelSelection(current);
@@ -46598,6 +46644,7 @@ function fetchDynamicModelOptions(current, autoLabel) {
 var ACP_GROUP, OPENROUTER_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
 var init_model_options = __esm({
   "src/renderer/views/model-options.ts"() {
+    init_openai_cloud_agent();
     init_acp_retention();
     init_chatgpt_plan();
     init_model_catalog();
@@ -79414,6 +79461,101 @@ var init_demo_scenarios = __esm({
         "Full thread view for a model below the concise gate",
         "gpt-4o"
       ),
+      {
+        id: "openai-host-pr",
+        label: "OpenAI host PR creation result",
+        project: project("demo-openai-recovery-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "remote-agent:openai#gpt-6.1-sol"
+        },
+        threads: [
+          {
+            id: "demo-openai-recovery-thread",
+            title: "Create a PR from hosted changes",
+            status: "idle",
+            model: "remote-agent:openai#gpt-6.1-sol",
+            messages: [
+              {
+                id: "recovery-user",
+                role: "user",
+                content: "Can we PR this?",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              },
+              {
+                id: "recovery-assistant",
+                role: "assistant",
+                content: "Changes imported. Done: Created draft PR https://github.com/example/project/pull/42",
+                toolCalls: [
+                  {
+                    id: "openai-publish-turn-push",
+                    name: "gh_push",
+                    args: {},
+                    status: "done",
+                    result: "Done: Pushed feature/mcp-apps to origin. Existing PR updated."
+                  },
+                  {
+                    id: "openai-publish-turn-call",
+                    name: "gh_pr_create",
+                    args: {
+                      title: "docs: MCP Apps support plan",
+                      body: "Document the implementation plan.",
+                      draft: true
+                    },
+                    status: "done",
+                    result: "Done: Created draft PR https://github.com/example/project/pull/42"
+                  }
+                ],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
+        id: "openai-cancellation-recovery",
+        label: "OpenAI confirmed cancellation with interrupted recovery",
+        project: project("demo-openai-recovery-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "remote-agent:openai#gpt-6.1-sol"
+        },
+        threads: [
+          {
+            id: "demo-openai-recovery-thread",
+            title: "Stopped hosted task",
+            status: "idle",
+            model: "remote-agent:openai#gpt-6.1-sol",
+            messages: [
+              {
+                id: "recovery-user",
+                role: "user",
+                content: "Run the public repository tests and report the result.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              },
+              {
+                id: "recovery-assistant",
+                role: "assistant",
+                content: "> An error occurred: OpenAI cancellation was confirmed, but output, usage, or artifacts could not be recovered. Session sess_demo remains linked; resend the previous message to recover it before starting another task.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
       conciseThreadScenario(
         "concise-thread-working",
         "Concise thread view while a capable model works",
@@ -85132,6 +85274,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
   }
   function captureListScrollAnchor() {
+    if (list.scrollTop <= 0) return null;
     const listRect = list.getBoundingClientRect();
     for (const row2 of list.querySelectorAll(".activity-row")) {
       const rowKey2 = row2.dataset["rowKey"];
@@ -92079,9 +92222,10 @@ function bindBrowserLinkClicks(root, store2, api2) {
     const artifact = remoteArtifactFromHref(href);
     if (artifact && api2) {
       void api2.remoteAgent.downloadArtifact(artifact.agentId, artifact.path).then((url2) => {
-        openBrowserUrl(store2, url2);
+        if (url2) openBrowserUrl(store2, url2);
       }).catch((err2) => {
         console.warn("[remote-agent] artifact download failed:", err2);
+        showErrorToast("Failed to download agent artifact", err2);
       });
       return;
     }
@@ -92113,6 +92257,7 @@ var init_browser_links = __esm({
     init_panels();
     init_github_pr_url2();
     init_pr_link_preview();
+    init_toast();
   }
 });
 
@@ -92154,6 +92299,17 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
     if (link.dataset["fileReferencePath"]) return;
     const href = workspaceHrefFromLink(link);
     if (!href) return;
+    const artifact = /\/([^/]+)\/blobs\/openai-artifacts\/([a-f0-9]{64}\/[a-f0-9]{64}\.[a-zA-Z0-9]{1,10})$/.exec(
+      href
+    );
+    if (artifact?.[1] && artifact[2]) {
+      event.preventDefault();
+      event.stopPropagation();
+      void api2.remoteAgent.downloadArtifact(`openai:${artifact[1]}`, artifact[2]).catch((error62) => {
+        showErrorToast("Failed to save agent artifact", error62);
+      });
+      return;
+    }
     const parsed2 = workspaceLinkTargetFromHref(href);
     if (!parsed2) return;
     const owner = getActiveThreadOwner(store2);
@@ -96089,6 +96245,14 @@ var init_model_selection2 = __esm({
   }
 });
 
+// src/shared/turn-recovery.ts
+var INTERRUPTED_TURN_CONTINUATION;
+var init_turn_recovery = __esm({
+  "src/shared/turn-recovery.ts"() {
+    INTERRUPTED_TURN_CONTINUATION = "Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.";
+  }
+});
+
 // src/renderer/controller/turn-recovery.ts
 function turnRecoveryForMessage(thread, failedMessageId) {
   if (!thread || thread.messagesLoaded === false) return null;
@@ -96135,13 +96299,13 @@ function recoverFailedTurn(store2, api2, projectId, threadId, failedMessageId, m
   dispatchAgentRun(store2, api2, threadId, payload);
   return true;
 }
-var INTERRUPTED_TURN_CONTINUATION;
-var init_turn_recovery = __esm({
+var init_turn_recovery2 = __esm({
   "src/renderer/controller/turn-recovery.ts"() {
     init_thread_helpers();
     init_model_selection2();
     init_message_queue();
-    INTERRUPTED_TURN_CONTINUATION = "Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.";
+    init_turn_recovery();
+    init_turn_recovery();
   }
 });
 
@@ -96535,7 +96699,7 @@ function bindSelectionQuote(transcript, actions) {
     class: "transcript-selection-reply",
     placeholder: "Reply\u2026",
     "aria-label": "Reply to selected text",
-    rows: "2"
+    rows: "1"
   });
   input2.setAttribute("aria-keyshortcuts", "Enter Meta+Enter Control+Enter");
   const sendLabel = el("span", {}, "Send");
@@ -96574,6 +96738,11 @@ function bindSelectionQuote(transcript, actions) {
   let reservedSpace = false;
   let scrollingTo = null;
   const hasDraft = () => input2.value.length > 0 || sending;
+  const resizeInput = () => {
+    input2.style.height = "auto";
+    input2.style.height = `${String(Math.min(input2.scrollHeight, 200))}px`;
+    if (!popup.hidden) position2();
+  };
   const updateControls = () => {
     input2.disabled = sending;
     sendButton.disabled = sending || !input2.value.trim();
@@ -96597,6 +96766,7 @@ function bindSelectionQuote(transcript, actions) {
       highlight.clear();
     }
     input2.value = "";
+    input2.style.height = "";
     status.hidden = true;
     status.textContent = "";
     sending = false;
@@ -96677,6 +96847,7 @@ function bindSelectionQuote(transcript, actions) {
     }
     if (text2 !== selectedText) {
       input2.value = "";
+      input2.style.height = "";
       status.hidden = true;
       revision++;
     }
@@ -96730,6 +96901,7 @@ function bindSelectionQuote(transcript, actions) {
       dismiss();
     } else {
       updateControls();
+      resizeInput();
     }
   });
   input2.addEventListener("copy", (event) => {
@@ -100351,7 +100523,7 @@ var init_conversation = __esm({
     init_message_queue();
     init_fork_thread3();
     init_resend_message();
-    init_turn_recovery();
+    init_turn_recovery2();
     init_turn_recovery_card();
     init_image_input_support();
     init_toast();
