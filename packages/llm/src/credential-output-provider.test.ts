@@ -42,7 +42,15 @@ describe('credential output boundary', () => {
     const output = await collect([
       {
         type: 'tool_call',
-        toolCall: { id: 'call', name: 'write_file', args: { nested: [secret] }, argsError: secret },
+        toolCall: {
+          id: 'call',
+          name: 'write_file',
+          title: 'Write the file',
+          programmaticName: 'write_file_v2',
+          args: { nested: [secret] },
+          argsError: secret,
+          kind: 'edit',
+        },
       },
       {
         type: 'usage',
@@ -57,6 +65,19 @@ describe('credential output boundary', () => {
       },
     ])
     assert.ok(!JSON.stringify(output).includes(secret))
+    // ACP metadata (title, programmaticName, kind) survives the redaction round trip.
+    assert.deepEqual(output[0], {
+      type: 'tool_call',
+      toolCall: {
+        id: 'call',
+        name: 'write_file',
+        title: 'Write the file',
+        programmaticName: 'write_file_v2',
+        args: { nested: ['[REDACTED_SECRET]'] },
+        argsError: '[REDACTED_SECRET]',
+        kind: 'edit',
+      },
+    })
     assert.deepEqual(output[1], {
       type: 'usage',
       model: 'pinned',
