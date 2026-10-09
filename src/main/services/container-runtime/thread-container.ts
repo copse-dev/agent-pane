@@ -677,17 +677,23 @@ export function adoptCarryOut(
   workspace: string,
   ref: string,
   base: string,
+  expectedTree?: string,
 ): Promise<CarryOutAdoption> {
   // One pick at a time per checkout, the whole check-and-pick as one turn.
   // Two follow-ups pressed together would otherwise both run against the
   // same index, and the one that failed would `cherry-pick --abort` the
   // other's pick as well as its own.
   return runSerialized(`carry-out-adoption:${resolve(workspace)}`, () =>
-    adoptOnce(workspace, ref, base),
+    adoptOnce(workspace, ref, base, expectedTree),
   )
 }
 
-async function adoptOnce(workspace: string, ref: string, base: string): Promise<CarryOutAdoption> {
+async function adoptOnce(
+  workspace: string,
+  ref: string,
+  base: string,
+  expectedTree?: string,
+): Promise<CarryOutAdoption> {
   const dirty = await git(workspace, ['status', '--porcelain', '--untracked-files=no'])
   if (dirty.length > 0) {
     throw new Error(
@@ -699,6 +705,10 @@ async function adoptOnce(workspace: string, ref: string, base: string): Promise<
   const pending = lines.filter((line) => line.startsWith('+ ')).map((line) => line.slice(2))
   const alreadyApplied = lines.filter((line) => line.startsWith('- ')).length
   if (pending.length === 0) return { applied: [], alreadyApplied }
+  // Check inside the same serialized adoption as the pick; another run may
+  // have committed between the caller's inspection and acquiring this slot.
+  if (expectedTree && (await git(workspace, ['rev-parse', 'HEAD^{tree}'])) !== expectedTree)
+    throw new Error('The checkout changed before adoption; the returned commits are retained.')
   try {
     await git(workspace, ['cherry-pick', '--no-edit', '--allow-empty-message', ...pending])
   } catch (error) {
