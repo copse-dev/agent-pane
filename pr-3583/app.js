@@ -52258,14 +52258,22 @@ function isAbortTimeoutMessage(message2) {
   return /aborted due to timeout|operation was aborted|aborterror|timeout/i.test(message2);
 }
 function claudeReasonNeedsLogin(reason) {
-  return /claude \/login|user:profile|rejected/i.test(reason);
+  return /claude \/login|user:profile|rejected|access token has expired/i.test(reason);
 }
-function createClaudeSignInHandler(store2, onRequestClose) {
+function createPlanSignInHandler(store2, provider, onRequestClose) {
   if (!store2) return null;
   return () => {
     onRequestClose?.();
-    store2.emit("request_terminal_command", "claude /login");
+    store2.emit("request_terminal_command", provider === "claude" ? "claude /login" : "codex login");
   };
+}
+function planSignInProvider(result) {
+  if (result.status !== "unavailable") return null;
+  if (result.provider === "claude" && claudeReasonNeedsLogin(result.reason)) return "claude";
+  if (result.provider === "codex" && /codex login|credentials were rejected/i.test(result.reason)) {
+    return "codex";
+  }
+  return null;
 }
 function formatReset2(resetsAt) {
   if (!resetsAt) return "reset unknown";
@@ -52303,7 +52311,7 @@ function formatPlanWindowStats(window2) {
   if (severity && severity !== "normal") parts.push(severity);
   return parts.join(" \xB7 ");
 }
-function renderPlanProvider(host, result, onClaudeSignIn) {
+function renderPlanProvider(host, result, onSignIn) {
   const card = document.createElement("div");
   card.className = "usage-plan-provider";
   card.dataset["provider"] = result.provider;
@@ -52317,14 +52325,16 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
     hint.className = "usage-plan-status field-hint";
     setInlineMarkdown(hint, result.reason);
     card.append(hint);
-    if (result.provider === "claude" && onClaudeSignIn && claudeReasonNeedsLogin(result.reason)) {
+    const signInProvider = planSignInProvider(result);
+    const onProviderSignIn = signInProvider ? onSignIn?.[signInProvider] : void 0;
+    if (signInProvider && onProviderSignIn) {
       const signIn = document.createElement("button");
       signIn.type = "button";
       signIn.className = "ui-btn ui-btn-primary usage-plan-signin-btn";
-      signIn.textContent = "Sign in to Claude";
-      signIn.title = "Open a terminal and run claude /login";
+      signIn.textContent = signInProvider === "claude" ? "Sign in to Claude" : "Sign in to Codex";
+      signIn.title = `Open a terminal and run ${signInProvider === "claude" ? "claude /login" : "codex login"}`;
       signIn.addEventListener("click", () => {
-        onClaudeSignIn();
+        onProviderSignIn();
       });
       card.append(signIn);
     }
@@ -52387,7 +52397,7 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
   }
   host.append(card);
 }
-function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
+function renderPlanSection(host, snapshot, error62, onSignIn) {
   host.replaceChildren();
   const heading = document.createElement("h4");
   heading.className = "usage-plan-heading";
@@ -52421,7 +52431,7 @@ function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
   const list = document.createElement("div");
   list.className = "usage-plan-providers";
   for (const provider of snapshot.providers) {
-    renderPlanProvider(list, provider, onClaudeSignIn);
+    renderPlanProvider(list, provider, onSignIn);
   }
   host.append(list);
 }
@@ -52626,7 +52636,10 @@ function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
   );
 }
 function createUsageSection(api2, store2, onRequestClose) {
-  const handleClaudeSignIn = createClaudeSignInHandler(store2, onRequestClose);
+  const handleSignIn = {
+    claude: createPlanSignInHandler(store2, "claude", onRequestClose) ?? void 0,
+    codex: createPlanSignInHandler(store2, "codex", onRequestClose) ?? void 0
+  };
   const root = document.createElement("div");
   root.className = "usage-section-root";
   root.innerHTML = `
@@ -52754,15 +52767,15 @@ function createUsageSection(api2, store2, onRequestClose) {
   });
   async function refreshPlan() {
     if (!cachedPlanSnapshot) {
-      renderPlanSection(planEl, null, null, handleClaudeSignIn);
+      renderPlanSection(planEl, null, null, handleSignIn);
     }
     try {
       const snapshot = await api2.usage.getPlanUsage();
       cachedPlanSnapshot = snapshot;
-      renderPlanSection(planEl, snapshot, null, handleClaudeSignIn);
+      renderPlanSection(planEl, snapshot, null, handleSignIn);
     } catch (err2) {
       const message2 = err2 instanceof Error ? err2.message : "Failed to load subscription plan usage.";
-      renderPlanSection(planEl, null, message2, handleClaudeSignIn);
+      renderPlanSection(planEl, null, message2, handleSignIn);
     }
   }
   async function refreshWorthIt() {
@@ -129393,6 +129406,29 @@ var init_pr_thread_relationships = __esm({
   }
 });
 
+// src/renderer/views/pr-auth-error.ts
+function isGithubSamlError(message2) {
+  return /organization SAML enforcement|SAML SSO/i.test(message2);
+}
+function githubSamlAuthorizationUrl(message2, owner) {
+  if (!isGithubSamlError(message2)) return null;
+  const match = message2.match(/https:\/\/github\.com\/orgs\/[a-z\d-]+\/sso\?[^\s<>'"()]+/i);
+  if (!match) return null;
+  try {
+    const url2 = new URL(match[0].replace(/[.,;]+$/, ""));
+    if (url2.origin !== "https://github.com" || url2.username || url2.password || url2.pathname.toLowerCase() !== `/orgs/${owner.toLowerCase()}/sso` || !url2.search) {
+      return null;
+    }
+    return url2.href;
+  } catch {
+    return null;
+  }
+}
+var init_pr_auth_error = __esm({
+  "src/renderer/views/pr-auth-error.ts"() {
+  }
+});
+
 // src/renderer/views/pr-pane.ts
 function agentProviderLabel(provider) {
   return AGENT_PROVIDER_LABEL[provider] ?? provider;
@@ -130364,7 +130400,32 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     } catch (err2) {
       if (requestId !== detailsRequestId) return;
       emptyState.hidden = false;
-      emptyState.textContent = err2 instanceof Error ? err2.message : "Could not load pull request";
+      const message2 = ipcErrorMessage(err2, "Could not load pull request");
+      const ssoUrl = githubSamlAuthorizationUrl(message2, ref.owner);
+      if (ssoUrl) {
+        emptyState.replaceChildren(
+          el(
+            "div",
+            { class: "pr-auth-error" },
+            el("p", {}, `GitHub requires SSO authorization for ${ref.owner}.`),
+            el(
+              "button",
+              { class: "ui-btn ui-btn-primary pr-auth-button", type: "button" },
+              "Sign in with GitHub SSO"
+            ),
+            el("p", { class: "pr-auth-hint" }, "After authorizing, refresh pull requests.")
+          )
+        );
+        emptyState.querySelector(".pr-auth-button")?.addEventListener("click", () => {
+          if (requestId === detailsRequestId && isStillSelected(ref)) {
+            void api2.shell.openExternal(ssoUrl);
+          }
+        });
+      } else if (isGithubSamlError(message2)) {
+        emptyState.textContent = `GitHub requires SSO authorization for ${ref.owner}. Open this pull request on GitHub to authorize access.`;
+      } else {
+        emptyState.textContent = message2;
+      }
       return;
     }
     if (!prDetails) {
@@ -130645,6 +130706,8 @@ var init_pr_pane = __esm({
     init_pr_pane_activity();
     init_thread_pr_relations2();
     init_pr_thread_relationships();
+    init_pr_auth_error();
+    init_ipc_error_message();
     STATUS_LABEL2 = {
       added: "A",
       modified: "M",
