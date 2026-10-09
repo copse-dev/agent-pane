@@ -1,4 +1,5 @@
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
+import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
@@ -17,7 +18,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebConten
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
@@ -37,6 +38,7 @@ import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
+import { hasBackgroundProcessesForThread } from '../services/exec/background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
@@ -3030,15 +3032,19 @@ export function registerAllHandlers(
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitBranchStatus(projectId, branch, root)
   })
+  const threadCheckoutBusy = (projectId: string, threadId: string): boolean =>
+    isDispatcherThreadActive(projectId, threadId) ||
+    listRunningThreadIds().includes(threadId) ||
+    hasBackgroundProcessesForThread({ projectId, threadId })
   ipcMain.handle('git:worktree-attachment', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return inspectThreadCheckoutAttachment(projectId, threadId)
+    return inspectThreadCheckoutAttachment(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:reattach-worktree', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return reattachThreadCheckout(projectId, threadId)
+    return reattachThreadCheckout(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -3210,6 +3216,15 @@ export function registerAllHandlers(
       assertMainFrameSender(event, win)
       const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
       const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
+      if (parsedAgentId.startsWith('openai:')) {
+        const data = await readOpenAiArtifact(parsedAgentId.slice('openai:'.length), parsedPath)
+        const result = await dialog.showSaveDialog(win, {
+          title: 'Save agent artifact',
+          defaultPath: `agent-artifact${extname(parsedPath)}`,
+        })
+        if (!result.canceled && result.filePath) await writeFile(result.filePath, data)
+        return ''
+      }
       return resolveRemoteArtifactDownloadUrl({ agentId: parsedAgentId, path: parsedPath })
     },
   )

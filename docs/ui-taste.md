@@ -1488,9 +1488,20 @@ than the card. Differences from the overlay are listed under each point below.
   `aria-expanded`. Working starts folded and names how many it holds; Needs you unfolds when a
   request new to the view arrives, and stays folded if the user folded one they had seen. Folded
   rows are not selectable, so selection moves to the nearest visible row. State is session-only.
-- **Project strip (new-thread screen).** All projects, then the projects that need you, most
-  waiting first, plus the chosen one; a tile filters the list. Requests tied to no thread belong
-  to no project and show only under All projects.
+- **Beside and above panels (new-thread screen).** A list resting at the top stays at the top
+  when a request arrives above its first row; the scroll anchor holds the reader's place only
+  once they have scrolled. Under the portrait chrome the home reserves the mode strip as the
+  conversation does, so the caption and the card are never under the composer. When every group
+  is folded the detail is hidden and the list takes the whole card. Spec:
+  `tests/demo/activity-home-panels.demo.ts`.
+- **Project strip (new-thread screen).** All projects, then every project in the sidebar (minus
+  ones whose folder is missing), by attention: most waiting first, then those with runs working,
+  then the rest by name. Each tile says "N need you" or "All clear" and, when there are any, "N
+  working"; a tile filters the list, and a filtered project that is removed falls back to All
+  projects. A lone project adds no tile, since it would repeat All projects. The strip scrolls
+  sideways with an edge fade and scrolls the chosen tile into view. Projects not opened this
+  session have no thread data yet and read "All clear". Requests tied to no thread belong to no
+  project and show only under All projects.
 - **Nothing moves under a click.** The panel has a fixed height, re-renders are throttled,
   selection and focus are restored to the same row, and Approve pauses whenever a request it
   has not shown yet takes the detail pane or the waiting list changes. Unchanged rows are the

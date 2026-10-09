@@ -200,7 +200,24 @@ A detached thread checkout remains usable by agent turns, file and editor operat
 only during validated Git recovery. Main must validate the persisted checkout path, Git registration,
 repository identity, and base commit, and the per-worktree Git directory must contain an active Git
 recovery marker. The persisted branch identity is retained while HEAD is detached. An unrelated
-detached checkout remains blocked. The footer offers recovery continuation after the agent turn ends.
+detached checkout remains blocked. The footer offers recovery only while nothing can write to the
+checkout: not during a turn (including one waiting on approval), and not while a background task
+for the thread is alive. Main computes that (`agentBusy` on the attachment inspection) and
+`reattachWorktree` refuses under the same condition, so a stale or scripted call cannot race an
+agent.
+
+Recovery is the fallback; prevention comes first. In a managed thread worktree the gate refuses,
+before any prompt, the commands that strand a checkout: `git rebase` (any form), `git pull
+--rebase` (flag or `-c pull.rebase=…`), `git bisect start`, and `git switch|checkout --detach`.
+A rebase that stops on a conflict or a failed signature leaves HEAD detached, and approving it
+would only strand the thread. The refusal names the alternative (`git merge`, `git pull
+--no-rebase`, `git worktree add --detach` outside the checkout) and says to ask the user to run
+the command in a terminal if it is truly needed. Exits from an operation already under way
+(`rebase --abort|--continue|--skip|--quit`, `bisect reset`) are never refused. Shared project
+checkouts are the user's own and keep ordinary policy. Classifier: `detectCheckoutDetachingCommand`
+(`packages/shell-guard/src/checkout-detach.ts`). Limits: the classifier is static, so a
+bare `git pull` under a `pull.rebase` set only in a config file, a script that rebases, or an
+external ACP agent's own shell is not covered; recovery stays available for those.
 
 ### Deferred-worktree threads (prototype)
 

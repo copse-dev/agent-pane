@@ -79,4 +79,6 @@
 // v49 versions saved-model invalidation reports and guarded recovery IPC.
 // v50 versions skill-source diagnostics and validated extra-root updates.
 // v51 versions the context_compacted agent chunk (OpenAI server-side compaction).
-export const API_PROTOCOL_VERSION = 51 as const
+// v52 versions the OpenAI remote-agent provider in thread and agent-PR-link payloads.
+// v53 versions agentBusy on worktree attachment status.
+export const API_PROTOCOL_VERSION = 53 as const

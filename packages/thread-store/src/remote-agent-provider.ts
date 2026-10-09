@@ -6,10 +6,13 @@
  */
 import { memberOf } from '@copse/std/member-of.ts'
 
+export const REMOTE_AGENT_PROVIDER_OPENAI = 'openai'
+
 export const REMOTE_AGENT_PROVIDER_CURSOR = 'cursor'
 export const REMOTE_AGENT_PROVIDER_ANTHROPIC = 'anthropic'
 
 export const REMOTE_AGENT_PROVIDERS = [
+  REMOTE_AGENT_PROVIDER_OPENAI,
   REMOTE_AGENT_PROVIDER_CURSOR,
   REMOTE_AGENT_PROVIDER_ANTHROPIC,
 ] as const
