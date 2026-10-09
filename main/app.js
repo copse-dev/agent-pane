@@ -23436,6 +23436,10 @@ var init_model_families = __esm({
       supportsStrictTools: true,
       supportsVerbosity: true,
       supportsParallelToolCallsControl: true,
+      // Documented for these families: OpenAI's Compaction guide shows server-side
+      // `context_management` on gpt-5.x and gpt-6-astra with `store: false`. If an
+      // endpoint refuses it anyway, `ResponsesProvider` falls back to client-side trim.
+      supportsServerCompaction: true,
       prefersApplyPatch: true,
       acceptsDeveloperRole: true
     };
@@ -154407,6 +154411,10 @@ function startAgentController(store2, api2) {
         break;
       }
       case "panel_update": {
+        break;
+      }
+      case "provider_state":
+      case "context_compacted": {
         break;
       }
       case "todo_worker_start":
