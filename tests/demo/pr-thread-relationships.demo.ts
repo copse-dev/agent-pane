@@ -37,9 +37,7 @@ describe('PR producing and related threads', () => {
     if (!second) throw new Error('Missing second related PR')
     await second.click()
     await expect($('.pr-viewer-title')).toHaveText('Follow up on widget review')
-    await expect($('.pr-thread-group[data-relationship-group="produced"]')).toHaveText(
-      'Producing threads\nNo recorded producing thread.',
-    )
+    await expect($('.pr-thread-group[data-relationship-group="produced"]')).not.toExist()
     await expect($$('.pr-thread-link[data-relationship="produced"]')).toBeElementsArrayOfSize(0)
     await saveElementScreenshot('#pane-files', 'pr-mention-without-producer.png')
   })

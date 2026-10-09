@@ -32,11 +32,33 @@ test('shows every producer and related reference with safe titles and independen
   assert.deepEqual(opened, ['p', 'r1', 'r2'])
 })
 
-test('mentions alone show no recorded producer', () => {
+test('mentions alone hide the empty producing group', () => {
   const host = renderPrThreadRelationships(
     [{ threadId: 'r', title: 'Review', kinds: ['referenced'], productions: [] }],
     () => {},
   )
-  assert.match(host.textContent, /No recorded producing thread/)
+  assert.equal(host.querySelector('[data-relationship-group="produced"]'), null)
+  assert.equal(
+    host.querySelector('[data-relationship-group="related"] h5')?.textContent,
+    'Related threads',
+  )
   assert.equal(host.querySelector('[data-relationship="produced"]'), null)
+})
+
+test('a producing thread hides the empty related group', () => {
+  const host = renderPrThreadRelationships(
+    [{ threadId: 'p', title: 'Created PR', kinds: ['produced'], productions: [] }],
+    () => {},
+  )
+  assert.equal(host.querySelector('[data-relationship-group="related"]'), null)
+  assert.equal(
+    host.querySelector('[data-relationship="produced"]')?.textContent,
+    'Created PRCreated PR',
+  )
+})
+
+test('no relationships leave no group headings or placeholders', () => {
+  const host = renderPrThreadRelationships([], () => {})
+  assert.equal(host.childElementCount, 0)
+  assert.equal(host.textContent, '')
 })

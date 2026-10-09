@@ -1818,6 +1818,24 @@ export async function parkThreadWorktree(
   return { status: 'removed', branch: validated.branch, head, upstreamRef }
 }
 
+/**
+ * True when `path` is, or lies inside, a thread checkout this manager owns.
+ * A shared project checkout is the user's own and never qualifies.
+ */
+export function isInsideManagedThreadWorktree(path: string): boolean {
+  const root = worktreesRoot()
+  let target = resolve(path)
+  try {
+    target = realpathSync.native(target)
+  } catch {
+    // An unresolved path is judged as written.
+  }
+  const rel = relative(root, target)
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return false
+  // `<project>/<thread>[/...]`: one segment names only a project directory.
+  return rel.split(sep).length >= 2
+}
+
 /** True when a registered path is managed under this project/thread namespace. */
 export function managedThreadIdForPath(projectId: string, path: string): string | null {
   assertOwnerId('project id', projectId)
