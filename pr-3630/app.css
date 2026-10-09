@@ -10256,6 +10256,79 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   color: var(--text-primary);
   font-size: var(--font-size-xs);
 }
+.automation-scheduler-notice {
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
+  padding: var(--spacing-sm);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
+.automation-scheduler-notice[hidden] {
+  display: none;
+}
+.automation-problem-title {
+  color: var(--text-primary);
+}
+.automation-problem-time {
+  color: var(--text-secondary);
+}
+.automation-problem-remedy {
+  color: var(--text-secondary);
+}
+.automation-problem-action {
+  margin-top: var(--spacing-xs);
+}
+.automation-ci-matches {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.automation-deliveries {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+}
+.automation-deliveries > summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.automation-delivery-list {
+  list-style: none;
+  margin: var(--spacing-xs) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.automation-delivery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-xs) var(--spacing-sm);
+}
+.automation-delivery-outcome {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.automation-delivery[data-delivery-outcome=filtered] .automation-delivery-outcome,
+.automation-delivery[data-delivery-outcome=waiting] .automation-delivery-outcome {
+  color: var(--text-secondary);
+}
+.automation-delivery[data-delivery-outcome=held] .automation-delivery-outcome {
+  color: var(--warning);
+}
+.automation-delivery-summary {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.automation-delivery-time,
+.automation-delivery-reason {
+  color: var(--text-secondary);
+}
+.automation-delivery-reason {
+  flex-basis: 100%;
+}
 .automation-list {
   display: flex;
   flex-direction: column;
@@ -13956,6 +14029,45 @@ dialog.activity-panel-overlay {
       position: static;
     }
   }
+}
+.activity-automation-notice {
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
+.activity-automation-notice[hidden] {
+  display: none;
+}
+.activity-issue {
+  color: var(--warning);
+}
+.activity-row[data-state=failed] .activity-issue {
+  color: var(--danger);
+}
+.activity-issue-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning) 8%, var(--bg-base));
+}
+.activity-issue-detail p {
+  margin: 0;
+  line-height: var(--line-height-base);
+}
+.activity-issue-title {
+  font-weight: 600;
+}
+.activity-issue-message,
+.activity-issue-remedy {
+  color: var(--text-secondary);
 }
 
 /* src/renderer/styles/global/conversation-search.css */
