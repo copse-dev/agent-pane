@@ -111676,9 +111676,13 @@ function mountFooterBranchStatus(host, store2, api2) {
   }
   function renderReattach() {
     const current = activeDetached();
-    const shown = current !== null && !isPickerMode() && !wrap.hidden && getActiveThread2()?.status !== "running";
+    const visible = current !== null && !isPickerMode() && !wrap.hidden;
+    const shown = visible && !agentCanTouchCheckout(current);
     reattachButton.hidden = !shown;
-    trigger.classList.toggle("is-detached", current !== null && !isPickerMode() && !wrap.hidden);
+    trigger.classList.toggle("is-detached", visible);
+    if (visible && !shown) {
+      trigger.title = `This checkout is detached from ${current.branch}. Recovery is offered once the agent stops working in it.`;
+    }
     if (!shown) return;
     const title = detachedTitle(current);
     trigger.title = title;
@@ -111712,6 +111716,9 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattachButton.setAttribute("aria-label", `Reattach checkout to ${current.branch}`);
     reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
   }
+  function agentCanTouchCheckout(current) {
+    return getActiveThread2()?.status === "running" || current?.agentBusy === true;
+  }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
   }
@@ -111734,7 +111741,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || getActiveThread2()?.status === "running" || reattaching || activeRecoveryRunId() !== null)
+    if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
     if (current.recovery) {
       const runId = globalThis.crypto.randomUUID();
