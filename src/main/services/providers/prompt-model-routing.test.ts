@@ -14,6 +14,7 @@ import {
   assessPromptDemand,
   assessPromptDemandWithFallback,
   pickPromptModel,
+  pickPromptModelWithinContext,
   promptRoutingContext,
 } from './prompt-model-routing.ts'
 
@@ -297,6 +298,43 @@ describe('primary prompt model routing', () => {
   it('uses a capable route instead of the cheapest underpowered local model', () => {
     assert.equal(pickPromptModel('mid', pool, 'fallback'), 'capable')
     assert.equal(pickPromptModel('top', pool, 'fallback'), 'frontier')
+  })
+
+  it('skips a loaded local model whose context is too small before starting it', async () => {
+    const low = modelIntellect(BAND_REPRESENTATIVE_MODEL.low)
+    assert.ok(low !== null)
+    const candidates = computeParetoFrontier([
+      { id: 'local-small-window', intellect: low, costPerMTok: 0, local: true },
+      { id: 'cloud-large-window', intellect: low + 1, costPerMTok: 1 },
+    ])
+    const checked: string[] = []
+    const chosen = await pickPromptModelWithinContext(
+      'low',
+      candidates,
+      'fallback',
+      12_000,
+      async (model) => {
+        checked.push(model)
+        return model === 'lmstudio:local-small-window' ? 8192 : 128_000
+      },
+    )
+    assert.equal(chosen, 'cloud-large-window')
+    assert.deepEqual(checked, ['lmstudio:local-small-window', 'cloud-large-window'])
+  })
+
+  it('keeps a fitting local model and rejects a task that fits no route', async () => {
+    const local = computeParetoFrontier([
+      { id: 'local', intellect: 50, costPerMTok: 0, local: true },
+    ])
+    const windowForModel = async (): Promise<number> => 8192
+    assert.equal(
+      await pickPromptModelWithinContext('low', local, 'fallback', 4096, windowForModel),
+      'lmstudio:local',
+    )
+    await assert.rejects(
+      pickPromptModelWithinContext('low', local, 'fallback', 12_000, windowForModel),
+      /could not find a model with enough context/,
+    )
   })
 
   it('uses included capacity when it meets the requirement', () => {
