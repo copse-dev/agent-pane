@@ -95009,7 +95009,10 @@ function isConciseCollapsedMessage(messages, index, enabled) {
   if (!enabled || !msg || !isConciseMessage(msg)) return false;
   const process2 = isConciseWorkingMessage(msg) || isConciseStepsMessage(msg) && messages.slice(index + 1).some((m2) => m2.role === "assistant");
   if (!process2) return false;
-  const producesOutput = (msg.visualEvidence?.length ?? 0) > 0 || (msg.canvasArtefacts?.length ?? 0) > 0 || msg.toolCalls.some((toolCall) => (toolCall.images?.length ?? 0) > 0);
+  const producesOutput = (msg.visualEvidence?.length ?? 0) > 0 || (msg.canvasArtefacts?.length ?? 0) > 0 || msg.toolCalls.some(
+    (toolCall) => (toolCall.images?.length ?? 0) > 0 || // Offers to the user stay painted in the concise view (see the stylesheet).
+    toolCall.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(toolCall)
+  );
   return !producesOutput;
 }
 function hasReasoning(msg) {
@@ -95103,6 +95106,8 @@ var init_concise_thread = __esm({
     init_intellect_lookup();
     init_todo_logic();
     init_tool_display();
+    init_thread_proposal2();
+    init_reviewer_input();
     init_unknown_value3();
     init_turn_interruption();
     CONCISE_THREAD_MIN_INTELLECT = 50;
