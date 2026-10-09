@@ -940,6 +940,19 @@ export function registerAllHandlers(
     // models (e.g. a new Opus release) appear on its next open without blocking
     // boot or requiring a manual "Detect models".
     revalidateStaleAcpModels()
+    // Register any already-installed ACP presets so a detected agent (e.g.
+    // `claude`, `codex` on PATH) lands in the model picker without the user
+    // having to open Settings → ACP agents first. Fire-and-forget for the same
+    // reason as above; registering a preset with no package to install never
+    // shows an approval dialog, so this stays silent in the common case. Skipped
+    // under the e2e harness: specs seed `registeredAcpAgents` explicitly, and
+    // this would otherwise pick up whatever ACP CLIs happen to be on the
+    // developer's own PATH.
+    if (process.env['COPSE_E2E'] !== '1') {
+      void runAcpAutoSetup(new AbortController().signal).catch((err: unknown) => {
+        console.warn('[acp] auto-setup on workspace open failed:', err)
+      })
+    }
     return canonical
   })
 

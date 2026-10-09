@@ -16,8 +16,10 @@ import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { requestApproval } from '../approval.ts'
 
 /**
- * "Just works" setup for curated ACP presets. It runs when ACP settings opens.
- * Fresh host-wide package installations are gated by an explicit approval.
+ * "Just works" setup for curated ACP presets. It runs both when ACP settings
+ * opens and on every `workspace:set`, so a preset already on PATH is usable
+ * from the model picker without a Settings visit. Fresh host-wide package
+ * installations are still gated by an explicit approval.
  * For each preset it:
  *
  *  1. Detects the agent binary and any gating client (`claude`, `cursor-agent`).
@@ -171,8 +173,22 @@ function presetToConfig(known: KnownAcpAgent): AcpAgentConfig {
 
 let inFlight: Promise<AcpAutoSetupResult> | null = null
 
-/** Run auto-setup, coalescing concurrent calls (e.g. the tab opened twice). */
+const noopAutoSetupResult: AcpAutoSetupResult = {
+  installed: [],
+  upgraded: [],
+  registered: [],
+  modelsDetected: [],
+  failed: [],
+}
+
+/**
+ * Run auto-setup, coalescing concurrent calls (e.g. the settings tab opened
+ * twice, or a workspace switch racing it). A no-op on SSH workspaces:
+ * `resolveOnPath` only ever sees the local main-process host PATH, and ACP
+ * agents are not spawned on SSH remotes, so there is nothing to detect.
+ */
 export function runAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult> {
+  if (isActiveSshWorkspace()) return Promise.resolve(noopAutoSetupResult)
   inFlight ??= performAcpAutoSetup(signal).finally(() => {
     inFlight = null
   })
