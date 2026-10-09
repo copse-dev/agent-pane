@@ -69,6 +69,7 @@ import {
 import { isAppleDevelopmentProjectEnrolled } from '../apple-development/apple-development-service.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { prepareAgentPluginMcpConfigs } from '../plugins/agent-plugin-mcp-runtime.ts'
+import { withWorktreeWriter } from '../worktree-writers.ts'
 import {
   clearMcpToolPermissionTargets,
   migrateLegacyMcpToolGrants,
@@ -591,13 +592,17 @@ function registerListedTools(
             : args
         let result: Awaited<ReturnType<Client['callTool']>>
         try {
-          result = await client.callTool(
-            {
-              name: tool.name,
-              arguments: isRecord(preparedArgs) ? preparedArgs : {},
-            },
-            undefined,
-            { signal },
+          // An MCP server is its own process and may write anywhere, so the
+          // call holds an unscoped worktree writer lease for its duration.
+          result = await withWorktreeWriter(null, () =>
+            client.callTool(
+              {
+                name: tool.name,
+                arguments: isRecord(preparedArgs) ? preparedArgs : {},
+              },
+              undefined,
+              { signal },
+            ),
           )
         } catch (error) {
           if (signInTargets.has(server.serverName) && isMcpSignInRequiredError(error)) {
