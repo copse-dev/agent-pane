@@ -47787,6 +47787,14 @@ function createClassifiersSection(api2) {
     });
     if (approved) await localAction(() => api2.localClassifiers.install(server.id));
   }
+  async function confirmUninstall(server) {
+    const approved = await showConfirmDialog({
+      message: `Uninstall ${server.label}?`,
+      detail: `Copse will delete the ${server.label} checkout, environment and downloaded model files from its classifier cache (about ${String(server.downloadGb)} GB). The saved connection stays until you remove it; the shared package cache is kept.`,
+      confirmLabel: "Uninstall"
+    });
+    if (approved) await localAction(() => api2.localClassifiers.uninstall(server.id));
+  }
   function localButton(label, className, onClick) {
     const button = el(
       "button",
@@ -47819,6 +47827,9 @@ function createClassifiersSection(api2) {
         actions.append(
           localButton("Start", "classifier-local-start", () => {
             void localAction(() => api2.localClassifiers.start(server.id));
+          }),
+          localButton("Uninstall", "classifier-local-uninstall", () => {
+            void confirmUninstall(server);
           })
         );
         break;
@@ -52648,6 +52659,65 @@ function renderModelTable(host, title, rows, emptyText, accounts = []) {
   section.append(table);
   host.append(section);
 }
+function renderClassifierTable(host, rows, allTime) {
+  const section = document.createElement("div");
+  section.className = "usage-model-group usage-classifier-group";
+  const heading = document.createElement("h4");
+  heading.textContent = "Classifiers";
+  section.append(heading);
+  if (allTime || !rows || rows.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "usage-empty";
+    empty.textContent = allTime ? "Classifier calls are listed for the day, month and 90-day windows only." : "No classifier usage in this period.";
+    section.append(empty);
+    host.append(section);
+    return;
+  }
+  const table = document.createElement("table");
+  table.className = "usage-table usage-classifier-table";
+  const columns = document.createElement("colgroup");
+  for (const className of [
+    "usage-col-model",
+    "usage-col-model",
+    "usage-col-num",
+    "usage-col-num",
+    "usage-col-num"
+  ]) {
+    const col = document.createElement("col");
+    col.className = className;
+    columns.append(col);
+  }
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (const label of ["Classifier", "Model", "Calls", "Input", "Output"]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    headRow.append(th);
+  }
+  head.append(headRow);
+  const body = document.createElement("tbody");
+  for (const row2 of rows) {
+    const tr2 = document.createElement("tr");
+    tr2.dataset["provider"] = row2.provider;
+    const provider = document.createElement("td");
+    provider.textContent = row2.provider;
+    const model = document.createElement("td");
+    const code = document.createElement("code");
+    code.textContent = row2.model;
+    model.append(code);
+    const cells = [row2.calls, row2.inputTokens, row2.outputTokens].map((value) => {
+      const td = document.createElement("td");
+      td.textContent = formatTokenCount(value);
+      return td;
+    });
+    tr2.append(provider, model, ...cells);
+    body.append(tr2);
+  }
+  table.append(columns, head, body);
+  section.append(table);
+  host.append(section);
+}
 function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
   host.replaceChildren();
   const headline = document.createElement("p");
@@ -52688,6 +52758,7 @@ function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
     summary.localModels,
     "No local model usage in this period."
   );
+  renderClassifierTable(host, summary.classifiers, period === "allTime");
 }
 function createUsageSection(api2, store2, onRequestClose) {
   const handleSignIn = {
@@ -66342,6 +66413,7 @@ var init_tool_display = __esm({
       browser_snapshot: { running: "Taking page snapshot", done: "Took page snapshot" },
       browser_screenshot: { running: "Taking screenshot", done: "Took screenshot" },
       image_gen: { running: "Generating image", done: "Generated image" },
+      classify_text: { running: "Classifying text", done: "Classified text" },
       browser_click: { running: "Clicking element", done: "Clicked element" },
       browser_type: { running: "Typing text", done: "Typed text" },
       browser_tabs: { running: "Listing browser tabs", done: "Listed browser tabs" },
@@ -79997,6 +80069,7 @@ function createDemoApi(scenario, options = {}) {
       install: unsupported,
       start: unsupported,
       stop: unsupported,
+      uninstall: unsupported,
       connect: unsupported
     },
     chatGptPlan: {
@@ -80066,6 +80139,7 @@ function createDemoApi(scenario, options = {}) {
           totalCostUsd: 0,
           cloudModels: [],
           localModels: [],
+          classifiers: [],
           totalInputTokens: 0,
           totalOutputTokens: 0,
           hasUnpricedCloudUsage: false
