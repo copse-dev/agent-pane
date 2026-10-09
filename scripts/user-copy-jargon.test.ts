@@ -263,6 +263,18 @@ const ALLOWED: readonly Allowance[] = [
     count: 2,
     reason: REASON.identifier,
   },
+  {
+    file: 'packages/llm/src/classifiers/validated.ts',
+    term: 'capability',
+    count: 1,
+    reason: REASON.identifier,
+  },
+  {
+    file: 'src/main/services/machines/machine-manager.ts',
+    term: 'capability',
+    count: 1,
+    reason: REASON.identifier,
+  },
   { file: 'src/renderer/demo/demo-api.ts', term: 'stdio', count: 1, reason: REASON.identifier },
   {
     file: 'src/renderer/perf-autopilot.ts',
