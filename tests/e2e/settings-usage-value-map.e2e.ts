@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  readSeededSettings,
+  resetUserData,
+  seedEmptyProject,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('settings usage model value map cost axis', () => {
@@ -22,6 +27,17 @@ describe('settings usage model value map cost axis', () => {
             { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
             { value: 'gpt-5.5', label: 'GPT-5.5' },
           ],
+        },
+      ],
+    })
+    writeSettings({
+      ...readSeededSettings(),
+      extraProviders: [
+        {
+          slug: 'legacy',
+          label: 'Legacy',
+          baseUrl: 'https://legacy.example.invalid/v1',
+          models: [{ id: 'o1-pro', inputPricePerMTok: 150, outputPricePerMTok: 600 }],
         },
       ],
     })
@@ -81,6 +97,19 @@ describe('settings usage model value map cost axis', () => {
     )
     assert.match(await chart.getText(), /GPT-6 Astra \(~\) · plan/)
     assert.equal(await fieldset.$('details.frontier-unpriced-list').isExisting(), false)
+    assert.equal(
+      await fieldset.$('circle.frontier-point[data-model-id="legacy:o1-pro"]').isExisting(),
+      false,
+      'a severely dominated routed model must not stretch the default price axis',
+    )
+    const hiddenOutliers = fieldset.$('details.frontier-severely-dominated')
+    await expect(hiddenOutliers).toBeExisting()
+    assert.match(
+      await browser.execute(
+        () => document.querySelector('details.frontier-severely-dominated')?.textContent ?? '',
+      ),
+      /o1-pro/,
+    )
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-mtok.png')
