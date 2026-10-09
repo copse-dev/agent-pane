@@ -124,6 +124,9 @@ function endpointOf(profile: ClassifierProfile): string | null {
 export class LocalClassifierManager {
   private readonly managed = new Map<string, Managed>()
 
+  /** Servers whose files are being deleted: nothing may install or start them meanwhile. */
+  private readonly uninstalling = new Set<string>()
+
   private readonly deps: LocalClassifierDeps
 
   constructor(deps: LocalClassifierDeps) {
@@ -140,6 +143,7 @@ export class LocalClassifierManager {
   /** Download, set up, start and connect. Errors are recorded on the status, not thrown. */
   async install(id: string): Promise<LocalClassifierOverview> {
     const entry = this.entry(id)
+    this.assertNotUninstalling(id, entry)
     const current = this.managed.get(id)
     if (current?.installing || current?.alive) return this.overview()
     const state = this.begin(id, true)
@@ -149,10 +153,13 @@ export class LocalClassifierManager {
 
   async start(id: string): Promise<LocalClassifierOverview> {
     const entry = this.entry(id)
+    this.assertNotUninstalling(id, entry)
     const current = this.managed.get(id)
     if (current?.installing || current?.alive) return this.overview()
     if (!(await this.deps.isInstalled(id, entry)))
       throw new Error(`${entry.label} is not installed.`)
+    // Uninstall may have begun while the installed check was awaited.
+    this.assertNotUninstalling(id, entry)
     const state = this.begin(id, false)
     void this.runStart(id, entry, state)
     return this.overview()
@@ -180,14 +187,29 @@ export class LocalClassifierManager {
     if (current?.installing || current?.alive) {
       throw new Error(`Stop ${entry.label} before uninstalling it.`)
     }
-    if (await this.deps.portListening(entry.port)) {
-      throw new Error(
-        `${entry.label} is running on port ${String(entry.port)}. Stop it before uninstalling.`,
-      )
+    if (this.uninstalling.has(id)) return this.overview()
+    // Reserve the server before the first await, so an install or start that
+    // arrives while the port is probed or the files are removed is refused
+    // instead of running on a cache that is being deleted.
+    this.uninstalling.add(id)
+    try {
+      if (await this.deps.portListening(entry.port)) {
+        throw new Error(
+          `${entry.label} is running on port ${String(entry.port)}. Stop it before uninstalling.`,
+        )
+      }
+      await this.deps.uninstall(id, entry)
+      this.managed.delete(id)
+    } finally {
+      this.uninstalling.delete(id)
     }
-    await this.deps.uninstall(id, entry)
-    this.managed.delete(id)
     return this.overview()
+  }
+
+  private assertNotUninstalling(id: string, entry: CatalogEntry): void {
+    if (this.uninstalling.has(id)) {
+      throw new Error(`${entry.label} is being uninstalled. Try again when that finishes.`)
+    }
   }
 
   /** Save the preset connection for a server that is already running. */

@@ -26,6 +26,8 @@ interface Fixture {
   prepareFailure: { message: string } | null
   freeBytes: number | null
   uninstalled: string[]
+  /** When set, every port probe waits for it, to hold an operation at its first await. */
+  portGate: Promise<void> | null
 }
 
 const children: Array<ReturnType<typeof spawn>> = []
@@ -40,7 +42,10 @@ function fixture(): Fixture {
       return { root: '/cache', checkout: `/cache/${name}/${spec.revision}`, models: '/cache/m' }
     },
     isInstalled: async (name) => state.installed.has(name),
-    portListening: async (port) => state.listening.has(port),
+    portListening: async (port) => {
+      await state.portGate
+      return state.listening.has(port)
+    },
     programAvailable: async (program) => state.available.has(program),
     freeBytes: async () => state.freeBytes,
     uninstall: async (name) => {
@@ -77,6 +82,7 @@ function fixture(): Fixture {
     prepareFailure: null,
     freeBytes: null,
     uninstalled: [],
+    portGate: null,
   }
   return state
 }
@@ -253,6 +259,27 @@ describe('LocalClassifierManager', () => {
     assert.equal(after.servers.find((server) => server.id === 'winnow')?.phase, 'not-installed')
     // The saved connection is left for the person to remove.
     assert.equal(after.servers.find((server) => server.id === 'winnow')?.saved, true)
+  })
+
+  it('refuses to install or start a server while it is being uninstalled', async () => {
+    const f = fixture()
+    f.installed.add('winnow')
+    // Hold the uninstall at its port probe, the first await after it begins.
+    let release: () => void = () => undefined
+    f.portGate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const removing = f.manager.uninstall('winnow')
+    await assert.rejects(f.manager.install('winnow'), /being uninstalled/)
+    await assert.rejects(f.manager.start('winnow'), /being uninstalled/)
+    assert.deepEqual(f.prepared, [])
+    release()
+    f.portGate = null
+    await removing
+    assert.deepEqual(f.uninstalled, ['winnow'])
+    // Once finished, the server can be installed again.
+    await f.manager.install('winnow')
+    await until(f, (status) => status.phase === 'running')
   })
 
   it('refuses to uninstall a server something else is running', async () => {
