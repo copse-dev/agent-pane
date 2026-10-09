@@ -5,7 +5,7 @@ import {
   detectHostEscape,
   detectOutwardEffect,
 } from './container-effects.ts'
-import type { ShellHarmDecision } from './shell-harm.ts'
+import { assessShellHarm, type ShellHarmDecision } from './shell-harm.ts'
 
 const ALLOW: ShellHarmDecision = { action: 'allow', reasons: [] }
 const PROMPT: ShellHarmDecision = {
@@ -90,5 +90,29 @@ describe('decideContainedShellEffect', () => {
   it('allows ordinary work', () => {
     const decision = decideContainedShellEffect('pnpm test -- thread-store', ALLOW)
     assert.equal(decision.action, 'allow')
+  })
+})
+
+describe('decideContainedShellEffect with the real harm assessment', () => {
+  const context = { workspaceRoot: '/app', homeDir: '/root' }
+  const decide = (command: string): string =>
+    decideContainedShellEffect(command, assessShellHarm(command, context)).action
+
+  it('lets every way of rewriting a system config file run inside the guest', () => {
+    // A task that configures a service writes under /etc. `cat >` and `tee` replace
+    // the file's content identically, so they must not be judged differently.
+    for (const command of [
+      'cat > /etc/nginx/nginx.conf <<EOF\nserver {}\nEOF',
+      'printf server | tee /etc/nginx/nginx.conf',
+      'cp new.conf /etc/nginx/nginx.conf',
+    ]) {
+      assert.equal(decide(command), 'allow', command)
+    }
+  })
+
+  it('still ends the run on a credential-file write by any route', () => {
+    for (const command of ['echo x > /etc/shadow', 'printf x | tee /etc/shadow']) {
+      assert.equal(decide(command), 'deny', command)
+    }
   })
 })

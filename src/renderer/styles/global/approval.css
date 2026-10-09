@@ -52,6 +52,13 @@
 .approval-heading {
   margin-bottom: var(--spacing-md);
 }
+/* Which side chat is asking, when the prompt surfaces over its parent thread. */
+.approval-origin {
+  margin: calc(-1 * var(--spacing-sm)) 0 var(--spacing-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
 /* Stacked list of pending requests; more than one item when a burst of
  * concurrent permission requests was coalesced into a single prompt. A large
  * batch scrolls as a group rather than growing the dialog unbounded. */

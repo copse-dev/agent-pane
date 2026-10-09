@@ -36,8 +36,12 @@ const BASELINE: Readonly<Record<string, SyncReadBaselineEntry>> = {
       'Container preparation and recovery inspect bounded manifests, canaries, and bundle bytes.',
   },
   'src/main/services/container-runtime/worker-entry.ts': {
-    calls: 2,
-    reason: 'Dedicated worker bootstrap reads its validated run request and attestation once.',
+    calls: 1,
+    reason: 'Dedicated worker bootstrap reads the host attestation once.',
+  },
+  'src/main/services/container-runtime/worker-main.ts': {
+    calls: 1,
+    reason: 'Dedicated worker bootstrap reads its validated run request once.',
   },
   'src/main/services/mobile/mobile-certificate.ts': {
     calls: 2,

@@ -44,6 +44,7 @@ import {
 } from '../../project-sandbox/network-scope.ts'
 import { acpBridgeNetworkScopeAlreadyApplies } from '../acp/acp-bridge-permission-context.ts'
 import { classifyShellScope } from './safety-classifier.ts'
+import { classifierSendsOffMachine } from '../classifiers/classifier-service.ts'
 import { currentRunIsUnattendedContainer } from './unattended-run.ts'
 import { decideContainedShellEffect } from '@copse/shell-guard/container-effects.ts'
 import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
@@ -831,6 +832,27 @@ async function checkWebSearchPermission(
     explicitPolicy !== 'ask',
     'Search queries will be sent to DuckDuckGo.',
   )
+}
+
+/**
+ * `classify_text` sends text the model chose to a saved classifier connection.
+ * Host approval is the classifier service's own gate, applied again at call
+ * time (`assertApprovedProviderHost`), so a host the user never approved fails
+ * there whatever this returns. This gate decides whether the call needs a
+ * prompt: a connection that leaves the machine asks, a local server or SemIf
+ * scorer does not, and an explicit "allow" or "ask" override wins either way.
+ */
+async function checkClassifyTextPermission(
+  args: unknown,
+  signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
+): Promise<boolean> {
+  if (explicitPolicy === 'allow') return true
+  const id = isRecord(args) && typeof args['classifier'] === 'string' ? args['classifier'] : ''
+  if (explicitPolicy === 'ask' || classifierSendsOffMachine(id)) {
+    return promptExplicitToolAsk('classify_text', args, signal)
+  }
+  return true
 }
 
 async function checkParallelSearchPermission(
@@ -2023,6 +2045,8 @@ export async function ensureToolPermitted(
     permitted = await checkWebSearchPermission(signal, explicitPolicy)
   } else if (toolName === 'parallel_search') {
     permitted = await checkParallelSearchPermission(signal, explicitPolicy)
+  } else if (toolName === 'classify_text') {
+    permitted = await checkClassifyTextPermission(args, signal, explicitPolicy)
   } else if (toolName === 'image_gen') {
     // The configured OpenAI credential is the network authority, as it is for
     // ordinary model requests. Keep the tool in the explicit network branch so

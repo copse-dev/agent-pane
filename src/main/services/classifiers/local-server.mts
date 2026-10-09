@@ -9,9 +9,9 @@
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rm, statfs, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, relative, isAbsolute } from 'node:path'
 import { connect } from 'node:net'
 
 export interface ServerSpec {
@@ -32,6 +32,8 @@ export interface CatalogEntry extends ServerSpec {
   downloadGb: number
   /** Programs the setup runs; each must answer `--version`. */
   prerequisites: readonly string[]
+  /** Hugging Face repositories the server downloads into the shared `HF_HOME`; uninstall removes them. */
+  weights: readonly string[]
 }
 
 export interface CachePaths {
@@ -46,6 +48,7 @@ export const LOCAL_CLASSIFIER_SERVERS: Readonly<Record<string, CatalogEntry>> = 
     label: 'Kev',
     downloadGb: 8,
     prerequisites: ['git', 'uv'],
+    weights: ['jaredpalmer/kev-4b'],
     repository: 'https://github.com/jaredpalmer/kev.git',
     revision: '2855ba2a55a80579176a459f78b95d03548cabb5',
     setup: () => [['uv', 'sync', '--extra', 'serve']],
@@ -68,7 +71,9 @@ export const LOCAL_CLASSIFIER_SERVERS: Readonly<Record<string, CatalogEntry>> = 
     presetId: 'winnow',
     label: 'Winnow-12B',
     downloadGb: 12.5,
+    // Winnow downloads into its own `models` directory, which uninstall removes with the checkout.
     prerequisites: ['git', 'python3'],
+    weights: [],
     repository: 'https://github.com/EldanRing/winnow-inference.git',
     revision: '77d14580c6732ca2f3745750c1dc1fd446d8bcee',
     setup: ({ models }) => [['python3', 'scripts/setup.py', '--text-only', '--model-dir', models]],
@@ -107,6 +112,8 @@ export function cacheEnvironment(root: string): NodeJS.ProcessEnv {
     // The cache may sit on another volume, where uv cannot hard-link.
     UV_LINK_MODE: 'copy',
     HF_HOME: join(root, 'huggingface'),
+    // A clone that needs credentials must fail, not wait on a terminal nobody sees.
+    GIT_TERMINAL_PROMPT: '0',
   }
 }
 
@@ -165,7 +172,12 @@ export function runCommand(
       }
       if (signal?.aborted) reject(new Error('Cancelled.'))
       else if (code !== 0) {
-        reject(new Error(`${command.join(' ')} exited with ${String(code ?? killedBy)}`))
+        const last = captured
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .at(-1)
+        const detail = onLine && last ? `: ${last.slice(0, 200)}` : ''
+        reject(new Error(`${command.join(' ')} exited with ${String(code ?? killedBy)}${detail}`))
       } else resolve(captured.join('\n').trim())
     })
   })
@@ -256,6 +268,47 @@ export async function prepareClassifierCache(
 
 function withSignal(options: RunOptions): RunOptions {
   return options.signal ? { signal: options.signal } : {}
+}
+
+/** Free bytes on the volume that holds `path`, or null when it cannot be read. */
+export async function freeDiskBytes(path: string): Promise<number | null> {
+  // The cache may not exist yet: ask the nearest ancestor that does.
+  let probe = path
+  while (!existsSync(probe)) {
+    const parent = dirname(probe)
+    if (parent === probe) return null
+    probe = parent
+  }
+  try {
+    const stats = await statfs(probe)
+    return stats.bavail * stats.bsize
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Delete what `name` installed: its checkout and virtual environment, its own
+ * model directory, and the Hugging Face weights the catalog names for it. The
+ * uv package cache and other servers are shared and stay. Refuses a path that
+ * is not inside the cache root, so a catalog or environment mistake cannot
+ * reach outside it.
+ */
+export async function removeClassifierInstall(name: string, spec: CatalogEntry): Promise<void> {
+  const { root } = cachePaths(name, spec)
+  const targets = [
+    join(root, name),
+    ...spec.weights.map((repo) =>
+      join(root, 'huggingface', 'hub', `models--${repo.replace('/', '--')}`),
+    ),
+  ]
+  for (const target of targets) {
+    const inside = relative(root, target)
+    if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
+      throw new Error(`Refusing to remove ${target}: it is outside ${root}`)
+    }
+    await rm(target, { recursive: true, force: true })
+  }
 }
 
 /** Whether something accepts TCP connections on the loopback port. Sends no data. */
