@@ -83631,14 +83631,17 @@ function buildForkedThread(source, options = {}) {
   const now = Date.now();
   const messages = slice.map((message2) => copyMessage(message2));
   const gitBranch = source.worktree === void 0 ? source.gitBranch : void 0;
+  const id = randomUUID2();
+  const links = collectThreadLinks({ id, messages });
   return {
-    id: randomUUID2(),
+    id,
     title: forkThreadTitle(source.title),
     status: "idle",
     messages,
     // References follow only the copied transcript; native production belongs
     // to the source thread and is never inherited or inferred from tool text.
     prRefs: collectThreadPrRefs({ messages }),
+    ...links.length > 0 ? { links } : {},
     // Usage is a ledger of what a thread spent. The fork has spent nothing yet;
     // the source keeps its own totals.
     usage: { inputTokens: 0, outputTokens: 0 },
@@ -83685,6 +83688,7 @@ var randomUUID2, MAX_TITLE_LENGTH2, FORK_SUFFIX;
 var init_fork_thread = __esm({
   "packages/thread-store/src/fork-thread.ts"() {
     init_thread_pr_status();
+    init_thread_links();
     randomUUID2 = () => globalThis.crypto.randomUUID();
     MAX_TITLE_LENGTH2 = 120;
     FORK_SUFFIX = " (fork)";
