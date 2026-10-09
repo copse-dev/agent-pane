@@ -112309,9 +112309,13 @@ function mountFooterBranchStatus(host, store2, api2) {
   }
   function renderReattach() {
     const current = activeDetached();
-    const shown = current !== null && !isPickerMode() && !wrap.hidden && getActiveThread2()?.status !== "running";
+    const visible = current !== null && !isPickerMode() && !wrap.hidden;
+    const shown = visible && !agentCanTouchCheckout(current);
     reattachButton.hidden = !shown;
-    trigger.classList.toggle("is-detached", current !== null && !isPickerMode() && !wrap.hidden);
+    trigger.classList.toggle("is-detached", visible);
+    if (visible && !shown) {
+      trigger.title = `This checkout is detached from ${current.branch}. Recovery is offered once the agent stops working in it.`;
+    }
     if (!shown) return;
     const title = detachedTitle(current);
     trigger.title = title;
@@ -112345,6 +112349,9 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattachButton.setAttribute("aria-label", `Reattach checkout to ${current.branch}`);
     reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
   }
+  function agentCanTouchCheckout(current) {
+    return getActiveThread2()?.status === "running" || current?.agentBusy === true;
+  }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
   }
@@ -112367,7 +112374,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || getActiveThread2()?.status === "running" || reattaching || activeRecoveryRunId() !== null)
+    if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
     if (current.recovery) {
       const runId = globalThis.crypto.randomUUID();
@@ -129956,15 +129963,28 @@ function prNewThreadDraft(pr2) {
 function prNewThreadTitle(pr2) {
   return `PR #${String(pr2.number)}: ${pr2.title}`;
 }
-function startPrDiscussThread(store2, pr2) {
+function prCheckFixDraft(pr2, check2, headSha) {
+  const details = check2.url && /^https?:\/\//i.test(check2.url) ? ` Check details: ${check2.url}.` : "";
+  return `Fix the failing check "${check2.name}" (${check2.state.toLowerCase()}) on [#${String(pr2.number)} \u2014 ${pr2.title}](${pr2.url}) at head commit ${headSha}.${details} Inspect the failure logs, identify the cause, make the fix, and run the relevant checks.`;
+}
+function startPrThread(store2, draft, title) {
   store2.emit("composer_draft_flush");
-  const threadId = createThread(store2, prNewThreadDraft(pr2));
-  const title = prNewThreadTitle(pr2);
+  const threadId = createThread(store2, draft);
   store2.setState({
     threads: store2.getState().threads.map((t2) => t2.id === threadId ? { ...t2, title } : t2)
   });
   store2.emit("threads_changed");
   return threadId;
+}
+function startPrCheckFixThread(store2, pr2, check2, headSha) {
+  return startPrThread(
+    store2,
+    prCheckFixDraft(pr2, check2, headSha),
+    `Fix PR #${String(pr2.number)}: ${check2.name}`
+  );
+}
+function startPrDiscussThread(store2, pr2) {
+  return startPrThread(store2, prNewThreadDraft(pr2), prNewThreadTitle(pr2));
 }
 var init_pr_pane_thread = __esm({
   "src/renderer/views/pr-pane-thread.ts"() {
@@ -129995,7 +130015,7 @@ function externalButton(label, url2, open2) {
   });
   return button;
 }
-function renderPrActivity(host, section, activity, open2) {
+function renderPrActivity(host, section, activity, open2, fixCheck) {
   clear(host);
   if (!activity || activity.error) {
     host.append(
@@ -130110,6 +130130,16 @@ function renderPrActivity(host, section, activity, open2) {
     );
     for (const check2 of checks) {
       const icon = group.tone === "success" ? checkIcon() : group.tone === "failure" ? closeIcon() : group.tone === "pending" ? circleIcon() : minusIcon();
+      const fixButton = group.tone === "failure" && fixCheck ? el(
+        "button",
+        {
+          type: "button",
+          class: "pr-activity-link pr-check-fix-btn",
+          "aria-label": `Fix ${check2.name}`
+        },
+        "Fix"
+      ) : null;
+      fixButton?.addEventListener("click", () => fixCheck?.(check2, activity.headSha));
       section2.append(
         el(
           "div",
@@ -130125,6 +130155,7 @@ function renderPrActivity(host, section, activity, open2) {
               readableState(check2.state)
             )
           ),
+          ...fixButton ? [fixButton] : [],
           externalButton("Details", check2.url, open2)
         )
       );
@@ -130160,19 +130191,12 @@ function renderPrThreadRelationships(rows, openThread) {
     }
   ];
   for (const group of groups) {
+    if (group.rows.length === 0) continue;
     const section = el(
       "div",
       { class: "pr-thread-group", "data-relationship-group": group.kind },
       el("h5", {}, group.label)
     );
-    if (group.rows.length === 0)
-      section.append(
-        el(
-          "p",
-          { class: "pr-thread-empty" },
-          group.kind === "produced" ? "No recorded producing thread." : "No related threads recorded."
-        )
-      );
     for (const row2 of group.rows) {
       const label = row2.kinds.includes("produced") ? "Created PR" : row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
       const button = el(
@@ -131030,9 +131054,19 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       diffWrap.hidden = true;
       emptyState.hidden = true;
       activityHost.hidden = false;
-      renderPrActivity(activityHost, activeSection, prDetails.activity, (url2) => {
-        void api2.shell.openExternal(url2);
-      });
+      renderPrActivity(
+        activityHost,
+        activeSection,
+        prDetails.activity,
+        (url2) => {
+          void api2.shell.openExternal(url2);
+        },
+        (check2, headSha) => {
+          if (!prDetails) return;
+          startPrCheckFixThread(store2, prDetails, check2, headSha);
+          getPromptAttachmentHandlers()?.focusComposer?.();
+        }
+      );
     }
   }
   function renderFiles() {
