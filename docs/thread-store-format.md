@@ -113,7 +113,7 @@ legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-inde
 
 - **`events.jsonl`** is the linear history — one JSON line per finalized message
   (plus interleaved `hook_run`, `decision`, legacy `permission_decision`,
-  `machine_continuation`, and Plan Mode `plan` lifecycle lines, below), oldest first. It is
+  `machine_continuation`, `context_compaction`, and Plan Mode `plan` lifecycle lines, below), oldest first. It is
   the source of ordering and structure; prose and large/opaque content live in
   referenced files (`messages/*.md`, `blobs/*`) so a draft keystroke rewrites
   one tiny file, not the whole thread.
@@ -166,7 +166,11 @@ legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-inde
   trimming replaces the whole file via an atomic write. Corrupt JSON, a missing
   file, or an unsupported future `v` fail closed to fresh provider history
   without damaging the human transcript in `events.jsonl` / `messages/`. Do not
-  log history values. Legacy electron-store keys `llm-history:<threadId>` are
+  log history values. Besides conversational messages it may hold
+  `{ "role": "provider_state" }` entries: opaque provider artefacts positioned
+  where the provider produced them. The only kind today is OpenAI's
+  server-side compaction item (see below). Provider state is a cache, never
+  product truth: dropping it loses nothing the transcript does not still hold. Legacy electron-store keys `llm-history:<threadId>` are
   migrated once at startup (after legacy thread import, before the first window)
   when ownership resolves to exactly one `(projectId, threadId)`.
 - **`acp-session.json`** is a private, versioned binding to one exact external
@@ -359,6 +363,70 @@ history.
   "result": "completed" | "duplicate" | "stale" | "budget-exhausted" | "failed" // finished only
 }
 ```
+
+## Server-side compaction (`provider_state`, `type: "context_compaction"`)
+
+First-party OpenAI models on the Responses API (`usesResponsesApi`, `store: false`)
+are asked to compact server-side: the agent loop passes the prompt size at which to
+do it (`serverCompactionThreshold`, 75% of the history budget, so it fires before
+client-side trimming would drop anything), and the provider sends it as
+`context_management: [{ type: "compaction", compact_threshold }]`. When the server
+compacts it emits an encrypted `compaction` item in the stream. That item is the
+only thing that carries the model's prior reasoning across the boundary, so:
+
+- **Provider-history projection.** The loop stores it in `agent-history.json` as a
+  `provider_state` message ahead of the assistant turn that followed it:
+
+  ```jsonc
+  {
+    "role": "provider_state",
+    "state": {
+      "kind": "openai-responses-compaction",
+      "v": 1, // projection version
+      "model": "gpt-5.6-sol", // replayed only to this exact model...
+      "endpoint": "", // ...on this endpoint ("" = first-party OpenAI)
+      "itemId": "cmp_…",
+      "encryptedContent": "…", // opaque; replayed verbatim, never inspected
+    },
+  }
+  ```
+
+  The next request sends the item instead of every turn before it (instructions
+  stay). The turns it summarises are **kept** in the projection, so a provider or
+  model switch, a rejected replay, or a lost sidecar falls back to the existing
+  client-side trim over full history. Every adapter other than the matching
+  Responses provider strips `provider_state` before building its request.
+
+- **Canonical boundary.** `events.jsonl` gets a payload-free line recording that it
+  happened, with provenance:
+
+  ```jsonc
+  {
+    "v": 1,
+    "type": "context_compaction",
+    "id": "<uuid>",
+    "recordedAt": 1712345678901,
+    "provider": "openai-responses",
+    "model": "gpt-5.6-sol",
+    "projectionVersion": 1,
+    "itemId": "cmp_…",
+  }
+  ```
+
+- **Fallback.** If the endpoint rejects `context_management` or a replayed item
+  (HTTP 400/422, or an in-stream error naming compaction), the provider retries the
+  same request without it and stays off for the rest of the run; client-side
+  trimming then owns the budget again. Chat Completions, OpenRouter, LM Studio,
+  Anthropic, and compatible Responses endpoints never compact server-side.
+
+A streamed compaction boundary is saved in output order: assistant text emitted before
+it remains in the neutral fallback before the item, and only later text is replayed
+with it. If a tool call is already pending at that boundary, the new item is declined
+so its later result cannot become orphaned. The previous valid compaction item remains
+usable, and the complete neutral turn remains available for fallback. A declined item
+is not saved to provider history or announced as an accepted spine boundary.
+Malformed or future-version opaque state in a history sidecar is discarded while
+valid neutral history is retained; it is never passed into the replay adapter.
 
 ## Hook-run line schema (`type: "hook_run"`)
 

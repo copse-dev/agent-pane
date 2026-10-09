@@ -1,3 +1,4 @@
+import { toResponsesInput } from '@copse/llm/responses-provider.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@copse/std/array-utils.ts'
@@ -2645,6 +2646,249 @@ describe('parallel explore fan-out', () => {
       { toolCallId: 'e2', isError: false },
     ])
     assertToolPairingValid(messages)
+  })
+
+  describe('server-side compaction', () => {
+    const compactionState = {
+      kind: 'openai-responses-compaction' as const,
+      v: 1 as const,
+      model: 'gpt-5.6-sol',
+      endpoint: '',
+      itemId: 'cmp_1',
+      encryptedContent: 'opaque',
+    }
+
+    function compactingProvider(
+      seen: { compactAtTokens: Array<number | undefined> },
+      identity: { model: string; endpoint: string } | undefined,
+    ): LLMProvider {
+      let call = 0
+      return {
+        compactionIdentity: identity,
+        async *stream(_messages, _tools, _signal, options): AsyncGenerator<ProviderStreamChunk> {
+          seen.compactAtTokens.push(options?.compactAtTokens)
+          if (call++ === 0) {
+            yield { type: 'provider_state', state: compactionState }
+            yield { type: 'tool_call', toolCall: { id: 'c1', name: 'read_file', args: {} } }
+            yield { type: 'done', stopReason: 'tool_calls' }
+            return
+          }
+          yield { type: 'text', text: 'done' }
+          yield { type: 'done' }
+        },
+      }
+    }
+
+    it('records the item ahead of the turn it produced and announces it without the payload', async () => {
+      const seen: { compactAtTokens: Array<number | undefined> } = { compactAtTokens: [] }
+      const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+      const chunks: AgentStreamChunk[] = []
+
+      await runAgentLoop({
+        provider: compactingProvider(seen, { model: 'gpt-5.6-sol', endpoint: '' }),
+        messages,
+        tools: [{ name: 'read_file', description: 'r', parameters: { type: 'object' } }],
+        maxContextTokens: 100_000,
+        onChunk: (chunk) => chunks.push(chunk),
+        executeTool: async () => 'ok',
+      })
+
+      assert.deepEqual(
+        messages.map((m) => m.role),
+        ['user', 'provider_state', 'assistant', 'tool', 'assistant'],
+      )
+      assert.ok(at(seen.compactAtTokens, 0) !== undefined)
+      assertToolPairingValid(messages)
+      for (const identity of [{ model: 'gpt-5.6-sol', endpoint: '' }, undefined]) {
+        const replay = toResponsesInput(messages, new Map(), identity)
+        const call = replay.findIndex((item) => 'type' in item && item.type === 'function_call')
+        const result = replay.findIndex(
+          (item) => 'type' in item && item.type === 'function_call_output',
+        )
+        assert.ok(call >= 0 && result > call)
+      }
+      const announced = chunks.filter((chunk) => chunk.type === 'context_compacted')
+      assert.deepEqual(announced, [
+        {
+          type: 'context_compacted',
+          provider: 'openai-responses',
+          model: 'gpt-5.6-sol',
+          itemId: 'cmp_1',
+        },
+      ])
+      assert.equal(JSON.stringify(chunks).includes('opaque'), false)
+      assert.equal(
+        chunks.some((chunk) => chunk.type === 'provider_state'),
+        false,
+      )
+    })
+
+    it('declines a boundary after a pending call and preserves paired full replay', async () => {
+      const previous = { ...compactionState, itemId: 'previous' }
+      const messages: LLMMessage[] = [
+        { role: 'user', content: 'old' },
+        { role: 'provider_state', state: previous },
+        { role: 'user', content: 'go' },
+      ]
+      let calls = 0
+      const chunks: AgentStreamChunk[] = []
+      const provider: LLMProvider = {
+        compactionIdentity: { model: 'gpt-5.6-sol', endpoint: '' },
+        async *stream(): AsyncGenerator<ProviderStreamChunk> {
+          if (calls++ === 0) {
+            yield {
+              type: 'tool_call',
+              toolCall: { id: 'call-before', name: 'read_file', args: {} },
+            }
+            yield { type: 'provider_state', state: compactionState }
+            yield { type: 'done', stopReason: 'tool_calls' }
+          } else {
+            yield { type: 'text', text: 'done' }
+            yield { type: 'done' }
+          }
+        },
+      }
+      await runAgentLoop({
+        provider,
+        messages,
+        tools: [{ name: 'read_file', description: 'r', parameters: { type: 'object' } }],
+        onChunk: (chunk) => chunks.push(chunk),
+        executeTool: async () => 'result',
+      })
+      assertToolPairingValid(messages)
+      assert.equal(messages.filter((message) => message.role === 'provider_state').length, 1)
+      assert.equal(
+        chunks.some((chunk) => chunk.type === 'context_compacted'),
+        false,
+      )
+      for (const identity of [provider.compactionIdentity, undefined]) {
+        const replay = toResponsesInput(messages, new Map(), identity)
+        const call = replay.findIndex((item) => 'type' in item && item.type === 'function_call')
+        const result = replay.findIndex(
+          (item) => 'type' in item && item.type === 'function_call_output',
+        )
+        assert.ok(call >= 0 && result > call)
+      }
+    })
+
+    it('replays only output emitted after a mid-stream compaction boundary', async () => {
+      const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+      const provider: LLMProvider = {
+        compactionIdentity: { model: 'gpt-5.6-sol', endpoint: '' },
+        async *stream(): AsyncGenerator<ProviderStreamChunk> {
+          yield { type: 'text', text: 'covered prefix' }
+          yield { type: 'provider_state', state: compactionState }
+          yield { type: 'text', text: 'retained suffix' }
+          yield { type: 'done' }
+        },
+      }
+      await runAgentLoop({
+        provider,
+        messages,
+        tools: [],
+        onChunk: () => {},
+        executeTool: async () => 'ok',
+      })
+      const replay = toResponsesInput(messages, new Map(), provider.compactionIdentity)
+      assert.equal(JSON.stringify(replay).includes('covered prefix'), false)
+      assert.equal(JSON.stringify(replay).includes('retained suffix'), true)
+      assert.ok(
+        messages.some(
+          (message) => message.role === 'assistant' && message.content === 'covered prefix',
+        ),
+      )
+    })
+
+    it('keeps a compacted prefix out of replay when the stream ends with a malformed call', async () => {
+      const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+      let call = 0
+      const provider: LLMProvider = {
+        compactionIdentity: { model: 'gpt-5.6-sol', endpoint: '' },
+        async *stream(): AsyncGenerator<ProviderStreamChunk> {
+          if (call++ === 0) {
+            yield { type: 'text', text: 'covered prefix' }
+            yield { type: 'provider_state', state: compactionState }
+            yield { type: 'text', text: 'retained suffix' }
+            yield {
+              type: 'done',
+              stopReason: 'tool_call_malformed',
+              malformedToolCall: { message: 'Failed to parse tool call', hitOutputCeiling: false },
+            }
+            return
+          }
+          yield { type: 'text', text: 'finished' }
+          yield { type: 'done' }
+        },
+      }
+      await runAgentLoop({
+        provider,
+        messages,
+        tools: [],
+        onChunk: () => {},
+        executeTool: async () => 'ok',
+      })
+      const replay = JSON.stringify(
+        toResponsesInput(messages, new Map(), provider.compactionIdentity),
+      )
+      assert.equal(replay.includes('covered prefix'), false)
+      assert.equal(replay.includes('retained suffix'), true)
+      assert.ok(
+        messages.some(
+          (message) => message.role === 'assistant' && message.content === 'covered prefix',
+        ),
+      )
+      assert.ok(
+        messages.some(
+          (message) => message.role === 'user' && message.content === MALFORMED_TOOL_CALL_NUDGE,
+        ),
+      )
+      assert.equal(call, 2)
+    })
+
+    it('reports replay pressure after resuming without counting retained old turns', async () => {
+      const messages: LLMMessage[] = [
+        { role: 'user', content: 'old '.repeat(10_000) },
+        { role: 'provider_state', state: compactionState },
+        { role: 'user', content: 'recent' },
+      ]
+      const chunks: AgentStreamChunk[] = []
+      const provider: LLMProvider = {
+        compactionIdentity: { model: 'gpt-5.6-sol', endpoint: '' },
+        async *stream(): AsyncGenerator<ProviderStreamChunk> {
+          yield { type: 'text', text: 'done' }
+          yield { type: 'done' }
+        },
+      }
+      await runAgentLoop({
+        provider,
+        messages,
+        tools: [],
+        maxContextTokens: 100_000,
+        onChunk: (chunk) => chunks.push(chunk),
+        executeTool: async () => 'ok',
+      })
+      const pressure = chunks.find((chunk) => chunk.type === 'context_pressure')
+      assert.equal(pressure?.type, 'context_pressure')
+      assert.ok(pressure.conversationTokens < 100, String(pressure.conversationTokens))
+      assert.ok(
+        messages.some((message) => message.role === 'user' && message.content.length > 1_000),
+      )
+    })
+
+    it('offers no threshold to a provider that cannot replay a compaction', async () => {
+      const seen: { compactAtTokens: Array<number | undefined> } = { compactAtTokens: [] }
+
+      await runAgentLoop({
+        provider: compactingProvider(seen, undefined),
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [{ name: 'read_file', description: 'r', parameters: { type: 'object' } }],
+        maxContextTokens: 100_000,
+        onChunk: () => {},
+        executeTool: async () => 'ok',
+      })
+
+      assert.deepEqual(seen.compactAtTokens, [undefined, undefined])
+    })
   })
 })
 

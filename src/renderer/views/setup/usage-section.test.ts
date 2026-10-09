@@ -7,7 +7,7 @@ import type { PlanWorthItPayload } from '@shared/usage/plan-worth-it.ts'
 import type { ModelUsageBreakdown } from '@shared/usage/aggregate-usage.ts'
 import {
   claudeReasonNeedsLogin,
-  createClaudeSignInHandler,
+  createPlanSignInHandler,
   renderModelTable,
   renderPlanProvider,
   renderPlanWorthItSection,
@@ -42,13 +42,14 @@ describe('claudeReasonNeedsLogin', () => {
       claudeReasonNeedsLogin('Claude usage response had no recognizable plan windows'),
       false,
     )
-    // A lapsed access token is Claude Code's to refresh; signing in again would
-    // be the very re-login this state exists to avoid.
+  })
+
+  it('offers an in-app login for a lapsed access token', () => {
     assert.equal(
       claudeReasonNeedsLogin(
         'Claude’s access token has expired. Usage updates the next time Claude Code refreshes it (any `claude` session or Claude agent turn).',
       ),
-      false,
+      true,
     )
   })
 })
@@ -60,8 +61,10 @@ describe('renderPlanProvider sign-in button', () => {
     renderPlanProvider(
       host,
       claudeUnavailable('Claude credentials were rejected. Re-run `claude /login`.'),
-      () => {
-        clicked += 1
+      {
+        claude: () => {
+          clicked += 1
+        },
       },
     )
     const btn = host.querySelector<HTMLButtonElement>('.usage-plan-signin-btn')
@@ -83,8 +86,10 @@ describe('renderPlanProvider sign-in button', () => {
     renderPlanProvider(
       host,
       claudeUnavailable('Console API keys do not expose subscription plan windows'),
-      () => {
-        assert.fail('handler should not be wired')
+      {
+        claude: () => {
+          assert.fail('handler should not be wired')
+        },
       },
     )
     assert.equal(host.querySelector('.usage-plan-signin-btn'), null)
@@ -95,22 +100,29 @@ describe('renderPlanProvider sign-in button', () => {
     renderPlanProvider(
       host,
       claudeUnavailable('Claude credentials were rejected. Re-run `claude /login`.'),
-      null,
+      {},
     )
     assert.equal(host.querySelector('.usage-plan-signin-btn'), null)
   })
 
-  it('never shows the button for a non-Claude provider, even on a rejection', () => {
+  it('shows the Codex button when its credentials were rejected', () => {
     const host = document.createElement('div')
     const codex: ProviderPlanResult = {
       status: 'unavailable',
       provider: 'codex',
       reason: 'Codex credentials were rejected. Run `codex login` again.',
     }
-    renderPlanProvider(host, codex, () => {
-      assert.fail('handler should not be wired for codex')
+    let clicked = 0
+    renderPlanProvider(host, codex, {
+      codex: () => {
+        clicked += 1
+      },
     })
-    assert.equal(host.querySelector('.usage-plan-signin-btn'), null)
+    const btn = host.querySelector<HTMLButtonElement>('.usage-plan-signin-btn')
+    assert.ok(btn)
+    assert.equal(btn.textContent, 'Sign in to Codex')
+    btn.click()
+    assert.equal(clicked, 1)
   })
 })
 
@@ -230,7 +242,7 @@ describe('renderPlanProvider credit windows', () => {
   })
 })
 
-describe('createClaudeSignInHandler', () => {
+describe('createPlanSignInHandler', () => {
   it('closes settings and requests `claude /login` in a terminal', () => {
     const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
     const commands: string[] = []
@@ -238,7 +250,7 @@ describe('createClaudeSignInHandler', () => {
       commands.push(cmd)
     })
     let closed = 0
-    const handler = createClaudeSignInHandler(store, () => {
+    const handler = createPlanSignInHandler(store, 'claude', () => {
       closed += 1
     })
     assert.ok(handler)
@@ -247,8 +259,24 @@ describe('createClaudeSignInHandler', () => {
     assert.equal(closed, 1)
   })
 
+  it('closes settings and requests `codex login` in a terminal', () => {
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const commands: string[] = []
+    store.on('request_terminal_command', (command) => {
+      commands.push(command)
+    })
+    let closed = 0
+    const handler = createPlanSignInHandler(store, 'codex', () => {
+      closed += 1
+    })
+    assert.ok(handler)
+    handler()
+    assert.deepEqual(commands, ['codex login'])
+    assert.equal(closed, 1)
+  })
+
   it('returns null without a store to route through', () => {
-    assert.equal(createClaudeSignInHandler(undefined), null)
+    assert.equal(createPlanSignInHandler(undefined, 'claude'), null)
   })
 })
 

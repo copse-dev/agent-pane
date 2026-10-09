@@ -27,16 +27,16 @@ describe('settings usage panel with a lapsed Claude token', () => {
     await browser.reloadSession()
   })
 
-  it('waits for Claude Code to refresh instead of asking to sign in', async () => {
+  it('offers an in-app Claude login for an expired token', async () => {
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
 
     const claude = $('.usage-plan-provider[data-provider="claude"][data-status="unavailable"]')
     await expect(claude).toBeDisplayed()
     assert.match(await claude.$('.usage-plan-status').getText(), /access token has expired/i)
-    // Copse no longer refreshes the token itself, so a lapsed one is not a
-    // sign-in problem: offering `claude /login` here would be a needless re-login.
-    await expect(claude.$('.usage-plan-signin-btn')).not.toBeExisting()
+    const signIn = claude.$('.usage-plan-signin-btn')
+    await expect(signIn).toBeDisplayed()
+    assert.equal(await signIn.getText(), 'Sign in to Claude')
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-token-expired.png')

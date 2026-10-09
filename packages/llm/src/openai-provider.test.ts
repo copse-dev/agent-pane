@@ -450,6 +450,41 @@ describe('OpenAIProvider request options', () => {
     ])
   })
 
+  it("never sends another provider's compaction item after a mid-thread switch", async () => {
+    const provider = new OpenAIProvider('gpt-4o', { apiKey: 'test-openai-key' })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    for await (const _ of provider.stream(
+      [
+        { role: 'user', content: 'question' },
+        {
+          role: 'provider_state',
+          state: {
+            kind: 'openai-responses-compaction',
+            v: 1,
+            model: 'gpt-5.6-sol',
+            endpoint: '',
+            itemId: 'cmp_1',
+            encryptedContent: 'opaque-secret-blob',
+          },
+        },
+        { role: 'assistant', content: 'answer' },
+      ],
+      [],
+    )) {
+      // Drain the stream so the provider sends and captures the request.
+    }
+
+    assert.deepEqual(captured.request?.messages, [
+      { role: 'user', content: 'question' },
+      { role: 'assistant', content: 'answer' },
+    ])
+  })
+
   it('asks OpenAI cloud streams to include usage', async () => {
     const provider = new OpenAIProvider('gpt-test', { apiKey: 'test-openai-key' })
     const captured: { request?: CapturedChatCompletionRequest } = {}

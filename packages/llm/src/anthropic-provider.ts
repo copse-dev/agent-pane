@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { withoutProviderState } from './provider-state.ts'
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { withAppAttribution } from './app-attribution.ts'
 import { memberOf } from '@copse/std/member-of.ts'
@@ -42,7 +43,7 @@ export class AnthropicProvider implements LLMProvider {
   ): AsyncIterable<ProviderStreamChunk> {
     const { client, model } = this
     const self = this
-    const { systemPrompt, conversation } = splitSystemPrompt(messages)
+    const { systemPrompt, conversation } = splitSystemPrompt(withoutProviderState(messages))
     // Any system message *after* the first is an operator instruction that
     // arrived mid-conversation (turn steering, hook-injected context). It is
     // volatile — regenerated every turn and never persisted into the thread's

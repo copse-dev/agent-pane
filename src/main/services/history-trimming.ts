@@ -5,7 +5,9 @@ import {
   estimateMessageTokens,
   estimateConversationTokens,
   conversationTokenBudget,
+  replayWindow,
 } from '@copse/agent/trim-history.ts'
+import type { CompactionIdentity } from '@copse/llm/provider-state.ts'
 
 export interface PreparedAgentHistory {
   trimmed: LLMMessage[]
@@ -21,16 +23,20 @@ export function prepareAgentHistory(
   messages: LLMMessage[],
   contextWindow: number,
   toolSchemaReserve: number,
+  /** The compaction the provider will replay; turns before it are not sent. */
+  compaction?: CompactionIdentity,
 ): PreparedAgentHistory {
   const historyBudget = historyTokenBudget(contextWindow, { reserveTokens: toolSchemaReserve })
   const { messages: trimmed, trimmed: wasTrimmed } = trimHistory(messages, contextWindow, {
     reserveTokens: toolSchemaReserve,
+    compaction,
   })
   const conversationBudget = conversationTokenBudget(trimmed, contextWindow, {
     reserveTokens: toolSchemaReserve,
   })
-  const initialConversationTokens = estimateConversationTokens(trimmed)
-  const estimatedPromptTokens = estimateMessageTokens(trimmed)
+  const sent = replayWindow(trimmed, compaction)
+  const initialConversationTokens = estimateConversationTokens(sent)
+  const estimatedPromptTokens = estimateMessageTokens(sent)
   return {
     trimmed,
     wasTrimmed,
@@ -76,12 +82,13 @@ export function contextTrimmedChunk(
   trimmed: LLMMessage[],
   contextWindow: number,
   historyBudget: number,
+  compaction?: CompactionIdentity,
 ): StreamChunk {
   return {
     type: 'context_trimmed',
     contextWindow,
     historyBudget,
-    estimatedTokens: Math.round(estimateMessageTokens(trimmed)),
+    estimatedTokens: Math.round(estimateMessageTokens(replayWindow(trimmed, compaction))),
   }
 }
 
