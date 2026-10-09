@@ -15,6 +15,12 @@ import {
   startHumanTurnTree,
 } from './message-queue.ts'
 
+/**
+ * History seeds still in flight, by side chat id. A question asked before its seed
+ * lands waits for it, so the first run reads the parent's context.
+ */
+const pendingSeeds = new Map<string, Promise<void>>()
+
 export interface StartSideChatOptions {
   /** Parent message to branch from; defaults to the parent's latest settled message. */
   anchorMessageId?: string
@@ -85,11 +91,18 @@ export async function startSideChat(
 
   const projectId = store.getState().activeProjectId
   if (projectId) {
+    const seed = api.threads.fork(projectId, parentThreadId, side.id, anchorMessageId).then(
+      () => undefined,
+      (error: unknown) => {
+        // The side chat is still usable; it just starts without the parent's context.
+        console.error('[side-chat] failed to seed history from the parent:', error)
+      },
+    )
+    pendingSeeds.set(side.id, seed)
     try {
-      await api.threads.fork(projectId, parentThreadId, side.id, anchorMessageId)
-    } catch (error) {
-      // The side chat is still usable; it just starts without the parent's context.
-      console.error('[side-chat] failed to seed history from the parent:', error)
+      await seed
+    } finally {
+      pendingSeeds.delete(side.id)
     }
   }
   return side.id
@@ -119,12 +132,17 @@ export function sendSideChatMessage(
     ...(side.workingBrief !== undefined ? { workingBrief: side.workingBrief } : {}),
   }
   const queued = { messageId, payload, createdAt: Date.now() }
-  if (side.status === 'running') {
-    enqueueUserMessage(store, sideThreadId, queued)
-  } else {
-    startHumanTurnTree(store, sideThreadId)
-    dispatchAgentRun(store, api, sideThreadId, payload, queued)
+  const dispatch = (): void => {
+    if (getThreadById(store, sideThreadId)?.status === 'running') {
+      enqueueUserMessage(store, sideThreadId, queued)
+    } else {
+      startHumanTurnTree(store, sideThreadId)
+      dispatchAgentRun(store, api, sideThreadId, payload, queued)
+    }
   }
+  const seed = pendingSeeds.get(sideThreadId)
+  if (seed) void seed.then(dispatch)
+  else dispatch()
   return messageId
 }
 
@@ -146,6 +164,8 @@ export async function promoteSideChat(
   api: ApiClient,
   sideThreadId: string,
 ): Promise<string | null> {
+  // Its agent history is copied below, so let a seed still in flight land first.
+  await pendingSeeds.get(sideThreadId)
   const side = getThreadById(store, sideThreadId)
   if (!side || side.sideChat === undefined || side.status === 'running') return null
   const parent = getThreadById(store, side.sideChat.parentThreadId)

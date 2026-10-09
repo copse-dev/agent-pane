@@ -196,6 +196,46 @@ test('asking a side chat adds the question to it and runs it without touching th
   assert.deepEqual(runs, [id])
 })
 
+test('a question asked before the history seed lands waits for it before running', async () => {
+  const { store, parentId } = seed()
+  const base = createFakeApi()
+  const order: string[] = []
+  let finishSeed = (): void => {}
+  const api: ApiClient = {
+    ...base,
+    threads: {
+      ...base.threads,
+      fork: () =>
+        new Promise<ForkedHistoryResult>((resolve) => {
+          finishSeed = (): void => {
+            order.push('seeded')
+            resolve({ source: 'rebuilt', messageCount: 2 })
+          }
+        }),
+    },
+    agent: {
+      ...base.agent,
+      run: (): Promise<void> => {
+        order.push('run')
+        return Promise.resolve()
+      },
+    },
+  }
+  const opened = new Promise<string>((resolve) => store.on('side_chat_open_requested', resolve))
+  const started = startSideChat(store, api, parentId)
+  const id = await opened
+
+  assert.ok(sendSideChatMessage(store, api, id, 'Asked straight away'))
+  // The question shows at once, but its run waits for the parent's history.
+  assert.equal(thread(store, id).messages.length, 1)
+  assert.deepEqual(order, [])
+
+  finishSeed()
+  assert.equal(await started, id)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(order, ['seeded', 'run'])
+})
+
 test('promoting a side chat makes a thread of the parent slice plus its own turns and archives it', async () => {
   const { store, parentId, answerId } = seed()
   const { api, forks } = fakeApi()
