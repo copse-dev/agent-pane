@@ -32,6 +32,10 @@ describe('settings usage model value map cost axis', () => {
     })
     writeSettings({
       ...readSeededSettings(),
+      // A cloud route is available only after its provider has a key.
+      apiKey: {
+        legacy: { v: 1, enc: Buffer.from('e2e-legacy-key').toString('base64'), plain: true },
+      },
       extraProviders: [
         {
           slug: 'legacy',
