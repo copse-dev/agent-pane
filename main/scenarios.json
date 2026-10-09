@@ -238,5 +238,17 @@
   {
     "id": "site-mcp-permissions",
     "label": "Copse.dev tour: per-tool MCP permissions"
+  },
+  {
+    "id": "approval-web-url",
+    "label": "Allow web origin?"
+  },
+  {
+    "id": "approval-browser-url",
+    "label": "Allow browser navigation?"
+  },
+  {
+    "id": "approval-provider-url",
+    "label": "Allow model provider host?"
   }
 ]
