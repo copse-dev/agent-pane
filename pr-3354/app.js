@@ -23919,7 +23919,7 @@ var init_acp_known_agents = __esm({
         setup: "copilot login",
         reauth: "copilot login",
         docsUrl: "https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server",
-        note: "Manual setup; ACP is in public preview. npm installation requires Node.js 22+. Sign in with `copilot login` or set `COPILOT_GITHUB_TOKEN`. GitHub-hosted models use your Copilot plan and usage limits; BYOK is billed by your model provider and needs a custom sandbox endpoint."
+        note: "Manual setup; the coding-agent connection is in public preview. npm installation requires Node.js 22+. Sign in with `copilot login` or set `COPILOT_GITHUB_TOKEN`. GitHub-hosted models use your Copilot plan and usage limits; BYOK is billed by your model provider and needs a custom sandbox endpoint."
       }
     ];
   }
