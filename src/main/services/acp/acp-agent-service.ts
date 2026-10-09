@@ -77,6 +77,7 @@ import {
   listWorktreeChangesSince,
   stageDiff,
 } from '../diff-queue.ts'
+import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
 import { perfMark, perfSpan } from '../diagnostics/perf-trace.ts'
 import {
@@ -801,6 +802,9 @@ async function runAcpAgentTurn(
 
   let stopReason: StopReason
   let usage: Usage | null | undefined
+  // The external agent edits through its own tools while it is prompted, so a
+  // bridged Copse file tool must sweep `git status` live for the whole attempt.
+  const releaseAgentWriter = beginWorktreeWriter(cwd)
   try {
     ;({ stopReason, usage } = await runWithAcpRetry(attempt, {
       signal: options.signal,
@@ -835,6 +839,8 @@ async function runAcpAgentTurn(
         ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
         : { inputTokens: 0, outputTokens: 0 },
     })
+  } finally {
+    releaseAgentWriter()
   }
 
   flushHeldText()

@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { createLongTask, setLongTaskRootForTest } from '../services/storage/long-task-tracker.ts'
+import {
+  createLongTask,
+  loadLongTasks,
+  loadLongTasksForScope,
+  setLongTaskRootForTest,
+} from '../services/storage/long-task-tracker.ts'
+import { storageSet } from '../services/storage/storage.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import { runWithThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from '../services/thread-models.ts'
@@ -118,7 +125,10 @@ describe('track_long_task list scoping', () => {
 
   it("treats a task written before owners were recorded as nobody's to resume", async () => {
     // Written directly, the way the store looked before tasks carried a threadId.
-    createLongTask({ title: 'Legacy', goal: 'g', steps: ['s'] }, '/project')
+    createLongTask(
+      { title: 'Legacy', goal: 'g', steps: ['s'] },
+      { projectId: null, root: '/project' },
+    )
 
     const listed = await textResult('thread-a', { action: 'list' })
 
@@ -193,5 +203,47 @@ describe('track_long_task continue', () => {
     assert.equal(scheduled.context.projectId, 'project-1')
     assert.equal(scheduled.turnTreeId, 'tree-1')
     assert.equal(scheduled.delayMs, 2_000)
+  })
+})
+
+describe('track_long_task after a project switch', () => {
+  let root: string
+  let restoreWorkspace: () => void
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'long-task-switch-'))
+    setLongTaskRootForTest(root)
+    storageSet('projects', [
+      { id: 'project-1', path: '/project', name: 'project' },
+      { id: 'project-2', path: '/other', name: 'other' },
+    ])
+    // The thread in project-1 keeps running after the user opens project-2.
+    storageSet('activeProjectId', 'project-2')
+    restoreWorkspace = setWorkspaceRootForTest('/other')
+  })
+
+  afterEach(() => {
+    storageSet('projects', [])
+    storageSet('activeProjectId', null)
+    setLongTaskRootForTest(null)
+    restoreWorkspace()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it("keeps a background thread's checklist in its own project", async () => {
+    await textResult('thread-a', {
+      action: 'create',
+      title: 'Background grind',
+      goal: 'g',
+      steps: ['s'],
+    })
+    await textResult('thread-a', { action: 'check', taskId: 't1', stepId: 's1' })
+
+    assert.deepEqual(loadLongTasks(), [], 'the now-active project has no tasks')
+    const own = loadLongTasksForScope({ projectId: 'project-1', root: '/project' })
+    const task = at(own, 0)
+    assert.equal(task.title, 'Background grind')
+    assert.equal(at(task.steps, 0).done, true)
+    assert.match(await textResult('thread-a', { action: 'list' }), /Background grind/)
   })
 })

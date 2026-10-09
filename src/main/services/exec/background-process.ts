@@ -19,6 +19,7 @@ import { currentRunUsesGuardedYolo } from '../security/guarded-yolo.ts'
 import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 import { worktreePreparationShellEnvironment } from '../worktree-preparation.ts'
+import { beginWorktreeWriter } from '../worktree-writers.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
 // plugin (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
@@ -242,6 +243,13 @@ export async function startBackgroundProcess(
       allowPortBinding: portBinding,
       unsandboxed,
     })
+    // A task writes on its own schedule, across turns, so the diff queue must
+    // not trust a remembered clean sweep while it runs (#1700). Released on the
+    // child's own exit, however it was stopped.
+    const releaseWriter = beginWorktreeWriter(cwd)
+    proc.once('exit', releaseWriter)
+    proc.once('error', releaseWriter)
+    if (proc.exitCode !== null || proc.signalCode !== null) releaseWriter()
 
     const entry: BackgroundProcess = {
       id: nextBackgroundOperationId(),

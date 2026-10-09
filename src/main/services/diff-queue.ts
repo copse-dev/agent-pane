@@ -34,6 +34,7 @@ import {
   type ThreadExecutionOwner,
 } from './thread-execution-context.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
+import { hasLiveWorktreeWriter, worktreeWriteEpoch } from './worktree-writers.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
@@ -107,6 +108,16 @@ export type ApplyResult =
 
 type DecisionWaiter = (status: DiffDecision['status']) => void
 
+/** A live `git status` sweep after which every change in the tree was Copse-owned. */
+interface CleanSweep {
+  root: string
+  /** {@link worktreeWriteEpoch} when the sweep started. */
+  epoch: number
+  /** `snapshotEvictions` when the sweep started. */
+  evictions: number
+  at: number
+}
+
 interface DiffQueueState {
   root: string | null
   projectRoot: string | null
@@ -120,6 +131,13 @@ interface DiffQueueState {
   readonly queue: QueueEntry[]
   readonly recentDecisions: DiffDecision[]
   readonly directAppliedSnapshots: Map<string, string>
+  /**
+   * Ownership snapshots dropped by the size bound. An evicted path reads as
+   * unowned again, so a remembered sweep that predates an eviction is void.
+   */
+  snapshotEvictions: number
+  /** See {@link cleanSweepHolds}. */
+  cleanSweep: CleanSweep | null
   readonly decisionWaiters: Map<string, Set<DecisionWaiter>>
 }
 
@@ -137,6 +155,8 @@ function createDiffQueueState(
     queue: [],
     recentDecisions: [],
     directAppliedSnapshots: new Map(),
+    snapshotEvictions: 0,
+    cleanSweep: null,
     decisionWaiters: new Map(),
   }
 }
@@ -282,6 +302,7 @@ function recordDirectAppliedSnapshot(state: DiffQueueState, path: string, conten
     const oldest = state.directAppliedSnapshots.keys().next().value
     if (oldest === undefined) break
     state.directAppliedSnapshots.delete(oldest)
+    state.snapshotEvictions++
   }
 }
 
@@ -366,6 +387,76 @@ function isNotFoundError(err: unknown): boolean {
   return code === 'ENOENT' || code === 'ENOTDIR'
 }
 
+/**
+ * How long a clean sweep may stand in for a live `git status` when no tracked
+ * writer has run since. The backstop for what nothing here can observe, such as
+ * an external editor opened on the worktree.
+ */
+const CLEAN_SWEEP_REUSE_MS = 10_000
+
+/**
+ * Whether the last clean sweep still answers job (a) of {@link canApplyDirectly}
+ * — "is there unowned work to back up and adopt?" — without a live `git status`.
+ *
+ * After a sweep, every change in the tree is either Copse's own or adopted, and
+ * every later Copse write records its path. So until something other than Copse
+ * writes, the answer is still "no", and a fifty-file rename sweep needs one
+ * `git status` rather than fifty (#1700). Every condition below is a way that
+ * premise can fail, and each falls back to the live sweep:
+ *
+ * - **Shared checkout.** The user edits these files in their own editor all the
+ *   time; only an isolated worktree has Copse as its usual writer.
+ * - **Hooks enabled.** `afterFileEdit` hooks run user scripts after Copse's own
+ *   writes, some of them detached, and a formatter there rewrites files.
+ * - **A writer started or finished since** (shell command, background task,
+ *   terminal, preparation install, MCP call, ACP turn, backup restore, new
+ *   turn), or **one is live on this root now**. See `worktree-writers.ts`.
+ * - **An ownership snapshot was evicted**, which turns that path unowned again.
+ * - **The sweep is older than {@link CLEAN_SWEEP_REUSE_MS}.**
+ *
+ * The per-path stale-content check, job (b), is not covered by this and still
+ * runs for every op.
+ */
+function cleanSweepHolds(state: DiffQueueState, root: string | null): boolean {
+  const sweep = state.cleanSweep
+  if (!sweep || root === null || sweep.root !== root) return false
+  if (state.checkoutMode !== 'worktree') return false
+  if (getSetting<boolean>('cursorHooksEnabled', false)) return false
+  if (sweep.epoch !== worktreeWriteEpoch()) return false
+  if (sweep.evictions !== state.snapshotEvictions) return false
+  if (Date.now() - sweep.at >= CLEAN_SWEEP_REUSE_MS) return false
+  return !hasLiveWorktreeWriter(root)
+}
+
+/**
+ * Live `git status` for {@link canApplyDirectly}: the changed paths Copse does
+ * not own, and the sweep to remember once they are dealt with. Null when git
+ * cannot answer. The sweep's epoch and time are taken before git runs, so a
+ * writer that starts mid-read voids it.
+ */
+async function readUnownedChanges(
+  state: DiffQueueState,
+  root: string | null,
+): Promise<{ unowned: string[]; sweep: CleanSweep } | null> {
+  if (root === null) return null
+  const sweep: CleanSweep = {
+    root,
+    epoch: worktreeWriteEpoch(),
+    evictions: state.snapshotEvictions,
+    at: Date.now(),
+  }
+  // Untracked files individually, not collapsed into their parent directory:
+  // ownership below is keyed by file, so a bare `dir/` would match nothing Copse
+  // recorded and turn its own new prototype into "the user's uncommitted work".
+  const status = await getGitStatus(root, { untrackedFiles: 'all' })
+  if (!status) return null
+  const changedPaths = [...status.staged, ...status.unstaged].map((change) => change.path)
+  const unowned = changedPaths.filter(
+    (changedPath) => !state.directAppliedSnapshots.has(ownedKey(changedPath)),
+  )
+  return { unowned: [...new Set(unowned)], sweep }
+}
+
 async function canApplyDirectly(
   state: DiffQueueState,
   path: string,
@@ -376,12 +467,13 @@ async function canApplyDirectly(
   }
 
   const root = executionRootFor(state)
-  // Untracked files individually, not collapsed into their parent directory:
-  // ownership below is keyed by file, so a bare `dir/` would match nothing Copse
-  // recorded and turn its own new prototype into "the user's uncommitted work".
-  const status = await getGitStatus(root, { untrackedFiles: 'all' })
-  if (!status) {
-    return { ok: false, reason: 'git is unavailable or the workspace is not a git worktree' }
+  let fresh: { unowned: string[]; sweep: CleanSweep } | null = null
+  if (!cleanSweepHolds(state, root)) {
+    fresh = await readUnownedChanges(state, root)
+    if (!fresh) {
+      return { ok: false, reason: 'git is unavailable or the workspace is not a git worktree' }
+    }
+    if (fresh.unowned.length === 0) state.cleanSweep = fresh.sweep
   }
 
   // Creating a file that does not exist yet destroys nothing, so there is
@@ -403,11 +495,7 @@ async function canApplyDirectly(
     return { ok: true, newFile: true }
   }
 
-  const changedPaths = [...status.staged, ...status.unstaged].map((change) => change.path)
-  const unownedChanges = changedPaths.filter(
-    (changedPath) => !state.directAppliedSnapshots.has(ownedKey(changedPath)),
-  )
-  if (unownedChanges.length > 0) {
+  if (fresh && fresh.unowned.length > 0) {
     // The user has uncommitted work Copse didn't make this turn. Rather than
     // route every edit through the approval panel to protect it, take one
     // durable backup of the whole worktree and adopt those paths as recoverable.
@@ -418,12 +506,13 @@ async function canApplyDirectly(
     if (!backup) {
       return {
         ok: false,
-        reason: `git has unowned changes that could not be backed up: ${[...new Set(unownedChanges)].join(', ')}`,
+        reason: `git has unowned changes that could not be backed up: ${fresh.unowned.join(', ')}`,
       }
     }
-    for (const changedPath of new Set(unownedChanges)) {
+    for (const changedPath of fresh.unowned) {
       recordDirectAppliedSnapshot(state, changedPath, await readCurrentContent(changedPath, root))
     }
+    state.cleanSweep = fresh.sweep
   }
 
   const lastDirectContent = state.directAppliedSnapshots.get(ownedKey(path))
@@ -474,7 +563,7 @@ async function canApplyDirectly(
  * directory has no git-status footprint to reconcile. The pending-queue check
  * still applies, so an op never jumps ahead of diffs the user is reviewing. That
  * leaves the sweep to the first op that could actually lose work, which is when
- * it earns its three subprocesses.
+ * it earns its `git status`.
  */
 async function canApplyFileOpDirectly(
   state: DiffQueueState,

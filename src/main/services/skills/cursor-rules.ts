@@ -105,42 +105,67 @@ export function parseRuleDescription(frontmatter: string): string | undefined {
 }
 
 /**
+ * Split on commas that are outside quotes and brace sets, so a brace expansion such as
+ * `src/**\/*.{ts,tsx}` stays one glob.
+ */
+function splitGlobList(text: string): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let quote: string | null = null
+  let start = 0
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]
+    if (quote) {
+      if (ch === '\\' && quote === '"') i += 1
+      else if (ch === quote) quote = null
+    } else if (ch === '"' || ch === "'") {
+      quote = ch
+    } else if (ch === '{') {
+      depth += 1
+    } else if (ch === '}') {
+      depth = Math.max(0, depth - 1)
+    } else if (ch === ',' && depth === 0) {
+      parts.push(text.slice(start, i))
+      start = i + 1
+    }
+  }
+  parts.push(text.slice(start))
+  return parts.map((part) => unwrapScalar(part)).filter(Boolean)
+}
+
+/**
  * Parse the `globs:` frontmatter field.
  *
  * Accepts Cursor's documented forms:
  *   - `globs: src/**\/*.tsx`
  *   - `globs: docs/**\/*.md, docs/**\/*.mdx` (comma-separated)
  *   - `globs: ["*.ts", "src/**\/*.tsx"]` (YAML flow array)
+ *   - `globs:` followed by `  - src/**\/*.ts` lines (YAML block list)
+ *
+ * Commas inside a brace set (`*.{ts,tsx}`) belong to the glob, not the list.
  */
 export function parseRuleGlobs(frontmatter: string): string[] {
-  const arrayMatch = frontmatter.match(/^globs:[ \t]*\[([^\]]*)\][ \t]*$/m)
-  if (arrayMatch) {
-    const inner = arrayMatch[1] ?? ''
-    const out: string[] = []
-    const re = /"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^,\s][^,]*)/g
-    for (let m = re.exec(inner); m; m = re.exec(inner)) {
-      const quotedDouble = m[1]
-      const quotedSingle = m[2]
-      const bare = m[3]
-      const value =
-        quotedDouble != null
-          ? unwrapScalar(`"${quotedDouble}"`)
-          : quotedSingle != null
-            ? unwrapScalar(`'${quotedSingle}'`)
-            : unwrapScalar(bare ?? '')
-      if (value) out.push(value)
-    }
-    return out
+  const arrayMatch = frontmatter.match(/^globs:[ \t]*\[(.*)\][ \t]*$/m)
+  if (arrayMatch) return splitGlobList(arrayMatch[1] ?? '')
+
+  const blockMatch = frontmatter.match(
+    /^globs:[ \t]*(?:#.*)?\r?\n((?:[ \t]*-[ \t].*(?:\r?\n|$))+)/m,
+  )
+  if (blockMatch) {
+    return (blockMatch[1] ?? '')
+      .split(/\r?\n/)
+      .map((line) => unwrapScalar(line.replace(/^[ \t]*-[ \t]/, '')))
+      .filter(Boolean)
   }
 
   const lineMatch = frontmatter.match(/^globs:[ \t]*(.+?)[ \t]*$/m)
   if (!lineMatch?.[1]) return []
-  const raw = unwrapScalar(lineMatch[1])
-  if (!raw) return []
-  return raw
-    .split(',')
-    .map((part) => unwrapScalar(part))
-    .filter(Boolean)
+  const parts = splitGlobList(lineMatch[1])
+  // A whole-line quoted scalar is still a comma list (`globs: "a, b"`).
+  const [only] = parts
+  return parts.length === 1 && only != null && /^["']/.test(lineMatch[1])
+    ? splitGlobList(only)
+    : parts
 }
 
 /** Classify a rule from its frontmatter fields (Cursor's truth table). */

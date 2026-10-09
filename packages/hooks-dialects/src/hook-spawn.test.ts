@@ -6,8 +6,10 @@
 // seatbelt is required on Linux CI (F3 acceptance).
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import {
+  effectiveHookTimeoutMs,
+  MAX_HOOK_TIMEOUT_MS,
   spawnHookProcess,
   setHookSandboxRuntimeForTest,
   type HookSandboxRuntime,
@@ -126,4 +128,73 @@ describe('hook-spawn — sandbox-by-default reversal (F3)', () => {
     assert.equal(result.sandboxed, true)
     assert.equal(result.exitCode, null)
   })
+})
+
+/** Whether `pid` is a live (non-zombie) process, via portable `ps`. */
+function processAlive(pid: number): boolean {
+  try {
+    const stat = execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf-8' })
+    return stat.trim() !== '' && !stat.trim().startsWith('Z')
+  } catch {
+    return false // ps exits non-zero when the pid is gone
+  }
+}
+
+describe('hook-spawn — timeout arming', () => {
+  afterEach(() => {
+    setHookSandboxRuntimeForTest(null)
+  })
+
+  it('clamps a timeout beyond setTimeout range instead of overflowing to 1 ms', async () => {
+    // A Claude/Cursor `"timeout": 2147484` (seconds) normalizes past 2^31-1 ms;
+    // Node would fire that timer after 1 ms and SIGKILL a blocking hook at once.
+    const huge = 2_147_484 * 1000
+    assert.equal(effectiveHookTimeoutMs(huge), MAX_HOOK_TIMEOUT_MS)
+    setHookSandboxRuntimeForTest(fakeSandbox({ enabled: false }))
+    const result = await spawnHookProcess(
+      'sleep 0.2; printf ok',
+      {},
+      {
+        cwd: process.cwd(),
+        timeoutMs: huge,
+      },
+    )
+    assert.equal(result.timedOut, false)
+    assert.equal(result.exitCode, 0)
+    assert.equal(result.stdout, 'ok')
+    assert.equal(result.timeoutMs, MAX_HOOK_TIMEOUT_MS)
+  })
+
+  it('reports the per-hook timeout it armed', async () => {
+    setHookSandboxRuntimeForTest(fakeSandbox({ enabled: false }))
+    const result = await spawnHookProcess('sleep 5', {}, { cwd: process.cwd(), timeoutMs: 120 })
+    assert.equal(result.timedOut, true)
+    assert.equal(result.timeoutMs, 120)
+  })
+
+  it(
+    'a timeout kills the whole hook process group, not just the shell',
+    { skip: process.platform === 'win32' },
+    async () => {
+      setHookSandboxRuntimeForTest(fakeSandbox({ enabled: false }))
+      const result = await spawnHookProcess(
+        'sleep 30 & echo $!; wait',
+        {},
+        {
+          cwd: process.cwd(),
+          timeoutMs: 300,
+        },
+      )
+      assert.equal(result.timedOut, true)
+      const grandchild = Number(result.stdout.trim())
+      assert.ok(grandchild > 0, `expected the background pid on stdout, got ${result.stdout}`)
+      const deadline = Date.now() + 2_000
+      while (processAlive(grandchild) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25))
+      }
+      const orphaned = processAlive(grandchild)
+      if (orphaned) process.kill(grandchild, 'SIGKILL')
+      assert.equal(orphaned, false, 'the backgrounded grandchild outlived the hook timeout')
+    },
+  )
 })
