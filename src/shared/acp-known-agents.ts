@@ -285,7 +285,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     setup: 'claude auth login',
     reauth: 'claude auth login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
-    note: 'Runs Claude Code through its agent SDK. Sign in with `claude auth login` (or `ANTHROPIC_API_KEY`).',
+    note: 'Runs Claude Code. Sign in with `claude auth login` (or `ANTHROPIC_API_KEY`).',
   },
   {
     id: 'cursor',
