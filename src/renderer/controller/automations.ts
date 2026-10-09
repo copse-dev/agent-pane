@@ -1,5 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
+import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
+import type { AutomationFailureCode } from '@shared/types'
 import type { AutomationTriggerEvent, Thread } from '@shared/types'
 import {
   addMessage,
@@ -15,7 +17,7 @@ import { ensureThreadMessages } from './thread-hydration.ts'
 
 export interface AutomationControllerApi {
   agent: Pick<ApiClient['agent'], 'prepareCheckout' | 'run'>
-  automations: Pick<ApiClient['automations'], 'onTriggered' | 'canStart'>
+  automations: Pick<ApiClient['automations'], 'onTriggered' | 'canStart' | 'reportStartFailure'>
   threads: Pick<ApiClient['threads'], 'loadProject'>
 }
 
@@ -95,6 +97,7 @@ export function attachAutomationController(
     // would persist a truncated history, so the failure note below is written
     // only once this is true.
     let hydrated = false
+    let checkoutStarted = false
     try {
       // Threads arrive as metadata only, so an automation can be the first thing
       // to touch a transcript that was never read — on a trigger, or on restart
@@ -121,6 +124,7 @@ export function attachAutomationController(
         return
       }
       if (!initial.worktreeChoice) {
+        checkoutStarted = true
         const prepared = await api.agent.prepareCheckout(
           projectId,
           threadId,
@@ -130,6 +134,7 @@ export function attachAutomationController(
         )
         if (store.getState().activeProjectId !== projectId) return
         applyPreparedThreadCheckout(store, threadId, prepared)
+        checkoutStarted = false
       }
 
       const current = getThreadById(store, threadId)
@@ -172,7 +177,18 @@ export function attachAutomationController(
       if (hydrated) {
         // Without this marker the kept draft counts as a run still waiting to
         // start, and every later trigger of the schedule is skipped behind it.
-        markAutomationStartFailed(store, threadId)
+        const message = startFailureDetail(error)
+        const code: AutomationFailureCode = checkoutStarted
+          ? 'worktree-failed'
+          : classifyAutomationFailureMessage(message)
+        markAutomationStartFailed(store, threadId, { code, message })
+        // Main keeps the schedule's last problem so the manager shows it with the project
+        // closed. Best effort: the thread already carries the durable record.
+        api.automations
+          .reportStartFailure(projectId, threadId, { code, message })
+          .catch((reportError: unknown) => {
+            console.error('[automations] Could not report a start failure:', reportError)
+          })
         addMessage(
           store,
           threadId,
