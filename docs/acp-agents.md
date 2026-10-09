@@ -114,13 +114,14 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 
 ### Settings panel (recommended)
 
-Open **Settings → ACP agents**. It scans your device when you open the tab and
+Open **Settings → General → Providers** and choose an agent's provider chip.
+The device-agent panel scans your device when selected and
 shows a **chip row** — one chip per agent — that hides each agent's details until
 you pick it, the same pattern as **Settings → Providers**. A dot marks the agents
 you've already added.
 
-- **Known agents** lead the row (Gemini CLI, Claude Agent, Claude Code, Cursor,
-  Codex). Select one to see whether it's installed, the **Install** command to get
+- **Known agents** include Gemini CLI, Claude, Cursor, Codex and GitHub Copilot CLI.
+  Select one to see whether it's installed, the **Install** command to get
   it, the **Sign in** command to authenticate it (e.g. `claude setup-token`), and
   an **Add to my agents** button.
 - Once added, selecting an agent's chip opens its editor — change its model /
@@ -131,14 +132,40 @@ you've already added.
 Changes are saved immediately; reopen the model dropdown to see them. **Re-scan
 device** refreshes the installed/running status after you install something.
 
-Opening the tab also runs **auto-setup** for curated npm presets (Claude, Codex):
+Selecting a curated preset (Claude, Codex or Cursor) runs **auto-setup**:
 missing adapters can be installed (with an approval), and an already-installed
 adapter that is behind the npm registry latest can be upgraded the same way.
 Upgrades use the `npm` beside the resolved binary so an nvm/prefix install stays
-in that prefix. Cursor is never auto-installed (its installer is not npm).
+in that prefix. Cursor is never auto-installed (its installer is not npm). Manual
+entries (Gemini and Copilot) and the custom-agent form only scan the device; they
+do not trigger setup or upgrades of unrelated presets.
 
 > Tip: you can **Add** a known agent before installing it — Copse stores the
 > config now, and you run the shown Install/Sign in commands when ready.
+
+GitHub Copilot CLI is a **manual** entry, separate from auto-setup presets. Install
+it with `npm install -g @github/copilot` (Node.js 22+), then run `copilot login`.
+The catalog launches `copilot --acp --stdio`; ACP is in public preview. GitHub-hosted
+models use your Copilot plan and usage limits, while BYOK uses the selected
+provider's billing and requires a custom sandbox endpoint. See the
+[candidate review](acp-catalog-review.md) for evidence, confinement limits and
+verification status, including why OpenCode and Qwen Code remain deferred.
+
+To discover agents beyond that reviewed list, choose **Add provider → An agent
+installed on this machine → Browse agent registry**. Search the public stable
+registry and select **Review configuration** to open a custom-agent draft.
+The browser fetches only when requested and can refresh its results. It checks
+direct executable names on PATH without running them; package-only entries have
+unknown installed status, even when `npx` or `uvx` is installed.
+
+Registry entries are **unverified by Copse**. Review the publisher's installation,
+authentication, billing and platform instructions, then fill in the installed
+command. Adding a registry draft leaves it disabled. Open the saved agent and
+explicitly select **Enabled** to authorize starting that command, including model
+detection. No package runner is filled in as an automatic installer, and no
+registry environment values, permission modes or sandbox allowances are imported.
+Custom agents use the existing custom-agent confinement rules; registry presence
+does not establish a sandbox profile. See [registry discovery](acp-registry-discovery.md).
 
 ### When a sign-in lapses
 

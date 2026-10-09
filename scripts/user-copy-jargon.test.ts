@@ -263,6 +263,7 @@ const ALLOWED: readonly Allowance[] = [
     count: 2,
     reason: REASON.identifier,
   },
+  { file: 'src/shared/acp-known-agents.ts', term: 'stdio', count: 1, reason: REASON.identifier },
   { file: 'src/renderer/demo/demo-api.ts', term: 'stdio', count: 1, reason: REASON.identifier },
   {
     file: 'src/renderer/perf-autopilot.ts',
