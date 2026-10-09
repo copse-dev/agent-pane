@@ -152,6 +152,10 @@
     "label": "Activity home on a new thread"
   },
   {
+    "id": "activity-home-many-projects",
+    "label": "Activity home listing twelve projects"
+  },
+  {
     "id": "activity-home-project-filter",
     "label": "Activity home after a project finishes waiting"
   },
