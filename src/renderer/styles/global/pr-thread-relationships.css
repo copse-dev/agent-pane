@@ -4,6 +4,10 @@
   margin-top: 12px;
 }
 
+.pr-thread-relationships:empty {
+  display: none;
+}
+
 .pr-thread-group h5 {
   margin: 0 0 6px;
   color: var(--text-secondary);
