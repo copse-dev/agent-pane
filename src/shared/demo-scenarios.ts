@@ -821,8 +821,8 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       finishedAt: FIXED_TIME + 23 * 60_000,
       prompt: 'Clear the lint suppression backlog in the renderer views',
       model: 'claude-sonnet-4-6',
-      egressAllowlist: ['api.anthropic.com:443'],
-      credential: 'key',
+      egressAllowlist: ['inference.copse.internal:443'],
+      credential: 'host',
       settings: {
         budgets: { wallClockMs: 180_000, tokenCeiling: 20_000 },
         installDependencies: false,
@@ -858,10 +858,10 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           pidsLimit: 512,
           memoryLimit: '4g',
           network: 'brokered',
-          egressAllowlist: ['api.anthropic.com:443'],
+          egressAllowlist: ['inference.copse.internal:443'],
           hostMounts: ['/run/copse', '/run/copse/state', '/run/copse/out'],
         },
-        egress: [{ at: FIXED_TIME, origin: 'api.anthropic.com:443', event: 'connect' }],
+        egress: [{ at: FIXED_TIME, origin: 'inference.copse.internal:443', event: 'connect' }],
         result: {
           threadId: 'demo-container-thread',
           stopReason: 'completed',
@@ -923,7 +923,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         carryIn: { sha: '9b1b901683b9f0e5b2a3c4d5e6f708192a3b4c5d', dirty: false },
         carryOut: { expected: true, ref: 'refs/copse/runs/run-demo-1', error: null },
         containerExit: 0,
-        credential: 'key',
+        credential: 'host',
         teardown: 'removed',
         cleanupError: null,
         secretCanary: { present: false, detail: 'canary absent from every surface' },
@@ -2301,6 +2301,10 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     // The first thread is the active one and is empty, so the chat pane is the
     // Activity home. The others give it something to list: one waiting on an
     // approval, two running, one that finished while the user was elsewhere.
+    // A second project, so the strip lists projects at all (a lone one adds no card).
+    otherProjects: [
+      { project: project('demo-activity-other-docs', 'docs-site', '/demo/docs'), threads: [] },
+    ],
     threads: [
       {
         id: 'demo-activity-home-new',
@@ -2366,10 +2370,72 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'activity-home-many-projects',
+    label: 'Activity home listing twelve projects',
+    project: project('demo-activity-many-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    // Twelve projects overflow the strip, so it scrolls with an edge fade. Only the
+    // open one has thread data, so the rest read "All clear" and sort by name.
+    otherProjects: [
+      'Atlas',
+      'Billing API',
+      'Cobalt',
+      'Docs site',
+      'Edge workers',
+      'Flight deck',
+      'Gateway',
+      'Harbor',
+      'Ingest',
+      'Jupiter',
+      'Kiln',
+    ].map((name) => ({
+      project: {
+        id: `demo-activity-many-${name.toLowerCase().replace(/\W+/g, '-')}`,
+        path: `/demo/${name}`,
+        name,
+      },
+      threads: [],
+    })),
+    threads: [
+      {
+        id: 'demo-activity-many-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-many-refactor',
+        title: 'Refactor auth',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+    ],
+    approvalRequests: [
+      {
+        id: 'demo-activity-many-approval',
+        threadId: 'demo-activity-many-refactor',
+        title: 'Run shell command?',
+        body: "printf 'auth-check-passed\\n'",
+        type: 'shell',
+      },
+    ],
+  },
+  {
     id: 'activity-home-project-filter',
     label: 'Activity home after a project finishes waiting',
     project: project('demo-activity-home-filter-project'),
     settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    // A second project, so the strip lists projects at all (a lone one adds no card).
+    otherProjects: [
+      { project: project('demo-activity-other-docs', 'docs-site', '/demo/docs'), threads: [] },
+    ],
     threads: [
       {
         id: 'demo-activity-filter-new',
@@ -2697,6 +2763,103 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     'Full thread view for a model below the concise gate',
     'gpt-4o',
   ),
+  {
+    id: 'openai-host-pr',
+    label: 'OpenAI host PR creation result',
+    project: project('demo-openai-recovery-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'remote-agent:openai#gpt-6.1-sol',
+    },
+    threads: [
+      {
+        id: 'demo-openai-recovery-thread',
+        title: 'Create a PR from hosted changes',
+        status: 'idle',
+        model: 'remote-agent:openai#gpt-6.1-sol',
+        messages: [
+          {
+            id: 'recovery-user',
+            role: 'user',
+            content: 'Can we PR this?',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+          {
+            id: 'recovery-assistant',
+            role: 'assistant',
+            content:
+              'Changes imported. Done: Created draft PR https://github.com/example/project/pull/42',
+            toolCalls: [
+              {
+                id: 'openai-publish-turn-push',
+                name: 'gh_push',
+                args: {},
+                status: 'done',
+                result: 'Done: Pushed feature/mcp-apps to origin. Existing PR updated.',
+              },
+              {
+                id: 'openai-publish-turn-call',
+                name: 'gh_pr_create',
+                args: {
+                  title: 'docs: MCP Apps support plan',
+                  body: 'Document the implementation plan.',
+                  draft: true,
+                },
+                status: 'done',
+                result: 'Done: Created draft PR https://github.com/example/project/pull/42',
+              },
+            ],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'openai-cancellation-recovery',
+    label: 'OpenAI confirmed cancellation with interrupted recovery',
+    project: project('demo-openai-recovery-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'remote-agent:openai#gpt-6.1-sol',
+    },
+    threads: [
+      {
+        id: 'demo-openai-recovery-thread',
+        title: 'Stopped hosted task',
+        status: 'idle',
+        model: 'remote-agent:openai#gpt-6.1-sol',
+        messages: [
+          {
+            id: 'recovery-user',
+            role: 'user',
+            content: 'Run the public repository tests and report the result.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+          {
+            id: 'recovery-assistant',
+            role: 'assistant',
+            content:
+              '> An error occurred: OpenAI cancellation was confirmed, but output, usage, or artifacts could not be recovered. Session sess_demo remains linked; resend the previous message to recover it before starting another task.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
   conciseThreadScenario(
     'concise-thread-working',
     'Concise thread view while a capable model works',

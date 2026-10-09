@@ -35,6 +35,22 @@ function rollupChildren(
 }
 
 describe('tool-display', () => {
+  it('attributes a model-activated skill by name without marking failed or supporting reads as activation', () => {
+    const call = { ...tc('skill', 'read_skill'), args: { name: 'style-guide' } }
+    assert.equal(getToolCallLabel({ ...call, status: 'running' }), 'Loading skill style-guide')
+    assert.equal(
+      getToolCallLabel({
+        ...call,
+        result: 'Skill activated by the model: style-guide\nSource: project',
+      }),
+      'Activated skill style-guide',
+    )
+    assert.equal(
+      getToolCallLabel({ ...call, result: 'Supporting file for skill "style-guide"' }),
+      'Read skill style-guide',
+    )
+    assert.equal(getToolCallLabel({ ...call, status: 'error' }), 'Skill style-guide')
+  })
   it('identifies which MCP server failed to start', () => {
     assert.equal(getToolDisplayName('mcp__docs__startup'), 'docs startup')
     assert.equal(getToolDisplayName('mcp__issue_tracker__startup'), 'issue_tracker startup')

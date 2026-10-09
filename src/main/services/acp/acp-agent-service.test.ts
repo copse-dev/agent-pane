@@ -601,6 +601,59 @@ describe('buildAcpPromptContent', () => {
     assert.deepEqual(blocks[2], { type: 'image', mimeType: 'image/jpeg', data: 'def456' })
   })
 
+  it('replays prior user images for a fresh text-only continuation', () => {
+    const priorMessages = [
+      {
+        role: 'user' as const,
+        content: [
+          { type: 'text' as const, text: 'Inspect this screenshot' },
+          { type: 'image' as const, dataUrl: 'data:image/png;base64,earlier' },
+        ],
+      },
+      { role: 'assistant' as const, content: 'I will inspect it.' },
+    ]
+    const blocks = buildAcpPromptContent('Continue the interrupted turn', priorMessages, {
+      includeNotes: false,
+      includeImages: true,
+    })
+
+    assert.equal(blocks[0]?.type, 'text')
+    assert.deepEqual(blocks[1], { type: 'image', mimeType: 'image/png', data: 'earlier' })
+    assert.equal(
+      buildAcpPromptContent('Continue the interrupted turn', [], {
+        includeNotes: false,
+        includeImages: true,
+      }).length,
+      1,
+    )
+  })
+
+  it('keeps current images and only the most recent prior images within the handoff limit', () => {
+    const priorMessages = Array.from({ length: 6 }, (_, index) => ({
+      role: 'user' as const,
+      content: [{ type: 'image' as const, dataUrl: `data:image/png;base64,prior${String(index)}` }],
+    }))
+    const blocks = buildAcpPromptContent(
+      [
+        { type: 'text', text: 'Compare with this one' },
+        { type: 'image', dataUrl: 'data:image/jpeg;base64,current' },
+      ],
+      priorMessages,
+      { includeNotes: false, includeImages: true },
+    )
+
+    assert.deepEqual(
+      blocks.slice(1),
+      ['prior2', 'prior3', 'prior4', 'prior5']
+        .map((data) => ({
+          type: 'image',
+          mimeType: 'image/png',
+          data,
+        }))
+        .concat({ type: 'image', mimeType: 'image/jpeg', data: 'current' }),
+    )
+  })
+
   it('still produces a text block for image-only prompts when images are included', () => {
     const blocks = buildAcpPromptContent(
       [{ type: 'image', dataUrl: 'data:image/png;base64,onlyimg' }],

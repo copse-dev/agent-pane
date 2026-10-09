@@ -83,6 +83,10 @@ function openAiResponsesProvider(
     apiKey,
     reasoningSummaries: true,
     encryptedReasoning: true,
+    // First-party only (the flag is route-gated): the item is encrypted per model,
+    // and `store: false` (below) is what makes server-side compaction the
+    // stateless, replayable kind. Off for any family not reviewed in the table.
+    serverCompaction: modelCapabilities(model).supportsServerCompaction,
     // First-party OpenAI implements strict function tools; the extra
     // Responses-style providers below do not get the flag.
     strictTools: true,
@@ -353,6 +357,7 @@ export function createExtraCloudProvider(
   requestedParams: ModelParameters = {},
   promptCacheKey?: string,
   urlOptions: CredentialUrlOptions = {},
+  fetch?: typeof globalThis.fetch,
 ): LLMProvider {
   const params = withoutVerbosity(requestedParams)
   validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL', urlOptions)
@@ -363,6 +368,7 @@ export function createExtraCloudProvider(
     const serverTools: Tool[] = Array.isArray(tools) ? tools.filter(isServerSideTool) : []
     const ceiling = resolvedOutputCeiling(model, params)
     return new ResponsesProvider(model, {
+      ...(fetch ? { fetch } : {}),
       baseURL: provider.baseUrl,
       apiKey,
       serverTools,
@@ -374,6 +380,7 @@ export function createExtraCloudProvider(
   }
   const ceiling = resolvedOutputCeiling(model, params)
   return new OpenAIProvider(model, {
+    ...(fetch ? { fetch } : {}),
     baseURL: provider.baseUrl,
     // Local servers usually run without auth but still want a non-empty key
     // (many reject a blank Authorization header), mirroring createLocalOpenAIProvider.

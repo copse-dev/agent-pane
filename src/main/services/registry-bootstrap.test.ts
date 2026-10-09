@@ -19,6 +19,7 @@ import {
   syncRoadmapPlanTools,
   syncReviewerInputTools,
 } from './registry-bootstrap.ts'
+import { buildSkillsCatalogBlock } from './skills/skill-prompt.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
@@ -67,10 +68,38 @@ description: Demo skill for tests
   })
 
   afterEach(async () => {
+    setSetting('skillsEnabled', true)
     restoreWorkspace?.()
     setSkillsForTest([])
     resetBundledCursorSkillsRootForTest()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  it('registers model-only skills while respecting the master switch', () => {
+    setSkillsForTest([
+      {
+        name: 'model-only',
+        description: 'A model-only workflow',
+        source: 'project',
+        skillRoot: tempRoot,
+        skillPath: join(tempRoot, 'SKILL.md'),
+        userInvocable: false,
+        disableModelInvocation: false,
+        paths: [],
+        externalLinks: [],
+        missingReferences: [],
+      },
+    ])
+    const registry = createRegistry()
+    registerSkillTools(registry)
+    assert.equal(registry.has('read_skill'), true)
+    assert.match(
+      buildSkillsCatalogBlock(registry.toLLMTools().map((tool) => tool.name)),
+      /model-only/,
+    )
+    setSetting('skillsEnabled', false)
+    registerSkillTools(registry)
+    assert.equal(registry.has('read_skill'), false)
   })
 
   it('registers read_skill after skills are discovered', async () => {

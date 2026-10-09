@@ -18,7 +18,10 @@ import type {
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
+import {
+  collectPriorPromptImages,
+  promptPayloadFromUserContent,
+} from '@shared/remote-agent-stream.ts'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
@@ -1509,13 +1512,16 @@ export function buildAcpPrompt(
   )
 }
 
+/** Limit image replay on a fresh ACP handoff while giving current attachments priority. */
+const MAX_ACP_HANDOFF_IMAGES = 5
+
 /**
  * Build the ACP `session/prompt` content blocks for a turn (issue #831).
  *
- * Always includes one text block from {@link buildAcpPrompt}. When
- * `includeImages` is true (agent advertised `promptCapabilities.image`), also
- * appends image content blocks from the current user message so vision-capable
- * agents receive the attachments instead of having them dropped.
+ * Always includes one text block from {@link buildAcpPrompt}. When the agent
+ * supports images, a fresh session also receives recent images from prior user
+ * turns. The caller passes no prior messages for an existing session, so those
+ * images are not resent on every turn.
  */
 export function buildAcpPromptContent(
   userPrompt: UserContent,
@@ -1540,8 +1546,11 @@ export function buildAcpPromptContent(
   })
   const blocks: ContentBlock[] = [{ type: 'text', text }]
   if (opts?.includeImages) {
-    const { images } = promptPayloadFromUserContent(userPrompt)
-    for (const image of images ?? []) {
+    const currentImages = promptPayloadFromUserContent(userPrompt).images ?? []
+    const priorBudget = Math.max(0, MAX_ACP_HANDOFF_IMAGES - currentImages.length)
+    const priorImages =
+      priorBudget > 0 ? collectPriorPromptImages(priorMessages).slice(-priorBudget) : []
+    for (const image of [...priorImages, ...currentImages]) {
       blocks.push({ type: 'image', mimeType: image.mimeType, data: image.data })
     }
   }

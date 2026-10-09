@@ -10,6 +10,7 @@ import {
   type OngoingPrediction,
   type PredictionResult,
 } from '@lmstudio/sdk'
+import { withoutProviderState, type ConversationMessage } from './provider-state.ts'
 import {
   openAiParameterFields,
   resolvedOutputCeiling,
@@ -192,16 +193,17 @@ export class LMStudioProvider implements LLMProvider {
     signal?: AbortSignal,
   ): AsyncIterable<ProviderStreamChunk> {
     const self = this
+    const sendable = withoutProviderState(messages)
     return yieldStreamWithRetry(
       async function* () {
-        yield* self.streamOnce(messages, tools, signal)
+        yield* self.streamOnce(sendable, tools, signal)
       },
       { ...(signal ? { signal } : {}) },
     )
   }
 
   private async *streamOnce(
-    messages: LLMMessage[],
+    messages: ConversationMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
   ): AsyncIterable<ProviderStreamChunk> {
@@ -240,7 +242,7 @@ export class LMStudioProvider implements LLMProvider {
   }
 
   private async produce(
-    messages: LLMMessage[],
+    messages: ConversationMessage[],
     tools: LLMTool[],
     signal: AbortSignal | undefined,
     queue: AsyncChunkQueue<ProviderStreamChunk>,
@@ -398,7 +400,10 @@ function lmStudioToolParameters(
   }
 }
 
-async function toLmStudioChat(messages: LLMMessage[], client: ClientAdapter): Promise<Chat> {
+async function toLmStudioChat(
+  messages: ConversationMessage[],
+  client: ClientAdapter,
+): Promise<Chat> {
   const chat = Chat.empty()
   for (const message of messages) {
     if (message.role === 'system') {

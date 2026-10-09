@@ -5,6 +5,7 @@ import type {
   ProviderStreamChunk,
   ToolResult,
 } from './wire-types.ts'
+import { withoutProviderState } from './provider-state.ts'
 import { claimMockScenarioResponse } from './mock-script.ts'
 import { at } from '@copse/std/array-utils.ts'
 
@@ -116,10 +117,11 @@ export class MockLLMProvider implements LLMProvider {
   }
 
   async *stream(
-    messages: LLMMessage[],
+    allMessages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
   ): AsyncIterable<ProviderStreamChunk> {
+    const messages = withoutProviderState(allMessages)
     if (__COPSE_TEST_SCENARIOS__) {
       const scenario = streamScenarioResponse(this.scope, messages, tools, signal)
       const first = await scenario.next()

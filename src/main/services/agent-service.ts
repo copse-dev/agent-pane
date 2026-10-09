@@ -1,3 +1,4 @@
+import { OpenAiCancellationError } from './remote/openai-agents-api.ts'
 import { runWithInlineCanvas } from './inline-canvas-context.ts'
 import { MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { promptRoutingContext, resolvePromptModel } from './providers/prompt-model-routing.ts'
@@ -66,7 +67,8 @@ import {
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isAppleDevelopmentToolOffered } from './apple-development/apple-development-tool-scope.ts'
 import { dispatchInlineVisualization } from './inline-visualization.ts'
-import { getThreadMeta, updateMeta } from './thread-store.ts'
+import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
+import { appendContextCompaction, getThreadMeta, updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
@@ -119,7 +121,7 @@ import {
 import { runApprovedEvidenceExploration, runSpecialistCheck } from './specialist-check-runner.ts'
 import { runExploreSubagent } from './subagent-service.ts'
 import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
-import { estimateConversationTokens } from '@copse/agent/trim-history.ts'
+import { estimateConversationTokens, replayWindow } from '@copse/agent/trim-history.ts'
 import {
   prepareAgentHistory,
   contextTrimmedChunk,
@@ -153,6 +155,7 @@ import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import { runWithCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { resolveAdvisorModelForGating, resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
+import { createSkillActivationTurn, runWithSkillActivationTurn } from './skills/skill-activation.ts'
 import { advisorAddsLift } from './advisor-strategy.ts'
 import {
   runWithOrchestrationContext,
@@ -221,6 +224,7 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import { type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
+import { createOpenAiHostTools } from './remote/openai-host-tools.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
 import {
   offerAcpClaudeFallback,
@@ -1528,12 +1532,28 @@ async function runAgentWithInlineCanvas(
       const controller = new AbortController()
       abortMap.set(threadId, controller)
       setActiveRunThread(threadId)
-      const runAbort = createAgentRunAbortScheduler(controller)
+      const runAbort = createAgentRunAbortScheduler(
+        controller,
+        new AgentRunDeadline(
+          AGENT_RUN_IDLE_TIMEOUT_MS,
+          AGENT_RUN_HARD_MAX_MS,
+          Date.now(),
+          Date.now,
+          { excludePausesFromHardMax: remoteSelection.provider === 'openai' },
+        ),
+      )
       runAbort.schedule()
+      if (remoteSelection.provider === 'openai') {
+        registerRunDeadline(threadId, runAbort.deadline)
+        beginHookRunRecording(threadId)
+      }
       try {
         const result = await runRemoteAgentFromSettings({
           threadId,
           provider: remoteSelection.provider,
+          ...(remoteSelection.provider === 'openai'
+            ? { hostTools: createOpenAiHostTools(registry, threadId) }
+            : {}),
           ...(remoteSelection.model ? { model: remoteSelection.model } : {}),
           userPrompt: outboundPrompt,
           priorMessages,
@@ -1555,7 +1575,9 @@ async function runAgentWithInlineCanvas(
         // Abort (Stop / Send now) is a clean interrupt — Cursor's adapter already
         // emits CANCELLED `done` when it handles the signal; if an abort still
         // escapes here, don't paint it as a provider error in the transcript.
-        if (controller.signal.aborted) {
+        // OpenAI cancellation/recovery failures still need a visible notice,
+        // even when Stop has already aborted the local stream.
+        if (controller.signal.aborted && !(err instanceof OpenAiCancellationError)) {
           const timedOut = isAgentRunTimeoutAbort(controller.signal)
           recordTurnFailure(controller.signal.reason, {
             source: timedOut ? 'host' : 'user',
@@ -1575,6 +1597,11 @@ async function runAgentWithInlineCanvas(
       } finally {
         // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
         fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+        if (remoteSelection.provider === 'openai') {
+          cancelApprovalsForThread(threadId)
+          clearRunDeadline(threadId, runAbort.deadline)
+          endHookRunRecording(threadId)
+        }
         runAbort.clear()
         clearActiveRunThread(threadId)
         abortMap.delete(threadId)
@@ -1801,6 +1828,11 @@ async function runAgentWithInlineCanvas(
       nestedInstructionTurn,
     })
     const systemPrompt = systemPromptBuild.prompt
+    const skillActivationTurn = createSkillActivationTurn(
+      invokedSkills,
+      parentLoopTools.map((tool) => tool.name),
+      systemPromptBuild.invokedSkillContextBytes,
+    )
     const activeNestedInstructionPaths = new Set(
       systemPromptBuild.instructionMetadata.activeNestedPaths,
     )
@@ -1938,7 +1970,12 @@ async function runAgentWithInlineCanvas(
       }
     }
 
-    const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
+    const prepared = prepareAgentHistory(
+      messages,
+      contextWindow,
+      toolSchemaReserve,
+      provider.compactionIdentity,
+    )
     trimmed = prepared.trimmed
     // The turn's history is committed by the host once this function returns, so
     // a run that never returns — the app quits, the process is killed, the turn
@@ -1950,7 +1987,14 @@ async function runAgentWithInlineCanvas(
     const { wasTrimmed, conversationBudget } = prepared
     const { notifyTrimmed } = createTrimNotifier(wasTrimmed)
     const sendTrimNotice = (): void => {
-      sendChunk(contextTrimmedChunk(trimmed, contextWindow, prepared.historyBudget))
+      sendChunk(
+        contextTrimmedChunk(
+          trimmed,
+          contextWindow,
+          prepared.historyBudget,
+          provider.compactionIdentity,
+        ),
+      )
     }
     if (wasTrimmed) notifyTrimmed(sendTrimNotice)
 
@@ -2092,7 +2136,9 @@ async function runAgentWithInlineCanvas(
           // Measured at the boundary, not from the turn's opening snapshot: the run
           // has been appending to `trimmed` ever since, and it is the size right now
           // that decides whether there is any headroom to buy.
-          const fillRatio = estimateConversationTokens(trimmed) / conversationBudget
+          const fillRatio =
+            estimateConversationTokens(replayWindow(trimmed, provider.compactionIdentity)) /
+            conversationBudget
           if (completed && compactAtTodoBoundary(trimmed, todos, { fillRatio })) {
             notifyTrimmed(sendTrimNotice)
           }
@@ -2262,9 +2308,13 @@ async function runAgentWithInlineCanvas(
         ): Promise<ToolExecuteResult> => {
           const startedAt = Date.now()
           try {
-            const raw = await (coordinationDemo
-              ? coordinationDemo.execute(() => runParentTool(name, args, signal, toolCallId))
-              : runParentTool(name, args, signal, toolCallId))
+            const execute = (): Promise<ToolExecuteResult> =>
+              coordinationDemo
+                ? coordinationDemo.execute(() => runParentTool(name, args, signal, toolCallId))
+                : runParentTool(name, args, signal, toolCallId)
+            const raw = await (name === 'read_skill'
+              ? runWithSkillActivationTurn(skillActivationTurn, execute)
+              : execute())
             // The agent just wrote, moved, or removed an AGENTS.md: the turn's
             // discovery memo no longer describes the tree, so the next file tool
             // call re-walks. `run_shell` writes are not seen here (documented).
@@ -2360,6 +2410,21 @@ async function runAgentWithInlineCanvas(
                     return
                   }
                   sendChunk(chunk)
+                  if (chunk.type === 'context_compacted' && runContext) {
+                    // The boundary is canonical; the opaque item stays in the
+                    // provider-history projection. Best effort like the other
+                    // observational spine lines: a failed append must not fail the turn.
+                    void appendContextCompaction(runContext.projectId, threadId, {
+                      v: SPINE_SCHEMA_VERSION,
+                      type: 'context_compaction',
+                      id: randomUUID(),
+                      recordedAt: Date.now(),
+                      provider: chunk.provider,
+                      model: chunk.model,
+                      projectionVersion: 1,
+                      itemId: chunk.itemId,
+                    }).catch(() => undefined)
+                  }
                   if (chunk.type === 'usage') {
                     inputTokens += chunk.inputTokens
                     outputTokens += chunk.outputTokens

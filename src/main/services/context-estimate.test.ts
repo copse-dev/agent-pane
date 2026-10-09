@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { estimateContextBreakdown } from './context-estimate.ts'
-import { createRegistry } from './registry-bootstrap.ts'
+import { createRegistry, registerSkillTools } from './registry-bootstrap.ts'
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { refreshSkillsRegistry } from './skills/skills-registry.ts'
@@ -77,7 +77,9 @@ description: Bundled skill for tests
     setBundledCursorSkillsRootForTest(bundledRoot)
     setSetting('bundledCursorSkillsEnabled', true)
     await refreshSkillsRegistry()
-    const withBundled = await estimateContextBreakdown(createRegistry(), {
+    const registry = createRegistry()
+    registerSkillTools(registry)
+    const withBundled = await estimateContextBreakdown(registry, {
       draftText: '',
       invokedSkills: [],
       imageCount: 0,
@@ -86,7 +88,8 @@ description: Bundled skill for tests
 
     setSetting('bundledCursorSkillsEnabled', false)
     await refreshSkillsRegistry()
-    const withoutBundled = await estimateContextBreakdown(createRegistry(), {
+    registerSkillTools(registry)
+    const withoutBundled = await estimateContextBreakdown(registry, {
       draftText: '',
       invokedSkills: [],
       imageCount: 0,
@@ -123,5 +126,16 @@ description: Bundled skill for tests
       Math.abs(toolsTokens(deferred) - toolsTokens(ordinary) - toolTokens) <= 1,
       `only a deferred thread should count the ~${String(Math.round(toolTokens))}-token tool`,
     )
+  })
+
+  it('omits model skill context when the offered toolset cannot activate skills', async () => {
+    await refreshSkillsRegistry()
+    const breakdown = await estimateContextBreakdown(createRegistry(), {
+      draftText: '',
+      invokedSkills: [],
+      imageCount: 0,
+      priorMessages: [],
+    })
+    assert.equal(skillsTokens(breakdown), 0)
   })
 })

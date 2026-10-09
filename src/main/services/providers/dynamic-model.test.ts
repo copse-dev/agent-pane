@@ -73,6 +73,35 @@ describe('resolveDynamicModelId', () => {
     )
   })
 
+  it('keeps ACP Astra available for chat but excludes it from automatic workers', async () => {
+    const pool = computeParetoFrontier([
+      { id: 'acp:codex-acp#gpt-6-astra', intellect: 80, costPerMTok: 0 },
+      { id: 'lmstudio:qwen/qwen3.6-35b-a3b', intellect: 38, costPerMTok: 0, local: true },
+    ])
+    assert.equal(
+      await resolveDynamicModelId('auto:best-value', { pool }),
+      'acp:codex-acp#gpt-6-astra',
+    )
+    assert.equal(
+      await resolveDynamicModelId('auto:best-value', { pool, callableOnly: true }),
+      'lmstudio:qwen/qwen3.6-35b-a3b',
+    )
+    // Soft exclusions must never reintroduce an incompatible route.
+    assert.equal(
+      await resolveDynamicModelId('auto:best-value', {
+        pool,
+        callableOnly: true,
+        exclude: ['lmstudio:qwen/qwen3.6-35b-a3b'],
+      }),
+      'lmstudio:qwen/qwen3.6-35b-a3b',
+    )
+  })
+
+  it('does not silently replace a pinned ACP worker with an API model', async () => {
+    const model = 'acp:codex-acp#gpt-6-astra'
+    assert.equal(await resolveDynamicModelId(model, { pool: POOL, callableOnly: true }), model)
+  })
+
   describe('roles', () => {
     it('returns the model assigned to the role', async () => {
       await setSetting('roleModels', { advisor: 'claude-opus-4-8' })

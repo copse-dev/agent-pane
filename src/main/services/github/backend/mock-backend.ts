@@ -184,6 +184,16 @@ export const mockGitHubBackend: GitHubBackend = {
   },
 
   getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
+    // A linked PR can be visible from chat while GitHub blocks its details
+    // behind organization SAML authorization. Keep this response at the mock
+    // backend boundary so the PR pane's real selection path can render it.
+    if (ref.owner === 'duckduckgo' && ref.repo === 'privacy-configuration' && ref.number === 6059) {
+      return Promise.reject(
+        new Error(
+          'GraphQL: Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization: https://github.com/orgs/duckduckgo/sso?authorization_request=mock-authorization-value',
+        ),
+      )
+    }
     const base = mockGetGhPrDetails(ref)
     if (!base) return Promise.resolve(null)
     const state = ensureState(ref)

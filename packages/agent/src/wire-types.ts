@@ -318,6 +318,11 @@ export type AgentStreamChunk =
       toolCallId: string
       evidence: VisualEvidenceDraft[]
     }
+  /**
+   * The provider compacted the model context server-side. Carries no payload:
+   * the opaque item stays in provider history, never on the stream.
+   */
+  | { type: 'context_compacted'; provider: 'openai-responses'; model: string; itemId: string }
   /** Replace accumulated assistant text (e.g. after stripping embedded pseudo tool XML). */
   | { type: 'text_replace'; text: string }
   | {

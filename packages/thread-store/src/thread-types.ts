@@ -460,6 +460,12 @@ export interface Thread {
      * unsent draft. Such a run no longer blocks the schedule's next trigger.
      */
     startFailedAt?: number
+    /**
+     * Why this run failed to start or ended in error, as the renderer observed it.
+     * `code` is an `AutomationFailureCode`; kept a string here because this package
+     * does not own that vocabulary, and validated by readers.
+     */
+    failure?: { code: string; message: string; at: number }
   }
   /**
    * Videos the user has attached to this thread, in the order they were sent.

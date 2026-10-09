@@ -5,7 +5,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore, type AppStore } from '@shared/store/store.ts'
-import type { BackgroundThread, Thread } from '@shared/types'
+import type { BackgroundThread, Project, Thread } from '@shared/types'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import { mountActivityHome } from './activity-home.ts'
 import { mountActivityPanel } from './activity-panel.ts'
@@ -367,6 +367,95 @@ describe('activity home project strip', () => {
     { projectId: 'p2', thread: thread('d1', { status: 'running' }) },
   ]
 
+  const names = (pane: HTMLElement): (string | null)[] =>
+    [...pane.querySelectorAll('#activity-home .activity-strip-name')].map(
+      (node) => node.textContent,
+    )
+
+  it('lists every project when nothing is waiting, after All projects', () => {
+    const { pane, home } = mount([thread('t1')])
+    home.setShown(true)
+    assert.deepEqual(names(pane), ['All projects', 'docs-site', 'workspace'])
+    assert.match(card(pane, 'p2').textContent, /All clear/)
+  })
+
+  it('orders by attention: need you, then working, then by name', () => {
+    const { store, pane, home } = mount([thread('t1', { status: 'running' }), thread('t2')], {
+      background: [{ projectId: 'p3', thread: thread('d1', { status: 'running' }) }],
+      approvals: [approval('a1', 't2')],
+    })
+    store.setState({
+      projects: [
+        { id: 'p0', path: '/a', name: 'alpha' },
+        { id: 'p2', path: '/docs', name: 'docs-site' },
+        { id: 'p3', path: '/c', name: 'zeta' },
+        { id: 'p1', path: '/work', name: 'workspace' },
+      ],
+    })
+    home.setShown(true)
+    assert.deepEqual(names(pane), ['All projects', 'workspace', 'zeta', 'alpha', 'docs-site'])
+  })
+
+  it('skips missing projects, as the sidebar thread sections do', () => {
+    const { store, pane, home } = mount([thread('t1')])
+    store.setState({
+      projects: [
+        { id: 'p1', path: '/work', name: 'workspace' },
+        { id: 'p2', path: '/docs', name: 'docs-site', missing: true },
+        { id: 'p3', path: '/c', name: 'cc' },
+      ],
+    })
+    home.setShown(true)
+    assert.deepEqual(names(pane), ['All projects', 'cc', 'workspace'])
+  })
+
+  it('filters the list from a card with nothing waiting, and clears when it is removed', () => {
+    const { store, pane, home, flush } = mount([thread('t1')], {
+      background: [{ projectId: 'p2', thread: thread('d1', { status: 'running' }) }],
+    })
+    home.setShown(true)
+    card(pane, 'p2').click()
+    toggle(pane, 'working').click()
+    assert.deepEqual(rows(pane), ['d1'])
+    assert.equal(card(pane, 'p2').getAttribute('aria-pressed'), 'true')
+    const kept: Project[] = [{ id: 'p1', path: '/work', name: 'workspace' }]
+    store.setState({ projects: kept })
+    store.emit('projects_changed')
+    flush()
+    assert.equal(pane.querySelector('.activity-strip-card[data-project="p2"]') === null, true)
+    assert.equal(card(pane, 'all').getAttribute('aria-pressed'), 'true')
+  })
+
+  it('clears the filter when removing another project leaves the chosen one alone', () => {
+    const { store, pane, home, flush } = mount([thread('t1', { status: 'running' })])
+    home.setShown(true)
+    card(pane, 'p1').click()
+    assert.equal(card(pane, 'p1').getAttribute('aria-pressed'), 'true')
+    store.setState({ projects: [{ id: 'p1', path: '/work', name: 'workspace' }] })
+    store.emit('projects_changed')
+    flush()
+    assert.deepEqual(names(pane), ['All projects'], 'a lone project has no tile')
+    assert.equal(card(pane, 'all').getAttribute('aria-pressed'), 'true')
+  })
+
+  it('moves focus to All projects when the focused card disappears', () => {
+    const { store, pane, home, flush } = mount([thread('t1', { status: 'running' })])
+    home.setShown(true)
+    card(pane, 'p1').focus()
+    assert.equal(document.activeElement, card(pane, 'p1'))
+    store.setState({ projects: [{ id: 'p1', path: '/work', name: 'workspace' }] })
+    store.emit('projects_changed')
+    flush()
+    assert.equal(document.activeElement, card(pane, 'all'), 'focus is not lost with the card')
+  })
+
+  it('shows only All projects when there is a single project', () => {
+    const { store, pane, home } = mount([thread('t1')])
+    store.setState({ projects: [{ id: 'p1', path: '/work', name: 'workspace' }] })
+    home.setShown(true)
+    assert.deepEqual(names(pane), ['All projects'])
+  })
+
   it('lists All projects first, then the projects that need you', () => {
     const { pane, home } = mount([thread('t1', { status: 'running' }), thread('t2')], {
       background,
@@ -377,7 +466,7 @@ describe('activity home project strip', () => {
     const names = [...pane.querySelectorAll('#activity-home .activity-strip-name')].map(
       (node) => node.textContent,
     )
-    assert.deepEqual(names, ['All projects', 'workspace'], 'docs-site has nothing waiting')
+    assert.deepEqual(names, ['All projects', 'workspace', 'docs-site'], 'attention first')
     assert.match(card(pane, 'all').textContent, /1 need you/)
     assert.match(card(pane, 'all').textContent, /2 working/)
     assert.equal(card(pane, 'all').getAttribute('aria-pressed'), 'true')
@@ -389,7 +478,10 @@ describe('activity home project strip', () => {
       approvals: [approval('a1', 't1')],
     })
     store.setState({
-      projects: [{ id: projectId, path: '/work', name: 'workspace' }],
+      projects: [
+        { id: projectId, path: '/work', name: 'workspace' },
+        { id: 'p2', path: '/docs', name: 'docs-site' },
+      ],
       activeProjectId: projectId,
       expandedProjectId: projectId,
     })

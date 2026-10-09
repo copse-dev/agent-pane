@@ -1,3 +1,5 @@
+import { memberOf } from '@shared/member-of.ts'
+
 /** A project-owned recurring schedule persisted by the automations plugin. */
 export type AutomationLiveWorktreeLimit = 1 | 2 | 3
 
@@ -58,7 +60,24 @@ export interface AutomationProblem {
   /** `failed`: the trigger threw. `pending-start`: an earlier run was never started. */
   kind: 'failed' | 'pending-start'
   message: string
+  /** Machine-readable cause; see `describeAutomationFailure`. Absent on rows written by older builds. */
+  code?: AutomationFailureCode | undefined
+  /** The run the problem belongs to, when one exists. */
+  threadId?: string | undefined
 }
+
+/** Every way an unattended run is known to fail to start, stall or die. */
+export const AUTOMATION_FAILURE_CODES = [
+  'approval-stalled',
+  'no-model',
+  'container-missing',
+  'auth-expired',
+  'worktree-failed',
+  'scheduler-stopped',
+  'unknown',
+] as const
+export type AutomationFailureCode = (typeof AUTOMATION_FAILURE_CODES)[number]
+export const isAutomationFailureCode = memberOf(AUTOMATION_FAILURE_CODES)
 
 /** Editable fields accepted by create/update IPC. Project ownership is separate. */
 export interface AutomationScheduleInput {
@@ -72,13 +91,49 @@ export interface AutomationScheduleInput {
   permissions?: AutomationPermission[]
 }
 
+/**
+ * What an event automation listens for. All kinds share one definition store and one
+ * delivery inbox; the kind selects the poller, the filters and the delivery identity.
+ */
+export type EventAutomationTrigger =
+  | {
+      kind: 'github-ci-failed'
+      repository: string
+      /** Branch whose current head is watched. For a PR-scoped trigger, the PR's head ref when saved. */
+      branch: string
+      /** Workflow names that may trigger a run. Absent or empty means every workflow. */
+      checks?: string[] | undefined
+      /** Watch this pull request's current head instead of a branch. */
+      pullRequest?: number | undefined
+    }
+  | {
+      kind: 'github-pr-changed'
+      repository: string
+      baseBranch: string
+      /** `ready-for-review`: a draft became ready. `new-commits`: a non-draft PR got a new head. */
+      transition: PullRequestTransition
+    }
+  | { kind: 'github-issue-labeled'; repository: string; label: string }
+
+export type PullRequestTransition = 'ready-for-review' | 'new-commits'
+
+export type EventAutomationTriggerInput =
+  | {
+      kind: 'github-ci-failed'
+      branch?: string | undefined
+      checks?: string[] | undefined
+      pullRequest?: number | undefined
+    }
+  | { kind: 'github-pr-changed'; baseBranch: string; transition: PullRequestTransition }
+  | { kind: 'github-issue-labeled'; label: string }
+
 /** Versioned event workflow. Existing cron schedules keep their stored shape until migrated. */
 export interface BranchCiAutomation {
   v: 1
   id: string
   projectId: string
   name: string
-  trigger: { kind: 'github-ci-failed'; repository: string; branch: string }
+  trigger: EventAutomationTrigger
   prompt: string
   model: string
   enabled: boolean
@@ -86,16 +141,22 @@ export interface BranchCiAutomation {
   revision: string
   createdAt: number
   updatedAt: number
-  /** Recent run+attempt identities, advanced only after inbox admission. */
+  /** Recent delivery identities, advanced only after inbox admission. */
   seenDeliveries: string[]
+  /** Pull requests last observed as drafts, so a later non-draft observation is a transition. */
+  draftPullRequests?: number[] | undefined
   lastRunAt?: number | undefined
   lastCreatedThreadId?: string | undefined
+  /** Latest unresolved failure to start or poll, cleared by the next run that starts. */
+  lastProblem?: AutomationProblem | undefined
 }
 
 export interface BranchCiAutomationInput {
   id?: string
   name: string
-  branch: string
+  /** Legacy shorthand for a branch CI trigger; ignored when `trigger` is given. */
+  branch?: string
+  trigger?: EventAutomationTriggerInput
   prompt: string
   model: string
   enabled: boolean
@@ -120,6 +181,20 @@ export interface AutomationRetainedWorktree {
   paths?: string[]
 }
 
+/** One recorded delivery for an event automation, as the manager shows it. */
+export interface EventDeliverySummary {
+  key: string
+  deliveryId: string
+  /** `started`: a task exists. `waiting`: held back by a limit, rechecked later. `filtered`/`held`: will not run. */
+  outcome: 'started' | 'waiting' | 'filtered' | 'held'
+  /** Plain-language reason for every outcome other than a clean start. */
+  reason?: string
+  summary: string
+  url?: string
+  receivedAt: number
+  threadId?: string
+}
+
 export interface AutomationTriggerEvent {
   projectId: string
   scheduleId: string
@@ -131,4 +206,23 @@ export interface AutomationTriggerEvent {
   coalescedReason?: 'busy' | 'worktree-limit'
   /** The runs holding worktree slots. Present only when coalesced for `worktree-limit`. */
   blockedBy?: AutomationRetainedWorktree[]
+}
+
+/** Whether the minute scheduler that fires schedules (and polls event triggers) is alive. */
+export interface AutomationSchedulerHealth {
+  /** `recovering`: the scheduler task died and a replacement is pending. `stopped`: replacement failed. */
+  state: 'ok' | 'recovering' | 'stopped'
+  /** When the current non-ok state began. */
+  since: number | null
+  message: string | null
+}
+
+/** What an event trigger would have matched recently, shown by Test match. */
+export interface EventMatchPreview {
+  repository: string
+  /** The watched branch (CI) or base branch (pull requests); empty for issue labels. */
+  branch: string
+  latestFailure: string | null
+  /** Recent items the trigger would have matched, newest first, already bounded for display. */
+  recent: string[]
 }
