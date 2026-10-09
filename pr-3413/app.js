@@ -78118,6 +78118,10 @@ var init_demo_scenarios = __esm({
         // The first thread is the active one and is empty, so the chat pane is the
         // Activity home. The others give it something to list: one waiting on an
         // approval, two running, one that finished while the user was elsewhere.
+        // A second project, so the strip lists projects at all (a lone one adds no card).
+        otherProjects: [
+          { project: project("demo-activity-other-docs", "docs-site", "/demo/docs"), threads: [] }
+        ],
         threads: [
           {
             id: "demo-activity-home-new",
@@ -78183,10 +78187,72 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home-many-projects",
+        label: "Activity home listing twelve projects",
+        project: project("demo-activity-many-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        // Twelve projects overflow the strip, so it scrolls with an edge fade. Only the
+        // open one has thread data, so the rest read "All clear" and sort by name.
+        otherProjects: [
+          "Atlas",
+          "Billing API",
+          "Cobalt",
+          "Docs site",
+          "Edge workers",
+          "Flight deck",
+          "Gateway",
+          "Harbor",
+          "Ingest",
+          "Jupiter",
+          "Kiln"
+        ].map((name) => ({
+          project: {
+            id: `demo-activity-many-${name.toLowerCase().replace(/\W+/g, "-")}`,
+            path: `/demo/${name}`,
+            name
+          },
+          threads: []
+        })),
+        threads: [
+          {
+            id: "demo-activity-many-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-many-refactor",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-activity-many-approval",
+            threadId: "demo-activity-many-refactor",
+            title: "Run shell command?",
+            body: "printf 'auth-check-passed\\n'",
+            type: "shell"
+          }
+        ]
+      },
+      {
         id: "activity-home-project-filter",
         label: "Activity home after a project finishes waiting",
         project: project("demo-activity-home-filter-project"),
         settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        // A second project, so the strip lists projects at all (a lone one adds no card).
+        otherProjects: [
+          { project: project("demo-activity-other-docs", "docs-site", "/demo/docs"), threads: [] }
+        ],
         threads: [
           {
             id: "demo-activity-filter-new",
@@ -84286,22 +84352,42 @@ function createActivityView(api2, store2, sources3, deps, host) {
     stripCache.set(id, { signature, node: node2 });
     return node2;
   }
+  function listedProjects() {
+    return store2.getState().projects.filter((project2) => !project2.missing);
+  }
+  let scrolledFilter;
+  function scrollSelectedCardIntoView() {
+    const selected = strip.querySelector('[aria-pressed="true"]');
+    if (!selected) return;
+    const left = selected.offsetLeft - strip.offsetLeft;
+    const right = left + selected.offsetWidth;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (right > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = right - strip.clientWidth;
+    }
+  }
   function renderStrip(groups) {
     const stats = projectStats(groups);
-    if (projectFilter !== null && !stats.has(projectFilter)) {
-      const project2 = store2.getState().projects.find((entry) => entry.id === projectFilter);
-      if (project2) stats.set(project2.id, { name: project2.name, need: 0, working: 0 });
-    }
+    const projects = listedProjects();
     const need = groups.find((group) => group.id === "needs-you")?.total ?? 0;
     const working = groups.find((group) => group.id === "working")?.total ?? 0;
     const cards = [stripCard(null, "All projects", need, working)];
-    const shown = [...stats.entries()].filter(([id, entry]) => entry.need > 0 || id === projectFilter).sort((a3, b4) => b4[1].need - a3[1].need || a3[1].name.localeCompare(b4[1].name));
-    for (const [id, entry] of shown)
-      cards.push(stripCard(id, entry.name, entry.need, entry.working));
+    const shown = (projects.length > 1 ? projects : []).map((project2) => ({
+      id: project2.id,
+      name: project2.name,
+      need: stats.get(project2.id)?.need ?? 0,
+      working: stats.get(project2.id)?.working ?? 0
+    })).sort((a3, b4) => b4.need - a3.need || b4.working - a3.working || a3.name.localeCompare(b4.name));
+    for (const entry of shown)
+      cards.push(stripCard(entry.id, entry.name, entry.need, entry.working));
     patchChildren(strip, cards);
-    const live = /* @__PURE__ */ new Set([null, ...shown.map(([id]) => id)]);
+    const live = /* @__PURE__ */ new Set([null, ...shown.map((entry) => entry.id)]);
     for (const id of stripCache.keys()) {
       if (!live.has(id)) stripCache.delete(id);
+    }
+    if (scrolledFilter !== projectFilter) {
+      scrolledFilter = projectFilter;
+      scrollSelectedCardIntoView();
     }
   }
   function emptyState() {
@@ -84388,9 +84474,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       }
     }
     if (spot.area === "strip") {
-      const card = [...strip.querySelectorAll("[data-project-key]")].find(
-        (node2) => node2.dataset["projectKey"] === spot.projectKey
-      );
+      const cards = [...strip.querySelectorAll("[data-project-key]")];
+      const card = cards.find((node2) => node2.dataset["projectKey"] === spot.projectKey) ?? cards.find((node2) => node2.dataset["projectKey"] === JSON.stringify(null));
       card?.focus({ preventScroll: true });
       return;
     }
@@ -84436,6 +84521,13 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const focus = captureFocus();
     const previousListScrollTop = list.scrollTop;
     const listScrollAnchor = captureListScrollAnchor();
+    if (host.projectStrip && projectFilter !== null) {
+      const filterId = projectFilter;
+      const listed = listedProjects();
+      if (listed.length < 2 || !listed.some((project2) => project2.id === filterId)) {
+        projectFilter = null;
+      }
+    }
     const allThreads = collectActivityThreads(store2);
     const approvals = sources3.approvals.pending();
     const questions = sources3.questions.pending();
@@ -111677,9 +111769,13 @@ function mountFooterBranchStatus(host, store2, api2) {
   }
   function renderReattach() {
     const current = activeDetached();
-    const shown = current !== null && !isPickerMode() && !wrap.hidden && getActiveThread2()?.status !== "running";
+    const visible = current !== null && !isPickerMode() && !wrap.hidden;
+    const shown = visible && !agentCanTouchCheckout(current);
     reattachButton.hidden = !shown;
-    trigger.classList.toggle("is-detached", current !== null && !isPickerMode() && !wrap.hidden);
+    trigger.classList.toggle("is-detached", visible);
+    if (visible && !shown) {
+      trigger.title = `This checkout is detached from ${current.branch}. Recovery is offered once the agent stops working in it.`;
+    }
     if (!shown) return;
     const title = detachedTitle(current);
     trigger.title = title;
@@ -111713,6 +111809,9 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattachButton.setAttribute("aria-label", `Reattach checkout to ${current.branch}`);
     reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
   }
+  function agentCanTouchCheckout(current) {
+    return getActiveThread2()?.status === "running" || current?.agentBusy === true;
+  }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
   }
@@ -111735,7 +111834,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || getActiveThread2()?.status === "running" || reattaching || activeRecoveryRunId() !== null)
+    if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
     if (current.recovery) {
       const runId = globalThis.crypto.randomUUID();
@@ -129444,15 +129543,28 @@ function prNewThreadDraft(pr2) {
 function prNewThreadTitle(pr2) {
   return `PR #${String(pr2.number)}: ${pr2.title}`;
 }
-function startPrDiscussThread(store2, pr2) {
+function prCheckFixDraft(pr2, check2, headSha) {
+  const details = check2.url && /^https?:\/\//i.test(check2.url) ? ` Check details: ${check2.url}.` : "";
+  return `Fix the failing check "${check2.name}" (${check2.state.toLowerCase()}) on [#${String(pr2.number)} \u2014 ${pr2.title}](${pr2.url}) at head commit ${headSha}.${details} Inspect the failure logs, identify the cause, make the fix, and run the relevant checks.`;
+}
+function startPrThread(store2, draft, title) {
   store2.emit("composer_draft_flush");
-  const threadId = createThread(store2, prNewThreadDraft(pr2));
-  const title = prNewThreadTitle(pr2);
+  const threadId = createThread(store2, draft);
   store2.setState({
     threads: store2.getState().threads.map((t2) => t2.id === threadId ? { ...t2, title } : t2)
   });
   store2.emit("threads_changed");
   return threadId;
+}
+function startPrCheckFixThread(store2, pr2, check2, headSha) {
+  return startPrThread(
+    store2,
+    prCheckFixDraft(pr2, check2, headSha),
+    `Fix PR #${String(pr2.number)}: ${check2.name}`
+  );
+}
+function startPrDiscussThread(store2, pr2) {
+  return startPrThread(store2, prNewThreadDraft(pr2), prNewThreadTitle(pr2));
 }
 var init_pr_pane_thread = __esm({
   "src/renderer/views/pr-pane-thread.ts"() {
@@ -129483,7 +129595,7 @@ function externalButton(label, url2, open2) {
   });
   return button;
 }
-function renderPrActivity(host, section, activity, open2) {
+function renderPrActivity(host, section, activity, open2, fixCheck) {
   clear(host);
   if (!activity || activity.error) {
     host.append(
@@ -129598,6 +129710,16 @@ function renderPrActivity(host, section, activity, open2) {
     );
     for (const check2 of checks) {
       const icon = group.tone === "success" ? checkIcon() : group.tone === "failure" ? closeIcon() : group.tone === "pending" ? circleIcon() : minusIcon();
+      const fixButton = group.tone === "failure" && fixCheck ? el(
+        "button",
+        {
+          type: "button",
+          class: "pr-activity-link pr-check-fix-btn",
+          "aria-label": `Fix ${check2.name}`
+        },
+        "Fix"
+      ) : null;
+      fixButton?.addEventListener("click", () => fixCheck?.(check2, activity.headSha));
       section2.append(
         el(
           "div",
@@ -129613,6 +129735,7 @@ function renderPrActivity(host, section, activity, open2) {
               readableState(check2.state)
             )
           ),
+          ...fixButton ? [fixButton] : [],
           externalButton("Details", check2.url, open2)
         )
       );
@@ -129648,19 +129771,12 @@ function renderPrThreadRelationships(rows, openThread) {
     }
   ];
   for (const group of groups) {
+    if (group.rows.length === 0) continue;
     const section = el(
       "div",
       { class: "pr-thread-group", "data-relationship-group": group.kind },
       el("h5", {}, group.label)
     );
-    if (group.rows.length === 0)
-      section.append(
-        el(
-          "p",
-          { class: "pr-thread-empty" },
-          group.kind === "produced" ? "No recorded producing thread." : "No related threads recorded."
-        )
-      );
     for (const row2 of group.rows) {
       const label = row2.kinds.includes("produced") ? "Created PR" : row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
       const button = el(
@@ -130518,9 +130634,19 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       diffWrap.hidden = true;
       emptyState.hidden = true;
       activityHost.hidden = false;
-      renderPrActivity(activityHost, activeSection, prDetails.activity, (url2) => {
-        void api2.shell.openExternal(url2);
-      });
+      renderPrActivity(
+        activityHost,
+        activeSection,
+        prDetails.activity,
+        (url2) => {
+          void api2.shell.openExternal(url2);
+        },
+        (check2, headSha) => {
+          if (!prDetails) return;
+          startPrCheckFixThread(store2, prDetails, check2, headSha);
+          getPromptAttachmentHandlers()?.focusComposer?.();
+        }
+      );
     }
   }
   function renderFiles() {
