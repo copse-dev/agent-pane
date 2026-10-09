@@ -118,6 +118,8 @@ import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { commitThreadModelSelection } from '../controller/model-selection.ts'
 import { mark as perfMark } from '../perf.ts'
 import type { GitPromptState } from '@shared/types/git.ts'
+import { isTypingTarget } from '../keyboard-shortcuts.ts'
+import { isAnyDialogOpen } from './dialog-shell.ts'
 
 interface MountInputBarOptions {
   /**
@@ -146,12 +148,34 @@ const IMAGE_DETAIL_LABELS: Record<ImageDetail, string> = {
   high: 'High detail — full fidelity, most tokens',
 }
 
+/** Whether a paste outside the composer was aimed at another input surface. */
+function pasteBelongsElsewhere(target: EventTarget | null): boolean {
+  if (isAnyDialogOpen() || isTypingTarget(target)) return true
+  return target instanceof Element && target.closest('.monaco-editor, .xterm') !== null
+}
+
+/** How long an Escape-armed stop waits for its confirming Escape or Enter. */
+const STOP_PENDING_TIMEOUT_MS = 3_000
+/** Keys that neither confirm nor cancel an armed stop. */
+const STOP_SHORTCUT_PASSTHROUGH_KEYS = new Set([
+  'Escape',
+  'Enter',
+  'Shift',
+  'Control',
+  'Alt',
+  'Meta',
+  'CapsLock',
+])
+
 export function mountInputBar(
   root: HTMLElement,
   store: AppStore,
   api: ApiClient,
   opts: MountInputBarOptions = {},
-): { handleStopShortcut: (key: 'Escape' | 'Enter') => boolean; unmount: () => void } {
+): {
+  handleStopShortcut: (key: 'Escape' | 'Enter', target?: EventTarget | null) => boolean
+  unmount: () => void
+} {
   const chips = el('div', { class: 'attachment-chips' })
   const composer = mountComposerEditor()
   composer.setPlaceholder('Message…')
@@ -1322,10 +1346,13 @@ export function mountInputBar(
   })
 
   let stopPendingThreadId: string | null = null
+  let stopPendingTimer: ReturnType<typeof setTimeout> | null = null
 
   function clearStopPending(): void {
     stopPendingThreadId = null
     stopBtn.classList.remove('stop-pending')
+    if (stopPendingTimer !== null) clearTimeout(stopPendingTimer)
+    stopPendingTimer = null
   }
 
   /**
@@ -1368,10 +1395,19 @@ export function mountInputBar(
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending()
   }
 
-  const handleStopShortcut = (key: 'Escape' | 'Enter'): boolean => {
+  const handleStopShortcut = (
+    key: 'Escape' | 'Enter',
+    target: EventTarget | null = null,
+  ): boolean => {
     const id = getActiveThreadId()
     const thread = getActiveThread(store)
     if (!id || thread?.status !== 'running') {
+      clearStopPending()
+      return false
+    }
+    // Escape and Enter typed into another editor (the terminal, Monaco, a
+    // settings field) belong to it: `Esc :wq Enter` in vim must not stop the run.
+    if (isTypingTarget(target) && !(target instanceof Node && root.contains(target))) {
       clearStopPending()
       return false
     }
@@ -1385,11 +1421,20 @@ export function mountInputBar(
     if (key === 'Escape') {
       stopPendingThreadId = id
       stopBtn.classList.add('stop-pending')
+      // An armed stop is a two-key gesture, not a standing state: it lapses.
+      stopPendingTimer = setTimeout(clearStopPending, STOP_PENDING_TIMEOUT_MS)
       return true
     }
 
     return false
   }
+  // Any other key between Escape and Enter means the user moved on; the Enter
+  // that ends whatever they typed next must not stop the run.
+  const disarmStopOnOtherKey = (e: KeyboardEvent): void => {
+    if (stopPendingThreadId === null || STOP_SHORTCUT_PASSTHROUGH_KEYS.has(e.key)) return
+    clearStopPending()
+  }
+  document.addEventListener('keydown', disarmStopOnOtherKey, true)
 
   function showBranchMismatch(branch: string): void {
     mismatchBranch = branch
@@ -1805,7 +1850,7 @@ export function mountInputBar(
     (e) => {
       if (e.isComposing || stopPendingThreadId === null) return
       if (e.key !== 'Escape' && e.key !== 'Enter') return
-      if (handleStopShortcut(e.key)) {
+      if (handleStopShortcut(e.key, e.target)) {
         e.preventDefault()
         e.stopPropagation()
       }
@@ -2550,6 +2595,9 @@ export function mountInputBar(
   fileInput.addEventListener('change', onFileInputChange)
 
   const onPaste = (e: ClipboardEvent): void => {
+    // Unfocused, the composer still takes an image pasted onto the transcript,
+    // but never one meant for another surface: a dialog, an editor, the terminal.
+    if (!composer.isFocused() && pasteBelongsElsewhere(e.target)) return
     const items = Array.from(e.clipboardData?.items ?? [])
     const img = items.find((i) => i.type.startsWith('image/'))
     if (img) {
@@ -2808,6 +2856,8 @@ export function mountInputBar(
       unsubWorkspace()
       window.removeEventListener('copse:skills-changed', onSkillsChanged)
       document.removeEventListener('paste', onPaste)
+      document.removeEventListener('keydown', disarmStopOnOtherKey, true)
+      clearStopPending()
       document.removeEventListener('click', closeCheckoutMenu)
       observer.disconnect()
       topEdgeObserver.disconnect()

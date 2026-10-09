@@ -280,6 +280,32 @@ describe('appearance live preview', () => {
     assert.equal(securityWrites, 0)
     assert.equal(iconApplies, 0)
   })
+
+  it('keeps the current font size when the field is emptied instead of sending NaN', async () => {
+    const base = createFakeApi()
+    const settingWrites: [string, unknown][] = []
+    const api: ApiClient = {
+      ...base,
+      settings: {
+        ...base.settings,
+        set: async (name, value) => {
+          settingWrites.push([name, value])
+        },
+      },
+    }
+    const store = createStore()
+    store.setState({ fontSize: 16 })
+    mountSettingsDialog(store, api)
+    const form = qsRequired<HTMLFormElement>(document, '.settings-content')
+    const fontSize = qsRequired<HTMLInputElement>(form, 'input[name="fontSize"]')
+    fontSize.value = ''
+    fontSize.dispatchEvent(new Event('change', { bubbles: true }))
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.deepEqual(settingWrites, [['fontSize', 16]])
+    assert.equal(store.getState().fontSize, 16)
+  })
 })
 
 // A fieldset whose only content would be "there are none" is noise, and most

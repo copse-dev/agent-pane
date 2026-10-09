@@ -1,7 +1,7 @@
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
-import type { ApiClient } from './api.d.ts'
+import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
@@ -1694,6 +1694,12 @@ const api: ApiClient = {
   },
 }
 contextBridge.exposeInMainWorld('api', api)
+
+// `File.path` was removed in Electron 32; the renderer asks the preload instead.
+const filePathBridge: FilePathBridge = {
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
+}
+contextBridge.exposeInMainWorld('copseFiles', filePathBridge)
 
 if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
   const errorToasts: string[] = []
