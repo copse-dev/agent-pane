@@ -2293,8 +2293,7 @@ export function registerAllHandlers(
     await initSkillsRegistry()
     return listSkillSources()
   })
-  ipcMain.handle('skills:set-roots', async (event, value: unknown) => {
-    assertMainFrameSender(event, win)
+  ipcMain.handle('skills:set-roots', async (_event, value: unknown) => {
     const roots = skillRootsSchema.safeParse(value)
     if (!roots.success)
       throw new IpcValidationError(
@@ -2302,9 +2301,6 @@ export function registerAllHandlers(
       )
     await setSetting('skillPluginPaths', roots.data)
     await initSkillsRegistry()
-    // Same as a `skillPluginPaths` change through settings:set: the first skill
-    // found under a new root must also register the read_skill tool.
-    registerSkillTools(registry)
     return listSkillSources()
   })
   ipcMain.handle('agents:list', async () => {
