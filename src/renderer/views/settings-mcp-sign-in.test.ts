@@ -102,6 +102,12 @@ async function openMcp(servers: McpServerStatus[]): Promise<SignInCalls> {
   const { api, calls } = stubApi(servers)
   mountSettingsDialog(createStore({ activeProjectId: 'project-1' }), api)
   document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="mcp"]')?.click()
+  const dialog = document.querySelector<HTMLDialogElement>('#settings-dialog')
+  assert.ok(dialog)
+  dialog.open = true
+  dialog.dispatchEvent(new Event('settings-open'))
+  await flush()
+  document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="mcp"]')?.click()
   await flush()
   return calls
 }

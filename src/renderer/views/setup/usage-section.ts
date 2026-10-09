@@ -361,7 +361,7 @@ export function renderPlanWorthItSection(
 
   const reason = document.createElement('p')
   reason.className = 'usage-worth-reason field-hint'
-  reason.textContent = worthIt.reason
+  reason.textContent = worthIt.reason.replaceAll('—', '·')
   card.append(reason)
 
   const feeRow = document.createElement('div')
@@ -595,7 +595,7 @@ export function createUsageSection(
   onRequestClose?: () => void,
 ): {
   root: HTMLElement
-  refresh: () => Promise<void>
+  refresh: (signal?: AbortSignal) => Promise<void>
   detach: () => void
 } {
   const handleSignIn = {
@@ -749,31 +749,37 @@ export function createUsageSection(
     })
   })
 
-  async function refreshPlan(): Promise<void> {
+  let currentSignal: AbortSignal | undefined
+  async function refreshPlan(signal: AbortSignal | undefined = currentSignal): Promise<void> {
     if (!cachedPlanSnapshot) {
       renderPlanSection(planEl, null, null, handleSignIn)
     }
     try {
       const snapshot = await api.usage.getPlanUsage()
+      if (signal?.aborted) return
       cachedPlanSnapshot = snapshot
       renderPlanSection(planEl, snapshot, null, handleSignIn)
     } catch (err) {
+      if (signal?.aborted) return
       // Plan usage is best-effort — never block the ledger on IPC failure.
       const message = err instanceof Error ? err.message : 'Failed to load subscription plan usage.'
       renderPlanSection(planEl, null, message, handleSignIn)
     }
   }
 
-  async function refreshWorthIt(): Promise<void> {
+  async function refreshWorthIt(signal: AbortSignal | undefined = currentSignal): Promise<void> {
     renderPlanWorthItSection(worthEl, null, null, {
       onFeeChange: () => undefined,
       onShowInference: () => undefined,
     })
     try {
       const payload = await api.usage.getPlanWorthIt()
+      if (signal?.aborted) return
       applyWorthItPayload(payload)
     } catch (err) {
+      if (signal?.aborted) return
       const message = err instanceof Error ? err.message : 'Failed to load plan worth-it.'
+      frontierPanel.setWindowExhaustion(new Map())
       renderPlanWorthItSection(worthEl, null, message, {
         onFeeChange: () => undefined,
         onShowInference: () => undefined,
@@ -781,11 +787,14 @@ export function createUsageSection(
     }
   }
 
-  async function refreshLedger(): Promise<void> {
+  async function refreshLedger(signal: AbortSignal | undefined = currentSignal): Promise<void> {
     try {
-      cachedSummary = await api.usage.getSummary()
+      const summary = await api.usage.getSummary()
+      if (signal?.aborted) return
+      cachedSummary = summary
       showPeriod(activePeriod)
     } catch (err) {
+      if (signal?.aborted) return
       bodyEl.textContent =
         err instanceof Error ? `Failed to load usage: ${err.message}` : 'Failed to load usage.'
     }
@@ -799,22 +808,33 @@ export function createUsageSection(
     }, LEDGER_REFRESH_DEBOUNCE_MS)
   }
 
-  async function refresh(): Promise<void> {
+  async function refresh(signal?: AbortSignal): Promise<void> {
+    currentSignal = signal
+    if (signal?.aborted) return
     try {
-      cachedAccounts = (await api.chatGptPlan.status()).accounts
+      const accounts = (await api.chatGptPlan.status()).accounts
+      if (signal?.aborted) return
+      cachedAccounts = accounts
     } catch {
+      if (signal?.aborted) return
       cachedAccounts = []
     }
     if (!cachedSummary) {
       bodyEl.textContent = 'Loading usage…'
     }
     // Plan fetch samples window history; worth-it must run after that sample lands.
-    const planThenWorth = refreshPlan().then(() => refreshWorthIt())
-    const frontierPromise = frontierPanel.refresh()
+    const planThenWorth = refreshPlan(signal).then(() => {
+      if (!signal?.aborted) return refreshWorthIt(signal)
+      return undefined
+    })
+    const frontierPromise = frontierPanel.refresh(signal)
     try {
-      cachedSummary = await api.usage.getSummary()
+      const summary = await api.usage.getSummary()
+      if (signal?.aborted) return
+      cachedSummary = summary
       showPeriod(activePeriod)
     } catch (err) {
+      if (signal?.aborted) return
       bodyEl.textContent =
         err instanceof Error ? `Failed to load usage: ${err.message}` : 'Failed to load usage.'
     }
@@ -823,7 +843,11 @@ export function createUsageSection(
   }
 
   const unsubUsage = store?.on('usage_updated', () => {
-    if (root.closest('.settings-section')?.classList.contains('active')) {
+    if (
+      !currentSignal?.aborted &&
+      root.closest('dialog')?.open !== false &&
+      root.closest('.settings-section')?.classList.contains('active')
+    ) {
       // Agent turns emit many usage deltas — only roll up the local ledger; plan
       // windows and the frontier chart stay on the main-process TTL cache.
       scheduleLedgerRefresh()

@@ -395,9 +395,10 @@ dialog.settings-overlay::backdrop {
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
   mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
 }
-.settings-buttons button {
+.settings-buttons button,
+#settings-save-status {
   -webkit-app-region: no-drag;
-  /* Lift the buttons over the frosted ::before. Without this the absolutely
+  /* Lift the actions and save status over the frosted ::before. Without this the absolutely
      positioned pseudo paints above them — in-flow content sits below the
      positioned layer — and Save comes out blurred along with the backdrop. */
   position: relative;
@@ -1358,7 +1359,9 @@ dialog.settings-overlay::backdrop {
    */
   pointer-events: auto;
   width: max-content;
-  max-width: 360px;
+  max-width: min(360px, 100%);
+  max-height: 70vh;
+  overflow: auto;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1369,6 +1372,23 @@ dialog.settings-overlay::backdrop {
 }
 .frontier-tooltip[hidden] {
   display: none;
+}
+.frontier-tooltip[data-pinned='true'] {
+  padding-right: 32px;
+}
+.frontier-tooltip-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 2px 4px;
+}
+.frontier-tooltip-close:hover {
+  color: var(--text-primary);
 }
 .frontier-tooltip .tt-title {
   font-size: var(--font-size-sm);
@@ -1449,6 +1469,10 @@ dialog.settings-overlay::backdrop {
 }
 .frontier-cost-axis .frontier-btn:last-child {
   border-radius: 0 var(--radius) var(--radius) 0;
+}
+.frontier-cost-axis .frontier-btn:has(+ .frontier-btn[hidden]) {
+  border-top-right-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
 }
 .frontier-expand-dialog {
   /* position:relative makes the dialog the containing block for the hover
@@ -1689,15 +1713,20 @@ dialog.settings-overlay::backdrop {
   min-width: 0;
   word-break: break-word;
 }
-/* When a hover origin is showing, keep the title to content width so the path
-   can claim the primary gutter without wrapping the row taller. */
-.sources-row:hover:has(.sources-row-hover-detail) .sources-row-title,
-.sources-row:focus-within:has(.sources-row-hover-detail) .sources-row-title {
-  flex: 0 1 auto;
+/* Origin-bearing rows stay on one title line even at rest. Changing a wrapped
+   title to nowrap only on hover can shrink the row out from under the pointer,
+   toggling hover repeatedly. The full title remains in the DOM. */
+.sources-row:has(.sources-row-hover-detail) .sources-row-title {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: normal;
+}
+/* Reveal the path in the primary gutter without changing the title's height. */
+.sources-row:hover:has(.sources-row-hover-detail) .sources-row-title,
+.sources-row:focus-within:has(.sources-row-hover-detail) .sources-row-title {
+  flex: 0 1 auto;
+  max-width: 50%;
 }
 /* `.sources-badge` takes its shape from `.ui-badge`. Scope (`user`, `project`,
    `bundled`), rule kind, agent container, and a worktree's owner are labels, so
@@ -1820,15 +1849,6 @@ dialog.settings-overlay::backdrop {
    only this list has — a measured size that arrives after the row, and a
    destructive per-row action. The size keeps its own colour so it reads as a
    value rather than more of the sentence around it. */
-.sources-row[data-worktree-path] .sources-row-title {
-  /* Worktree headers also hold status chips and three actions. Keep a long
-     branch/path on one ellipsized line at rest so revealing the hover path
-     cannot collapse a previously wrapped row and visibly change its shape. */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: normal;
-}
 .sources-worktree-size {
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
@@ -3191,4 +3211,12 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 #sources-skills-status {
   margin-left: var(--spacing-sm);
+}
+
+/* Keep a failed save readable beside the sticky actions. */
+#settings-save-status {
+  margin-right: auto;
+  min-width: 0;
+  color: var(--error);
+  font-size: var(--font-size-sm);
 }

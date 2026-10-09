@@ -143,7 +143,7 @@ describe('custom interface colours', () => {
     expect(await tintStrength.getValue()).toBe('1')
     const settingsActions = await browser.execute(() => {
       const save = document.querySelector<HTMLElement>('.settings-buttons button[type="submit"]')
-      const cancel = document.querySelector<HTMLElement>('.settings-buttons button[type="button"]')
+      const cancel = document.querySelector<HTMLElement>('#settings-cancel')
       if (!save || !cancel) return null
       const snapshot = (button: HTMLElement): Record<string, string | number> => ({
         height: button.getBoundingClientRect().height,

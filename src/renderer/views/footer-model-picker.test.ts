@@ -96,7 +96,7 @@ describe('footer model picker', () => {
     trigger.click()
 
     const recentLabels = [...root.querySelectorAll<HTMLElement>('.model-picker-option')].map(
-      (option) => option.textContent.split(' — ')[0],
+      (option) => option.textContent.split(': ')[0],
     )
     assert.deepEqual(recentLabels, ['Claude Sonnet 4.6', 'Claude Opus 4.8', 'GPT-5.6 Sol'])
     assert.equal(root.querySelector('.model-picker-view-title')?.textContent, 'Recent')
@@ -117,7 +117,7 @@ describe('footer model picker', () => {
     filter.value = 'haiku'
     filter.dispatchEvent(new Event('input', { bubbles: true }))
     const filteredLabels = [...root.querySelectorAll<HTMLElement>('.model-picker-option')].map(
-      (option) => option.textContent.split(' — ')[0],
+      (option) => option.textContent.split(': ')[0],
     )
     assert.ok(filteredLabels.length > 0)
     assert.deepEqual([...new Set(filteredLabels)], ['Claude Haiku 4.5'])
@@ -183,7 +183,7 @@ describe('footer model picker', () => {
     assert.ok(hint)
     assert.equal(
       root.querySelector('.model-picker-label')?.textContent,
-      `Claude Sonnet 4.6 — ${hint}`,
+      `Claude Sonnet 4.6: ${hint}`,
     )
   })
 

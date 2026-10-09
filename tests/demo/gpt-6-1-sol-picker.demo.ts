@@ -18,7 +18,7 @@ describe('GPT-6.1 Sol in the model picker (browser-hosted)', () => {
     await picker.$('.model-picker-filter').setValue('GPT-6')
     const sol = picker.$('.model-picker-option[data-value="gpt-6.1-sol"]')
     await expect(sol).toBeDisplayed()
-    await expect(sol).toHaveText(/^GPT-6\.1 Sol — intellect ~\d+(\.\d)? · \$[\d.]+\/MTok/)
+    await expect(sol).toHaveText(/^GPT-6\.1 Sol: intellect ~\d+(\.\d)? · \$[\d.]+\/MTok/)
     await saveElementScreenshot('.footer-model-host .model-picker-menu', 'gpt-6-1-sol-picker.png')
 
     await sol.click()

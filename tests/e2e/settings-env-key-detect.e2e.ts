@@ -43,7 +43,7 @@ describe('environment API-key detection (Settings → General)', () => {
     const host = $('#settings-env-detect-host')
     // #1448 renamed this legend as part of rewriting Settings' copy; the section
     // itself is unchanged.
-    await expect(host.$('legend=Detected API keys')).toBeDisplayed()
+    await expect(host.$('legend=Detected settings')).toBeDisplayed()
 
     const scanBtn = host.$('button=Scan environment')
     await expect(scanBtn).toBeDisplayed()

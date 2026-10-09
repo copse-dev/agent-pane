@@ -20,6 +20,8 @@ Object.assign(globalThis, {
   document: win.document,
   window: win,
   customElements: win.customElements,
+  CSS: win.CSS,
+  HTMLDetailsElement: win.HTMLDetailsElement,
   // Expose happy-dom's Event constructors as globals. happy-dom 20 strictly
   // rejects events in dispatchEvent() that aren't instances of its own Event
   // class, so `new Event()` must resolve to happy-dom's rather than Node's

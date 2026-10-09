@@ -26,7 +26,8 @@ export type ApiKeyProvider =
 
 export interface ApiKeysSection {
   root: HTMLFieldSetElement
-  refreshKeyStatus: () => Promise<void>
+  refreshKeyStatus: (signal?: AbortSignal) => Promise<void>
+  reset: () => void
   saveKeys: () => Promise<boolean>
 }
 
@@ -144,6 +145,7 @@ export function createApiKeysSection(
     plaintextNote,
   )
 
+  let generation = 0
   const validationTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   async function validateField(
@@ -151,6 +153,7 @@ export function createApiKeysSection(
     input: HTMLInputElement,
     statusEl: HTMLElement,
   ): Promise<void> {
+    const mine = generation
     const value = input.value.trim()
     if (!value) {
       statusEl.replaceChildren()
@@ -160,6 +163,7 @@ export function createApiKeysSection(
     setInlineStatus(statusEl, 'pending', 'Checking…')
     statusEl.className = 'key-status'
     const result = await api.settings.validateKey(provider, value)
+    if (mine !== generation || input.value.trim() !== value) return
     if (result.ok) {
       setInlineStatus(statusEl, 'ok', 'Valid key')
       statusEl.className = keyStatusClass(true)
@@ -191,16 +195,20 @@ export function createApiKeysSection(
     bindValidation(field.provider, field.input, field.status)
   }
 
-  async function refreshKeyStatus(): Promise<void> {
+  async function refreshKeyStatus(signal?: AbortSignal): Promise<void> {
+    const mine = generation
+    if (signal?.aborted) return
     let anyPlaintext = false
     for (const field of fields) {
       const saved = await api.settings.getKey(field.provider)
+      if (mine !== generation || signal?.aborted) return
       if (!field.input.value.trim()) {
         setInlineStatus(field.status, saved ? 'filled' : 'idle', saved ? 'saved' : 'not set')
         field.status.className = 'key-status'
       }
       // At-rest badge: only meaningful once a key is stored. `null` means no key.
       const encrypted = saved ? await api.settings.getKeyEncrypted(field.provider) : null
+      if (mine !== generation || signal?.aborted) return
       if (encrypted === true) {
         setInlineStatus(field.atRest, 'ok', 'Encrypted by OS keychain')
         field.atRest.className = 'key-status'
@@ -265,5 +273,18 @@ export function createApiKeysSection(
     return failures.length === 0
   }
 
-  return { root: fieldset, refreshKeyStatus, saveKeys }
+  return {
+    root: fieldset,
+    refreshKeyStatus,
+    saveKeys,
+    reset: (): void => {
+      generation += 1
+      for (const timer of validationTimers.values()) clearTimeout(timer)
+      validationTimers.clear()
+      for (const field of fields) {
+        field.input.value = ''
+        field.status.replaceChildren()
+      }
+    },
+  }
 }

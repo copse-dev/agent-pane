@@ -5,7 +5,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
-// Visual eval: opening Settings → Providers probes the default local-server
+// Visual eval: selecting a local provider in Settings probes the default local-server
 // endpoints and puts the green "set up" dot on every chip whose server answers,
 // with no key saved. A stand-in OpenAI-compatible server plays Ollama (:11434).
 describe('local server detection (Settings → Providers)', () => {
@@ -37,6 +37,7 @@ describe('local server detection (Settings → Providers)', () => {
     const host = $('#settings-providers-host')
     await expect(host).toBeDisplayed()
 
+    await host.$('.provider-chip[data-provider="ollama"]').click()
     const ollamaDot = host.$('.provider-chip[data-provider="ollama"] .provider-chip-dot')
     await ollamaDot.waitForExist({ timeout: 15_000, timeoutMsg: 'running Ollama never got a dot' })
     assert.equal(await ollamaDot.getAttribute('title'), 'Set up')
@@ -45,6 +46,12 @@ describe('local server detection (Settings → Providers)', () => {
       false,
     )
 
-    await saveElementScreenshot('#settings-providers-host', 'settings-local-server-detect.png')
+    const chips = host.$('.provider-chips')
+    await chips.scrollIntoView({ block: 'center' })
+    await expect(ollamaDot).toBeDisplayed()
+    await saveElementScreenshot(
+      '#settings-providers-host .provider-chips',
+      'settings-local-server-detect.png',
+    )
   })
 })

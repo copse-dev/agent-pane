@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import type { ApiClient, ExtraProvider } from '../../../preload/api.d.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 import { createCustomProvidersSection } from './custom-providers-section.ts'
+import { deferred } from '../../../../tests/deferred.ts'
 
 type ValidateResult = { ok: boolean; error?: string; formatOk?: boolean }
 
@@ -180,6 +181,42 @@ describe('custom providers: plaintext storage policy', () => {
 })
 
 describe('local providers: running-server detection', () => {
+  it('retries a selected local provider and ignores an aborted earlier probe', async () => {
+    const base = stubApi([], [])
+    const firstProbe = deferred<Awaited<ReturnType<ApiClient['lmStudio']['test']>>>()
+    let oldVisit = true
+    let statusChanges = 0
+    const section = createCustomProvidersSection(
+      {
+        ...base,
+        lmStudio: {
+          ...base.lmStudio,
+          test: async () => (oldVisit ? firstProbe.promise : { ok: false, error: 'not running' }),
+        },
+      },
+      {
+        variant: 'local',
+        embedded: true,
+        onStatusChanged: () => {
+          statusChanges += 1
+        },
+      },
+    )
+    const first = new AbortController()
+    await section.refresh({}, first.signal)
+    section.select('ollama')
+    first.abort()
+    oldVisit = false
+    await section.refresh({}, new AbortController().signal)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(section.isConfigured('ollama'), false)
+    assert.equal(statusChanges, 1)
+    firstProbe.resolve({ ok: true, models: ['old-model'] })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(section.isConfigured('ollama'), false)
+    assert.equal(statusChanges, 1, 'the aborted reply cannot repaint provider status')
+  })
+
   it('marks a local server configured when its endpoint answers, with no key saved', async () => {
     const base = stubApi([], [])
     const api: ApiClient = {
@@ -193,6 +230,7 @@ describe('local providers: running-server detection', () => {
     }
     const section = createCustomProvidersSection(api, { variant: 'local', embedded: true })
     await section.refresh()
+    section.select('ollama')
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     assert.equal(section.isConfigured('ollama'), true)
@@ -214,6 +252,7 @@ describe('local providers: running-server detection', () => {
       onStatusChanged: () => (status += 1),
     })
     await section.refresh()
+    section.select('ollama')
     const changedAfterRefresh = changed
     await new Promise((resolve) => setTimeout(resolve, 0))
 

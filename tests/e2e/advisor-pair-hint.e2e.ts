@@ -145,8 +145,12 @@ describe('advisor pair assessment hint', function () {
     const hint = $('#advisorPairHint')
     await browser.waitUntil(async () => /external coding agent/i.test(await hint.getText()), {
       timeout: 5_000,
-      timeoutMsg: 'advisor pair hint did not show the ACP note',
+      timeoutMsg: 'advisor pair hint did not show the external-agent note',
     })
+    assert.equal(
+      await hint.getText(),
+      'Advice comes from the configured external coding agent, consulted on a bare one-off session. Its strength is not rated, so there is no comparison.',
+    )
     assert.equal(await hint.getAttribute('data-level'), 'info')
   })
 })

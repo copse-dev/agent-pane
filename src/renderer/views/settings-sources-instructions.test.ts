@@ -13,7 +13,7 @@ import {
   clickActiveConfirmDialogConfirm,
   mountConfirmDialog,
 } from './confirm-dialog.ts'
-import { mountSettingsDialog } from './settings-dialog.ts'
+import { mountSettingsDialog, openSettingsDialog } from './settings-dialog.ts'
 
 const AGENTS_MD = '# AGENTS.md\n\nRun `pnpm check` before committing.\n'
 
@@ -95,6 +95,7 @@ async function openInstructions(api: ApiClient): Promise<HTMLElement> {
   document.body.innerHTML = ''
   mountConfirmDialog()
   mountSettingsDialog(createStore(), api)
+  openSettingsDialog('customise')
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
     '.settings-nav-btn[data-section="customise"]',
   )

@@ -241,6 +241,7 @@ describe('settings model routing placement', function () {
     await $('.provider-chip[data-provider="lmstudio"]').click()
     await expect(settingsSection('general').$('legend=Server connection')).toBeDisplayed()
 
+    await expect($('.key-status[data-key="lmstudio"]')).toHaveText('not set')
     await scrollSettingsToLegend('Server connection')
     // Nested cards hold their titles inside their padding (#3065).
     await assertLegendInsideCard('Server connection')

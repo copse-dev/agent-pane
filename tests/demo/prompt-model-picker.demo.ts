@@ -17,7 +17,7 @@ describe('primary prompt model picker', () => {
     const option = picker.$('.model-picker-option[data-value="auto:match-prompt"]')
     await option.waitForDisplayed()
     await expect(option).toHaveText(
-      expect.stringContaining('Match task — Chooses a suitable model from your prompt'),
+      expect.stringContaining('Match task: Chooses a suitable model from your prompt'),
     )
     await saveElementScreenshot(HOST + ' .model-picker-menu', 'prompt-model-picker.png')
     await option.click()
@@ -67,7 +67,7 @@ describe('primary prompt model picker', () => {
     expect(headings.filter((heading) => heading.toLowerCase() === 'automatic')).toHaveLength(1)
     expect(headings.map((heading) => heading.toLowerCase())).not.toContain('chat default')
     await expect(picker.$('.model-picker-option[data-value="auto:match-prompt"]')).toHaveText(
-      expect.stringContaining('Match task — Chooses a suitable model from your prompt'),
+      expect.stringContaining('Match task: Chooses a suitable model from your prompt'),
     )
     await expect(picker.$('.model-picker-option[data-value="auto:best-value"]')).toExist()
     await saveElementScreenshot('#settings-dialog', 'prompt-model-settings.png')

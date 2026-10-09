@@ -93,6 +93,10 @@ if (process.env.COPSE_E2E_SECRET_STORAGE === 'unavailable') {
   }
 }
 
+if (process.env.COPSE_E2E_SETTINGS_SNAPSHOT_FAILURE === '1') {
+  require('./settings-snapshot-failure-fixture.cjs').install()
+}
+
 // Notifications, the Dock badge and window hiding are OS chrome; see the fixture.
 if (process.env.COPSE_E2E_NATIVE_ALERTS) {
   require('./native-alerts-fixture.cjs').install(process.env.COPSE_E2E_NATIVE_ALERTS)

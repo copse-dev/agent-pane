@@ -5,7 +5,7 @@ import { createDetectedItemRow, providerLabel } from './detected-item-row.ts'
 export interface EnvKeyDetectSection {
   root: HTMLFieldSetElement
   /** Reset the section to its initial state (call when the host dialog opens). */
-  refresh: () => Promise<void>
+  refresh: (signal?: AbortSignal) => Promise<void>
 }
 
 /**
@@ -141,8 +141,8 @@ export function createEnvKeyDetectSection(
     })()
   })
 
-  function refresh(): Promise<void> {
-    reset()
+  function refresh(signal?: AbortSignal): Promise<void> {
+    if (!signal?.aborted) reset()
     return Promise.resolve()
   }
 

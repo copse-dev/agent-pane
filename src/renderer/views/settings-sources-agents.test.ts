@@ -7,7 +7,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { AgentsListResult } from '@shared/types/agents.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
-import { mountSettingsDialog } from './settings-dialog.ts'
+import { mountSettingsDialog, openSettingsDialog } from './settings-dialog.ts'
 
 function stubApi(agents: AgentsListResult): ApiClient {
   const base = createFakeApi()
@@ -27,6 +27,7 @@ const EMPTY: AgentsListResult = { agents: [], skipped: [], shadowed: [] }
 async function openAgentsList(agents: AgentsListResult): Promise<HTMLElement> {
   document.body.innerHTML = ''
   mountSettingsDialog(createStore(), stubApi(agents))
+  openSettingsDialog('customise')
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
     '.settings-nav-btn[data-section="customise"]',
   )

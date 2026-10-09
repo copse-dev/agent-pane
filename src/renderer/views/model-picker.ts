@@ -80,7 +80,7 @@ export interface PickerValueGroup {
 
 export interface ModelPicker {
   root: HTMLElement
-  refresh: () => Promise<void>
+  refresh: (signal?: AbortSignal) => Promise<void>
   sync: () => void
   /** Open the menu from outside the trigger (e.g. a "choose another model" action). */
   openMenu: () => void
@@ -643,7 +643,8 @@ export function mountModelPicker(
     triggerCost.hidden = match?.coverage !== 'paid'
   }
 
-  async function refresh(): Promise<void> {
+  async function refresh(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return
     const generation = ++refreshGeneration
     if (cachedOptions.length === 0) {
       loadState = 'loading'
@@ -651,11 +652,11 @@ export function mountModelPicker(
     }
     try {
       const options = await loadOptions(getCurrent())
-      if (generation !== refreshGeneration) return
+      if (generation !== refreshGeneration || signal?.aborted) return
       cachedOptions = options
       loadState = 'ready'
     } catch {
-      if (generation !== refreshGeneration) return
+      if (generation !== refreshGeneration || signal?.aborted) return
       cachedOptions = []
       loadState = 'error'
     }
@@ -663,7 +664,7 @@ export function mountModelPicker(
     // failure there leaves the model list fully usable.
     if (pickerOpts.loadValueGroups) {
       const groups = await pickerOpts.loadValueGroups(getCurrent()).catch(() => [])
-      if (generation !== refreshGeneration) return
+      if (generation !== refreshGeneration || signal?.aborted) return
       valueGroups = [...groups]
       if (!activeGroup()) activeGroupId = null
     }
@@ -894,8 +895,8 @@ export interface ModelSelectPickerOptions extends Omit<ModelPickerOptions, 'vari
   loadOptions: (current: string) => Promise<ModelOption[]>
 }
 
-export interface ModelSelectPicker extends ModelPicker {
-  refresh: (current?: string) => Promise<void>
+export interface ModelSelectPicker extends Omit<ModelPicker, 'refresh'> {
+  refresh: (current?: string, signal?: AbortSignal) => Promise<void>
 }
 
 let fieldPickerId = 0
@@ -996,9 +997,10 @@ export function mountModelSelectPicker(
 
   return {
     ...picker,
-    refresh: async (nextCurrent?: string): Promise<void> => {
+    refresh: async (nextCurrent?: string, signal?: AbortSignal): Promise<void> => {
+      if (signal?.aborted) return
       if (nextCurrent !== undefined) current = nextCurrent
-      await picker.refresh()
+      await picker.refresh(signal)
     },
     destroy: (): void => {
       select.removeEventListener('change', onNativeChange)
