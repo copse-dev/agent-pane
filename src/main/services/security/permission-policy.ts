@@ -55,6 +55,7 @@ export const GITHUB_NONMUTATING_CI_TOOLS = new Set([
  * action grant. Names mirror the tools defined in src/main/tools/gh-pr-action-tools.ts.
  */
 export const GITHUB_WRITE_TOOLS = new Set([
+  'gh_push',
   'gh_pr_create',
   'gh_pr_rerun_failed_ci',
   'gh_pr_approve',
@@ -64,6 +65,7 @@ export const GITHUB_WRITE_TOOLS = new Set([
 
 /** User-facing question for each mutating GitHub PR tool. Keep snake_case ids out of the modal. */
 const GITHUB_WRITE_PROMPT_TITLES: Record<string, string> = {
+  gh_push: 'Push branch to GitHub?',
   gh_pr_create: 'Open pull request on GitHub?',
   gh_pr_rerun_failed_ci: 'Re-run failed CI on GitHub?',
   gh_pr_approve: 'Approve pull request on GitHub?',
@@ -121,6 +123,8 @@ function nonEmptyStringArg(args: Record<string, unknown>, key: string): string |
 }
 
 function formatGithubWritePromptBody(toolName: string, args: unknown): string {
+  if (toolName === 'gh_push')
+    return 'Push the current thread branch to origin, updating any existing pull request. No force push.'
   if (!isRecord(args)) return JSON.stringify(args, null, 2)
   // gh_pr_create has no PR number yet — show the title, and the target repo
   // when one was passed explicitly, so a retargeted create is visible in the
