@@ -1,7 +1,11 @@
 import { $, browser, expect } from '@wdio/globals'
 import { delimiter, join } from 'node:path'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  pinTextForCapture,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 async function rejectFreshAcpBootstrap(): Promise<void> {
@@ -40,7 +44,7 @@ describe('native ChatGPT plan connection settings', () => {
       ],
       usageEvents: [
         {
-          at: Date.parse('2026-01-15T12:00:00.000Z'),
+          at: Date.now(),
           model: 'chatgpt-plan:oaiapp_second#gpt-5.6-luna',
           source: 'agent',
           inputTokens: 1000,
@@ -49,7 +53,7 @@ describe('native ChatGPT plan connection settings', () => {
           projectId: 'e2e-chatgpt-plan',
         },
         {
-          at: Date.parse('2026-01-15T12:00:00.000Z'),
+          at: Date.now(),
           model: 'chatgpt-plan:oaiapp_fixture#gpt-5.6-luna',
           source: 'agent',
           inputTokens: 447300,
@@ -110,9 +114,8 @@ describe('native ChatGPT plan connection settings', () => {
   })
   it('shows a readable plan model label in Usage without its client ID', async () => {
     await $('.settings-nav-btn[data-section="usage"]').click()
-    // A fixed ledger date keeps the capture stable; All time keeps this fixture
-    // visible independently of the machine's current day/month.
-    await $('.usage-period-btn[data-period="allTime"]').click()
+    // Ledger events expire after 90 days; All time reads saved threads instead.
+    await $('.usage-period-btn[data-period="month"]').click()
     const row = $('.usage-model-group tbody tr')
     await row.waitForExist()
     await expect(row.$('td')).toHaveText(/GPT-5\.6[- ]Luna · ChatGPT plan/)
@@ -123,6 +126,18 @@ describe('native ChatGPT plan connection settings', () => {
     await browser.execute(() => {
       document.querySelector('.usage-model-group')?.scrollIntoView({ block: 'center' })
     })
-    await saveElementScreenshot('#usage-period-body', 'settings-chatgpt-plan-usage.png')
+    // The retention window requires a live event date. Assert the real ledger
+    // note, then pin only its wall-clock text for this capture.
+    await expect($('#usage-period-body')).toHaveText(/Ledger: 2 event\(s\) tracked \(since /)
+    const restoreDate = await pinTextForCapture(
+      '#usage-period-body',
+      /tracked \(since [^)]+\)/,
+      'tracked (since 1/15/2026, 12:00:00 PM)',
+    )
+    try {
+      await saveElementScreenshot('#usage-period-body', 'settings-chatgpt-plan-usage.png')
+    } finally {
+      await restoreDate()
+    }
   })
 })
