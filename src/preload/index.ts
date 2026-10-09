@@ -1079,6 +1079,7 @@ const api: ApiClient = {
     install: (id: string) => ipcRenderer.invoke('local-classifiers:install', id),
     start: (id: string) => ipcRenderer.invoke('local-classifiers:start', id),
     stop: (id: string) => ipcRenderer.invoke('local-classifiers:stop', id),
+    uninstall: (id: string) => ipcRenderer.invoke('local-classifiers:uninstall', id),
     connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
   },
   settings: {

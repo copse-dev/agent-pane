@@ -24,6 +24,7 @@ import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
   backgroundClassifierId,
+  getClassifierProfile,
   listClassifierProfiles,
   saveClassifierProfile,
   removeClassifierProfile,
@@ -32,6 +33,7 @@ import {
   setScreeningClassifier,
   testClassifierProfile,
 } from '../services/classifiers/classifier-service.ts'
+import { recordClassifierResultUsage } from '../services/classifiers/classifier-usage.ts'
 import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
@@ -1405,9 +1407,13 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     return removeClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
-  ipcMain.handle('classifiers:test', (event, raw: unknown) => {
+  ipcMain.handle('classifiers:test', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
-    return testClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+    const id = parseIpcArgs(keyProviderSchema.max(53), [raw])
+    const result = await testClassifierProfile(id)
+    // The sample is a real call: tokens a provider reports for it count like any other.
+    recordClassifierResultUsage(getClassifierProfile(id).label, result)
+    return result
   })
   ipcMain.handle('classifiers:screening', (event) => {
     assertMainFrameSender(event, win)
@@ -1441,6 +1447,10 @@ export function registerAllHandlers(
   ipcMain.handle('local-classifiers:stop', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     return localClassifiers().stop(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:uninstall', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().uninstall(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
   ipcMain.handle('local-classifiers:connect', (event, raw: unknown) => {
     assertMainFrameSender(event, win)

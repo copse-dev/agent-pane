@@ -138,6 +138,21 @@ function profileKey(profile: ClassifierProfile): string | undefined {
   return getApiKey(classifierCredentialId(profile.id)) ?? environmentKey(profile)
 }
 
+/**
+ * Whether a call to this connection leaves the machine. SemIf is a local
+ * process and a loopback URL stays on the host; any other HTTP endpoint is
+ * remote. A connection that is not configured sends nothing, so it reads local.
+ */
+export function classifierSendsOffMachine(id: string): boolean {
+  const profile = configuredProfiles().find((entry) => entry.id === id)
+  return profile?.connection.type === 'http' && !isLocalBaseUrl(profile.connection.baseUrl)
+}
+
+/** Saved connections, for deciding whether a turn offers the classifier tool. */
+export function configuredClassifierProfiles(): ClassifierProfile[] {
+  return configuredProfiles()
+}
+
 export function listClassifierProfiles(): ClassifierProfileStatus[] {
   return configuredProfiles().map((profile) => ({
     profile,

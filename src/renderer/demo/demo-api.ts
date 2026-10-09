@@ -1158,6 +1158,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       install: unsupported,
       start: unsupported,
       stop: unsupported,
+      uninstall: unsupported,
       connect: unsupported,
     },
     chatGptPlan: {
@@ -1232,6 +1233,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           totalCostUsd: 0,
           cloudModels: [],
           localModels: [],
+          classifiers: [],
           totalInputTokens: 0,
           totalOutputTokens: 0,
           hasUnpricedCloudUsage: false,
