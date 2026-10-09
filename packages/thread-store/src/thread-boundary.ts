@@ -103,8 +103,10 @@ export function parseThreadMetaValue(value: unknown): ThreadMeta | null {
   const commitProductions = commitProductionSchema
     .array()
     .safeParse(value['commitProductions'] ?? [])
+  const { executionMode: _rawExecutionMode, ...rest } = value
   return {
-    ...value,
+    ...rest,
+    ...(value['executionMode'] === 'agent' ? { executionMode: 'agent' as const } : {}),
     id: value['id'],
     title: value['title'],
     status: value['status'],

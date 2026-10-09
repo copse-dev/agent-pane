@@ -49,6 +49,7 @@ function parseReviewContext(value: unknown): string | undefined {
 
 export function parseAgentRunPayload(rawPrompt: string): {
   userContent: UserContent
+  executionMode?: 'agent'
   invokedSkills: string[]
   /** Subagent the user invoked with `/name` this turn, if any. */
   invokedAgent?: string
@@ -83,6 +84,7 @@ export function parseAgentRunPayload(rawPrompt: string): {
         : []
       return {
         userContent: content.data,
+        ...(parsed['executionMode'] === 'agent' ? { executionMode: 'agent' as const } : {}),
         invokedSkills: invokedSkills.success ? invokedSkills.data : [],
         priorTodos: normalizedTodos,
         ...(typeof parsed['invokedAgent'] === 'string' && parsed['invokedAgent']

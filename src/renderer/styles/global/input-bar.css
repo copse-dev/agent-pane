@@ -547,6 +547,73 @@
   border-top: 1px solid var(--border);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
+.agent-execution-mode-badge {
+  flex: 0 0 auto;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+.agent-execution-mode-dialog {
+  width: min(430px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.agent-execution-mode-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+.agent-execution-mode-dialog h2 {
+  margin: 0 0 4px;
+  font-size: var(--font-size-lg);
+}
+.agent-execution-mode-dialog p {
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+}
+.agent-execution-mode-options {
+  display: grid;
+  gap: 8px;
+}
+.agent-execution-mode-option {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+.agent-execution-mode-option[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+.agent-execution-mode-option span,
+.agent-execution-mode-dialog .agent-execution-mode-note {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.agent-execution-mode-dialog .agent-execution-mode-note {
+  margin: 14px 0;
+}
+.agent-execution-mode-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.agent-execution-mode-actions button {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.agent-execution-mode-apply {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
 /* Portrait / bottom-pinned chrome: dock one composer-width outline around the
    labeled panel toggles, directly on the single-pixel divider above the stacked
    panel. Its height remains pixel-locked to `.projects-settings-btn`. */

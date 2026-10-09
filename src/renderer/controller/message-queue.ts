@@ -160,7 +160,7 @@ function setMessageHookOrigin(
 export function refreshAgentRunPayload(
   store: AppStore,
   threadId: string,
-  { reviewContext: _stale, ...payload }: AgentRunPayload,
+  { reviewContext: _stale, executionMode: _previousMode, ...payload }: AgentRunPayload,
   queuedModel?: string,
 ): AgentRunPayload {
   const thread = getThreadById(store, threadId)
@@ -173,6 +173,7 @@ export function refreshAgentRunPayload(
   const selectedModel = queuedModel ?? thread?.model
   return {
     ...payload,
+    ...(thread?.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
     ...(reviewContext !== undefined ? { reviewContext } : {}),
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...(thread?.workingBrief !== undefined ? { workingBrief: thread.workingBrief } : {}),
