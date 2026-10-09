@@ -20,13 +20,12 @@
  * handshake and refuses a peer that speaks a different one rather than letting
  * mismatched shapes reach the handler table.
  *
- * v3 is a conservative bump, not an accurate one. `lm-studio:model-info` gained
- * an optional `embedding` field on each row (#2487) — additive by the paragraph
- * above — but `compareApiProtocol` compares whole resolved shapes and has no way
- * to say "only optional result fields were added", so it classified it breaking
- * and the gate demanded a bump. Teaching the differ that distinction is worth
- * doing on its own; until then a bump is the safe side of the disagreement,
- * since it can only refuse peers that would otherwise have been allowed.
+ * Through v53 the gate compared whole resolved shapes and could not tell an added
+ * optional result field from a breaking change, so the bumps below marked
+ * "conservatively" (starting with v3, `lm-studio:model-info`'s optional
+ * `embedding`, #2487) versioned additive changes. `compareApiProtocol` now
+ * compares each shape in the direction its data travels (docs/api-protocol.md),
+ * so a change like that no longer needs a bump.
  */
 // v4 adds bounded PR activity results; v5 adds nested-instruction metadata.
 // Both conservatively version optional result fields for the whole-shape gate.

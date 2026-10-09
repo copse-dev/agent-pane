@@ -25,6 +25,7 @@ import {
   parseApiProtocolManifest,
   serializeApiProtocol,
   serializeApiProtocolManifest,
+  type ApiProtocolDiff,
   type ApiProtocolDocument,
   type JsonSchema,
 } from './api-protocol.mts'
@@ -388,9 +389,9 @@ describe('compareApiProtocol', () => {
     assert.deepEqual(compareApiProtocol(before, after), {
       breaking: [
         'channels.invoke.a:del: removed',
-        'channels.invoke.a:get: shape changed',
+        'channels.invoke.a:get: shape changed (args: required item added)',
         'client.ns.del: removed',
-        'client.ns.get: shape changed',
+        'client.ns.get: shape changed (params: required item added)',
       ],
       additive: ['channels.invoke.a:new: added', 'client.ns.new: added'],
     })
@@ -408,8 +409,8 @@ describe('compareApiProtocol', () => {
       { New: { type: 'number' } },
     )
     assert.deepEqual(compareApiProtocol(before, retyped).breaking, [
-      'channels.invoke.a:get: shape changed',
-      'client.ns.get: shape changed',
+      'channels.invoke.a:get: shape changed (result: type changed)',
+      'client.ns.get: shape changed (result: type changed)',
     ])
   })
 
@@ -420,6 +421,174 @@ describe('compareApiProtocol', () => {
       { Node: node },
     )
     assert.deepEqual(compareApiProtocol(before, before), { breaking: [], additive: [] })
+  })
+
+  describe('compatible widening', () => {
+    const obj = (properties: Record<string, JsonSchema>, required: string[]): JsonSchema => ({
+      type: 'object',
+      properties,
+      required,
+    })
+    const widened = (channel: string, method: string): ApiProtocolDiff => ({
+      breaking: [],
+      additive: [
+        `channels.invoke.${channel}: widened compatibly`,
+        `client.ns.${method}: widened compatibly`,
+      ],
+    })
+    /** A break found at `at` (named from the channel's side: `args`, `result`). */
+    const broken = (channel: string, method: string, at: string, why: string): ApiProtocolDiff => ({
+      breaking: [
+        `channels.invoke.${channel}: shape changed (${at}: ${why})`,
+        `client.ns.${method}: shape changed (${at.replace(/^args/, 'params')}: ${why})`,
+      ],
+      additive: [],
+    })
+
+    it('treats an optional field the host adds to a result as additive, at any depth', () => {
+      const row = (extra: Record<string, JsonSchema>): JsonSchema =>
+        obj({ a: str, ...extra }, ['a'])
+      const result = (
+        extra: Record<string, JsonSchema>,
+        nested: Record<string, JsonSchema>,
+      ): JsonSchema =>
+        obj(
+          {
+            id: str,
+            rows: { type: 'array', items: row(nested) },
+            byId: { type: 'object', additionalProperties: row(nested) },
+            ...extra,
+          },
+          ['id', 'rows', 'byId'],
+        )
+      const before = doc({ 'a:get': { args: tuple(), result: result({}, {}) } })
+      const after = doc({ 'a:get': { args: tuple(), result: result({ note: str }, { b: str }) } })
+      assert.deepEqual(compareApiProtocol(before, after), widened('a:get', 'get'))
+    })
+
+    it('keeps required, newly required, and client-sent fields breaking', () => {
+      const before = doc({
+        'a:set': { args: tuple(obj({ a: str }, ['a'])), result: obj({ a: str }, []) },
+      })
+      const requiredField = doc({
+        'a:set': { args: tuple(obj({ a: str }, ['a'])), result: obj({ a: str, b: str }, ['b']) },
+      })
+      const nowRequired = doc({
+        'a:set': { args: tuple(obj({ a: str }, ['a'])), result: obj({ a: str }, ['a']) },
+      })
+      const clientSent = doc({
+        'a:set': { args: tuple(obj({ a: str, b: str }, ['a'])), result: obj({ a: str }, []) },
+      })
+      assert.deepEqual(
+        compareApiProtocol(before, requiredField),
+        broken('a:set', 'set', 'result.b', 'added as required'),
+      )
+      assert.deepEqual(
+        compareApiProtocol(before, nowRequired),
+        broken('a:set', 'set', 'result', 'required fields changed'),
+      )
+      assert.deepEqual(
+        compareApiProtocol(before, clientSent),
+        broken('a:set', 'set', 'args[0].b', 'added to data the client sends'),
+      )
+    })
+
+    it('treats a new union member or enum value as breaking, and matches members as a set', () => {
+      const member = (kind: string, extra: Record<string, JsonSchema> = {}): JsonSchema =>
+        obj({ kind: { const: kind }, ...extra }, ['kind'])
+      const union = (...members: JsonSchema[]): JsonSchema => ({ anyOf: members })
+      const before = doc({ 'a:get': { args: tuple(), result: union(member('a'), member('b')) } })
+      // The widened member now serializes first, as the generator would order it.
+      const reordered = doc({
+        'a:get': { args: tuple(), result: union(member('b', { aa: str }), member('a')) },
+      })
+      assert.deepEqual(compareApiProtocol(before, reordered), widened('a:get', 'get'))
+      const newMember = doc({
+        'a:get': { args: tuple(), result: union(member('a'), member('b'), member('c')) },
+      })
+      assert.deepEqual(
+        compareApiProtocol(before, newMember),
+        broken('a:get', 'get', 'result', 'union members added or removed'),
+      )
+      const enumOf = (...values: string[]): JsonSchema => ({ type: 'string', enum: values })
+      assert.deepEqual(
+        compareApiProtocol(
+          doc({ 'a:get': { args: tuple(), result: enumOf('x', 'y') } }),
+          doc({ 'a:get': { args: tuple(), result: enumOf('x', 'y', 'z') } }),
+        ),
+        broken('a:get', 'get', 'result', 'enum changed'),
+      )
+    })
+
+    it('accepts a new optional trailing argument but not a required one', () => {
+      const before = doc({ 'a:get': { args: tuple(str), result: str } })
+      const optionalTail = doc({
+        'a:get': {
+          args: { type: 'array', prefixItems: [str, str], minItems: 1, maxItems: 2 },
+          result: str,
+        },
+      })
+      assert.deepEqual(compareApiProtocol(before, optionalTail), widened('a:get', 'get'))
+      const requiredTail = doc({ 'a:get': { args: tuple(str, str), result: str } })
+      assert.deepEqual(
+        compareApiProtocol(before, requiredTail),
+        broken('a:get', 'get', 'args', 'required item added'),
+      )
+    })
+
+    it('ignores parameter names but not fields named description or title', () => {
+      const named = (title: string): JsonSchema => ({
+        type: 'array',
+        prefixItems: [{ title, ...str }],
+        minItems: 1,
+        maxItems: 1,
+      })
+      assert.deepEqual(
+        compareApiProtocol(
+          doc({ 'a:get': { args: named('id'), result: str } }),
+          doc({ 'a:get': { args: named('threadId'), result: str } }),
+        ),
+        { breaking: [], additive: [] },
+      )
+      for (const field of ['description', 'title']) {
+        assert.deepEqual(
+          compareApiProtocol(
+            doc({ 'a:get': { args: tuple(), result: obj({ [field]: str }, [field]) } }),
+            doc({
+              'a:get': { args: tuple(), result: obj({ [field]: { type: 'number' } }, [field]) },
+            }),
+          ),
+          broken('a:get', 'get', `result.${field}`, 'type changed'),
+        )
+      }
+    })
+
+    it('treats an optional field added to an event payload as additive', () => {
+      const withEvent = (payload: JsonSchema): ApiProtocolDocument => {
+        const base = doc({})
+        const args = tuple(payload)
+        return {
+          ...base,
+          channels: { ...base.channels, event: { 'a:changed': { 'x-api': 'ns.onChanged', args } } },
+          client: {
+            ns: { onChanged: { kind: 'subscribe', channel: 'a:changed', handlerParams: args } },
+          },
+        }
+      }
+      assert.deepEqual(
+        compareApiProtocol(
+          withEvent(obj({ id: str }, ['id'])),
+          withEvent(obj({ id: str, note: str }, ['id'])),
+        ),
+        {
+          breaking: [],
+          additive: [
+            'channels.event.a:changed: widened compatibly',
+            'client.ns.onChanged: widened compatibly',
+          ],
+        },
+      )
+    })
   })
 
   it('parses only documents that carry the fields the tooling reads', () => {

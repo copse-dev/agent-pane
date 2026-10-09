@@ -79,8 +79,24 @@ every member, with two documented escapes:
    `API_PROTOCOL_VERSION`. The manifest diff shows channel-level changes; type
    shape changes are only visible to the generator, which regenerates the
    protocol at a git ref (a temporary worktree borrowing this checkout's
-   `node_modules`), compares full shapes with `$ref`s inlined and doc comments
-   ignored, and exits non-zero on a breaking change without a bump:
+   `node_modules`), compares shapes with `$ref`s inlined and annotations (doc
+   comments, parameter names) ignored, and exits non-zero on a breaking change
+   without a bump.
+
+   It compares each shape in the direction its data travels, because only the
+   host may add to what it sends. A client built against the old shape ignores a
+   field it does not know, and one built against the new shape must already
+   cope with an optional field being absent, so these widenings are additive:
+
+   - a field that is not required, added at any depth to data the host sends:
+     invoke results, event payloads, and the arguments of a subscribe handler;
+   - an optional trailing argument, in either direction.
+
+   Everything else that differs is breaking, including a field added to data
+   the client sends (an argument object), a new union member or enum value, a
+   field that became required or optional, and a changed type. Union members are
+   matched as a set, since the generator orders them by serialization. Run the
+   check against `main`:
 
    ```bash
    node scripts/gen-api-protocol.mts --compare-ref origin/main
