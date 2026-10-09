@@ -15,6 +15,15 @@
  * the version and only regenerate the schema. `scripts/gen-api-protocol.mts
  * --compare-ref <git-ref>` classifies a diff against a committed schema.
  *
+ * A version names a released surface, so a breaking change needs a version
+ * above the latest release tag, and every breaking change between two releases
+ * shares one bump. When trunk already carries an unreleased bump, leave this
+ * alone; otherwise set it to one more than the release's. Describe the change in
+ * the pull request rather than on a line below, so concurrent pull requests make
+ * the same one-line edit (or none) and merge cleanly instead of each claiming the
+ * next number and renumbering whenever another lands. The per-version lines
+ * below stop at v53, where that rule began.
+ *
  * A transport that connects a client and server built separately — today the
  * sidecar WebSocket bridge, later a daemon — exchanges this number in its
  * handshake and refuses a peer that speaks a different one rather than letting

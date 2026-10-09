@@ -292,10 +292,11 @@ jobs:
       # Enforce the API protocol's compatibility rule (docs/api-protocol.md).
       # The unit test only pins that the committed manifest matches the sources,
       # which a breaking change satisfies by regenerating; this is the step that
-      # reads the change against the base and fails a breaking one that did not
-      # bump API_PROTOCOL_VERSION. Only meaningful with a base to compare to,
-      # so it is skipped on schedule / branch-create runs.
+      # reads the change against the base and fails a breaking one whose
+      # API_PROTOCOL_VERSION is not above the latest release. Only meaningful
+      # with a base to compare to, so it is skipped on schedule / branch-create runs.
       - name: API protocol compatibility
+        shell: bash
         env:
           # PR/queue base; previous tip on push. Empty for schedule.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
@@ -313,7 +314,20 @@ jobs:
           # worse than no gate. The script distinguishes that from a base that
           # genuinely predates the protocol, which it allows.
           git fetch --no-tags --quiet origin "$BASE_SHA" 2>/dev/null || true
-          node scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA"
+          # A version names a released surface (docs/api-protocol.md), so a
+          # breaking change needs a version above the latest release tag, and
+          # changes between two releases share one bump. Without that tag the
+          # script falls back to requiring a bump over the base, so failing to
+          # read it can only make the gate stricter.
+          released_args=()
+          if git fetch --no-tags --quiet origin \
+               '+refs/heads/release:refs/remotes/origin/release' '+refs/tags/v*:refs/tags/v*' &&
+             released_tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' refs/remotes/origin/release); then
+            released_args=(--released-ref "$released_tag")
+          else
+            echo "::warning::Could not read the latest release tag; requiring a bump over the base instead"
+          fi
+          node scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA" "${released_args[@]}"
       # Fail closed on high/critical dependency advisories. This runs after the
       # lockfile-exact setup, so it audits precisely the tree CI will execute.
       # The registry's audit endpoint intermittently times out from hosted

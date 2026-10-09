@@ -54,7 +54,8 @@ invariants test, so the surface changes only deliberately. Delivered:
   `hello-ok` carry `protocolVersion`; either end closes with 4008 on a
   mismatch — the server on the client's `hello`, the client on the server's
   `hello-ok`), and the compatibility comparison runs in CI's `precheck`
-  against the PR base, so a breaking change without a version bump fails.
+  against the PR base, so a breaking change fails unless the version is above
+  the latest release (one bump per release, see `../api-protocol.md`).
 - `scripts/lib/api-protocol.test.ts`: drift (committed manifest equals generated),
   every method bound to one namespaced channel, every channel has a literal
   main-process endpoint, no dangling `$ref`s. `--compare-ref <git-ref>` classifies a change as additive or

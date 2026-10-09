@@ -23,6 +23,7 @@ import {
   manifestOf,
   parseApiProtocol,
   parseApiProtocolManifest,
+  protocolVersionProblem,
   serializeApiProtocol,
   serializeApiProtocolManifest,
   type ApiProtocolDiff,
@@ -597,6 +598,50 @@ describe('compareApiProtocol', () => {
   })
 })
 
+describe('protocolVersionProblem', () => {
+  it('lets every breaking change before the next release share one unreleased bump', () => {
+    // main is at v53 and the latest release shipped v42: trunk already carries
+    // an unreleased bump, so a breaking pull request leaves the version alone,
+    // and two pull requests that both bumped to v54 make the same edit.
+    assert.equal(protocolVersionProblem({ breaking: true, base: 53, head: 53, released: 42 }), null)
+    assert.equal(protocolVersionProblem({ breaking: true, base: 53, head: 54, released: 42 }), null)
+  })
+
+  it('asks for one more than the release when trunk has no unreleased bump', () => {
+    assert.match(
+      protocolVersionProblem({ breaking: true, base: 42, head: 42, released: 42 }) ?? '',
+      /v42 is already released\. Set API_PROTOCOL_VERSION .* to 43/,
+    )
+    assert.equal(protocolVersionProblem({ breaking: true, base: 42, head: 43, released: 42 }), null)
+    // A base that predates the release still has to clear the release.
+    assert.match(
+      protocolVersionProblem({ breaking: true, base: 41, head: 42, released: 42 }) ?? '',
+      /to 43/,
+    )
+  })
+
+  it('falls back to requiring a bump over the base when the release is unknown', () => {
+    assert.match(
+      protocolVersionProblem({ breaking: true, base: 53, head: 53 }) ?? '',
+      /without a version bump/,
+    )
+    assert.equal(protocolVersionProblem({ breaking: true, base: 53, head: 54 }), null)
+  })
+
+  it('never lets the version go below the base, breaking or not', () => {
+    for (const breaking of [true, false]) {
+      assert.match(
+        protocolVersionProblem({ breaking, base: 53, head: 52, released: 42 }) ?? '',
+        /below the base's \(v53 → v52\)/,
+      )
+    }
+    assert.equal(
+      protocolVersionProblem({ breaking: false, base: 53, head: 53, released: 53 }),
+      null,
+    )
+  })
+})
+
 describe('linkRefNodeModules', () => {
   it("resolves workspace packages from the ref's worktree and dependencies from the base", () => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), 'copse-protocol-links-')))
@@ -648,10 +693,14 @@ describe('linkRefNodeModules', () => {
 })
 
 describe('gen-api-protocol --compare-ref', () => {
-  const run = (ref: string, gitDir?: string): { status: number | null; out: string } => {
+  const run = (
+    ref: string,
+    gitDir?: string,
+    extra: string[] = [],
+  ): { status: number | null; out: string } => {
     const result = spawnSync(
       process.execPath,
-      [resolve(ROOT, 'scripts/gen-api-protocol.mts'), '--compare-ref', ref],
+      [resolve(ROOT, 'scripts/gen-api-protocol.mts'), '--compare-ref', ref, ...extra],
       {
         cwd: ROOT,
         encoding: 'utf8',
@@ -716,5 +765,16 @@ describe('gen-api-protocol --compare-ref', () => {
       assert.equal(status, 1, `${ref} should fail closed, got:\n${out}`)
       assert.match(out, /cannot resolve/)
     }
+  })
+
+  it('fails closed when the release cannot be read, before generating anything', () => {
+    // Reading the release can only relax the rule, so an unreadable one must
+    // not pass silently either.
+    const { status, out } = run('HEAD', undefined, ['--released-ref', 'origin/no-such-release'])
+    assert.equal(status, 1, out)
+    assert.match(out, /cannot resolve origin\/no-such-release/)
+    const missing = run('HEAD', undefined, ['--released-ref'])
+    assert.equal(missing.status, 2, missing.out)
+    assert.match(missing.out, /--released-ref needs a git ref/)
   })
 })

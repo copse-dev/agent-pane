@@ -1395,3 +1395,47 @@ export function compareApiProtocol(
   }
   return { breaking: breaking.sort(), additive: additive.sort() }
 }
+
+/** What the version gate needs to know about one change. */
+export interface ProtocolVersionCheck {
+  /** Whether the head's surface breaks compatibility with the base's. */
+  breaking: boolean
+  /** `API_PROTOCOL_VERSION` at the base. */
+  base: number
+  /** `API_PROTOCOL_VERSION` at the head. */
+  head: number
+  /** `API_PROTOCOL_VERSION` at the latest release tag, when it could be read. */
+  released?: number
+}
+
+/**
+ * Why the head's version breaks the bump rule, or `null` when it does not.
+ *
+ * A version names a released surface: two builds that can meet as separately
+ * built peers come from different releases, and only those must disagree on the
+ * version when their surfaces are incompatible. So a breaking change needs a
+ * version above the latest release, and every breaking change between two
+ * releases shares one bump. Concurrent pull requests then make the same
+ * one-line edit, or none once trunk carries the bump, instead of each claiming
+ * the next number and renumbering whenever another lands. Without the release
+ * version the rule falls back to the stricter bump over the base.
+ */
+export function protocolVersionProblem(check: ProtocolVersionCheck): string | null {
+  const { breaking, base, head, released } = check
+  if (head < base) {
+    return `API_PROTOCOL_VERSION is below the base's (v${String(base)} → v${String(head)}). Merge the base, or keep its version.`
+  }
+  if (!breaking) return null
+  if (released === undefined) {
+    return head > base
+      ? null
+      : 'Breaking change to the API protocol without a version bump. ' +
+          'Bump API_PROTOCOL_VERSION in src/shared/api-protocol.mts or make the change additive.'
+  }
+  if (head > released) return null
+  return (
+    `Breaking change to the API protocol, and v${String(released)} is already released. ` +
+    `Set API_PROTOCOL_VERSION in src/shared/api-protocol.mts to ${String(released + 1)} ` +
+    'or make the change additive.'
+  )
+}

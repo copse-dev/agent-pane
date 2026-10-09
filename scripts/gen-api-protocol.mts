@@ -12,6 +12,8 @@
 //                                                           # (default: dist/schemas/…)
 //   node scripts/gen-api-protocol.mts --compare-ref <ref>   # classify the change from
 //                                                           # the protocol at a git ref
+//       [--released-ref <tag>]                              # and judge the version bump
+//                                                           # against that release
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -23,6 +25,7 @@ import {
   generateApiProtocol,
   generateApiProtocolAtRef,
   manifestOf,
+  protocolVersionProblem,
   serializeApiProtocol,
   serializeApiProtocolManifest,
 } from './lib/api-protocol.mts'
@@ -42,7 +45,17 @@ if (compareIndex !== -1) {
     console.error('--compare-ref needs a git ref')
     process.exit(2)
   }
+  const releasedIndex = args.indexOf('--released-ref')
+  const releasedRef = releasedIndex === -1 ? undefined : args[releasedIndex + 1]
+  if (releasedIndex !== -1 && (!releasedRef || releasedRef.startsWith('--'))) {
+    console.error('--released-ref needs a git ref (the latest release tag)')
+    process.exit(2)
+  }
   const previousVersion = versionAtRef(ref)
+  // Read before generating anything, so an unreadable release fails fast. A
+  // release that predates the protocol released no version at all.
+  const releasedAt = releasedRef === undefined ? undefined : versionAtRef(releasedRef)
+  const released = releasedAt === 'pre-protocol' ? 0 : releasedAt
   if (previousVersion === 'pre-protocol') {
     // The ref predates the protocol itself — the case on the PR that
     // introduces it, where `main` has no `api-protocol.mts` to read a version
@@ -55,16 +68,20 @@ if (compareIndex !== -1) {
   const diff = compareApiProtocol(previous, doc)
   for (const line of diff.additive) console.log(`additive  ${line}`)
   for (const line of diff.breaking) console.log(`BREAKING  ${line}`)
-  const bumped = doc.version > previous.version
+  const releaseNote =
+    released === undefined ? '' : `; v${String(released)} released at ${releasedRef ?? ''}`
   console.log(
     `${String(diff.additive.length)} additive, ${String(diff.breaking.length)} breaking; ` +
-      `version ${String(previous.version)} → ${String(doc.version)}`,
+      `version ${String(previous.version)} → ${String(doc.version)}${releaseNote}`,
   )
-  if (diff.breaking.length > 0 && !bumped) {
-    console.error(
-      'Breaking change to the API protocol without a version bump. ' +
-        'Bump API_PROTOCOL_VERSION in src/shared/api-protocol.mts or make the change additive.',
-    )
+  const problem = protocolVersionProblem({
+    breaking: diff.breaking.length > 0,
+    base: previous.version,
+    head: doc.version,
+    ...(released === undefined ? {} : { released }),
+  })
+  if (problem) {
+    console.error(problem)
     process.exit(1)
   }
   process.exit(0)

@@ -107,6 +107,24 @@ every member, with two documented escapes:
    enough: regenerating the manifest after a breaking change satisfies it
    without bumping anything.
 
+4. Bump against the latest release, not against trunk. A version names a
+   released surface: the peers that can meet with different builds come from
+   different releases, so only releases must disagree on the version when their
+   surfaces are incompatible. A breaking change therefore needs a version above
+   the latest release tag, and every breaking change between two releases
+   shares one bump. When `main` already carries an unreleased bump, leave the
+   version alone; otherwise set it to one more than the release's. Explain the
+   change in the pull request rather than in a comment line beside the
+   constant: concurrent pull requests then make the same one-line edit, or
+   none, so they merge cleanly and never renumber because another landed first.
+   CI passes the latest release tag on `release` to the same command, and falls
+   back to requiring a bump over the base when it cannot read the tag:
+
+   ```bash
+   node scripts/gen-api-protocol.mts --compare-ref origin/main \
+     --released-ref "$(git describe --tags --abbrev=0 --match 'v[0-9]*' origin/release)"
+   ```
+
 The same test also pins that every facade method is bound to exactly one
 namespaced channel, and that every invoke/send channel has a literal
 `ipcMain.handle` and every event channel a literal sender under `src/main`.
