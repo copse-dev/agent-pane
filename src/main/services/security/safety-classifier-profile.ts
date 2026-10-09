@@ -7,7 +7,7 @@ import type {
 } from '@copse/llm/classifiers/types.ts'
 import { createClassifierSession, getClassifierProfile } from '../classifiers/classifier-service.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
-import { recordUsageEvent } from '../storage/usage-ledger.ts'
+import { recordClassifierResultUsage } from '../classifiers/classifier-usage.ts'
 import type { ClassificationResult } from './safety-classification-parse.ts'
 import type { SafetyModelProblem } from './safety-model-availability.ts'
 import {
@@ -178,14 +178,7 @@ async function screen(
     })
     noteSafetyModelAnswered(model)
     if (!result) return { answer: null, problem: null }
-    if (result.usage?.inputTokens || result.usage?.outputTokens) {
-      recordUsageEvent({
-        model: result.model,
-        source: 'safety-classifier',
-        inputTokens: result.usage.inputTokens ?? 0,
-        outputTokens: result.usage.outputTokens ?? 0,
-      })
-    }
+    recordClassifierResultUsage(label, result)
     return {
       answer: { result, source: `the "${label}" classifier (${result.model})` },
       problem: null,

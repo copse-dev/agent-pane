@@ -309,6 +309,98 @@ describe('aggregate usage', () => {
     assert.deepEqual(parseUsageEvents(JSON.parse(JSON.stringify(parsed))), parsed)
   })
 
+  it('lists classifier calls apart from cloud and local models, by connection and model', () => {
+    const classifier = (
+      provider: string,
+      model: string,
+      inputTokens: number,
+      outputTokens: number,
+      at = NOW - 1000,
+    ): UsageEvent => event({ source: 'classifier', provider, model, inputTokens, outputTokens, at })
+    const summary = buildUsageSummary(
+      [
+        event({ model: 'claude-sonnet-4-6', inputTokens: 1_000, outputTokens: 100 }),
+        classifier('Kev (local)', 'kev-4b', 100, 2),
+        classifier('Kev (local)', 'kev-4b', 50, 1),
+        classifier('TypeSafe / Jev', 'jev-1', 400, 4),
+        // The same model behind another connection is its own row.
+        classifier('Kev (staging)', 'kev-4b', 10, 1),
+        classifier('Kev (local)', 'kev-4b', 999, 9, NOW - 2 * DAY_MS),
+      ],
+      [],
+      NOW,
+    )
+    assert.deepEqual(
+      (summary.day.classifiers ?? []).map((row) => [
+        row.provider,
+        row.model,
+        row.calls,
+        row.inputTokens,
+      ]),
+      [
+        ['TypeSafe / Jev', 'jev-1', 1, 400],
+        ['Kev (local)', 'kev-4b', 2, 150],
+        ['Kev (staging)', 'kev-4b', 1, 10],
+      ],
+    )
+    assert.equal(
+      (summary.month.classifiers ?? []).find((row) => row.provider === 'Kev (local)')?.calls,
+      3,
+    )
+    // They are not chat-model usage: no cloud/local row, no cost, no unpriced warning.
+    assert.deepEqual(
+      summary.day.cloudModels.map((row) => row.model),
+      ['claude-sonnet-4-6'],
+    )
+    assert.equal(summary.day.localModels.length, 0)
+    assert.equal(summary.day.hasUnpricedCloudUsage, false)
+    assert.equal(summary.day.totalInputTokens, 1_000)
+    assert.deepEqual(summary.allTime.classifiers, [])
+    assert.equal(summary.ledgerEventCount, 6)
+  })
+
+  it('names a classifier call with no recorded connection rather than dropping it', () => {
+    const summary = buildUsageSummary(
+      [event({ source: 'classifier', model: 'kev-4b', inputTokens: 5, outputTokens: 1 })],
+      [],
+      NOW,
+    )
+    assert.equal(summary.day.classifiers?.[0]?.provider, 'Classifier')
+  })
+
+  it('keeps a classifier event and its connection through a ledger round trip', () => {
+    const [parsed] = parseUsageEvents([
+      {
+        at: NOW,
+        model: 'kev-4b',
+        source: 'classifier',
+        inputTokens: 5,
+        outputTokens: 1,
+        provider: 'Kev (local)',
+      },
+    ])
+    assert.ok(parsed)
+    assert.equal(parsed.source, 'classifier')
+    assert.equal(parsed.provider, 'Kev (local)')
+    assert.deepEqual(aggregateEventsByModel([parsed], DAY_MS, NOW), {})
+    // An unknown source is still dropped, and an oversized label is not kept.
+    assert.deepEqual(
+      parseUsageEvents([{ at: NOW, model: 'm', source: 'robot', inputTokens: 1, outputTokens: 1 }]),
+      [],
+    )
+    const [long] = parseUsageEvents([
+      {
+        at: NOW,
+        model: 'm',
+        source: 'classifier',
+        inputTokens: 1,
+        outputTokens: 1,
+        provider: 'x'.repeat(121),
+      },
+    ])
+    assert.equal(long?.provider, undefined)
+  })
+
   it('pruneUsageEvents removes entries older than 90 days', () => {
     const events: UsageEvent[] = [
       event({ model: 'gpt-4o', inputTokens: 1, outputTokens: 1, at: NOW - 91 * DAY_MS }),
