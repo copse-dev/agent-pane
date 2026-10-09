@@ -12,6 +12,7 @@ import {
   applyOrStageFileOp,
   awaitStagedDiffDecision,
   approveAllStagedDiffs,
+  approveStagedDiff,
   captureWorktreeBaseline,
   clearDiffQueueForTest,
   getDiffQueueForTest,
@@ -1052,6 +1053,38 @@ describe('approveAllStagedDiffs', () => {
       )
     },
   )
+})
+
+describe('approveStagedDiff', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-diff-approve-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+  })
+
+  afterEach(async () => {
+    clearDiffQueueForTest()
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  ownedIt('keeps a re-stage of the same path made while the approval applies', async () => {
+    await writeFile(join(tempRoot, 'a.txt'), 'orig\n', 'utf-8')
+    await stageDiff('a.txt', 'orig\n', 'newA\n', 'plaintext')
+
+    const apply = approveStagedDiff('a.txt', TEST_THREAD_OWNER)
+    await stageDiff('a.txt', 'newA\n', 'newerA\n', 'plaintext')
+    await apply
+
+    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'newA\n')
+    assert.deepEqual(
+      getDiffQueueForTest().map((e) => [e.path, e.after]),
+      [['a.txt', 'newerA\n']],
+      'the re-staged diff must stay queued, not be dropped unapplied',
+    )
+  })
 })
 
 describe('staged-diff resolver (headless host, e.g. ACP)', () => {

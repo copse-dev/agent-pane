@@ -35,8 +35,16 @@ describe('parseGithubRepoSlug', () => {
     assert.equal(parseGithubRepoSlug('ssh://git@github.com/org/repo'), 'org/repo')
   })
 
+  it('parses SSH remotes with a non-git user or the port-443 host', () => {
+    assert.equal(parseGithubRepoSlug('org-123@github.com:org/repo.git'), 'org/repo')
+    assert.equal(parseGithubRepoSlug('git@ssh.github.com:org/repo.git'), 'org/repo')
+    assert.equal(parseGithubRepoSlug('ssh://git@ssh.github.com:443/org/repo.git'), 'org/repo')
+  })
+
   it('returns null for non-GitHub remotes', () => {
     assert.equal(parseGithubRepoSlug('git@gitlab.com:org/repo.git'), null)
+    assert.equal(parseGithubRepoSlug('git@notgithub.com:org/repo.git'), null)
+    assert.equal(parseGithubRepoSlug('ssh://git@ssh.gitlab.com:443/org/repo.git'), null)
     assert.equal(parseGithubRepoSlug(''), null)
   })
 })

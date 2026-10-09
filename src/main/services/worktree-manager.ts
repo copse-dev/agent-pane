@@ -683,9 +683,11 @@ async function symbolicHeadBranch(worktreePath: string): Promise<string | null> 
  * a worktree based on it starts from the latest remote tip rather than whatever
  * the local branch happened to be pointed at. Never throws: no network / no
  * `origin` remote just means the next resolution step falls back to the local ref.
+ * A fetch that hangs until the command timeout rejects rather than returning a
+ * failed result, so that rejection is absorbed here too.
  */
 async function fetchDefaultBranch(projectRoot: string, branch: string): Promise<void> {
-  await git(projectRoot, ['fetch', '--quiet', 'origin', branch])
+  await git(projectRoot, ['fetch', '--quiet', 'origin', branch]).catch(() => undefined)
 }
 
 async function hasOriginRemote(projectRoot: string): Promise<boolean> {
@@ -1813,12 +1815,13 @@ export function changedPaths(raw: string): string[] {
     if (!entry || entry.length < 4 || entry[2] !== ' ') continue
     const path = entry.slice(3)
     if (path) out.push(path)
+    // `-z` always follows a rename/copy with its bare source field, which has no
+    // status prefix. Consume it unconditionally: a source such as `01 intro.md`
+    // only looks like a status entry.
     if (entry[0] === 'R' || entry[0] === 'C' || entry[1] === 'R' || entry[1] === 'C') {
       const source = entries[index + 1]
-      if (source && !(source.length >= 3 && source[2] === ' ')) {
-        out.push(source)
-        index++
-      }
+      if (source) out.push(source)
+      index++
     }
   }
   return [...new Set(out)]

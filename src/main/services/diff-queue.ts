@@ -897,26 +897,7 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
     'diff:approve',
     async (event, projectIdArg: unknown, threadIdArg: unknown, path: string) => {
       assertMainFrameSender(event, win)
-      const owner = parseOwner(projectIdArg, threadIdArg)
-      const state = stateFor(owner)
-      const entry = state.queue.find((e) => e.path === path)
-      if (!entry) return
-      const result = await applyDiffEntry(entry, executionRootFor(state), projectRootFor(state))
-      if (result.status === 'conflict') {
-        restage(owner, entry, result.current)
-        recordDecision(state, owner, { path: entry.path, status: 'conflict' })
-        broadcastToAppWindows('diff:conflict', owner.projectId, owner.threadId, [entry.path])
-        return
-      }
-      if (result.status === 'error') {
-        // Leave the entry queued so the user can retry; surface the failure.
-        recordDecision(state, owner, { path: entry.path, status: 'error', error: result.error })
-        throw new Error(`Failed to write ${entry.path}: ${result.error}`)
-      }
-      await reindexAfterApply(state)
-      recordOwnershipAfterApply(state, entry)
-      recordDecision(state, owner, { path: entry.path, status: 'approved' })
-      removeEntry(state, owner, path)
+      await approveStagedDiff(path, parseOwner(projectIdArg, threadIdArg))
     },
   )
 
@@ -981,6 +962,36 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
     state.queue.length = 0
     broadcastQueue(state, owner)
   })
+}
+
+/**
+ * Apply the queued diff for one path. Like {@link approveAllStagedDiffs}, the
+ * applied entry is removed by identity rather than by path: the agent can
+ * re-stage the same path while the write and reindex are awaited, and upsert
+ * replaces the entry with a fresh object that must stay queued for review.
+ */
+export async function approveStagedDiff(path: string, owner: ThreadExecutionOwner): Promise<void> {
+  const state = stateFor(owner)
+  const entry = state.queue.find((e) => e.path === path)
+  if (!entry) return
+  const result = await applyDiffEntry(entry, executionRootFor(state), projectRootFor(state))
+  if (result.status === 'conflict') {
+    restage(owner, entry, result.current)
+    recordDecision(state, owner, { path: entry.path, status: 'conflict' })
+    broadcastToAppWindows('diff:conflict', owner.projectId, owner.threadId, [entry.path])
+    return
+  }
+  if (result.status === 'error') {
+    // Leave the entry queued so the user can retry; surface the failure.
+    recordDecision(state, owner, { path: entry.path, status: 'error', error: result.error })
+    throw new Error(`Failed to write ${entry.path}: ${result.error}`)
+  }
+  await reindexAfterApply(state)
+  recordOwnershipAfterApply(state, entry)
+  recordDecision(state, owner, { path: entry.path, status: 'approved' })
+  const index = state.queue.indexOf(entry)
+  if (index !== -1) state.queue.splice(index, 1)
+  broadcastQueue(state, owner)
 }
 
 /**
