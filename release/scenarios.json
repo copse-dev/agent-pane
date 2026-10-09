@@ -132,6 +132,10 @@
     "label": "Empty unopened project in the sidebar"
   },
   {
+    "id": "sidebar-other-projects",
+    "label": "Sidebar listing threads of projects not opened yet"
+  },
+  {
     "id": "sidebar-thread-sort",
     "label": "Sidebar thread sort"
   },
@@ -142,6 +146,10 @@
   {
     "id": "activity-home",
     "label": "Activity home on a new thread"
+  },
+  {
+    "id": "activity-home-many-projects",
+    "label": "Activity home listing twelve projects"
   },
   {
     "id": "activity-home-project-filter",
@@ -182,6 +190,14 @@
   {
     "id": "concise-thread-full",
     "label": "Full thread view for a model below the concise gate"
+  },
+  {
+    "id": "openai-host-pr",
+    "label": "OpenAI host PR creation result"
+  },
+  {
+    "id": "openai-cancellation-recovery",
+    "label": "OpenAI confirmed cancellation with interrupted recovery"
   },
   {
     "id": "concise-thread-working",
