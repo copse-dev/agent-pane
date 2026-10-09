@@ -140,6 +140,10 @@
     "label": "Sidebar thread sort"
   },
   {
+    "id": "sidebar-cleanup-after-pr",
+    "label": "Cleanup after merged or closed PRs"
+  },
+  {
     "id": "sidebar-thread-changes",
     "label": "Sidebar changes glyph"
   },
@@ -238,5 +242,17 @@
   {
     "id": "site-mcp-permissions",
     "label": "Copse.dev tour: per-tool MCP permissions"
+  },
+  {
+    "id": "approval-web-url",
+    "label": "Allow web origin?"
+  },
+  {
+    "id": "approval-browser-url",
+    "label": "Allow browser navigation?"
+  },
+  {
+    "id": "approval-provider-url",
+    "label": "Allow model provider host?"
   }
 ]

@@ -20799,15 +20799,17 @@ function fileExtension(name) {
   return dot < 0 ? "" : name.slice(dot).toLowerCase();
 }
 function formatByteSize(bytes) {
-  if (bytes < 1024) return `${String(bytes)} B`;
+  if (!Number.isFinite(bytes) || bytes < 0) return "unknown size";
+  if (bytes < 1024) return `${String(Math.round(bytes))} B`;
   const units = ["KB", "MB", "GB"];
+  const render = (value2) => value2 < 9.95 ? value2.toFixed(1) : Math.round(value2).toString();
   let value = bytes / 1024;
   let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
+  while (Number(render(value)) >= 1024 && unit < units.length - 1) {
     value /= 1024;
     unit += 1;
   }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value).toString()} ${units[unit] ?? "GB"}`;
+  return `${render(value)} ${units[unit] ?? "GB"}`;
 }
 var init_file_bytes = __esm({
   "src/shared/file-bytes.ts"() {
@@ -22104,7 +22106,7 @@ function casedWord(word, leading) {
   return leading ? word.charAt(0).toUpperCase() + word.slice(1) : word;
 }
 function humanizeIdentifier(identifier) {
-  const words = identifier.replace(/([a-z0-9])([A-Z])/gu, "$1 $2").split(/[\s._-]+/u).filter(Boolean).map((word) => word.toLowerCase());
+  const words = identifier.replace(/([a-z0-9])([A-Z])/gu, "$1 $2").replace(/([A-Z])(?=[A-Z][a-z]{2})/gu, "$1 ").split(/[\s._-]+/u).filter(Boolean).map((word) => word.toLowerCase());
   if (words.length === 0) return identifier;
   const merged = [];
   for (const word of words) {
@@ -23653,7 +23655,7 @@ function remoteAgentDisplayLabel(model, catalog = []) {
   const catalogLabel = catalog.find((entry) => entry.id === selection2.model)?.label;
   return `${title} \u2014 ${catalogLabel ?? cloudModelDisplayLabel(selection2.model)}`;
 }
-var CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
+var DEFAULT_CURSOR_AGENT_BASE_URL, CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
 var init_remote_agent = __esm({
   "src/shared/remote-agent.ts"() {
     init_reserved_prefixes();
@@ -23664,6 +23666,7 @@ var init_remote_agent = __esm({
     init_unknown_value3();
     init_remote_agent_provider();
     init_remote_agent_provider();
+    DEFAULT_CURSOR_AGENT_BASE_URL = "https://api.cursor.com";
     CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
     REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
     REMOTE_AGENT_MODELS = [
@@ -65951,6 +65954,12 @@ var init_review_reports = __esm({
   }
 });
 
+// src/shared/line-endings.ts
+var init_line_endings = __esm({
+  "src/shared/line-endings.ts"() {
+  }
+});
+
 // src/shared/patch/apply-patch.ts
 function normalizePatchPath(raw) {
   return raw.trim().replace(/^(?:\.\/)+/, "");
@@ -65998,6 +66007,7 @@ function summarizePatch(patchText) {
 var ADD, DELETE, UPDATE, MOVE;
 var init_apply_patch = __esm({
   "src/shared/patch/apply-patch.ts"() {
+    init_line_endings();
     ADD = "*** Add File: ";
     DELETE = "*** Delete File: ";
     UPDATE = "*** Update File: ";
@@ -68271,6 +68281,9 @@ function isProjectSwitchInFlight(store2, projectId) {
   if (expandedProjectId === projectId && activeProjectId !== projectId) return true;
   return activeProjectId === projectId && !workspaceRoot;
 }
+function isListedProject(store2, projectId) {
+  return store2.getState().projects.some((project2) => project2.id === projectId);
+}
 function cacheThreads(projectId, threads) {
   if (liveCacheProjectId !== null && liveCacheProjectId !== projectId) {
     const outgoing = threadCache.get(liveCacheProjectId);
@@ -68298,7 +68311,9 @@ async function preloadSidebarThreads(store2, api2) {
 function attachProjectThreadCache(store2) {
   return store2.on("threads_changed", () => {
     const { activeProjectId, threads } = store2.getState();
-    if (activeProjectId) cacheThreads(activeProjectId, threads);
+    if (activeProjectId && isListedProject(store2, activeProjectId)) {
+      cacheThreads(activeProjectId, threads);
+    }
   });
 }
 async function trySetWorkspace(api2, path, sshHost) {
@@ -68549,7 +68564,7 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
   pendingSwitch = { gen, projectId: id, dispatched: false };
   const outgoingId = activeProjectId;
   const outgoingThreads = threads;
-  if (outgoingId) {
+  if (outgoingId && isListedProject(store2, outgoingId)) {
     cacheThreads(outgoingId, outgoingThreads);
     recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store2.getState()));
   }
@@ -71718,6 +71733,7 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     }
     input2.dataset["pluginId"] = pluginId;
     input2.dataset["settingKey"] = field.id;
+    let lastNumberValue = input2.value;
     input2.addEventListener("change", () => {
       let value = input2.value;
       if (field.kind === "boolean") {
@@ -71726,6 +71742,11 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
         }
         value = input2.checked;
       } else if (field.kind === "number") {
+        if (input2.value.trim() === "" || !Number.isFinite(Number(input2.value))) {
+          input2.value = lastNumberValue;
+          return;
+        }
+        lastNumberValue = input2.value;
         value = Number(input2.value);
       }
       void api2.plugins.setSetting(pluginId, field.id, value).catch(() => {
@@ -72658,7 +72679,8 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
       const themePrefRaw = data.get("theme");
       const themePreference = isThemePreference(themePrefRaw) ? themePrefRaw : DEFAULT_THEME_PREFERENCE;
       const theme = resolveTheme(themePreference);
-      const fontSize = parseInt(formDataString(data, "fontSize"), 10);
+      const fontSizeRaw = parseInt(formDataString(data, "fontSize"), 10);
+      const fontSize = Number.isFinite(fontSizeRaw) ? fontSizeRaw : store2.getState().fontSize;
       const uiScaleField = data.get("uiScale");
       const uiScaleRaw = typeof uiScaleField === "string" ? parseFloat(uiScaleField) : Number.NaN;
       const uiScale = Number.isFinite(uiScaleRaw) ? clampUiScale(uiScaleRaw) : normalizeUiScale(store2.getState().uiScale);
@@ -73436,9 +73458,10 @@ var init_panels = __esm({
 
 // src/shared/fs/image-path.ts
 function imageMimeType(path) {
-  const name = path.split("/").pop()?.toLowerCase() ?? "";
-  const ext = name.split(".").pop() ?? "";
-  return IMAGE_MIME_BY_EXT[ext] ?? null;
+  const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return null;
+  return IMAGE_MIME_BY_EXT.get(name.slice(dot + 1)) ?? null;
 }
 function isImagePath(path) {
   return imageMimeType(path) !== null;
@@ -73450,17 +73473,17 @@ function isRasterImagePath(path) {
 var IMAGE_MIME_BY_EXT;
 var init_image_path = __esm({
   "src/shared/fs/image-path.ts"() {
-    IMAGE_MIME_BY_EXT = {
-      avif: "image/avif",
-      bmp: "image/bmp",
-      gif: "image/gif",
-      ico: "image/x-icon",
-      jpeg: "image/jpeg",
-      jpg: "image/jpeg",
-      png: "image/png",
-      svg: "image/svg+xml",
-      webp: "image/webp"
-    };
+    IMAGE_MIME_BY_EXT = /* @__PURE__ */ new Map([
+      ["avif", "image/avif"],
+      ["bmp", "image/bmp"],
+      ["gif", "image/gif"],
+      ["ico", "image/x-icon"],
+      ["jpeg", "image/jpeg"],
+      ["jpg", "image/jpeg"],
+      ["png", "image/png"],
+      ["svg", "image/svg+xml"],
+      ["webp", "image/webp"]
+    ]);
   }
 });
 
@@ -76461,6 +76484,35 @@ var init_demo_site_tour = __esm({
   }
 });
 
+// src/shared/approval-copy.ts
+function webApprovalDetails(origin, url2, allowRemember, context) {
+  return {
+    body: url2,
+    bodyAdvice: `The agent wants to contact ${origin}. The site can see the request and any data in its URL.` + (context ? `
+
+${context}` : ""),
+    bodyFooter: allowRemember ? "Allow this request once. \u201CAlways allow\u201D permits future requests to this origin, including other URLs, and is saved in Settings." : "Allow this request once. This does not add the origin to Settings."
+  };
+}
+function browserApprovalDetails(origin, url2, allowRemember) {
+  return {
+    body: url2,
+    bodyAdvice: `The agent wants to open a browser page on ${origin}. The site can see the request and any data in its URL.`,
+    bodyFooter: "Approval allows navigation to this origin for this chat\u2019s browser session." + (allowRemember ? " \u201CAlways allow\u201D also permits future requests to this origin and is saved in Settings." : "")
+  };
+}
+function providerApprovalDetails(host, baseUrl) {
+  return {
+    body: baseUrl.trim(),
+    bodyAdvice: `Your API key and prompts will be sent to ${host} at this base URL:`,
+    bodyFooter: "Approval always allows this provider host, including other base URLs on it. The grant is saved in Settings."
+  };
+}
+var init_approval_copy = __esm({
+  "src/shared/approval-copy.ts"() {
+  }
+});
+
 // src/shared/demo-scenarios.ts
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
@@ -76682,11 +76734,32 @@ function conciseThreadScenario(id, label, model, {
     ]
   };
 }
+function approvalRiskScenario(id, request) {
+  return {
+    id,
+    label: request.title,
+    project: project(`demo-${id}-project`),
+    settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: "Review requested access",
+        status: "idle",
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME
+      }
+    ],
+    approvalRequests: [request]
+  };
+}
 var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
     init_demo_site_tour();
+    init_approval_copy();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
@@ -78481,6 +78554,46 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "sidebar-cleanup-after-pr",
+        label: "Cleanup after merged or closed PRs",
+        project: project("demo-cleanup-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threadChanges: {
+          "cleanup-dirty": { dirty: true },
+          "cleanup-unpushed": { dirty: false, unpushed: 2 },
+          "cleanup-clean": { dirty: false }
+        },
+        threads: ["dirty", "unpushed", "clean"].map((state, index) => ({
+          id: `cleanup-${state}`,
+          title: state === "dirty" ? "New edits after merge" : state === "unpushed" ? "Unpushed follow-up" : "Finished and clean",
+          status: "idle",
+          messages: [],
+          messagesLoaded: false,
+          prRefs: [
+            {
+              owner: "acme",
+              repo: "widgets",
+              number: index + 1,
+              url: `https://github.com/acme/widgets/pull/${String(index + 1)}`
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: FIXED_TIME - index,
+          updatedAt: FIXED_TIME - index
+        })),
+        pullRequests: [1, 2, 3].map((number4) => ({
+          owner: "acme",
+          repo: "widgets",
+          number: number4,
+          url: `https://github.com/acme/widgets/pull/${String(number4)}`,
+          title: "Previous change",
+          state: number4 === 2 ? "CLOSED" : "MERGED",
+          body: "",
+          files: [],
+          checks: "success"
+        }))
+      },
+      {
         id: "sidebar-thread-changes",
         label: "Sidebar changes glyph",
         project: project("demo-sidebar-changes-project"),
@@ -79176,7 +79289,41 @@ var init_demo_scenarios = __esm({
         ]
       },
       // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
-      ...SITE_TOUR_SCENARIOS
+      ...SITE_TOUR_SCENARIOS,
+      approvalRiskScenario("approval-web-url", {
+        id: "web-url",
+        title: "Allow web origin?",
+        type: "web",
+        ...webApprovalDetails(
+          "https://example.com:443",
+          "https://example.com/docs?topic=approvals",
+          true
+        ),
+        allowRemember: true,
+        rememberLabel: "Always allow https://example.com:443",
+        approveLabel: "Allow request"
+      }),
+      approvalRiskScenario("approval-browser-url", {
+        id: "browser-url",
+        title: "Allow browser navigation?",
+        type: "mcp",
+        ...browserApprovalDetails(
+          "https://example.com:443",
+          "https://example.com/docs?topic=approvals",
+          true
+        ),
+        allowRemember: true,
+        rememberLabel: "Always allow https://example.com:443",
+        approveLabel: "Allow navigation"
+      }),
+      approvalRiskScenario("approval-provider-url", {
+        id: "provider-url",
+        title: "Allow model provider host?",
+        type: "web",
+        ...providerApprovalDetails("api.example.com", "https://api.example.com/v1"),
+        allowRemember: false,
+        approveLabel: "Always allow host"
+      })
     ];
   }
 });
@@ -84015,7 +84162,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         return el("div", { class: "approval-item" }, ...rowChildren);
       })
     );
-    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : "Approve";
+    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : soloRequest()?.approveLabel ?? "Approve";
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : "Reject";
     const onceLabel = approveOnceGrant();
     const showOnce = onceLabel !== "" && (!collapseDetails || detailsExpanded);
@@ -84160,6 +84307,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       type,
       allowRemember,
       rememberLabel: rememberLabel2,
+      approveLabel,
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
@@ -84178,6 +84326,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         type,
         allowRemember,
         rememberLabel: rememberLabel2,
+        approveLabel,
         collapseDetails,
         approveOnceLabel,
         showWhileSettingsOpen,
@@ -85802,8 +85951,8 @@ var init_thread_title = __esm({
       [
         // Interjections only count when punctuated ("Okay," / "Sure!"), so "OK button" survives.
         String.raw`^(?:sure|okay|ok|got it|alright|certainly)(?:[,!.:;—-]|\s*$)`,
-        String.raw`^(?:here(?:'s| is| are)|let me|let's|based on)\b`,
-        String.raw`^i(?:'ll|'m|'d| will| think| would)\b`,
+        String.raw`^(?:here(?:['’]s| is| are)|let me|let['’]s|based on)\b`,
+        String.raw`^i(?:['’]ll|['’]m|['’]d| will| think| would)\b`,
         String.raw`^(?:the|this) (?:user|conversation|request)\s+(?:wants|is|asks|asked|needs|would|has|seems|appears|about)\b`
       ].join("|"),
       "i"
@@ -86207,6 +86356,13 @@ var init_projects_drag = __esm({
 });
 
 // src/renderer/views/projects-pane.ts
+function describeLiveResources(running) {
+  return [
+    ...running.agent ? ["\u2022 the chat\u2019s running agent"] : [],
+    ...running.terminals ? ["\u2022 its open terminals"] : [],
+    ...running.backgroundProcesses ? ["\u2022 its background processes"] : []
+  ];
+}
 function attentionBell(label) {
   const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", "chat-attention-bell");
@@ -86696,7 +86852,24 @@ function mountProjectsPane(root, store2, api2) {
     try {
       await flushProjectThreads(api2, projectId, store2.getState().threads);
       if (projectId !== store2.getState().activeProjectId) return;
-      let result = await api2.threads.archive(projectId, threadId, null);
+      let stopProcesses = false;
+      let result = await api2.threads.archive(projectId, threadId, null, stopProcesses);
+      if (result.status === "blocked-running") {
+        const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
+        const confirmed = await showConfirmDialog({
+          message: `Stop running work and archive \u201C${title}\u201D?`,
+          detail: [
+            "Archiving will stop:",
+            ...describeLiveResources(result.running),
+            "Anything still running in the chat\u2019s worktree is ended before it is removed."
+          ].join("\n"),
+          confirmLabel: "Stop and archive",
+          danger: true
+        });
+        if (!confirmed || projectId !== store2.getState().activeProjectId) return;
+        stopProcesses = true;
+        result = await api2.threads.archive(projectId, threadId, null, stopProcesses);
+      }
       let refreshed = false;
       while (result.status === "blocked-dirty") {
         const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
@@ -86715,11 +86888,11 @@ function mountProjectsPane(root, store2, api2) {
           danger: true
         });
         if (!confirmed || projectId !== store2.getState().activeProjectId) return;
-        result = await api2.threads.archive(projectId, threadId, result.fingerprint);
+        result = await api2.threads.archive(projectId, threadId, result.fingerprint, stopProcesses);
         refreshed = true;
       }
       if (result.status === "blocked-running") {
-        showToast("Stop the chat\u2019s agent, terminals and background processes before archiving.", {
+        showToast("Something started in the chat while archiving. Try again.", {
           variant: "error"
         });
         return;
@@ -86820,7 +86993,11 @@ function mountProjectsPane(root, store2, api2) {
   function threadNeedsCleanup(project2, thread) {
     if (project2.sshHost || thread.status === "running") return false;
     const rollup = rollupForThread(thread);
-    if (rollup) return rollup.kind === "open";
+    if (rollup?.kind === "open") return true;
+    if (sidebarPrRefs(thread).some(
+      (ref) => (cachedPrLifecycle(githubPrKey(ref)) ?? "unknown") === "unknown"
+    ))
+      return true;
     const cached2 = threadChangeCache.get(threadChangeKey(project2.id, thread.id));
     if (!cached2) return true;
     return describeThreadChanges(cached2.summary) !== null;
@@ -87392,13 +87569,14 @@ function mountProjectsPane(root, store2, api2) {
             prRollup.kind === "open" && conflictsForThread(thread)
           )
         );
-      } else if (thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
+      }
+      if ((!prRollup || needsCleanupOnly && prRollup.kind !== "open") && thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
         const key = threadChangeKey(project2.id, thread.id);
         threadChangeSeen.push({ projectId: project2.id, threadId: thread.id });
         threadChangeSeenKeys.add(key);
         const cached2 = threadChangeCache.get(key);
         const changesLabel = describeThreadChanges(cached2?.summary ?? null);
-        if (changesLabel) {
+        if (changesLabel && !prRollup) {
           chatRow.classList.add("has-changes-status");
           chatRow.append(chatChangesStatus(changesLabel));
         }
@@ -89735,7 +89913,8 @@ function normalizeBrowserUrl(input2) {
   const candidate = `https://${trimmed2}`;
   if (URL.canParse(candidate)) {
     const parsed2 = tryParseHttpUrl(candidate);
-    if (parsed2 && isNavigableHostname(parsed2.hostname)) return parsed2.href;
+    const hasUserinfo = parsed2 != null && (parsed2.username !== "" || parsed2.password !== "");
+    if (parsed2 && !hasUserinfo && isNavigableHostname(parsed2.hostname)) return parsed2.href;
   }
   return duckDuckGoSearchUrl(trimmed2);
 }
@@ -91919,7 +92098,20 @@ function remoteArtifactFromHref(href) {
   const match = url2.pathname.match(/^\/v1\/agents\/([^/]+)\/artifacts\/download$/);
   const path = url2.searchParams.get("path");
   if (!match?.[1] || !path) return null;
-  return { agentId: decodeURIComponent(match[1]), path };
+  return { agentId: decodeURIComponent(match[1]), path, origin: url2.origin };
+}
+function originOf(url2) {
+  try {
+    return new URL(url2).origin;
+  } catch {
+    return null;
+  }
+}
+async function artifactServerOrigin(agentId, settings) {
+  if (agentId.startsWith("openai:")) return OPENAI_AGENTS_ORIGIN;
+  const configured = await settings?.get("remoteAgentBaseUrl");
+  const configuredOrigin = typeof configured === "string" && configured.trim() ? originOf(configured.trim()) : null;
+  return configuredOrigin ?? originOf(DEFAULT_CURSOR_AGENT_BASE_URL);
 }
 function bindBrowserLinkClicks(root, store2, api2) {
   root.classList.add("browser-links-scope");
@@ -91929,6 +92121,20 @@ function bindBrowserLinkClicks(root, store2, api2) {
       return;
     }
     openBrowserUrl(store2, href);
+  };
+  const openLink = (href) => {
+    const githubPr = parseGithubPrUrl(href);
+    if (githubPr && api2?.gh && store2.getState().openLinksInBuiltInBrowser) {
+      void api2.gh.status().then((status) => {
+        if (status.installed && status.authenticated) {
+          openPullRequest(store2, githubPr);
+          return;
+        }
+        openPlainLink(href);
+      });
+      return;
+    }
+    openPlainLink(href);
   };
   const onClick = (event) => {
     const target = event.target;
@@ -91944,7 +92150,12 @@ function bindBrowserLinkClicks(root, store2, api2) {
     event.stopPropagation();
     const artifact = remoteArtifactFromHref(href);
     if (artifact && api2) {
-      void api2.remoteAgent.downloadArtifact(artifact.agentId, artifact.path).then((url2) => {
+      void artifactServerOrigin(artifact.agentId, api2.settings).then(async (origin) => {
+        if (origin !== artifact.origin) {
+          openLink(href);
+          return;
+        }
+        const url2 = await api2.remoteAgent.downloadArtifact(artifact.agentId, artifact.path);
         if (url2) openBrowserUrl(store2, url2);
       }).catch((err2) => {
         console.warn("[remote-agent] artifact download failed:", err2);
@@ -91952,18 +92163,7 @@ function bindBrowserLinkClicks(root, store2, api2) {
       });
       return;
     }
-    const githubPr = parseGithubPrUrl(href);
-    if (githubPr && api2?.gh && store2.getState().openLinksInBuiltInBrowser) {
-      void api2.gh.status().then((status) => {
-        if (status.installed && status.authenticated) {
-          openPullRequest(store2, githubPr);
-          return;
-        }
-        openPlainLink(href);
-      });
-      return;
-    }
-    openPlainLink(href);
+    openLink(href);
   };
   const unbindPreviews = bindPrLinkPreviews(
     root,
@@ -91975,12 +92175,15 @@ function bindBrowserLinkClicks(root, store2, api2) {
     unbindPreviews();
   };
 }
+var OPENAI_AGENTS_ORIGIN;
 var init_browser_links = __esm({
   "src/renderer/markdown/browser-links.ts"() {
     init_panels();
     init_github_pr_url2();
     init_pr_link_preview();
     init_toast();
+    init_remote_agent();
+    OPENAI_AGENTS_ORIGIN = "https://api.openai.com";
   }
 });
 
@@ -92253,7 +92456,7 @@ function splitCursorAcpTransportNoise(text2) {
 var TRAILING_RETRIABLE_ERROR_RE;
 var init_acp_cursor_transport_noise = __esm({
   "src/shared/acp-cursor-transport-noise.ts"() {
-    TRAILING_RETRIABLE_ERROR_RE = /(?:\r?\n)*Error:\s*RetriableError:\s*[^\r\n]+(?:\r?\n)*$/;
+    TRAILING_RETRIABLE_ERROR_RE = /(?:^|\n)\s*Error:[ \t]*RetriableError:[^\r\n]+\s*$/;
   }
 });
 
@@ -92283,8 +92486,10 @@ function createInlineVisualizationStreamFilter(onReference) {
       if (separator < 0) {
         if (!final && pending.length <= FRAME_START.length + MAX_OPERATOR_CHARS) return visible;
         if (final) {
-          pending = "";
-          return visible;
+          if (VISUALIZE_OPERATOR.startsWith(pending.slice(FRAME_START.length))) {
+            pending = "";
+            return visible;
+          }
         }
         visible += FRAME_START;
         pending = pending.slice(FRAME_START.length);
@@ -98961,10 +99166,18 @@ function mountConversation(root, store2, api2) {
   list.addEventListener("scroll", handleUserScroll, { passive: true });
   const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncStickyImagePreview);
   listResizeObserver?.observe(list);
+  function nestedScrollerTakesWheelUp(target) {
+    for (let node2 = target instanceof Element ? target : null; node2 && node2 !== list; node2 = node2.parentElement) {
+      if (node2.scrollTop <= 0 || node2.scrollHeight <= node2.clientHeight) continue;
+      const { overflowY } = window.getComputedStyle(node2);
+      if (overflowY === "auto" || overflowY === "scroll") return true;
+    }
+    return false;
+  }
   list.addEventListener(
     "wheel",
     (event) => {
-      if (event.deltaY < 0) {
+      if (event.deltaY < 0 && !nestedScrollerTakesWheelUp(event.target)) {
         userScrolledUpAt = Date.now();
         pinnedToBottom = false;
         updateScrollButton();
@@ -110859,6 +111072,10 @@ var init_archive_media = __esm({
 });
 
 // src/renderer/attachments/handle-file-drop.ts
+function diskPathOf(file2) {
+  const path = window.copseFiles?.pathForFile(file2) ?? "";
+  return path === "" ? null : path;
+}
 function readAsDataUrl(blob) {
   return new Promise((res, rej) => {
     const r2 = new FileReader();
@@ -110919,7 +111136,7 @@ async function attachDroppedFile(file2, handlers3, api2, workspaceRoot, owner = 
     await handlers3.attachArchive({ name: file2.name, bytes: await file2.arrayBuffer() });
     return;
   }
-  const absPath = file2.path;
+  const absPath = diskPathOf(file2);
   if (absPath && workspaceRoot) {
     await attachWorkspacePath(absPath, handlers3, api2, workspaceRoot, owner);
     return;
@@ -111869,8 +112086,11 @@ function escapeRegExp(value) {
 function invocationTokenPattern(name) {
   return `\\/${escapeRegExp(name)}(?![a-z0-9-])`;
 }
+function inlineInvocationPattern(name) {
+  return new RegExp(`(^|\\s)${invocationTokenPattern(name)}`);
+}
 function stripInvocationToken(text2, name) {
-  return text2.replace(new RegExp(invocationTokenPattern(name)), "").replace(/\s+/g, " ").trim();
+  return text2.replace(inlineInvocationPattern(name), "$1").replace(/\s+/g, " ").trim();
 }
 function parseLeadingInvocation(text2) {
   const trimmed2 = text2.trim();
@@ -111888,8 +112108,7 @@ function resolveInvocation(text2, invocables) {
   if (!trimmed2 || invocables.length === 0) return null;
   const sorted = [...invocables].sort((a3, b4) => b4.name.length - a3.name.length);
   for (const { name, kind } of sorted) {
-    const re3 = new RegExp(`(?:^|\\s)${invocationTokenPattern(name)}`);
-    if (!re3.test(trimmed2)) continue;
+    if (!inlineInvocationPattern(name).test(trimmed2)) continue;
     return { name, kind, remainder: stripInvocationToken(trimmed2, name) };
   }
   return null;
@@ -115330,7 +115549,94 @@ var init_container_run_control = __esm({
   }
 });
 
+// src/renderer/keyboard-shortcuts.ts
+function isTypingTarget(target) {
+  if (target === null || !("tagName" in target) || typeof target.tagName !== "string") return false;
+  const tag = target.tagName;
+  if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return true;
+  return "isContentEditable" in target && target.isContentEditable === true;
+}
+function matchNewThreadShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return false;
+  return e3.key === "n" || e3.key === "N";
+}
+function matchFindInChatShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return false;
+  return e3.key === "f" || e3.key === "F";
+}
+function matchUiScaleShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return null;
+  if (e3.key === "0" || e3.code === "Digit0" || e3.code === "Numpad0") return "reset";
+  if (e3.key === "=" || e3.key === "+" || e3.code === "Equal" || e3.code === "NumpadAdd") return "in";
+  if (e3.key === "-" || e3.key === "_" || e3.code === "Minus" || e3.code === "NumpadSubtract") {
+    return "out";
+  }
+  return null;
+}
+function matchCommandPaletteShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
+  return e3.key === "k" || e3.key === "K";
+}
+function matchActivityPanelShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
+  return e3.key === "a" || e3.key === "A";
+}
+function matchPanelShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey) return null;
+  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "toggleSidebar";
+  if (!e3.shiftKey && (e3.key === "j" || e3.key === "J")) return "togglePanel";
+  if (e3.shiftKey && (e3.key === "e" || e3.key === "E")) return { openPanel: "explorer" };
+  if (e3.shiftKey && (e3.key === "g" || e3.key === "G")) return { openPanel: "changes" };
+  if (e3.shiftKey && (e3.key === "b" || e3.key === "B")) return { openPanel: "browser" };
+  if (!e3.shiftKey && (e3.key === "`" || e3.code === "Backquote")) return { openPanel: "terminal" };
+  return null;
+}
+function handlePanelShortcut(store2, api2, action) {
+  if (action === "toggleSidebar") {
+    toggleProjectsPane(store2);
+    return;
+  }
+  if (action === "togglePanel") {
+    toggleFilesPaneWithWorkspace(store2, api2);
+    return;
+  }
+  openRightPanelWithWorkspace(store2, api2, action.openPanel);
+}
+function registerPanelKeyboardShortcuts(store2, api2) {
+  document.addEventListener("keydown", (e3) => {
+    if (isAnyDialogOpen()) return;
+    if (matchNewThreadShortcut(e3)) {
+      if (!store2.getState().workspaceRoot) return;
+      e3.preventDefault();
+      openNewThread(store2);
+      return;
+    }
+    if (isTypingTarget(e3.target)) return;
+    const action = matchPanelShortcut(e3);
+    if (!action) return;
+    e3.preventDefault();
+    handlePanelShortcut(store2, api2, action);
+  });
+}
+var init_keyboard_shortcuts = __esm({
+  "src/renderer/keyboard-shortcuts.ts"() {
+    init_thread_helpers();
+    init_panels();
+    init_dialog_shell();
+  }
+});
+
 // src/renderer/views/input-bar.ts
+function pasteBelongsElsewhere(target) {
+  if (isAnyDialogOpen() || isTypingTarget(target)) return true;
+  return target instanceof Element && target.closest(".monaco-editor, .xterm") !== null;
+}
 function mountInputBar(root, store2, api2, opts = {}) {
   const chips = el("div", { class: "attachment-chips" });
   const composer = mountComposerEditor();
@@ -116234,9 +116540,12 @@ ${description}
     draftAutosave.schedule();
   });
   let stopPendingThreadId = null;
+  let stopPendingTimer = null;
   function clearStopPending() {
     stopPendingThreadId = null;
     stopBtn.classList.remove("stop-pending");
+    if (stopPendingTimer !== null) clearTimeout(stopPendingTimer);
+    stopPendingTimer = null;
   }
   function updateTargetPicker() {
     if (!containerRunMounted) return;
@@ -116268,10 +116577,14 @@ ${description}
     composer.el.classList.toggle("with-stop", running);
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending();
   }
-  const handleStopShortcut2 = (key) => {
+  const handleStopShortcut2 = (key, target = null) => {
     const id = getActiveThreadId();
     const thread = getActiveThread(store2);
     if (!id || thread?.status !== "running") {
+      clearStopPending();
+      return false;
+    }
+    if (isTypingTarget(target) && !(target instanceof Node && root.contains(target))) {
       clearStopPending();
       return false;
     }
@@ -116283,10 +116596,16 @@ ${description}
     if (key === "Escape") {
       stopPendingThreadId = id;
       stopBtn.classList.add("stop-pending");
+      stopPendingTimer = setTimeout(clearStopPending, STOP_PENDING_TIMEOUT_MS);
       return true;
     }
     return false;
   };
+  const disarmStopOnOtherKey = (e3) => {
+    if (stopPendingThreadId === null || STOP_SHORTCUT_PASSTHROUGH_KEYS.has(e3.key)) return;
+    clearStopPending();
+  };
+  document.addEventListener("keydown", disarmStopOnOtherKey, true);
   function showBranchMismatch(branch) {
     mismatchBranch = branch;
     branchWarning.hidden = false;
@@ -116548,7 +116867,7 @@ ${description}
     (e3) => {
       if (e3.isComposing || stopPendingThreadId === null) return;
       if (e3.key !== "Escape" && e3.key !== "Enter") return;
-      if (handleStopShortcut2(e3.key)) {
+      if (handleStopShortcut2(e3.key, e3.target)) {
         e3.preventDefault();
         e3.stopPropagation();
       }
@@ -117110,6 +117429,7 @@ ${reply}`);
   };
   fileInput.addEventListener("change", onFileInputChange);
   const onPaste = (e3) => {
+    if (!composer.isFocused() && pasteBelongsElsewhere(e3.target)) return;
     const items = Array.from(e3.clipboardData?.items ?? []);
     const img = items.find((i2) => i2.type.startsWith("image/"));
     if (img) {
@@ -117334,6 +117654,8 @@ ${reply}`);
       unsubWorkspace();
       window.removeEventListener("copse:skills-changed", onSkillsChanged);
       document.removeEventListener("paste", onPaste);
+      document.removeEventListener("keydown", disarmStopOnOtherKey, true);
+      clearStopPending();
       document.removeEventListener("click", closeCheckoutMenu);
       observer.disconnect();
       topEdgeObserver.disconnect();
@@ -117355,7 +117677,7 @@ ${reply}`);
     }
   };
 }
-var IMAGE_DETAIL_LABELS;
+var IMAGE_DETAIL_LABELS, STOP_PENDING_TIMEOUT_MS, STOP_SHORTCUT_PASSTHROUGH_KEYS;
 var init_input_bar = __esm({
   "src/renderer/views/input-bar.ts"() {
     init_helpers();
@@ -117415,11 +117737,23 @@ var init_input_bar = __esm({
     init_estimate_cost();
     init_model_selection2();
     init_perf();
+    init_keyboard_shortcuts();
+    init_dialog_shell();
     IMAGE_DETAIL_LABELS = {
       auto: "Auto detail (provider decides)",
       low: "Low detail \u2014 cheapest, text may be unreadable",
       high: "High detail \u2014 full fidelity, most tokens"
     };
+    STOP_PENDING_TIMEOUT_MS = 3e3;
+    STOP_SHORTCUT_PASSTHROUGH_KEYS = /* @__PURE__ */ new Set([
+      "Escape",
+      "Enter",
+      "Shift",
+      "Control",
+      "Alt",
+      "Meta",
+      "CapsLock"
+    ]);
   }
 });
 
@@ -130227,56 +130561,87 @@ var init_pr_pane_activity = __esm({
 });
 
 // src/renderer/views/pr-thread-relationships.ts
-function renderPrThreadRelationships(rows, openThread) {
+function threadChip(row2, kind, openThread) {
+  const kindLabel2 = row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "pr-open-thread-btn pr-thread-link",
+      "data-thread-id": row2.threadId,
+      "data-relationship": kind,
+      "aria-label": `Open thread: ${row2.title}`
+    },
+    el("span", { class: "pr-thread-title" }, row2.title),
+    ...kind === "related" ? [el("span", { class: "pr-thread-kind" }, kindLabel2)] : []
+  );
+  button.addEventListener("click", () => {
+    openThread(row2.threadId);
+  });
+  return button;
+}
+function renderPrThreadRelationships(rows, openThread, view = {}) {
   const host = el("section", {
     class: "pr-thread-relationships",
     "aria-label": "PR thread relationships"
   });
-  const groups = [
-    {
-      label: "Producing threads",
-      kind: "produced",
-      rows: rows.filter((row2) => row2.kinds.includes("produced"))
-    },
-    {
-      label: "Related threads",
-      kind: "related",
-      rows: rows.filter((row2) => !row2.kinds.includes("produced"))
-    }
-  ];
-  for (const group of groups) {
-    if (group.rows.length === 0) continue;
-    const section = el(
-      "div",
-      { class: "pr-thread-group", "data-relationship-group": group.kind },
-      el("h5", {}, group.label)
+  const produced = rows.filter((row2) => row2.kinds.includes("produced"));
+  const related = rows.filter((row2) => !row2.kinds.includes("produced"));
+  if (produced.length > 0) {
+    host.append(
+      el(
+        "div",
+        { class: "pr-thread-group", "data-relationship-group": "produced" },
+        el("h5", {}, "Produced by"),
+        ...produced.map((row2) => threadChip(row2, "produced", openThread))
+      )
     );
-    for (const row2 of group.rows) {
-      const label = row2.kinds.includes("produced") ? "Created PR" : row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
-      const button = el(
-        "button",
-        {
-          type: "button",
-          class: "pr-open-thread-btn pr-thread-link",
-          "data-thread-id": row2.threadId,
-          "data-relationship": group.kind,
-          "aria-label": `Open thread: ${row2.title}`
-        },
-        el("span", { class: "pr-thread-title" }, row2.title),
-        el("span", { class: "pr-thread-kind" }, label)
-      );
-      button.addEventListener("click", () => {
-        openThread(row2.threadId);
-      });
-      section.append(button);
-    }
-    host.append(section);
   }
+  if (related.length === 0) return host;
+  if (produced.length === 0) {
+    host.append(
+      el(
+        "div",
+        { class: "pr-thread-group", "data-relationship-group": "related" },
+        el("h5", {}, "Related threads"),
+        ...related.map((row2) => threadChip(row2, "related", openThread))
+      )
+    );
+    return host;
+  }
+  let expanded = view.expanded ?? false;
+  const group = el(
+    "div",
+    {
+      class: "pr-thread-group pr-thread-group-more",
+      "data-relationship-group": "related",
+      "aria-label": "Related threads"
+    },
+    ...related.map((row2) => threadChip(row2, "related", openThread))
+  );
+  const toggle = el(
+    "button",
+    { type: "button", class: "pr-thread-toggle" },
+    el("span", {}, `${String(related.length)} related`),
+    chevronRightIcon("ui-icon ui-icon-sm")
+  );
+  const sync = () => {
+    group.hidden = !expanded;
+    toggle.setAttribute("aria-expanded", String(expanded));
+  };
+  sync();
+  toggle.addEventListener("click", () => {
+    expanded = !expanded;
+    sync();
+    view.onToggle?.(expanded);
+  });
+  host.append(toggle, group);
   return host;
 }
 var init_pr_thread_relationships = __esm({
   "src/renderer/views/pr-thread-relationships.ts"() {
     init_helpers();
+    init_icons();
   }
 });
 
@@ -130379,6 +130744,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     class: "pr-detail-sections",
     "aria-label": "Pull request sections"
   });
+  const relationshipsHost = el("div", { class: "pr-relationships-host" });
   const activityHost = el("div", { class: "pr-activity", hidden: true });
   const descriptionHost = el("div", {
     class: "pr-viewer-description message-text streaming-markdown"
@@ -130391,6 +130757,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   viewerRoot.append(
     metaHost,
     sectionsHost,
+    relationshipsHost,
     activityHost,
     descriptionHost,
     filesHost,
@@ -130399,6 +130766,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     emptyState
   );
   let activeSection = "overview";
+  const relatedExpanded = /* @__PURE__ */ new Map();
   let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
@@ -130555,6 +130923,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     clear(listBody);
     listBody.append(paneLoadingRow("Loading pull requests\u2026"));
     clear(metaHost);
+    clear(relationshipsHost);
     clear(descriptionHost);
     descriptionHost.classList.remove("pr-viewer-description-fill");
     clear(filesHost);
@@ -130573,6 +130942,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   function renderGhUnavailableViewer() {
     clear(metaHost);
     clear(sectionsHost);
+    clear(relationshipsHost);
     activityHost.hidden = true;
     clear(descriptionHost);
     descriptionHost.classList.remove("pr-viewer-description-fill");
@@ -130851,17 +131221,33 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     });
     return btn;
   }
-  function renderMeta() {
-    clear(metaHost);
+  function renderRelationships() {
+    clear(relationshipsHost);
     if (!selectedPr) return;
-    const relationships = prRelationships ? renderPrThreadRelationships(prRelationships, (id) => {
-      switchThread(store2, id);
-    }) : el(
+    const prKey = githubPrKey(selectedPr);
+    const relationships = prRelationships ? renderPrThreadRelationships(
+      prRelationships,
+      (id) => {
+        switchThread(store2, id);
+      },
+      {
+        expanded: relatedExpanded.get(prKey),
+        onToggle: (expanded) => {
+          relatedExpanded.set(prKey, expanded);
+        }
+      }
+    ) : el(
       "p",
       { class: "pr-thread-empty", role: "status" },
       relationshipError ? "Thread relationships unavailable." : "Loading thread relationships\u2026"
     );
     relationships.hidden = prDetails !== null && activeSection !== "overview";
+    relationshipsHost.append(relationships);
+  }
+  function renderMeta() {
+    clear(metaHost);
+    renderRelationships();
+    if (!selectedPr) return;
     if (!prDetails) {
       metaHost.append(
         el(
@@ -130877,8 +131263,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           "div",
           { class: "pr-viewer-subtitle" },
           `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`
-        ),
-        relationships
+        )
       );
       return;
     }
@@ -131039,8 +131424,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       branch,
       badges,
       actions,
-      statusLine,
-      relationships
+      statusLine
     );
   }
   function renderDescription() {
@@ -133405,27 +133789,27 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
         }
         const trackedThread = getThreadById(store2, itemThreadId(item));
         if (trackedThread) {
-          const threadChip = el("span", {
+          const threadChip2 = el("span", {
             class: "roadmap-thread-chip",
             role: "link",
             tabindex: "0",
             title: `Reopen thread "${trackedThread.title}"`,
             "aria-label": `Reopen thread "${trackedThread.title}"`
           });
-          threadChip.append(attachmentIcon("thread", "ui-icon roadmap-thread-chip-icon"));
-          threadChip.addEventListener("click", (e3) => {
+          threadChip2.append(attachmentIcon("thread", "ui-icon roadmap-thread-chip-icon"));
+          threadChip2.addEventListener("click", (e3) => {
             e3.stopPropagation();
             switchThread(store2, trackedThread.id);
             getPromptAttachmentHandlers()?.focusComposer?.();
           });
-          threadChip.addEventListener("keydown", (e3) => {
+          threadChip2.addEventListener("keydown", (e3) => {
             if (e3.key !== "Enter" && e3.key !== " ") return;
             e3.preventDefault();
             e3.stopPropagation();
             switchThread(store2, trackedThread.id);
             getPromptAttachmentHandlers()?.focusComposer?.();
           });
-          meta3.append(threadChip);
+          meta3.append(threadChip2);
         }
         const complexity = item.fields["complexity"];
         if (isRoadmapComplexity(complexity)) {
@@ -157119,89 +157503,6 @@ var init_chat_layout = __esm({
   }
 });
 
-// src/renderer/keyboard-shortcuts.ts
-function isTypingTarget(target) {
-  if (target === null || !("tagName" in target) || typeof target.tagName !== "string") return false;
-  const tag = target.tagName;
-  if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return true;
-  return "isContentEditable" in target && target.isContentEditable === true;
-}
-function matchNewThreadShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return false;
-  return e3.key === "n" || e3.key === "N";
-}
-function matchFindInChatShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return false;
-  return e3.key === "f" || e3.key === "F";
-}
-function matchUiScaleShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return null;
-  if (e3.key === "0" || e3.code === "Digit0" || e3.code === "Numpad0") return "reset";
-  if (e3.key === "=" || e3.key === "+" || e3.code === "Equal" || e3.code === "NumpadAdd") return "in";
-  if (e3.key === "-" || e3.key === "_" || e3.code === "Minus" || e3.code === "NumpadSubtract") {
-    return "out";
-  }
-  return null;
-}
-function matchCommandPaletteShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
-  return e3.key === "k" || e3.key === "K";
-}
-function matchActivityPanelShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
-  return e3.key === "a" || e3.key === "A";
-}
-function matchPanelShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey) return null;
-  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "toggleSidebar";
-  if (!e3.shiftKey && (e3.key === "j" || e3.key === "J")) return "togglePanel";
-  if (e3.shiftKey && (e3.key === "e" || e3.key === "E")) return { openPanel: "explorer" };
-  if (e3.shiftKey && (e3.key === "g" || e3.key === "G")) return { openPanel: "changes" };
-  if (e3.shiftKey && (e3.key === "b" || e3.key === "B")) return { openPanel: "browser" };
-  if (!e3.shiftKey && (e3.key === "`" || e3.code === "Backquote")) return { openPanel: "terminal" };
-  return null;
-}
-function handlePanelShortcut(store2, api2, action) {
-  if (action === "toggleSidebar") {
-    toggleProjectsPane(store2);
-    return;
-  }
-  if (action === "togglePanel") {
-    toggleFilesPaneWithWorkspace(store2, api2);
-    return;
-  }
-  openRightPanelWithWorkspace(store2, api2, action.openPanel);
-}
-function registerPanelKeyboardShortcuts(store2, api2) {
-  document.addEventListener("keydown", (e3) => {
-    if (isAnyDialogOpen()) return;
-    if (matchNewThreadShortcut(e3)) {
-      if (!store2.getState().workspaceRoot) return;
-      e3.preventDefault();
-      openNewThread(store2);
-      return;
-    }
-    if (isTypingTarget(e3.target)) return;
-    const action = matchPanelShortcut(e3);
-    if (!action) return;
-    e3.preventDefault();
-    handlePanelShortcut(store2, api2, action);
-  });
-}
-var init_keyboard_shortcuts = __esm({
-  "src/renderer/keyboard-shortcuts.ts"() {
-    init_thread_helpers();
-    init_panels();
-    init_dialog_shell();
-  }
-});
-
 // src/renderer/popout/popout-titlebar.ts
 function mountPopoutTitlebar(host, store2, api2) {
   const bar = el("div", { class: "titlebar popout-titlebar" });
@@ -166586,9 +166887,9 @@ function registerKeyboardShortcuts() {
         closeSettingsDialog();
         return;
       }
-      if (handleStopShortcut?.("Escape")) e3.preventDefault();
+      if (handleStopShortcut?.("Escape", e3.target)) e3.preventDefault();
     }
-    if (e3.key === "Enter" && handleStopShortcut?.("Enter")) {
+    if (e3.key === "Enter" && handleStopShortcut?.("Enter", e3.target)) {
       e3.preventDefault();
     }
     if (e3.ctrlKey && !e3.metaKey && !e3.altKey && e3.key === "Tab") {
