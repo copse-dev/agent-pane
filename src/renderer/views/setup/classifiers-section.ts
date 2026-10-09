@@ -298,6 +298,15 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     if (approved) await localAction(() => api.localClassifiers.install(server.id))
   }
 
+  async function confirmUninstall(server: LocalClassifierStatus): Promise<void> {
+    const approved = await showConfirmDialog({
+      message: `Uninstall ${server.label}?`,
+      detail: `Copse will delete the ${server.label} checkout, environment and downloaded model files from its classifier cache (about ${String(server.downloadGb)} GB). The saved connection stays until you remove it; the shared package cache is kept.`,
+      confirmLabel: 'Uninstall',
+    })
+    if (approved) await localAction(() => api.localClassifiers.uninstall(server.id))
+  }
+
   function localButton(label: string, className: string, onClick: () => void): HTMLButtonElement {
     const button = el(
       'button',
@@ -331,6 +340,9 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         actions.append(
           localButton('Start', 'classifier-local-start', () => {
             void localAction(() => api.localClassifiers.start(server.id))
+          }),
+          localButton('Uninstall', 'classifier-local-uninstall', () => {
+            void confirmUninstall(server)
           }),
         )
         break

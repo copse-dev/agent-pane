@@ -16,6 +16,8 @@ import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { composeContextBreakdown } from '@copse/agent/context-breakdown.ts'
 import { PARENT_DELEGATED_TOOLS, withoutUnofferedWriteAccess } from './agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
+import { withClassifierToolOffer } from '../tools/classifier-tool.ts'
+import { configuredClassifierProfiles } from './classifiers/classifier-service.ts'
 import { isAppleDevelopmentToolOffered } from './apple-development/apple-development-tool-scope.ts'
 
 /** MCP tools are registered with a `[MCP:<server>]` description prefix (mcp-registry.ts). */
@@ -86,9 +88,10 @@ export async function estimateContextBreakdown(
   const tools = withoutUnofferedWriteAccess(registry.toLLMTools(), input.deferredWorktree === true)
     .filter((tool) => isAppleDevelopmentToolOffered(tool.name, input.projectId))
     .filter((t) => (subagentsEnabled ? !delegated.has(t.name) : t.name !== 'explore'))
+  const offered = withClassifierToolOffer(tools, configuredClassifierProfiles())
   let toolsTokens = 0
   let mcpTokens = 0
-  for (const tool of tools) {
+  for (const tool of offered) {
     const tokens = estimateToolTokens(tool)
     if (isMcpTool(tool)) mcpTokens += tokens
     else toolsTokens += tokens
