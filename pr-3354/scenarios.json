@@ -24,6 +24,10 @@
     "label": "Balanced model rule label"
   },
   {
+    "id": "prompt-model-first-ask",
+    "label": "Prompt matching without transcript diagnostics"
+  },
+  {
     "id": "footer-compact",
     "label": "Responsive composer footer"
   },
@@ -92,6 +96,10 @@
     "label": "Settings scroll + sticky footer geometry"
   },
   {
+    "id": "plugin-install-review",
+    "label": "Plugin catalogue install review"
+  },
+  {
     "id": "mcp-sign-in",
     "label": "MCP servers that sign in with OAuth"
   },
@@ -120,8 +128,20 @@
     "label": "Sidebar automation fold"
   },
   {
+    "id": "sidebar-empty-project",
+    "label": "Empty unopened project in the sidebar"
+  },
+  {
+    "id": "sidebar-other-projects",
+    "label": "Sidebar listing threads of projects not opened yet"
+  },
+  {
     "id": "sidebar-thread-sort",
     "label": "Sidebar thread sort"
+  },
+  {
+    "id": "sidebar-thread-changes",
+    "label": "Sidebar changes glyph"
   },
   {
     "id": "activity-home",
@@ -142,6 +162,10 @@
   {
     "id": "activity-home-empty",
     "label": "Activity home with nothing to list"
+  },
+  {
+    "id": "pr-relations",
+    "label": "PR producing and related threads"
   },
   {
     "id": "chat-layout-styling",
