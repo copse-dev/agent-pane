@@ -371,9 +371,10 @@ describe('compareApiProtocol', () => {
     $defs: defs,
   })
   const str: JsonSchema = { type: 'string' }
+  // As the generator writes a fixed-length tuple: no `prefixItems` when empty.
   const tuple = (...items: JsonSchema[]): JsonSchema => ({
     type: 'array',
-    prefixItems: items,
+    ...(items.length > 0 ? { prefixItems: items } : {}),
     minItems: items.length,
     maxItems: items.length,
   })
@@ -390,9 +391,9 @@ describe('compareApiProtocol', () => {
     assert.deepEqual(compareApiProtocol(before, after), {
       breaking: [
         'channels.invoke.a:del: removed',
-        'channels.invoke.a:get: shape changed (args: required item added)',
+        'channels.invoke.a:get: shape changed (args: items added to data the client sends)',
         'client.ns.del: removed',
-        'client.ns.get: shape changed (params: required item added)',
+        'client.ns.get: shape changed (params: items added to data the client sends)',
       ],
       additive: ['channels.invoke.a:new: added', 'client.ns.new: added'],
     })
@@ -521,7 +522,39 @@ describe('compareApiProtocol', () => {
       )
     })
 
-    it('accepts a new optional trailing argument but not a required one', () => {
+    it('keeps a member from gaining a field another union member is told apart by', () => {
+      // A client narrows `Dir | File` with `'size' in entry`, so an old client
+      // would take a Dir that gained `size` for a File.
+      const dir = (extra: Record<string, JsonSchema> = {}): JsonSchema =>
+        obj({ name: str, ...extra }, ['name'])
+      const file = obj({ name: str, size: { type: 'number' } }, ['name', 'size'])
+      const listing = (...members: JsonSchema[]): JsonSchema => ({
+        type: 'array',
+        items: { anyOf: members },
+      })
+      const before = doc({ 'a:list': { args: tuple(), result: listing(dir(), file) } })
+      assert.deepEqual(
+        compareApiProtocol(
+          before,
+          doc({ 'a:list': { args: tuple(), result: listing(dir({ size: str }), file) } }),
+        ),
+        broken(
+          'a:list',
+          'list',
+          'result[].size',
+          'added to a union member that another member has',
+        ),
+      )
+      assert.deepEqual(
+        compareApiProtocol(
+          before,
+          doc({ 'a:list': { args: tuple(), result: listing(dir({ note: str }), file) } }),
+        ),
+        widened('a:list', 'list'),
+      )
+    })
+
+    it('treats any argument added to a call as breaking, since hosts check arity', () => {
       const before = doc({ 'a:get': { args: tuple(str), result: str } })
       const optionalTail = doc({
         'a:get': {
@@ -529,15 +562,32 @@ describe('compareApiProtocol', () => {
           result: str,
         },
       })
-      assert.deepEqual(compareApiProtocol(before, optionalTail), widened('a:get', 'get'))
+      assert.deepEqual(
+        compareApiProtocol(before, optionalTail),
+        broken('a:get', 'get', 'args', 'items added to data the client sends'),
+      )
       const requiredTail = doc({ 'a:get': { args: tuple(str, str), result: str } })
       assert.deepEqual(
         compareApiProtocol(before, requiredTail),
-        broken('a:get', 'get', 'args', 'required item added'),
+        broken('a:get', 'get', 'args', 'items added to data the client sends'),
       )
     })
 
-    it('ignores parameter names but not fields named description or title', () => {
+    it('keeps the qualifiers beside a $ref, so T becoming T | undefined is breaking', () => {
+      const defs = { Thread: obj({ id: str }, ['id']) }
+      const before = doc({ 'a:get': { args: tuple(), result: { $ref: '#/$defs/Thread' } } }, defs)
+      const after = doc(
+        { 'a:get': { args: tuple(), result: { $ref: '#/$defs/Thread', 'x-optional': true } } },
+        defs,
+      )
+      assert.deepEqual(
+        compareApiProtocol(before, after),
+        broken('a:get', 'get', 'result', 'x-optional changed'),
+      )
+    })
+
+    it('compares parameter names and fields named description or title', () => {
+      // A rename cannot be told apart from two same-typed parameters swapping.
       const named = (title: string): JsonSchema => ({
         type: 'array',
         prefixItems: [{ title, ...str }],
@@ -549,7 +599,7 @@ describe('compareApiProtocol', () => {
           doc({ 'a:get': { args: named('id'), result: str } }),
           doc({ 'a:get': { args: named('threadId'), result: str } }),
         ),
-        { breaking: [], additive: [] },
+        broken('a:get', 'get', 'args[0]', 'title changed'),
       )
       for (const field of ['description', 'title']) {
         assert.deepEqual(
@@ -564,10 +614,42 @@ describe('compareApiProtocol', () => {
       }
     })
 
-    it('treats an optional field added to an event payload as additive', () => {
-      const withEvent = (payload: JsonSchema): ApiProtocolDocument => {
+    it('widens an empty result object and an intersection member, but not a record', () => {
+      const empty: JsonSchema = { type: 'object' }
+      assert.deepEqual(
+        compareApiProtocol(
+          doc({ 'a:get': { args: tuple(), result: empty } }),
+          doc({ 'a:get': { args: tuple(), result: obj({ note: str }, []) } }),
+        ),
+        widened('a:get', 'get'),
+      )
+      const both = (extra: Record<string, JsonSchema>): JsonSchema => ({
+        allOf: [obj({ id: str }, ['id']), obj({ name: str, ...extra }, ['name'])],
+      })
+      assert.deepEqual(
+        compareApiProtocol(
+          doc({ 'a:get': { args: tuple(), result: both({}) } }),
+          doc({ 'a:get': { args: tuple(), result: both({ note: str }) } }),
+        ),
+        widened('a:get', 'get'),
+      )
+      const record = (properties: Record<string, JsonSchema>): JsonSchema => ({
+        type: 'object',
+        ...(Object.keys(properties).length > 0 ? { properties } : {}),
+        additionalProperties: { type: 'number' },
+      })
+      assert.deepEqual(
+        compareApiProtocol(
+          doc({ 'a:get': { args: tuple(), result: record({}) } }),
+          doc({ 'a:get': { args: tuple(), result: record({ note: str }) } }),
+        ),
+        broken('a:get', 'get', 'result.note', 'added beside a record index'),
+      )
+    })
+
+    it('treats an optional field or trailing argument added to an event as additive', () => {
+      const withEvent = (args: JsonSchema): ApiProtocolDocument => {
         const base = doc({})
-        const args = tuple(payload)
         return {
           ...base,
           channels: { ...base.channels, event: { 'a:changed': { 'x-api': 'ns.onChanged', args } } },
@@ -576,18 +658,35 @@ describe('compareApiProtocol', () => {
           },
         }
       }
+      const widenedEvent = {
+        breaking: [],
+        additive: [
+          'channels.event.a:changed: widened compatibly',
+          'client.ns.onChanged: widened compatibly',
+        ],
+      }
+      const payload = obj({ id: str }, ['id'])
       assert.deepEqual(
         compareApiProtocol(
-          withEvent(obj({ id: str }, ['id'])),
-          withEvent(obj({ id: str, note: str }, ['id'])),
+          withEvent(tuple(payload)),
+          withEvent(tuple(obj({ id: str, note: str }, ['id']))),
         ),
-        {
-          breaking: [],
-          additive: [
-            'channels.event.a:changed: widened compatibly',
-            'client.ns.onChanged: widened compatibly',
-          ],
-        },
+        widenedEvent,
+      )
+      assert.deepEqual(
+        compareApiProtocol(
+          withEvent(tuple(payload)),
+          withEvent({ type: 'array', prefixItems: [payload, str], minItems: 1, maxItems: 2 }),
+        ),
+        widenedEvent,
+      )
+      // A handler that took nothing (`onSettings(() => …)`) gains an optional argument.
+      assert.deepEqual(
+        compareApiProtocol(
+          withEvent(tuple()),
+          withEvent({ type: 'array', prefixItems: [str], minItems: 0, maxItems: 1 }),
+        ),
+        widenedEvent,
       )
     })
   })
@@ -610,7 +709,7 @@ describe('protocolVersionProblem', () => {
   it('asks for one more than the release when trunk has no unreleased bump', () => {
     assert.match(
       protocolVersionProblem({ breaking: true, base: 42, head: 42, released: 42 }) ?? '',
-      /v42 is already released\. Set API_PROTOCOL_VERSION .* to 43/,
+      /v42 has shipped or is about to\. Set API_PROTOCOL_VERSION .* on main to 43/,
     )
     assert.equal(protocolVersionProblem({ breaking: true, base: 42, head: 43, released: 42 }), null)
     // A base that predates the release still has to clear the release.
@@ -767,7 +866,7 @@ describe('gen-api-protocol --compare-ref', () => {
     }
   })
 
-  it('fails closed when the release cannot be read, before generating anything', () => {
+  it('fails closed when the release cannot be read', () => {
     // Reading the release can only relax the rule, so an unreadable one must
     // not pass silently either.
     const { status, out } = run('HEAD', undefined, ['--released-ref', 'origin/no-such-release'])
@@ -776,5 +875,23 @@ describe('gen-api-protocol --compare-ref', () => {
     const missing = run('HEAD', undefined, ['--released-ref'])
     assert.equal(missing.status, 2, missing.out)
     assert.match(missing.out, /--released-ref needs a git ref/)
+  })
+
+  it('refuses a release on the commit under test and a release without a comparison', () => {
+    // A push to release is tagged while CI runs: that tag is this commit being
+    // released, so judging against it would demand a bump the release cannot have.
+    const self = run('HEAD~1', undefined, ['--released-ref', 'HEAD'])
+    assert.equal(self.status, 2, self.out)
+    assert.match(self.out, /is the commit under test/)
+    const swallowed = run('--released-ref', undefined, ['HEAD'])
+    assert.equal(swallowed.status, 2, swallowed.out)
+    assert.match(swallowed.out, /--compare-ref needs a git ref/)
+    const alone = spawnSync(
+      process.execPath,
+      [resolve(ROOT, 'scripts/gen-api-protocol.mts'), '--released-ref', 'HEAD'],
+      { cwd: ROOT, encoding: 'utf8' },
+    )
+    assert.equal(alone.status, 2, `${alone.stdout}${alone.stderr}`)
+    assert.match(alone.stderr, /only applies with --compare-ref/)
   })
 })

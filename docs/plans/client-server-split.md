@@ -59,7 +59,7 @@ invariants test, so the surface changes only deliberately. Delivered:
 - `scripts/lib/api-protocol.test.ts`: drift (committed manifest equals generated),
   every method bound to one namespaced channel, every channel has a literal
   main-process endpoint, no dangling `$ref`s. `--compare-ref <git-ref>` classifies a change as additive or
-  breaking and fails a breaking change without a version bump.
+  breaking and fails a breaking change whose version is not above the release (`--released-ref`).
 - The preload object is now declared `const api: ApiClient`. It was never checked against
   the contract before; five subscription listeners were typed `unknown` /
   `string` where the contract has precise types, and are now aligned.

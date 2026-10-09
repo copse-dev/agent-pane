@@ -189,9 +189,10 @@ jobs:
       # Full history of the commit under test, for the oracle's base diff and the
       # gitleaks history scan. Not `fetch-depth: 0`: that also fetched every
       # other branch (~575, mostly screenshot-compare/*) and every tag, 2.3 GB
-      # against ~1 GB for this history alone. Nothing here reads another branch:
-      # a pull_request merge commit has the PR base as a parent, and every step
-      # that needs `BASE_SHA` still fetches it explicitly. A push's `before` is
+      # against ~1 GB for this history alone. Only the API protocol step reads
+      # other refs (release, promote/main and the v* tags), and it fetches just
+      # those: a pull_request merge commit has the PR base as a parent, and every
+      # step that needs `BASE_SHA` still fetches it explicitly. A push's `before` is
       # usually an ancestor, but a force-push may have replaced it; the plan
       # step fetches it unshallowed for that, and the oracle fails closed (full
       # plan) whenever it still finds no merge-base.
@@ -300,6 +301,8 @@ jobs:
         env:
           # PR/queue base; previous tip on push. Empty for schedule.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          # The branch the change lands on (`main` or `release`).
+          TARGET_REF: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref_name }}
         run: |
           set -euo pipefail
           # No usable base (schedule, first push, branch create) -> nothing to
@@ -315,19 +318,48 @@ jobs:
           # genuinely predates the protocol, which it allows.
           git fetch --no-tags --quiet origin "$BASE_SHA" 2>/dev/null || true
           # A version names a released surface (docs/api-protocol.md), so a
-          # breaking change needs a version above the latest release tag, and
-          # changes between two releases share one bump. Without that tag the
-          # script falls back to requiring a bump over the base, so failing to
-          # read it can only make the gate stricter.
-          released_args=()
+          # breaking change needs a version above the newest surface that ships
+          # without it, and changes between two releases share one bump. That
+          # surface is the latest release tag, or, for a change landing on main
+          # while a promotion carrying a not-yet-tagged version is pending, that
+          # promotion. Without it the script falls back to requiring a bump over
+          # the base, so failing to read it can only make the gate stricter.
+          released_ref=''
           if git fetch --no-tags --quiet origin \
-               '+refs/heads/release:refs/remotes/origin/release' '+refs/tags/v*:refs/tags/v*' &&
-             released_tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' refs/remotes/origin/release); then
-            released_args=(--released-ref "$released_tag")
-          else
-            echo "::warning::Could not read the latest release tag; requiring a bump over the base instead"
+               '+refs/heads/release:refs/remotes/origin/release' '+refs/tags/v*:refs/tags/v*'; then
+            # A tag on the commit under test is this push being released (Cut
+            # release tag runs alongside), not the release before it.
+            exclude_head=()
+            while IFS= read -r tag; do
+              exclude_head+=(--exclude "$tag")
+            done < <(git tag --points-at HEAD --list 'v[0-9]*')
+            released_ref=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${exclude_head[@]}" \
+              refs/remotes/origin/release) || released_ref=''
           fi
-          node scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA" "${released_args[@]}"
+          # Skip the promotion when it already contains the commit under test
+          # (a push to main that was pinned before its own CI read it).
+          if [ -n "$released_ref" ] && [ "${TARGET_REF#refs/heads/}" != release ] &&
+             git fetch --no-tags --quiet origin \
+               '+refs/heads/promote/main:refs/remotes/origin/promote/main' 2>/dev/null &&
+             ! git merge-base --is-ancestor HEAD refs/remotes/origin/promote/main; then
+            pending=$(git show refs/remotes/origin/promote/main:package.json |
+              node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version') || pending=''
+            if [ -n "$pending" ] && ! git rev-parse --quiet --verify "refs/tags/v${pending}" >/dev/null; then
+              released_ref=refs/remotes/origin/promote/main
+            fi
+          fi
+          released_args=()
+          if [ -n "$released_ref" ]; then
+            released_args=(--released-ref "$released_ref")
+          else
+            echo "::warning::Could not read the latest release, so this run requires a bump over the base. If main already carries an unreleased bump, re-run before bumping."
+          fi
+          if ! node scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA" "${released_args[@]}"; then
+            if [ "${TARGET_REF#refs/heads/}" = release ]; then
+              echo "::error::A promotion only carries main's commits: land the version bump on main, then promote again."
+            fi
+            exit 1
+          fi
       # Fail closed on high/critical dependency advisories. This runs after the
       # lockfile-exact setup, so it audits precisely the tree CI will execute.
       # The registry's audit endpoint intermittently times out from hosted

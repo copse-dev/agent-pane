@@ -41,7 +41,7 @@ const manifest = serializeApiProtocolManifest(manifestOf(doc))
 const compareIndex = args.indexOf('--compare-ref')
 if (compareIndex !== -1) {
   const ref = args[compareIndex + 1]
-  if (!ref) {
+  if (!ref || ref.startsWith('--')) {
     console.error('--compare-ref needs a git ref')
     process.exit(2)
   }
@@ -51,9 +51,17 @@ if (compareIndex !== -1) {
     console.error('--released-ref needs a git ref (the latest release tag)')
     process.exit(2)
   }
+  if (releasedRef !== undefined && sameCommit(releasedRef, 'HEAD')) {
+    // A tag on the commit under test is this commit being released; the
+    // surface it must clear is the release before it.
+    console.error(
+      `--released-ref ${releasedRef} is the commit under test; pass the release before it`,
+    )
+    process.exit(2)
+  }
   const previousVersion = versionAtRef(ref)
-  // Read before generating anything, so an unreadable release fails fast. A
-  // release that predates the protocol released no version at all.
+  // Read before generating the base's protocol, so an unreadable release fails
+  // fast. A release that predates the protocol released no version at all.
   const releasedAt = releasedRef === undefined ? undefined : versionAtRef(releasedRef)
   const released = releasedAt === 'pre-protocol' ? 0 : releasedAt
   if (previousVersion === 'pre-protocol') {
@@ -69,7 +77,7 @@ if (compareIndex !== -1) {
   for (const line of diff.additive) console.log(`additive  ${line}`)
   for (const line of diff.breaking) console.log(`BREAKING  ${line}`)
   const releaseNote =
-    released === undefined ? '' : `; v${String(released)} released at ${releasedRef ?? ''}`
+    released === undefined ? '' : `; v${String(released)} ships at ${releasedRef ?? ''}`
   console.log(
     `${String(diff.additive.length)} additive, ${String(diff.breaking.length)} breaking; ` +
       `version ${String(previous.version)} → ${String(doc.version)}${releaseNote}`,
@@ -85,6 +93,13 @@ if (compareIndex !== -1) {
     process.exit(1)
   }
   process.exit(0)
+}
+
+if (args.includes('--released-ref')) {
+  // Without a comparison there is nothing to judge, and falling through would
+  // rewrite the manifest instead.
+  console.error('--released-ref only applies with --compare-ref')
+  process.exit(2)
 }
 
 if (args.includes('--check')) {
@@ -119,6 +134,19 @@ if (schemaIndex !== -1) {
   mkdirSync(dirname(out), { recursive: true })
   writeFileSync(out, serializeApiProtocol(doc), 'utf8')
   console.log(`Wrote ${out}: ${String(Object.keys(doc.$defs).length)} named types`)
+}
+
+/** Whether two refs name the same commit (false when either cannot be read). */
+function sameCommit(a: string, b: string): boolean {
+  try {
+    const commit = (ref: string): string =>
+      execFileSync('git', ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
+        encoding: 'utf8',
+      }).trim()
+    return commit(a) === commit(b)
+  } catch {
+    return false
+  }
 }
 
 /** Whether `git` succeeds, used to ask yes/no questions about a ref. */

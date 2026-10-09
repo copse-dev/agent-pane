@@ -9,32 +9,33 @@
  * full JSON Schema the build emits; this is the version stamped into both.
  *
  * Bump it only for a backward-incompatible change to the surface: a channel or
- * method removed or renamed, an argument added in a non-trailing position or
- * made required, a result shape narrowed. Purely additive changes (a new
- * channel, a new optional trailing argument, a new optional result field) keep
- * the version and only regenerate the schema. `scripts/gen-api-protocol.mts
+ * method removed or renamed, an argument added or made required (hosts validate
+ * their arguments as a closed tuple), a result shape narrowed. Purely additive
+ * changes (a new channel, a new optional result field) keep the version and only
+ * regenerate the schema. `scripts/gen-api-protocol.mts
  * --compare-ref <git-ref>` classifies a diff against a committed schema.
  *
  * A version names a released surface, so a breaking change needs a version
- * above the latest release tag, and every breaking change between two releases
- * shares one bump. When trunk already carries an unreleased bump, leave this
- * alone; otherwise set it to one more than the release's. Describe the change in
- * the pull request rather than on a line below, so concurrent pull requests make
- * the same one-line edit (or none) and merge cleanly instead of each claiming the
- * next number and renumbering whenever another lands. The per-version lines
- * below stop at v53, where that rule began.
+ * above the latest release (or a pending promotion that carries an untagged
+ * version), and every breaking change between two releases shares one bump.
+ * When trunk already carries an unreleased bump, leave this alone; otherwise set
+ * it to one more than the release's. Describe the change in the pull request
+ * rather than on a line below, so concurrent pull requests make the same
+ * one-line edit (or none) and merge cleanly instead of each claiming the next
+ * number and renumbering whenever another lands. The per-version lines below
+ * predate that rule.
  *
  * A transport that connects a client and server built separately — today the
  * sidecar WebSocket bridge, later a daemon — exchanges this number in its
  * handshake and refuses a peer that speaks a different one rather than letting
  * mismatched shapes reach the handler table.
  *
- * Through v53 the gate compared whole resolved shapes and could not tell an added
- * optional result field from a breaking change, so the bumps below marked
- * "conservatively" (starting with v3, `lm-studio:model-info`'s optional
- * `embedding`, #2487) versioned additive changes. `compareApiProtocol` now
- * compares each shape in the direction its data travels (docs/api-protocol.md),
- * so a change like that no longer needs a bump.
+ * Before `compareApiProtocol` compared each shape in the direction its data
+ * travels (docs/api-protocol.md), it compared whole resolved shapes and could
+ * not tell an added optional result field from a breaking change. So the bumps
+ * below marked "conservatively" (starting with v3, `lm-studio:model-info`'s
+ * optional `embedding`, #2487) versioned additive changes, which no longer need
+ * one.
  */
 // v4 adds bounded PR activity results; v5 adds nested-instruction metadata.
 // Both conservatively version optional result fields for the whole-shape gate.

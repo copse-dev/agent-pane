@@ -1065,18 +1065,21 @@ export interface ApiProtocolDiff {
   additive: string[]
 }
 
-/** Schema annotations that are not part of the wire contract. */
-const ANNOTATION_KEYWORDS = new Set(['description', 'title'])
+/**
+ * Schema annotations that are not part of the wire contract. A parameter's
+ * `title` stays: the wire is positional, but a renamed parameter cannot be told
+ * apart from two same-typed parameters that swapped places.
+ */
+const ANNOTATION_KEYWORDS = new Set(['description'])
 
 /** Schema keywords whose value is data rather than a nested schema. */
 const DATA_KEYWORDS = new Set(['const', 'enum'])
 
 /**
  * Inline every `$ref` so two documents compare by shape, not by def naming, and
- * drop annotations: a doc comment is not part of the wire contract, and a
- * `title` only names a positional parameter. Annotations are dropped only where
- * they are keywords: inside a `properties` map every key is a field name, so a
- * field called `description` or `title` keeps its schema.
+ * drop doc comments, which are not part of the wire contract. They are dropped
+ * only where they are keywords: inside a `properties` map every key is a field
+ * name, so a field called `description` keeps its schema.
  */
 function resolveRefs(
   doc: ApiProtocolDocument,
@@ -1089,8 +1092,15 @@ function resolveRefs(
   const ref = value['$ref']
   if (!isPropertyMap && typeof ref === 'string' && ref.startsWith('#/$defs/')) {
     const name = ref.slice('#/$defs/'.length)
-    if (seen.includes(name)) return { 'x-recursive': name }
-    return resolveRefs(doc, doc.$defs[name] ?? { 'x-missing-def': name }, [...seen, name])
+    const target = seen.includes(name)
+      ? { 'x-recursive': name }
+      : resolveRefs(doc, doc.$defs[name] ?? { 'x-missing-def': name }, [...seen, name])
+    // Keywords beside a `$ref` qualify it: `T | undefined` for a named `T` is
+    // `{ $ref, 'x-optional': true }`, and dropping them would hide that change.
+    const siblings = Object.entries(value).filter(([key]) => key !== '$ref')
+    if (siblings.length === 0) return target
+    const qualifiers = resolveRefs(doc, Object.fromEntries(siblings), seen)
+    return isRecord(target) && isRecord(qualifiers) ? { ...target, ...qualifiers } : target
   }
   return Object.fromEntries(
     Object.entries(value)
@@ -1142,13 +1152,14 @@ function worse(a: Compat, b: Compat): Compat {
  * docs/api-protocol.md lists as additive:
  *
  * - an object in data the host sends gains a field that is not required;
- * - a fixed-length tuple gains trailing items a caller may omit (a new optional
- *   trailing argument);
- * - either of those nested in a field, array item, record value or union member.
+ * - a fixed-length tuple in data the host sends gains trailing items that may be
+ *   absent (a new optional argument to a subscribe handler);
+ * - either of those nested in a field, array item, record value, or union or
+ *   intersection member.
  *
  * Everything else that differs is breaking, including a new union member or
- * enum value, a field becoming required or optional, and a field added to data
- * the client sends.
+ * enum value, a field becoming required or optional, and a field or argument
+ * added to data the client sends.
  */
 function compatOf(prev: unknown, next: unknown, flow: Flow, at: string, trace: Trace): Compat {
   if (stableStringify(prev) === stableStringify(next)) return 'same'
@@ -1180,7 +1191,13 @@ function compatOf(prev: unknown, next: unknown, flow: Flow, at: string, trace: T
         result = worse(result, compatOf(prev[key], next[key], flow, `${at}{}`, trace))
         break
       case 'anyOf':
-        result = worse(result, unionCompat(prev['anyOf'], next['anyOf'], flow, at, trace))
+        result = worse(result, memberSetCompat(prev['anyOf'], next['anyOf'], flow, at, trace, true))
+        break
+      case 'allOf':
+        result = worse(
+          result,
+          memberSetCompat(prev['allOf'], next['allOf'], flow, at, trace, false),
+        )
         break
       default:
         if (stableStringify(prev[key]) !== stableStringify(next[key])) {
@@ -1199,8 +1216,9 @@ function propertiesCompat(
   at: string,
   trace: Trace,
 ): Compat {
-  const before = prev['properties']
-  const after = next['properties']
+  // The generator omits an empty `properties` map.
+  const before = prev['properties'] ?? {}
+  const after = next['properties'] ?? {}
   if (!isRecord(before) || !isRecord(after)) return broke(trace, at, 'fields changed')
   let result: Compat = 'same'
   for (const [name, schema] of Object.entries(before)) {
@@ -1215,6 +1233,10 @@ function propertiesCompat(
       return broke(trace, `${at}.${name}`, 'added as required')
     }
     if (flow === 'to-host') return broke(trace, `${at}.${name}`, 'added to data the client sends')
+    // An old client reads every key of a record as one of its values.
+    if (prev['additionalProperties'] !== undefined) {
+      return broke(trace, `${at}.${name}`, 'added beside a record index')
+    }
     result = 'widened'
   }
   return result
@@ -1227,8 +1249,11 @@ function tupleCompat(
   at: string,
   trace: Trace,
 ): Compat {
-  const before = prev['prefixItems']
-  const after = next['prefixItems']
+  // The generator omits `prefixItems` for an empty fixed-length tuple.
+  const emptyTuple = (schema: Record<string, unknown>): unknown =>
+    schema['prefixItems'] ?? (typeof schema['maxItems'] === 'number' ? [] : undefined)
+  const before = emptyTuple(prev)
+  const after = emptyTuple(next)
   const sameBounds = prev['minItems'] === next['minItems'] && prev['maxItems'] === next['maxItems']
   if (!Array.isArray(before) || !Array.isArray(after)) {
     return sameBounds && stableStringify(before) === stableStringify(after)
@@ -1244,7 +1269,11 @@ function tupleCompat(
   if (after.length === before.length) {
     return sameBounds ? result : broke(trace, at, 'required item count changed')
   }
-  // Grown: only a fixed-length tuple, and only by items a caller may leave out.
+  // Grown. A host validates the arguments it receives as a closed tuple
+  // (`parseIpcArgs(z.tuple([...]))` rejects extra items), so only a client
+  // can take more: an old subscribe handler ignores an argument it does not
+  // name. A client always forwards an optional slot, even as undefined.
+  if (flow === 'to-host') return broke(trace, at, 'items added to data the client sends')
   const min = prev['minItems']
   const optionalTail = typeof min === 'number' && min <= before.length && min === next['minItems']
   const fixedLength = prev['maxItems'] === before.length && next['maxItems'] === after.length
@@ -1252,13 +1281,20 @@ function tupleCompat(
 }
 
 /**
- * Union members are a set: the generator orders them by serialization, so a
- * widened member can move. Identical members pair first; every other member
- * must then pair with a distinct compatible one.
+ * Union (and intersection) members are a set: the generator orders union
+ * members by serialization, so a widened member can move. Identical members pair
+ * first; every other member must then pair with a distinct compatible one.
  */
-function unionCompat(prev: unknown, next: unknown, flow: Flow, at: string, trace: Trace): Compat {
+function memberSetCompat(
+  prev: unknown,
+  next: unknown,
+  flow: Flow,
+  at: string,
+  trace: Trace,
+  isUnion: boolean,
+): Compat {
   if (!Array.isArray(prev) || !Array.isArray(next) || prev.length !== next.length) {
-    return broke(trace, at, 'union members added or removed')
+    return broke(trace, at, `${isUnion ? 'union' : 'intersection'} members added or removed`)
   }
   const candidates = next.map((member: unknown) => ({
     member,
@@ -1279,16 +1315,35 @@ function unionCompat(prev: unknown, next: unknown, flow: Flow, at: string, trace
       (candidate) =>
         !candidate.used && compatOf(member, candidate.member, flow, at, {}) !== 'breaking',
     )
-    if (!match) return broke(trace, at, 'a union member changed incompatibly')
+    if (!match) return broke(trace, at, 'a member changed incompatibly')
     match.used = true
+    // A client may tell union members apart by which fields are present
+    // (`'size' in entry`), so one must not gain a field another is known by.
+    const gained = fieldNames(match.member).filter((name) => !fieldNames(member).includes(name))
+    const telling = gained.find(
+      (name) =>
+        isUnion &&
+        next.some((other: unknown) => other !== match.member && fieldNames(other).includes(name)),
+    )
+    if (telling !== undefined) {
+      return broke(trace, `${at}.${telling}`, 'added to a union member that another member has')
+    }
     result = worse(result, compatOf(member, match.member, flow, at, trace))
   }
   return result
 }
 
-/** Whether two `required` lists name the same fields, in any order. */
-function sameMembers(prev: unknown, next: unknown): boolean {
-  if (prev === undefined || next === undefined) return prev === next
+/** The top-level field names an object schema declares. */
+function fieldNames(schema: unknown): string[] {
+  const properties = isRecord(schema) ? schema['properties'] : undefined
+  return isRecord(properties) ? Object.keys(properties) : []
+}
+
+/**
+ * Whether two `required` lists name the same fields, in any order. The
+ * generator omits an empty list, so an absent one names no fields.
+ */
+function sameMembers(prev: unknown = [], next: unknown = []): boolean {
   if (!Array.isArray(prev) || !Array.isArray(next)) return false
   const sorted = (list: unknown[]): string => stableStringify(list.map(stableStringify).sort())
   return sorted(prev) === sorted(next)
@@ -1404,7 +1459,10 @@ export interface ProtocolVersionCheck {
   base: number
   /** `API_PROTOCOL_VERSION` at the head. */
   head: number
-  /** `API_PROTOCOL_VERSION` at the latest release tag, when it could be read. */
+  /**
+   * `API_PROTOCOL_VERSION` of the newest surface that ships without this change
+   * (the latest release, or a pending promotion), when it could be read.
+   */
   released?: number
 }
 
@@ -1434,8 +1492,8 @@ export function protocolVersionProblem(check: ProtocolVersionCheck): string | nu
   }
   if (head > released) return null
   return (
-    `Breaking change to the API protocol, and v${String(released)} is already released. ` +
-    `Set API_PROTOCOL_VERSION in src/shared/api-protocol.mts to ${String(released + 1)} ` +
-    'or make the change additive.'
+    `Breaking change to the API protocol, and v${String(released)} has shipped or is about ` +
+    `to. Set API_PROTOCOL_VERSION in src/shared/api-protocol.mts on main to ` +
+    `${String(released + 1)}, or make the change additive.`
   )
 }
