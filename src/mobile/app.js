@@ -298,9 +298,7 @@ function renderDecisions(data, row) {
   const attention = document.getElementById('attention')
   const hadCards = attention.childElementCount > 0
   attention.replaceChildren(...cards)
-  // Approvals sit below the messages; bring a newly arrived prompt into view
-  // without yanking the page on every refresh of an already-visible one.
-  if (cards.length && !hadCards) attention.scrollIntoView({ block: 'end', behavior: 'smooth' })
+  return cards.length > 0 && !hadCards
 }
 
 async function refreshThread() {
@@ -326,9 +324,15 @@ async function refreshThread() {
         : runId
           ? 'Running · Saved output refreshes automatically.'
           : 'Send a message to continue this chat.'
-    renderDecisions(data, row)
+    const promptArrived = renderDecisions(data, row)
+    // Approvals sit below the messages: scroll to a newly arrived prompt only
+    // after messages settle, and not on every refresh of a visible one.
+    const revealPrompt = () => {
+      if (promptArrived)
+        document.getElementById('attention').scrollIntoView({ block: 'end', behavior: 'smooth' })
+    }
     const signature = JSON.stringify(data.messages)
-    if (signature === messageSignature) return
+    if (signature === messageSignature) return revealPrompt()
     messageSignature = signature
     messages.replaceChildren(
       ...data.messages.map((message, index) => {
@@ -346,6 +350,7 @@ async function refreshThread() {
         element('p', 'empty', 'A running response appears after it is saved on the desktop.'),
       )
     if (document.activeElement === messageInput) revealComposer()
+    revealPrompt()
   } catch (cause) {
     fail(cause.message)
   }
