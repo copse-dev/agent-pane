@@ -321,6 +321,9 @@ export function mountSideChatPane(
     if (atBottom) bodyHost.scrollTop = bodyHost.scrollHeight
     input.disabled = side.archivedAt != null
     send.disabled = side.archivedAt != null || side.status === 'running'
+    // A run's later output lands on the side chat's own id, so promote once it settles.
+    promote.disabled = side.status === 'running'
+    promote.title = promote.disabled ? 'Wait for the side chat to finish before promoting' : ''
     // Visible and selected means seen: a reply landing now is not "unread".
     if (side.unreadAt !== undefined) markThreadRead(store, side.id)
   }

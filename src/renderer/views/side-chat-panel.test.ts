@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
 import type { ForkedHistoryResult, Message, Thread } from '@shared/types'
-import { addMessage, createThread } from '@shared/store/thread-helpers.ts'
+import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { startSideChat } from '../controller/side-chat.ts'
@@ -222,7 +222,13 @@ test('the mounted pane shows a requested side chat beside the main thread, sends
     assert.equal(input.value, '', 'the composer clears after sending')
     assert.equal(viewer.querySelector('.is-user')?.textContent, 'Is it safe?')
 
-    viewer.querySelector<HTMLElement>('[data-action="promote-side-chat"]')?.click()
+    const promote = viewer.querySelector<HTMLButtonElement>('[data-action="promote-side-chat"]')
+    assert.ok(promote)
+    assert.equal(promote.disabled, true, 'promote waits for the run to settle')
+    setThreadStatus(store, sideId, 'idle')
+    await settle()
+    assert.equal(promote.disabled, false)
+    promote.click()
     await settle()
     const promoted = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
     assert.ok(promoted && promoted.id !== mainId && promoted.sideChat === undefined)

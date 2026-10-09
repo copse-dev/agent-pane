@@ -134,7 +134,10 @@ describe('Side chats beside the main thread', () => {
   })
 
   it('promotes a side chat to a thread', async () => {
-    await $('[data-action="promote-side-chat"]').click()
+    // Promote waits for the side chat's reply to finish streaming.
+    const promote = $('[data-action="promote-side-chat"]')
+    await promote.waitForEnabled({ timeout: 10_000 })
+    await promote.click()
     await browser.waitUntil(async () => (await sidebarTitles()).length === 3, {
       timeout: 10_000,
       timeoutMsg: 'the promoted thread never appeared in the sidebar',

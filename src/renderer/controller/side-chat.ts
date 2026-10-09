@@ -136,8 +136,9 @@ export function sendSideChatMessage(
  * is archived, not deleted. Built as a fresh thread rather than by editing the side
  * chat in place because persistence writes new messages only as they are appended.
  *
- * Returns the new thread id, or `null` for an unknown thread or one that is not a
- * side chat. A side chat with nothing to carry over (orphaned and empty) is simply
+ * Returns the new thread id, or `null` for an unknown thread, one that is not a
+ * side chat, or one still running (its later output would land on the archived
+ * side chat rather than the promoted thread). A side chat with nothing to carry over (orphaned and empty) is simply
  * detached from its link in place.
  */
 export async function promoteSideChat(
@@ -146,7 +147,7 @@ export async function promoteSideChat(
   sideThreadId: string,
 ): Promise<string | null> {
   const side = getThreadById(store, sideThreadId)
-  if (!side || side.sideChat === undefined) return null
+  if (!side || side.sideChat === undefined || side.status === 'running') return null
   const parent = getThreadById(store, side.sideChat.parentThreadId)
 
   const prefix = parent

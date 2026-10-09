@@ -251,6 +251,22 @@ test('promoting a side chat leaves out a follow-up still queued behind its run',
   )
 })
 
+test('refuses to promote a side chat while its run is still going', async () => {
+  const { store, parentId } = seed()
+  const { api } = fakeApi()
+  const id = await startSideChat(store, api, parentId)
+  assert.ok(id)
+  addMessage(store, id, 'user', 'Why?')
+  setThreadStatus(store, id, 'running')
+  const before = store.getState().threads.length
+
+  assert.equal(await promoteSideChat(store, api, id), null)
+
+  assert.equal(store.getState().threads.length, before)
+  assert.equal(thread(store, id).archivedAt, undefined)
+  assert.equal(store.getState().activeThreadId, parentId)
+})
+
 test('promoting an empty side chat carries the parent slice and seeds from the parent', async () => {
   const { store, parentId, answerId } = seed()
   const { api, forks } = fakeApi()
