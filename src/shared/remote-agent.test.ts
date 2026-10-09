@@ -67,3 +67,14 @@ describe('remote-agent model selection', () => {
     )
   })
 })
+
+describe('OpenAI cloud selections', () => {
+  it('round trips the provider and model and recognizes a bare selection', () => {
+    assert.equal(remoteAgentModelValue('openai', 'gpt-6.1-sol'), 'remote-agent:openai#gpt-6.1-sol')
+    assert.equal(parseRemoteAgentModel('remote-agent:openai'), 'openai')
+    assert.deepEqual(parseRemoteAgentModelSelection('remote-agent:openai#gpt-6.1-sol'), {
+      provider: 'openai',
+      model: 'gpt-6.1-sol',
+    })
+  })
+})

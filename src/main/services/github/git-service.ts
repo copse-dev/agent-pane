@@ -1246,7 +1246,7 @@ export async function pushBranchToOrigin(
     ['push', '--set-upstream', 'origin', `${ref}:${ref}`],
     {
       cwd: root,
-      // This is called only after the user approved `gh_pr_create` or confirmed
+      // This is called only after the user approved `gh_pr_create` / `gh_push` or confirmed
       // the composer dialog. A sandboxed push cannot reach the remote.
       unsandboxed: true,
       timeout_ms: 120_000,

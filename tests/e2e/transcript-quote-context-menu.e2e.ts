@@ -257,6 +257,17 @@ describe('transcript selection: quote into the reply', () => {
     expect(geometry.visible).toBe(true)
     expect(geometry.nearSelection).toBe(true)
     expect(geometry.gap).toBeLessThanOrEqual(8)
+    const compactHeight = await browser.execute(() => {
+      const popup = document.querySelector<HTMLElement>('.transcript-selection-quote')
+      const input = document.querySelector<HTMLTextAreaElement>('.transcript-selection-reply')
+      if (!popup || !input) throw new Error('selection reply missing')
+      return {
+        popup: popup.getBoundingClientRect().height,
+        input: input.getBoundingClientRect().height,
+      }
+    })
+    expect(compactHeight.popup).toBeLessThanOrEqual(50)
+    expect(compactHeight.input).toBeLessThanOrEqual(30)
     await prepareChatMessageScreenshot()
     await saveAppScreenshot(SELECTION_SHOT)
 
@@ -291,6 +302,38 @@ describe('transcript selection: quote into the reply', () => {
     expect(await action.isDisplayed()).toBe(false)
     await prepareChatMessageScreenshot()
     await saveAppScreenshot(INLINE_COMPOSER_SHOT)
+  })
+
+  it('grows the selection reply while typing multiple lines', async () => {
+    await dragSelectText(SELECTED_PHRASE)
+    const popup = $('.transcript-selection-quote')
+    await popup.waitForDisplayed({ timeout: 5_000 })
+    const initialHeight = await browser.execute(() => {
+      const element = document.querySelector('.transcript-selection-quote')
+      if (!element) throw new Error('selection reply missing')
+      return element.getBoundingClientRect().height
+    })
+    await browser.keys('Please inspect where this rule is selected.')
+    await browser.keys(['Shift', 'Enter'])
+    await browser.keys('Then resolve it before creating the provider.')
+    const expanded = await browser.execute(() => {
+      const element = document.querySelector<HTMLElement>('.transcript-selection-quote')
+      const input = document.querySelector<HTMLTextAreaElement>('.transcript-selection-reply')
+      if (!element || !input) throw new Error('selection reply missing')
+      return {
+        popupHeight: element.getBoundingClientRect().height,
+        inputHeight: input.getBoundingClientRect().height,
+        text: input.value,
+        scrollHeight: input.scrollHeight,
+      }
+    })
+    expect(expanded.text).toContain('\n')
+    expect(expanded.popupHeight).toBeGreaterThan(initialHeight)
+    expect(expanded.inputHeight).toBeGreaterThan(30)
+    expect(expanded.inputHeight).toBeGreaterThanOrEqual(expanded.scrollHeight - 2)
+    await saveAppScreenshot('transcript-quote-selection-reply-expanded.png')
+    await browser.keys('Escape')
+    await popup.waitForDisplayed({ reverse: true, timeout: 5_000 })
   })
 
   it('dismisses the inline action on Escape and selection collapse', async () => {
