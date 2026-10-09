@@ -62,7 +62,7 @@ describe('latest user prompt anchor', () => {
         scrollable: list.scrollHeight > list.clientHeight,
         composerBackground: getComputedStyle(composer).backgroundColor,
         composerBeforeContent: before.content,
-        composerBeforeBackdrop: before.backdropFilter || before.webkitBackdropFilter,
+        composerShadow: getComputedStyle(composer).boxShadow,
         promptBackground: getComputedStyle(prompt).backgroundColor,
         footerBackground: getComputedStyle(footer).backgroundColor,
       }
@@ -76,11 +76,11 @@ describe('latest user prompt anchor', () => {
     expect(layout.machineClassList).toBe(true)
     expect(layout.machinePosition).toBe('relative')
     expect(layout.stickyUserCount).toBe(1)
-    expect(layout.composerBackground).toBe('rgba(0, 0, 0, 0)')
+    expect(layout.composerBackground).not.toBe('rgba(0, 0, 0, 0)')
     expect(layout.promptBackground).toBe('rgba(0, 0, 0, 0)')
     expect(layout.footerBackground).toBe('rgba(0, 0, 0, 0)')
-    expect(layout.composerBeforeContent).not.toBe('none')
-    expect(layout.composerBeforeBackdrop).toMatch(/blur\(/)
+    expect(layout.composerBeforeContent).toBe('none')
+    expect(layout.composerShadow).not.toBe('none')
     expect(
       Math.abs(layout.latestTop - (layout.listTop + layout.listPaddingTop - 16)),
     ).toBeLessThanOrEqual(1)
