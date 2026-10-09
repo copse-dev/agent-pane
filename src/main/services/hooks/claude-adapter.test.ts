@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -105,6 +105,13 @@ describe('claude-adapter', () => {
       assert.equal(claudeMatcherMatches('mcp__.*', 'Bash'), false)
       assert.equal(claudeMatcherMatches('^Read$', 'Read'), true)
       assert.equal(claudeMatcherMatches('^Read$', 'NotebookRead'), false)
+    })
+
+    it('fires (rather than hangs or skips) on a catastrophically backtracking matcher', () => {
+      const started = Date.now()
+      assert.equal(claudeMatcherMatches('^(a+)+$', `${'a'.repeat(64)}!`), true)
+      assert.equal(claudeMatcherMatches('^(a+)+$', `${'a'.repeat(64)}!`), true)
+      assert.ok(Date.now() - started < 5_000, 'the matcher was bounded')
     })
   })
 
@@ -283,6 +290,67 @@ describe('claude-adapter', () => {
       assert.equal((await gate('mcp__x__y', { q: 1 })).permission, 'deny')
     })
 
+    it('denies on the deprecated top-level decision "block" with its reason', async () => {
+      const script = await writeJsonHookScript(
+        'legacy-block.sh',
+        '{"decision":"block","reason":"legacy policy"}',
+      )
+      await writeUserSettings({
+        hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: script }] }] },
+      })
+
+      const decision = await gate('run_shell', { command: 'echo hi' })
+      assert.equal(decision.permission, 'deny')
+      assert.equal(decision.agentMessage, 'legacy policy')
+    })
+
+    it('lets hookSpecificOutput.permissionDecision outrank a deprecated top-level decision', async () => {
+      const script = await writeJsonHookScript(
+        'legacy-and-new.sh',
+        '{"decision":"block","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}',
+      )
+      await writeUserSettings({
+        hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: script }] }] },
+      })
+
+      assert.equal((await gate('run_shell', { command: 'echo hi' })).permission, 'allow')
+    })
+
+    it('fires Write|Edit matcher hooks for write_file and str_replace with Claude tool input', async () => {
+      const capture = join(tempHome, 'stdin.jsonl')
+      const script = join(tempHome, 'edit-gate.sh')
+      await writeFile(
+        script,
+        `#!/bin/sh\ncat >> '${capture}'\necho >> '${capture}'\nprintf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"}}'\n`,
+        'utf-8',
+      )
+      await chmod(script, 0o755)
+      await writeUserSettings({
+        hooks: {
+          PreToolUse: [{ matcher: 'Write|Edit', hooks: [{ type: 'command', command: script }] }],
+        },
+      })
+
+      assert.equal((await gate('write_file', { path: 'a.ts', content: 'x' })).permission, 'deny')
+      assert.equal(
+        (await gate('str_replace', { path: 'a.ts', old_string: 'x', new_string: 'y' })).permission,
+        'deny',
+      )
+      const [write, edit] = (await readFile(capture, 'utf-8'))
+        .trim()
+        .split('\n')
+        .map((line) => expectRecord(JSON.parse(line)))
+      assert.equal(write?.['tool_name'], 'Write')
+      assert.deepEqual(write?.['tool_input'], { file_path: 'a.ts', content: 'x' })
+      assert.equal(edit?.['tool_name'], 'Edit')
+      assert.deepEqual(edit?.['tool_input'], {
+        file_path: 'a.ts',
+        old_string: 'x',
+        new_string: 'y',
+        replace_all: false,
+      })
+    })
+
     it('fails closed on non-JSON stdout', async () => {
       const script = await writeJsonHookScript('bad.sh', 'not-json')
       await writeUserSettings({
@@ -380,6 +448,7 @@ describe('claude-adapter', () => {
         exitCode: 0,
         durationMs: 1,
         timedOut: false,
+        timeoutMs: 30_000,
         spawnError: false,
         sandboxed: false,
         sandboxViolationCount: 0,

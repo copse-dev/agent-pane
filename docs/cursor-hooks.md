@@ -232,6 +232,15 @@ hook can never auto-approve something Copse would otherwise ask about.
   response denies a gated action. Omitted or invalid `failClosed` resolves closed;
   `{ "command": …, "failClosed": false }` explicitly restores Cursor's fail-open
   compatibility behavior. Users can turn all external hooks off in Settings → Sources.
+  A gate hook that exits non-zero is a crash even if it printed a response first: its
+  stdout cannot allow the call, though a printed `deny` is still honoured.
+- **Timeouts are bounded and kill the whole hook.** A per-hook `timeout` beyond Node's
+  timer range (about 24.8 days) is clamped rather than overflowing to an instant kill, and a
+  timeout or output-cap kill signals the hook's whole process group, so commands it
+  backgrounded do not outlive it. The recorded error names the timeout the hook actually had.
+- **Matchers are bounded.** Each `matcher` regex is compiled once and run under a 50 ms
+  budget. A pattern that backtracks past it is logged once and then treated as matching, so
+  the hook still decides rather than a gate silently disappearing.
 - **No LLM secrets.** Hook processes inherit `envForRendererChildProcess()` — the same
   scrubbed environment as `run_shell`, so provider _LLM_ API keys never reach hook
   scripts. Note this is **not** an empty environment: non-LLM tool tokens that the agent
