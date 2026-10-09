@@ -1,5 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
-import type { ThreadStatus } from '@shared/types'
+import type { AutomationFailureCode, Thread, ThreadStatus } from '@shared/types'
+import { isAutomationFailureCode } from '@shared/types'
+import { describeAutomationFailure, isApprovalStalled } from '@shared/automation-failure.ts'
 import { getSidebarThreads, projectDisplayName } from './projects.ts'
 import type { PendingApprovalSummary } from '../views/approval-dialog.ts'
 import type { PendingQuestionSummary } from '../views/ask-user-dialog.ts'
@@ -30,6 +32,8 @@ export interface ActivityThread {
   projectName: string
   /** The automation schedule that started the thread, when one did. */
   schedule?: { id: string; name: string }
+  /** Why the automation run failed to start or ended in error, when the renderer recorded it. */
+  failure?: { code: AutomationFailureCode; message: string; at: number; startFailed: boolean }
 }
 
 /** What the renderer observed of a thread's runs this session. */
@@ -71,6 +75,11 @@ export interface ActivityRow {
    * `runs` are the ordinary rows it folds, newest first.
    */
   fold?: { kind: 'finished' | 'failed'; runs: ActivityRow[] }
+  /**
+   * Set on an unattended (automation) run that is stuck or failed: what went wrong and
+   * what to do about it. Absent on ordinary threads, which the user is watching.
+   */
+  issue?: { code: AutomationFailureCode; title: string; remedy: string; message: string | null }
 }
 
 export interface ActivityGroup {
@@ -86,6 +95,8 @@ export interface ActivityInput {
   approvals: readonly PendingApprovalSummary[]
   questions: readonly PendingQuestionSummary[]
   runs: ReadonlyMap<string, RunTiming>
+  /** The current time, for deciding whether an unattended approval has stalled. */
+  now?: number
 }
 
 /** Settled rows are a reminder, not a log: the group keeps only the latest few. */
@@ -173,6 +184,23 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
   const waitingThreads = new Set(needsYou.flatMap((row) => (row.threadId ? [row.threadId] : [])))
 
   const scheduleOf = new Map(input.threads.map((thread) => [thread.id, thread.schedule]))
+  const issueFor = (
+    code: AutomationFailureCode,
+    message: string | null,
+  ): NonNullable<ActivityRow['issue']> => {
+    const description = describeAutomationFailure(code)
+    return { code, title: description.title, remedy: description.remedy, message }
+  }
+  // Nobody is watching an unattended run, so a request it is waiting on that has sat
+  // unanswered is a failure in all but name.
+  if (input.now !== undefined) {
+    for (const row of needsYou) {
+      const thread = row.threadId ? byId.get(row.threadId) : undefined
+      if (thread?.schedule && isApprovalStalled(row.since, input.now)) {
+        row.issue = issueFor('approval-stalled', null)
+      }
+    }
+  }
   const threadRow = (
     thread: ActivityThread,
     state: ActivityRowState,
@@ -211,13 +239,34 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
       // An ended run is "recent" only when something says so: this session
       // watched it end, or it ended unseen while another thread was open. The
       // stored status outlives restarts, so an old error alone is not recent.
-      const endedAt = run?.endedAt ?? thread.unreadAt
+      // A run that never started has no end to observe, so its recorded failure stands in
+      // for a day: long enough to be noticed after an unattended night, short enough not to
+      // haunt the list after a restart.
+      const recentStartFailure =
+        thread.schedule &&
+        thread.failure?.startFailed &&
+        thread.failure.at > (input.now ?? 0) - 86_400_000
+          ? thread.failure.at
+          : undefined
+      const endedAt = run?.endedAt ?? thread.unreadAt ?? recentStartFailure
       if (endedAt === undefined) continue
-      recent.push(
-        thread.status === 'error'
-          ? threadRow(thread, 'failed', 'Ended with an error', endedAt)
-          : threadRow(thread, 'finished', 'Finished', endedAt),
-      )
+      if (thread.status === 'error') {
+        const row = threadRow(thread, 'failed', 'Ended with an error', endedAt)
+        if (thread.schedule) {
+          const code = thread.failure?.code ?? 'unknown'
+          row.issue = issueFor(code, thread.failure?.message ?? null)
+          row.want = row.issue.title
+        }
+        recent.push(row)
+      } else if (thread.schedule && thread.failure?.startFailed) {
+        // A run that never started is idle, not errored, but it is no less failed.
+        const row = threadRow(thread, 'failed', 'Could not start', endedAt)
+        row.issue = issueFor(thread.failure.code, thread.failure.message)
+        row.want = row.issue.title
+        recent.push(row)
+      } else {
+        recent.push(threadRow(thread, 'finished', 'Finished', endedAt))
+      }
     }
   }
 
@@ -306,6 +355,21 @@ export function foldScheduleRuns(
  * changes. Projects not opened this session are absent — the sidebar has the
  * same limit (see `getSidebarThreads`).
  */
+function failureField(
+  automation: NonNullable<Thread['automation']>,
+): { failure: NonNullable<ActivityThread['failure']> } | Record<string, never> {
+  const failure = automation.failure
+  if (!failure) return {}
+  return {
+    failure: {
+      code: isAutomationFailureCode(failure.code) ? failure.code : 'unknown',
+      message: failure.message,
+      at: failure.at,
+      startFailed: automation.startFailedAt !== undefined,
+    },
+  }
+}
+
 export function collectActivityThreads(store: AppStore): ActivityThread[] {
   const { projects, backgroundThreads } = store.getState()
   const out = new Map<string, ActivityThread>()
@@ -325,6 +389,7 @@ export function collectActivityThreads(store: AppStore): ActivityThread[] {
                 id: thread.automation.scheduleId,
                 name: thread.automation.scheduleName,
               },
+              ...failureField(thread.automation),
             }
           : {}),
       })
@@ -347,6 +412,7 @@ export function collectActivityThreads(store: AppStore): ActivityThread[] {
               id: carried.thread.automation.scheduleId,
               name: carried.thread.automation.scheduleName,
             },
+            ...failureField(carried.thread.automation),
           }
         : {}),
     })

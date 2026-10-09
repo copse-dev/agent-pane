@@ -474,3 +474,119 @@ describe('automation runs in Recently finished', () => {
     assert.equal(recent.total, RECENT_ROW_LIMIT + 3 + 1)
   })
 })
+
+describe('unattended run issues', () => {
+  const NOW = 10_000_000
+  const STALL = 15 * 60_000
+  const schedule = { id: 's1', name: 'Nightly review' }
+
+  it('flags an automation approval that has waited past the stall threshold', () => {
+    const groups = deriveActivity(
+      input({
+        threads: [info('t1', { schedule })],
+        approvals: [approval('a1', 't1', NOW - STALL)],
+        now: NOW,
+      }),
+    )
+    const row = groups.find((group) => group.id === 'needs-you')?.rows[0]
+    assert.equal(row?.issue?.code, 'approval-stalled')
+    assert.match(row.issue.remedy, /approve or deny/i)
+  })
+
+  it('leaves a fresh automation approval and any ordinary thread alone', () => {
+    const fresh = deriveActivity(
+      input({
+        threads: [info('t1', { schedule })],
+        approvals: [approval('a1', 't1', NOW - STALL + 1)],
+        now: NOW,
+      }),
+    )
+    assert.equal(fresh[0]?.rows[0]?.issue, undefined)
+    const ordinary = deriveActivity(
+      input({
+        threads: [info('t2')],
+        approvals: [approval('a2', 't2', NOW - 10 * STALL)],
+        now: NOW,
+      }),
+    )
+    assert.equal(ordinary[0]?.rows[0]?.issue, undefined)
+  })
+
+  it('names the cause of a failed automation run and falls back to a generic failure', () => {
+    const runs = new Map<string, RunTiming>([
+      ['t1', { endedAt: NOW - 1000 }],
+      ['t2', { endedAt: NOW - 2000 }],
+      ['t3', { endedAt: NOW - 3000 }],
+    ])
+    const groups = deriveActivity(
+      input({
+        threads: [
+          info('t1', {
+            status: 'error',
+            schedule,
+            failure: { code: 'auth-expired', message: '401', at: NOW - 1000, startFailed: false },
+          }),
+          info('t2', { status: 'error', schedule: { id: 's2', name: 'Other' } }),
+          info('t3', { status: 'error' }),
+        ],
+        runs,
+        now: NOW,
+      }),
+    )
+    const recent = groups.find((group) => group.id === 'recent')?.rows ?? []
+    const byThread = new Map(recent.map((row) => [row.threadId, row]))
+    assert.equal(byThread.get('t1')?.issue?.code, 'auth-expired')
+    assert.equal(byThread.get('t1')?.want, 'Sign-in expired')
+    assert.equal(byThread.get('t2')?.issue?.code, 'unknown')
+    assert.equal(byThread.get('t3')?.issue, undefined)
+    assert.equal(byThread.get('t3')?.want, 'Ended with an error')
+  })
+
+  it('shows a run that never started for a day, then lets it go', () => {
+    const failure = (at: number): NonNullable<ActivityThread['failure']> => ({
+      code: 'worktree-failed',
+      message: 'no checkout',
+      at,
+      startFailed: true,
+    })
+    const recent = (at: number): ActivityGroup | undefined =>
+      deriveActivity(
+        input({ threads: [info('t1', { schedule, failure: failure(at) })], now: NOW }),
+      ).find((group) => group.id === 'recent')
+    const shown = recent(NOW - 60_000)?.rows[0]
+    assert.equal(shown?.state, 'failed')
+    assert.equal(shown.issue?.code, 'worktree-failed')
+    assert.equal(recent(NOW - 25 * 60 * 60_000)?.rows.length, 0)
+  })
+
+  it('carries an automation thread failure into the activity metadata', () => {
+    const store = createStore({
+      activeProjectId: 'p1',
+      projects: [{ id: 'p1', path: '/a', name: 'a' }],
+    })
+    const thread: Thread = {
+      id: 'auto',
+      title: 'Nightly',
+      status: 'error',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      model: 'm',
+      automation: {
+        scheduleId: 's1',
+        scheduleName: 'Nightly',
+        triggeredAt: 1,
+        failure: { code: 'no-model', message: 'gone', at: 5 },
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    store.setState({ threads: [thread] })
+    const collected = collectActivityThreads(store).find((item) => item.id === 'auto')
+    assert.deepEqual(collected?.failure, {
+      code: 'no-model',
+      message: 'gone',
+      at: 5,
+      startFailed: false,
+    })
+  })
+})

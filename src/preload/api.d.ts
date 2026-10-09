@@ -42,12 +42,17 @@ import type {
   PluginUninstallResult,
 } from '@shared/types/plugin-installs.ts'
 import type {
+  AutomationFailureCode,
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
+  AutomationSchedulerHealth,
   AutomationTriggerEvent,
   BranchCiAutomation,
   BranchCiAutomationInput,
+  EventAutomationTriggerInput,
+  EventDeliverySummary,
+  EventMatchPreview,
 } from '@shared/types/automations.ts'
 import type {
   AppleConfigureInput,
@@ -1237,8 +1242,16 @@ export interface ApiClient {
     removeBranchCi: (projectId: string, id: string) => Promise<void>
     testBranchCi: (
       projectId: string,
-      branch: string,
-    ) => Promise<{ repository: string; branch: string; latestFailure: string | null }>
+      trigger: string | EventAutomationTriggerInput,
+    ) => Promise<EventMatchPreview>
+    eventHistory: (projectId: string, id: string) => Promise<EventDeliverySummary[]>
+    reportStartFailure: (
+      projectId: string,
+      threadId: string,
+      failure: { code: AutomationFailureCode; message: string },
+    ) => Promise<boolean>
+    schedulerHealth: () => Promise<AutomationSchedulerHealth>
+    onSchedulerHealth: (handler: (health: AutomationSchedulerHealth) => void) => () => void
     canStart: (
       projectId: string,
       threadId: string,

@@ -549,12 +549,37 @@ export function setThreadDraftPrompt(store: AppStore, threadId: string, draftPro
  * Record that an automation run could not be started, so its unsent draft stops
  * blocking the schedule's next trigger and is no longer auto-started.
  */
-export function markAutomationStartFailed(store: AppStore, threadId: string): void {
+export function markAutomationStartFailed(
+  store: AppStore,
+  threadId: string,
+  failure?: { code: string; message: string },
+): void {
   patchThreadAnywhere(store, threadId, (t) =>
     t.automation
       ? {
           ...t,
-          automation: { ...t.automation, startFailedAt: Date.now() },
+          automation: {
+            ...t.automation,
+            startFailedAt: Date.now(),
+            ...(failure ? { failure: { ...failure, at: Date.now() } } : {}),
+          },
+          updatedAt: Date.now(),
+        }
+      : t,
+  )
+}
+
+/** Record why an automation run that did start ended in error, for Activity and the manager. */
+export function markAutomationRunFailed(
+  store: AppStore,
+  threadId: string,
+  failure: { code: string; message: string },
+): void {
+  patchThreadAnywhere(store, threadId, (t) =>
+    t.automation
+      ? {
+          ...t,
+          automation: { ...t.automation, failure: { ...failure, at: Date.now() } },
           updatedAt: Date.now(),
         }
       : t,
