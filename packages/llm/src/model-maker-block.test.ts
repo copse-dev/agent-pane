@@ -34,6 +34,7 @@ describe('model maker block list', () => {
   it('recognizes other makers across direct, aggregator, and agent routes', () => {
     assert.equal(modelMakerForSelection('openrouter:anthropic/claude-opus-5'), 'anthropic')
     assert.equal(modelMakerForSelection('remote-agent:anthropic'), 'anthropic')
+    assert.equal(modelMakerForSelection('remote-agent:openai'), 'openai')
     assert.equal(modelMakerForSelection('openrouter:openai/gpt-6-sol'), 'openai')
     assert.equal(modelMakerForSelection('acp:gemini#gemini-2.5-pro'), 'google')
     assert.equal(modelMakerForSelection('acp:claude-acp#opus'), 'anthropic')

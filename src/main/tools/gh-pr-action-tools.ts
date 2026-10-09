@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { getGithubRepoSlug } from '../services/github/git-service.ts'
+import {
+  getGithubRepoSlug,
+  getCurrentBranchName,
+  pushBranchToOrigin,
+} from '../services/github/git-service.ts'
 import {
   approvePr,
   enablePrAutoMerge,
@@ -50,7 +54,7 @@ async function resolveRef(args: {
   return target ? { ...target, number: args.number } : null
 }
 
-function formatResult(result: PrActionResult): string {
+function formatResult(result: Pick<PrActionResult, 'ok' | 'message' | 'noop'>): string {
   const prefix = result.ok ? (result.noop ? 'No change' : 'Done') : 'Failed'
   return `${prefix}: ${result.message}`
 }
@@ -65,6 +69,21 @@ async function runAction(
   }
   return formatResult(await action(ref))
 }
+
+export const ghPushTool = defineTool({
+  name: 'gh_push',
+  description:
+    'Push the current thread branch to origin, updating its existing pull request. Does not force push or create a PR. Mutating action — asks for approval.',
+  parameters: z.object({}).strict(),
+  execute: async () => {
+    const context = getThreadExecutionContext()
+    if (!context) return 'Failed: no thread checkout is available.'
+    const branch = await getCurrentBranchName(context.root)
+    if (!branch || (context.branch && context.branch !== branch))
+      return 'Failed: the thread branch is detached or has changed. Refresh the checkout before pushing.'
+    return formatResult(await pushBranchToOrigin(branch, context.root))
+  },
+})
 
 export const ghCreatePrTool = defineTool({
   name: 'gh_pr_create',
@@ -155,6 +174,7 @@ export const ghEnableAutoMergeTool = defineTool({
  * in this file and are edited together.
  */
 export const ghPrActionTools = [
+  ghPushTool,
   ghCreatePrTool,
   ghRerunFailedCiTool,
   ghApprovePrTool,
@@ -164,6 +184,7 @@ export const ghPrActionTools = [
 
 /** Register every PR lifecycle write tool (idempotent — register overwrites). */
 export function registerGhPrActionTools(registry: ToolRegistry): void {
+  registry.register(ghPushTool)
   registry.register(ghCreatePrTool)
   registry.register(ghRerunFailedCiTool)
   registry.register(ghApprovePrTool)

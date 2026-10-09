@@ -14,6 +14,29 @@ import { dismissContextMenu } from '../dom/context-menu.ts'
 installArtifactImagePolicy()
 
 describe('markdown browser links', () => {
+  it('does not open a browser after an artifact is saved or its save dialog is cancelled', async () => {
+    const root = document.createElement('div')
+    root.innerHTML =
+      '<a href="https://api.openai.com/v1/agents/openai%3Athread/artifacts/download?path=artifact.patch">Download</a>'
+    const store = createStore({ filesPaneOpen: false })
+    let downloads = 0
+    const unbind = bindBrowserLinkClicks(root, store, {
+      remoteAgent: {
+        downloadArtifact: async (id) => {
+          assert.equal(id, 'openai:thread')
+          downloads++
+          return ''
+        },
+      },
+    })
+    qsRequired(root, 'a').dispatchEvent(
+      new window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    unbind()
+    assert.equal(downloads, 1)
+    assert.equal(store.getState().filesPaneOpen, false)
+  })
   it('opens HTTP links in the browser panel', () => {
     const root = document.createElement('div')
     root.innerHTML = '<a href="https://example.com/docs" target="_blank">docs</a>'
