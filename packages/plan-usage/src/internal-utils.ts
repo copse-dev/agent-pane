@@ -19,6 +19,12 @@ export function clampPercent(value: number): number {
   return Math.round(value * 100) / 100
 }
 
+/** `Date#toISOString` throws past ±8.64e15 ms; an out-of-range reset is unknown, not fatal. */
+function isoFromMs(ms: number): string | null {
+  const date = new Date(ms)
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null
+}
+
 /** Prefer ISO string; accept unix seconds/ms (number or digit string). */
 export function toIsoTimestamp(value: unknown, _nowMs: number): string | null {
   if (typeof value === 'string' && value.trim()) {
@@ -27,16 +33,16 @@ export function toIsoTimestamp(value: unknown, _nowMs: number): string | null {
       const n = Number(trimmed)
       if (Number.isFinite(n)) {
         const ms = n > 1e12 ? n : n * 1000
-        return new Date(ms).toISOString()
+        return isoFromMs(ms)
       }
     }
     const parsed = Date.parse(trimmed)
-    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null
+    return Number.isFinite(parsed) ? isoFromMs(parsed) : null
   }
   if (typeof value === 'number' && Number.isFinite(value)) {
     // Codex resetsAt is unix seconds; treat large values as ms already.
     const ms = value > 1e12 ? value : value * 1000
-    return new Date(ms).toISOString()
+    return isoFromMs(ms)
   }
   return null
 }

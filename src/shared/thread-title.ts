@@ -122,17 +122,18 @@ export function threadTitlePrompt(text: string): string {
   )
 }
 
-// "Sure, here's the title: X" / "Thread title: X" — keep only X.
+// "Sure, here's the title: X" / "Thread title: X" — keep only X. Models often emit a
+// typographic apostrophe (here’s), so every contraction accepts both.
 const MODEL_TITLE_LABEL =
-  /^(?:(?:sure|okay|ok|got it|alright)\b[\s,!.:;—-]*)?(?:here(?:'s| is)\s+(?:the|a|your)?\s*)?(?:thread\s+|sidebar\s+)?title\s*:\s*/i
+  /^(?:(?:sure|okay|ok|got it|alright)\b[\s,!.:;—-]*)?(?:here(?:['’]s| is)\s+(?:the|a|your)?\s*)?(?:thread\s+|sidebar\s+)?title\s*:\s*/i
 
 // A line of preamble or reasoning rather than a title ("Okay, the user wants…").
 const MODEL_PREAMBLE = new RegExp(
   [
     // Interjections only count when punctuated ("Okay," / "Sure!"), so "OK button" survives.
     String.raw`^(?:sure|okay|ok|got it|alright|certainly)(?:[,!.:;—-]|\s*$)`,
-    String.raw`^(?:here(?:'s| is| are)|let me|let's|based on)\b`,
-    String.raw`^i(?:'ll|'m|'d| will| think| would)\b`,
+    String.raw`^(?:here(?:['’]s| is| are)|let me|let['’]s|based on)\b`,
+    String.raw`^i(?:['’]ll|['’]m|['’]d| will| think| would)\b`,
     String.raw`^(?:the|this) (?:user|conversation|request)\s+(?:wants|is|asks|asked|needs|would|has|seems|appears|about)\b`,
   ].join('|'),
   'i',
