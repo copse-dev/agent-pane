@@ -18,6 +18,7 @@ export function createMcpSection(
   api: ApiClient,
   onTrusted: (statuses: McpServerStatus[]) => void,
   onManagePermissions: () => void,
+  onHeadingsChanged: () => void,
 ): McpSection {
   let generation = 0
   /**
@@ -355,6 +356,7 @@ export function createMcpSection(
       )
       listEl.append(row)
     }
+    onHeadingsChanged()
   }
 
   async function refreshDeclaredMcpServers(): Promise<void> {

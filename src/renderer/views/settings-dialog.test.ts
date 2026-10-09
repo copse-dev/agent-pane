@@ -775,3 +775,53 @@ describe('Settings snapshot and submitted draft lifecycle', () => {
     assert.equal(qsRequired(dialog, '.settings-body').inert, false)
   })
 })
+
+describe('MCP declared-server navigation', () => {
+  it('tracks asynchronous declarations and keeps search free of sidebar headings', async () => {
+    document.body.innerHTML = ''
+    const base = createFakeApi()
+    let declared = deferred<Awaited<ReturnType<ApiClient['mcp']['listDeclared']>>>()
+    mountSettingsDialog(createStore(), {
+      ...base,
+      mcp: { ...base.mcp, listDeclared: async () => declared.promise },
+    })
+    const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+    shimModal(dialog)
+    openSettingsDialog()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    qsRequired(dialog, '.settings-nav-btn[data-section="mcp"]').click()
+    declared.resolve([
+      {
+        name: 'example',
+        pluginId: 'example.plugin',
+        pluginEnabled: false,
+        transport: 'stdio',
+        reason: 'Disabled',
+      },
+    ])
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(qsRequired(dialog, '#mcp-declared-fieldset').hidden, false)
+    assert.match(
+      qsRequired(dialog, '.settings-nav-subheadings').textContent,
+      /Declared by plugins, not running/,
+    )
+    declared = deferred<Awaited<ReturnType<ApiClient['mcp']['listDeclared']>>>()
+    qsRequired(dialog, '#mcp-reload-btn').click()
+    declared.resolve([])
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(qsRequired(dialog, '#mcp-declared-fieldset').hidden, true)
+    assert.doesNotMatch(
+      qsRequired(dialog, '.settings-nav-subheadings').textContent,
+      /Declared by plugins/,
+    )
+    declared = deferred<Awaited<ReturnType<ApiClient['mcp']['listDeclared']>>>()
+    qsRequired(dialog, '#mcp-reload-btn').click()
+    const search = qsRequired<HTMLInputElement>(dialog, '#settings-search-input')
+    search.value = 'servers'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    declared.resolve([])
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(dialog.querySelector('.settings-nav-subheadings'), null)
+    closeSettingsDialog()
+  })
+})

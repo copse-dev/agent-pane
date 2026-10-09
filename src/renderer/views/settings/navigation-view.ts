@@ -182,6 +182,7 @@ export function createSettingsNavigation(
       searchInput.focus()
     },
     refreshHeadings: (): void => {
+      if (searchInput.value.trim()) return
       renderNavSubheadings(activeSection)
     },
     active: (): SettingsSection => activeSection,

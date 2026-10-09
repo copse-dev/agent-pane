@@ -199,6 +199,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           qsRequired(overlay, '#tool-permissions-fieldset').scrollIntoView({ block: 'start' })
         })
     },
+    () => {
+      nav.refreshHeadings()
+    },
   )
   const storage = createStorageSection(overlay, api, store, closeSettingsDialog)
   const lifecycle = new SettingsLifecycle(

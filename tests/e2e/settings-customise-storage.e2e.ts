@@ -152,6 +152,9 @@ describe('settings → Customise / MCP / Storage', function () {
     // A declaration is not a control: nothing here implies Copse could start it.
     assert.equal(await declaredRow.$('.toggle-switch').isExisting(), false)
 
+    await expect($('#settings-dialog .settings-nav-subheadings')).toHaveText(
+      expect.stringContaining('Declared by plugins, not running'),
+    )
     await saveElementScreenshot('#settings-dialog', 'settings-mcp-lens.png')
   })
 })
