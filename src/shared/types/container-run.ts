@@ -62,10 +62,10 @@ export interface ThreadContainerRecord {
   carryOut: { expected: boolean; ref: string | null; error: string | null }
   containerExit: number | null
   /**
-   * What the guest held: a run-scoped key, the user's sign-in (the home
+   * Authentication location: host-owned provider inference, a guest-held run-scoped key, the user's sign-in (the home
    * directories that were copied in, discarded with the container), or nothing.
    */
-  credential: 'none' | 'key' | { login: string[] }
+  credential: 'none' | 'key' | 'host' | { login: string[] }
   teardown: 'removed' | 'already-gone' | 'failed'
   /** Non-null when stopping or reaping the container did not settle cleanly. */
   cleanupError: string | null
@@ -100,8 +100,8 @@ export interface ContainerModelVerdict {
   loginOffered?: { agentTitle: string }
 }
 
-/** What the guest was given to authenticate with. */
-export type ContainerRunCredential = 'none' | 'key' | 'login'
+/** Host inference, or the credential an external guest agent received. */
+export type ContainerRunCredential = 'none' | 'key' | 'login' | 'host'
 
 export type ContainerRunSettings = z.infer<typeof containerRunSettingsSchema>
 
