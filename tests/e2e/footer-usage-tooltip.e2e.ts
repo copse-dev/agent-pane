@@ -1,5 +1,9 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedFooterUsageFixture } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedFooterUsageFixture,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 // The footer token counter is folded into the context wheel: one ring, one
@@ -16,7 +20,8 @@ describe('footer context and usage hover', () => {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
-    seedFooterUsageFixture(process.cwd())
+    // Checkout changes must not leak into the composer's Changes badge.
+    seedFooterUsageFixture(seedStableWorkspace())
     await browser.reloadSession()
   })
 
