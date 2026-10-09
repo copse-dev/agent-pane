@@ -58,6 +58,9 @@ export function initFsWatcher(win: BrowserWindow): void {
     const root = (await resolveThreadExecutionContext(projectId, threadId)).root
     const abs = await resolvePathWithinRoot(rel, root)
     const key = watcherKey(projectId, threadId, rel)
+    // The window may have closed during the awaits above; its `destroyed`
+    // event has then already fired and would never release this subscription.
+    if (event.sender.isDestroyed()) return
     trackSender(event.sender)
     subscriptions.add(key, event.sender.id)
     // Node's fs.watch can only observe the local machine, so a remote workspace
