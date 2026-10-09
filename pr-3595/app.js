@@ -83748,7 +83748,7 @@ async function promoteSideChat(store2, api2, sideThreadId) {
     throughMessageId: side.sideChat.anchorMessageId,
     excludeMessageIds: queuedMessageIds(parent)
   }) : null;
-  const own2 = buildForkedThread(side);
+  const own2 = buildForkedThread(side, { excludeMessageIds: queuedMessageIds(side) });
   const base = own2 ?? prefix;
   if (!base) {
     const { sideChat: _link, ...detached } = side;
