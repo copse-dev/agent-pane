@@ -383,7 +383,9 @@ async function boot(): Promise<void> {
   const mobileReady = new Promise<void>((resolve) => {
     mobileRestored = resolve
   })
-  attachAutomationAppearance(api.appIcon.testAutomation)
+  // The preload exposes this bridge only in test-enabled E2E sessions.
+  // Keep harness state out of the product ApiClient/protocol.
+  attachAutomationAppearance(Object.hasOwn(window, '__copseE2e'))
   // A pop-out window is a secondary view of the same workspace; let the main
   // window own the agent loop and config autosave so the two don't race.
   if (!popoutMode) {

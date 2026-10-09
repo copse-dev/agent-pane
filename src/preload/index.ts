@@ -1140,7 +1140,6 @@ const api: ApiClient = {
   },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
-    testAutomation: __COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1',
   },
   about: {
     getInfo: () => ipcRenderer.invoke('about:get-info'),
