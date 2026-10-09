@@ -67,6 +67,7 @@ import {
 } from '../services/exec/subprocess-output-cap.ts'
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/diff-queue.ts'
+import { beginWorktreeWriter } from '../services/worktree-writers.ts'
 import { emitShellOutput } from '../services/exec/shell-output-context.ts'
 import { getActiveRunThread } from '../services/thread-models.ts'
 import { currentRunUsesGuardedYolo } from '../services/security/guarded-yolo.ts'
@@ -585,7 +586,10 @@ export const runShellTool = defineTool({
     // keeping the worktree "clean" for direct edits on the next turn. Runs in a
     // finally because a command can change files even when it exits non-zero or
     // the runner throws. Scoped to the command's real effects by the baseline diff.
+    // The writer lease keeps direct applies sweeping `git status` live while the
+    // command runs, and its release voids the sweep they remembered before it.
     const baseline = await captureWorktreeBaseline()
+    const releaseWriter = beginWorktreeWriter(cwd)
     try {
       const result = await runShellOnce(
         executedCommand,
@@ -662,7 +666,11 @@ export const runShellTool = defineTool({
       )
     } finally {
       gitSsh.release()
-      await adoptWorktreeChangesSince(baseline)
+      try {
+        await adoptWorktreeChangesSince(baseline)
+      } finally {
+        releaseWriter()
+      }
     }
   },
 })

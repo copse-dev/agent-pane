@@ -4,8 +4,8 @@
 // project `.claude/settings.json`, and `.claude/settings.local.json`; parsing
 // the nested `hooks.PreToolUse` matcher groups; the tool-name matcher; wire
 // marshalling in both directions (a Claude hook sees Claude's stdin shape and
-// tool names — `Bash`, `Read`, `mcp__…`); and the exit-code table (decision 9):
-// **exit 2 denies** (stderr → agent message).
+// tool names — `Bash`, `Read`, `Write`, `Edit`, `mcp__…`); and the exit-code
+// table (decision 9): **exit 2 denies** (stderr → agent message).
 //
 // Claude has no `failClosed` flag, so Copse applies its fail-closed host policy
 // to execution failures. Exit 2 is a *decision*, not a failure, so it is honoured
@@ -37,6 +37,7 @@ import type {
   DialectInterpretation,
 } from './dialect-adapter.ts'
 import { type HookSpawnResult } from './hook-spawn.ts'
+import { testHookMatcher } from './matcher-regex.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 
@@ -152,11 +153,11 @@ export function claudeMatcherMatches(matcher: string | undefined, toolName: stri
   if (/^[A-Za-z0-9_|]+$/.test(matcher)) {
     return matcher.split('|').includes(toolName)
   }
-  try {
-    return new RegExp(matcher).test(toolName)
-  } catch {
-    return false
-  }
+  const result = testHookMatcher(matcher, toolName)
+  // A pattern that backtracks past its bound fires the hook rather than
+  // silently dropping a gate; one that does not compile never matches.
+  if (result === 'invalid') return false
+  return result === 'timeout' ? true : result
 }
 
 /** One parsed Claude settings file: usable hooks plus per-entry authoring warnings. */
@@ -347,7 +348,15 @@ function toCommandHook<E extends HookEventName>(
 // tool → Claude tool-name matcher + wire marshalling (both directions)
 // ---------------------------------------------------------------------------
 
-/** Map a canonical Copse tool call to the Claude PreToolUse tool_name + tool_input. */
+function stringInput(input: Record<string, unknown>, key: string): string {
+  const value = input[key]
+  return typeof value === 'string' ? value : ''
+}
+
+/**
+ * Map a canonical Copse tool call to the Claude PreToolUse tool_name + tool_input.
+ * Tools with no Claude Code counterpart return null, so no Claude hook sees them.
+ */
 export function claudeToolForTool(
   toolName: string,
   input: Record<string, unknown>,
@@ -363,14 +372,32 @@ export function claudeToolForTool(
     const path = input['path']
     return { toolName: 'Read', toolInput: { file_path: typeof path === 'string' ? path : '' } }
   }
+  if (toolName === 'write_file') {
+    return {
+      toolName: 'Write',
+      toolInput: { file_path: stringInput(input, 'path'), content: stringInput(input, 'content') },
+    }
+  }
+  if (toolName === 'str_replace') {
+    return {
+      toolName: 'Edit',
+      toolInput: {
+        file_path: stringInput(input, 'path'),
+        old_string: stringInput(input, 'old_string'),
+        new_string: stringInput(input, 'new_string'),
+        replace_all: input['replace_all'] === true,
+      },
+    }
+  }
   return null
 }
 
 /**
  * Discover the Claude PreToolUse command hooks that match `payload.toolName`, as
  * registry `CommandHook`s. Matching uses the Claude tool name (`Bash` / `Read` /
- * `mcp__…`) so a hook sees the vendor's tool vocabulary (decision 8). Claude has
- * no `failClosed`, so Copse's host policy makes `onFailure` closed.
+ * `Write` / `Edit` / `mcp__…`) so a hook sees the vendor's tool vocabulary
+ * (decision 8). Claude has no `failClosed`, so Copse's host policy makes
+ * `onFailure` closed.
  */
 export async function claudeToolGateHooks(
   payload: HookEventPayloads['toolGate'],
@@ -387,8 +414,9 @@ export async function claudeToolGateHooks(
 /**
  * Discover the Claude `PostToolUse` command hooks for a finished tool call, as
  * canonical `afterToolUse` `CommandHook`s. Matching uses the Claude tool name
- * (`Bash` / `Read` / `mcp__…`), the same vocabulary `PreToolUse` matches against,
- * so one matcher pattern covers a tool on both sides of the call.
+ * (`Bash` / `Read` / `Write` / `Edit` / `mcp__…`), the same vocabulary
+ * `PreToolUse` matches against, so one matcher pattern covers a tool on both
+ * sides of the call.
  *
  * Fired **detached** (decision 3) by the fire site (`after-tool-use.ts`), which
  * means Claude's "block" response cannot un-run the tool. Its `reason` /
@@ -501,6 +529,13 @@ function denyOutcome(reason: string): BlockingHookOutcome {
   return reason ? { decision: 'deny', agentMessage: reason } : { decision: 'deny' }
 }
 
+/** PreToolUse's deprecated top-level `decision: "block"` as a deny, else undefined. */
+function legacyBlockOutcome(parsed: unknown): BlockingHookOutcome | undefined {
+  if (!isRecord(parsed) || parsed['decision'] !== 'block') return undefined
+  const reason = parsed['reason']
+  return denyOutcome(typeof reason === 'string' ? reason.trim() : '')
+}
+
 /**
  * Interpret exit-0 stdout JSON: `continue: false` stops the run (treated as deny
  * for the gate), else `hookSpecificOutput.permissionDecision` is honoured.
@@ -526,8 +561,17 @@ function outcomeFromExitZero(stdout: string): {
     return { outcome: denyOutcome(reason), parseOk: true }
   }
 
+  // Claude Code still honours PreToolUse's deprecated top-level
+  // `decision: "block"` (+ `reason`) as a deny when `hookSpecificOutput` gives no
+  // `permissionDecision`. Ignoring it would let an older hook's block through.
+  // The deprecated `"approve"` is deliberately not mapped: dropping an allow
+  // falls back to Copse's own gate, which is the safe direction.
+  const legacyDeny = legacyBlockOutcome(parsed)
+
   const specific = (parsed as { hookSpecificOutput?: unknown }).hookSpecificOutput
-  if (typeof specific !== 'object' || specific === null) return { outcome: null, parseOk: true }
+  if (typeof specific !== 'object' || specific === null) {
+    return { outcome: legacyDeny ?? null, parseOk: true }
+  }
 
   const outcome: BlockingHookOutcome = {}
 
@@ -537,6 +581,9 @@ function outcomeFromExitZero(stdout: string): {
     const reasonRaw = (specific as { permissionDecisionReason?: unknown }).permissionDecisionReason
     const reason = typeof reasonRaw === 'string' && reasonRaw.trim() ? reasonRaw.trim() : ''
     if (reason) outcome.agentMessage = reason
+  } else if (legacyDeny) {
+    outcome.decision = 'deny'
+    if (legacyDeny.agentMessage !== undefined) outcome.agentMessage = legacyDeny.agentMessage
   }
 
   // H2: Claude's PreToolUse `hookSpecificOutput.additionalContext` injects text
