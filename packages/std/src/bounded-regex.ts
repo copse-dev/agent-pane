@@ -24,7 +24,10 @@ export function matchingIndexesWithin(
     const result: unknown = matchScript.runInContext(boundedContext, {
       timeout: Math.max(1, Math.ceil(opts.timeoutMs)),
     })
-    return Array.isArray(result) ? result.filter((index) => typeof index === 'number') : []
+    // Copy into this realm: the vm array carries the context's own Array.prototype.
+    return Array.isArray(result)
+      ? Array.from(result).filter((index) => typeof index === 'number')
+      : []
   } catch (error) {
     if (isScriptTimeout(error)) return 'timeout'
     throw error
