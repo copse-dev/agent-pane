@@ -18,30 +18,30 @@ are from the audited commit.
 
 ## Summary
 
-| Feature                                              | Where gated                                                  | Recommendation                | Key evidence                                                                                                       | Blockers                                                                                                           |
-| ---------------------------------------------------- | ------------------------------------------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| MCP-UI canvas (`copse.mcp-ui-canvas`)                | Plugin manifest; `mcp-registry.ts:466-496`                   | **Enable after X** — sign-off | Enabled-state e2e (`canvas-artefact-refresh`, `browser-session-restore`); layered CSP/opaque-origin/network policy | Plugin toggle does not reload MCP servers; ACP inline path ungated; CSP unit test; migration                       |
-| Apple Development (`copse.apple-development`)        | Plugin manifest; `xcodebuildmcp.ts:110-120`                  | **Enable after X** — sign-off | Inert until a project is enrolled; good unit coverage; demo scenario exists                                        | No recorded macOS e2e run (#2719); tool offered on every OS; preview depends on `vncEnabled`; migration            |
-| Copse Reviewer (`copse.review`)                      | Plugin manifest; `registry-bootstrap.ts:291-296`             | **Enable after X** — sign-off | Fails closed to read-only review; anchored multi-report history (#2826); seeded-report e2e specs                   | Very new and high-churn; no pipeline e2e; no cost estimate; model-comparison carry-over                            |
-| Automations (`copse.automations`)                    | Plugin manifest; `automation-service.ts:149,324,351`         | **Enable after X** — sign-off | Inert until a schedule is saved; real cron-boundary e2e (`automation-trigger.e2e.ts`)                              | Unattended runs absent from `shell-permissions.md`; no spend budget; approvals stall runs; dead event-inbox path   |
-| Roadmap plans (`copse.roadmap-plans`)                | Plugin manifest; `registry-bootstrap.ts:274-280`             | **Enable after X**            | 17 `roadmap-*.e2e.ts` specs with screenshots, 63-case pane unit suite                                              | `roadmap_plan` writes to the _active_ project, not the thread's; #2510; migration                                  |
-| CI investigator (`copse.ci-investigator`)            | Plugin manifest; `registry-bootstrap.ts:396-406`             | **Enable after X**            | Read-only `gh`; unregistered when `gh` is absent or unauthenticated                                                | Follow-up points at `investigate_ci` while `subagentsEnabled` is off; no sync/service tests; migration             |
-| Forced planning (`copse.forced-planning`)            | Plugin manifest; `turn-start-hooks.ts:138-158`               | **Enable after X**            | Pure, byte-identical when off, conforms to hooks plan P12                                                          | No recorded steer-eval lift; overlaps todo steering; e2e seed list omits it; doc edits (P12)                       |
-| OKF memories (`copse.okf-memories`)                  | Plugin manifest; `registry-bootstrap.ts:254-262`             | Keep opt-in — sign-off        | Pane e2e only; nothing drives `remember`/`recall` in a turn                                                        | Store keyed by the active project; provenance gaps (reported privately); uncapped `recall`                         |
-| Long-horizon tasks (`copse.long-horizon-tasks`)      | Plugin manifest; `registry-bootstrap.ts:308-314`             | Keep opt-in — sign-off        | Wakes obey the continuation budget; unit tests only; #558 open                                                     | Store keyed by the active project; no UI; hooks-plan decision 5 omits long-task wakes                              |
-| Dark factory (`copse.dark-factory`)                  | Plugin manifest; `dark-factory-sensor.ts:61`                 | Keep opt-in                   | Emits an event nothing subscribes to                                                                               | No consumer; description overstates it; no upgrade seed (see Rollout)                                              |
-| Advisor strategy (`copse.advisor-strategy`)          | Plugin manifest; `registry-bootstrap.ts:326-331`             | Keep opt-in — sign-off        | No runner test, no loop e2e                                                                                        | Uncapped transcript; `maxTokens` never applied; Stop does not abort; cross-provider egress without consent         |
-| Artifact checkpoint (`copse.artifact-checkpoint`)    | Plugin manifest; `run-agent-loop.ts:1183-1208`               | Keep opt-in                   | Cheap and well-contained; unit tests only                                                                          | Benchmark-shaped steering with no product A/B; wording wrong for research/refactor runs                            |
-| PII redaction (`copse.pii-redaction`)                | Plugin manifest; `pii-redactor.ts:91-93`                     | Keep opt-in — sign-off        | Tests use a fake Rampart only                                                                                      | Redacts every URL/IP in coding prompts; fails open silently; placeholder numbering resets on restart               |
-| Parallel Search (`copse.parallel-search`)            | Plugin manifest; `registry-bootstrap.ts:460-468`             | Keep opt-in                   | Paid third-party API; enabling _is_ the network consent (`permission-gate.ts:724-735`)                             | By design: needs the user's own key and consent                                                                    |
-| DevTools shortcut (`copse.devtools-shortcut`)        | Plugin manifest; `create-main-window.ts:304-336`             | Keep opt-in                   | Developer affordance                                                                                               | `globalShortcut` steals Ctrl+Shift+I system-wide                                                                   |
-| Remote desktop viewer (`vncEnabled`)                 | `settings-dialog.ts:300`; `ipc/vnc.ts` (≈11 inline defaults) | Keep opt-in — sign-off        | Good unit and e2e coverage when enabled                                                                            | Discovery (port scan, Bonjour, SSH) runs at every launch; LAN/SSH VNC not separable from local devices; stale copy |
-| Next-step tab complete (`nextStepSuggestionEnabled`) | `next-step-service.ts:56`; `next-step-hint.ts:71`            | Keep opt-in                   | Enabled-state e2e with screenshots                                                                                 | Second small-tasks call per turn; can fall back to the chat model; Tab-key accessibility decision                  |
-| Unattended container runs (`containerRunsEnabled`)   | `container-run-service.ts:322`; `input-bar.ts:414`           | Keep opt-in — sign-off        | Large unit suite; hardened container design                                                                        | Docker path never run in CI; #2689 draft; security findings reported privately                                     |
-| Model classifier (`modelClassifierEnabled`)          | `registry-bootstrap.ts:139-141`                              | Keep opt-in                   | Pure heuristic, 13 unit tests                                                                                      | Advice nothing consumes; toggle needs a restart; no enabled-state test                                             |
-| Delegating steps (`orchestrationStrategyEnabled`)    | `registry-bootstrap.ts:155-157`                              | Keep opt-in — sign-off        | Worker goes through the permission gate                                                                            | Runner untested; bypasses afterToolUse hooks; no spend cap; toggle needs a restart                                 |
-| ACP over SSH (`acpOverSshEnabled`)                   | `acp-ssh-transport.ts:60-76`                                 | Keep opt-in — sign-off        | Unit tests only                                                                                                    | No e2e/integration; design doc stale; security findings reported privately                                         |
-| Developer mode (`developerMode`)                     | `settings-dialog.ts:329`                                     | Keep opt-in                   | Developer affordance                                                                                               | Exposes hook configuration and main-window DevTools                                                                |
+| Feature                                              | Where gated                                                  | Recommendation                | Key evidence                                                                                                       | Blockers                                                                                                               |
+| ---------------------------------------------------- | ------------------------------------------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| MCP-UI canvas (`copse.mcp-ui-canvas`)                | Plugin manifest; `mcp-registry.ts:466-496`                   | **Enable after X** — sign-off | Enabled-state e2e (`canvas-artefact-refresh`, `browser-session-restore`); layered CSP/opaque-origin/network policy | Plugin toggle does not reload MCP servers; ACP inline path ungated; CSP unit test; migration                           |
+| Apple Development (`copse.apple-development`)        | Plugin manifest; `xcodebuildmcp.ts:110-120`                  | **Enable after X** — sign-off | Inert until a project is enrolled; good unit coverage; demo scenario exists                                        | No recorded macOS e2e run (#2719); tool offered on every OS; preview depends on `vncEnabled`; migration                |
+| Copse Reviewer (`copse.review`)                      | Plugin manifest; `registry-bootstrap.ts:291-296`             | **Enable after X** — sign-off | Fails closed to read-only review; anchored multi-report history (#2826); seeded-report e2e specs                   | Very new and high-churn; no pipeline e2e; no cost estimate; model-comparison carry-over                                |
+| Automations (`copse.automations`)                    | Plugin manifest; `automation-service.ts:149,324,351`         | **Enable after X** — sign-off | Inert until a schedule is saved; real cron-boundary e2e (`automation-trigger.e2e.ts`)                              | No spend budget; an unanswered approval still stalls a run (now named in Activity after 15 min, not resolved)          |
+| Roadmap plans (`copse.roadmap-plans`)                | Plugin manifest; `registry-bootstrap.ts:274-280`             | **Enable after X**            | 17 `roadmap-*.e2e.ts` specs with screenshots, 63-case pane unit suite                                              | `roadmap_plan` writes to the _active_ project, not the thread's; #2510; migration                                      |
+| CI investigator (`copse.ci-investigator`)            | Plugin manifest; `registry-bootstrap.ts:396-406`             | **Enable after X**            | Read-only `gh`; unregistered when `gh` is absent or unauthenticated                                                | Follow-up points at `investigate_ci` while `subagentsEnabled` is off; no sync/service tests; migration                 |
+| Forced planning (`copse.forced-planning`)            | Plugin manifest; `turn-start-hooks.ts:138-158`               | **Enable after X**            | Pure, byte-identical when off, conforms to hooks plan P12                                                          | No recorded steer-eval lift; overlaps todo steering; e2e seed list omits it; doc edits (P12)                           |
+| OKF memories (`copse.okf-memories`)                  | Plugin manifest; `registry-bootstrap.ts:254-262`             | Keep opt-in — sign-off        | Pane e2e only; nothing drives `remember`/`recall` in a turn                                                        | Store keyed by the active project; provenance gaps (reported privately); uncapped `recall`                             |
+| Long-horizon tasks (`copse.long-horizon-tasks`)      | Plugin manifest; `registry-bootstrap.ts:308-314`             | Keep opt-in — sign-off        | Wakes obey the continuation budget; unit tests only; #558 open                                                     | Store keyed by the active project; no UI; hooks-plan decision 5 omits long-task wakes                                  |
+| Dark factory (`copse.dark-factory`)                  | Plugin manifest; `dark-factory-sensor.ts:61`                 | Keep opt-in                   | Emits an event nothing subscribes to                                                                               | No consumer; description overstates it; no upgrade seed (see Rollout)                                                  |
+| Advisor strategy (`copse.advisor-strategy`)          | Plugin manifest; `registry-bootstrap.ts:326-331`             | Keep opt-in — sign-off        | No runner test, no loop e2e                                                                                        | Uncapped transcript; `maxTokens` never applied; Stop does not abort; cross-provider egress without consent             |
+| Artifact checkpoint (`copse.artifact-checkpoint`)    | Plugin manifest; `run-agent-loop.ts:1183-1208`               | Keep opt-in                   | Cheap and well-contained; unit tests only                                                                          | Benchmark-shaped steering with no product A/B; wording wrong for research/refactor runs                                |
+| PII redaction (`copse.pii-redaction`)                | Plugin manifest; `pii-redactor.ts:91-93`                     | Keep opt-in — sign-off        | Tests use a fake Rampart only                                                                                      | Redacts every URL/IP in coding prompts; fails open silently; placeholder numbering resets on restart                   |
+| Parallel Search (`copse.parallel-search`)            | Plugin manifest; `registry-bootstrap.ts:460-468`             | Keep opt-in                   | Paid third-party API; enabling _is_ the network consent (`permission-gate.ts:724-735`)                             | By design: needs the user's own key and consent                                                                        |
+| DevTools shortcut (`copse.devtools-shortcut`)        | Plugin manifest; `create-main-window.ts:304-336`             | Keep opt-in                   | Developer affordance                                                                                               | `globalShortcut` steals Ctrl+Shift+I system-wide                                                                       |
+| Remote desktop viewer (`vncEnabled`)                 | `settings-dialog.ts:300`; `ipc/vnc.ts` (≈11 inline defaults) | Keep opt-in — sign-off        | Good unit and e2e coverage when enabled                                                                            | Discovery (port scan, Bonjour, SSH) runs at every launch; LAN/SSH VNC not separable from local devices; stale copy     |
+| Next-step tab complete (`nextStepSuggestionEnabled`) | `next-step-service.ts:56`; `next-step-hint.ts:71`            | Keep opt-in                   | Enabled-state e2e with screenshots                                                                                 | Second small-tasks call per turn; can fall back to the chat model; Tab-key accessibility decision                      |
+| Unattended container runs (`containerRunsEnabled`)   | `container-run-service.ts:322`; `input-bar.ts:414`           | Keep opt-in — sign-off        | Large unit suite; hardened container design                                                                        | Docker path has no required CI (advisory workflow added, never yet run); no cost/idle budget; #2689; no named reviewer |
+| Model classifier (`modelClassifierEnabled`)          | `registry-bootstrap.ts:139-141`                              | Keep opt-in                   | Pure heuristic, 13 unit tests                                                                                      | Advice nothing consumes; toggle needs a restart; no enabled-state test                                                 |
+| Delegating steps (`orchestrationStrategyEnabled`)    | `registry-bootstrap.ts:155-157`                              | Keep opt-in — sign-off        | Worker goes through the permission gate                                                                            | Runner untested; bypasses afterToolUse hooks; no spend cap; toggle needs a restart                                     |
+| ACP over SSH (`acpOverSshEnabled`)                   | `acp-ssh-transport.ts:60-76`                                 | Keep opt-in — sign-off        | Unit tests only                                                                                                    | No e2e/integration; design doc stale; security findings reported privately                                             |
+| Developer mode (`developerMode`)                     | `settings-dialog.ts:329`                                     | Keep opt-in                   | Developer affordance                                                                                               | Exposes hook configuration and main-window DevTools                                                                    |
 
 "Sign-off" means the item touches sandbox, network, credential or data-egress scope. Changing its
 default needs a **named human reviewer** under [`docs/shell-permissions.md`](../shell-permissions.md),
@@ -191,18 +191,30 @@ trust badge.
 
 ### Automations — Enable after X (sign-off)
 
-- **What:** project-scoped cron schedules. Each run starts a fresh thread in its own worktree. Event
-  automations are not wired in: `AutomationEventInbox` is only used by its own test.
+> **Update 2026-10-07.** The audit text below is kept as written except where struck by this
+> note. Since the audit: the event inbox _is_ wired (branch CI, PR-scoped CI, PR changed, issue
+> labelled, with delivery history — see [event-driven-automations.md](event-driven-automations.md#status-update-2026-10-07));
+> a run's finished checkout is handed to the next run instead of blocking it behind ignored files
+> ([automations.md](automations.md#worktree-hand-over)); and failures have names, remedies and a
+> place to see them. **Not changed:** no spend budget, approvals still stall unattended runs
+> (they are now flagged "Waiting for approval" in Activity after 15 minutes, and the manager says
+> so, but nothing answers them — deferral mode is still unused), and the visual specs added for
+> the new states have not been executed (no Electron binary was available when they were written).
+> The `shell-permissions.md` claim in the summary table was only ever true of cron-started _shell_
+> runs; that file covers automation grants and the unattended container boundary.
+
+- **What:** project-scoped cron schedules and GitHub event triggers. Each run starts a fresh thread in
+  its own worktree.
 - **Tests:** strong. There are unit tests for the service, cron, controller, dialog and settings.
   `automation-trigger.e2e.ts` exercises the real cron boundary with a mock turn, and five more
   enabled-state e2e specs record screenshots.
 - **Issues/churn:** 14 commits since 2026-08-01, 4 of them fixes (#1803, #1956, #2149, #1677).
   The heading-alignment polish landed in #3055.
 - **Cost:** none until a schedule exists (`automation-service.ts:155-157`). After that, one full agent
-  turn per match, with no token or cost budget per schedule.
+  turn per match, with no token or cost budget per schedule. Event triggers are capped at three runs
+  per 24 hours per automation; cron schedules have no per-day cap.
 - **Security:** runs inherit the user's auto-run policy and happen with nobody watching. Deferral mode
   exists for this case (`deferral-mode.ts:8`) but is not used, so an approval prompt stalls the run.
-  Neither behaviour is covered by `shell-permissions.md`.
 
 ### Roadmap plans — Enable after X
 
@@ -340,19 +352,83 @@ window-local accelerator.
 
 ### Unattended container runs (`containerRunsEnabled`) — Keep opt-in (sign-off)
 
+> **Update 2026-10-07 — re-audit against the code.** Two of the original blockers were stale:
+> the settings copy _already_ names the dependency-install hosts (a committed demo spec,
+> `settings-container-runs.demo.ts`, asserts it), and `shell-permissions.md` _does_ describe the
+> unattended container boundary. What remains is below. **The default is not flipped and must not
+> be flipped until a named human security reviewer signs off under
+> [`shell-permissions.md`](../shell-permissions.md); no reviewer is named anywhere in the repo
+> (no `CODEOWNERS`, and that file names no person), so naming one is the first action item.**
+
 - **Design:** the container is hardened: read-only, `cap-drop=ALL`, `--network=none` with a brokered
   egress allowlist, a non-root user, and nothing applied automatically.
-- **Coverage gap:** the Docker path has never run in CI. The integration tests need
-  `COPSE_THREAD_CONTAINER_E2E=1`, which nothing sets, and `thread-in-container.md` records no
-  real-model run.
+- **Coverage gap:** the Docker path had never run in CI: the integration tests
+  (`thread-container.integration.test.ts`, `acp-container.integration.test.ts`) need
+  `COPSE_THREAD_CONTAINER_E2E=1`, which nothing set. `.github/workflows/thread-container.yml`
+  now runs them on `ubuntu-latest` for PRs touching the runtime, nightly, and on dispatch. It is
+  **advisory and has never been run**: it is deliberately outside the `CI Passed` aggregate (pinned
+  by `ci-workflow-invariants.test.ts`) until it has been observed green. Unverified on hosted
+  runners: the `--pids-limit` / `--memory` / non-root checks, seccomp/AppArmor attestation, bind-mount
+  ownership under the guest's unprivileged uid, and pulling the base image by digest. The test needs
+  no model or credentials (a scripted model server and scripted ACP agent). A real-model run is
+  still not recorded in `thread-in-container.md`.
 - **Churn and open work:** 65 commits since 2026-08-01, 13 of them fixes. Draft #2689 is still open
   with hardening work.
-- **Copy:** the settings text says a run reaches "only its model's origin", but "Install dependencies"
-  is ticked by default and adds package-registry and GitHub hosts (`guest-install.ts:36-45`).
+- **Copy:** the settings text says a run reaches "only its model's origin" and then, when "Install
+  dependencies" is ticked (the per-run default), the npm registry, GitHub and Electron's download
+  hosts. That is accurate as far as it goes. Not stated: the install allowlist is fixed for the
+  **whole run**, not just the install step (`container-run-service.ts:414-422`); GitHub access is
+  by wildcard (`*.github.com`, `*.githubusercontent.com`) — anonymous reads only, as the guest has
+  no token, `gh` or SSH agent, but wide. Tightening the wording would change a committed screenshot
+  baseline, so it is left as a follow-up with the reviewer's decision on whether the wildcards
+  should narrow instead.
+- **Budgets:** wall-clock (60 s – 24 h, enforced by a `docker wait` deadline) and a token ceiling
+  (enforced in the worker) are mandatory per run. **Missing against
+  [`unattended-runs.md`](unattended-runs.md) decision 7:** a _cost_ ceiling, an _idle_ reap, and
+  suspend-with-state (a breach stops the run). Budgets are chosen per run in the composer, not
+  armed once as policy.
+- **Automations:** no automation code dispatches into a container, so scheduled/event runs are
+  _not_ contained — they run on the host under the normal permission path. "Unattended container
+  runs by default" therefore has two separate meanings: the _setting_ (menu entry shown) and
+  _automations running contained_. Only the first exists.
 - **Security findings:** the review found problems with credential handling and egress. They are being
   reported privately under [`SECURITY.md`](../../SECURITY.md) and are not described here.
-- **Cost:** even with the setting off, `sweepOrphans()` runs the `docker` CLI on every window creation
-  (`register-handlers.ts:554`).
+- **Cost:** even with the setting off, `sweepOrphans()` is gated on the setting or on recorded runs
+  (`container-run-service.ts:94`).
+
+#### What blocks the default flip
+
+| #   | Blocker                                                                                 | Status                                              |
+| --- | --------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| 1   | A named human security reviewer under `shell-permissions.md`                            | **Open — needs a person; not decided here**         |
+| 2   | Docker path green in CI                                                                 | Workflow written, unrun; promote after it is green  |
+| 3   | A real-model run recorded for the container route                                       | Open                                                |
+| 4   | Cost ceiling and idle reap (decision 7), suspend-not-stop                               | Open — design work, not a toggle                    |
+| 5   | Egress wording / wildcard narrowing; allowlist scoped to the install step               | Open — needs reviewer input and a new screenshot    |
+| 6   | Private security findings resolved; #2689 merged                                        | Open                                                |
+| 7   | Deferred approvals (`deferred-approvals.md`) so a contained run never blocks on a modal | Open (hard dependency of unattended-runs U2)        |
+| 8   | For automations: dispatch of a run into a container, with the same error vocabulary     | Not started; `container-missing` is reserved for it |
+
+#### One-shot migration plan for existing profiles (proposed, not implemented)
+
+`containerRunsEnabled` was added after the 2026-08-03 change that saves only fields the user
+touched, so a profile that never toggled it has **no stored value** and would receive any new
+default silently; a profile that toggled it on and off has a stored `false` that a default flip
+would not reach. Because turning it on adds an egress path and a menu entry, do **not** let a
+default change reach users unannounced:
+
+1. Ship the flip behind a profile marker, `migrations.containerRunsDefault`, written once at
+   startup (the pattern of `migrateReviewPluginFromModelComparison`). Absent marker + absent
+   stored value → write the marker, leave the setting **unset** and show a one-time, dismissible
+   notice in Settings → Experimental naming the new default and the egress it adds.
+2. Absent marker + stored `true` or `false` → write the marker only. An explicit choice is never
+   overridden, in either direction.
+3. Only after the notice has shipped for one release, change the code default for **unset**
+   profiles. Never write `true` into a profile on its behalf.
+4. Roll back by clearing the marker and reverting the default; stored values are untouched, so
+   nothing has to be un-migrated.
+5. Per-run arming (budgets, install-dependencies, agent sign-in copy) stays per run — the default
+   only controls whether the menu entry exists.
 
 ### Model classifier (`modelClassifierEnabled`) — Keep opt-in
 

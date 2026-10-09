@@ -5,6 +5,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
 import { closeIcon } from '../dom/icons.ts'
 import { createAutomationPluginSettings } from './automation-plugin-settings.ts'
+import { switchProjectThread } from '../controller/projects.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
 import { openAutomationSettings } from './settings-dialog.ts'
 
@@ -74,6 +75,13 @@ export function openAutomationDialog(
       options.scheduleId,
       options.createNew,
       projectId,
+      {
+        openRun: (threadId) => {
+          if (!projectId) return
+          close()
+          switchProjectThread(store, api, projectId, threadId)
+        },
+      },
     )
     const toggle = el(
       'button',
