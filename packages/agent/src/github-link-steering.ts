@@ -22,7 +22,11 @@ export function parseGithubRepoSlug(remoteUrl: string): string | null {
   const trimmed = remoteUrl.trim()
   if (!trimmed) return null
 
-  const scp = trimmed.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i)
+  // scp-like syntax: any SSH user (GitHub Enterprise-style `org-123@` aliases
+  // too) and GitHub's port-443 host `ssh.github.com`.
+  const scp = trimmed.match(
+    /^(?:[^@\s/:]+@)?(?:ssh\.)?github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i,
+  )
   if (scp) {
     const owner = scp[1] ?? ''
     const repo = (scp[2] ?? '').replace(/\.git$/i, '')
@@ -31,7 +35,7 @@ export function parseGithubRepoSlug(remoteUrl: string): string | null {
 
   try {
     const url = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`)
-    if (url.hostname.replace(/^www\./i, '').toLowerCase() !== 'github.com') return null
+    if (url.hostname.replace(/^(?:www|ssh)\./i, '').toLowerCase() !== 'github.com') return null
     const [owner, repoRaw] = url.pathname.replace(/^\/+/, '').split('/')
     if (!owner || !repoRaw) return null
     const repo = repoRaw.replace(/\.git$/i, '')
