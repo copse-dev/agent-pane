@@ -13,7 +13,7 @@ import {
   turnErrorDetail,
 } from './agent-errors.ts'
 import { AcpTurnFailure } from './acp/acp-agent-service.ts'
-import { ThreadWorktreeDetachedError } from './worktree-manager.ts'
+import { ThreadWorktreeDetachedError, ThreadWorktreeOnBaseBranchError } from './worktree-manager.ts'
 
 describe('classifyAgentError', () => {
   it('maps 401 to API key guidance', () => {
@@ -229,6 +229,22 @@ describe('classifyAgentError', () => {
     assert.equal(
       result,
       "This thread's checkout is detached from its branch. Your files are preserved. Use the recovery button next to the branch name below the composer (**Reattach**, **Continue rebase**, or **Reset bisect**) to put it back on `copse/thread-branch`, then retry.",
+    )
+    assert.doesNotMatch(result, /^An error occurred:/)
+  })
+
+  it('turns a thread worktree sitting on its base branch into recovery guidance (#1882)', () => {
+    const result = classifyAgentError(
+      new ThreadWorktreeOnBaseBranchError({
+        baseBranch: 'main',
+        branch: 'copse/thread-branch',
+        path: '/worktrees/project-1/thread-1',
+      }),
+    )
+
+    assert.equal(
+      result,
+      "This thread's checkout is on its base branch `main` instead of its own branch, so Copse will not run in it: edits would land directly on `main`. Your files are preserved. In the checkout at `/worktrees/project-1/thread-1`, run `git checkout copse/thread-branch` to return to the thread branch (or `git checkout -b <new-branch>` to start a fresh one), then retry.",
     )
     assert.doesNotMatch(result, /^An error occurred:/)
   })

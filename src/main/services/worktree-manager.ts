@@ -271,6 +271,35 @@ export class ThreadWorktreeDetachedError extends Error {
   }
 }
 
+/**
+ * The linked checkout's HEAD is the thread's recorded base branch (#1882).
+ * Git refuses to check a branch out twice, so this cannot happen while the
+ * project checkout still holds the base branch; it happens once the user has
+ * moved the project checkout elsewhere and an agent (or the user) then runs
+ * `git checkout <base>` inside the thread worktree. Validation stays fail
+ * closed: edits in that state would land directly on the base branch. The
+ * error carries what the recovery needs, so callers can say which checkout
+ * is on which branch and which thread branch to return to.
+ */
+export class ThreadWorktreeOnBaseBranchError extends Error {
+  /** The recorded base branch the checkout is unexpectedly on. */
+  readonly baseBranch: string
+  /** The thread branch the metadata recorded for this checkout. */
+  readonly branch: string
+  /** The linked checkout's canonical path. */
+  readonly path: string
+
+  constructor(input: { baseBranch: string; branch: string; path: string }) {
+    super(
+      `Thread worktree branch must differ from its recorded base branch: ${input.path} is checked out on "${input.baseBranch}" instead of its thread branch "${input.branch}"`,
+    )
+    this.name = 'ThreadWorktreeOnBaseBranchError'
+    this.baseBranch = input.baseBranch
+    this.branch = input.branch
+    this.path = input.path
+  }
+}
+
 interface MutableWorktreeRecord {
   path?: string
   head?: string
@@ -1368,7 +1397,11 @@ async function validateThreadWorktreeState(
   // is retained here for the recovery-only validator below.
   if (liveBranch) {
     if (liveBranch === input.worktree.baseBranch) {
-      throw new Error('Thread worktree branch must differ from its recorded base branch')
+      throw new ThreadWorktreeOnBaseBranchError({
+        baseBranch: input.worktree.baseBranch,
+        branch: input.worktree.branch,
+        path: canonicalPath,
+      })
     }
   }
 

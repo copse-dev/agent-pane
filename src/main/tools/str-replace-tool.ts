@@ -6,6 +6,7 @@ import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { getPendingAfterContent, applyOrStageDiff } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
+import { isAgentRunExploreMode } from '../services/agent-run-explore-mode.ts'
 
 function countOccurrences(haystack: string, needle: string): number {
   if (needle === '') return 0
@@ -16,6 +17,22 @@ function countOccurrences(haystack: string, needle: string): number {
     idx += needle.length
   }
   return count
+}
+
+/**
+ * explore returns a prose summary with approximate line numbers, not verbatim
+ * bytes, so telling the model to "re-read" is ambiguous — it was satisfied by
+ * calling explore again (#1433). Name the remedy the run actually has: outside
+ * explore mode only read_file returns the exact text str_replace needs to
+ * match; in explore mode read_file is delegated away from the parent (see
+ * `PARENT_DELEGATED_TOOLS`), so naming it sends the model after a tool it
+ * cannot call — ask explore for a verbatim quote instead.
+ */
+export function oldStringNotFoundMessage(path: string, exploreMode: boolean): string {
+  if (exploreMode) {
+    return `old_string was not found in the file. explore returns a summary, not verbatim bytes: call explore again on ${path} asking it to quote the exact lines you want to replace verbatim in a fenced code block, then copy old_string from that quote.`
+  }
+  return `old_string was not found in the file. Call read_file on ${path} and copy the exact text from its output — explore returns a summary, not verbatim bytes.`
 }
 
 export const strReplaceTool = defineTool({
@@ -46,13 +63,7 @@ export const strReplaceTool = defineTool({
     }
 
     const occurrences = countOccurrences(before, old_string)
-    if (occurrences === 0) {
-      // explore returns a prose summary with approximate line numbers, not
-      // verbatim bytes, so telling the model to "re-read" is ambiguous — it
-      // was satisfied by calling explore again (#1433). Name the remedy: only
-      // read_file returns the exact text str_replace needs to match.
-      return `old_string was not found in the file. Call read_file on ${path} and copy the exact text from its output — explore returns a summary, not verbatim bytes.`
-    }
+    if (occurrences === 0) return oldStringNotFoundMessage(path, isAgentRunExploreMode())
     if (!replace_all && occurrences > 1) {
       return `old_string appears ${String(occurrences)} times; include more surrounding context so it is unique, or set replace_all to true.`
     }

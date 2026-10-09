@@ -1,4 +1,4 @@
-import type { TodoItem, TodoStatus, TodoUpdateInput } from '@shared/types/todo.ts'
+import type { TodoCheck, TodoItem, TodoStatus, TodoUpdateInput } from '@shared/types/todo.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 // Turn-start steering helpers moved into `@copse/agent` (M0.2) so first-party
@@ -74,6 +74,50 @@ export function applyTodoUpdate(
     })
   }
   return [...byId.values()]
+}
+
+function sameTodoCheck(a: TodoCheck | undefined, b: TodoCheck | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b
+  if (a.kind !== b.kind) return false
+  switch (a.kind) {
+    case 'shell':
+      return b.kind === 'shell' && a.command === b.command && a.expectExit === b.expectExit
+    case 'fileExists':
+      return b.kind === 'fileExists' && a.path === b.path
+    case 'typecheck':
+      return true
+  }
+}
+
+/**
+ * Holds back completions whose acceptance `check` arrived in the same update
+ * that flipped the item to `completed` (#1433, item 5). A check attached at
+ * completion time is written to pass, not to verify: the run that motivated
+ * this marked "fetch origin/main and rebase" completed after two failed
+ * fetches, attaching a `gh pr view` check in the same call so the gate had
+ * something green to run. The check is kept on the item (so the next update
+ * can complete it honestly) but the status stays `in_progress`; the gate in
+ * `gateCompletedStatus` then never runs a check the model has not committed to
+ * ahead of the work. Only items already on the plan are held: a brand-new item
+ * has no prior state to contradict.
+ */
+export function holdChecksAttachedAtCompletion(
+  before: readonly TodoItem[],
+  after: readonly TodoItem[],
+): { todos: TodoItem[]; messages: string[] } {
+  const beforeById = new Map(before.map((t) => [t.id, t]))
+  const messages: string[] = []
+  const todos = after.map((item) => {
+    if (item.status !== 'completed' || !item.check) return item
+    const prev = beforeById.get(item.id)
+    if (!prev || prev.status === 'completed') return item
+    if (sameTodoCheck(prev.check, item.check)) return item
+    messages.push(
+      `${item.content}: acceptance check was attached in the same call that marked it completed, so it cannot verify the work. Kept in_progress with the check recorded; complete it in a later update_todos call.`,
+    )
+    return { ...item, status: 'in_progress' as const }
+  })
+  return { todos, messages }
 }
 
 export function gateCompletedStatus(
