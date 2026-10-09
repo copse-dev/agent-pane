@@ -36,7 +36,7 @@ describe('hooks:test target resolution', () => {
     const parsed = zHookTestRequest.parse({ ...sandboxed, sandbox: false })
     const target = resolveHookTestTarget(parsed, [sandboxed])
     assert.deepEqual(target, sandboxed)
-    assert.equal(target && Object.hasOwn(target, 'sandbox'), false)
+    assert.equal(Object.hasOwn(target, 'sandbox'), false)
   })
 
   it('carries a discovered sandbox escape from discovery', () => {

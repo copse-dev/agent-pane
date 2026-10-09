@@ -27,7 +27,7 @@ describe('ipc-guards assertMainFrameSender', () => {
     // window still open, every request it sends must reach the trusted-frame
     // check rather than crash on the closed boot window the handlers captured.
     const closedBootWindow = {
-      isDestroyed: () => true,
+      isDestroyed: (): boolean => true,
       get webContents(): never {
         throw new TypeError('Object has been destroyed')
       },
