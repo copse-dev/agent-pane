@@ -64967,7 +64967,7 @@ function archiveThread(store2, id, persisted) {
   const now = persisted?.archivedAt ?? Date.now();
   const updated = threads.map((t2) => {
     if (t2.id !== id) {
-      return t2.sideChat?.parentThreadId === id && !isThreadArchived(t2) ? { ...t2, archivedAt: now, updatedAt: now } : t2;
+      return t2.sideChat?.parentThreadId === id && !isThreadArchived(t2) && t2.status !== "running" ? { ...t2, archivedAt: now, updatedAt: now } : t2;
     }
     const archived = { ...t2, archivedAt: now, updatedAt: now };
     if (persisted) {
@@ -87296,6 +87296,15 @@ function mountProjectsPane(root, store2, api2) {
   const archivingThreads = /* @__PURE__ */ new Set();
   async function archiveProjectThread(projectId, threadId) {
     if (projectId !== store2.getState().activeProjectId || archivingThreads.has(threadId)) return;
+    const runningSideChat = store2.getState().threads.some(
+      (t2) => t2.sideChat?.parentThreadId === threadId && !isThreadArchived(t2) && t2.status === "running"
+    );
+    if (runningSideChat) {
+      showToast("Wait for this chat\u2019s side chat to finish before archiving it.", {
+        variant: "error"
+      });
+      return;
+    }
     archivingThreads.add(threadId);
     try {
       await flushProjectThreads(api2, projectId, store2.getState().threads);
