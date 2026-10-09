@@ -100,6 +100,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     code_block_run_requested: new Set(),
     code_block_run_finished: new Set(),
     attention_changed: new Set(),
+    sidebar_threads_loaded: new Set(),
   }
 
   function on<K extends keyof StoreEvents>(event: K, handler: EventHandler<K>): Unsubscribe {

@@ -7,7 +7,13 @@ function attachMermaidExpand(root: ParentNode): void {
   attach(root, () => {
     const element = document.createElement('iframe')
     element.className = 'mermaid-frame'
-    return { element, ready: Promise.resolve({ width: 400, height: 300 }) }
+    return {
+      element,
+      ready: Promise.resolve({ width: 400, height: 300 }),
+      dispose: (): void => {
+        element.remove()
+      },
+    }
   })
 }
 import { qs, qsRequired } from '../dom/helpers.ts'

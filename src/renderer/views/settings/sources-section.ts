@@ -8,6 +8,7 @@ import { qsRequired } from '../../dom/helpers.ts'
 import { openAttachmentPreview } from '../../attachments/attachment-preview.ts'
 import { showConfirmDialog } from '../confirm-dialog.ts'
 import { makeSourceRow } from './source-row.ts'
+import { mountSkillsSources } from '../settings-sources-skills.ts'
 
 export interface SourcesSectionOptions {
   root: HTMLElement
@@ -29,6 +30,7 @@ export function createSourcesSection({
   onHeadingsChanged,
 }: SourcesSectionOptions): SourcesSection {
   let generation = 0
+  const skillSources = mountSkillsSources({ root, api, makeSourceRow })
   /**
    * Rows for Settings → Sources → Agents: what Copse found, what it skipped, and
    * what lost a name collision.
@@ -418,7 +420,7 @@ export function createSourcesSection({
       const [instructions, cursorRules, skills, agents, hooks] = await Promise.all([
         api.instructions.list(),
         api.cursorRules.list(),
-        api.skills.list(),
+        api.skills.sources(),
         api.agents.list(),
         api.hooks.list(),
       ])
@@ -469,19 +471,7 @@ export function createSourcesSection({
       if (!root.querySelector('.settings-content')?.classList.contains('settings-searching'))
         onHeadingsChanged()
 
-      fillSourceList(
-        '#sources-skills-list',
-        skills.map((s) =>
-          makeSourceRow(s.name, s.source, s.description || null, {
-            // Keep the resting list uncluttered: path lives on hover (and as a
-            // native tooltip fallback). Description stays as the always-visible
-            // detail; when a skill has none, the hover line is the only path.
-            titleAttr: s.skillPath,
-            hoverDetail: s.skillPath,
-          }),
-        ),
-        'No skills discovered.',
-      )
+      skillSources.refresh(skills)
 
       fillSourceList('#sources-agents-list', makeAgentRows(agents), 'No agents discovered.')
 
@@ -505,6 +495,7 @@ export function createSourcesSection({
     refresh: refreshSources,
     invalidate: (): void => {
       generation += 1
+      skillSources.invalidate()
     },
   }
 }

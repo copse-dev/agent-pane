@@ -143,7 +143,7 @@ describe('advisor pair assessment hint', function () {
     })
 
     const hint = $('#advisorPairHint')
-    await browser.waitUntil(async () => /external ACP agent/i.test(await hint.getText()), {
+    await browser.waitUntil(async () => /external coding agent/i.test(await hint.getText()), {
       timeout: 5_000,
       timeoutMsg: 'advisor pair hint did not show the ACP note',
     })

@@ -44,7 +44,7 @@ import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { registerBrowserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
-import { listSkills } from './skills/skills-registry.ts'
+import { listSkills, listModelInvocableSkills } from './skills/skills-registry.ts'
 import { getSetting, resolveApiKey } from './storage/settings.ts'
 import { isGhAvailable } from './tool-availability.ts'
 import {
@@ -549,7 +549,9 @@ export function pluginEnableRefusal(pluginId: string, enabled: boolean): string 
 
 /** Register skill tools after the skills registry has been populated. */
 export function registerSkillTools(registry: ToolRegistry): void {
-  const available = getSetting<boolean>('skillsEnabled', true) && listSkills().length > 0
+  const available =
+    getSetting<boolean>('skillsEnabled', true) &&
+    (listSkills().length > 0 || listModelInvocableSkills().length > 0)
   if (available) {
     if (!registry.has('read_skill')) registry.register(readSkillTool)
   } else {

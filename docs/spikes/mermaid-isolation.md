@@ -1,5 +1,9 @@
 # Mermaid isolation prototype
 
+The reusable execution boundary is now extracted by the
+[adapter migration](mermaid-adapter-migration.md). This document retains the
+original prototype rationale and evaluation; see the migration for current ownership.
+
 This worktree prototypes an app-owned Mermaid execution frame. It is not a
 completed cross-platform rollout or a CPU/memory isolation guarantee.
 

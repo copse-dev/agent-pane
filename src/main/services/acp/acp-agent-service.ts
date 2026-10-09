@@ -18,7 +18,10 @@ import type {
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
+import {
+  collectPriorPromptImages,
+  promptPayloadFromUserContent,
+} from '@shared/remote-agent-stream.ts'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
@@ -352,7 +355,7 @@ export function isTransientProviderError(err: unknown): boolean {
  * session ID only when the agent advertised `session/resume`. The next user
  * turn then restores that session without replaying work already accepted by
  * the agent; otherwise it opens a fresh session and replays history. This is
- * the `"ACP connection closed"` case that previously surfaced straight to the
+ * the "coding agent connection closed" case that previously surfaced straight to the
  * user with no recovery path.
  */
 export function isAcpConnectionDropped(err: unknown): boolean {
@@ -364,7 +367,7 @@ export function isAcpConnectionDropped(err: unknown): boolean {
   if (/process(?:transport)? is not ready for writing/i.test(msg)) return true
   if (/query closed before response received/i.test(msg)) return true
   if (/process exited with (?:code|signal)/i.test(msg)) return true
-  if (/ACP agent .+ exited with (?:code|signal)/i.test(msg)) return true
+  if (/coding agent .+ exited with (?:code|signal)/i.test(msg)) return true
   return false
 }
 
@@ -537,7 +540,7 @@ async function runAcpAgentTurn(
   const agent = getAcpAgent(options.agentId)
   if (!agent) {
     throw new Error(
-      `ACP agent "${options.agentId}" is not configured or is disabled. Add it in Settings → ACP agents.`,
+      `The coding agent "${options.agentId}" is not configured or is disabled. Add it in Settings → General → Providers.`,
     )
   }
 
@@ -558,7 +561,7 @@ async function runAcpAgentTurn(
   const readonlyCheckout = isThreadCheckoutDeferred()
   const cwd = getAgentExecutionRoot()
   if (!cwd) {
-    throw new Error('Open a folder before running an ACP agent so it has a workspace to act in.')
+    throw new Error('Open a folder before running a coding agent so it has a workspace to act in.')
   }
   const projectRoot = getAgentProjectRoot()
   // The turn's trusted context, resolved once by the dispatcher before this
@@ -588,7 +591,7 @@ async function runAcpAgentTurn(
   const hasText = Boolean(outboundPayload.text.trim())
   const hasImages = (outboundPayload.images?.length ?? 0) > 0
   if (!hasText && !hasImages) {
-    throw new Error('ACP agent prompt cannot be empty.')
+    throw new Error('The prompt for the coding agent cannot be empty.')
   }
 
   const model = options.model ?? agent.model
@@ -761,7 +764,7 @@ async function runAcpAgentTurn(
     const includeImages = entry.open.promptImage && hasImages
     if (!hasText && !includeImages) {
       throw new Error(
-        'This ACP agent does not support image prompts. Add text, or use an agent that advertises prompt.image.',
+        'This coding agent does not support image prompts. Add text, or use an agent that accepts images.',
       )
     }
     const promptBlocks = buildAcpPromptContent(
@@ -771,7 +774,7 @@ async function runAcpAgentTurn(
         sandboxed,
         readonlyCheckout,
         includeNotes: fresh,
-        includeImages,
+        includeImages: entry.open.promptImage,
         ...(options.operatorInstructions
           ? { operatorInstructions: options.operatorInstructions }
           : {}),
@@ -886,7 +889,7 @@ export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgen
   if (!agent) return { models: null, modes: null }
   const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
   if (!cwd) {
-    throw new Error('Open a folder before detecting an ACP agent’s models.')
+    throw new Error('Open a folder before detecting a coding agent’s models.')
   }
   const sandbox = resolveAcpSandbox(agent)
   // A probe only runs `initialize` to enumerate models/modes — it needs no
@@ -1277,7 +1280,7 @@ async function emitBypassedWriteAudit(
     type: 'tool_result',
     toolCallId: id,
     result:
-      'Warning: these files changed on disk during the ACP turn outside the approved ' +
+      'Warning: these files changed on disk during the agent’s turn outside the approved ' +
       "sphere — no diff was reviewed for them. The write came from the agent's own " +
       'tools (e.g. its shell) or from something else entirely:\n' +
       bypassed.map((p) => `- ${p}`).join('\n') +
@@ -1480,13 +1483,16 @@ export function buildAcpPrompt(
   )
 }
 
+/** Limit image replay on a fresh ACP handoff while giving current attachments priority. */
+const MAX_ACP_HANDOFF_IMAGES = 5
+
 /**
  * Build the ACP `session/prompt` content blocks for a turn (issue #831).
  *
- * Always includes one text block from {@link buildAcpPrompt}. When
- * `includeImages` is true (agent advertised `promptCapabilities.image`), also
- * appends image content blocks from the current user message so vision-capable
- * agents receive the attachments instead of having them dropped.
+ * Always includes one text block from {@link buildAcpPrompt}. When the agent
+ * supports images, a fresh session also receives recent images from prior user
+ * turns. The caller passes no prior messages for an existing session, so those
+ * images are not resent on every turn.
  */
 export function buildAcpPromptContent(
   userPrompt: UserContent,
@@ -1511,8 +1517,11 @@ export function buildAcpPromptContent(
   })
   const blocks: ContentBlock[] = [{ type: 'text', text }]
   if (opts?.includeImages) {
-    const { images } = promptPayloadFromUserContent(userPrompt)
-    for (const image of images ?? []) {
+    const currentImages = promptPayloadFromUserContent(userPrompt).images ?? []
+    const priorBudget = Math.max(0, MAX_ACP_HANDOFF_IMAGES - currentImages.length)
+    const priorImages =
+      priorBudget > 0 ? collectPriorPromptImages(priorMessages).slice(-priorBudget) : []
+    for (const image of [...priorImages, ...currentImages]) {
       blocks.push({ type: 'image', mimeType: image.mimeType, data: image.data })
     }
   }

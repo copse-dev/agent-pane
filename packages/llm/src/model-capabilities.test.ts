@@ -34,6 +34,7 @@ const GPT_REASONING = [
   'supportsStrictTools',
   'supportsVerbosity',
   'supportsParallelToolCallsControl',
+  'supportsServerCompaction',
   'prefersApplyPatch',
   'acceptsDeveloperRole',
 ]
@@ -137,9 +138,19 @@ describe('modelCapabilities: catalog models', () => {
     }
   })
 
-  it('no catalog model claims server compaction until a consumer verifies it', () => {
+  it('claims server compaction only for the GPT-5/6 families OpenAI documents it for', () => {
     for (const row of CATALOG_ROWS) {
-      assert.equal(modelCapabilities(row.id).supportsServerCompaction, false, row.id)
+      assert.equal(
+        modelCapabilities(row.id).supportsServerCompaction,
+        row.transport === 'openai-responses',
+        row.id,
+      )
+    }
+  })
+
+  it('never claims it for the o-series, or for a GPT model reached through a router', () => {
+    for (const id of ['o3', 'o4-mini', 'openrouter:openai/gpt-5', 'lmstudio:gpt-5']) {
+      assert.equal(modelCapabilities(id).supportsServerCompaction, false, id)
     }
   })
 })

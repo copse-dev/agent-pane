@@ -212,20 +212,38 @@ export async function inspectThreadCheckoutRoot(
   )
 }
 
+/**
+ * Whether anything for this thread can still write to its checkout. A detached
+ * checkout is repaired only once this is false: Git recovery run under a live
+ * agent turn or background task would race its own commands.
+ */
+export type ThreadCheckoutBusy = (projectId: string, threadId: string) => boolean
+
 /** Whether the thread's isolated checkout is detached; shared and retired checkouts report attached. */
 export async function inspectThreadCheckoutAttachment(
   projectId: string,
   threadId: string,
+  isBusy: ThreadCheckoutBusy,
 ): Promise<ThreadWorktreeAttachment> {
   const input = await activeThreadWorktreeInput(projectId, threadId)
-  return input ? inspectThreadWorktreeAttachment(input) : { state: 'attached' }
+  if (!input) return { state: 'attached' }
+  const attachment = await inspectThreadWorktreeAttachment(input)
+  return attachment.state === 'detached'
+    ? { ...attachment, agentBusy: isBusy(projectId, threadId) }
+    : attachment
 }
 
 /** Reattach the thread's detached isolated checkout to its recorded branch. */
 export async function reattachThreadCheckout(
   projectId: string,
   threadId: string,
+  isBusy: ThreadCheckoutBusy,
 ): Promise<ThreadWorktreeReattachResult> {
+  if (isBusy(projectId, threadId)) {
+    throw new Error(
+      'The agent is still working in this checkout. Wait for it to finish, then reattach.',
+    )
+  }
   const input = await activeThreadWorktreeInput(projectId, threadId)
   if (!input) throw new Error('Only an active thread worktree can be reattached')
   return reattachThreadWorktree(input)

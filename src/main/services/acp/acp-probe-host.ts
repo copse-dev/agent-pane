@@ -92,7 +92,7 @@ export function parseProbeWorkerOutput(stdout: string): AcpAgentProbe | null {
     }
     if (parsed['ok'] === false) {
       throw new Error(
-        typeof parsed['error'] === 'string' ? parsed['error'] : 'ACP probe worker failed',
+        typeof parsed['error'] === 'string' ? parsed['error'] : 'Checking the coding agent failed',
       )
     }
   }
@@ -129,7 +129,7 @@ function runProbeWorker(
     const timer = setTimeout(() => {
       cancelEscalation.current = terminateProcessTree(child)
       finish(() => {
-        reject(new Error(`ACP probe worker timed out after ${String(timeoutMs)}ms`))
+        reject(new Error(`Checking the coding agent timed out after ${String(timeoutMs)}ms`))
       })
     }, timeoutMs + HOST_TIMEOUT_GRACE_MS)
 
@@ -156,7 +156,7 @@ function runProbeWorker(
           }
           reject(
             new Error(
-              `ACP probe worker exited with code ${String(code)} and no result${
+              `Checking the coding agent stopped with code ${String(code)} and no result${
                 stderr.trim() ? `: ${stderr.trim()}` : ''
               }`,
             ),

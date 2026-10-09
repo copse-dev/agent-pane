@@ -673,7 +673,7 @@ export async function startAcpNativeBridge(
         resolve()
       })
     })
-    throw new Error('ACP native bridge did not bind a TCP port')
+    throw new Error('Copse could not open a local port for the coding agent’s tools')
   }
   const offeredToolNames = bridgedTools(registry, opts.projectId, offerWriteAccess).map(
     (tool) => tool.name,

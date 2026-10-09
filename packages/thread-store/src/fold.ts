@@ -299,13 +299,13 @@ const acpToolCallContentSchema: z.ZodType<AcpToolCallContent> = z.discriminatedU
 
 function parseAcpContentBlocks(raw: string): AcpContentBlock[] {
   const parsed = safeJsonParse(raw, decodeWithSchema(z.array(acpContentBlockSchema)))
-  if (parsed === null) throw new Error('Invalid persisted ACP content blocks')
+  if (parsed === null) throw new Error('Saved agent content blocks are invalid')
   return parsed
 }
 
 function parseAcpToolCallContent(raw: string): AcpToolCallContent[] {
   const parsed = safeJsonParse(raw, decodeWithSchema(z.array(acpToolCallContentSchema)))
-  if (parsed === null) throw new Error('Invalid persisted ACP tool-call content')
+  if (parsed === null) throw new Error('Saved agent tool-call content is invalid')
   return parsed
 }
 

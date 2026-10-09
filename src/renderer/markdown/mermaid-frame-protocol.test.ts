@@ -5,7 +5,7 @@ import {
   MAX_DIAGRAM_SOURCE_LENGTH,
   parseDiagramSize,
   parseDiagramSource,
-} from './mermaid-frame-protocol.ts'
+} from '@copse/streaming-markdown/diagrams/mermaid/isolated'
 
 describe('untrusted diagram frame protocol', () => {
   it('accepts source as data and rejects oversized or differently shaped requests', () => {

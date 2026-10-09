@@ -60,7 +60,8 @@ describe('classifyAgentError', () => {
   it('surfaces other ACP JSON-RPC errors with code and optional data', () => {
     const err = new RequestError(-32002, 'Resource not found', { uri: 'file:///missing' })
     const out = classifyAgentError(err, { acpAgentId: 'cursor' })
-    assert.match(out, /ACP error -32002 \(Resource not found\)/)
+    assert.match(out, /The agent reported an error \(code -32002, Resource not found\)/)
+    assert.doesNotMatch(out, /ACP|JSON-RPC/)
     assert.match(out, /file:\/\/\/missing/)
   })
 
@@ -227,7 +228,7 @@ describe('classifyAgentError', () => {
 
     assert.equal(
       result,
-      "This thread's checkout is detached from its branch. Your files are preserved. Use the recovery button next to the branch name below the composer (**Reattach**, **Continue rebase**, or **Reset bisect**) to put it back on `copse/thread-branch`, then retry.",
+      "This thread's checkout is detached from its branch. Your files are preserved. Once the agent has stopped, a recovery button appears next to the branch name below the composer (**Reattach**, **Continue rebase**, **Commit and continue**, or **Reset bisect**, depending on what Git left half-done). Use it to put the checkout back on `copse/thread-branch`, then retry. It is hidden while the agent or a background task is still running.",
     )
     assert.doesNotMatch(result, /^An error occurred:/)
   })

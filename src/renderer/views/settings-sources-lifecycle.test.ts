@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import type { HooksListResult } from '@shared/types/hooks.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { skillsSourcesMarkup } from './settings-sources-skills.ts'
 import { createSourcesSection } from './settings/sources-section.ts'
 
 interface Deferred<T> {
@@ -62,7 +63,7 @@ function harness(requests: Promise<HooksListResult>[]): Harness {
       <span id="sources-reload-status"></span>
       <div id="sources-instructions-list"></div>
       <fieldset id="cursor-rules-fieldset"><div id="sources-cursor-rules-list"></div></fieldset>
-      <div id="sources-skills-list"></div>
+      ${skillsSourcesMarkup}
       <div id="sources-agents-list"></div>
       <div id="sources-hooks-list"></div>
     </section>`

@@ -25,6 +25,17 @@ afterEach(() => {
 })
 
 describe('mockGitHubBackend', () => {
+  it('returns a SAML authorization failure for the linked PR fixture', async () => {
+    await assert.rejects(
+      mockGitHubBackend.getPrDetails({
+        owner: 'duckduckgo',
+        repo: 'privacy-configuration',
+        number: 6059,
+      }),
+      /Resource protected by organization SAML enforcement/,
+    )
+  })
+
   it('pages through all open-issue fixtures without a total ceiling', async () => {
     process.env['COPSE_PANEL_MOCK_GH_MANY_ISSUES'] = '1'
     const first = await mockGitHubBackend.listWorkspaceOpenIssues(1, 20)

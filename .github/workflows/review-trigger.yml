@@ -2,11 +2,11 @@ name: Copse review trigger
 
 # Dogfood the same workflow that external repositories call. GitHub resolves the
 # local workflow and reviewer source from this trusted default-branch revision.
-# Full reviews do not follow pushes; the independent cheap summary still does.
+# Reviews run on main after a credential-free PR signal, or by manual dispatch.
 on:
-  pull_request_target:
-    types: [opened, reopened, ready_for_review, labeled, synchronize]
-
+  workflow_run:
+    workflows: [Copse review request]
+    types: [completed]
   workflow_dispatch:
     inputs:
       pr:
@@ -16,16 +16,20 @@ on:
 
 permissions: {}
 
-# Pushes cancel each other's dispatch, never a review's.
+# Retries of one head supersede each other; a late old request cannot cancel a newer head.
 concurrency:
-  group: copse-review-trigger-${{ github.event.pull_request.number }}-${{ github.event.action == 'synchronize' && 'push' || 'review' }}
+  group: copse-review-trigger-${{ github.event.workflow_run.pull_requests[0].number || inputs.pr || github.run_id }}-${{ github.event.workflow_run.head_sha || 'manual' }}
   cancel-in-progress: true
 
 jobs:
   review:
     if: >-
       github.repository_id == '1274237362' && github.actor_id == '338988' &&
-      github.triggering_actor == 'jonathanKingston' && github.event.action != 'synchronize'
+      github.triggering_actor == 'jonathanKingston' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.id == github.event.repository.id))
     permissions:
       contents: read
       # Ceiling for the portable variant; the protected Copse job reduces this to read.
@@ -34,57 +38,9 @@ jobs:
     with:
       reviewer-ref: ${{ github.sha }}
       preparation: copse-pnpm
-      pr: ${{ inputs.pr || 0 }}
+      # Dispatch inputs arrive as strings; the reusable interface requires a number.
+      pr: ${{ github.event.workflow_run.pull_requests[0].number || fromJSON(inputs.pr || '0') }}
     # Same-repository inheritance enables the protected job's environment secrets
     # (actions/runner#4453); naming an empty value does not. Grounding references
     # no secrets, and only the guarded Copse findings job reads RELEASE_APP_*.
     secrets: inherit
-
-  summary:
-    name: Dispatch the description summary for the current head
-    # The review's own rule, plus pushes: ready, or a draft with the label.
-    if: >-
-      github.event_name == 'pull_request_target' &&
-      github.repository_id == '1274237362' &&
-      github.actor_id == '338988' &&
-      github.event.pull_request.user.id == 338988 &&
-      github.event.pull_request.head.repo.id == 1274237362 &&
-      !contains(github.event.pull_request.labels.*.name, 'copse-review-skip') &&
-      ((github.event.action == 'labeled' && github.event.label.name == 'copse-review') ||
-      (github.event.action != 'labeled' && (!github.event.pull_request.draft ||
-      contains(github.event.pull_request.labels.*.name, 'copse-review'))))
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: write
-      pull-requests: read
-    steps:
-      - name: Resolve the current pull request and dispatch its summary
-        shell: bash
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          IFS=$'\t' read -r head base state draft labelled skipped < <(
-            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
-              --jq '[.head.sha, .base.ref, .state, .draft,
-                ([.labels[].name] | index("copse-review") != null),
-                ([.labels[].name] | index("copse-review-skip") != null)] | @tsv'
-          )
-          test -n "$head" && test -n "$base" && test "$state" = "open"
-          if [ "$skipped" = "true" ]; then
-            echo "::notice::copse-review-skip is set; not summarising"
-            exit 0
-          fi
-          if [ "$draft" = "true" ] && [ "$labelled" != "true" ]; then
-            echo "::notice::a draft is summarised only with the copse-review label"
-            exit 0
-          fi
-          gh workflow run review-summary.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "$DEFAULT_BRANCH" \
-            -f "pr=${PR_NUMBER}" \
-            -f "head=${head}" \
-            -f "base=${base}"

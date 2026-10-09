@@ -158,8 +158,10 @@ async function authorize(
   options: {
     permission?: string
     rerunPermission?: string
-    action?: string
-    label?: string
+    actor?: string
+    triggeringActor?: string
+    signal?: Record<string, unknown>
+    lookupCandidates?: Record<string, unknown>[]
     draft?: boolean
     labels?: string[]
     state?: string
@@ -171,7 +173,8 @@ async function authorize(
     preparation?: string
     copseAllowed?: boolean
     author?: number
-    headRepo?: number
+    headRepo?: number | null
+    manualPr?: string
   } = {},
 ): Promise<Record<string, string>> {
   const workflow = workflowSchema.parse(
@@ -192,8 +195,8 @@ async function authorize(
         PREPARATION: options.preparation ?? 'npm',
         COPSE_CALLER_ALLOWED: options.copseAllowed === false ? 'false' : 'true',
         REVIEWER_REF: options.reviewerRef ?? 'c'.repeat(40),
-        MANUAL_PR: '123',
-        TRIGGERING_ACTOR: 'rerunner',
+        MANUAL_PR: options.manualPr ?? '123',
+        TRIGGERING_ACTOR: options.triggeringActor ?? 'rerunner',
         MAX_STEPS: '12',
         MAX_VERIFY: '3',
         HAS_APP_ID: 'false',
@@ -203,13 +206,23 @@ async function authorize(
     },
     context: {
       repo: { owner: 'copse-dev', repo: copse ? 'agent-pane' : 'streaming-markdown' },
-      actor: 'maintainer',
+      actor: options.actor ?? 'maintainer',
       ref: options.ref ?? 'refs/heads/main',
-      eventName: options.event ?? 'pull_request_target',
+      eventName: options.event ?? 'workflow_dispatch',
       payload: {
-        action: options.action ?? 'opened',
-        label: { name: options.label ?? 'copse-review' },
-        pull_request: { number: 123 },
+        workflow_run: {
+          event: 'pull_request',
+          conclusion: 'success',
+          path: '.github/workflows/copse-review-request.yml',
+          repository: { id: repository.id },
+          head_repository: { id: repository.id },
+          head_sha: request.head,
+          head_branch: 'test-review',
+          pull_requests: [{ number: 123 }],
+          actor: { login: options.actor ?? 'maintainer', id: 338988 },
+          triggering_actor: { login: options.triggeringActor ?? 'rerunner', id: 338988 },
+          ...options.signal,
+        },
       },
     },
     core: {
@@ -225,19 +238,36 @@ async function authorize(
           getCollaboratorPermissionLevel: async ({ username }: { username: string }) => ({
             data: {
               permission:
-                username === 'maintainer'
+                username === (options.actor ?? 'maintainer')
                   ? (options.permission ?? 'write')
                   : (options.rerunPermission ?? 'write'),
             },
           }),
         },
         pulls: {
+          list: async (query: { state: string; head: string; base: string }) => {
+            assert.equal(query.state, 'open')
+            assert.equal(query.head, 'copse-dev:test-review')
+            assert.equal(query.base, 'main')
+            return {
+              data: options.lookupCandidates ?? [
+                {
+                  number: 123,
+                  head: { sha: request.head, repo: repository },
+                  base: { ref: 'main', repo: repository },
+                },
+              ],
+            }
+          },
           get: async () => ({
             data: {
               state: options.state ?? 'open',
               draft: options.draft ?? false,
               user: { id: options.author ?? 338988 },
-              head: { sha: request.head, repo: { id: options.headRepo ?? repository.id } },
+              head: {
+                sha: request.head,
+                repo: options.headRepo === null ? null : { id: options.headRepo ?? repository.id },
+              },
               base: { sha: request.base, ref: 'main', repo: repository },
               labels: (options.labels ?? []).map((name) => ({ name })),
             },
@@ -251,22 +281,18 @@ async function authorize(
 }
 
 describe('portable review authorization', () => {
-  it('resolves a current PR for a maintainer, including manually dispatched and labelled drafts', async () => {
-    for (const options of [
-      {},
-      { event: 'workflow_dispatch' },
-      { action: 'labeled', draft: true, labels: ['copse-review'] },
-    ]) {
+  it('resolves a current same-repository PR for a manual maintainer request, including labelled drafts', async () => {
+    for (const options of [{}, { draft: true, labels: ['copse-review'] }]) {
       assert.deepEqual(decodeActionRequest((await authorize(options))['request'] ?? ''), request)
     }
   })
 
-  it('does not spend model credentials on unauthorized callers, unrelated labels or opted-out PRs', async () => {
+  it('does not authorize grounding or model review for fork heads, unauthorized callers or opted-out PRs', async () => {
     for (const options of [
       { permission: 'read' },
       { rerunPermission: 'read' },
-      { action: 'synchronize' },
-      { action: 'labeled', label: 'other' },
+      { headRepo: 999 },
+      { headRepo: null },
       { labels: ['copse-review-skip'] },
       { draft: true },
       { state: 'closed' },
@@ -274,9 +300,106 @@ describe('portable review authorization', () => {
       assert.deepEqual(await authorize(options), {})
   })
 
+  it('authorizes current same-repository automatic requests, including Dependabot', async () => {
+    for (const options of [
+      { event: 'workflow_run' },
+      {
+        event: 'workflow_run',
+        actor: 'dependabot[bot]',
+        triggeringActor: 'dependabot[bot]',
+        permission: 'read',
+        rerunPermission: 'read',
+        author: 49699333,
+        signal: {
+          actor: { login: 'dependabot[bot]', id: 49699333 },
+          triggering_actor: { login: 'dependabot[bot]', id: 49699333 },
+        },
+      },
+    ]) {
+      assert.deepEqual(decodeActionRequest((await authorize(options))['request'] ?? ''), request)
+    }
+  })
+
+  it('resolves omitted PR associations by exact same-repository branch and commit', async () => {
+    const options = { event: 'workflow_run', manualPr: '0', signal: { pull_requests: [] } }
+    assert.deepEqual(decodeActionRequest((await authorize(options))['request'] ?? ''), request)
+    for (const lookupCandidates of [
+      [],
+      [
+        {
+          number: 123,
+          head: { sha: 'd'.repeat(40), repo: { id: 7 } },
+          base: { ref: 'main', repo: { id: 7 } },
+        },
+      ],
+      [
+        {
+          number: 123,
+          head: { sha: request.head, repo: { id: 999 } },
+          base: { ref: 'main', repo: { id: 7 } },
+        },
+      ],
+      [
+        {
+          number: 123,
+          head: { sha: request.head, repo: { id: 7 } },
+          base: { ref: 'release', repo: { id: 7 } },
+        },
+      ],
+      [123, 124].map((number) => ({
+        number,
+        head: { sha: request.head, repo: { id: 7 } },
+        base: { ref: 'main', repo: { id: 7 } },
+      })),
+    ])
+      assert.deepEqual(await authorize({ ...options, lookupCandidates }), {})
+  })
+
+  it('rejects failed, foreign, stale, misassociated and unauthorized automatic requests', async () => {
+    for (const options of [
+      { signal: { event: 'push' } },
+      { signal: { conclusion: 'failure' } },
+      { signal: { path: '.github/workflows/untrusted.yml' } },
+      { signal: { repository: { id: 999 } } },
+      { signal: { head_repository: { id: 999 } } },
+      { signal: { head_repository: null } },
+      { signal: { pull_requests: [] } },
+      { signal: { pull_requests: [{ number: 999 }] } },
+      { signal: { pull_requests: [{ number: 123 }, { number: 124 }] } },
+      { signal: { head_sha: 'd'.repeat(40) } },
+      { signal: { actor: null } },
+      { headRepo: 999 },
+      { headRepo: null },
+      { permission: 'read' },
+      { rerunPermission: 'read' },
+      { signal: { triggering_actor: { login: 'outside' } }, rerunPermission: 'read' },
+      {
+        actor: 'dependabot[bot]',
+        triggeringActor: 'dependabot[bot]',
+        permission: 'read',
+        signal: { actor: { login: 'dependabot[bot]', id: 999 } },
+        author: 49699333,
+      },
+      {
+        actor: 'dependabot[bot]',
+        triggeringActor: 'dependabot[bot]',
+        permission: 'read',
+        signal: { actor: { login: 'dependabot[bot]', id: 49699333 } },
+        author: 338988,
+      },
+      { draft: true },
+      { labels: ['copse-review-skip'] },
+    ])
+      assert.deepEqual(await authorize({ event: 'workflow_run', ...options }), {})
+  })
+
   it('rejects untrusted workflow contexts and unpinned source', async () => {
     for (const options of [
       { event: 'pull_request' },
+      { event: 'pull_request_target' },
+      { event: 'push' },
+      { manualPr: '0' },
+      { manualPr: 'not-a-number' },
       { ref: 'refs/heads/contributor' },
       { privateRepo: true },
       { reviewerRef: 'main' },
@@ -288,6 +411,45 @@ describe('portable review authorization', () => {
 })
 
 describe('portable Actions isolation', () => {
+  it('opts portable description summaries in without changing the default', () => {
+    const workflow = z
+      .object({
+        on: z.object({
+          workflow_call: z.object({
+            inputs: z.object({
+              'post-summary': z.object({ type: z.literal('boolean'), default: z.boolean() }),
+            }),
+          }),
+        }),
+        jobs: z.object({
+          findings: z.object({
+            steps: z.array(
+              z.object({
+                uses: z.string().optional(),
+                with: z.record(z.string(), z.unknown()).optional(),
+              }),
+            ),
+          }),
+        }),
+      })
+      .parse(load(readFileSync('.github/workflows/reviewer.yml', 'utf8')))
+    const option = workflow.on.workflow_call.inputs['post-summary']
+    assert.equal(option.default, false)
+    const step = workflow.jobs.findings.steps.find(
+      (step) => step.uses === './.copse-reviewer/.github/actions/review-findings',
+    )
+    const expression = z.string().parse(step?.with?.['post-summary'])
+    assert.ok(expression.startsWith('${{ ') && expression.endsWith(' }}'))
+    for (const enabled of [option.default, true]) {
+      assert.equal(
+        runInNewContext(expression.slice(3, -2), {
+          inputs: { 'post-summary': enabled },
+        }),
+        enabled ? 'true' : 'false',
+      )
+    }
+  })
+
   it('keeps paid credentials out of grounding and gates the fresh findings runner on successful grounding', () => {
     const workflow = workflowSchema.parse(
       load(readFileSync('.github/workflows/reviewer.yml', 'utf8')),
@@ -324,14 +486,59 @@ describe('Copse dogfooding of the reusable reviewer', () => {
       repository_id: '1274237362',
       actor_id: '338988',
       triggering_actor: 'jonathanKingston',
-      event: { action: 'opened' },
+      event_name: 'workflow_dispatch',
     }
     assert.equal(runInNewContext(job.if, { github }), true)
+    const automatic = {
+      ...github,
+      event_name: 'workflow_run',
+      event: {
+        workflow_run: {
+          event: 'pull_request',
+          conclusion: 'success',
+          head_repository: { id: 1274237362 },
+        },
+        repository: { id: 1274237362 },
+      },
+    }
+    assert.equal(runInNewContext(job.if, { github: automatic }), true)
+    for (const patch of [
+      { event: 'push' },
+      { conclusion: 'failure' },
+      { head_repository: { id: 999 } },
+    ]) {
+      assert.equal(
+        runInNewContext(job.if, {
+          github: {
+            ...automatic,
+            event: {
+              ...automatic.event,
+              workflow_run: { ...automatic.event.workflow_run, ...patch },
+            },
+          },
+        }),
+        false,
+      )
+    }
+
     for (const patch of [
       { repository_id: '999' },
       { actor_id: '999' },
       { triggering_actor: 'contributor' },
-      { event: { action: 'synchronize' } },
+      {
+        event_name: 'workflow_run',
+        event: {
+          workflow_run: {
+            event: 'pull_request',
+            conclusion: 'failure',
+            head_repository: { id: 1274237362 },
+          },
+          repository: { id: 1274237362 },
+        },
+      },
+      { event_name: 'pull_request_target' },
+      { event_name: 'pull_request' },
+      { event_name: 'push' },
     ]) {
       assert.equal(runInNewContext(job.if, { github: { ...github, ...patch } }), false)
     }
@@ -443,18 +650,27 @@ describe('Copse dogfooding of the reusable reviewer', () => {
       triggering_actor: 'jonathanKingston',
       ref: 'refs/heads/main',
       workflow_ref: 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main',
+      event_name: 'workflow_dispatch',
     }
     const allows = (expression: string, context: Record<string, unknown>): boolean =>
       Boolean(runInNewContext(expression.trim().slice(3, -2), context))
     const preflight = workflow.jobs.authorize.steps[0]?.env['COPSE_CALLER_ALLOWED']
     assert.ok(preflight)
     assert.equal(allows(job.if, { github, inputs: { preparation: 'copse-pnpm' } }), true)
+    assert.equal(
+      allows(job.if, {
+        github: { ...github, event_name: 'workflow_run' },
+        inputs: { preparation: 'copse-pnpm' },
+      }),
+      true,
+    )
     assert.equal(allows(job.if, { github, inputs: { preparation: 'npm' } }), false)
     for (const expression of [preflight, job.if]) {
       for (const [key, value] of Object.entries({
         repository_id: '999',
         actor_id: '999',
         triggering_actor: 'contributor',
+        event_name: 'pull_request_target',
         ref: 'refs/heads/contributor',
         workflow_ref: github.workflow_ref.replace('/heads/main', '/heads/untrusted'),
       })) {
@@ -568,5 +784,11 @@ describe('shared findings model configuration', () => {
     const portable = execute('portable', { REVIEW_BASE_URL: '' })
     assert.equal(portable.status, 0, portable.stderr)
     assert.doesNotMatch(portable.stdout, /--post-summary|--feedback-label/)
+    const portableSummary = execute('portable', {
+      REVIEW_BASE_URL: '',
+      REVIEW_POST_SUMMARY: 'true',
+    })
+    assert.equal(portableSummary.status, 0, portableSummary.stderr)
+    assert.match(portableSummary.stdout, /--post-summary\ngithub\n$/)
   })
 })

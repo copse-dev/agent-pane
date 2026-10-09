@@ -1,9 +1,11 @@
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
+import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
+import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
 import { getChatGptPlanService } from '../services/providers/chatgpt-plan-service.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
@@ -16,7 +18,8 @@ import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebConten
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve } from 'node:path'
+import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
@@ -35,6 +38,7 @@ import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
+import { hasBackgroundProcessesForThread } from '../services/exec/background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
@@ -233,6 +237,7 @@ import { showSimulatorDesktop } from '../services/simulator-desktop/simulator-de
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import {
   listSkills,
+  listSkillSources,
   initSkillsRegistry,
   waitForSkillsRegistryRefresh,
 } from '../services/skills/skills-registry.ts'
@@ -1645,6 +1650,28 @@ export function registerAllHandlers(
     }
   })
   ipcMain.handle('models:best-value-default', () => resolveBestValueChatModel())
+  ipcMain.handle(
+    'models:invalidations',
+    (event, rawThreadModel: unknown, rawFreshLocal: unknown) => {
+      assertMainFrameSender(event, win)
+      const [model, fresh] = parseIpcArgs(
+        z.tuple([z.string().max(512).optional(), z.boolean().optional()]),
+        [rawThreadModel, rawFreshLocal],
+      )
+      return modelInvalidationService.report(model, fresh)
+    },
+  )
+  ipcMain.handle(
+    'models:recover-setting',
+    (event, rawTarget: unknown, rawExpected: unknown, rawFallback: unknown) => {
+      assertMainFrameSender(event, win)
+      const [target, expected, fallback] = parseIpcArgs(
+        z.tuple([z.string().max(512), z.string().max(512), z.string().max(512)]),
+        [rawTarget, rawExpected, rawFallback],
+      )
+      return modelInvalidationService.recover(target, expected, fallback)
+    },
+  )
   // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
   // to show the concrete model behind a rule; a pinned id round-trips unchanged.
   ipcMain.handle('models:resolve-dynamic', (_event, rawValue: unknown) => {
@@ -2254,6 +2281,20 @@ export function registerAllHandlers(
   ipcMain.handle('skills:list', async () => {
     await waitForSkillsRegistryRefresh()
     return listSkills()
+  })
+  ipcMain.handle('skills:sources', async () => {
+    await initSkillsRegistry()
+    return listSkillSources()
+  })
+  ipcMain.handle('skills:set-roots', async (_event, value: unknown) => {
+    const roots = skillRootsSchema.safeParse(value)
+    if (!roots.success)
+      throw new IpcValidationError(
+        'Extra skill folders must be at most 64 absolute paths, one per line',
+      )
+    await setSetting('skillPluginPaths', roots.data)
+    await initSkillsRegistry()
+    return listSkillSources()
   })
   ipcMain.handle('agents:list', async () => {
     await waitForAgentsRegistryRefresh()
@@ -2991,15 +3032,19 @@ export function registerAllHandlers(
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitBranchStatus(projectId, branch, root)
   })
+  const threadCheckoutBusy = (projectId: string, threadId: string): boolean =>
+    isDispatcherThreadActive(projectId, threadId) ||
+    listRunningThreadIds().includes(threadId) ||
+    hasBackgroundProcessesForThread({ projectId, threadId })
   ipcMain.handle('git:worktree-attachment', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return inspectThreadCheckoutAttachment(projectId, threadId)
+    return inspectThreadCheckoutAttachment(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:reattach-worktree', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return reattachThreadCheckout(projectId, threadId)
+    return reattachThreadCheckout(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -3171,6 +3216,15 @@ export function registerAllHandlers(
       assertMainFrameSender(event, win)
       const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
       const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
+      if (parsedAgentId.startsWith('openai:')) {
+        const data = await readOpenAiArtifact(parsedAgentId.slice('openai:'.length), parsedPath)
+        const result = await dialog.showSaveDialog(win, {
+          title: 'Save agent artifact',
+          defaultPath: `agent-artifact${extname(parsedPath)}`,
+        })
+        if (!result.canceled && result.filePath) await writeFile(result.filePath, data)
+        return ''
+      }
       return resolveRemoteArtifactDownloadUrl({ agentId: parsedAgentId, path: parsedPath })
     },
   )
@@ -3554,7 +3608,7 @@ export function registerAllHandlers(
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event, rawScenario: unknown) => {
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
-      if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
+      if (!codex) throw new IpcValidationError('The Codex agent preset is missing')
       // Fixture at the detection boundary; no global package mutation runs here.
       const scenario = parseIpcArgs(
         z.enum(['install', 'firewall-bootstrap', 'mixed-bootstrap']).default('install'),
@@ -3562,7 +3616,7 @@ export function registerAllHandlers(
       )
       if (scenario === 'mixed-bootstrap') {
         const claude = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'claude-acp')
-        if (!claude) throw new IpcValidationError('Claude ACP preset is missing')
+        if (!claude) throw new IpcValidationError('The Claude agent preset is missing')
         return requestAcpPackageInstallApproval(
           [
             { agent: claude, action: 'install' },

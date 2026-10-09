@@ -1051,6 +1051,14 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     openRouter: { models: emptyArray },
     models: {
+      invalidations: () =>
+        resolved({
+          evaluated: true,
+          invalidations: [],
+          selections: [],
+          verifiedChoices: [],
+        }),
+      recoverSetting: () => resolved(false),
       bestValueDefault: () => resolved('lmstudio:qwen/qwen3.6-35b-a3b'),
       resolveDynamic: (value: string) =>
         resolved(value.startsWith('auto:') ? 'lmstudio:qwen/qwen3.6-35b-a3b' : value),
@@ -1380,7 +1388,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       remove: unsupported,
     },
     agents: { list: () => resolved({ agents: [], skipped: [], shadowed: [] }) },
-    skills: { list: emptyArray },
+    skills: {
+      list: emptyArray,
+      sources: () => resolved({ skills: [], diagnostics: [], extraRoots: [], reload: 'manual' }),
+      setRoots: (extraRoots) =>
+        resolved({
+          skills: [],
+          diagnostics: [],
+          extraRoots,
+          reload: 'manual',
+        }),
+    },
     cursorPlugins: { list: emptyArray },
     bundledSkillPlugins: { list: emptyArray },
     hooks: {

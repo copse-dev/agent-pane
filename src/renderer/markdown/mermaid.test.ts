@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import {
   renderMermaidInFrame as renderMermaidIn,
   setMermaidLoaderForTests,
-} from './mermaid-render.ts'
+} from '../../../tests/mermaid-render.ts'
 import { qs, qsRequired } from '../dom/helpers.ts'
 
 type Nodes = { nodes: HTMLElement[] }

@@ -41,7 +41,7 @@ import { canonicalModelLabel } from '@copse/llm/model-label.ts'
  * the remote host (and must not silently run against a remote path as cwd).
  */
 export const ACP_UNSUPPORTED_ON_SSH_MESSAGE =
-  'ACP agents run locally on this device and are not available in SSH workspaces. Switch to a local folder or pick a cloud/local model.'
+  'Coding agents installed on this device run locally and are not available in SSH workspaces. Switch to a local folder or pick a cloud/local model.'
 
 function parseChoices(
   value: unknown,

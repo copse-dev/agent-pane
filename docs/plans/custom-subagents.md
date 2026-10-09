@@ -355,6 +355,17 @@ gains a `custom` entry. `tool-display.ts` labels `task` from its `subagent_type`
 ("Running the code-reviewer agent" / "Ran the code-reviewer agent") rather than a static
 string.
 
+### 10. Skill activation belongs to a native parent run
+
+The model-selected skill mechanism (#1353) owns a catalog, deduplication state and
+bounded instruction budget in the native parent run. A custom-agent child does not
+inherit that state: `read_skill` is withheld from its offered tools, including an
+explicit profile allowlist, and no automatic skill catalog is appended to its prompt.
+Fixed exploration/review/worker toolsets already exclude this tool. Skill preloading
+for custom profiles remains P6; introducing child activation requires its own bounded
+context rather than a process-global or inherited parent allowance. This narrows
+resource access in custom children deliberately; it does not grant any permission.
+
 ## Phases
 
 Each phase is independently shippable and independently useful.

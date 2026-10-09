@@ -7,6 +7,7 @@ import {
   awaitPendingThreadPersistence,
   __resetPersistenceForTest,
   saveProjects,
+  saveNavigation,
   setNavigationOwnership,
   markNavigationRestored,
   suspendNavigationWrites,
@@ -371,6 +372,34 @@ test('does not rewrite navigation that has not changed', async () => {
   await waitDebounce()
   assert.deepEqual(calls.navigations.at(-1), { activeProjectId: 'p2', activeThreadId: null })
   autosave.detach()
+})
+
+test('an identical navigation save waits for the outstanding IPC write', async () => {
+  __resetPersistenceForTest()
+  const { api } = fakeApi()
+  let release = (): void => {}
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let writes = 0
+  api.windowState.setNavigation = async (): Promise<void> => {
+    writes++
+    await pending
+  }
+  const first = saveNavigation(api, 'p2', null)
+  let duplicateFinished = false
+  const duplicate = saveProjects(api, [], 'p2', null).then(() => {
+    duplicateFinished = true
+  })
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(duplicateFinished, false, 'project activation must wait for navigation to land')
+    assert.equal(writes, 1, 'the identical navigation must reuse the outstanding write')
+  } finally {
+    release()
+    await Promise.all([first, duplicate])
+  }
+  assert.equal(duplicateFinished, true)
 })
 
 test('a metadata change on a known thread emits updateMeta, not create', async () => {

@@ -105,20 +105,24 @@ describe('Attaching a video to the chat', () => {
     })
     await $('.submit-btn').click()
 
-    const sentChip = await $(
-      '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-video',
-    )
-    await sentChip.waitForExist({ timeout: 10_000 })
-    await expect(await sentChip.$('svg[data-icon="video"]').isExisting()).toBe(true)
-    await expect(await sentChip.getText()).toContain(VIDEO_NAME)
+    const sentChip =
+      '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-video'
+    // Streaming can replace the transcript nodes between assertions. Resolve
+    // each selector afresh and let the DOM matcher retry during that update.
+    await expect($(sentChip)).toExist({ wait: 10_000 })
+    await expect($(`${sentChip} svg[data-icon="video"]`)).toExist()
+    await expect($(sentChip)).toHaveText(expect.stringContaining(VIDEO_NAME))
 
     // The user sees their own words, not the steering block the agent gets.
-    const shown = await $('.messages-list .msg-user .message-text').getText()
-    await expect(shown).toContain('what goes wrong at the end of this?')
-    await expect(shown).not.toContain('video_frames')
+    await expect($('.messages-list .msg-user .message-text')).toHaveText(
+      expect.stringContaining('what goes wrong at the end of this?'),
+    )
+    await expect($('.messages-list .msg-user .message-text')).not.toHaveText(
+      expect.stringContaining('video_frames'),
+    )
 
     // The composer clears its chips once the message is sent.
-    await expect(await $('.attachment-chips .video-chip').isExisting()).toBe(false)
+    await expect($('.attachment-chips .video-chip')).not.toExist()
 
     await expectAssistantReply(REPLY)
     await saveAppScreenshot(TRANSCRIPT_SCREENSHOT)

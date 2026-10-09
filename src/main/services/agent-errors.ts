@@ -96,11 +96,21 @@ function findJsonRpcError(err: unknown): JsonRpcError | null {
   return null
 }
 
-function formatJsonRpcErrorCode(code: number, message: string): string {
+/**
+ * `technical` keeps the protocol name for the "Technical details" block, where
+ * a user filing a bug needs the exact code; the headline form stays in plain
+ * words because it is shown straight in the error banner.
+ */
+function formatJsonRpcErrorCode(code: number, message: string, technical: boolean): string {
   const label = ACP_ERROR_CODE_LABELS[code]
+  if (technical) {
+    return label
+      ? `ACP error ${String(code)} (${label}): ${message}`
+      : `ACP error ${String(code)}: ${message}`
+  }
   return label
-    ? `ACP error ${String(code)} (${label}): ${message}`
-    : `ACP error ${String(code)}: ${message}`
+    ? `The agent reported an error (code ${String(code)}, ${label}): ${message}`
+    : `The agent reported an error (code ${String(code)}): ${message}`
 }
 
 function formatErrorData(data: unknown): string | null {
@@ -384,7 +394,7 @@ function acpCredentialsNote(known: { title: string; envHints?: string[] } | unde
 function acpAgentReport(rpc: JsonRpcError | null): string | null {
   if (!rpc) return null
   const dataDetail = formatErrorData(rpc.data)
-  const report = formatJsonRpcErrorCode(rpc.code, rpc.message)
+  const report = formatJsonRpcErrorCode(rpc.code, rpc.message, true)
   return dataDetail ? `${report}\nDetails: ${dataDetail}` : report
 }
 
@@ -506,7 +516,7 @@ export function classifyProviderAccessFailure(err: unknown): ProviderAccessFailu
 /** Map provider / local-model failures to user-facing chat text. */
 export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext): string {
   if (err instanceof ThreadWorktreeDetachedError) {
-    return `This thread's checkout is detached from its branch. Your files are preserved. Use the recovery button next to the branch name below the composer (**Reattach**, **Continue rebase**, or **Reset bisect**) to put it back on \`${err.branch}\`, then retry.`
+    return `This thread's checkout is detached from its branch. Your files are preserved. Once the agent has stopped, a recovery button appears next to the branch name below the composer (**Reattach**, **Continue rebase**, **Commit and continue**, or **Reset bisect**, depending on what Git left half-done). Use it to put the checkout back on \`${err.branch}\`, then retry. It is hidden while the agent or a background task is still running.`
   }
 
   const rpc = findJsonRpcError(err)
@@ -583,7 +593,7 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
   if (rpc && ctx?.acpAgentId) {
     const dataDetail = formatErrorData(rpc.data)
     const suffix = dataDetail ? `\n\nDetails: ${dataDetail}` : ''
-    return `${formatJsonRpcErrorCode(rpc.code, rpc.message)}${suffix}`
+    return `${formatJsonRpcErrorCode(rpc.code, rpc.message, false)}${suffix}`
   }
 
   return message ?? raw

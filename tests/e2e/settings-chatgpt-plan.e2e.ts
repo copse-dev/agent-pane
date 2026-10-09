@@ -9,7 +9,9 @@ async function rejectFreshAcpBootstrap(): Promise<void> {
   // Exercise and reject its genuine fresh-install consent before continuing.
   const dialog = $('#approval-dialog')
   await dialog.waitForDisplayed({ timeout: 10_000 })
-  await expect(dialog.$('.approval-heading')).toHaveText('Install ACP adapters globally?')
+  await expect(dialog.$('.approval-heading')).toHaveText(
+    'Install software to connect your coding agents?',
+  )
   await expect(dialog.$('.approval-body')).toHaveText('@agentclientprotocol/codex-acp', {
     containing: true,
   })
@@ -75,7 +77,7 @@ describe('native ChatGPT plan connection settings', () => {
       'ChatGPT plan',
     )
     await expect($('.openai-connection-card[data-connection="api"] h4')).toHaveText('OpenAI API')
-    await expect($('.openai-connection-card[data-connection="codex"] h4')).toHaveText('Codex ACP')
+    await expect($('.openai-connection-card[data-connection="codex"] h4')).toHaveText('Codex agent')
     const section = $('[data-testid="chatgpt-plan-section"]')
     await $('#settings-providers-host').scrollIntoView()
     await expect(section).toBeDisplayed()

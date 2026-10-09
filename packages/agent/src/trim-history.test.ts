@@ -12,6 +12,8 @@ import {
   effectiveConversationTokens,
   estimateConversationTokens,
   conversationTokenBudget,
+  replayWindow,
+  serverCompactionThreshold,
 } from './trim-history.ts'
 
 beforeEach(() => {
@@ -406,5 +408,97 @@ describe('trimMessagesInPlace precompute (#583)', () => {
       messages.length >= 25,
       `expected a small trim, only ${String(messages.length)} of ${String(lengthBefore)} messages left`,
     )
+  })
+})
+
+describe('server-side compaction awareness', () => {
+  const IDENTITY = { model: 'gpt-5.6-sol', endpoint: '' }
+  const state = {
+    kind: 'openai-responses-compaction' as const,
+    v: 1 as const,
+    model: 'gpt-5.6-sol',
+    endpoint: '',
+    itemId: 'cmp_1',
+    encryptedContent: 'x'.repeat(4_000),
+  }
+
+  function history(): LLMMessage[] {
+    const oldTurns: LLMMessage[] = []
+    for (let i = 0; i < 6; i++) {
+      oldTurns.push({ role: 'user', content: `old ${String(i)} ${'a'.repeat(2_000)}` })
+      oldTurns.push({ role: 'assistant', content: `answer ${String(i)} ${'b'.repeat(2_000)}` })
+    }
+    return [
+      { role: 'system', content: 'sys' },
+      ...oldTurns,
+      { role: 'provider_state', state },
+      { role: 'user', content: 'recent' },
+      { role: 'assistant', content: 'reply' },
+    ]
+  }
+
+  it('never counts encrypted provider state as conversation tokens', () => {
+    const plain: LLMMessage[] = [{ role: 'user', content: 'recent' }]
+    assert.equal(
+      estimateConversationTokens([...plain, { role: 'provider_state', state }]),
+      estimateConversationTokens(plain),
+    )
+  })
+
+  it('sizes the prompt without the turns a compaction replaced or its opaque payload', () => {
+    const messages = history()
+    const sent = replayWindow(messages, IDENTITY)
+
+    assert.deepEqual(
+      sent.map((m) => m.role),
+      ['system', 'user', 'assistant'],
+    )
+    assert.ok(estimateConversationTokens(sent) < 50)
+    assert.ok(estimateConversationTokens(messages) > 2_000)
+  })
+
+  it('counts every turn when the provider will not replay the item', () => {
+    const messages = history()
+    const sent = replayWindow(messages, { model: 'claude-sonnet-4-6', endpoint: '' })
+
+    // Provider state is never prompt text; the turns it summarised still are.
+    assert.equal(sent.length, messages.length - 1)
+    assert.ok(estimateConversationTokens(sent) > 2_000)
+  })
+
+  it('does not trim turns the compaction already covers, and keeps the item', () => {
+    const messages = history()
+    const before = messages.length
+
+    const trimmed = trimMessagesInPlace(messages, 1_000, {
+      reserveTokens: 0,
+      completionReserveTokens: 0,
+      compaction: IDENTITY,
+    })
+
+    assert.equal(trimmed, false)
+    assert.equal(messages.length, before)
+  })
+
+  it('without compaction, over-budget history still trims and never drops the item', () => {
+    const messages = history()
+
+    const trimmed = trimMessagesInPlace(messages, 1_000, {
+      reserveTokens: 0,
+      completionReserveTokens: 0,
+    })
+
+    assert.equal(trimmed, true)
+    assert.ok(messages.some((m) => m.role === 'provider_state'))
+    assert.ok(messages.length < history().length)
+  })
+
+  it('compacts before the trimmer would start dropping turns', () => {
+    const window = 200_000
+    const reserve = 12_000
+    const threshold = serverCompactionThreshold(window, { reserveTokens: reserve })
+
+    assert.ok(threshold < historyTokenBudget(window, { reserveTokens: reserve }))
+    assert.ok(threshold > 0)
   })
 })

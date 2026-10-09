@@ -75,4 +75,10 @@
 // agent chunk.
 // v46 versions the removal of `activeRunThreadIds` from the process-manager snapshot.
 // v47 conservatively versions optional PR/commit production evidence on thread payloads.
-export const API_PROTOCOL_VERSION = 47 as const
+// v48 conservatively versions retained-worktree blockers on automation schedules and triggers.
+// v49 versions saved-model invalidation reports and guarded recovery IPC.
+// v50 versions skill-source diagnostics and validated extra-root updates.
+// v51 versions the context_compacted agent chunk (OpenAI server-side compaction).
+// v52 versions the OpenAI remote-agent provider in thread and agent-PR-link payloads.
+// v53 versions agentBusy on worktree attachment status.
+export const API_PROTOCOL_VERSION = 53 as const

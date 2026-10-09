@@ -66,6 +66,7 @@ function messageText(message: LLMMessage): PluginModelHistoryMessage | null {
   switch (message.role) {
     case 'system':
     case 'developer':
+    case 'provider_state':
       return null
     case 'user':
       return {

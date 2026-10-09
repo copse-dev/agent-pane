@@ -273,7 +273,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             }
             st.toolSinceText = nextState.toolSinceText
             st.currentText = nextState.currentText ?? ''
-            if (st.msgId === null) throw new Error('assistant message id missing for ACP text')
+            if (st.msgId === null) throw new Error('assistant message id missing for agent text')
             appendToken(store, st.msgId, plan.text)
             st.writing = plan.text.trim().length > 0
             if (st.writing) maybeNameThread(store, api, threadId)
@@ -585,6 +585,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         // the plan panel from `thread.todos` via the `todo_update` above, so the
         // chunk is redundant here — ignore it explicitly rather than through a
         // fall-through so the exhaustiveness check stays meaningful.
+        break
+      }
+      case 'provider_state':
+      case 'context_compacted': {
+        // Provider bookkeeping. The opaque item never reaches the renderer (the
+        // loop keeps it in provider history), and the boundary is recorded in the
+        // thread spine by main; nothing to show or store here.
         break
       }
       case 'todo_worker_start':

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import * as fsp from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
@@ -18,8 +19,7 @@ import { getSetting } from '../storage/settings.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import {
   folderNameMatchesSkill,
-  parseSkillFrontmatter,
-  splitSkillMarkdown,
+  decodeSkillDefinition,
   toSkillMetadata,
 } from './parse-skill-frontmatter.ts'
 import type {
@@ -27,6 +27,8 @@ import type {
   SkillReadResult,
   SkillSource,
   SkillSummary,
+  SkillDiagnostic,
+  SkillsSourcesResult,
 } from '@shared/types/skills.ts'
 import { READ_FILE_LIMITS_CEILING } from '@copse/agent/read-file-limits.ts'
 import { extractExternalLinkHosts } from '@shared/skills/extract-skill-links.ts'
@@ -58,7 +60,13 @@ export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
  * Across scopes, {@link collectDiscoveryTargets} orders user roots before project
  * roots, so a user-installed skill always beats a same-named workspace one.
  */
-export const SKILL_CONTAINER_DIRS: readonly string[] = ['.cursor', '.agents', '.claude', '.codex']
+export const SKILL_CONTAINER_DIRS: readonly string[] = [
+  '.cursor',
+  '.agents',
+  '.claude',
+  '.codex',
+  '.github',
+]
 const SKILL_CONTAINER_DIR_SET: ReadonlySet<string> = new Set(SKILL_CONTAINER_DIRS)
 
 /**
@@ -75,17 +83,20 @@ export interface SkillLoadFailure {
   readonly attemptedNames: readonly string[]
   readonly skillPath: string
   readonly reason: string
+  readonly source: SkillSource
 }
 
 let cachedSkills: SkillMetadata[] = []
 let cachedSkillLoadFailures: SkillLoadFailure[] = []
 let cachedSwitchedOffPlugins: string[] = []
+let cachedSkillDiagnostics: SkillDiagnostic[] = []
 let refreshPromise: Promise<void> | null = null
 interface SkillRegistrySnapshot {
   readonly skills: readonly SkillMetadata[]
   readonly failures: readonly SkillLoadFailure[]
   /** Bundled plugins left out because their own switch is off. */
   readonly switchedOffPlugins: readonly string[]
+  readonly diagnostics: readonly SkillDiagnostic[]
 }
 const scopedSkills = new AsyncLocalStorage<SkillRegistrySnapshot>()
 
@@ -111,7 +122,12 @@ function skillsEnabled(): boolean {
  * developer's real home directory.
  */
 export function userSkillRoots(home: string = userSkillsHome()): string[] {
-  return SKILL_CONTAINER_DIRS.map((dir) => join(home, dir, 'skills'))
+  return [
+    ...SKILL_CONTAINER_DIRS.filter((dir) => dir !== '.github').map((dir) =>
+      join(home, dir, 'skills'),
+    ),
+    join(home, '.copilot', 'skills'),
+  ]
 }
 
 let userSkillsHomeOverride: string | null = null
@@ -136,8 +152,8 @@ function sortByContainerPrecedence(skillRoots: readonly string[]): string[] {
     return index === -1 ? SKILL_CONTAINER_DIRS.length : index
   }
   return skillRoots
-    .map((root, order) => ({ root, order, rank: rank(root) }))
-    .sort((a, b) => a.rank - b.rank || a.order - b.order)
+    .map((root) => ({ root, rank: rank(root) }))
+    .sort((a, b) => a.rank - b.rank || a.root.localeCompare(b.root))
     .map(({ root }) => root)
 }
 
@@ -163,38 +179,55 @@ async function loadSkillFromFile(
   source: SkillSource,
   skills: Map<string, SkillMetadata>,
   failures: SkillLoadFailure[],
+  diagnostics: SkillDiagnostic[],
   plugin?: string,
 ): Promise<void> {
+  const folderName = basename(dirname(skillPath))
+  const fail = (reason: string): void => {
+    failures.push({ attemptedNames: [folderName], skillPath, source, reason })
+  }
   let raw: string
   try {
-    raw = await fsp.readFile(skillPath, 'utf-8')
+    const file = await fsp.open(
+      skillPath,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    )
+    try {
+      const stat = await file.stat()
+      if (!stat.isFile() || stat.size > SKILL_READ_MAX_BYTES) {
+        fail('SKILL.md must be a regular file within the skill read-size limit')
+        return
+      }
+      const buffer = Buffer.alloc(stat.size + 1)
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
+      if (bytesRead !== stat.size) {
+        fail('SKILL.md changed while being read; reload Sources')
+        return
+      }
+      raw = buffer.subarray(0, bytesRead).toString('utf8')
+    } finally {
+      await file.close()
+    }
   } catch {
+    fail('SKILL.md cannot be read as a regular file (symlinks and unreadable files are skipped)')
     return
   }
 
-  const folderName = basename(dirname(skillPath))
-
-  const split = splitSkillMarkdown(raw)
-  if (!split) {
-    console.warn(`[skills] Skipping ${skillPath}: missing frontmatter`)
+  const { validation: result, compatibilityReason } = decodeSkillDefinition(
+    { source, skillPath },
+    raw,
+  )
+  if (!result.skill) {
+    console.warn(`[skills] Skipping ${skillPath}: ${result.reason}`)
     failures.push({
-      attemptedNames: [folderName],
+      attemptedNames: [...new Set([folderName, ...(result.name ? [result.name] : [])])],
       skillPath,
-      reason: 'SKILL.md has no YAML frontmatter block (a leading `---`-delimited header)',
+      reason: result.reason,
+      source,
     })
     return
   }
-
-  const parsed = parseSkillFrontmatter(split.frontmatter)
-  if (!parsed) {
-    console.warn(`[skills] Skipping ${skillPath}: invalid frontmatter`)
-    failures.push({
-      attemptedNames: [folderName],
-      skillPath,
-      reason: 'frontmatter is missing the required `name` or `description` field',
-    })
-    return
-  }
+  const parsed = result.skill
 
   if (!folderNameMatchesSkill(skillPath, parsed.name)) {
     console.warn(
@@ -204,6 +237,7 @@ async function loadSkillFromFile(
       attemptedNames: [...new Set([parsed.name, folderName])],
       skillPath,
       reason: `frontmatter name "${parsed.name}" does not match its folder "${folderName}"`,
+      source,
     })
     return
   }
@@ -213,8 +247,26 @@ async function loadSkillFromFile(
     console.warn(
       `[skills] Duplicate skill "${parsed.name}" — keeping first from ${existing.skillPath}`,
     )
+    diagnostics.push({
+      kind: 'shadowed',
+      name: parsed.name,
+      skillPath,
+      source,
+      shadowedBy: existing.skillPath,
+      reason: `Same name: the earlier root wins (${existing.skillPath})`,
+    })
     return
   }
+  if (compatibilityReason)
+    diagnostics.push({
+      kind: 'compatibility',
+      name: parsed.name,
+      skillPath,
+      source,
+      reason: compatibilityReason,
+    })
+  for (const reason of result.warnings)
+    diagnostics.push({ kind: 'unsupported', name: parsed.name, skillPath, source, reason })
 
   // Scan the whole file (description + body) so a link hidden in either surface
   // is still flagged up front before the skill runs.
@@ -287,7 +339,7 @@ async function collectDiscoveryTargets(): Promise<{
     )
     // The walk yields roots in directory order (`.claude` before `.cursor`);
     // sort them so first-writer-wins follows the documented container
-    // precedence, with the walk order as the tiebreak between subdirectories.
+    // precedence, with lexical root path as the tiebreak between subdirectories.
     for (const root of sortByContainerPrecedence([...projectRoots])) {
       targets.push({ kind: 'root', path: root, source: 'project' })
     }
@@ -344,23 +396,54 @@ async function collectDiscoveryTargets(): Promise<{
 
 async function discoverSkillsRegistry(): Promise<SkillRegistrySnapshot> {
   if (!skillsEnabled()) {
-    return { skills: [], failures: [], switchedOffPlugins: [] }
+    return { skills: [], failures: [], switchedOffPlugins: [], diagnostics: [] }
   }
 
   const skills = new Map<string, SkillMetadata>()
   const failures: SkillLoadFailure[] = []
+  const diagnostics: SkillDiagnostic[] = []
+  for (const root of getSetting<string[]>('skillPluginPaths', [])) {
+    try {
+      // An extra path that exists but is a file or unreadable folder must not
+      // silently look like an empty catalog after the user explicitly saves it.
+      await fsp.readdir(resolve(root))
+    } catch {
+      diagnostics.push({
+        kind: 'invalid',
+        name: basename(root),
+        skillPath: root,
+        source: 'plugin-path',
+        reason:
+          'Extra skill folder is missing, unreadable, or not a directory; no skills were loaded from it',
+      })
+    }
+  }
   const { targets: discoveryTargets, switchedOffPlugins } = await collectDiscoveryTargets()
 
   for (const target of discoveryTargets) {
     if (target.kind === 'file') {
-      await loadSkillFromFile(target.path, target.source, skills, failures, target.plugin)
+      await loadSkillFromFile(
+        target.path,
+        target.source,
+        skills,
+        failures,
+        diagnostics,
+        target.plugin,
+      )
       continue
     }
     await walkForFiles(
       target.path,
       (fileName) => fileName === 'SKILL.md',
       async (skillPath) => {
-        await loadSkillFromFile(skillPath, target.source, skills, failures, target.plugin)
+        await loadSkillFromFile(
+          skillPath,
+          target.source,
+          skills,
+          failures,
+          diagnostics,
+          target.plugin,
+        )
       },
     )
   }
@@ -369,6 +452,21 @@ async function discoverSkillsRegistry(): Promise<SkillRegistrySnapshot> {
     skills: [...skills.values()].sort((a, b) => a.name.localeCompare(b.name)),
     failures,
     switchedOffPlugins,
+    diagnostics: [
+      ...diagnostics,
+      ...failures.map((failure): SkillDiagnostic => ({
+        kind: 'invalid',
+        name: failure.attemptedNames[0] ?? '',
+        skillPath: failure.skillPath,
+        source: failure.source,
+        reason: failure.reason,
+      })),
+    ].sort(
+      (a, b) =>
+        a.skillPath.localeCompare(b.skillPath) ||
+        a.kind.localeCompare(b.kind) ||
+        a.reason.localeCompare(b.reason),
+    ),
   }
 }
 
@@ -377,14 +475,20 @@ export async function refreshSkillsRegistry(): Promise<void> {
   cachedSkills = [...snapshot.skills]
   cachedSkillLoadFailures = [...snapshot.failures]
   cachedSwitchedOffPlugins = [...snapshot.switchedOffPlugins]
+  cachedSkillDiagnostics = [...snapshot.diagnostics]
 }
 
 export async function initSkillsRegistry(): Promise<void> {
-  if (refreshPromise) await refreshPromise
-  refreshPromise = refreshSkillsRegistry()
-  await refreshPromise
-  refreshPromise = null
-  notifyRefreshContextEstimate()
+  // Serialize explicit Sources/settings reloads. A failed previous discovery
+  // is reported to its caller and must not permanently block future reloads.
+  const current = (refreshPromise ?? Promise.resolve()).catch(() => {}).then(refreshSkillsRegistry)
+  refreshPromise = current
+  try {
+    await current
+    notifyRefreshContextEstimate()
+  } finally {
+    if (refreshPromise === current) refreshPromise = null
+  }
 }
 
 /** Wait until an already-started discovery pass has populated the shared cache. */
@@ -399,13 +503,24 @@ export async function runWithDiscoveredSkills<T>(fn: () => Promise<T>): Promise<
 }
 
 export function listSkills(): SkillSummary[] {
-  return activeSkills().map(({ name, description, source, skillPath, externalLinks }) => ({
-    name,
-    description,
-    source,
-    skillPath,
-    externalLinks,
-  }))
+  return activeSkills()
+    .filter((skill) => skill.userInvocable !== false)
+    .map(({ name, description, source, skillPath, externalLinks }) => ({
+      name,
+      description,
+      source,
+      skillPath,
+      externalLinks,
+    }))
+}
+
+export function listSkillSources(): SkillsSourcesResult {
+  return {
+    skills: [...activeSkills()],
+    diagnostics: [...(scopedSkills.getStore()?.diagnostics ?? cachedSkillDiagnostics)],
+    extraRoots: getSetting<string[]>('skillPluginPaths', []),
+    reload: 'manual',
+  }
 }
 
 /**
@@ -662,4 +777,5 @@ export function setSkillsForTest(skills: SkillMetadata[]): void {
   cachedSkills = skills
   cachedSkillLoadFailures = []
   cachedSwitchedOffPlugins = []
+  cachedSkillDiagnostics = []
 }

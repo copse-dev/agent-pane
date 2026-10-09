@@ -21,7 +21,7 @@ import type {
 } from '@shared/types'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
-import type { SkillSummary } from '@shared/types/skills.ts'
+import type { SkillSummary, SkillsSourcesResult } from '@shared/types/skills.ts'
 import type { AgentsListResult } from '@shared/types/agents.ts'
 import type {
   BundledSkillPluginSummary,
@@ -712,6 +712,17 @@ export interface ApiClient {
     >
   }
   models: {
+    /** Conclusive invalidations of explicit saved model fields and an optional active chat route. */
+    invalidations: (
+      threadModel?: string,
+      freshLocal?: boolean,
+    ) => Promise<import('@shared/model-invalidation.ts').ModelInvalidationReport>
+    /** Revalidate and compare the exact saved value before using a discovered on-device model. */
+    recoverSetting: (
+      target: import('@shared/model-invalidation.ts').ModelSettingsTarget,
+      expected: string,
+      fallback: string,
+    ) => Promise<boolean>
     /**
      * Concrete model id for the plan/price Pareto best-value default
      * (`auto:best-value` setting expands to this on new chats / agent runs).
@@ -755,7 +766,9 @@ export interface ApiClient {
       apiKey?: string,
     ) => Promise<{ ok: boolean; models?: string[]; error?: string }>
     models: () => Promise<string[]>
-    modelInfo: () => Promise<Array<{ id: string; supportsImages?: boolean; embedding?: boolean }>>
+    modelInfo: () => Promise<
+      Array<{ id: string; supportsImages?: boolean; embedding?: boolean; local?: boolean }>
+    >
     detect: (
       url?: string,
       apiKey?: string,
@@ -794,6 +807,7 @@ export interface ApiClient {
     }>
   }
   remoteAgent: {
+    /** Returns a remote URL, or an empty string when a native Save dialog handled the download. */
     downloadArtifact: (agentId: string, path: string) => Promise<string>
     artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
     /** Live Cursor Cloud Agent models from `GET /v1/models` (empty without a key). */
@@ -1156,6 +1170,8 @@ export interface ApiClient {
   }
   skills: {
     list: () => Promise<SkillSummary[]>
+    sources: () => Promise<SkillsSourcesResult>
+    setRoots: (roots: string[]) => Promise<SkillsSourcesResult>
   }
   /**
    * Cursor's read-only plugin cache. Distinct from `plugins` below (the plugin

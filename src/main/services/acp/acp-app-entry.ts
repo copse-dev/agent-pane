@@ -88,7 +88,7 @@ export function createAcpTurnRunner(deps: AcpTurnRunnerDeps): AcpTurnRunner {
 
     try {
       const projectId = activeProjectId()
-      if (!projectId) throw new Error('Cannot run an ACP turn without an active project')
+      if (!projectId) throw new Error('Open a project before running a coding agent')
       // ACP session ids are generated and retained by the main-process server,
       // not persisted in the GUI thread store. The project still comes from
       // trusted app state; acknowledge that main-owned membership explicitly.

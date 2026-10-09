@@ -21,7 +21,7 @@ export async function renderMermaidIn(root: ParentNode): Promise<void> {
         await frame.ready
         attachMermaidExpand(container.parentElement ?? root)
       } catch {
-        frame.element.remove()
+        frame.dispose()
         renderMermaidFallback(container, source)
       }
     }),

@@ -29,7 +29,11 @@ export interface DemoScenario {
   chatGptPlan?: ChatGptPlanStatus
   project: Project
   threads: Thread[]
-  /** Other projects exposed by the demo boundary, compatible with #3541. */
+  /**
+   * Further projects in the sidebar, each with its own threads. The scenario's
+   * `project` stays the one that opens; these are the ones never opened this
+   * session, so a spec can see what the sidebar lists for them.
+   */
   otherProjects?: ReadonlyArray<{ project: Project; threads: Thread[] }>
   settings: Readonly<Record<string, unknown>>
   /** Optional read-only PR showcase data for the browser demo's PR panel. */
@@ -2110,6 +2114,61 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'sidebar-other-projects',
+    label: 'Sidebar listing threads of projects not opened yet',
+    project: project('demo-other-projects-active', 'copse-demo', '/demo/copse'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      sidebarThreadGroup: 'status',
+    },
+    // The open project has one thread; two more projects hold threads that are only
+    // read in the background after startup, so their titles must still be listed.
+    threads: [
+      {
+        id: 'demo-other-projects-active-chat',
+        title: 'Open project thread',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    otherProjects: [
+      {
+        project: project('demo-other-projects-docs', 'docs-site', '/demo/docs-site'),
+        threads: ['Rewrite the install guide', 'Fix broken anchors'].map((title, index) => ({
+          id: `demo-other-projects-docs-${String(index)}`,
+          title,
+          status: 'idle' as const,
+          messages: [],
+          messagesLoaded: false,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: FIXED_TIME - 10 - index,
+          updatedAt: FIXED_TIME - 10 - index,
+        })),
+      },
+      {
+        project: project('demo-other-projects-api', 'api-server', '/demo/api-server'),
+        threads: [
+          {
+            id: 'demo-other-projects-api-0',
+            title: 'Add pagination to the list endpoint',
+            status: 'idle' as const,
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 20,
+            updatedAt: FIXED_TIME - 20,
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: 'sidebar-thread-sort',
     label: 'Sidebar thread sort',
     project: project('demo-sidebar-sort-project'),
@@ -2242,6 +2301,10 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     // The first thread is the active one and is empty, so the chat pane is the
     // Activity home. The others give it something to list: one waiting on an
     // approval, two running, one that finished while the user was elsewhere.
+    // A second project, so the strip lists projects at all (a lone one adds no card).
+    otherProjects: [
+      { project: project('demo-activity-other-docs', 'docs-site', '/demo/docs'), threads: [] },
+    ],
     threads: [
       {
         id: 'demo-activity-home-new',
@@ -2307,10 +2370,72 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'activity-home-many-projects',
+    label: 'Activity home listing twelve projects',
+    project: project('demo-activity-many-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    // Twelve projects overflow the strip, so it scrolls with an edge fade. Only the
+    // open one has thread data, so the rest read "All clear" and sort by name.
+    otherProjects: [
+      'Atlas',
+      'Billing API',
+      'Cobalt',
+      'Docs site',
+      'Edge workers',
+      'Flight deck',
+      'Gateway',
+      'Harbor',
+      'Ingest',
+      'Jupiter',
+      'Kiln',
+    ].map((name) => ({
+      project: {
+        id: `demo-activity-many-${name.toLowerCase().replace(/\W+/g, '-')}`,
+        path: `/demo/${name}`,
+        name,
+      },
+      threads: [],
+    })),
+    threads: [
+      {
+        id: 'demo-activity-many-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-many-refactor',
+        title: 'Refactor auth',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+    ],
+    approvalRequests: [
+      {
+        id: 'demo-activity-many-approval',
+        threadId: 'demo-activity-many-refactor',
+        title: 'Run shell command?',
+        body: "printf 'auth-check-passed\\n'",
+        type: 'shell',
+      },
+    ],
+  },
+  {
     id: 'activity-home-project-filter',
     label: 'Activity home after a project finishes waiting',
     project: project('demo-activity-home-filter-project'),
     settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    // A second project, so the strip lists projects at all (a lone one adds no card).
+    otherProjects: [
+      { project: project('demo-activity-other-docs', 'docs-site', '/demo/docs'), threads: [] },
+    ],
     threads: [
       {
         id: 'demo-activity-filter-new',
@@ -2638,6 +2763,103 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     'Full thread view for a model below the concise gate',
     'gpt-4o',
   ),
+  {
+    id: 'openai-host-pr',
+    label: 'OpenAI host PR creation result',
+    project: project('demo-openai-recovery-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'remote-agent:openai#gpt-6.1-sol',
+    },
+    threads: [
+      {
+        id: 'demo-openai-recovery-thread',
+        title: 'Create a PR from hosted changes',
+        status: 'idle',
+        model: 'remote-agent:openai#gpt-6.1-sol',
+        messages: [
+          {
+            id: 'recovery-user',
+            role: 'user',
+            content: 'Can we PR this?',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+          {
+            id: 'recovery-assistant',
+            role: 'assistant',
+            content:
+              'Changes imported. Done: Created draft PR https://github.com/example/project/pull/42',
+            toolCalls: [
+              {
+                id: 'openai-publish-turn-push',
+                name: 'gh_push',
+                args: {},
+                status: 'done',
+                result: 'Done: Pushed feature/mcp-apps to origin. Existing PR updated.',
+              },
+              {
+                id: 'openai-publish-turn-call',
+                name: 'gh_pr_create',
+                args: {
+                  title: 'docs: MCP Apps support plan',
+                  body: 'Document the implementation plan.',
+                  draft: true,
+                },
+                status: 'done',
+                result: 'Done: Created draft PR https://github.com/example/project/pull/42',
+              },
+            ],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'openai-cancellation-recovery',
+    label: 'OpenAI confirmed cancellation with interrupted recovery',
+    project: project('demo-openai-recovery-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'remote-agent:openai#gpt-6.1-sol',
+    },
+    threads: [
+      {
+        id: 'demo-openai-recovery-thread',
+        title: 'Stopped hosted task',
+        status: 'idle',
+        model: 'remote-agent:openai#gpt-6.1-sol',
+        messages: [
+          {
+            id: 'recovery-user',
+            role: 'user',
+            content: 'Run the public repository tests and report the result.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+          {
+            id: 'recovery-assistant',
+            role: 'assistant',
+            content:
+              '> An error occurred: OpenAI cancellation was confirmed, but output, usage, or artifacts could not be recovered. Session sess_demo remains linked; resend the previous message to recover it before starting another task.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
   conciseThreadScenario(
     'concise-thread-working',
     'Concise thread view while a capable model works',

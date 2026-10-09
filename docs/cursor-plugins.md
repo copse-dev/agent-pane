@@ -48,7 +48,7 @@ primarily **skills + optional MCP**.
 | ------------------------ | ------------- | --------------------------------------------------------------------------------------------------------------- |
 | **Skills**               | Supported     | Discovered from `~/.cursor/plugins/{local,cache}`; surfaced in `/` picker and `read_skill`                      |
 | **MCP servers**          | Supported     | Loaded from each plugin's `mcpServers` config file; merged after user/global `mcp.json`, before project configs |
-| **Extra plugin paths**   | Supported     | `skillPluginPaths` setting (storage only; no Settings UI yet)                                                   |
+| **Extra plugin paths**   | Supported     | Settings → Customise → Skills → Extra skill folders (`skillPluginPaths`)                                        |
 | **Commands**             | Not supported | Cursor manifest slot exists; no on-disk examples in current plugins                                             |
 | **Subagents**            | Not supported | Same as commands                                                                                                |
 | **Rules / AGENTS.md**    | Not supported | Some plugins ship `agentsmd/AGENTS.md` as a Gemini fallback; Copse does not load it                             |
@@ -93,7 +93,7 @@ the first skill loaded for a name wins, so an earlier root overrides a later
 one:
 
 1. **User** — `~/.cursor/skills`, `~/.agents/skills`, `~/.claude/skills`,
-   `~/.codex/skills` (source `user`, trusted). `.codex` is the Codex CLI's
+   `~/.codex/skills`, `~/.copilot/skills` (source `user`, trusted). `.codex` is the Codex CLI's
    layout; it was added after a Codex-backed thread could not find the skill it
    had been asked to run (reconcile-worktrees post-mortem, 2026-09-09).
 2. **Bundled Cursor plugin skills** shipped with Copse (`bundled`, trusted).
@@ -107,12 +107,16 @@ one:
    under its directory that its text names (followed transitively), except
    files inside a JS/TS project within the skill. `SOURCE.json` lists every
    reference still missing, and the build fails if that list drifts.
-3. **Project** — the same four container directories under the workspace,
+3. **Project** — `.cursor/skills`, `.agents/skills`, `.claude/skills`,
+   `.codex/skills`, and `.github/skills` under the workspace,
    including monorepo packages, but never inside a nested repository such as a
    `.claude/worktrees/*` checkout (`project`, untrusted). Within the project
-   scope the containers keep the order above.
-4. **Cursor plugins** (`~/.cursor/plugins/{local,cache}`) and
-   `skillPluginPaths` (`plugin` / `plugin-path`, untrusted).
+   scope the containers keep the order above; roots within the same container
+   are ordered by lexical path. Entries within each root are also sorted.
+4. **Enabled Agent Plugins**, then **Cursor plugins**
+   (`~/.cursor/plugins/{local,cache}`), then **Extra skill folders** in their
+   saved order (`plugin` / `plugin-path`, untrusted). Extra folders may contain
+   skills directly or a Cursor plugin manifest; they grant no permissions.
 5. **Built-in skills** shipped in `assets/skills` (`bundled`); last, so any
    user or project skill of the same name overrides a first-party one.
 
@@ -129,15 +133,51 @@ in the catalog, models derived it from `fullPath` and asked for `pstack`.
 
 ```yaml
 ---
-name: reconcile-worktrees # must match the folder name
+# Must match the folder name.
+name: reconcile-worktrees
 description: One line the model sees in the catalog
-disable-model-invocation: true # optional: user-only, hidden from the model
-paths: # optional: extra read-only entries, relative to this directory
+# Optional: manual-only, hidden from the model catalog.
+disable-model-invocation: true
+# Optional: hide from the manual slash picker (default true).
+user-invocable: true
+license: MIT
+compatibility: Requires Python 3.11
+metadata:
+  author: Example
+  version: '1.0'
+# Descriptive only: does not authorize these tools.
+allowed-tools: Bash(python:*) Read
+# Optional: extra read-only entries, relative to this directory.
+paths:
   - data
   - references/schema.json
 ---
 ```
 
+- `name` is required, at most 64 characters, and contains lowercase ASCII
+  letters, digits, and single hyphens between words. Leading, trailing, and
+  consecutive hyphens are invalid. `description` must contain non-whitespace
+  text and be at most 1024 Unicode characters. Invalid entries are skipped;
+  `read_skill` explains the exact constraint
+  when asked for the declared name or its folder name.
+- [Agent Skills format](https://agentskills.io/specification) headers are decoded
+  as bounded YAML and validated before registry insertion. Quoted scalars,
+  folded/literal descriptions, and string-valued metadata maps are supported.
+  Duplicate keys, aliases, executable tags, malformed optional fields, and
+  oversized headers are rejected. `license`, `compatibility` (at most 500
+  characters), `metadata`, and experimental `allowed-tools` round-trip through
+  the registry and appear in Sources. `allowed-tools` is a descriptive string;
+  it never changes approval, tools offered, or sandbox policy.
+- Two exact-byte adapters preserve immutable bundled snapshots: the pinned
+  `cursor-sdk` uses a reviewed short catalog summary for its original
+  1045-character description, and the pinned `check-agent-compatibility` has its
+  original colon-bearing description quoted for decoding. Original files and
+  instruction bodies remain intact. Sources exposes each adaptation; changed
+  vendor bytes and all user/project/plugin skills use normal strict validation.
+- `user-invocable: false` hides a skill from manual slash discovery while retaining
+  model eligibility. Both invocation controls default to manual/model on; setting
+  manual and model invocation both disabled leaves the skill visible only as a
+  Sources entry.
 - `disable-model-invocation` keeps a skill out of the model's catalog; the
   user can still invoke it with `/name`.
 - `paths` declares extra read-only entries for `run_shell`. When a skill is
@@ -156,6 +196,22 @@ paths: # optional: extra read-only entries, relative to this directory
 Reads outside these roots — and every write outside the workspace — still go
 through the normal "Run outside sandbox?" approval.
 
+### Sources diagnostics and reload
+
+Settings → Customise → Skills lists every valid skill, its filesystem origin,
+manual/model eligibility, and optional compatibility metadata. Skipped invalid
+files and unknown fields have actionable diagnostics. A shadowed duplicate names
+the winning path; duplicate precedence is independent of filesystem enumeration.
+
+Skill roots remain **manual reload**. Opening Sources or selecting **Reload skills**
+rescans disk; **Save folders** validates/persists absolute extra folder paths and
+rescans immediately. Files are not watched. Reload does not rewrite a catalog
+already included in an agent turn; the refreshed catalog applies to future turns.
+`read_skill` still reads the file from disk when requested, rather than pinning
+instruction bytes indefinitely. Workspace changes and existing settings/plugin actions still refresh their
+catalogs. Missing folders, unreadable/symlink skill files, malformed metadata, and
+name/folder mismatches appear in the diagnostics list.
+
 ## Local development
 
 Symlink a plugin repo into Cursor's local plugins directory (from Kingston skills
@@ -171,8 +227,8 @@ servers from Settings after changing plugin MCP configs.
 
 ## Gaps and future work
 
-1. **Settings UI** — surface `skillPluginPaths`, `skillsEnabled`, and installed
-   plugins (name, version, skills/MCP indicators).
+1. **Settings UI** — enrich installed Cursor plugin details (name, version,
+   skills/MCP indicators); extra skill folders are already editable in Sources.
 2. **Hot reload** — rescan `~/.cursor/plugins` when Cursor installs or updates a
    plugin without restarting the app.
 3. **Command contributions** — if Cursor stabilizes a `commands` manifest field,

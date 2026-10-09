@@ -37,7 +37,7 @@ import {
   prMatchesFilter,
   type PrRef,
 } from './pr-pane-list.ts'
-import { startPrDiscussThread } from './pr-pane-thread.ts'
+import { startPrCheckFixThread, startPrDiscussThread } from './pr-pane-thread.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
@@ -63,6 +63,8 @@ import {
 } from '@shared/git/thread-pr-relations.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { renderPrThreadRelationships } from './pr-thread-relationships.ts'
+import { githubSamlAuthorizationUrl, isGithubSamlError } from './pr-auth-error.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 
 const STATUS_LABEL: Record<string, string> = {
   added: 'A',
@@ -1087,9 +1089,19 @@ export function mountPrPane(
       diffWrap.hidden = true
       emptyState.hidden = true
       activityHost.hidden = false
-      renderPrActivity(activityHost, activeSection, prDetails.activity, (url) => {
-        void api.shell.openExternal(url)
-      })
+      renderPrActivity(
+        activityHost,
+        activeSection,
+        prDetails.activity,
+        (url) => {
+          void api.shell.openExternal(url)
+        },
+        (check, headSha) => {
+          if (!prDetails) return
+          startPrCheckFixThread(store, prDetails, check, headSha)
+          getPromptAttachmentHandlers()?.focusComposer?.()
+        },
+      )
     }
   }
 
@@ -1284,7 +1296,34 @@ export function mountPrPane(
     } catch (err) {
       if (requestId !== detailsRequestId) return
       emptyState.hidden = false
-      emptyState.textContent = err instanceof Error ? err.message : 'Could not load pull request'
+      const message = ipcErrorMessage(err, 'Could not load pull request')
+      const ssoUrl = githubSamlAuthorizationUrl(message, ref.owner)
+      if (ssoUrl) {
+        emptyState.replaceChildren(
+          el(
+            'div',
+            { class: 'pr-auth-error' },
+            el('p', {}, `GitHub requires SSO authorization for ${ref.owner}.`),
+            el(
+              'button',
+              { class: 'ui-btn ui-btn-primary pr-auth-button', type: 'button' },
+              'Sign in with GitHub SSO',
+            ),
+            el('p', { class: 'pr-auth-hint' }, 'After authorizing, refresh pull requests.'),
+          ),
+        )
+        emptyState
+          .querySelector<HTMLButtonElement>('.pr-auth-button')
+          ?.addEventListener('click', () => {
+            if (requestId === detailsRequestId && isStillSelected(ref)) {
+              void api.shell.openExternal(ssoUrl)
+            }
+          })
+      } else if (isGithubSamlError(message)) {
+        emptyState.textContent = `GitHub requires SSO authorization for ${ref.owner}. Open this pull request on GitHub to authorize access.`
+      } else {
+        emptyState.textContent = message
+      }
       return
     }
 

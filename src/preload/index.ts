@@ -899,6 +899,10 @@ const api: ApiClient = {
     models: () => ipcRenderer.invoke('open-router:models'),
   },
   models: {
+    invalidations: (threadModel?: string, freshLocal?: boolean) =>
+      ipcRenderer.invoke('models:invalidations', threadModel, freshLocal),
+    recoverSetting: (target, expected, fallback) =>
+      ipcRenderer.invoke('models:recover-setting', target, expected, fallback),
     bestValueDefault: () => ipcRenderer.invoke('models:best-value-default'),
     resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolve-dynamic', value),
   },
@@ -1384,6 +1388,8 @@ const api: ApiClient = {
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
+    sources: () => ipcRenderer.invoke('skills:sources'),
+    setRoots: (roots: string[]) => ipcRenderer.invoke('skills:set-roots', roots),
   },
   // Cursor's read-only plugin cache. Distinct from `plugins` below (the plugin
   // registry) until C1 merges the two Settings surfaces; the channel is named

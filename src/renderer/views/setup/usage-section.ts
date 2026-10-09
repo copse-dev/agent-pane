@@ -53,24 +53,34 @@ function isAbortTimeoutMessage(message: string): boolean {
  * API key that simply can't report plan windows. Exported for unit tests.
  */
 export function claudeReasonNeedsLogin(reason: string): boolean {
-  return /claude \/login|user:profile|rejected/i.test(reason)
+  return /claude \/login|user:profile|rejected|access token has expired/i.test(reason)
 }
 
 /**
- * Build the "Sign in to Claude" click handler: close the settings modal so the
- * shell is visible, then launch `claude /login` in a fresh Shells terminal.
+ * Close settings so the shell is visible, then run the provider's interactive
+ * login command in a fresh Shells terminal.
  * Returns `null` without a store to route the request through. Exported so the
  * emit + close wiring is unit-testable without standing up the whole section.
  */
-export function createClaudeSignInHandler(
+export function createPlanSignInHandler(
   store: AppStore | undefined,
+  provider: 'claude' | 'codex',
   onRequestClose?: () => void,
 ): (() => void) | null {
   if (!store) return null
   return (): void => {
     onRequestClose?.()
-    store.emit('request_terminal_command', 'claude /login')
+    store.emit('request_terminal_command', provider === 'claude' ? 'claude /login' : 'codex login')
   }
+}
+
+function planSignInProvider(result: ProviderPlanResult): 'claude' | 'codex' | null {
+  if (result.status !== 'unavailable') return null
+  if (result.provider === 'claude' && claudeReasonNeedsLogin(result.reason)) return 'claude'
+  if (result.provider === 'codex' && /codex login|credentials were rejected/i.test(result.reason)) {
+    return 'codex'
+  }
+  return null
 }
 
 function formatReset(resetsAt: string | null): string {
@@ -139,7 +149,7 @@ export function formatPlanWindowStats(window: {
 export function renderPlanProvider(
   host: HTMLElement,
   result: ProviderPlanResult,
-  onClaudeSignIn?: (() => void) | null,
+  onSignIn?: Partial<Record<'claude' | 'codex', (() => void) | undefined>>,
 ): void {
   const card = document.createElement('div')
   card.className = 'usage-plan-provider'
@@ -156,14 +166,16 @@ export function renderPlanProvider(
     hint.className = 'usage-plan-status field-hint'
     setInlineMarkdown(hint, result.reason)
     card.append(hint)
-    if (result.provider === 'claude' && onClaudeSignIn && claudeReasonNeedsLogin(result.reason)) {
+    const signInProvider = planSignInProvider(result)
+    const onProviderSignIn = signInProvider ? onSignIn?.[signInProvider] : undefined
+    if (signInProvider && onProviderSignIn) {
       const signIn = document.createElement('button')
       signIn.type = 'button'
       signIn.className = 'ui-btn ui-btn-primary usage-plan-signin-btn'
-      signIn.textContent = 'Sign in to Claude'
-      signIn.title = 'Open a terminal and run claude /login'
+      signIn.textContent = signInProvider === 'claude' ? 'Sign in to Claude' : 'Sign in to Codex'
+      signIn.title = `Open a terminal and run ${signInProvider === 'claude' ? 'claude /login' : 'codex login'}`
       signIn.addEventListener('click', () => {
-        onClaudeSignIn()
+        onProviderSignIn()
       })
       card.append(signIn)
     }
@@ -239,7 +251,7 @@ function renderPlanSection(
   host: HTMLElement,
   snapshot: PlanUsageSnapshot | null,
   error: string | null,
-  onClaudeSignIn?: (() => void) | null,
+  onSignIn?: Partial<Record<'claude' | 'codex', (() => void) | undefined>>,
 ): void {
   host.replaceChildren()
 
@@ -281,7 +293,7 @@ function renderPlanSection(
   const list = document.createElement('div')
   list.className = 'usage-plan-providers'
   for (const provider of snapshot.providers) {
-    renderPlanProvider(list, provider, onClaudeSignIn)
+    renderPlanProvider(list, provider, onSignIn)
   }
   host.append(list)
 }
@@ -586,7 +598,10 @@ export function createUsageSection(
   refresh: () => Promise<void>
   detach: () => void
 } {
-  const handleClaudeSignIn = createClaudeSignInHandler(store, onRequestClose)
+  const handleSignIn = {
+    claude: createPlanSignInHandler(store, 'claude', onRequestClose) ?? undefined,
+    codex: createPlanSignInHandler(store, 'codex', onRequestClose) ?? undefined,
+  }
   const root = document.createElement('div')
   root.className = 'usage-section-root'
   root.innerHTML = `
@@ -736,16 +751,16 @@ export function createUsageSection(
 
   async function refreshPlan(): Promise<void> {
     if (!cachedPlanSnapshot) {
-      renderPlanSection(planEl, null, null, handleClaudeSignIn)
+      renderPlanSection(planEl, null, null, handleSignIn)
     }
     try {
       const snapshot = await api.usage.getPlanUsage()
       cachedPlanSnapshot = snapshot
-      renderPlanSection(planEl, snapshot, null, handleClaudeSignIn)
+      renderPlanSection(planEl, snapshot, null, handleSignIn)
     } catch (err) {
       // Plan usage is best-effort — never block the ledger on IPC failure.
       const message = err instanceof Error ? err.message : 'Failed to load subscription plan usage.'
-      renderPlanSection(planEl, null, message, handleClaudeSignIn)
+      renderPlanSection(planEl, null, message, handleSignIn)
     }
   }
 

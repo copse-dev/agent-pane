@@ -154,7 +154,7 @@ describe('containerRunToolCall', () => {
     assert.equal(tc.result, markdown)
     assert.equal(tc.resultFormat, 'markdown')
     assert.match(markdown, /^\*\*Finished: 1 commit on refs\/copse\/runs\/run-1/)
-    assert.match(markdown, /Copse harness · 10 in \/ 5 out · 60s/)
+    assert.match(markdown, /Copse agent · 10 in \/ 5 out · 60s/)
     assert.match(markdown, /- `abc fix: the thing`/)
     assert.match(markdown, /\*\*Needs your attention\*\*\n- 1 connection refused/)
     assert.match(markdown, /\*\*Waiting for your review\*\*\n- Push — publishes/)
