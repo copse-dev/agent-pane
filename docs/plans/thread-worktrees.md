@@ -203,7 +203,19 @@ stale-content comparison — and creating a directory destroys nothing: it canno
 overwrite a file, cannot conflict, and an empty directory has no git-status
 footprint. It still respects the pending queue, so it never lands ahead of diffs
 the user is reviewing. The sweep is left to the first op that could actually lose
-work, which is where its three subprocesses are worth paying for.
+work, which is where its `git status` is worth paying for.
+
+That sweep runs once per run of ops, not once per op (#1700). In worktree mode the
+queue remembers a sweep after which every change in `git status` was Copse-owned
+or adopted, and later ops reuse it, because Copse records every path it writes
+itself. The remembered sweep is void as soon as anything else could have written:
+an agent shell command, a background task, a terminal open on the tree, a
+`prepare_worktree` install, an MCP call, an ACP prompt, a backup restore or a new
+turn. Each of these holds or notes a lease in `worktree-writers.ts`. The sweep is
+also void when `cursorHooksEnabled` is on, when an ownership snapshot is evicted,
+and after a 10-second backstop for writers nothing can observe, such as an external
+editor. The shared checkout never reuses a sweep. The per-path stale-content
+comparison still runs for every op.
 
 The state cache mirrors `root`: `DiffQueueState.checkoutMode` is refreshed from
 the execution context whenever one is bound, because the ACP native-tool bridge

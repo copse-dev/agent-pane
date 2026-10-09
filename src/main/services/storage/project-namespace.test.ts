@@ -4,9 +4,21 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { projectStoreNamespaceDir } from './project-namespace.ts'
+import {
+  currentProjectStoreScope,
+  projectStoreNamespaceDir,
+  projectStoreScopeFor,
+  threadProjectStoreScope,
+} from './project-namespace.ts'
+import {
+  adoptUpgradedThreadExecutionContext,
+  releaseUpgradedThreadExecutionContext,
+  resolveThreadExecutionContext,
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from '../thread-execution-context.ts'
 import { storageSet } from './storage.ts'
-import { setWorkspaceRootForTest } from '../workspace.ts'
+import { getProjectRoot, setWorkspaceRootForTest } from '../workspace.ts'
 
 const cleanups: Array<() => void> = []
 
@@ -33,6 +45,27 @@ function openProject(id: string | null, path: string): void {
   storageSet('projects', id ? [{ id, path, name: basename(path) }] : [])
   storageSet('activeProjectId', id)
   cleanups.push(setWorkspaceRootForTest(path))
+}
+
+/** Two persisted projects, with `active` open in the window. */
+function openTwoProjects(active: 'project-a' | 'project-b'): void {
+  storageSet('projects', [
+    { id: 'project-a', path: '/repos/alpha', name: 'alpha' },
+    { id: 'project-b', path: '/repos/beta', name: 'beta' },
+  ])
+  storageSet('activeProjectId', active)
+  cleanups.push(setWorkspaceRootForTest(active === 'project-a' ? '/repos/alpha' : '/repos/beta'))
+}
+
+function turnIn(projectId: string, projectRoot: string): ThreadExecutionContext {
+  return {
+    projectId,
+    threadId: 'thread-1',
+    projectRoot,
+    root: projectRoot,
+    checkoutMode: 'shared',
+    branch: null,
+  }
 }
 
 afterEach(() => {
@@ -105,7 +138,10 @@ describe('projectStoreNamespaceDir', () => {
     openProject(null, '/repos/widget')
     cleanups.push(setWorkspaceRootForTest(null))
 
-    assert.equal(projectStoreNamespaceDir(base, null), join(base, 'shared'))
+    assert.equal(
+      projectStoreNamespaceDir(base, { projectId: null, root: null }),
+      join(base, 'shared'),
+    )
   })
 
   // Headless runs scope by workspace root and never set an active project id;
@@ -116,13 +152,250 @@ describe('projectStoreNamespaceDir', () => {
     storageSet('activeProjectId', null)
     cleanups.push(setWorkspaceRootForTest(root))
 
-    assert.equal(projectStoreNamespaceDir(base, root), join(base, legacyName(root)))
+    assert.equal(
+      projectStoreNamespaceDir(base, { projectId: null, root }),
+      join(base, legacyName(root)),
+    )
   })
 
-  it('honours an explicitly passed root', () => {
+  it('honours an explicitly passed scope with no root', () => {
     const base = tempBase()
     openProject('project-1', '/repos/widget')
 
-    assert.equal(projectStoreNamespaceDir(base, null), join(base, 'shared'))
+    assert.equal(
+      projectStoreNamespaceDir(base, { projectId: null, root: null }),
+      join(base, 'shared'),
+    )
+  })
+
+  it('honours an explicitly named project that is not the active one', () => {
+    const base = tempBase()
+    openTwoProjects('project-b')
+
+    assert.equal(
+      projectStoreNamespaceDir(base, projectStoreScopeFor('project-a')),
+      join(base, 'project-a'),
+    )
+  })
+
+  // The bug: a run keeps going after the user switches projects, and used to
+  // resolve the *active* project's store from inside its own turn.
+  it("keys a turn's store on the turn's project after the user switches away", () => {
+    const base = tempBase()
+    openTwoProjects('project-b')
+
+    const dir = runWithThreadExecutionContext(turnIn('project-a', '/repos/alpha'), () =>
+      projectStoreNamespaceDir(base),
+    )
+
+    assert.equal(dir, join(base, 'project-a'))
+    assert.equal(projectStoreNamespaceDir(base), join(base, 'project-b'), 'outside the turn')
+  })
+
+  it("keeps a turn's store in its project's directory after the project is removed", () => {
+    const base = tempBase()
+    openTwoProjects('project-b')
+    const turn = turnIn('project-a', '/repos/alpha')
+
+    const before = runWithThreadExecutionContext(turn, () => projectStoreNamespaceDir(base))
+    // The user removes project A while its background turn is still running.
+    storageSet('projects', [{ id: 'project-b', path: '/repos/beta', name: 'beta' }])
+    const after = runWithThreadExecutionContext(turn, () => projectStoreNamespaceDir(base))
+
+    assert.equal(before, join(base, 'project-a'))
+    assert.equal(after, before, 'the rest of the turn writes where it started')
+  })
+
+  it('keeps the id when the project is removed before the turn first uses a store', async () => {
+    const base = tempBase()
+    storageSet('projects', [
+      { id: 'project-early', path: '/repos/early', name: 'early' },
+      { id: 'project-b', path: '/repos/beta', name: 'beta' },
+    ])
+    storageSet('activeProjectId', 'project-b')
+    cleanups.push(setWorkspaceRootForTest('/repos/beta'))
+    // The turn starts: main resolves its context against the persisted list.
+    const turn = await resolveThreadExecutionContext('project-early', 'thread-1', {
+      getProjectRoot,
+      getThreadMeta: () => Promise.resolve({ id: 'thread-1' }),
+    })
+    // The user removes the project before the turn has touched any store.
+    storageSet('projects', [{ id: 'project-b', path: '/repos/beta', name: 'beta' }])
+
+    const dir = runWithThreadExecutionContext(turn, () => projectStoreNamespaceDir(base))
+
+    assert.equal(dir, join(base, 'project-early'))
+  })
+
+  it('migrates legacy data when the project is removed before first store access', async () => {
+    const base = tempBase()
+    const projectRoot = '/repos/removed-before-store'
+    const legacy = join(base, legacyName(projectRoot))
+    mkdirSync(legacy, { recursive: true })
+    writeFileSync(join(legacy, 'notes.txt'), 'legacy notes')
+    storageSet('projects', [
+      { id: 'project-removed-before-store', path: projectRoot, name: 'removed' },
+      { id: 'project-b', path: '/repos/beta', name: 'beta' },
+    ])
+    storageSet('activeProjectId', 'project-b')
+    cleanups.push(setWorkspaceRootForTest('/repos/beta'))
+    const turn = await resolveThreadExecutionContext('project-removed-before-store', 'thread-1', {
+      getProjectRoot,
+      getThreadMeta: () => Promise.resolve({ id: 'thread-1' }),
+    })
+    storageSet('projects', [{ id: 'project-b', path: '/repos/beta', name: 'beta' }])
+
+    const dir = runWithThreadExecutionContext(turn, () => projectStoreNamespaceDir(base))
+
+    assert.equal(dir, join(base, 'project-removed-before-store'))
+    assert.equal(readFileSync(join(dir, 'notes.txt'), 'utf8'), 'legacy notes')
+    assert.equal(existsSync(legacy), false)
+  })
+
+  it('migrates legacy data when the project is relocated before first store access', async () => {
+    const base = tempBase()
+    const oldRoot = '/repos/relocated-before-store'
+    const legacy = join(base, legacyName(oldRoot))
+    mkdirSync(legacy, { recursive: true })
+    writeFileSync(join(legacy, 'notes.txt'), 'legacy notes')
+    storageSet('projects', [
+      { id: 'project-relocated-before-store', path: oldRoot, name: 'relocated' },
+      { id: 'project-b', path: '/repos/beta', name: 'beta' },
+    ])
+    storageSet('activeProjectId', 'project-b')
+    cleanups.push(setWorkspaceRootForTest('/repos/beta'))
+    const turn = await resolveThreadExecutionContext('project-relocated-before-store', 'thread-1', {
+      getProjectRoot,
+      getThreadMeta: () => Promise.resolve({ id: 'thread-1' }),
+    })
+    // The project moves while the turn runs, before it first uses a store.
+    storageSet('projects', [
+      { id: 'project-relocated-before-store', path: '/moved/relocated', name: 'relocated' },
+      { id: 'project-b', path: '/repos/beta', name: 'beta' },
+    ])
+
+    const dir = runWithThreadExecutionContext(turn, () => projectStoreNamespaceDir(base))
+
+    assert.equal(dir, join(base, 'project-relocated-before-store'))
+    assert.equal(readFileSync(join(dir, 'notes.txt'), 'utf8'), 'legacy notes')
+    assert.equal(existsSync(legacy), false)
+  })
+
+  it('never adopts a root no context was resolved at, even for a known project id', () => {
+    const base = tempBase()
+    const legacyOther = join(base, legacyName('/repos/someone-else'))
+    mkdirSync(legacyOther, { recursive: true })
+    writeFileSync(join(legacyOther, 'notes.txt'), 'not yours')
+    openTwoProjects('project-b')
+
+    // A context claiming project-a but carrying a root it was never resolved at.
+    runWithThreadExecutionContext(turnIn('project-a', '/repos/someone-else'), () =>
+      projectStoreNamespaceDir(base),
+    )
+
+    assert.equal(readFileSync(join(legacyOther, 'notes.txt'), 'utf8'), 'not yours')
+  })
+
+  it('keeps a deferred turn on its own store after it is upgraded to a worktree', async () => {
+    const base = tempBase()
+    const projectRoot = '/repos/deferred-upgrade'
+    const legacy = join(base, legacyName(projectRoot))
+    mkdirSync(legacy, { recursive: true })
+    writeFileSync(join(legacy, 'notes.txt'), 'deferred notes')
+    storageSet('projects', [
+      { id: 'project-deferred', path: projectRoot, name: 'deferred' },
+      { id: 'project-b', path: '/repos/beta', name: 'beta' },
+    ])
+    storageSet('activeProjectId', 'project-b')
+    cleanups.push(setWorkspaceRootForTest('/repos/beta'))
+    const resolved = await resolveThreadExecutionContext('project-deferred', 'thread-1', {
+      getProjectRoot,
+      getThreadMeta: () => Promise.resolve({ id: 'thread-1' }),
+    })
+    // The turn starts on the shared checkout, deferring its worktree (#3241)…
+    const deferred: ThreadExecutionContext = {
+      ...resolved,
+      deferredWorktree: { baseBranch: 'main', requestedAt: 0 },
+    }
+    try {
+      const dir = runWithThreadExecutionContext(deferred, () => {
+        // …and its first write moves it onto a worktree with a different root.
+        adoptUpgradedThreadExecutionContext({
+          projectId: 'project-deferred',
+          threadId: 'thread-1',
+          projectRoot,
+          root: '/worktrees/project-deferred/thread-1',
+          checkoutMode: 'worktree',
+          branch: 'copse/thread-1',
+        })
+        return projectStoreNamespaceDir(base)
+      })
+
+      assert.equal(dir, join(base, 'project-deferred'))
+      assert.equal(readFileSync(join(dir, 'notes.txt'), 'utf8'), 'deferred notes')
+    } finally {
+      releaseUpgradedThreadExecutionContext({ projectId: 'project-deferred', threadId: 'thread-1' })
+    }
+  })
+
+  it("migrates a background turn's own legacy directory under its own id", () => {
+    const base = tempBase()
+    const legacyA = join(base, legacyName('/repos/alpha'))
+    mkdirSync(legacyA, { recursive: true })
+    writeFileSync(join(legacyA, 'notes.txt'), 'alpha notes')
+    openTwoProjects('project-b')
+
+    const dir = runWithThreadExecutionContext(turnIn('project-a', '/repos/alpha'), () =>
+      projectStoreNamespaceDir(base),
+    )
+
+    assert.equal(dir, join(base, 'project-a'))
+    assert.equal(readFileSync(join(dir, 'notes.txt'), 'utf8'), 'alpha notes')
+    assert.equal(existsSync(join(base, 'project-b')), false)
+  })
+
+  it("never moves one project's legacy directory under another project's id", () => {
+    const base = tempBase()
+    const legacyA = join(base, legacyName('/repos/alpha'))
+    mkdirSync(legacyA, { recursive: true })
+    writeFileSync(join(legacyA, 'notes.txt'), 'alpha notes')
+    openTwoProjects('project-b')
+
+    // A mismatched scope (project B's id with project A's root) resolves B's
+    // directory but leaves A's data where it is.
+    const dir = projectStoreNamespaceDir(base, { projectId: 'project-b', root: '/repos/alpha' })
+
+    assert.equal(dir, join(base, 'project-b'))
+    assert.equal(existsSync(join(dir, 'notes.txt')), false)
+    assert.equal(readFileSync(join(legacyA, 'notes.txt'), 'utf8'), 'alpha notes')
+  })
+})
+
+describe('currentProjectStoreScope', () => {
+  it('is the active project outside a turn', () => {
+    openTwoProjects('project-b')
+
+    assert.deepEqual(currentProjectStoreScope(), { projectId: 'project-b', root: '/repos/beta' })
+  })
+
+  it("is the turn's project inside a turn", () => {
+    openTwoProjects('project-b')
+
+    const scope = runWithThreadExecutionContext(turnIn('project-a', '/repos/alpha'), () =>
+      currentProjectStoreScope(),
+    )
+
+    assert.deepEqual(scope, { projectId: 'project-a', root: '/repos/alpha' })
+  })
+
+  // Headless runs mint a fresh, never-persisted project id per run; keying by it
+  // would strand each run's data in a new directory.
+  it('drops a turn project id that is not persisted, keeping the root', () => {
+    openTwoProjects('project-b')
+
+    assert.deepEqual(threadProjectStoreScope(turnIn('headless-project-1', '/tmp/headless')), {
+      projectId: null,
+      root: '/tmp/headless',
+    })
   })
 })

@@ -27,7 +27,8 @@ import {
 } from './diff-queue.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
-import { resetSessionBackup } from './worktree-backup.ts'
+import { getSessionBackup, resetSessionBackup } from './worktree-backup.ts'
+import { beginWorktreeWriter, withWorktreeWriter } from './worktree-writers.ts'
 import { getIndex, invalidateIndex } from './search/file-index.ts'
 import {
   runWithThreadExecutionContext,
@@ -37,6 +38,7 @@ import { ownedIt, worktreeIt, TEST_THREAD_OWNER } from './thread-execution-conte
 import { setSetting } from './storage/settings.ts'
 import { localWorkspaceFs } from './workspace-fs/local-workspace-fs.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
+import { runShellTool } from '../tools/shell-tool.ts'
 
 function git(cwd: string, args: string[]): void {
   execFileSync('git', args, {
@@ -728,6 +730,177 @@ describe('applyOrStageFileOp (worktree auto-approve)', () => {
       'Deletion of gone.txt staged. Approve or reject in the diff panel — nothing changes on disk until accepted.',
     )
     assert.equal(await readFile(join(workspaceRoot, 'gone.txt'), 'utf-8'), 'bye\n')
+  })
+})
+
+describe('direct-apply sweep reuse (#1700)', () => {
+  let tempRoot = ''
+  let workspaceRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    clearDiffQueueForTest()
+    resetSessionBackup(TEST_THREAD_OWNER)
+    setGitAvailableForTest(true)
+    await setSetting('worktreeAutoApproveEdits', true)
+    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-sweep-'))
+    workspaceRoot = join(tempRoot, 'packages/app')
+    await mkdir(workspaceRoot, { recursive: true })
+    initCommittedRepo(tempRoot)
+    restoreWorkspace = setWorkspaceRootForTest(workspaceRoot)
+  })
+
+  afterEach(async () => {
+    mock.timers.reset()
+    clearDiffQueueForTest()
+    resetSessionBackup(TEST_THREAD_OWNER)
+    setGitAvailableForTest(null)
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  async function commitFiles(names: string[]): Promise<void> {
+    for (const name of names) await writeFile(join(workspaceRoot, name), `${name}\n`, 'utf-8')
+    git(tempRoot, ['add', '.'])
+    git(tempRoot, ['commit', '-m', 'add fixtures'])
+  }
+
+  function deleteFile(name: string, before = `${name}\n`): Promise<string> {
+    return applyOrStageFileOp({
+      op: 'delete',
+      path: name,
+      before,
+      after: '',
+      language: 'plaintext',
+    })
+  }
+
+  // Every test below leans on the same probe. With git switched off, a live
+  // sweep cannot answer and the op stages with "git is unavailable"; an op that
+  // still applies directly therefore ran no `git status`.
+  const GIT_UNAVAILABLE = /git is unavailable or the workspace is not a git worktree/
+
+  worktreeIt('runs one git status for a run of destructive ops with no other writer', async () => {
+    const names = ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt']
+    await commitFiles(names)
+
+    assert.match(await deleteFile('a.txt'), /Deleted a\.txt directly/)
+    setGitAvailableForTest(false)
+    for (const name of names.slice(1)) {
+      assert.match(await deleteFile(name), /directly/, name)
+    }
+    assert.equal(getDiffQueueForTest().length, 0)
+  })
+
+  worktreeIt('still checks each path for a change since Copse last wrote it', async () => {
+    await commitFiles(['b.txt'])
+    assert.match(await applyOrStageDiff('b.txt', 'b.txt\n', 'mine\n', 'plaintext'), /directly/)
+    await writeFile(join(workspaceRoot, 'b.txt'), 'theirs\n', 'utf-8')
+    setGitAvailableForTest(false)
+
+    // The reused sweep answers "is there unowned work elsewhere"; it never
+    // vouches for a path Copse owns whose content has since moved on.
+    const result = await deleteFile('b.txt', 'theirs\n')
+    assert.match(result, /changed on disk since Copse last applied a direct edit/)
+    assert.equal(await readFile(join(workspaceRoot, 'b.txt'), 'utf-8'), 'theirs\n')
+  })
+
+  worktreeIt('sweeps live while a writer is running on the worktree', async () => {
+    await commitFiles(['a.txt', 'b.txt'])
+    await deleteFile('a.txt')
+    setGitAvailableForTest(false)
+
+    const release = beginWorktreeWriter(workspaceRoot)
+    try {
+      assert.match(await deleteFile('b.txt'), GIT_UNAVAILABLE)
+    } finally {
+      release()
+    }
+  })
+
+  worktreeIt('reuses the sweep while the only live writer is on another tree', async () => {
+    await commitFiles(['a.txt', 'b.txt'])
+    const release = beginWorktreeWriter(join(tempRoot, '..', 'another-worktree'))
+    try {
+      await deleteFile('a.txt')
+      setGitAvailableForTest(false)
+      assert.match(await deleteFile('b.txt'), /Deleted b\.txt directly/)
+    } finally {
+      release()
+    }
+  })
+
+  worktreeIt('backs up a file a finished writer created before deleting it', async () => {
+    await commitFiles(['a.txt'])
+    assert.match(await deleteFile('a.txt'), /Deleted a\.txt directly/)
+    assert.equal(getSessionBackup(), null, 'a clean tree needs no backup')
+
+    await withWorktreeWriter(workspaceRoot, () =>
+      writeFile(join(workspaceRoot, 'theirs.txt'), 'not Copse’s\n', 'utf-8'),
+    )
+
+    const result = await deleteFile('theirs.txt', 'not Copse’s\n')
+    assert.match(result, /Deleted theirs\.txt directly/)
+    const backup = getSessionBackup()
+    assert.ok(backup, 'the unowned file was backed up before the delete landed')
+    assert.match(result, new RegExp(`backed up to ${backup.ref}`))
+    assert.ok(backup.paths.includes('theirs.txt'))
+  })
+
+  worktreeIt('re-sweeps after a foreground shell command', async () => {
+    await commitFiles(['a.txt'])
+    await deleteFile('a.txt')
+    // Written behind every signal, standing in for an external editor: only the
+    // shell command finishing should make the next op look again.
+    await writeFile(join(workspaceRoot, 'theirs.txt'), 'external\n', 'utf-8')
+
+    await runShellTool.execute(
+      { command: 'true', timeout_ms: 30_000 },
+      new AbortController().signal,
+    )
+
+    assert.match(await deleteFile('theirs.txt', 'external\n'), /backed up to /)
+    assert.ok(getSessionBackup()?.paths.includes('theirs.txt'))
+  })
+
+  worktreeIt('re-sweeps at a new turn', async () => {
+    await commitFiles(['a.txt', 'b.txt'])
+    await deleteFile('a.txt')
+    resetSessionBackup(TEST_THREAD_OWNER)
+    setGitAvailableForTest(false)
+
+    assert.match(await deleteFile('b.txt'), GIT_UNAVAILABLE)
+  })
+
+  worktreeIt('re-sweeps once the sweep is older than its reuse window', async () => {
+    mock.timers.enable({ apis: ['Date'], now: Date.now() })
+    await commitFiles(['a.txt'])
+    await deleteFile('a.txt')
+    await writeFile(join(workspaceRoot, 'theirs.txt'), 'external\n', 'utf-8')
+
+    mock.timers.tick(10_000)
+
+    assert.match(await deleteFile('theirs.txt', 'external\n'), /backed up to /)
+    assert.ok(getSessionBackup()?.paths.includes('theirs.txt'))
+  })
+
+  worktreeIt('does not remember a sweep that found unowned work it did not adopt', async () => {
+    await commitFiles(['a.txt'])
+    await writeFile(join(workspaceRoot, 'theirs.txt'), 'external\n', 'utf-8')
+    // A brand-new file returns before the unowned work is backed up and adopted,
+    // so that sweep must not stand in for the delete that follows.
+    assert.match(await applyOrStageDiff('new.txt', '', 'new\n', 'plaintext'), /did not exist/)
+    setGitAvailableForTest(false)
+
+    assert.match(await deleteFile('a.txt'), GIT_UNAVAILABLE)
+  })
+
+  ownedIt('never reuses a sweep in the shared checkout', async () => {
+    await commitFiles(['a.txt'])
+    assert.match(await applyOrStageDiff('a.txt', 'a.txt\n', 'one\n', 'plaintext'), /directly/)
+    setGitAvailableForTest(false)
+
+    assert.match(await applyOrStageDiff('a.txt', 'one\n', 'two\n', 'plaintext'), GIT_UNAVAILABLE)
   })
 })
 
