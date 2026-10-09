@@ -29,8 +29,9 @@ describe('todo-logic', () => {
       assert.deepEqual(held.todos, [
         { id: 't3', content: 'Fetch and rebase', status: 'in_progress', check: prCheck },
       ])
-      assert.equal(held.messages.length, 1)
-      assert.match(held.messages[0], /Fetch and rebase: acceptance check was attached/)
+      assert.deepEqual(held.messages, [
+        'Fetch and rebase: acceptance check was attached in the same call that marked it completed, so it cannot verify the work. Kept in_progress with the check recorded; complete it in a later update_todos call.',
+      ])
     })
 
     it('holds a completion whose check was swapped for a different one', () => {
