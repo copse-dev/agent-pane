@@ -99097,9 +99097,7 @@ function mountConversation(root, store2, api2) {
     });
     msgEl.append(body);
     if (msg.role === "assistant" && msg.content.trim()) {
-      attachCopyButton(body, msgId, store2);
-      const sideChat = buildSideChatAction(threadId, msgId);
-      if (sideChat) body.append(el("div", { class: "msg-actions" }, sideChat));
+      attachReplyActions(body, threadId, msgId);
     }
     if (msg.role === "user") body.append(buildUserActions(threadId, msgId));
     return msgEl;
@@ -99153,6 +99151,12 @@ function mountConversation(root, store2, api2) {
     if (!msgEl) return;
     list.insertBefore(msgEl, before);
     finalizeMessageEl(threadId, msgId);
+  }
+  function attachReplyActions(body, threadId, msgId) {
+    const sideChat = buildSideChatAction(threadId, msgId);
+    const host = sideChat ? el("div", { class: "msg-reply-actions" }, sideChat) : body;
+    attachCopyButton(host, msgId, store2);
+    if (host !== body) body.append(host);
   }
   function buildSideChatAction(threadId, msgId) {
     if (getThreadById(store2, threadId)?.sideChat !== void 0) return null;
@@ -99837,7 +99841,8 @@ function mountConversation(root, store2, api2) {
       if (msg?.role === "assistant" && msg.content.trim()) {
         resyncRunMembership(thread, mid);
         const body = msgEl?.querySelector(".message-body");
-        if (body && !body.querySelector(".msg-copy")) attachCopyButton(body, mid, store2);
+        if (body && thread && !body.querySelector(".msg-copy"))
+          attachReplyActions(body, thread.id, mid);
         const reasoning = body?.querySelector(":scope > .message-reasoning");
         if (reasoning && !reasoning.dataset["userToggled"]) reasoning.open = false;
       }
