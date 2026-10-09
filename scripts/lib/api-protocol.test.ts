@@ -664,6 +664,31 @@ describe('compareApiProtocol', () => {
       )
     })
 
+    it('pairs set members so each fits, whichever order the new ones come in', () => {
+      // {a} may become either new member, {b} only {a, b}. First fit would give
+      // {a} the {a, b} member when it comes first and leave {b} without one.
+      const fields = (...names: string[]): JsonSchema =>
+        obj(Object.fromEntries(names.map((name) => [name, str])), [])
+      const result = (key: 'allOf' | 'anyOf', ...members: JsonSchema[]): ApiProtocolDocument =>
+        doc({ 'a:get': { args: tuple(), result: { [key]: members } } })
+      const before = (key: 'allOf' | 'anyOf'): ApiProtocolDocument =>
+        result(key, fields('a'), fields('b'))
+      for (const after of [
+        [fields('a', 'b'), fields('a', 'c')],
+        [fields('a', 'c'), fields('a', 'b')],
+      ]) {
+        assert.deepEqual(
+          compareApiProtocol(before('allOf'), result('allOf', ...after)),
+          widened('a:get', 'get'),
+        )
+        // In a union, {b} gaining `a` would let an old client mistake it for {a}.
+        assert.deepEqual(
+          compareApiProtocol(before('anyOf'), result('anyOf', ...after)),
+          broken('a:get', 'get', 'result.a', 'added to a union member that another member has'),
+        )
+      }
+    })
+
     it('treats an optional field or trailing argument added to an event as additive', () => {
       const withEvent = (args: JsonSchema): ApiProtocolDocument => {
         const base = doc({})

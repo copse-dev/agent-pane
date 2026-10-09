@@ -1315,29 +1315,66 @@ function memberSetCompat(
     if (twin) twin.used = true
     else unpaired.push(member)
   }
-  let result: Compat = 'same'
-  for (const member of unpaired) {
-    // Probe quietly: only the pairing that is finally kept may explain a failure.
-    const match = candidates.find(
-      (candidate) =>
-        !candidate.used && compatOf(member, candidate.member, flow, at, {}) !== 'breaking',
-    )
-    if (!match) return broke(trace, at, 'a member changed incompatibly')
-    match.used = true
-    // A client may tell union members apart by which fields are present
-    // (`'size' in entry`), so one must not gain a field another is known by.
-    const gained = fieldNames(match.member).filter((name) => !fieldNames(member).includes(name))
-    const telling = gained.find(
-      (name) =>
-        isUnion &&
-        next.some((other: unknown) => other !== match.member && fieldNames(other).includes(name)),
-    )
-    if (telling !== undefined) {
-      return broke(trace, `${at}.${telling}`, 'added to a union member that another member has')
+  // First fit could hand a member the only candidate a later one fits and
+  // report a compatible change as breaking, so search for a full pairing,
+  // moving earlier members to other candidates where they also fit.
+  const open = candidates.filter((candidate) => !candidate.used).map(({ member }) => member)
+  const faults = unpaired.map((member) =>
+    open.map((candidate) => pairFault(member, candidate, next, flow, at, isUnion)),
+  )
+  const holder: (number | undefined)[] = open.map(() => undefined)
+  const claim = (index: number, tried: Set<number>): boolean => {
+    for (const slot of open.keys()) {
+      if (faults[index]?.[slot] !== undefined || tried.has(slot)) continue
+      tried.add(slot)
+      const current = holder[slot]
+      if (current === undefined || claim(current, tried)) {
+        holder[slot] = index
+        return true
+      }
     }
-    result = worse(result, compatOf(member, match.member, flow, at, trace))
+    return false
+  }
+  for (const [index, row] of faults.entries()) {
+    if (claim(index, new Set())) continue
+    const told = row.find((fault) => fault !== undefined && fault.why !== INCOMPATIBLE_MEMBER)
+    return broke(trace, told?.at ?? at, told?.why ?? INCOMPATIBLE_MEMBER)
+  }
+  let result: Compat = 'same'
+  for (const [slot, index] of holder.entries()) {
+    if (index !== undefined) {
+      result = worse(result, compatOf(unpaired[index], open[slot], flow, at, trace))
+    }
   }
   return result
+}
+
+const INCOMPATIBLE_MEMBER = 'a member changed incompatibly'
+
+/** Why one set member may not become a candidate, or undefined when it may. */
+function pairFault(
+  member: unknown,
+  candidate: unknown,
+  members: unknown[],
+  flow: Flow,
+  at: string,
+  isUnion: boolean,
+): Trace | undefined {
+  // Probe quietly: only the pairing that is finally kept may explain a failure.
+  if (compatOf(member, candidate, flow, at, {}) === 'breaking') {
+    return { at, why: INCOMPATIBLE_MEMBER }
+  }
+  if (!isUnion) return undefined
+  // A client may tell union members apart by which fields are present
+  // (`'size' in entry`), so one must not gain a field another is known by.
+  const told = fieldNames(candidate).find(
+    (name) =>
+      !fieldNames(member).includes(name) &&
+      members.some((other) => other !== candidate && fieldNames(other).includes(name)),
+  )
+  return told === undefined
+    ? undefined
+    : { at: `${at}.${told}`, why: 'added to a union member that another member has' }
 }
 
 /** The top-level field names an object schema declares. */
