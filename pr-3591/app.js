@@ -84716,6 +84716,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
   }
   function captureListScrollAnchor() {
+    if (list.scrollTop <= 0) return null;
     const listRect = list.getBoundingClientRect();
     for (const row2 of list.querySelectorAll(".activity-row")) {
       const rowKey2 = row2.dataset["rowKey"];
