@@ -116423,6 +116423,7 @@ ${description}
       (use) => {
         classifierUseInFlight = false;
         if (seq !== classifierUseSeq) return;
+        if (JSON.stringify(use) === JSON.stringify(classifierUse)) return;
         classifierUse = use;
         updateFooter();
       },
