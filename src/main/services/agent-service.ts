@@ -1800,6 +1800,7 @@ async function runAgentWithInlineCanvas(
     const skillActivationTurn = createSkillActivationTurn(
       invokedSkills,
       parentLoopTools.map((tool) => tool.name),
+      systemPromptBuild.invokedSkillContextBytes,
     )
     const activeNestedInstructionPaths = new Set(
       systemPromptBuild.instructionMetadata.activeNestedPaths,

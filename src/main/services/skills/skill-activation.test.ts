@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createSkillActivationTurn } from './skill-activation.ts'
+import { buildSystemPromptWithMetadata } from '../agent-system-prompt.ts'
 import {
   getSkill,
   refreshSkillsRegistry,
@@ -179,6 +180,44 @@ describe('model skill activation', () => {
     await assert.rejects(turn.read('over-budget', undefined, signal), /context limit/)
     await assert.rejects(turn.read(manual.name, 'reference.md', signal), /context limit/)
     assert.match(await turn.read(manual.name, undefined, signal), /explicitly invoked/)
+  })
+
+  it('charges the actual deduplicated UTF-8 manual prompt before automatic and supporting reads', async () => {
+    const body = '🌲'.repeat(10_000)
+    const manual = await skill('manual-prompt-budget', {}, body)
+    const second = await skill('second-manual-budget', {}, 'x'.repeat(45_000))
+    await skill('automatic-prompt-budget', {}, 'x'.repeat(45_000))
+    await writeFile(join(manual.skillRoot, 'large.md'), 'x'.repeat(45_000))
+    await writeFile(join(manual.skillRoot, 'small.md'), 'small reference')
+    const restore = setWorkspaceRootForTest(root)
+    try {
+      const empty = await buildSystemPromptWithMetadata({
+        subagentsEnabled: false,
+        invokedSkills: [],
+      })
+      const built = await buildSystemPromptWithMetadata({
+        subagentsEnabled: false,
+        invokedSkills: [manual.name, second.name, manual.name],
+      })
+      assert.equal(empty.invokedSkillContextBytes, 0)
+      assert.equal(built.prompt.split(body).length, 2)
+      assert.equal(
+        built.invokedSkillContextBytes,
+        Buffer.byteLength(built.prompt, 'utf8') - Buffer.byteLength(empty.prompt, 'utf8'),
+      )
+      assert.ok(built.invokedSkillContextBytes > 80_000)
+      const turn = createSkillActivationTurn(
+        [manual.name],
+        ['read_skill'],
+        built.invokedSkillContextBytes,
+      )
+      assert.match(await turn.read(manual.name, undefined, signal), /explicitly invoked/)
+      await assert.rejects(turn.read('automatic-prompt-budget', undefined, signal), /context limit/)
+      await assert.rejects(turn.read(manual.name, 'large.md', signal), /context limit/)
+      assert.match(await turn.read(manual.name, 'small.md', signal), /small reference/)
+    } finally {
+      restore()
+    }
   })
 
   it('keeps budgets isolated between turns and rejects skills added or replaced after the catalog snapshot', async () => {

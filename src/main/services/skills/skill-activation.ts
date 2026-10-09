@@ -16,6 +16,7 @@ export interface SkillActivationTurn {
 export function createSkillActivationTurn(
   invokedSkills: readonly string[],
   availableToolNames: readonly string[],
+  invokedSkillContextBytes = 0,
 ): SkillActivationTurn {
   const eligible = new Map(
     modelInvocableSkillsForTools(availableToolNames).map((skill) => [skill.name, skill.skillPath]),
@@ -27,7 +28,9 @@ export function createSkillActivationTurn(
     }),
   )
   const active = new Map<string, Promise<void>>()
-  let contextBytes = 0
+  // Explicit invocations remain intact, but already-injected prompt text spends
+  // the same budget as subsequent automatic activations and supporting reads.
+  let contextBytes = invokedSkillContextBytes
 
   function chargeContext(block: string): number {
     const bytes = Buffer.byteLength(block, 'utf-8')
