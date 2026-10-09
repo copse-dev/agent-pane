@@ -50,9 +50,12 @@ export async function startSideChat(
   if (!parent) return null
 
   // Queued follow-ups have not been sent to the model, so they are not context.
+  // While the parent runs, its reply is still streaming and not yet persisted
+  // for the history seed, so the default anchor is the prompt that started it.
   const queued = queuedMessageIds(parent)
-  const anchorMessageId =
-    options.anchorMessageId ?? parent.messages.filter((m) => !queued.has(m.id)).at(-1)?.id
+  const sent = parent.messages.filter((m) => !queued.has(m.id))
+  const settled = parent.status === 'running' ? sent.filter((m) => m.role === 'user') : sent
+  const anchorMessageId = options.anchorMessageId ?? settled.at(-1)?.id
   if (anchorMessageId === undefined || queued.has(anchorMessageId)) return null
 
   const side = buildSideChatThread(parent, {

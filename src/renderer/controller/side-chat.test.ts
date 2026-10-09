@@ -6,6 +6,7 @@ import {
   addMessage,
   archiveThread,
   createThread,
+  setThreadStatus,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -69,6 +70,23 @@ test('opens an empty side chat anchored on the latest message beside the main th
   // The parent is untouched.
   assert.equal(thread(store, parentId).messages.length, 2)
   assert.equal(thread(store, parentId).sideChat, undefined)
+})
+
+test('anchors on the running prompt, not the reply still streaming, while the parent runs', async () => {
+  const { store, parentId } = seed()
+  const promptId = addMessage(store, parentId, 'user', 'And the fix?')
+  addMessage(store, parentId, 'assistant', 'Partly writ')
+  setThreadStatus(store, parentId, 'running')
+  const { api, forks } = fakeApi()
+
+  const id = await startSideChat(store, api, parentId)
+
+  assert.ok(id)
+  assert.deepEqual(thread(store, id).sideChat, {
+    parentThreadId: parentId,
+    anchorMessageId: promptId,
+  })
+  assert.deepEqual(forks, [['project-1', parentId, id, promptId]])
 })
 
 test('can open as the active thread instead', async () => {
