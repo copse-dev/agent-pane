@@ -1,13 +1,38 @@
 # New-thread activity screen: porting the #3450 prototype
 
-Status: **In progress, 2026-10-04.** Slices 0-6 are built; slice 7 is not started. Slices 1b, 3, 4 and 6
-are open PRs (the Activity stack ending at
-[#3489](https://github.com/copse-dev/agent-pane/pull/3489) and the sidebar stack ending at
-[#3488](https://github.com/copse-dev/agent-pane/pull/3488)). Built behaviour that departs from the
-slice text below is recorded in [Divergences from the plan](#divergences-from-the-plan).
-Decisions were resolved and the plan validated by exploration on 2026-10-02. See [Validation findings](#validation-findings). This plan turns
+Status: **Built, 2026-10-07; slice 7 is partly built and the rest is recorded below.** Every
+slice of the Activity stack has merged to `main`. Built behaviour that departs from the slice text
+below is recorded in [Divergences from the plan](#divergences-from-the-plan); what is still open
+is under [Intentionally left](#intentionally-left). Decisions were resolved and the plan validated
+by exploration on 2026-10-02. See [Validation findings](#validation-findings). This plan turns
 [#3450](https://github.com/copse-dev/agent-pane/pull/3450) (`prototypes/new-thread-activity.html`,
-a standalone 8,244-line mock-up) into product code.
+a standalone mock-up, merged as a design reference) into product code.
+
+## Status
+
+Checked against `origin/main` on 2026-10-07.
+
+| Slice                                                                | PR                                                                                                                                                                                                                                                                                      | State                                                                                                                                                                        |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 Plan and decision                                                  | [#3453](https://github.com/copse-dev/agent-pane/pull/3453), [#3532](https://github.com/copse-dev/agent-pane/pull/3532)                                                                                                                                                                  | Merged                                                                                                                                                                       |
+| 1 Reusable Activity view                                             | [#3455](https://github.com/copse-dev/agent-pane/pull/3455)                                                                                                                                                                                                                              | Merged                                                                                                                                                                       |
+| 1b Keyed Activity rows                                               | [#3458](https://github.com/copse-dev/agent-pane/pull/3458)                                                                                                                                                                                                                              | Merged                                                                                                                                                                       |
+| 2 Restyle                                                            | (folded into 3)                                                                                                                                                                                                                                                                         | Done with slice 3                                                                                                                                                            |
+| 3 New-thread screen host                                             | [#3467](https://github.com/copse-dev/agent-pane/pull/3467)                                                                                                                                                                                                                              | Merged                                                                                                                                                                       |
+| 4 Sort, group-by, automation fold                                    | Sort [#3473](https://github.com/copse-dev/agent-pane/pull/3473); group-by [#3484](https://github.com/copse-dev/agent-pane/pull/3484); sidebar fold [#3488](https://github.com/copse-dev/agent-pane/pull/3488); Activity fold [#3489](https://github.com/copse-dev/agent-pane/pull/3489) | Merged, except the shared row model and the extra sorts ([left out](#intentionally-left))                                                                                    |
+| 5 Thread drag                                                        | n/a                                                                                                                                                                                                                                                                                     | Dropped                                                                                                                                                                      |
+| 6 Answer in place                                                    | [#3475](https://github.com/copse-dev/agent-pane/pull/3475)                                                                                                                                                                                                                              | Merged                                                                                                                                                                       |
+| 7 Panel and composer polish                                          | This PR (bottom panel, 360 px pane, light theme, folded card)                                                                                                                                                                                                                           | In review. The context-ring item is closed: [#3407](https://github.com/copse-dev/agent-pane/pull/3407) and [#3515](https://github.com/copse-dev/agent-pane/pull/3515) merged |
+| Three-dot thread menu (not in the plan)                              | [#3379](https://github.com/copse-dev/agent-pane/pull/3379)                                                                                                                                                                                                                              | Merged                                                                                                                                                                       |
+| Prior art [#3386](https://github.com/copse-dev/agent-pane/pull/3386) | n/a                                                                                                                                                                                                                                                                                     | Closed unmerged (2026-10-04); superseded by slices 3 and 4                                                                                                                   |
+
+Open PRs that touch the sidebar or Activity but are **not** part of this plan, left alone: #3551
+(Activity strip lists every project, sorted by attention), #3550 (project label clip on sidebar
+rows), #3544 (changes glyph on sidebar rows), #3543 (Activity lists recently completed threads that
+ended before launch), #3542 (empty project row in every grouping) and #3541 (load other projects'
+thread titles after startup). They will conflict with each other on `activity-panel.css` and
+`projects-pane.ts`; merge them one at a time. #3551 and #3543 change what the Activity list
+contains, so re-run the `activity-home` demo spec after each.
 
 It extends [`mission-control.md`](mission-control.md). It **reverses one decision recorded there**:
 slice 1 placed the Activity panel as an overlay beside the sidebar, not as a screen. See
@@ -41,7 +66,7 @@ rebase onto them.
 
 | PR                                                         | Covers                                                                    | State                      |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------- |
-| [#3386](https://github.com/copse-dev/agent-pane/pull/3386) | Activity thread browser as the default sidebar; inspect-only `git:status` | Open                       |
+| [#3386](https://github.com/copse-dev/agent-pane/pull/3386) | Activity thread browser as the default sidebar; inspect-only `git:status` | Closed unmerged            |
 | [#3148](https://github.com/copse-dev/agent-pane/pull/3148) | Activity overlay, approve/reject in place                                 | Merged (already in `main`) |
 | [#3407](https://github.com/copse-dev/agent-pane/pull/3407) | Context ring with combined hover                                          | Merged                     |
 | [#3371](https://github.com/copse-dev/agent-pane/pull/3371) | Thread PR icon colours and glyphs                                         | Merged                     |
@@ -339,18 +364,93 @@ references stay stable.
 
 ### 7. Panel and composer polish (2 days)
 
-- Right and bottom panel visuals, narrow widths (320 px), light theme, context ring.
-- Mostly CSS. Do not rebuild the pane contents; the real panes already exist.
-- **Context ring, last (decided 2026-10-04).** [#3407](https://github.com/copse-dev/agent-pane/pull/3407)
-  merged (one ring, one hover) and [#3515](https://github.com/copse-dev/agent-pane/pull/3515) is
-  open on top of it. Do this item last: re-read the prototype's ring against what shipped and port
-  only the differences. The prototype's design workshop (`prototypes/combined-usage/index.html`) was
-  the source for #3407, so start there.
+Checked 2026-10-07 against the divergences above and the prototype. Most of the original text was
+already done by slices 3 and 6, so what is left is what a screenshot of each arrangement showed.
+
+- **Already done:** the side panel at a narrow chat pane (stacked card, project tiles shrink to
+  one-line pills, Approve stays above the composer, `activity-home.demo.ts`), the light theme, the
+  context ring ([#3407](https://github.com/copse-dev/agent-pane/pull/3407),
+  [#3515](https://github.com/copse-dev/agent-pane/pull/3515)). The ring was **not** re-read against the prototype's `combined-usage` workshop in this pass; it is the one slice 7 item still unchecked (see [Intentionally left](#intentionally-left)).
+- **Built here, found by screenshots of the new arrangements** (`activity-home-panels.demo.ts`):
+  - Under the portrait chrome (bottom panel) the composer sits above the mode strip, but the home
+    reserved room for the composer only, so the caption and the card's foot ran under it by about
+    26 px. The home now reserves the strip as the conversation does.
+  - A list resting at the top was pushed down when a request arrived above its first row, because
+    the scroll anchor held the old first row still. The first heading and the selected request were
+    scrolled out of view whenever the list was short enough to scroll (any bottom panel or narrow
+    window). A list at the top now stays at the top; a list the reader has scrolled still holds
+    its place.
+  - With every group folded (only a collapsed Working group), the hidden detail left a blank half
+    of the card. The list now takes the card.
+- **Not built, by choice:** a bottom panel leaves the card about 290 px tall and the detail shows
+  a few lines; it scrolls. The prototype is no better there (its card is clipped to a sliver), and
+  the panel position is the user's choice. See [Intentionally left](#intentionally-left).
 
 **Total: about 17.5-26.5 focused days (sum of the slice ranges), or 4-6 calendar weeks.** Calendar time runs 1.5-2.5x focused
 effort (CI cycles, merging main, screenshot review). Slices 4 and 6 are independent of 3 and can
 run in parallel once slices 1 and 1b are merged. Add 0.25-0.5 day to any slice that changes the
 IPC surface (API protocol version bump).
+
+## Prototype comparison
+
+Screenshots of the prototype (`?panel=`, `?pos=bottom`, `?theme=light`, `?group=status`) and the
+app's demo scenarios, 1280 px wide, dark and light, reviewed side by side on 2026-10-07. The app
+renders on the browser demo build with a small fixture, so row counts and the titlebar's mode
+buttons (Memories, Roadmap) differ for that reason alone.
+
+| State                 | Result                                                                                                                                                                                                                                 |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Empty                 | **Deliberate difference.** The prototype has no empty state. The app centres the composer and hides the home (see divergences).                                                                                                        |
+| Needs-you rows        | Matches: shield or bubble glyph, bold title, age at right, what it wants, project. The prototype also shows a PR glyph and an automation clock on rows; the fixture has neither, and the product draws them from the same thread data. |
+| Active (working) rows | Matches; the state word is dropped as recorded.                                                                                                                                                                                        |
+| Project strip         | Matches, including the one-line pill at a narrow pane (both drop the working count there).                                                                                                                                             |
+| Automation folds      | Matches in structure (clock glyph, run count, expandable). Only the app's demo scenario was reviewed; the prototype's `?runs=many` fold was not captured side by side.                                                                 |
+| Grouping and sort     | The prototype's sidebar groups by project, status or none and has more sorts; the app has the three groups and the sorts its data supports (see [Intentionally left](#intentionally-left)).                                            |
+| Answer in place       | Matches the prototype's detail layout; the app adds quick answers and a Send answer button as the plan decided.                                                                                                                        |
+| Bottom panel          | Differed (caption under the composer, list scrolled past its heading); fixed in slice 7. The prototype crops the card to a sliver; the app scrolls it.                                                                                 |
+| Light theme           | Matches. The card and strip use the same surfaces as the prototype.                                                                                                                                                                    |
+| Composer placeholder  | The prototype says "Ask Copse to work on something…"; the app says "Message…" because the placeholder has one writer that offers a Tab-completable next step. Left as is.                                                              |
+
+## Intentionally left
+
+- **Shared thread-row model** (slice 4's first bullet). The sidebar and the Activity list each
+  derive their rows and each have a pure fold (`foldAutomationRuns`, `foldScheduleRuns`). Unifying
+  them is a refactor with no visible change, and `scripts/check-dead-code.mts` needs a consumer
+  for it. Do it when a third surface needs the same rows.
+- **Extra sorts** (Updated, Changed files, Running longest, PR status). They need fields the
+  sidebar rows do not carry. #3544 adds the changes glyph, which makes "Changed files" cheap.
+- **Detail pane patching.** The detail pane still rebuilds on every redraw, so a click landing on a
+  rebuilt Approve button remains possible ([#3458](https://github.com/copse-dev/agent-pane/pull/3458)
+  follow-up). Not measured as a real problem.
+- **Failed-run ageing.** Failed automation runs stay broken out until archived; the open question
+  (only the latest N, or those since the user last looked) was not decided.
+- **Bottom panel height.** The card is short beside a bottom panel. Fixing it means resizing or
+  collapsing the card against the panel, which is a product decision, not polish.
+- **Thread drag** between projects, as decided.
+- **Context ring against the prototype** (the plan's last item): not re-checked.
+- **Real-keyboard and Chromium layout cost** from [Validation findings](#validation-findings) are
+  still unmeasured.
+
+### Interaction with Concise view and the three-dot menu
+
+- **Concise view.** Checked by reading code and re-running the Activity specs; no concise file was
+  edited. Nothing in the Activity home, view or model references Concise. The home shows only
+  while the thread is empty; opening a thread from a row hands it to whatever view the thread
+  uses, so a working thread opens into the live concise turn
+  ([#3392](https://github.com/copse-dev/agent-pane/pull/3392)). Not verified on a real run:
+  Open thread from a _working_ row into a Concise turn, which needs Electron.
+- **Three-dot thread menu** ([#3379](https://github.com/copse-dev/agent-pane/pull/3379)). Every
+  sidebar thread row, in the tree, the status and flat layouts and under an automation fold, is
+  drawn by `renderThreadRow`, so each has the menu. A fold row names no thread and has none.
+  Activity rows carry no menu by design ("list rows carry no buttons"); Rename, Fork, Archive and
+  Delete stay in the sidebar.
+
+### Other redesign work not in this plan
+
+- #3551 and #3543 (above) change the Activity list's contents and ordering; neither is in the
+  slices.
+- #3550, #3544 and #3542 are sidebar row polish from the same redesign.
+- The prototype's Memories and Roadmap panel modes already exist in the app and were not touched.
 
 ## Validation per slice
 

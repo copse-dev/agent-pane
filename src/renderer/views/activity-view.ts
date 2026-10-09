@@ -923,6 +923,10 @@ export function createActivityView(
 
   /** Preserve what the reader is looking at while a live activity update redraws the list. */
   function captureListScrollAnchor(): { rowKey: string; viewportTop: number } | null {
+    // A list resting at the top has no reading position to hold: a request that
+    // arrives above its first row must show, not push the list down to keep the
+    // old first row still. That only shows once the list is short enough to scroll.
+    if (list.scrollTop <= 0) return null
     const listRect = list.getBoundingClientRect()
     for (const row of list.querySelectorAll<HTMLElement>('.activity-row')) {
       const rowKey = row.dataset['rowKey']
