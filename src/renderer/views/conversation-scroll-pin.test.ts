@@ -184,4 +184,28 @@ describe('transcript bottom pinning', () => {
 
     assert.equal(list.scrollTop, readingAt, 'a reader who scrolled up keeps their place')
   })
+
+  it('keeps following when a wheel-up only scrolls a nested code block', () => {
+    const { list, threadId, store, geometry } = mountAtBottom()
+    // A long code block or tool output with its own scrollbar, scrolled down.
+    const nested = document.createElement('pre')
+    nested.style.overflowY = 'auto'
+    Object.defineProperties(nested, {
+      clientHeight: { configurable: true, get: () => 100 },
+      scrollHeight: { configurable: true, get: () => 400 },
+      scrollTop: { configurable: true, get: () => 50 },
+    })
+    list.querySelector(':scope > .msg-assistant')?.append(nested)
+
+    const wheel = new Event('wheel', { bubbles: true })
+    Object.defineProperty(wheel, 'deltaY', { value: -120 })
+    nested.dispatchEvent(wheel)
+    addMessage(store, threadId, 'assistant', 'next reply')
+
+    assert.equal(
+      list.scrollTop,
+      geometry.max(),
+      'the code block took the wheel; the transcript never moved, so it keeps following',
+    )
+  })
 })

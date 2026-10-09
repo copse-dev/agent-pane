@@ -75,6 +75,12 @@ describe('two-step stop shortcut', function () {
 
     await saveElementScreenshot('#input-bar', 'two-step-stop-armed.png')
 
+    // An armed stop lapses on its own (bug-hunt #20), so the capture above cannot
+    // leave it armed for an unrelated key later. Wait it out, then re-arm and
+    // confirm back to back.
+    await expect(stopButton).not.toHaveElementClass('stop-pending', { wait: 10_000 })
+    await browser.keys('Escape')
+    await expect(stopButton).toHaveElementClass('stop-pending')
     await browser.keys('Escape')
     await expect(stopButton).not.toHaveElementClass('stop-pending')
     await waitForAgentIdle(15_000)
