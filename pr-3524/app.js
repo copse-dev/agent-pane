@@ -52903,8 +52903,12 @@ function createLmStudioSection(api2, opts = {}) {
     if (signal?.aborted) return;
     setInlineStatus(detectionStatus, "pending", "Checking local server\u2026");
     detectionStatus.className = "setup-detection-status";
-    const detection = await api2.lmStudio.detect(urlInput.value.trim(), keyInput.value.trim());
+    const [detection, keySaved] = await Promise.all([
+      api2.lmStudio.detect(urlInput.value.trim(), keyInput.value.trim()),
+      api2.settings.getKey("lmstudio")
+    ]);
     if (signal?.aborted) return;
+    setInlineStatus(keyStatus, keySaved ? "filled" : "idle", keySaved ? "saved" : "not set");
     renderContextAdvisory(detection.modelContexts);
     if (detection.serverRunning) {
       setInlineStatus(detectionStatus, "ok", `LM Studio server reachable at ${detection.serverUrl}`);
