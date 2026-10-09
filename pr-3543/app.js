@@ -82880,7 +82880,9 @@ function questionWant(questions) {
 }
 function persistedEndedAt(thread, now) {
   const at3 = thread.settledAt;
-  return at3 !== void 0 && now - at3 <= RECENT_WINDOW_MS ? at3 : void 0;
+  if (at3 === void 0) return void 0;
+  const age = now - at3;
+  return age <= RECENT_WINDOW_MS && age >= -FUTURE_SKEW_MS ? at3 : void 0;
 }
 function deriveActivity(input2) {
   const now = input2.now ?? Date.now();
@@ -83091,13 +83093,14 @@ function formatAgeLong(elapsedMs) {
   if (elapsedMs < DAY) return unit(Math.floor(elapsedMs / HOUR), "hour");
   return unit(Math.floor(elapsedMs / DAY), "day");
 }
-var RECENT_ROW_LIMIT, RECENT_WINDOW_MS, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
+var RECENT_ROW_LIMIT, RECENT_WINDOW_MS, FUTURE_SKEW_MS, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
     init_projects();
     init_sidebar_thread();
     RECENT_ROW_LIMIT = 10;
     RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1e3;
+    FUTURE_SKEW_MS = 24 * 60 * 60 * 1e3;
     SCHEDULE_FOLD_AT = 2;
     WANT_MAX_CHARS = 140;
     UNTITLED_THREAD = "New thread";
