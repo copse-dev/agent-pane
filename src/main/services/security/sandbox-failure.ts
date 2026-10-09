@@ -1,5 +1,7 @@
 import { PRIOR_DENIAL_MARKER } from './denied-operations.ts'
 import type { ShellPromptParts } from './permission-policy.ts'
+import { UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
+import { githubShellActionAdvice } from './github-approval-copy.ts'
 
 // The detection itself lives in `@copse/hooks-dialects` (the hook runner is one of
 // its two callers); re-exported so the shell tool and the gate keep their import.
@@ -42,7 +44,14 @@ export function formatUnsandboxedPromptParts(command: string, reasons: string[])
     // The renderer constrains this region with its own scrollbar. Preserve the
     // full command so the user can inspect everything approval would execute.
     command,
-    bodyAdvice: priorDenial ? `${priorDenial}\n\n${failureLine}` : failureLine,
+    bodyAdvice: [
+      priorDenial,
+      failureLine,
+      githubShellActionAdvice(command),
+      UNSANDBOXED_ACCESS_WARNING,
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
     bodyFooter: 'Allow running it once without sandbox restrictions?',
   }
 }

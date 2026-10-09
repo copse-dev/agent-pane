@@ -3577,6 +3577,7 @@ export function registerAllHandlers(
       type: z.string().min(1).max(128),
       collapseDetails: z.boolean().optional(),
       approveOnceLabel: z.string().max(500).optional(),
+      approveLabel: z.string().max(500).optional(),
     })
 
     ipcMain.handle('test:setMockScenario', (event, id: unknown, raw: unknown, scope: unknown) => {
