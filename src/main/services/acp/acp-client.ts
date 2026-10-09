@@ -1054,6 +1054,18 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
 }
 
 /**
+ * How long an agent gets to answer `initialize` and open (or reattach) its
+ * session. Generous, since a first launch may still be installing the adapter,
+ * but bounded: the pool serializes each thread's acquires, so an agent that
+ * never answers would otherwise block every later turn on the thread.
+ */
+export const ACP_SESSION_STARTUP_TIMEOUT_MS = 3 * 60 * 1000
+
+function abortReason(signal: AbortSignal | undefined): Error {
+  return signal?.reason instanceof Error ? signal.reason : new DOMException('Aborted', 'AbortError')
+}
+
+/**
  * Open a persistent ACP session (issue #605): spawn the agent (or connect the
  * injected test transport), initialize, and start a long-lived session. Unlike
  * the old one-turn flow, nothing is torn down when a prompt settles — the
@@ -1157,7 +1169,34 @@ export async function openAcpSession(
     return disposal
   }
 
+  // Startup waits on the agent at every step below. Stop (the run's signal) or
+  // the startup deadline disposes the connection, which rejects whichever
+  // request is in flight; the catch then reports why instead of that rejection.
+  // Without this a hung agent holds the thread's pool slot forever.
+  let startupFailure: Error | null = null
+  // Read through a call: the failure is set from callbacks, which a plain read
+  // of the variable would not see past its narrowing.
+  const failedStartup = (): Error | null => startupFailure
+  const failStartup = (reason: Error): void => {
+    startupFailure ??= reason
+    void dispose()
+  }
+  const onStartupAbort = (): void => {
+    failStartup(abortReason(signal))
+  }
+  const startupDeadline = setTimeout(() => {
+    failStartup(
+      new Error(
+        `The coding agent did not finish starting within ${String(ACP_SESSION_STARTUP_TIMEOUT_MS / 1000)}s`,
+      ),
+    )
+  }, ACP_SESSION_STARTUP_TIMEOUT_MS)
+  if (signal?.aborted) onStartupAbort()
+  else signal?.addEventListener('abort', onStartupAbort, { once: true })
+
   try {
+    const abortedBeforeStart = failedStartup()
+    if (abortedBeforeStart) throw abortedBeforeStart
     const initResponse = await perfSpan('ttft:acp-initialize', () =>
       connection.agent.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
@@ -1316,11 +1355,18 @@ export async function openAcpSession(
       },
       { once: true },
     )
+    // Disposal can race the last response; only a session that is still open
+    // may be handed out.
+    const failedLate = failedStartup()
+    if (failedLate) throw failedLate
     startAcpUpdatePump(open)
     return open
   } catch (err) {
     await dispose()
-    throw err
+    throw failedStartup() ?? err
+  } finally {
+    clearTimeout(startupDeadline)
+    signal?.removeEventListener('abort', onStartupAbort)
   }
 }
 
@@ -1382,8 +1428,12 @@ export async function runAcpSessionPrompt(
     onGraceExpired = resolve
   })
   let graceTimer: ReturnType<typeof setTimeout> | undefined
+  let promptSent = false
   const cancel = (): void => {
     open.suppressChunks = true
+    // Before the prompt goes out there is nothing to cancel: the check ahead of
+    // the send ends the turn instead.
+    if (!promptSent) return
     void connection.agent.notify('session/cancel', { sessionId: session.sessionId })
     graceTimer ??= setTimeout(() => {
       onGraceExpired('grace-expired')
@@ -1444,7 +1494,11 @@ export async function runAcpSessionPrompt(
       )
     }
 
+    // Stopped before (or while the model/config switch was in flight): never
+    // start a turn the agent would only run until the cancel grace kills it.
+    if (signal?.aborted) return { stopReason: 'cancelled' }
     open.hasHistory = true
+    promptSent = true
     void connection.agent
       .request(methods.agent.session.prompt, {
         sessionId: session.sessionId,
