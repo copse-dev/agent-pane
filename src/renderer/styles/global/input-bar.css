@@ -30,8 +30,7 @@
   border-top: none;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: var(--spacing-md);
-  /* Transparent over #input-bar's frosted ::before — an opaque fill here would
-     recreate the black bounding box the shell frost exists to avoid. */
+  /* The card supplies the contrasting surface; the editor stays clear. */
   background: transparent;
   font-family: inherit;
   font-size: inherit;
@@ -100,25 +99,12 @@
   flex: 1 1 auto;
   min-height: 0;
 }
-/* The topmost visible advisory strip gets the card's rounded top edge, so its
-   fill (the danger wash behind the Guarded YOLO banner especially) runs into the
-   border instead of poking square corners through the hairline ring. The class
-   is maintained in input-bar.ts — `:first-child` would pick the DOM-first
-   element, which is usually a `hidden` strip contributing no top edge at all.
-   Rounding the element rather than clipping the card is deliberate: the footer
-   model/branch/overflow menus are positioned outside `#input-bar`, so an
-   `overflow: hidden` here would shear them off. No clipping is needed anyway —
-   a border-radius already clips the element's own background, and every strip
-   keeps its content inside padding far clear of an 8px corner. */
+/* The topmost visible advisory strip follows the card's rounded top edge.
+   The class is maintained in input-bar.ts because the DOM-first strip is often
+   hidden. Do not clip the card: footer menus need to escape above it. */
 #input-bar > .is-composer-top {
-  border-top-left-radius: var(--radius-lg);
-  border-top-right-radius: var(--radius-lg);
-}
-/* The docked composer keeps a real 1px border, so its first strip nests one
-   pixel inside it. */
-.pane-chat:not(.is-activity-idle) #input-bar > .is-composer-top {
-  border-top-left-radius: calc(var(--radius-lg) - 1px);
-  border-top-right-radius: calc(var(--radius-lg) - 1px);
+  border-top-left-radius: var(--composer-radius);
+  border-top-right-radius: var(--composer-radius);
 }
 /* The advisory strips stack at the top of the composer, so each one carries its
    separator on the *bottom* edge. A border-top would draw a line against the
@@ -302,7 +288,7 @@
   /* leave room for the absolutely-positioned Send button (right) and the
      paperclip attach button (left) */
   padding-right: 84px;
-  padding-left: 44px;
+  padding-left: 48px;
 }
 .prompt-input.with-stop {
   padding-right: 148px;
@@ -310,7 +296,7 @@
 .attach-btn {
   position: absolute;
   left: 8px;
-  bottom: var(--spacing-md);
+  top: calc(var(--spacing-md) - 4px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -367,10 +353,11 @@
   outline: 1px solid var(--danger);
 }
 .submit-btn {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--text-on-accent);
-  border-radius: var(--radius);
+  border-radius: 999px;
   padding: 6px 16px;
+  filter: saturate(0.8);
 }
 .footer-queue {
   font-size: var(--font-size-xs);
@@ -542,10 +529,9 @@
   padding: var(--spacing-xs) var(--spacing-md);
   font-size: var(--font-size-xs);
   color: var(--text-muted);
-  /* See .prompt-input — keep the frosted shell visible through the footer. */
   background: transparent;
   border-top: 1px solid var(--border);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border-radius: 0 0 var(--composer-radius) var(--composer-radius);
 }
 /* Portrait / bottom-pinned chrome: dock one composer-width outline around the
    labeled panel toggles, directly on the single-pixel divider above the stacked
