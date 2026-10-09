@@ -45,7 +45,10 @@ describe('archiveStoredThread', () => {
   let previousWorktrees: string | undefined
   let previousWorkspace: string | undefined
   let processes: boolean
+  let terminals: boolean
+  let agentActive: boolean
   let acquired: boolean
+  let events: string[]
   let releases: number
   let disposals: number
   let dependencies: ThreadArchivingDependencies
@@ -53,6 +56,11 @@ describe('archiveStoredThread', () => {
     begin: () => acquired,
     end: () => {
       releases++
+    },
+    isAgentActive: () => agentActive,
+    stopAgent: async () => {
+      events.push('agent')
+      agentActive = false
     },
   }
 
@@ -72,6 +80,9 @@ describe('archiveStoredThread', () => {
     git(repo, ['add', '.'])
     git(repo, ['commit', '-qm', 'base'])
     processes = false
+    terminals = false
+    agentActive = false
+    events = []
     acquired = true
     releases = 0
     disposals = 0
@@ -79,7 +90,16 @@ describe('archiveStoredThread', () => {
       getMeta: getThreadMeta,
       updateMeta: updateMetaOrThrow,
       projectRoot: (): string => repo,
-      hasProcesses: (): boolean => processes,
+      hasTerminals: (): boolean => terminals,
+      hasBackgroundProcesses: (): boolean => processes,
+      destroyTerminals: async (): Promise<void> => {
+        events.push('terminals')
+        terminals = false
+      },
+      stopBackgroundProcesses: async (): Promise<void> => {
+        events.push('background')
+        processes = false
+      },
       disposeAcp: async (): Promise<void> => {
         disposals++
       },
@@ -132,8 +152,9 @@ describe('archiveStoredThread', () => {
 
   const archive = (
     confirmation: string | null = null,
+    stopProcesses = false,
   ): Promise<import('@shared/threads/archive-thread.ts').ThreadArchiveResult> =>
-    archiveStoredThread('project', 'thread', confirmation, runtime, dependencies)
+    archiveStoredThread('project', 'thread', confirmation, stopProcesses, runtime, dependencies)
 
   it('removes a clean checkout, preserves unmerged commits and transcript, and can rebuild it', async () => {
     const { worktree } = await seed()
@@ -160,7 +181,7 @@ describe('archiveStoredThread', () => {
     assert.equal(releases, 1)
   })
 
-  it('reports tracked, staged, untracked and ignored content; leaves everything until confirmed', async () => {
+  it('reports tracked, staged and untracked files but not ignored output; leaves everything until confirmed', async () => {
     const { worktree } = await seed()
     assert.ok(worktree)
     await writeFile(join(worktree.path, '.gitignore'), 'local.log\n')
@@ -174,12 +195,7 @@ describe('archiveStoredThread', () => {
     await writeFile(join(worktree.path, 'local.log'), 'ignored\n')
     const blocked = await archive()
     assert.equal(blocked.status, 'blocked-dirty')
-    assert.deepEqual(blocked.paths.sort(), [
-      'README.md',
-      'local.log',
-      'notes/draft.txt',
-      'staged.txt',
-    ])
+    assert.deepEqual(blocked.paths.sort(), ['README.md', 'notes/draft.txt', 'staged.txt'])
     assert.equal((await getThreadMeta('project', 'thread'))?.archivedAt, undefined)
     assert.equal(await readFile(join(worktree.path, 'notes/draft.txt'), 'utf8'), 'draft\n')
     assert.equal(disposals, 0, 'dirty-file preview must leave the agent session intact')
@@ -244,16 +260,18 @@ describe('archiveStoredThread', () => {
     assert.equal((await getThreadMeta('project', 'thread'))?.archivedAt, undefined)
   })
 
-  it('rolls retirement back when final content inspection cannot safely complete', async () => {
+  it('archives without confirmation when only ignored output is present, however large', async () => {
     const { worktree } = await seed()
     assert.ok(worktree)
-    dependencies.disposeAcp = async (): Promise<void> => {
-      await writeFile(join(worktree.path, 'large.txt'), '')
-      await truncate(join(worktree.path, 'large.txt'), 64 * 1024 * 1024 + 1)
-    }
-    await assert.rejects(archive(), /Too much file content/)
-    assert.ok(await lstat(worktree.path))
-    assert.equal((await getThreadMeta('project', 'thread'))?.worktree?.retiredAt, undefined)
+    await writeFile(join(worktree.path, '.gitignore'), 'build/\n')
+    git(worktree.path, ['add', '.gitignore'])
+    git(worktree.path, ['commit', '-qm', 'ignore build'])
+    await mkdir(join(worktree.path, 'build'))
+    await writeFile(join(worktree.path, 'build/huge.bin'), '')
+    await truncate(join(worktree.path, 'build/huge.bin'), 64 * 1024 * 1024 + 1)
+    await symlink(join(root, 'outside-not-present'), join(worktree.path, 'build/link'))
+    assert.equal((await archive()).status, 'archived')
+    await assert.rejects(lstat(worktree.path), { code: 'ENOENT' })
   })
 
   it('archives a clean checkout whose tracked index exceeds the ordinary command display cap', async () => {
@@ -270,40 +288,30 @@ describe('archiveStoredThread', () => {
     assert.equal((await archive()).status, 'archived')
   })
 
-  it('requires fresh consent for new paths and changes to an already listed file', async () => {
+  it('requires fresh consent when the set of changed files changes after confirmation', async () => {
     const { worktree } = await seed()
     assert.ok(worktree)
     await writeFile(join(worktree.path, 'README.md'), 'first edit\n')
     const first = await archive()
     assert.equal(first.status, 'blocked-dirty')
-    await writeFile(join(worktree.path, 'README.md'), 'second edit\n')
+    await writeFile(join(worktree.path, 'new.txt'), 'new draft\n')
     const second = await archive(first.fingerprint)
     assert.equal(second.status, 'blocked-dirty')
+    assert.ok(second.paths.includes('new.txt'))
     assert.notEqual(second.fingerprint, first.fingerprint)
     assert.equal((await getThreadMeta('project', 'thread'))?.worktree?.retiredAt, undefined)
-    await writeFile(join(worktree.path, 'new.txt'), 'new draft\n')
-    const third = await archive(second.fingerprint)
-    assert.equal(third.status, 'blocked-dirty')
-    assert.ok(third.paths.includes('new.txt'))
-    assert.equal((await archive(third.fingerprint)).status, 'archived')
+    assert.equal((await archive(second.fingerprint)).status, 'archived')
   })
 
-  it('binds ignored nested content and symlink targets without following external files', async () => {
+  it('requires fresh consent when HEAD moves after confirmation', async () => {
     const { worktree } = await seed()
     assert.ok(worktree)
-    await writeFile(join(worktree.path, '.gitignore'), 'build/\n')
-    git(worktree.path, ['add', '.gitignore'])
-    git(worktree.path, ['commit', '-qm', 'ignore build'])
-    await mkdir(join(worktree.path, 'build'))
-    await writeFile(join(worktree.path, 'build/draft.txt'), 'first ignored draft\n')
-    await symlink(join(root, 'outside-not-present'), join(worktree.path, 'build/link'))
-    const preview = await archive()
-    assert.equal(preview.status, 'blocked-dirty')
-    await writeFile(join(worktree.path, 'build/draft.txt'), 'changed ignored draft\n')
-    const refreshed = await archive(preview.fingerprint)
-    assert.equal(refreshed.status, 'blocked-dirty')
-    assert.notEqual(refreshed.fingerprint, preview.fingerprint)
-    assert.equal((await archive(refreshed.fingerprint)).status, 'archived')
+    await writeFile(join(worktree.path, 'README.md'), 'edited\n')
+    const first = await archive()
+    assert.equal(first.status, 'blocked-dirty')
+    git(worktree.path, ['commit', '-qam', 'edit'])
+    await writeFile(join(worktree.path, 'README.md'), 'edited again\n')
+    assert.equal((await archive(first.fingerprint)).status, 'blocked-dirty')
   })
 
   it('rejects invalid resource owner IDs before any creation or metadata lookup', async () => {
@@ -339,7 +347,13 @@ describe('archiveStoredThread', () => {
     const archival = archive()
     release.resolve(undefined)
     await creation
-    assert.equal((await archival).status, 'blocked-running')
+    const blocked = await archival
+    assert.equal(blocked.status, 'blocked-running')
+    assert.deepEqual(blocked.running, {
+      agent: false,
+      terminals: false,
+      backgroundProcesses: true,
+    })
     assert.ok(await lstat(worktree.path))
   })
 
@@ -377,18 +391,61 @@ describe('archiveStoredThread', () => {
     assert.equal(await readFile(join(repo, 'README.md'), 'utf8'), 'base\n')
   })
 
-  it('refuses running agents and processes even when discard is confirmed', async () => {
+  it('refuses running work without consent, even when discard is confirmed, and stops nothing', async () => {
     const { worktree } = await seed()
     assert.ok(worktree)
-    acquired = false
-    assert.deepEqual(await archive('f'.repeat(64)), { status: 'blocked-running' })
-    assert.equal(releases, 0)
-    acquired = true
+    agentActive = true
+    terminals = true
     processes = true
-    assert.deepEqual(await archive('f'.repeat(64)), { status: 'blocked-running' })
+    assert.deepEqual(await archive('f'.repeat(64)), {
+      status: 'blocked-running',
+      running: { agent: true, terminals: true, backgroundProcesses: true },
+    })
+    assert.deepEqual(events, [])
     assert.equal((await getThreadMeta('project', 'thread'))?.archivedAt, undefined)
     assert.ok(await lstat(worktree.path))
+    assert.equal(releases, 0)
+  })
+
+  it('stops the agent, terminals and background processes before inspecting the checkout', async () => {
+    const { worktree } = await seed()
+    assert.ok(worktree)
+    await writeFile(join(worktree.path, 'draft.txt'), 'draft\n')
+    agentActive = true
+    terminals = true
+    processes = true
+    dependencies.disposeAcp = async (): Promise<void> => {
+      events.push('acp')
+    }
+    const blocked = await archive(null, true)
+    assert.equal(blocked.status, 'blocked-dirty')
+    assert.deepEqual(events, ['agent', 'acp', 'terminals', 'background'])
     assert.equal(releases, 1)
+    assert.equal(await readFile(join(worktree.path, 'draft.txt'), 'utf8'), 'draft\n')
+    assert.equal((await archive(blocked.fingerprint, true)).status, 'archived')
+    await assert.rejects(lstat(worktree.path), { code: 'ENOENT' })
+  })
+
+  it('fails closed when a stopped process is still reported alive', async () => {
+    const { worktree } = await seed()
+    assert.ok(worktree)
+    processes = true
+    dependencies.stopBackgroundProcesses = async (): Promise<void> => {
+      events.push('background')
+    }
+    const result = await archive(null, true)
+    assert.deepEqual(result, {
+      status: 'blocked-running',
+      running: { agent: false, terminals: false, backgroundProcesses: true },
+    })
+    assert.ok(await lstat(worktree.path))
+  })
+
+  it('refuses when a turn claims the dispatch slot first', async () => {
+    await seed()
+    acquired = false
+    assert.equal((await archive()).status, 'blocked-running')
+    assert.equal(releases, 0)
   })
 
   it('leaves a chat visible and releases the slot when removal fails', async () => {
