@@ -120,6 +120,14 @@ export interface AutomationRetainedWorktree {
   paths?: string[]
 }
 
+/** What a user-requested cleanup of one schedule's finished runs achieved. */
+export interface AutomationCleanupResult {
+  /** Runs whose checkout was removed, or was already gone. */
+  released: string[]
+  /** Runs that still hold a worktree, and why. Never discarded without the user's say-so. */
+  retained: AutomationRetainedWorktree[]
+}
+
 export interface AutomationTriggerEvent {
   projectId: string
   scheduleId: string

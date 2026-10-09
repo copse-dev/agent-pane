@@ -27,6 +27,8 @@ export interface SidebarThread {
   unreadAt?: number
   archivedAt?: number
   automation?: Thread['automation']
+  /** The checkout an automation run left behind; the sidebar flags runs still holding one. */
+  worktree?: Thread['worktree']
   remoteAgentLink?: Thread['remoteAgentLink']
   /** The live transcript. Absent once the entry has been compacted. */
   messages?: Message[]
@@ -100,6 +102,7 @@ export function compactSidebarThread(thread: SidebarThread): SidebarThread {
     ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
     ...(thread.automation ? { automation: thread.automation } : {}),
+    ...(thread.worktree ? { worktree: thread.worktree } : {}),
     ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
     prRefs: sidebarPrRefs(thread),
     ...(thread.prProductions ? { prProductions: thread.prProductions } : {}),

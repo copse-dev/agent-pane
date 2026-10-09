@@ -540,6 +540,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A schedule whose finished runs still hold worktrees: the same warning amber
+   the plugin settings use for a skipped run, small enough to sit by the count. */
+.automation-schedule-held {
+  flex: none;
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--warning, currentColor);
+  border-radius: var(--radius-sm);
+  color: var(--warning, var(--text-secondary));
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
 .automation-schedule-count {
   margin-left: auto;
   color: var(--text-muted);

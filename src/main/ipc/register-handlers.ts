@@ -2653,6 +2653,18 @@ export function registerAllHandlers(
     },
   )
 
+  ipcMain.handle(
+    'automations:cleanup-runs',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      return getAutomationService().cleanupRuns(projectId, scheduleId)
+    },
+  )
+
   ipcMain.handle('automations:list-branch-ci', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
