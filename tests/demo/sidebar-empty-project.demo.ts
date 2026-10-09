@@ -2,7 +2,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 
 async function choose(prefix: string): Promise<void> {
-  const items = await $$('.context-menu-item')
+  const items = await $$('.context-menu-item').getElements()
   for (const item of items) {
     if ((await item.getText()).startsWith(prefix)) {
       await item.click()
@@ -33,7 +33,7 @@ describe('an empty unopened project in the sidebar', () => {
       for (const width of [800, 1600]) {
         await browser.setWindowSize(width, 900)
         await expect(entry).toBeDisplayed()
-        await saveAppScreenshot(`sidebar-empty-project-${group.toLowerCase()}-${width}.png`)
+        await saveAppScreenshot(`sidebar-empty-project-${group.toLowerCase()}-${String(width)}.png`)
       }
       if (group === 'Project') await entry.$('.project-row').click()
       else await entry.$('.project-new-thread-btn').click()

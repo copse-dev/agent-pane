@@ -73,7 +73,9 @@ describe('native PR and commit provenance', function () {
     seedE2eThreePaneLayout()
     await browser.reloadSession()
     await $('.chat-row.selected').waitForExist({ timeout: 30_000 })
-    producer = await $('.chat-row.selected').getAttribute('data-thread-id')
+    const producerId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    assert.ok(producerId, 'the selected producer chat must have a thread id')
+    producer = producerId
   })
 
   after(() => {

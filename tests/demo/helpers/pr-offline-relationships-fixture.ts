@@ -33,15 +33,15 @@ const store = createStore({
   ],
 })
 const api = createFakeApi()
-api.gh.status = async () => ({
+api.gh.status = async (): ReturnType<typeof api.gh.status> => ({
   installed: location.search.includes('unauthenticated'),
   authenticated: false,
   username: null,
   message: null,
 })
-api.gh.prThreadRelationships = async (ref) =>
+api.gh.prThreadRelationships = async (ref): ReturnType<typeof api.gh.prThreadRelationships> =>
   new ThreadPrRelationshipIndex(store.getState().threads).forPr(ref)
-api.gh.threadPrRelationships = async (id) =>
+api.gh.threadPrRelationships = async (id): ReturnType<typeof api.gh.threadPrRelationships> =>
   new ThreadPrRelationshipIndex(store.getState().threads).forThread(id)
 const unreachable = (): never => {
   throw new Error('Offline fixture must not construct a diff editor')
@@ -57,7 +57,7 @@ document.documentElement.dataset['theme'] = 'dark'
 const record = document.createElement('button')
 record.id = 'record-production'
 record.textContent = 'Record PR creation'
-record.onclick = () => {
+record.onclick = (): void => {
   store.setState({
     threads: store.getState().threads.map((item) =>
       item.id === 'producer'

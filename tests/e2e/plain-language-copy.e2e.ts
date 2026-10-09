@@ -110,9 +110,9 @@ describe('plain-language copy: Settings and the install approval', () => {
 
 describe('plain-language copy: agent error banner', () => {
   beforeEach(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedAcpAuthErrorFixture(process.cwd())
     await browser.reloadSession()
