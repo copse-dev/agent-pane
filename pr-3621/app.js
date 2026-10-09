@@ -70087,16 +70087,16 @@ function mountSettingsDialog(store2, api2) {
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="containerRunsEnabled" />
-                Let a thread run unattended inside a disposable Docker container
+                Let a thread run unattended inside a disposable container
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
                 snapshot of the thread's checkout with no prompts and brings its commits back for
-                you to apply. Its network reaches only its model's origin, plus, when the run
-                installs dependencies (on by default, per run), the npm registry, GitHub and
-                Electron's download hosts. Needs Docker; the first run builds the worker image. A
-                run carries one credential: the model's API key, or, if you opt in per run, your
-                Codex or Gemini sign-in copied into the container.
+                you to apply. Built-in models infer on the desktop; their keys and sign-in tokens stay there. When the run
+                installs dependencies (on by default, per run), it can reach the npm registry, GitHub and
+                Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
+                External coding agents run in the container with their selected API key, or, if you opt in
+                per run, your Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 
@@ -77089,8 +77089,8 @@ var init_demo_scenarios = __esm({
           finishedAt: FIXED_TIME + 23 * 6e4,
           prompt: "Clear the lint suppression backlog in the renderer views",
           model: "claude-sonnet-4-6",
-          egressAllowlist: ["api.anthropic.com:443"],
-          credential: "key",
+          egressAllowlist: ["inference.copse.internal:443"],
+          credential: "host",
           settings: {
             budgets: { wallClockMs: 18e4, tokenCeiling: 2e4 },
             installDependencies: false
@@ -77126,10 +77126,10 @@ var init_demo_scenarios = __esm({
               pidsLimit: 512,
               memoryLimit: "4g",
               network: "brokered",
-              egressAllowlist: ["api.anthropic.com:443"],
+              egressAllowlist: ["inference.copse.internal:443"],
               hostMounts: ["/run/copse", "/run/copse/state", "/run/copse/out"]
             },
-            egress: [{ at: FIXED_TIME, origin: "api.anthropic.com:443", event: "connect" }],
+            egress: [{ at: FIXED_TIME, origin: "inference.copse.internal:443", event: "connect" }],
             result: {
               threadId: "demo-container-thread",
               stopReason: "completed",
@@ -77189,7 +77189,7 @@ var init_demo_scenarios = __esm({
             carryIn: { sha: "9b1b901683b9f0e5b2a3c4d5e6f708192a3b4c5d", dirty: false },
             carryOut: { expected: true, ref: "refs/copse/runs/run-demo-1", error: null },
             containerExit: 0,
-            credential: "key",
+            credential: "host",
             teardown: "removed",
             cleanupError: null,
             secretCanary: { present: false, detail: "canary absent from every surface" }
@@ -86207,6 +86207,13 @@ var init_projects_drag = __esm({
 });
 
 // src/renderer/views/projects-pane.ts
+function describeLiveResources(running) {
+  return [
+    ...running.agent ? ["\u2022 the chat\u2019s running agent"] : [],
+    ...running.terminals ? ["\u2022 its open terminals"] : [],
+    ...running.backgroundProcesses ? ["\u2022 its background processes"] : []
+  ];
+}
 function attentionBell(label) {
   const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", "chat-attention-bell");
@@ -86680,7 +86687,24 @@ function mountProjectsPane(root, store2, api2) {
     try {
       await flushProjectThreads(api2, projectId, store2.getState().threads);
       if (projectId !== store2.getState().activeProjectId) return;
-      let result = await api2.threads.archive(projectId, threadId, null);
+      let stopProcesses = false;
+      let result = await api2.threads.archive(projectId, threadId, null, stopProcesses);
+      if (result.status === "blocked-running") {
+        const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
+        const confirmed = await showConfirmDialog({
+          message: `Stop running work and archive \u201C${title}\u201D?`,
+          detail: [
+            "Archiving will stop:",
+            ...describeLiveResources(result.running),
+            "Anything still running in the chat\u2019s worktree is ended before it is removed."
+          ].join("\n"),
+          confirmLabel: "Stop and archive",
+          danger: true
+        });
+        if (!confirmed || projectId !== store2.getState().activeProjectId) return;
+        stopProcesses = true;
+        result = await api2.threads.archive(projectId, threadId, null, stopProcesses);
+      }
       let refreshed = false;
       while (result.status === "blocked-dirty") {
         const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
@@ -86699,11 +86723,11 @@ function mountProjectsPane(root, store2, api2) {
           danger: true
         });
         if (!confirmed || projectId !== store2.getState().activeProjectId) return;
-        result = await api2.threads.archive(projectId, threadId, result.fingerprint);
+        result = await api2.threads.archive(projectId, threadId, result.fingerprint, stopProcesses);
         refreshed = true;
       }
       if (result.status === "blocked-running") {
-        showToast("Stop the chat\u2019s agent, terminals and background processes before archiving.", {
+        showToast("Something started in the chat while archiving. Try again.", {
           variant: "error"
         });
         return;
@@ -90303,7 +90327,7 @@ function argsOf(toolCall) {
     model,
     runtimeId: typeof runtimeId === "string" ? runtimeId : null,
     ref: typeof ref === "string" ? ref : null,
-    credential: credential === "key" || credential === "login" ? credential : "none",
+    credential: credential === "key" || credential === "login" || credential === "host" ? credential : "none",
     continuedFrom: typeof continuedFrom === "string" ? continuedFrom : null,
     report: typeof report === "string" ? report : null,
     ...settings.success ? { settings: settings.data } : {}
@@ -114685,7 +114709,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     tokens.value = String(previousSettings?.budgets.tokenCeiling ?? DEFAULT_TOKEN_CEILING);
     const egressHint = el("p", { class: "field-hint container-run-model-hint" });
     function renderEgressHint() {
-      egressHint.textContent = `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; the key is scoped to the run and blanked once the guest holds it.`;
+      egressHint.textContent = chosenModel.startsWith("acp:") ? `The agent runs in the container and receives its selected credential; network access is limited to its provider.` : `The desktop calls ${modelDisplayLabel(chosenModel)} for this run; provider keys and sign-in tokens stay on the desktop.`;
     }
     renderEgressHint();
     const loginOptIn = el("input", {
@@ -114854,7 +114878,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     rows.push(
       row2(
         "Credential",
-        typeof held === "object" ? `your desktop sign-in, copied in for the run (${held.login.map((d3) => `~/${d3}`).join(", ")})` : held === "key" ? "one API key, scoped to the run" : held === "login" ? "your desktop sign-in, copied in for the run" : "none"
+        typeof held === "object" ? `your desktop sign-in, copied in for the run (${held.login.map((d3) => `~/${d3}`).join(", ")})` : held === "key" ? "one API key, scoped to the run" : held === "login" ? "your desktop sign-in, copied in for the run" : held === "host" ? "Provider authentication held on the desktop; no keys or tokens in the container" : "none"
       )
     );
     const elapsedRow = row2("Elapsed", elapsedLabel(run2));
