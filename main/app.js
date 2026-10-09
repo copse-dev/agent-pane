@@ -65599,6 +65599,17 @@ function getToolCallLabel(tc2) {
   const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
   const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
   const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
+  if (name === "read_skill") {
+    const skillName = stringArg(tc2.args, "name");
+    if (skillName) {
+      if (tc2.status === "running") return `Loading skill ${skillName}`;
+      if (tc2.status === "error") return `Skill ${skillName}`;
+      if (tc2.result?.startsWith("Skill activated by the model: ")) {
+        return `Activated skill ${skillName}`;
+      }
+      return `Read skill ${skillName}`;
+    }
+  }
   if (name === "write_file" || name === "str_replace") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Editing ${path}` : `Edited ${path}`;
