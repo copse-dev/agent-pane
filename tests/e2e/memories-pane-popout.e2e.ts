@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import assert from 'node:assert/strict'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -38,7 +39,7 @@ describe('Memories pane pop-out', () => {
     ])
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
-    mainHandle = (await browser.getWindowHandles())[0]
+    mainHandle = at([...(await browser.getWindowHandles())], 0)
   })
 
   after(async () => {
@@ -55,17 +56,20 @@ describe('Memories pane pop-out', () => {
     this.timeout(180_000)
 
     // The titlebar Memories button is revealed by the seeded setting.
-    const openBtn = await $('.titlebar-panel-controls [aria-label="Open memories"]')
+    const openBtn = await $('.titlebar-panel-controls [aria-label="Open memories"]').getElement()
     await openBtn.waitForDisplayed({ timeout: 20_000 })
     await openBtn.click()
     await $('#memories-host').waitForDisplayed({ timeout: 20_000 })
-    await browser.waitUntil(async () => (await $$('#memories-host .memories-row')).length >= 2, {
-      timeout: 20_000,
-      timeoutMsg: 'expected the seeded memories to render in the docked pane',
-    })
+    await browser.waitUntil(
+      async () => (await $$('#memories-host .memories-row').getElements()).length >= 2,
+      {
+        timeout: 20_000,
+        timeoutMsg: 'expected the seeded memories to render in the docked pane',
+      },
+    )
 
     // Detach via the pane header's pop-out control.
-    const popoutBtn = await $('#memories-host .pane-popout-btn')
+    const popoutBtn = await $('#memories-host .pane-popout-btn').getElement()
     await popoutBtn.waitForClickable({ timeout: 10_000 })
     const before = await browser.getWindowHandles()
     await popoutBtn.click()
@@ -74,41 +78,46 @@ describe('Memories pane pop-out', () => {
       timeoutMsg: 'expected a pop-out window for memories',
     })
     const popoutHandle = (await browser.getWindowHandles()).find((h) => !before.includes(h))
-    expect(popoutHandle).toBeDefined()
+    if (!popoutHandle) throw new Error('Expected a new pop-out window handle')
 
     // The detached window renders only the memories pane; app chrome is collapsed
     // and the (now redundant) in-panel pop-out control is hidden.
-    await browser.switchToWindow(popoutHandle as string)
+    await browser.switchToWindow(popoutHandle)
     await browser.waitUntil(
       async () =>
-        (await browser.execute(
+        await browser.execute(
           () => document.documentElement.getAttribute('data-popout-mode') === 'memories',
-        )) === true,
+        ),
       { timeout: 20_000, timeoutMsg: 'popout window did not boot in memories mode' },
     )
-    await browser.waitUntil(async () => (await $$('.memories-row')).length >= 2, {
+    await browser.waitUntil(async () => (await $$('.memories-row').getElements()).length >= 2, {
       timeout: 30_000,
       timeoutMsg: 'expected the popped-out memories list to load its own data',
     })
-    await expect(await $('#pane-files')).toBeDisplayed()
-    await expect(await $('#titlebar')).not.toBeDisplayed()
-    await expect(await $('#pane-projects')).not.toBeDisplayed()
-    await expect(await $('#pane-chat')).not.toBeDisplayed()
-    await expect(await $('.pane-popout-btn')).not.toBeDisplayed()
+    await expect(await $('#pane-files').getElement()).toBeDisplayed()
+    await expect(await $('#titlebar').getElement()).not.toBeDisplayed()
+    await expect(await $('#pane-projects').getElement()).not.toBeDisplayed()
+    await expect(await $('#pane-chat').getElement()).not.toBeDisplayed()
+    await expect(await $('.pane-popout-btn').getElement()).not.toBeDisplayed()
 
-    const taintedRow = await $('.memories-row*=Where the API key lives')
+    const taintedRow = await $('.memories-row*=Where the API key lives').getElement()
     // `.memories-row-taint` is `text-transform: uppercase`, and WebDriver's
     // `getText()` returns rendered text, so the badge reads EXTERNAL CONTEXT.
     // Assert the label case-insensitively: the wording is the contract here,
     // the casing is presentation and belongs to the stylesheet.
-    await expect(await taintedRow.$('.memories-row-taint')).toHaveText('external context', {
-      ignoreCase: true,
-    })
-    await expect(await taintedRow.$('.memories-row-taint')).toHaveAttribute(
+    await expect(await taintedRow.$('.memories-row-taint').getElement()).toHaveText(
+      'external context',
+      {
+        ignoreCase: true,
+      },
+    )
+    await expect(await taintedRow.$('.memories-row-taint').getElement()).toHaveAttribute(
       'data-tooltip',
       expect.stringContaining('Saved by the agent during a turn that had read external content'),
     )
-    await expect(await $('.memories-row*=Build command').$('.memories-row-taint')).not.toExist()
+    await expect(
+      await $('.memories-row*=Build command').$('.memories-row-taint').getElement(),
+    ).not.toExist()
 
     // Select the provenance-marked note so the badge and editor warning are
     // both present in the committed reference screenshot.
@@ -120,7 +129,7 @@ describe('Memories pane pop-out', () => {
       },
       { timeout: 10_000, timeoutMsg: 'expected the editor to load the selected memory' },
     )
-    await expect(await $('.memories-meta')).toHaveText(
+    await expect(await $('.memories-meta').getElement()).toHaveText(
       expect.stringContaining('saved with external content in context'),
     )
 

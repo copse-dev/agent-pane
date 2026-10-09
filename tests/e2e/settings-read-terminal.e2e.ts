@@ -24,7 +24,7 @@ describe('read terminal setting', () => {
     const permissions = $('.settings-section[data-section="permissions"]')
     await expect(permissions).toBeDisplayed()
 
-    const toggle = await permissions.$('input[name="readTerminalEnabled"]')
+    const toggle = await permissions.$('input[name="readTerminalEnabled"]').getElement()
     await expect(toggle).toBeExisting()
     assert.equal(await toggle.isSelected(), true)
 

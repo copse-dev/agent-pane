@@ -1,3 +1,4 @@
+import type { Thread } from '../../src/shared/types/index.ts'
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
@@ -30,7 +31,7 @@ const AUDIT_PROMPT = 'Audit the dependency tree.'
 const AUDIT_REPLY = 'The dependency audit found nothing to update.'
 const SEEDED_AT = 1_786_000_000_000
 
-function seededThread(id: string, title: string, request: string, answer: string) {
+function seededThread(id: string, title: string, request: string, answer: string): Thread {
   return {
     id,
     title,
@@ -192,10 +193,9 @@ describe('Activity panel', function () {
     // prompt does, and the once-only Approve action exists only there.
     await expect($('#activity-panel .activity-list .activity-approve')).not.toBeExisting()
     const detail = $('#activity-panel .activity-detail')
-    await expect(detail).toHaveAttribute(
-      'data-row-key',
-      `approval:${await needsRow.getAttribute('data-request-id')}`,
-    )
+    const requestId = await needsRow.getAttribute('data-request-id')
+    if (!requestId) throw new Error('Missing activity approval request id')
+    await expect(detail).toHaveAttribute('data-row-key', `approval:${requestId}`)
     await expect(detail.$('.activity-detail-title')).toHaveText('Refactor auth')
     await expect(detail.$('.activity-review-title')).toHaveText('Run shell command?')
     const fullBody = await browser.execute(
@@ -257,9 +257,10 @@ describe('Activity panel', function () {
     // A real approval redraw must leave an unchanged recent row and group as
     // the same Chromium nodes, not recreate a target under the pointer.
     const untouchedSelector = rowSelector('recent', 'e2e-activity-recent-9')
-    const untouchedRowId = (await $(untouchedSelector)).elementId
-    const recentGroupId = (await $('#activity-panel .activity-group[data-group="recent"]'))
-      .elementId
+    const untouchedRowId = (await $(untouchedSelector).getElement()).elementId
+    const recentGroupId = (
+      await $('#activity-panel .activity-group[data-group="recent"]').getElement()
+    ).elementId
 
     // Approve from the panel. The user stays on thread B the whole time.
     await reopenedApprove.click()
@@ -287,12 +288,12 @@ describe('Activity panel', function () {
     await finishedRow.waitForExist({ timeout: 30_000 })
     await expect(finishedRow).toHaveAttribute('data-state', 'finished')
     assert.equal(
-      (await $(untouchedSelector)).elementId,
+      (await $(untouchedSelector).getElement()).elementId,
       untouchedRowId,
       'unchanged row survives the native approval redraw',
     )
     assert.equal(
-      (await $('#activity-panel .activity-group[data-group="recent"]')).elementId,
+      (await $('#activity-panel .activity-group[data-group="recent"]').getElement()).elementId,
       recentGroupId,
       'unchanged group survives the native approval redraw',
     )

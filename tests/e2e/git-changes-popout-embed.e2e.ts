@@ -1,6 +1,7 @@
+import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { $, $$, browser, expect } from '@wdio/globals'
+import { $, $$, browser } from '@wdio/globals'
 import {
   cleanupGitChangesFixture,
   resetUserData,
@@ -63,7 +64,7 @@ async function waitForFixtureRows(): Promise<void> {
       async () => {
         seen = await browser.execute(() =>
           Array.from(document.querySelectorAll('.git-change-row')).map((row) =>
-            (row.textContent ?? '').trim(),
+            row.textContent.trim(),
           ),
         )
         if (seen.length !== FIXTURE_ROWS.length) return false
@@ -91,11 +92,11 @@ describe('git changes embed alongside pop-out (#1753)', function () {
     repoRoot = seedGitChangesFixture()
     await browser.reloadSession()
     await browser.waitUntil(
-      async () => (await (await $('.workspace-name')).getText()) !== 'No folder',
+      async () => (await (await $('.workspace-name').getElement()).getText()) !== 'No folder',
       { timeout: 60_000, timeoutMsg: 'expected a restored workspace' },
     )
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
-    mainHandle = (await browser.getWindowHandles())[0]
+    mainHandle = at([...(await browser.getWindowHandles())], 0)
   })
 
   after(async () => {
@@ -131,9 +132,9 @@ describe('git changes embed alongside pop-out (#1753)', function () {
       timeoutMsg: 'expected a pop-out window',
     })
     const popoutHandle = (await browser.getWindowHandles()).find((h) => !before.includes(h))
-    expect(popoutHandle).toBeDefined()
+    if (!popoutHandle) throw new Error('Expected a new pop-out window handle')
 
-    await browser.switchToWindow(popoutHandle as string)
+    await browser.switchToWindow(popoutHandle)
     await browser.waitUntil(
       async () =>
         browser.execute(
@@ -159,7 +160,7 @@ describe('git changes embed alongside pop-out (#1753)', function () {
       timeoutMsg: `docked pane lost decorations after an external change: ${await describeViewer()}`,
     })
 
-    const stagedRow = await $('.git-change-row*=staged.ts')
+    const stagedRow = await $('.git-change-row*=staged.ts').getElement()
     await stagedRow.click()
     await browser.waitUntil(hasDiffDecorations, {
       timeout: 15_000,
@@ -172,7 +173,7 @@ describe('git changes embed alongside pop-out (#1753)', function () {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-popout-embed-docked.png'))
 
     // And the pop-out still shows them too.
-    await browser.switchToWindow(popoutHandle as string)
+    await browser.switchToWindow(popoutHandle)
     await browser.waitUntil(hasDiffDecorations, {
       timeout: 15_000,
       timeoutMsg: `pop-out lost diff decorations: ${await describeViewer()}`,

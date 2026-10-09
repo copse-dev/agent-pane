@@ -5,14 +5,6 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
-// Visual eval for the close guard: quitting disposes every live agent session
-// with no resume, so a close while a thread is mid-turn asks first. The test
-// bridge drives the real main→renderer round trip (`test:requestCloseConfirm`)
-// rather than an actual close — closing the app would end this session too.
-interface CloseConfirmBridge {
-  requestCloseConfirm: () => Promise<boolean>
-}
-
 /** Long enough that the thread stays `running` across all three cases. */
 
 /**
@@ -27,9 +19,9 @@ const CONFIRM_DIALOG_WAIT_MS = 30_000
 
 async function requestClose(): Promise<void> {
   await browser.execute(() => {
-    const bridge = (window as unknown as { __copseE2e?: CloseConfirmBridge }).__copseE2e
-    if (!bridge?.requestCloseConfirm) throw new Error('__copseE2e.requestCloseConfirm unavailable')
-    const host = window as unknown as { __closeConfirmAnswers?: boolean[] }
+    const bridge = window.__copseE2e
+    if (!bridge) throw new Error('__copseE2e.requestCloseConfirm unavailable')
+    const host = window
     host.__closeConfirmAnswers ??= []
     const answers = host.__closeConfirmAnswers
     void bridge.requestCloseConfirm().then((confirmed) => answers.push(confirmed))
@@ -37,9 +29,7 @@ async function requestClose(): Promise<void> {
 }
 
 async function closeAnswers(): Promise<boolean[]> {
-  return await browser.execute(
-    () => (window as unknown as { __closeConfirmAnswers?: boolean[] }).__closeConfirmAnswers ?? [],
-  )
+  return await browser.execute(() => window.__closeConfirmAnswers ?? [])
 }
 
 /**
@@ -84,7 +74,7 @@ describe('close confirmation while a thread is working', function () {
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-close-confirm-project', {
       subagentsEnabled: false,
@@ -117,7 +107,7 @@ describe('close confirmation while a thread is working', function () {
     await ensureRunning()
     await requestClose()
 
-    const dialog = await $('#confirm-dialog')
+    const dialog = await $('#confirm-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: CONFIRM_DIALOG_WAIT_MS })
     await expect(dialog.$('.confirm-dialog-message')).toHaveText(
       'Close Copse while the agent is still working?',
@@ -141,7 +131,7 @@ describe('close confirmation while a thread is working', function () {
     await ensureRunning()
     await requestClose()
 
-    const dialog = await $('#confirm-dialog')
+    const dialog = await $('#confirm-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: CONFIRM_DIALOG_WAIT_MS })
     await dialog.$('.confirm-dialog-confirm').click()
 

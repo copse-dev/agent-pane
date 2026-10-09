@@ -87,11 +87,9 @@ async function activeGuestText(): Promise<{ guest: string | null; host: string; 
     const host = document.querySelector<HTMLElement>(
       '.browser-tab-panel.is-active .browser-webview-host',
     )
-    const webview = host?.querySelector('webview') as {
-      executeJavaScript?: (code: string) => Promise<unknown>
-    } | null
-    const guest = await webview
-      ?.executeJavaScript?.(
+    const webview = host?.querySelector<Electron.WebviewTag>('webview')
+    const guest: unknown = await webview
+      ?.executeJavaScript(
         'getComputedStyle(document.getElementById("canvas-background-probe") ?? document.body).color',
       )
       .catch(() => null)
@@ -243,7 +241,7 @@ async function renderCanvas(prompt: string, expectedToolCount: number): Promise<
       browser.execute((count) => {
         const completedReplies = Array.from(
           document.querySelectorAll('.msg-assistant > .message-body > .message-text'),
-        ).filter((message) => message.textContent?.includes('The canvas preview is ready.')).length
+        ).filter((message) => message.textContent.includes('The canvas preview is ready.')).length
         return (
           document.querySelectorAll('.tool-card[data-tool-id][data-status="done"]').length ===
             count && completedReplies >= count
@@ -327,9 +325,9 @@ async function saveCanvasPreviewScreenshot(filename: string, title: string): Pro
 
 describe('canvas background parity', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
 
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), PROJECT_ID, {
@@ -430,14 +428,14 @@ describe('canvas background parity', () => {
         browser.execute((title) => {
           const candidate = Array.from(
             document.querySelectorAll<HTMLElement>('.canvas-preview-card'),
-          ).find((element) => element.textContent?.includes(title))
+          ).find((element) => element.textContent.includes(title))
           const preview = candidate?.querySelector<HTMLImageElement>('.canvas-preview-image')
           return preview?.complete === true && preview.naturalWidth > 0
         }, OVERRIDE_TITLE),
       { timeout: 20_000, timeoutMsg: 'expected explicit canvas preview image to load' },
     )
 
-    const cards = await $$('.canvas-preview-card')
+    const cards = await $$('.canvas-preview-card').getElements()
     const card = cards.at(-1)
     assert.ok(card)
     const image = card.$('.canvas-preview-image')

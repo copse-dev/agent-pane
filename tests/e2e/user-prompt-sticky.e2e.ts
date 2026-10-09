@@ -4,9 +4,9 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('latest user prompt anchor', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedStickyUserPromptFixture(process.cwd())
     await browser.reloadSession()
@@ -36,7 +36,7 @@ describe('latest user prompt anchor', () => {
       const prompt = document.querySelector('.prompt-input')
       const footer = document.querySelector('.input-footer')
       if (!list || !first || !latest || !machine || !answer || !composer || !prompt || !footer) {
-        return { error: 'missing sticky fixture element' }
+        throw new Error('missing sticky fixture element')
       }
 
       const listRect = list.getBoundingClientRect()
@@ -62,7 +62,8 @@ describe('latest user prompt anchor', () => {
         scrollable: list.scrollHeight > list.clientHeight,
         composerBackground: getComputedStyle(composer).backgroundColor,
         composerBeforeContent: before.content,
-        composerBeforeBackdrop: before.backdropFilter || before.webkitBackdropFilter,
+        composerBeforeBackdrop:
+          before.backdropFilter || before.getPropertyValue('-webkit-backdrop-filter'),
         promptBackground: getComputedStyle(prompt).backgroundColor,
         footerBackground: getComputedStyle(footer).backgroundColor,
       }
@@ -189,7 +190,9 @@ describe('latest user prompt anchor', () => {
     await browser.waitUntil(
       async () => !(await latest.getAttribute('class'))?.includes('is-preview-compact'),
     )
-    await browser.waitUntil(async () => (await images[0]?.getSize('width')) > 100)
+    const firstImage = images[0]
+    if (!firstImage) throw new Error('Missing first prompt image')
+    await browser.waitUntil(async () => (await firstImage.getSize('width')) > 100)
   })
 
   it('returns the latest prompt to the transcript when the chat pane is narrow', async () => {
@@ -209,7 +212,7 @@ describe('latest user prompt anchor', () => {
       const answer = document.querySelector('[data-message-id="msg-assistant-sticky-result"]')
       const composer = document.getElementById('input-bar')
       if (!chat || !list || !latest || !answer || !composer) {
-        return { error: 'missing narrow sticky fixture element' }
+        throw new Error('missing narrow sticky fixture element')
       }
 
       const chatRect = chat.getBoundingClientRect()

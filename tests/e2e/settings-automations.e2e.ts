@@ -298,7 +298,7 @@ describe('settings automations plugin', function () {
     const filter = detail.$('.automation-permission-filter')
     await filter.setValue('publish_weekly')
     await browser.waitUntil(
-      async () => (await detail.$$('.automation-permission-row')).length === 1,
+      async () => (await detail.$$('.automation-permission-row').getElements()).length === 1,
     )
     assert.match(await detail.$('.automation-permissions').getText(), /1 of \d+ permissions/)
     await expect(dialog.$('.settings-buttons')).not.toBeDisplayed()

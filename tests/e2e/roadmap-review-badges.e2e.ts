@@ -106,7 +106,7 @@ describe('roadmap review badges', () => {
     await $('.roadmap-review-btn').waitForDisplayed({ timeout: 10_000 })
     await $('.roadmap-row').waitForDisplayed({ timeout: 10_000 })
 
-    const badges = await $$('.roadmap-review-badge')
+    const badges = await $$('.roadmap-review-badge').getElements()
     assert.equal(badges.length, 2)
     await expect(badges[0]).toHaveText(expect.stringContaining('review: likely'))
     await expect(badges[1]).toHaveText(expect.stringContaining('review: open'))

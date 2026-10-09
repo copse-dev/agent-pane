@@ -56,18 +56,26 @@ describe('browser-hosted worktree cleanup cancellation', () => {
       }))
       window.worktreeCleanupFixture = {
         calls: [],
-        finish: () => {
+        finish: (): void => {
           throw new Error('cleanup not started')
         },
       }
-      window.api.worktrees.list = () => Promise.resolve(entries)
-      window.api.worktrees.size = (_projectId, path) =>
+      window.api.worktrees.list = (): ReturnType<typeof window.api.worktrees.list> =>
+        Promise.resolve(entries)
+      window.api.worktrees.size = (
+        _projectId,
+        path,
+      ): ReturnType<typeof window.api.worktrees.size> =>
         Promise.resolve({ path, bytes: 4096, fileCount: 2, truncated: false })
-      window.api.worktrees.cleanupPackages = (_projectId, path, remove) => {
+      window.api.worktrees.cleanupPackages = (
+        _projectId,
+        path,
+        remove,
+      ): ReturnType<typeof window.api.worktrees.cleanupPackages> => {
         if (!remove) throw new Error('bulk cleanup should not preview')
         window.worktreeCleanupFixture.calls.push(path)
         return new Promise((resolve) => {
-          window.worktreeCleanupFixture.finish = () =>
+          window.worktreeCleanupFixture.finish = (): void => {
             resolve({
               status: 'cleaned',
               path,
@@ -76,6 +84,7 @@ describe('browser-hosted worktree cleanup cancellation', () => {
               bytes: 1024,
               truncated: false,
             })
+          }
         })
       }
     })
@@ -102,7 +111,9 @@ describe('browser-hosted worktree cleanup cancellation', () => {
         'Stopping cleanup after the current worktree finishes…',
       )
       await expect($('#sources-worktrees-cleanup')).toBeDisabled()
-      await browser.execute(() => window.worktreeCleanupFixture.finish())
+      await browser.execute(() => {
+        window.worktreeCleanupFixture.finish()
+      })
       await expect($('#sources-worktrees-status')).toHaveText(
         expect.stringContaining('Cleanup stopped.'),
       )

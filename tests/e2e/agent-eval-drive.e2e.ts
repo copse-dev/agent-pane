@@ -1,3 +1,5 @@
+import { readFixtureJsonObject } from './helpers/fixture-json.ts'
+import { isRecord, nonEmptyStringOr } from '@copse/std/unknown-value.ts'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
@@ -38,7 +40,7 @@ let approvalCount = 0
 let rejectedGuardedYoloHarmCount = 0
 
 function loadScenario(): EvalScenario {
-  const path = process.env['COPSE_EVAL_SCENARIO']?.trim() || DEFAULT_SCENARIO
+  const path = nonEmptyStringOr(process.env['COPSE_EVAL_SCENARIO']?.trim(), DEFAULT_SCENARIO)
   return loadEvalScenario(path)
 }
 
@@ -50,7 +52,7 @@ async function approvePendingApprovalDialogs(): Promise<void> {
       return dialog instanceof HTMLDialogElement && dialog.open
     })
     if (!open) return
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     const heading = await dialog.$('.approval-heading').getText()
     if (heading === 'Guarded YOLO safety check') {
       // Never let an eval execute a command the product identified as harmful.
@@ -78,7 +80,7 @@ async function approvePendingDiffs(): Promise<void> {
 async function armGuardedYoloForEval(): Promise<void> {
   // Match tests/e2e/guarded-yolo.e2e.ts exactly.
   await $('.footer-overflow-trigger').click()
-  const items = await $$('.footer-overflow-item')
+  const items = await $$('.footer-overflow-item').getElements()
   let enableItem
   for (const item of items) {
     if ((await item.getText()).includes('Enable Guarded YOLO')) {
@@ -89,13 +91,13 @@ async function armGuardedYoloForEval(): Promise<void> {
   if (!enableItem) throw new Error('Guarded YOLO footer action was not available for eval')
   await enableItem.click()
 
-  const dialog = await $('#approval-dialog')
+  const dialog = await $('#approval-dialog').getElement()
   await dialog.waitForDisplayed({ timeout: 10_000 })
   await expect(dialog.$('.approval-heading')).toHaveText('Enable Guarded YOLO for this thread?')
   await dialog.$('.approval-approve').click()
   approvalCount++
 
-  const banner = await $('.guarded-yolo-banner')
+  const banner = await $('.guarded-yolo-banner').getElement()
   await banner.waitForDisplayed({ timeout: 10_000 })
   await expect(banner).toHaveAttribute('data-phase', 'armed')
 }
@@ -104,7 +106,7 @@ async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
     async () => {
       await approvePendingApprovalDialogs()
       await approvePendingDiffs()
-      const stopBtn = await $('.stop-btn')
+      const stopBtn = await $('.stop-btn').getElement()
       return (await stopBtn.isExisting()) && (await stopBtn.getProperty('hidden')) !== true
     },
     {
@@ -138,7 +140,9 @@ async function waitForBackgroundWake(
   expectation: NonNullable<EvalScenario['backgroundWake']>,
 ): Promise<void> {
   if (expectation.reloadRenderer === true) {
-    await browser.execute(() => window.location.reload())
+    await browser.execute(() => {
+      window.location.reload()
+    })
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   }
   const timeoutMs = expectation.timeoutMs ?? 5 * 60_000
@@ -180,11 +184,14 @@ async function attachPromptFiles(attachments: PromptAttachment[]): Promise<void>
       }),
     )
   }, files)
-  await browser.waitUntil(async () => (await $$('.attachment-chip')).length >= files.length, {
-    timeout: 5_000,
-    interval: 100,
-    timeoutMsg: `Expected ${files.length} prompt attachment chip(s)`,
-  })
+  await browser.waitUntil(
+    async () => (await $$('.attachment-chip').getElements()).length >= files.length,
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: `Expected ${String(files.length)} prompt attachment chip(s)`,
+    },
+  )
 }
 
 async function typePrompt(prompt: EvalPrompt): Promise<void> {
@@ -193,7 +200,7 @@ async function typePrompt(prompt: EvalPrompt): Promise<void> {
   await waitForPromptReady()
   await attachPromptFiles(attachments)
   await browser.execute((value) => {
-    const el = document.querySelector('.prompt-input') as HTMLElement | null
+    const el = document.querySelector<HTMLElement>('.prompt-input')
     if (!el) throw new Error('.prompt-input not found')
     el.focus()
     el.textContent = value
@@ -203,7 +210,7 @@ async function typePrompt(prompt: EvalPrompt): Promise<void> {
 
 function walkFiles(root: string): string[] {
   const files: string[] = []
-  const visit = (dir: string) => {
+  const visit = (dir: string): void => {
     for (const entry of readdirSync(dir)) {
       if (entry === '.git') continue
       const abs = join(dir, entry)
@@ -260,7 +267,10 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
           encoding: 'utf8',
         }).trim(),
       )
-      assert.ok(count >= exp.git.minCommits, `Expected at least ${exp.git.minCommits} commits`)
+      assert.ok(
+        count >= exp.git.minCommits,
+        `Expected at least ${String(exp.git.minCommits)} commits`,
+      )
     }
     if (exp.git.allCommitMessagesContain) {
       const messages = execFileSync('git', ['log', '--format=%B%x00'], {
@@ -326,18 +336,20 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
 
 function readEvalConfig(): Record<string, unknown> {
   const configPath = join(getCopseUserDataDir(), 'config.json')
-  return JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>
+  return readFixtureJsonObject(configPath)
 }
 
 function activeProjectId(): string {
-  return readEvalConfig().activeProjectId as string
+  const projectId = readEvalConfig()['activeProjectId']
+  if (typeof projectId !== 'string') throw new Error('Eval config must identify its active project')
+  return projectId
 }
 
 async function readActiveThread(): Promise<Thread> {
   const config = readEvalConfig()
-  const threads = await loadProjectThreads(config.activeProjectId as string)
+  const threads = await loadProjectThreads(activeProjectId())
   if (threads.length === 0) throw new Error('No threads in the thread store after eval run')
-  const activeId = config.activeThreadId as string | undefined
+  const activeId = config['activeThreadId']
   const thread = threads.find((t) => t.id === activeId) ?? threads[threads.length - 1]
   if (!thread) throw new Error('Could not resolve active thread')
   return thread
@@ -449,6 +461,7 @@ function assertToolUseExpectations(
       calls.some(
         (call) =>
           call.name === 'run_background' &&
+          isRecord(call.args) &&
           call.args['action'] === 'start' &&
           call.args['wake_on_completion'] === true &&
           typeof call.args['timeout_ms'] === 'number',
@@ -530,10 +543,10 @@ describe('agent eval drive', () => {
   it('runs scenario prompts against the real agent and writes JSONL artifact', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const idleTimeout = Number(process.env.COPSE_EVAL_IDLE_MS ?? 15 * 60_000)
+    const idleTimeout = Number(process.env['COPSE_EVAL_IDLE_MS'] ?? 15 * 60_000)
     const prompts = selectedEvalPrompts(scenario)
     const shouldArmGuardedYolo =
-      scenario.toolUse?.armGuardedYolo === true || process.env.COPSE_EVAL_GUARDED_YOLO === '1'
+      scenario.toolUse?.armGuardedYolo === true || process.env['COPSE_EVAL_GUARDED_YOLO'] === '1'
     if (shouldArmGuardedYolo) {
       await armGuardedYoloForEval()
     }
@@ -600,7 +613,7 @@ describe('agent eval drive', () => {
       process.stdout.write(`COPSE_AUTONOMY_TRACE=${traceOutPath}\n`)
       process.stdout.write(`COPSE_AUTONOMY_REPORT=${reportOutPath}\n`)
       process.stdout.write(`COPSE_AUTONOMY_PASS=${String(report.pass)}\n`)
-      if (process.env.COPSE_EVAL_ENFORCE === '1') {
+      if (process.env['COPSE_EVAL_ENFORCE'] === '1') {
         assert.equal(report.pass, true, report.violations.join('\n'))
       }
     }

@@ -165,7 +165,9 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
       'the real roadmap Save label should be visible',
     )
 
-    async function measureAndCapture(theme: 'light' | 'dark') {
+    async function measureAndCapture(
+      theme: 'light' | 'dark',
+    ): Promise<{ badge: number; saveBtn: number }> {
       const currentTheme = await browser.execute(
         () => document.documentElement.dataset['theme'] ?? null,
       )
@@ -196,12 +198,12 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
       ['dark', dark],
     ] as const) {
       assert.ok(
-        measured.badge! >= AA_BODY_TEXT,
-        `Changes badge falls below ${String(AA_BODY_TEXT)}:1 in ${theme}: ${measured.badge!.toFixed(2)}:1`,
+        measured.badge >= AA_BODY_TEXT,
+        `Changes badge falls below ${String(AA_BODY_TEXT)}:1 in ${theme}: ${measured.badge.toFixed(2)}:1`,
       )
       assert.ok(
-        measured.saveBtn! >= AA_BODY_TEXT,
-        `roadmap Save button falls below ${String(AA_BODY_TEXT)}:1 in ${theme}: ${measured.saveBtn!.toFixed(2)}:1`,
+        measured.saveBtn >= AA_BODY_TEXT,
+        `roadmap Save button falls below ${String(AA_BODY_TEXT)}:1 in ${theme}: ${measured.saveBtn.toFixed(2)}:1`,
       )
     }
   })

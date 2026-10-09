@@ -31,7 +31,7 @@ describe('PR panel gh unavailable (mock)', () => {
 
   it('shows chat-linked PRs with install guidance', async function () {
     this.timeout(60_000)
-    const pane = await $('#pane-files')
+    const pane = await $('#pane-files').getElement()
     if (!(await pane.isDisplayed())) {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
@@ -39,15 +39,17 @@ describe('PR panel gh unavailable (mock)', () => {
     await $('[aria-label="Open pull requests"]').click()
     await browser.pause(800)
 
-    await (await $('.git-changes-section-title*=Related PRs')).waitForDisplayed({ timeout: 10_000 })
+    await (
+      await $('.git-changes-section-title*=Related PRs').getElement()
+    ).waitForDisplayed({ timeout: 10_000 })
 
     const bannerText = await browser.execute(
-      () => document.querySelector('.pr-empty-state')?.textContent?.trim() ?? '',
+      () => document.querySelector('.pr-empty-state')?.textContent.trim() ?? '',
     )
     expect(bannerText.toLowerCase()).toMatch(/not installed|install github cli/)
     // Listing a chat-linked PR must not leave the viewer on its cold-start
     // "Loading pull requests…" spinner: gh has answered, and it is missing.
-    const viewerEmpty = await $('#pr-viewer-host .panel-empty')
+    const viewerEmpty = await $('#pr-viewer-host .panel-empty').getElement()
     await expect(viewerEmpty).toHaveText('GitHub CLI is not available')
     await expect($('#pr-viewer-host .panel-empty .ui-inline-status')).not.toBeExisting()
 

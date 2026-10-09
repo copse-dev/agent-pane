@@ -9,7 +9,7 @@ import { tokenColour } from './helpers/theme.ts'
 const SERVER_NAME = 'copse-canvas'
 const TOOL_NAME = 'Render HTML artefact'
 
-async function openMcpSettings() {
+async function openMcpSettings(): Promise<WebdriverIO.Element> {
   await $('[aria-label="Settings"]').click()
   const dialog = $('#settings-dialog')
   await expect(dialog).toBeDisplayed()
@@ -20,7 +20,7 @@ async function openMcpSettings() {
   await mcp
     .$(`[aria-label="Manage permissions for ${SERVER_NAME}"]`)
     .waitForDisplayed({ timeout: 30_000 })
-  return mcp
+  return mcp.getElement()
 }
 
 async function openMcpPermissions(): Promise<void> {
@@ -34,9 +34,9 @@ async function openMcpPermissions(): Promise<void> {
 describe('settings tool permissions', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-settings-tool-permissions', {
       mcpUiCanvasEnabled: true,

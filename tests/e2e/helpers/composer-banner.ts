@@ -39,7 +39,7 @@ export async function composerBannerMetrics(
         .map((action) => {
           const own = getComputedStyle(action)
           return {
-            label: action.textContent ?? '',
+            label: action.textContent,
             padding: own.padding,
             fontSize: own.fontSize,
             radius: own.borderTopLeftRadius,

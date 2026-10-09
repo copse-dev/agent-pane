@@ -183,12 +183,10 @@ describe('archive chat and remove its worktree', function () {
     const visibleMeta = safeJsonParse(
       readFileSync(join(e2eWorkspaceDir(), PROJECT_ID, DIRTY_ID, 'meta.json'), 'utf8'),
       decodeWithSchema(
-        z
-          .object({
-            archivedAt: z.number().optional(),
-            worktree: z.object({ retiredAt: z.number().optional() }).passthrough().optional(),
-          })
-          .passthrough(),
+        z.looseObject({
+          archivedAt: z.number().optional(),
+          worktree: z.looseObject({ retiredAt: z.number().optional() }).optional(),
+        }),
       ),
     )
     assert.ok(visibleMeta)

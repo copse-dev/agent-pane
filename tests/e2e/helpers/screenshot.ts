@@ -1,3 +1,4 @@
+import type {} from './browser-globals.d.ts'
 import { join } from 'node:path'
 import { writeFileSync } from 'node:fs'
 import { PNG } from 'pngjs'
@@ -34,7 +35,7 @@ async function assertNaturalConversation(): Promise<void> {
       ...document.querySelectorAll(
         '.msg-user .message-text, .msg-assistant .message-text, .chat-title',
       ),
-    ].map((element) => element.textContent ?? ''),
+    ].map((element) => element.textContent),
   )
   const leaks = mockConversationLeaks(texts)
   if (leaks.length > 0) {
@@ -52,8 +53,8 @@ export async function prepareE2eScreenshot(
     if (!app) return
     const width = Math.min(viewport.width, window.innerWidth)
     const height = Math.min(viewport.height, window.innerHeight)
-    app.style.width = `${width}px`
-    app.style.height = `${height}px`
+    app.style.width = `${String(width)}px`
+    app.style.height = `${String(height)}px`
     app.style.overflow = 'clip'
     app.style.boxSizing = 'border-box'
     window.dispatchEvent(new Event('resize'))
@@ -71,8 +72,8 @@ export async function prepareThreePaneScreenshot(filesPaneWidth = 480): Promise<
       const app = document.getElementById('app')
       const body = document.getElementById('body')
       if (app) {
-        app.style.width = `${Math.min(viewport.width, window.innerWidth)}px`
-        app.style.height = `${Math.min(viewport.height, window.innerHeight)}px`
+        app.style.width = `${String(Math.min(viewport.width, window.innerWidth))}px`
+        app.style.height = `${String(Math.min(viewport.height, window.innerHeight))}px`
         app.style.overflow = 'clip'
         app.style.boxSizing = 'border-box'
       }
@@ -101,7 +102,7 @@ export async function saveThreePaneScreenshot(
     await prepareThreePaneScreenshot(options.filesPaneWidth)
     // Native guests can finish resizing after their host element has settled.
     await options.beforeCapture?.()
-    const body = await browser.$('#body.three-pane')
+    const body = await browser.$('#body.three-pane').getElement()
     await body.waitForDisplayed({ timeout: 15_000 })
     const path = join(E2E_SCREENSHOT_DIR, filename)
     if (options.captureFromViewport) {
@@ -190,7 +191,7 @@ export async function saveAppScreenshot(
 
 /** Capture an app shell that the spec has already sized and framed. */
 export async function savePreparedAppScreenshot(filename: string): Promise<void> {
-  const app = await browser.$('#app')
+  const app = await browser.$('#app').getElement()
   await app.waitForDisplayed({ timeout: 15_000 })
   await waitForSettledLayout('#app')
   await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
@@ -211,7 +212,7 @@ export async function prepareChatMessageScreenshot(
     const app = document.getElementById('app')
     if (app) app.style.overflow = 'visible'
     for (const sel of ['#body', '.pane-chat', '.conversation-scroll', '.messages-list']) {
-      const el = document.querySelector(sel) as HTMLElement | null
+      const el = document.querySelector<HTMLElement>(sel)
       if (el) el.style.overflow = 'visible'
     }
     window.dispatchEvent(new Event('resize'))
@@ -226,7 +227,7 @@ export async function saveChatPaneScreenshot(filename: string): Promise<void> {
     document.querySelector('.message-text table')?.scrollIntoView({ block: 'start' })
   })
   await browser.pause(100)
-  const app = await browser.$('#app')
+  const app = await browser.$('#app').getElement()
   await app.waitForDisplayed({ timeout: 15_000 })
   await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
@@ -238,10 +239,10 @@ export async function savePreparedElementScreenshot(
 ): Promise<void> {
   await prepareChatMessageScreenshot()
   await browser.execute((sel) => {
-    document.querySelector(sel)?.scrollIntoView({ block: 'start', inline: 'nearest' })
+    document.querySelector<HTMLElement>(sel)?.scrollIntoView({ block: 'start', inline: 'nearest' })
   }, selector)
   await browser.pause(100)
-  const el = await browser.$(selector)
+  const el = await browser.$(selector).getElement()
   await el.waitForDisplayed({ timeout: 15_000 })
   await el.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
@@ -276,7 +277,7 @@ export async function waitForImagesSettled(
     () =>
       browser.execute(
         (sel: string, min: number) => {
-          const host = document.querySelector(sel)
+          const host = document.querySelector<HTMLElement>(sel)
           if (!host) return false
           const images = Array.from(host.querySelectorAll('img'))
           // An empty host has no <img> at all, so `every` would report settled
@@ -383,7 +384,7 @@ export async function saveElementScreenshot(
     // Scrolling web documents cannot reach subjects below an app-sized clip.
     // Their owning spec frames the subject in the natural document viewport.
     if (options.frame !== 'document') await prepareE2eScreenshot()
-    const el = await browser.$(selector)
+    const el = await browser.$(selector).getElement()
     await el.waitForDisplayed({ timeout: 15_000 })
     // Resolve inside the page: a transcript update can replace `el` between
     // waitForDisplayed and execute, and WebDriver cannot revive an execute arg.
@@ -396,7 +397,7 @@ export async function saveElementScreenshot(
     // page settled (a tool card whose transcript updated once more) is a fresh
     // node by now, and the handle taken above would be stale.
     await waitForSettledLayout(selector)
-    const subject = await browser.$(selector)
+    const subject = await browser.$(selector).getElement()
     await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
     // Hand the page back exactly as the caller left it — the scroll was for the
     // capture, and specs keep interacting with the page afterwards.
@@ -431,17 +432,18 @@ export async function pinTextForCapture(
 ): Promise<() => Promise<void>> {
   const count = await browser.execute(
     (sel: string, source: string, flags: string, next: string) => {
-      type Pin = { observer: MutationObserver; pinned: Map<Text, string> }
-      const win = window as unknown as { __copsePinnedText?: Pin }
+      const win = window
       const re = new RegExp(source, flags)
       const pinned = new Map<Text, string>()
       const apply = (): number => {
-        const host = document.querySelector(sel)
+        const host = document.querySelector<HTMLElement>(sel)
         if (!host) return 0
         let matched = 0
         const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
         for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-          const text = node as Text
+          if (!(node instanceof Text))
+            throw new Error('Expected a text node from the text-only walker')
+          const text = node
           // `search` ignores lastIndex, so a /g pattern cannot skip a node.
           if (text.data.search(re) === -1) continue
           // A live value that already reads as the stand-in (a 40 ms dry-run
@@ -479,8 +481,7 @@ export async function pinTextForCapture(
   }
   return async () => {
     await browser.execute(() => {
-      type Pin = { observer: MutationObserver; pinned: Map<Text, string> }
-      const win = window as unknown as { __copsePinnedText?: Pin }
+      const win = window
       const pin = win.__copsePinnedText
       if (!pin) return
       pin.observer.disconnect()

@@ -6,7 +6,7 @@ import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 // into its runs; each run is still an ordinary row.
 
 async function folds(): Promise<string[]> {
-  const rows = await $$('#activity-home .activity-fold')
+  const rows = await $$('#activity-home .activity-fold').getElements()
   return rows.map((row) => row.getText())
 }
 
@@ -28,19 +28,19 @@ describe('Activity home automation fold', () => {
   })
 
   it('opens a fold out into its runs and closes it again', async () => {
-    const before = (await $$('#activity-home .activity-row')).length
+    const before = (await $$('#activity-home .activity-row').getElements()).length
     await $('#activity-home .activity-fold[data-fold="finished"] .activity-fold-toggle').click()
     await browser.waitUntil(
-      async () => (await $$('#activity-home .activity-row')).length === before + 5,
+      async () => (await $$('#activity-home .activity-row').getElements()).length === before + 5,
     )
-    expect((await $$('#activity-home .activity-fold-run')).length).toBe(5)
+    expect((await $$('#activity-home .activity-fold-run').getElements()).length).toBe(5)
     await expect(
       $('#activity-home .activity-fold[data-fold="finished"] .activity-fold-toggle'),
     ).toBeFocused()
     await saveAppScreenshot('activity-automation-fold-open.png')
     await $('#activity-home .activity-fold[data-fold="finished"] .activity-fold-toggle').click()
     await browser.waitUntil(
-      async () => (await $$('#activity-home .activity-row')).length === before,
+      async () => (await $$('#activity-home .activity-row').getElements()).length === before,
     )
     await expect(
       $('#activity-home .activity-fold[data-fold="finished"] .activity-fold-toggle'),

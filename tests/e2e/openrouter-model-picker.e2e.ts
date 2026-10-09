@@ -117,7 +117,7 @@ async function startOpenRouterModelServer(): Promise<{
   const apiBase = await new Promise<string>((resolve, reject) => {
     server.once('error', reject)
     server.listen(OPENROUTER_FIXTURE_PORT, '127.0.0.1', () => {
-      resolve(`http://127.0.0.1:${OPENROUTER_FIXTURE_PORT}/api/v1`)
+      resolve(`http://127.0.0.1:${String(OPENROUTER_FIXTURE_PORT)}/api/v1`)
     })
   })
   return {
@@ -125,7 +125,10 @@ async function startOpenRouterModelServer(): Promise<{
     localServerUrl: `http://127.0.0.1:${String(OPENROUTER_FIXTURE_PORT)}/lm/v1`,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()))
+        server.close((err) => {
+          if (err) reject(err)
+          else resolve()
+        })
       }),
   }
 }
@@ -158,10 +161,10 @@ describe('OpenRouter model picker', () => {
     const recent = await browser.execute(() => {
       const groupLabels = [
         ...document.querySelectorAll<HTMLElement>('.model-picker-group-label'),
-      ].map((el) => el.textContent?.trim())
+      ].map((el) => el.textContent.trim())
       const optionLabels = [
         ...document.querySelectorAll<HTMLElement>('.model-picker-menu .model-picker-option-label'),
-      ].map((el) => el.textContent?.trim() ?? '')
+      ].map((el) => el.textContent.trim())
       const title = document.querySelector<HTMLElement>('.model-picker-view-title')?.textContent
       return { groupLabels, optionLabels, title: title?.trim() }
     })
@@ -198,10 +201,10 @@ describe('OpenRouter model picker', () => {
     const picker = await browser.execute(() => {
       const groupLabels = [
         ...document.querySelectorAll<HTMLElement>('.model-picker-group-label'),
-      ].map((el) => el.textContent?.trim())
+      ].map((el) => el.textContent.trim())
       const optionLabels = [
         ...document.querySelectorAll<HTMLElement>('.model-picker-menu .model-picker-option-label'),
-      ].map((el) => el.textContent?.trim() ?? '')
+      ].map((el) => el.textContent.trim())
       return { groupLabels, optionLabels }
     })
 
@@ -281,7 +284,7 @@ describe('OpenRouter model picker', () => {
       [
         ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
       ].map((option) => ({
-        text: option.querySelector('.model-picker-option-label')?.textContent?.trim() ?? '',
+        text: option.querySelector('.model-picker-option-label')?.textContent.trim() ?? '',
         active: option.getAttribute('aria-selected'),
       })),
     )
@@ -299,7 +302,7 @@ describe('OpenRouter model picker', () => {
       [
         ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
       ].map((option) => ({
-        text: option.querySelector('.model-picker-option-label')?.textContent?.trim() ?? '',
+        text: option.querySelector('.model-picker-option-label')?.textContent.trim() ?? '',
         active: option.getAttribute('aria-selected'),
         hasActiveClass: option.classList.contains('is-active'),
       })),
@@ -337,7 +340,7 @@ describe('OpenRouter model picker', () => {
     await browser.keys('Escape')
     await $('.model-picker-trigger').click()
     await $('.model-picker-browse').click()
-    const filter = await $('.model-picker-filter')
+    const filter = await $('.model-picker-filter').getElement()
     assert.equal(
       await browser.execute(() =>
         document.activeElement?.classList.contains('model-picker-filter'),
@@ -373,7 +376,7 @@ describe('OpenRouter model picker', () => {
     await filter.setValue('no-such-model')
     await $('.model-picker-empty').waitForDisplayed()
     assert.equal((await $('.model-picker-empty').getText()).trim(), 'No matching models')
-    assert.equal((await $$('.model-picker-option')).length, 0)
+    assert.equal((await $$('.model-picker-option').getElements()).length, 0)
 
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-filter.png')
 
@@ -393,7 +396,9 @@ describe('OpenRouter model picker', () => {
     await $('.model-picker-trigger').click()
     await $('.model-picker-browse').click()
     await $('.model-picker-filter').setValue('qwen')
-    const qwen = await $('.model-picker-option[data-value="openrouter:qwen/qwen3-235b-a22b:free"]')
+    const qwen = await $(
+      '.model-picker-option[data-value="openrouter:qwen/qwen3-235b-a22b:free"]',
+    ).getElement()
     await qwen.waitForDisplayed({ timeout: 5_000 })
     await qwen.click()
     await $('.model-picker-menu').waitForDisplayed({ reverse: true, timeout: 5_000 })
@@ -417,13 +422,13 @@ describe('OpenRouter model picker', () => {
     })
 
     await $('.attachment-chips .image-chip').waitForDisplayed({ timeout: 5_000 })
-    const warning = await $('.composer-image-warning')
+    const warning = await $('.composer-image-warning').getElement()
     await warning.waitForDisplayed({ timeout: 10_000 })
     assert.match(await warning.getText(), /Qwen3 235B A22B \(free\) can’t read image input/)
     assert.match(await warning.getText(), /Use Claude Sonnet 3.5 \(paid\)/)
     assert.match(await warning.getText(), /Describe locally with qwen\/qwen3-vl/)
-    await expect(await $('.composer-image-describe-btn').isDisplayed()).toBe(true)
-    await expect(await $('.composer-image-without-btn').isDisplayed()).toBe(true)
+    expect(await $('.composer-image-describe-btn').isDisplayed()).toBe(true)
+    expect(await $('.composer-image-without-btn').isDisplayed()).toBe(true)
 
     await $('.submit-btn').click()
     await browser.pause(150)
@@ -505,10 +510,13 @@ describe('OpenRouter model picker', () => {
       ],
     })
     await $('.submit-btn').click()
-    await browser.waitUntil(async () => (await $$('.messages-list .msg-user')).length === 2, {
-      timeout: 10_000,
-      timeoutMsg: 'described image was not handed to the selected text-only model',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length === 2,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'described image was not handed to the selected text-only model',
+      },
+    )
     assert.equal(
       (await $('.model-picker-label').getText()).trim(),
       'Qwen3 235B A22B (free)',
@@ -529,7 +537,7 @@ describe('OpenRouter model picker', () => {
     // shown only once its chip is selected in the Providers panel.
     const selected = await browser.execute(() => {
       const chip = [...document.querySelectorAll<HTMLButtonElement>('.provider-chip')].find(
-        (el) => el.textContent?.trim() === 'OpenRouter',
+        (el) => el.textContent.trim() === 'OpenRouter',
       )
       chip?.click()
       return !!chip

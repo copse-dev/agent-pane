@@ -41,7 +41,7 @@ describe('package install approval', () => {
     await setComposerValue('Install the project dependencies.')
     await submitComposer()
 
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
 
     await expect(dialog.$('.approval-heading')).toHaveText('Run package install?')
@@ -68,7 +68,10 @@ describe('package install approval', () => {
           const scaled = channel / 255
           return scaled <= 0.04045 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4
         })
-        return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
+        const [red, green, blue] = linear
+        if (red === undefined || green === undefined || blue === undefined)
+          throw new Error('RGB color requires three channels')
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
       }
       const background = style.backgroundColor
       const color = style.color

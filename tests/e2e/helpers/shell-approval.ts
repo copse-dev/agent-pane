@@ -17,7 +17,7 @@ import { $ } from '@wdio/globals'
  * must give its command enough duration to outlast that wait.
  */
 export async function approveShellCommandIfPrompted(): Promise<void> {
-  const dialog = await $('#approval-dialog')
+  const dialog = await $('#approval-dialog').getElement()
   const approvalShown = await dialog
     .waitForDisplayed({ timeout: process.platform === 'darwin' ? 1_000 : 15_000 })
     .then(() => true)

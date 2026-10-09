@@ -6,7 +6,7 @@ import { parkPointer } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const SCREENSHOT_NAME =
-  process.env.MARKDOWN_ORDERED_LIST_SCREENSHOT ?? 'markdown-ordered-list-after'
+  process.env['MARKDOWN_ORDERED_LIST_SCREENSHOT'] ?? 'markdown-ordered-list-after'
 const isBeforeCapture = SCREENSHOT_NAME === 'markdown-ordered-list-before'
 
 describe('markdown ordered list spacing', () => {
@@ -28,14 +28,16 @@ describe('markdown ordered list spacing', () => {
     )
     await expect($('.tool-card-rollup summary.tool-card-header .tool-count')).toHaveText('×2')
 
-    const summary = await $('[data-message-id="msg-assistant-git-summary"] .message-text')
+    const summary = await $(
+      '[data-message-id="msg-assistant-git-summary"] .message-text',
+    ).getElement()
     await summary.waitForExist({ timeout: 30_000 })
 
     const layout = await browser.execute(() => {
       const root = document.querySelector(
         '[data-message-id="msg-assistant-git-summary"] .message-text',
       )
-      if (!root) return { error: 'no summary message-text' }
+      if (!root) throw new Error('no summary message-text')
 
       const ol = root.querySelector('ol')
       const items = ol ? [...ol.querySelectorAll('li')] : []
@@ -45,7 +47,7 @@ describe('markdown ordered list spacing', () => {
       const firstItemCode = firstItem?.querySelector('code')
       const firstItemStrong = firstItem?.querySelector('strong')
 
-      const gap = (a: Element | null | undefined, b: Element | null | undefined) => {
+      const gap = (a: Element | null | undefined, b: Element | null | undefined): number => {
         if (!a || !b) return 0
         return b.getBoundingClientRect().top - a.getBoundingClientRect().bottom
       }
@@ -54,7 +56,7 @@ describe('markdown ordered list spacing', () => {
         olCount: root.querySelectorAll('ol').length,
         liCount: items.length,
         numberedParagraphs: root.querySelectorAll('p').length,
-        hasNumberedParagraph: /^\d+\./.test(root.textContent?.trim() ?? ''),
+        hasNumberedParagraph: /^\d+\./.test(root.textContent.trim()),
         introToListGap: gap(intro, ol),
         itemGap: gap(firstItem, secondItem),
         firstItemInternalGap: gap(firstItemCode, firstItemStrong),

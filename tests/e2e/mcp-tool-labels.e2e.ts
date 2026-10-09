@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedMcpToolDisplayFixture } from './helpers/seed-config.ts'
@@ -6,9 +7,9 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 describe('MCP tool labels', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedMcpToolDisplayFixture(process.cwd())
     await browser.reloadSession()
@@ -46,18 +47,30 @@ describe('MCP tool labels', () => {
     // Copse's mixed tools count their operations and the failure.
     await run.$('summary.tool-card-header').click()
     await expect(run).toHaveAttribute('open')
-    const steps = await run.$$('.tool-card-step')
+    const steps = await run.$$('.tool-card-step').getElements()
     await expect(steps).toBeElementsArrayOfSize(3)
-    await expect(steps[0]!).toHaveAttribute('data-step-message-id', 'msg-assistant-mcp-single')
-    await expect(steps[1]!).toHaveAttribute('data-step-message-id', 'msg-assistant-mcp-group')
-    await expect(steps[2]!).toHaveAttribute('data-step-message-id', 'msg-assistant-copse-group')
-    await expect(steps[0]!.$('.tool-card-header .tool-name')).toHaveText('Create issue')
-    await expect(steps[1]!.$('.tool-card-header .tool-name')).toHaveText('github')
-    await expect(steps[2]!.$('.tool-card-header .tool-name')).toHaveText('Used 5 tools · 1 failed')
+    await expect(at([...steps], 0)).toHaveAttribute(
+      'data-step-message-id',
+      'msg-assistant-mcp-single',
+    )
+    await expect(at([...steps], 1)).toHaveAttribute(
+      'data-step-message-id',
+      'msg-assistant-mcp-group',
+    )
+    await expect(at([...steps], 2)).toHaveAttribute(
+      'data-step-message-id',
+      'msg-assistant-copse-group',
+    )
+    await expect(at([...steps], 0).$('.tool-card-header .tool-name')).toHaveText('Create issue')
+    await expect(at([...steps], 1).$('.tool-card-header .tool-name')).toHaveText('github')
+    await expect(at([...steps], 2).$('.tool-card-header .tool-name')).toHaveText(
+      'Used 5 tools · 1 failed',
+    )
 
     // The single tool's own card sits inside its step; open the step so the
     // card's label is rendered text rather than hidden `<details>` content.
-    const single = steps[0]!
+    const single = steps[0]
+    if (single == null) throw new Error('Missing single in test fixture')
     await single.$('summary.tool-card-header').click()
     await expect(single).toHaveAttribute('open')
     await expect(single.$('.tool-card[data-tool-id="tc-mcp-create"] .tool-name')).toHaveText(
@@ -66,7 +79,8 @@ describe('MCP tool labels', () => {
 
     // Dotted Codex names and double-underscore names both take the native
     // Copse labels, and Copse's git wrappers keep their semantic group.
-    const copse = steps[2]!
+    const copse = steps[2]
+    if (copse == null) throw new Error('Missing copse in test fixture')
     await copse.$('summary.tool-card-header').click()
     await expect(copse).toHaveAttribute('open')
     const git = copse.$('.tool-card-group')

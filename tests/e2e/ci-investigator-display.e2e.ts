@@ -18,7 +18,7 @@ describe('CI investigator subagent display', () => {
   it('shows the Investigated CI subagent card with nested CI log tools', async () => {
     await $('.tool-card-subagent').waitForExist({ timeout: 15_000 })
 
-    const card = await $('.tool-card-subagent')
+    const card = await $('.tool-card-subagent').getElement()
     await expect(card).toBeDisplayed()
     await expect(card).not.toHaveAttribute('open')
     await expect(card.$('summary.tool-card-header .tool-name')).toHaveText('Investigated CI')
@@ -28,8 +28,8 @@ describe('CI investigator subagent display', () => {
     await card.$('summary.tool-card-header').click()
     await expect(card.$('.subagent-message-assistant strong')).toHaveText('failing run logs')
     const innerText = await card.$$('.subagent-inner-tool .tool-name').map((n) => n.getText())
-    await expect(innerText).toContain('Listed CI runs')
-    await expect(innerText).toContain('Viewed CI run logs')
+    expect(innerText).toContain('Listed CI runs')
+    expect(innerText).toContain('Viewed CI run logs')
 
     await saveAppScreenshot('ci-investigator-display-expanded.png')
   })

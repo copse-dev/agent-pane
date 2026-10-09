@@ -98,10 +98,7 @@ describe('settings usage plan worth-it', function () {
   })
 
   it('shows a worth-it verdict and switches the value map to inference prices', async () => {
-    const payload = (await browser.execute(() => window.api.usage.getPlanWorthIt())) as {
-      worthIt: { verdict: string; completedWeeklyCount: number }
-      windowExhaustion: Array<{ windowId: string; hit: number; total: number }>
-    }
+    const payload = await browser.execute(() => window.api.usage.getPlanWorthIt())
     assert.equal(payload.worthIt.verdict, 'worth_it')
     assert.equal(payload.worthIt.completedWeeklyCount, 2)
     assert.ok(payload.windowExhaustion.some((r) => r.windowId === 'seven_day_fable' && r.hit === 2))
@@ -133,9 +130,9 @@ describe('settings usage plan worth-it', function () {
     await browser.waitUntil(
       async () => {
         const coverage = await browser.execute(() => {
-          const active = document.querySelector(
+          const active = document.querySelector<HTMLElement>(
             '.frontier-plan-coverage [data-plan-coverage].active',
-          ) as HTMLElement | null
+          )
           return active?.dataset['planCoverage'] ?? null
         })
         return coverage === 'inference'

@@ -59,9 +59,9 @@ function seedThreads(): void {
 
 describe('command palette and sidebar thread filter', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedThreads()
     await browser.reloadSession()
@@ -74,7 +74,7 @@ describe('command palette and sidebar thread filter', () => {
   })
 
   async function openPalette(): Promise<WebdriverIO.Element> {
-    const dialog = await $('#command-palette-dialog')
+    const dialog = await $('#command-palette-dialog').getElement()
     // metaKey covers macOS, ctrlKey the rest — the handler accepts either.
     await browser.execute(() => {
       document.dispatchEvent(
@@ -94,20 +94,21 @@ describe('command palette and sidebar thread filter', () => {
   it('opens on Cmd/Ctrl+Shift+K, filters threads, and jumps to the chosen one', async () => {
     const dialog = await openPalette()
 
-    const input = await $('.command-palette-input')
+    const input = await $('.command-palette-input').getElement()
     await input.setValue('login')
 
     // Only the login thread survives the filter across every section.
-    const threadName = await $('.command-palette-item-thread .command-palette-name')
+    const threadName = await $('.command-palette-item-thread .command-palette-name').getElement()
+
     await threadName.waitForDisplayed({ timeout: 10_000 })
     await expect(threadName).toHaveText(expect.stringContaining(TARGET_TITLE))
-    const threadRows = await $$('.command-palette-item-thread')
+    const threadRows = await $$('.command-palette-item-thread').getElements()
     await expect(threadRows).toBeElementsArrayOfSize(1)
 
     await saveAppScreenshot('command-palette.png')
 
     // Choosing the thread closes the palette and selects it in the sidebar.
-    const chosen = await $('.command-palette-item-thread')
+    const chosen = await $('.command-palette-item-thread').getElement()
     await chosen.click()
     await dialog.waitForDisplayed({ timeout: 10_000, reverse: true })
     await expect($('.chat-row.selected .chat-title')).toHaveText(TARGET_TITLE)
@@ -116,15 +117,16 @@ describe('command palette and sidebar thread filter', () => {
   it('finds a thread by the bare number of the PR it opened', async () => {
     const dialog = await openPalette()
 
-    const input = await $('.command-palette-input')
+    const input = await $('.command-palette-input').getElement()
     await input.setValue(String(TARGET_PR_NUMBER))
 
     // Only the thread that opened #2262 survives, and its row explains the hit
     // with a PR chip — a bare number is otherwise an opaque match on a title.
-    const threadName = await $('.command-palette-item-thread .command-palette-name')
+    const threadName = await $('.command-palette-item-thread .command-palette-name').getElement()
+
     await threadName.waitForDisplayed({ timeout: 10_000 })
     await expect(threadName).toHaveText(expect.stringContaining(TARGET_TITLE))
-    const threadRows = await $$('.command-palette-item-thread')
+    const threadRows = await $$('.command-palette-item-thread').getElements()
     await expect(threadRows).toBeElementsArrayOfSize(1)
     await expect($('.command-palette-item-thread .command-palette-pr')).toHaveText(
       `#${String(TARGET_PR_NUMBER)}`,
@@ -133,7 +135,7 @@ describe('command palette and sidebar thread filter', () => {
     await saveAppScreenshot('command-palette-pr-number.png')
 
     // Choose it so the palette is closed before the sidebar spec below.
-    const chosen = await $('.command-palette-item-thread')
+    const chosen = await $('.command-palette-item-thread').getElement()
     await chosen.click()
     await dialog.waitForDisplayed({ timeout: 10_000, reverse: true })
     await expect($('.chat-row.selected .chat-title')).toHaveText(TARGET_TITLE)
@@ -141,13 +143,13 @@ describe('command palette and sidebar thread filter', () => {
 
   it('filters the sidebar thread list from the header search field', async () => {
     // Narrow to the login thread.
-    const input = await $('.projects-search-input')
+    const input = await $('.projects-search-input').getElement()
     await input.waitForDisplayed({ timeout: 10_000 })
     await input.setValue('login')
 
     await browser.waitUntil(
       async () => {
-        const rows = await $$('.chats-list .chat-title')
+        const rows = await $$('.chats-list .chat-title').getElements()
         return rows.length === 1
       },
       { timeout: 10_000, timeoutMsg: 'sidebar filter did not narrow to one thread' },

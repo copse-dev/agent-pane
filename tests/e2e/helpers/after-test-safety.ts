@@ -165,8 +165,10 @@ export function forceKillWedgedE2eSession(): void {
   }
 }
 
+type DeleteSessionOptions = { shutdownDriver?: boolean }
+
 export type SessionDeleter = {
-  deleteSession: (options?: unknown) => Promise<unknown>
+  deleteSession: (options?: DeleteSessionOptions) => Promise<unknown>
   /**
    * WDIO's supported command override. Required when `session` is the
    * `@wdio/globals` Proxy — that Proxy has no `set` trap, so assigning
@@ -175,13 +177,13 @@ export type SessionDeleter = {
    * e2e shard 4: green-body suites still FAILED on DELETE ECONNREFUSED).
    */
   overwriteCommand?: (
-    name: string,
+    name: 'deleteSession',
     // WDIO binds `this` to the real browser; keep it untyped so unit fakes stay simple.
     fn: (
       this: unknown,
-      origCommand: (...args: unknown[]) => unknown,
-      ...args: unknown[]
-    ) => unknown,
+      origCommand: (options?: DeleteSessionOptions) => unknown,
+      options?: DeleteSessionOptions,
+    ) => Promise<unknown>,
   ) => void
 }
 
@@ -227,8 +229,8 @@ export function installDeleteSessionSafety(
       'deleteSession',
       async function overwriteDeleteSession(
         this: unknown,
-        origDeleteSession: (...args: unknown[]) => unknown,
-        ...args: unknown[]
+        origDeleteSession: (options?: DeleteSessionOptions) => unknown,
+        ...args: [options?: DeleteSessionOptions]
       ) {
         return await runSafeDelete(async () => await origDeleteSession.apply(this, args))
       },
@@ -237,6 +239,6 @@ export function installDeleteSessionSafety(
   }
 
   const original = session.deleteSession.bind(session)
-  session.deleteSession = async (deleteOptions?: unknown) =>
+  session.deleteSession = async (deleteOptions?: DeleteSessionOptions): Promise<unknown> =>
     await runSafeDelete(async () => await original(deleteOptions))
 }

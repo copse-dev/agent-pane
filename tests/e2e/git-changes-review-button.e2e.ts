@@ -11,7 +11,7 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function openChanges(): Promise<void> {
   await browser.waitUntil(
-    async () => (await (await $('.workspace-name')).getText()) !== 'No folder',
+    async () => (await (await $('.workspace-name').getElement()).getText()) !== 'No folder',
     { timeout: 60_000, timeoutMsg: 'expected a restored workspace before opening Changes' },
   )
   await $('.prompt-input').waitForExist({ timeout: 60_000 })

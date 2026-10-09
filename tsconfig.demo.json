@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.e2e.json",
+  "include": [
+    "tests/demo/**/*.ts",
+    "tests/demo/**/*.mts",
+    "wdio.demo.conf.ts",
+    "tests/e2e/helpers/*.d.ts",
+    "src/preload/api.d.ts",
+    "src/shared/build-constants.d.ts",
+    "src/renderer/types/**/*.d.ts"
+  ],
+  "exclude": []
+}

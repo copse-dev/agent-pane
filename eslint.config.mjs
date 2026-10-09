@@ -53,16 +53,10 @@ export default ts.config(
       '.claude/**',
       'eslint.config.mjs',
       'eslint.hook.config.mjs',
-      'wdio.conf.ts',
-      'wdio.ci.conf.ts',
-      'wdio.eval.conf.ts',
-      'wdio.demo.conf.ts',
       // One-line side-effect import of the preload for the Tauri ws-bridge
       // bundle; in no tsconfig project (the preload typechecks under
       // tsconfig.node.json, this entry is browser-side). See scripts/build-tauri.mts.
       'src/sidecar/ws-bridge/entry.ts',
-      'tests/e2e/**',
-      'tests/demo/**',
       'tests/fixtures/git-changes-repo/**',
       // Bench-task fixture repos: code for the agent under eval to fix, not project code.
       'benchmarks/fixtures/**',
@@ -102,6 +96,20 @@ export default ts.config(
     languageOptions: {
       parserOptions: { project: ['./tsconfig.node.json', './tsconfig.web.json'] },
     },
+  },
+  {
+    files: [
+      'tests/e2e/**/*.ts',
+      'tests/e2e/**/*.mts',
+      'wdio.conf.ts',
+      'wdio.ci.conf.ts',
+      'wdio.eval.conf.ts',
+    ],
+    languageOptions: { parserOptions: { project: ['./tsconfig.e2e.json'] } },
+  },
+  {
+    files: ['tests/demo/**/*.ts', 'tests/demo/**/*.mts', 'wdio.demo.conf.ts'],
+    languageOptions: { parserOptions: { project: ['./tsconfig.demo.json'] } },
   },
   {
     rules: {
@@ -384,6 +392,8 @@ export default ts.config(
         __dirname: 'readonly',
         __filename: 'readonly',
         Buffer: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
       },
     },
     rules: {
@@ -403,7 +413,7 @@ export default ts.config(
     // `packages/*/bin/*.mjs` are the one-line executable shims a workspace
     // package's `bin` points at (`copse-review`): the same shape, for the same
     // reason.
-    files: ['tests/fixtures/*.mjs', 'packages/*/bin/*.mjs'],
+    files: ['tests/fixtures/*.mjs', 'tests/e2e/fixtures/*.mjs', 'packages/*/bin/*.mjs'],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
       sourceType: 'module',
@@ -413,6 +423,7 @@ export default ts.config(
         Buffer: 'readonly',
         ReadableStream: 'readonly',
         AbortController: 'readonly',
+        setTimeout: 'readonly',
       },
     },
     rules: {

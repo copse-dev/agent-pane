@@ -74,7 +74,10 @@ describe('Mobile Companion at phone width', () => {
               const scaled = value.startsWith('color(') ? channel : channel / 255
               return scaled <= 0.04045 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4
             })
-          return 0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]!
+          const [red, green, blue] = rgb
+          if (red === undefined || green === undefined || blue === undefined)
+            throw new Error('Expected three RGB colour channels')
+          return 0.2126 * red + 0.7152 * green + 0.0722 * blue
         }
         const background = luminance(style.backgroundColor)
         const foreground = luminance(style.color)
@@ -106,7 +109,7 @@ describe('Mobile Companion at phone width', () => {
       expect(appearance.label).toBe('rgb(68, 68, 68)')
       assert.ok(
         appearance.contrast >= 4.5,
-        `${theme} primary label contrast: ${appearance.contrast}`,
+        `${theme} primary label contrast: ${String(appearance.contrast)}`,
       )
       assert.ok(appearance.height >= 44, 'Pairing must remain a phone-sized touch target')
       expect(appearance.surfaceLuminance > 0.5).toBe(theme === 'light')
@@ -114,7 +117,9 @@ describe('Mobile Companion at phone width', () => {
       expect(appearance.chromeMatches).toBe(true)
       await screenshot(`mobile-companion-pair-${theme}.png`)
 
-      await browser.execute(() => localStorage.setItem('copse-mobile-token', 'visual-test-token'))
+      await browser.execute(() => {
+        localStorage.setItem('copse-mobile-token', 'visual-test-token')
+      })
       await browser.refresh()
       await expect($('.group .row')).toBeDisplayed()
       await browser.execute(async () => {

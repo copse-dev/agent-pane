@@ -63,16 +63,43 @@ describe('portrait right panel layout', () => {
 
     await browser.waitUntil(
       async () =>
-        (await (await $('#body')).getAttribute('class'))?.includes('is-right-panel-horizontal'),
+        (await (await $('#body').getElement()).getAttribute('class'))?.includes(
+          'is-right-panel-horizontal',
+        ),
       { timeout: 5_000, timeoutMsg: 'expected portrait right panel layout class' },
     )
 
     const layout = await browser.execute(() => {
-      const chat = document.getElementById('pane-chat')!.getBoundingClientRect()
-      const projects = document.getElementById('pane-projects')!.getBoundingClientRect()
-      const files = document.getElementById('pane-files')!.getBoundingClientRect()
-      const input = document.getElementById('input-bar')!.getBoundingClientRect()
-      const panelBar = document.querySelector('.portrait-panel-bar')!.getBoundingClientRect()
+      const chat = (
+        document.getElementById('pane-chat') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('pane-chat')")
+        })()
+      ).getBoundingClientRect()
+      const projects = (
+        document.getElementById('pane-projects') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('pane-projects')")
+        })()
+      ).getBoundingClientRect()
+      const files = (
+        document.getElementById('pane-files') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('pane-files')")
+        })()
+      ).getBoundingClientRect()
+      const input = (
+        document.getElementById('input-bar') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('input-bar')")
+        })()
+      ).getBoundingClientRect()
+      const panelBar = (
+        document.querySelector('.portrait-panel-bar') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.querySelector('.portrait-panel-bar')")
+        })()
+      ).getBoundingClientRect()
       return {
         projectsTop: projects.top,
         chatTop: chat.top,
@@ -98,8 +125,18 @@ describe('portrait right panel layout', () => {
     await expect($('#body')).not.toHaveElementClass('is-right-panel-horizontal')
 
     const layout = await browser.execute(() => {
-      const chat = document.getElementById('pane-chat')!.getBoundingClientRect()
-      const files = document.getElementById('pane-files')!.getBoundingClientRect()
+      const chat = (
+        document.getElementById('pane-chat') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('pane-chat')")
+        })()
+      ).getBoundingClientRect()
+      const files = (
+        document.getElementById('pane-files') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('pane-files')")
+        })()
+      ).getBoundingClientRect()
       return {
         chatTop: chat.top,
         filesTop: files.top,

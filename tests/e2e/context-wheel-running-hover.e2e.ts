@@ -1,6 +1,6 @@
 import { waitForAgentIdle } from './helpers.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
-import { $, $$, browser, expect } from '@wdio/globals'
+import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedContextWheelFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -11,9 +11,9 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 // drawing, which needs no estimate to produce.
 describe('context wheel hover while running', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedContextWheelFixture(process.cwd())
     await browser.reloadSession()
@@ -26,7 +26,7 @@ describe('context wheel hover while running', () => {
   it('shows the snapshot aggregate on hover mid-run', async () => {
     await $('.input-footer').waitForExist({ timeout: 30_000 })
 
-    const wheel = await $('.context-wheel')
+    const wheel = await $('.context-wheel').getElement()
     await expect(wheel).toBeDisplayed()
 
     // Hold the run open long enough to hover while `status === 'running'`.

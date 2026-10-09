@@ -10,9 +10,9 @@ const LONG_TITLE = `cd /work && ${'echo hello; '.repeat(40)}`
 // rawInput arrives. The wire adapter is covered separately; no command runs.
 describe('title-only ACP shell command', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     const now = 1_700_000_000_000
     writeSeedConfig({
@@ -60,7 +60,9 @@ describe('title-only ACP shell command', () => {
     await browser.reloadSession()
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('compacts the long title and keeps the native tool card within the transcript', async () => {
     const card = $('[data-tool-id="long-acp-shell"]')

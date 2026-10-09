@@ -32,7 +32,7 @@ describe('PR producing and related threads', () => {
 
   it('a mention-only PR cannot claim a producing thread', async () => {
     await $('.pr-thread-link[data-thread-id="pr-reviewer"]').click()
-    const rows = await $$('.pr-list-row[data-pr-section="linked"]')
+    const rows = await $$('.pr-list-row[data-pr-section="linked"]').getElements()
     const second = rows[1]
     if (!second) throw new Error('Missing second related PR')
     await second.click()

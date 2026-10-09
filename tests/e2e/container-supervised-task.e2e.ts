@@ -32,7 +32,9 @@ describe('container run in the supervisor rail', function () {
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('shows the container task and removes it after cancellation', async () => {
     await $('button[aria-label="Open terminal"]').click()

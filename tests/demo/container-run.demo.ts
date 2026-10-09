@@ -1,3 +1,4 @@
+import { findAsync } from '../e2e/helpers/find-async.ts'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
@@ -12,8 +13,10 @@ import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 async function openOverflowItem(label: string): Promise<void> {
   await $('.footer-overflow-trigger').click()
   await expect($('.footer-overflow-menu')).toBeDisplayed()
-  const items = await $$('.footer-overflow-item')
-  const item = await items.find(async (candidate) => (await candidate.getText()).includes(label))
+  const items = await $$('.footer-overflow-item').getElements()
+  const item = await findAsync(items, async (candidate) =>
+    (await candidate.getText()).includes(label),
+  )
   if (!item) throw new Error(`Footer overflow item "${label}" was not available`)
   await item.click()
 }
@@ -25,7 +28,7 @@ describe('unattended container run (browser-hosted)', () => {
     await expect($('.container-run-banner')).not.toBeDisplayed()
 
     await openOverflowItem('Run unattended in a container…')
-    const dialog = await $('#container-run-dialog')
+    const dialog = await $('#container-run-dialog').getElement()
     await dialog.waitForDisplayed()
     await expect(dialog.$('.container-run-title')).toHaveText(
       'Run this thread unattended in a container',
@@ -67,7 +70,7 @@ describe('unattended container run (browser-hosted)', () => {
     await $('.prompt-input').setValue('Tidy the backlog of lint suppressions')
 
     await openOverflowItem('Run unattended in a container…')
-    const dialog = await $('#container-run-dialog')
+    const dialog = await $('#container-run-dialog').getElement()
     await dialog.waitForDisplayed()
     const task = dialog.$('.container-run-prompt')
     await expect(task).toHaveValue('Tidy the backlog of lint suppressions')
@@ -82,7 +85,7 @@ describe('unattended container run (browser-hosted)', () => {
     await browser.url('/?scenario=container-run')
     await $('.input-footer').waitForExist()
 
-    const banner = await $('.container-run-banner')
+    const banner = await $('.container-run-banner').getElement()
     await banner.waitForDisplayed()
     await expect(banner).toHaveAttribute('data-phase', 'finished')
     const bannerText = await banner.getText()
@@ -100,9 +103,9 @@ describe('unattended container run (browser-hosted)', () => {
     await saveElementScreenshot('#input-bar', 'container-run-banner-finished.png')
 
     await banner.$('.container-run-details').click()
-    const dialog = await $('#container-run-dialog')
+    const dialog = await $('#container-run-dialog').getElement()
     await dialog.waitForDisplayed()
-    const status = await dialog.$('.container-run-status')
+    const status = await dialog.$('.container-run-status').getElement()
     await expect(status).toHaveAttribute('data-phase', 'finished')
     const summary = await dialog.$('.container-run-summary').getText()
     expect(summary).toContain('Finished')
@@ -159,7 +162,7 @@ describe('unattended container run (browser-hosted)', () => {
     // The run is a turn on the thread (A13): one subagent card, labelled for
     // what it is, holding the guest's transcript and the record, with the
     // follow-up under it.
-    const card = await $('.tool-card-subagent[data-tool-id^="container-run:"]')
+    const card = await $('.tool-card-subagent[data-tool-id^="container-run:"]').getElement()
     await card.waitForExist()
     await expect(card).toHaveAttribute('data-status', 'done')
     expect(await card.$('.tool-card-header').getText()).toContain('Ran unattended in a container')
@@ -193,7 +196,9 @@ describe('unattended container run (browser-hosted)', () => {
 
     // The menu label follows the run state: a finished run is not "live".
     await $('.footer-overflow-trigger').click()
-    const labels = await (await $$('.footer-overflow-item')).map((item) => item.getText())
+    const labels = await (
+      await $$('.footer-overflow-item').getElements()
+    ).map((item) => item.getText())
     expect(labels).toContain('Run unattended in a container…')
     await browser.keys('Escape')
 
@@ -227,12 +232,13 @@ describe('unattended container run (browser-hosted)', () => {
           carryOut: { expected: true, ref: null, error: 'missing carry-out bundle' },
         },
       }
-      window.api.container.runThread = () => Promise.resolve(failed)
+      window.api.container.runThread = (): ReturnType<typeof window.api.container.runThread> =>
+        Promise.resolve(failed)
     })
     await $('.container-run-start').click()
     // Starting closes the sheet (A14): the banner is the run's face now, and
     // the task became a message on the thread.
-    const dialog = await $('#container-run-dialog')
+    const dialog = await $('#container-run-dialog').getElement()
     await expect(dialog).not.toBeDisplayed()
     await expect($('.container-run-banner')).toHaveAttribute('data-phase', 'failed')
     expect(await $('.container-run-banner').getText()).not.toContain('commits back')
@@ -271,11 +277,12 @@ describe('unattended container run (browser-hosted)', () => {
           },
         },
       }
-      window.api.container.runThread = () => Promise.resolve(apple)
+      window.api.container.runThread = (): ReturnType<typeof window.api.container.runThread> =>
+        Promise.resolve(apple)
     })
     await $('.container-run-start').click()
     await $('.container-run-details').click()
-    const dialog = await $('#container-run-dialog')
+    const dialog = await $('#container-run-dialog').getElement()
     await expect(dialog.$('.container-run-status')).toHaveAttribute('data-phase', 'finished')
     const summary = await dialog.$('.container-run-summary').getText()
     expect(summary).toMatch(
@@ -299,20 +306,22 @@ describe('unattended container run (browser-hosted)', () => {
     await $('.container-run-banner').waitForDisplayed()
     await $('.tool-card-subagent[data-tool-id^="container-run:"]').waitForExist()
     // The run is the thread's last turn, so the picker shows and points at it.
-    const target = await $('.composer-target')
+    const target = await $('.composer-target').getElement()
     await expect(target).toBeDisplayed()
     await expect(target).toHaveValue('container')
     await saveElementScreenshot('.input-row', 'container-run-follow-up-target.png')
 
     await $('.prompt-input').setValue('Now add a test for the formatter change')
     await $('.submit-btn').click()
-    const dialog = await $('.container-run-dialog')
+    const dialog = await $('.container-run-dialog').getElement()
     await dialog.waitForDisplayed()
     await expect($('.container-run-title')).toHaveText('Review the container follow-up')
     await expect($('.container-run-minutes')).toHaveValue('3')
     await expect($('.container-run-tokens')).toHaveValue('20000')
     await expect($('.container-run-install')).not.toBeChecked()
-    const beforeStart = await $$('.tool-card-subagent[data-tool-id^="container-run:"]')
+    const beforeStart = await $$(
+      '.tool-card-subagent[data-tool-id^="container-run:"]',
+    ).getElements()
     expect(beforeStart.length).toBe(1)
     expect(await $('.prompt-input').getText()).toContain('Now add a test')
     await saveElementScreenshot('.container-run-dialog', 'container-run-follow-up-form.png')
@@ -325,15 +334,17 @@ describe('unattended container run (browser-hosted)', () => {
     await dialog.waitForDisplayed({ reverse: true })
     // Confirmation adds the follow-up and a running card, then empties the composer.
     await browser.waitUntil(async () => {
-      const cards = await $$('.tool-card-subagent[data-tool-id^="container-run:"]')
+      const cards = await $$('.tool-card-subagent[data-tool-id^="container-run:"]').getElements()
       return cards.length === 2
     })
-    const texts = await (await $$('.msg-user .message-text')).map((node) => node.getText())
+    const texts = await (
+      await $$('.msg-user .message-text').getElements()
+    ).map((node) => node.getText())
     expect(texts.some((text) => text.includes('Now add a test for the formatter change'))).toBe(
       true,
     )
     expect((await $('.prompt-input').getText()).trim()).toBe('')
-    const cards = await $$('.tool-card-subagent[data-tool-id^="container-run:"]')
+    const cards = await $$('.tool-card-subagent[data-tool-id^="container-run:"]').getElements()
     await expect(cards[1]).toHaveAttribute('data-status', 'running')
     // A busy container is not a target: the picker falls back to the thread.
     await expect(target).toHaveValue('thread')

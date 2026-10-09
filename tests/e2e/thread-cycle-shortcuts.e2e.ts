@@ -62,9 +62,9 @@ async function expectSelected(title: string): Promise<void> {
 
 describe('thread-cycle shortcuts', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedThreads()
     await browser.reloadSession()
@@ -91,7 +91,7 @@ describe('thread-cycle shortcuts', () => {
         new KeyboardEvent('keydown', { key: '/', metaKey: true, ctrlKey: true, bubbles: true }),
       )
     })
-    const dialog = await $('#keyboard-shortcuts-dialog')
+    const dialog = await $('#keyboard-shortcuts-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 10_000 })
 
     const chords = await browser.execute(() => {
@@ -101,9 +101,7 @@ describe('thread-cycle shortcuts', () => {
             candidate.querySelector('.keyboard-shortcuts-label')?.textContent === label,
         )
         if (!row) throw new Error(`shortcut row not found: ${label}`)
-        return [...row.querySelectorAll('kbd.keyboard-shortcuts-key')].map(
-          (key) => key.textContent ?? '',
-        )
+        return [...row.querySelectorAll('kbd.keyboard-shortcuts-key')].map((key) => key.textContent)
       }
       return {
         next: keysFor('Next thread'),
@@ -111,8 +109,8 @@ describe('thread-cycle shortcuts', () => {
         isMac: /mac/i.test(navigator.platform || navigator.userAgent || ''),
       }
     })
-    await expect(chords.next).toEqual(['Ctrl', 'Tab'])
-    await expect(chords.previous).toEqual(['Ctrl', chords.isMac ? '⇧' : 'Shift', 'Tab'])
+    expect(chords.next).toEqual(['Ctrl', 'Tab'])
+    expect(chords.previous).toEqual(['Ctrl', chords.isMac ? '⇧' : 'Shift', 'Tab'])
     await saveAppScreenshot('thread-cycle-shortcuts.png')
   })
 })

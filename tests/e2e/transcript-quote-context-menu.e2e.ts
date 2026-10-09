@@ -414,7 +414,7 @@ describe('transcript selection: quote into the reply', () => {
       async () =>
         browser.execute(() =>
           [...document.querySelectorAll('.msg-user .message-text')].some((message) =>
-            (message.textContent ?? '').includes('Send this reply now.'),
+            message.textContent.includes('Send this reply now.'),
           ),
         ),
       { timeout: 10_000, timeoutMsg: 'expected the inline reply in the real transcript' },
@@ -422,7 +422,7 @@ describe('transcript selection: quote into the reply', () => {
     const sent = await browser.execute(
       () =>
         [...document.querySelectorAll('.msg-user .message-text')].find((message) =>
-          (message.textContent ?? '').includes('Send this reply now.'),
+          message.textContent.includes('Send this reply now.'),
         )?.textContent,
     )
     expect(sent).toContain(SELECTED_PHRASE)

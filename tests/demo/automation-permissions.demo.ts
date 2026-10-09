@@ -46,8 +46,8 @@ describe('browser-hosted automation permission preferences', () => {
     ).toBeChecked()
     assert.match(await form.$('.automation-permissions').getText(), /Allowed without asking/)
     assert.match(await form.$('.automation-permissions').getText(), /11 permissions/)
-    assert.equal((await form.$$('.automation-permission-row')).length, 11)
-    assert.equal((await form.$$('.automation-permission-switch')).length, 11)
+    assert.equal((await form.$$('.automation-permission-row').getElements()).length, 11)
+    assert.equal((await form.$$('.automation-permission-switch').getElements()).length, 11)
     await expect(
       form.$('.automation-permission-row[title="gh_pr_approve"] .toggle-switch-track'),
     ).toBeDisplayed()
@@ -66,7 +66,9 @@ describe('browser-hosted automation permission preferences', () => {
 
     const filter = form.$('.automation-permission-filter')
     await filter.setValue('publish_weekly')
-    await browser.waitUntil(async () => (await form.$$('.automation-permission-row')).length === 1)
+    await browser.waitUntil(
+      async () => (await form.$$('.automation-permission-row').getElements()).length === 1,
+    )
     assert.match(await form.$('.automation-permissions').getText(), /1 of 11 permissions/)
     await expect(
       form.$('.automation-permission-unavailable[title="mcp__reports__publish_weekly"] input'),

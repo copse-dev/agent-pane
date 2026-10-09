@@ -77,7 +77,7 @@ function checkDialogRegions(rootSelector: string): RegionCheck {
 }
 
 async function assertNoDragViolations(rootSelector: string): Promise<void> {
-  const result = (await browser.execute(checkDialogRegions, rootSelector)) as RegionCheck
+  const result = await browser.execute(checkDialogRegions, rootSelector)
   if (!result.ok) {
     throw new Error(`drag-region violations in ${rootSelector}: ${result.violations.join(', ')}`)
   }
@@ -111,7 +111,7 @@ describe('dialog drag-region invariant (issue #1914 class)', () => {
   })
 
   it('the onboarding dialog is click-safe (its drag header excepted)', async () => {
-    const overlay = await $('#onboarding-dialog')
+    const overlay = await $('#onboarding-dialog').getElement()
     await overlay.waitForDisplayed({ timeout: 30_000 })
     await assertNoDragViolations('#onboarding-dialog')
   })
@@ -121,7 +121,7 @@ describe('dialog drag-region invariant (issue #1914 class)', () => {
     // Dismiss onboarding onto the welcome screen — the whole screen is a drag
     // region there, the exact construction that ate #1914's clicks.
     await $('#onboarding-skip').click()
-    const newProjectBtn = await $('.welcome-new-btn')
+    const newProjectBtn = await $('.welcome-new-btn').getElement()
     await newProjectBtn.waitForClickable({ timeout: 15_000 })
     await newProjectBtn.click()
     await browser.waitUntil(
@@ -137,9 +137,9 @@ describe('dialog drag-region invariant (issue #1914 class)', () => {
 
   it('every open dialog passes the sweep', async () => {
     // Generic guard for dialogs added later: anything open right now is checked.
-    const openDialogs = (await browser.execute(() =>
+    const openDialogs = await browser.execute(() =>
       [...document.querySelectorAll('dialog[open]')].map((d) => `#${d.id}`),
-    )) as string[]
+    )
     for (const selector of openDialogs) {
       await assertNoDragViolations(selector)
     }

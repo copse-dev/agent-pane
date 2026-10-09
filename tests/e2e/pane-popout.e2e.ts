@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -74,7 +75,7 @@ describe('Pane pop-out (mock gh)', () => {
     seedE2eThreePaneLayout()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
-    mainHandle = (await browser.getWindowHandles())[0]
+    mainHandle = at([...(await browser.getWindowHandles())], 0)
   })
 
   after(async () => {
@@ -99,7 +100,7 @@ describe('Pane pop-out (mock gh)', () => {
       await $(pane.listHost).waitForDisplayed({ timeout: 20_000 })
 
       // The pop-out control lives inside the pane header, not the titlebar.
-      const popoutBtn = await $(`${pane.listHost} .pane-popout-btn`)
+      const popoutBtn = await $(`${pane.listHost} .pane-popout-btn`).getElement()
       await popoutBtn.waitForClickable({ timeout: 10_000 })
 
       if (pane.mode === 'browser') {
@@ -125,26 +126,26 @@ describe('Pane pop-out (mock gh)', () => {
         { timeout: 15_000, timeoutMsg: `expected a pop-out window for ${pane.mode}` },
       )
       const popoutHandle = (await browser.getWindowHandles()).find((h) => !before.includes(h))
-      expect(popoutHandle).toBeDefined()
+      if (!popoutHandle) throw new Error('Expected a new pop-out window handle')
 
       // The detached window renders only this pane; app chrome is collapsed and
       // the (now redundant) in-panel pop-out control is hidden.
-      await browser.switchToWindow(popoutHandle as string)
+      await browser.switchToWindow(popoutHandle)
       await browser.waitUntil(
         async () =>
-          (await browser.execute(
+          await browser.execute(
             (mode) => document.documentElement.getAttribute('data-popout-mode') === mode,
             pane.mode,
-          )) === true,
+          ),
         { timeout: 20_000, timeoutMsg: `popout window did not boot in ${pane.mode} mode` },
       )
       await $(pane.probe).waitForDisplayed({ timeout: 30_000 })
-      await expect(await $('#pane-files')).toBeDisplayed()
-      await expect(await $('#titlebar')).not.toBeDisplayed()
-      await expect(await $('#pane-projects')).not.toBeDisplayed()
-      await expect(await $('#pane-chat')).not.toBeDisplayed()
-      await expect(await $('.pane-popout-btn')).not.toBeDisplayed()
-      await expect(await $('.popout-panel-bar')).toBeDisplayed()
+      await expect(await $('#pane-files').getElement()).toBeDisplayed()
+      await expect(await $('#titlebar').getElement()).not.toBeDisplayed()
+      await expect(await $('#pane-projects').getElement()).not.toBeDisplayed()
+      await expect(await $('#pane-chat').getElement()).not.toBeDisplayed()
+      await expect(await $('.pane-popout-btn').getElement()).not.toBeDisplayed()
+      await expect(await $('.popout-panel-bar').getElement()).toBeDisplayed()
 
       // The switcher rides in a renderer-drawn titlebar pinned to the top of the
       // window, painted in the same chrome as the app titlebar it replaces.
@@ -177,10 +178,13 @@ describe('Pane pop-out (mock gh)', () => {
       expect(portraitChrome).toBe(false)
 
       if (pane.mode === 'browser') {
-        await browser.waitUntil(async () => (await $$('.browser-tabs-tab')).length >= 1, {
-          timeout: 20_000,
-          timeoutMsg: 'pop-out browser lost its tabs',
-        })
+        await browser.waitUntil(
+          async () => (await $$('.browser-tabs-tab').getElements()).length >= 1,
+          {
+            timeout: 20_000,
+            timeoutMsg: 'pop-out browser lost its tabs',
+          },
+        )
         await browser.waitUntil(
           async () => (await $('.browser-url-input').getValue()).includes('example.com'),
           { timeout: 20_000, timeoutMsg: 'pop-out browser did not inherit the active tab URL' },
@@ -188,17 +192,17 @@ describe('Pane pop-out (mock gh)', () => {
       }
 
       if (pane.mode === 'prs') {
-        await browser.waitUntil(async () => (await $$('.pr-list-row')).length >= 2, {
+        await browser.waitUntil(async () => (await $$('.pr-list-row').getElements()).length >= 2, {
           timeout: 30_000,
           timeoutMsg: 'expected the popped-out PR list to load its own data',
         })
       }
 
       if (pane.mode === 'roadmap') {
-        await expect(await $('.roadmap-list-empty')).toHaveText(
+        await expect(await $('.roadmap-list-empty').getElement()).toHaveText(
           expect.stringContaining('No roadmap items yet'),
         )
-        await expect(await $('.memories-error')).not.toBeDisplayed()
+        await expect(await $('.memories-error').getElement()).not.toBeDisplayed()
       }
 
       // The probe above proves the list element exists, not that it has rows, and
@@ -222,10 +226,10 @@ describe('Pane pop-out (mock gh)', () => {
 
     // The main window keeps its full three-pane layout; the pop-out control
     // lives inside the (currently open) pane, and not in the titlebar.
-    await expect(await $('#pane-projects')).toBeDisplayed()
-    await expect(await $('.prompt-input')).toBeExisting()
-    await expect(await $('.titlebar-popout-btn')).not.toBeExisting()
-    await expect(await $('#roadmap-host .pane-popout-btn')).toBeDisplayed()
+    await expect(await $('#pane-projects').getElement()).toBeDisplayed()
+    await expect(await $('.prompt-input').getElement()).toBeExisting()
+    await expect(await $('.titlebar-popout-btn').getElement()).not.toBeExisting()
+    await expect(await $('#roadmap-host .pane-popout-btn').getElement()).toBeDisplayed()
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'pane-popout-main.png'))
   })
 })

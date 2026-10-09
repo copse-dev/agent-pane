@@ -1,3 +1,5 @@
+import { readFixtureJsonObject } from './helpers/fixture-json.ts'
+import { at } from '@copse/std/array-utils.ts'
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -78,22 +80,13 @@ describe('settings usage panel', function () {
   })
 
   it('shows plan limits and ledger usage without blocking on plan fetch', async () => {
-    const summary = (await browser.execute(() => window.api.usage.getSummary())) as {
-      ledgerEventCount: number
-      day: {
-        totalInputTokens: number
-        cloudModels: Array<{ model: string }>
-        localModels: Array<{ model: string }>
-      }
-    }
+    const summary = await browser.execute(() => window.api.usage.getSummary())
     assert.equal(summary.ledgerEventCount, 5)
     assert.ok(summary.day.totalInputTokens >= 1_003_700)
     assert.ok(summary.day.cloudModels.some((m) => m.model === 'claude-sonnet-4-6'))
     assert.ok(summary.day.localModels.some((m) => m.model.startsWith('lmstudio:')))
 
-    const plan = (await browser.execute(() => window.api.usage.getPlanUsage())) as {
-      providers: Array<{ status: string; provider: string }>
-    }
+    const plan = await browser.execute(() => window.api.usage.getPlanUsage())
     assert.equal(plan.providers.length, 4)
     assert.ok(plan.providers.every((p) => p.status === 'ok'))
 
@@ -104,10 +97,8 @@ describe('settings usage panel', function () {
       .flatMap((name) => readFileSync(join(ledgerDir, name), 'utf8').split('\n'))
       .filter((line) => line.trim() !== '')
     assert.equal(ledgerRecords.length, 5)
-    const config = JSON.parse(readFileSync(join(getCopseUserDataDir(), 'config.json'), 'utf8')) as {
-      usageEvents?: unknown
-    }
-    assert.equal(config.usageEvents, undefined)
+    const config = readFixtureJsonObject(join(getCopseUserDataDir(), 'config.json'))
+    assert.equal(config['usageEvents'], undefined)
 
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
@@ -180,7 +171,7 @@ describe('settings usage panel', function () {
 
     const cloudRows = await browser.execute(() =>
       [...document.querySelectorAll('.usage-model-group:nth-of-type(1) tbody tr')].map(
-        (row) => row.textContent ?? '',
+        (row) => row.textContent,
       ),
     )
     assert.ok(
@@ -278,7 +269,15 @@ describe('settings usage panel', function () {
     // (no card fill or inset) under a display-face legend, even though Usage
     // mounts it one wrapper deeper (#3065).
     const groupStyle = await browser.execute(() => {
-      const read = (selector: string) => {
+      const read = (
+        selector: string,
+      ): {
+        background: string
+        padding: string
+        legendFamily: string
+        legendSize: string
+        legendWeight: string
+      } | null => {
         const group = document.querySelector<HTMLElement>(selector)
         const legend = group?.querySelector<HTMLElement>(':scope > legend')
         if (!group || !legend) return null
@@ -308,9 +307,9 @@ describe('settings usage panel', function () {
       timeout: 20_000,
       timeoutMsg: 'value-map points never rendered',
     })
-    const hits = await $$('.frontier-chart circle.frontier-hit')
+    const hits = await $$('.frontier-chart circle.frontier-hit').getElements()
     assert.ok(hits.length > 0, 'expected value-map points to render')
-    let rightmost = hits[0]
+    let rightmost = at([...hits], 0)
     let rightmostCx = Number(await rightmost.getAttribute('cx'))
     for (const hit of hits.slice(1)) {
       const cx = Number(await hit.getAttribute('cx'))
@@ -345,7 +344,7 @@ describe('settings usage panel', function () {
           : rightmostPoint
       }, null)
       if (!tip || !field || !point) return null
-      const rect = (element: Element) => {
+      const rect = (element: Element): { x: number; y: number; width: number; height: number } => {
         const { x, y, width, height } = element.getBoundingClientRect()
         return { x, y, width, height }
       }

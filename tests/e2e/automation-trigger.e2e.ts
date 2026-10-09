@@ -344,7 +344,7 @@ describe('cron automation trigger', function () {
         browser.execute(() =>
           Array.from(document.querySelectorAll('.msg'))
             .slice(0, 4)
-            .map((node) => `${node.className}:${(node.textContent ?? '').slice(0, 60)}`)
+            .map((node) => `${node.className}:${node.textContent.slice(0, 60)}`)
             .join(' || '),
         ),
       ])
@@ -387,7 +387,7 @@ describe('cron automation trigger', function () {
     const expectedResponse = 'The CI review is complete; no failures were found.'
     await browser.waitUntil(
       async () => {
-        const assistantMessages = await $$('.msg-assistant .message-text')
+        const assistantMessages = await $$('.msg-assistant .message-text').getElements()
         for (let i = 0; i < assistantMessages.length; i += 1) {
           if ((await assistantMessages[i]?.getText())?.includes(expectedResponse)) return true
         }

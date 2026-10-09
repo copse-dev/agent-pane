@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -45,7 +46,7 @@ describe('roadmap filter panel is a sticky footer, not an overlay', () => {
   it('keeps every row above the footer, fully on screen and clickable', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.titlebar-text-btn[aria-label="Open roadmap"]').click()
-    await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 6, {
+    await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 6, {
       timeout: 20_000,
       timeoutMsg: 'expected six seeded roadmap rows',
     })
@@ -86,7 +87,7 @@ describe('roadmap filter panel is a sticky footer, not an overlay', () => {
 
     // A row stays selectable while the footer is shown (issue #2467's actual
     // complaint: the old overlay "made rows hard to click").
-    const thirdRow = await $$('.roadmap-row')[2]
+    const thirdRow = at([...(await $$('.roadmap-row').getElements())], 2)
     await thirdRow.click()
     await $('.roadmap-row.is-selected').waitForDisplayed({ timeout: 5_000 })
     await expect(thirdRow).toHaveElementClass('is-selected')

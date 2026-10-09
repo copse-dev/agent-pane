@@ -62,7 +62,7 @@ function request(path: string, body?: object, bearer = token): z.infer<typeof re
   return parsed
 }
 
-function action(sessionId: string, payload: object) {
+function action(sessionId: string, payload: object): Record<string, unknown> {
   return { sessionId, issuedAt: Date.now(), requestId: randomUUID(), projectId, ...payload }
 }
 
@@ -159,7 +159,7 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     const start = action(sessionId, { action: 'message', threadId: null, text: first })
     assert.match(request('/api/action', start, readToken).error ?? '', /Enable control/)
     const started = request('/api/action', start)
-    assert.equal(started.ok, true, started.error)
+    assert.equal(started.ok, true, started.error ?? 'Mobile message start failed')
     assert.ok(started.threadId)
     const threadId = started.threadId
     assert.deepEqual(
@@ -176,7 +176,7 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       '/api/action',
       action(sessionId, { action: 'message', threadId, text: followup }),
     )
-    assert.equal(queued.queued, true, queued.error)
+    assert.equal(queued.queued, true, queued.error ?? 'Mobile message queue failed')
     await expect($('.footer-queue')).toHaveText('1 queued')
     await saveAppScreenshot('mobile-controls-queued-desktop.png')
     assert.equal(

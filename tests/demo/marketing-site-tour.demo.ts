@@ -168,9 +168,7 @@ describe('marketing site Tour anchor', () => {
     const openSourceBadge = $('.hero-badges .mode-source-live-only')
     await expect(openSourceBadge).toBeDisplayed()
     await expect(openSourceBadge).toHaveText('Free & open source')
-    expect(
-      (await openSourceBadge.getSize('height')) ?? Number.POSITIVE_INFINITY,
-    ).toBeLessThanOrEqual(32)
+    expect(await openSourceBadge.getSize('height')).toBeLessThanOrEqual(32)
     await browser.saveScreenshot(
       join(E2E_SCREENSHOT_DIR, 'marketing-site-mobile-open-source-badge.png'),
     )

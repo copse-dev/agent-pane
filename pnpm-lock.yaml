@@ -135,6 +135,9 @@ importers:
       '@types/micromatch':
         specifier: ^4.0.9
         version: 4.0.10
+      '@types/mocha':
+        specifier: 10.0.10
+        version: 10.0.10
       '@types/node':
         specifier: ^26.6.3
         version: 26.6.3
@@ -156,6 +159,9 @@ importers:
       '@wdio/cli':
         specifier: ^9.32.0
         version: 9.32.0(@types/node@26.6.3)(expect-webdriverio@6.0.10)
+      '@wdio/globals':
+        specifier: 9.31.3
+        version: 9.31.3(expect-webdriverio@6.0.10)(webdriverio@9.32.0)
       '@wdio/local-runner':
         specifier: ^9.32.0
         version: 9.32.0(@wdio/globals@9.31.3)(webdriverio@9.32.0)
@@ -164,6 +170,9 @@ importers:
         version: 9.32.0
       '@wdio/spec-reporter':
         specifier: ^9.32.0
+        version: 9.32.0
+      '@wdio/types':
+        specifier: 9.32.0
         version: 9.32.0
       '@xterm/addon-fit':
         specifier: ^0.11.0

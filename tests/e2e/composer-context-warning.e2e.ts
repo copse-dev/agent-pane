@@ -1,5 +1,4 @@
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import {
@@ -43,9 +42,9 @@ describe('composer context-window warning', () => {
       composer.dispatchEvent(new Event('input', { bubbles: true }))
     }, OVERSIZED_DRAFT_REPEATS)
 
-    const warning = await $('.composer-context-warning')
+    const warning = await $('.composer-context-warning').getElement()
     await expect(warning).toBeDisplayed({ wait: 30_000 })
-    const text = await warning.$('.composer-context-warning-text')
+    const text = await warning.$('.composer-context-warning-text').getElement()
     await expect(text).toHaveText(/This thread no longer fits “GPT-4o mini”/)
     await expect(text).toHaveText(/context window holds 128K/)
     await expect(text).toHaveText(/Pick a model with a larger context window/)
@@ -56,9 +55,9 @@ describe('composer context-window warning', () => {
     await expect(warning).toHaveElementClass('is-over')
     const metrics = await composerBannerMetrics('.composer-context-warning')
     if (!metrics) throw new Error('context warning not found')
-    await expect(metrics.padding).toBe('8px 12px')
-    await expect(metrics.fontSize).toBe('12px')
-    await expect(metrics.actions).toEqual([
+    expect(metrics.padding).toBe('8px 12px')
+    expect(metrics.fontSize).toBe('12px')
+    expect(metrics.actions).toEqual([
       {
         label: 'Choose another model',
         padding: '4px 8px',

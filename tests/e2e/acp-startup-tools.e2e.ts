@@ -10,9 +10,9 @@ const THREAD_ID = 'e2e-acp-startup-thread'
 // names and expandable original diagnostic, through the real Electron reader.
 describe('Codex MCP startup failures', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     const now = 1_700_000_000_000
     writeSeedConfig({
@@ -69,7 +69,9 @@ describe('Codex MCP startup failures', () => {
     await browser.reloadSession()
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('shows distinct failed servers with their diagnostics and no activity spinner', async () => {
     const docs = $('[data-message-id="startup-assistant"] > [data-tool-id="startup-docs"]')

@@ -9,8 +9,8 @@ async function setChatPaneWidth(width: number): Promise<void> {
     for (const element of [pane, inputBar]) {
       if (!element) continue
       element.style.flex = '0 0 auto'
-      element.style.width = `${nextWidth}px`
-      element.style.maxWidth = `${nextWidth}px`
+      element.style.width = `${String(nextWidth)}px`
+      element.style.maxWidth = `${String(nextWidth)}px`
     }
     window.dispatchEvent(new Event('resize'))
   }, width)
@@ -50,7 +50,7 @@ describe('browser-hosted footer geometry', () => {
 
     await $('.footer-overflow-trigger').click()
     await expect($('.footer-overflow-menu')).toBeDisplayed()
-    const items = await $$('.footer-overflow-item')
+    const items = await $$('.footer-overflow-item').getElements()
     await expect(items).toBeElementsArrayOfSize(7)
     await expect(items[0]).toHaveText('Enable Guarded YOLO')
     await expect(items[1]).toHaveText('Run unattended in a container…')
@@ -80,7 +80,7 @@ describe('browser-hosted footer geometry', () => {
       await expect($('.footer-usage')).not.toBeDisplayed()
     }
 
-    const wheel = await $('.context-wheel')
+    const wheel = await $('.context-wheel').getElement()
     await expect(wheel).toBeDisplayed()
     const title = await wheel.getAttribute('title')
     expect(title).toContain(FOOTER_COMPACT_EXPECTATIONS.tokenLabel)
@@ -90,7 +90,7 @@ describe('browser-hosted footer geometry', () => {
 
     await $('.footer-overflow-trigger').click()
     await expect($('.footer-overflow-menu')).toBeDisplayed()
-    const items = await $$('.footer-overflow-item')
+    const items = await $$('.footer-overflow-item').getElements()
     await expect(items).toBeElementsArrayOfSize(7)
     await expect(items[0]).toHaveText('Enable Guarded YOLO')
     await expect(items[1]).toHaveText('Run unattended in a container…')

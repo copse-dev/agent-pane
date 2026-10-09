@@ -18,9 +18,9 @@ describe('ACP rich content', () => {
     const image = readFileSync(
       join(process.cwd(), 'tests/e2e/fixtures/inline-rollup-prototype.png'),
     ).toString('base64')
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     writeSeedConfig({

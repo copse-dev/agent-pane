@@ -58,7 +58,7 @@ async function diagramState(): Promise<DiagramState | null> {
     const svg = document.querySelector<SVGSVGElement>('.arch-canvas svg')
     const nodes = [...document.querySelectorAll<SVGGElement>('.diagram-node')]
     const edges = [...document.querySelectorAll<SVGPathElement>('.diagram-edge')]
-    const ids = new Set(nodes.map((node) => node.dataset.id ?? ''))
+    const ids = new Set(nodes.map((node) => node.dataset['id'] ?? ''))
     if (!svg || nodes.length === 0) return null
 
     let maxLabelOverflow = 0
@@ -71,7 +71,7 @@ async function diagramState(): Promise<DiagramState | null> {
         const overflow = label.getComputedTextLength() - available
         if (overflow > maxLabelOverflow) {
           maxLabelOverflow = overflow
-          labelWithMaxOverflow = label.textContent ?? ''
+          labelWithMaxOverflow = label.textContent
         }
       }
     }
@@ -82,8 +82,10 @@ async function diagramState(): Promise<DiagramState | null> {
           svg.viewBox.baseVal.width / svg.viewBox.baseVal.height,
       ),
       badEdges: edges
-        .filter((edge) => !ids.has(edge.dataset.from ?? '') || !ids.has(edge.dataset.to ?? ''))
-        .map((edge) => `${edge.dataset.from ?? '?'} -> ${edge.dataset.to ?? '?'}`),
+        .filter(
+          (edge) => !ids.has(edge.dataset['from'] ?? '') || !ids.has(edge.dataset['to'] ?? ''),
+        )
+        .map((edge) => `${edge.dataset['from'] ?? '?'} -> ${edge.dataset['to'] ?? '?'}`),
       edgeCount: edges.length,
       inspectorTitle: document.querySelector('.arch-inspector h3')?.textContent ?? '',
       labelWithMaxOverflow,
@@ -119,15 +121,13 @@ describe('architecture site diagrams', () => {
     await browser.waitUntil(() => browser.execute(() => document.fonts.status === 'loaded'))
 
     const labels = await browser.execute(() =>
-      [...document.querySelectorAll<HTMLButtonElement>('.arch-tab')].map(
-        (tab) => tab.textContent ?? '',
-      ),
+      [...document.querySelectorAll<HTMLButtonElement>('.arch-tab')].map((tab) => tab.textContent),
     )
     expect(labels).toEqual([...VIEW_ANCHORS.keys()])
     const links = await browser.execute(() =>
       Object.fromEntries(
         [...document.querySelectorAll<HTMLAnchorElement>('.arch-tab')].map((tab) => [
-          tab.textContent ?? '',
+          tab.textContent,
           tab.getAttribute('href') ?? '',
         ]),
       ),

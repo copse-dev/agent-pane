@@ -6,9 +6,9 @@ import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 
 describe('project quarantine and orphan recovery', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     const now = Date.now()
@@ -82,20 +82,20 @@ describe('project quarantine and orphan recovery', () => {
 
   it('shows preserved missing projects and recoverable orphan threads', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const missingRow = await $('.project-row.missing')
+    const missingRow = await $('.project-row.missing').getElement()
     await missingRow.waitForDisplayed({ timeout: 15_000 })
     await expect(missingRow.$('.project-name')).toHaveText('Moved project')
     assert.match((await missingRow.getAttribute('title')) ?? '', /folder missing/i)
 
     await missingRow.click()
-    const notice = await $('.project-missing-notice')
+    const notice = await $('.project-missing-notice').getElement()
     await notice.waitForDisplayed({ timeout: 10_000 })
     await expect(notice.$('.project-missing-text')).toHaveText(
       'This folder could not be opened. Its threads are safe — relocate the project to restore them.',
     )
     await expect(notice.$('.project-missing-btn')).toHaveText('Relocate…')
 
-    const orphanSection = await $('.orphans-section')
+    const orphanSection = await $('.orphans-section').getElement()
     await orphanSection.waitForDisplayed({ timeout: 15_000 })
     await expect(orphanSection.$('.orphans-heading')).toHaveText('Recoverable threads')
     await expect(orphanSection.$('.orphan-name')).toHaveText('Recovered planning notes')
@@ -109,15 +109,12 @@ describe('project quarantine and orphan recovery', () => {
     assert.equal(titleFits, true, 'the recoverable thread title should not be truncated')
 
     await orphanSection.$('.orphan-recover-btn').click()
-    const confirm = await $('#confirm-dialog')
+    const confirm = await $('#confirm-dialog').getElement()
     await confirm.waitForDisplayed({ timeout: 10_000 })
     await expect(confirm.$('.confirm-dialog-message')).toHaveText(
       'Recover “Recovered planning notes”?',
     )
-    assert.match(
-      (await confirm.$('.confirm-dialog-detail').getText()) ?? '',
-      /Recovered planning notes/,
-    )
+    assert.match(await confirm.$('.confirm-dialog-detail').getText(), /Recovered planning notes/)
     await expect(confirm.$('.confirm-dialog-confirm')).toHaveText('Choose folder…')
     await confirm.$('.confirm-dialog-cancel').click()
     await browser.waitUntil(async () => !(await confirm.isDisplayed()), { timeout: 5_000 })
@@ -127,7 +124,7 @@ describe('project quarantine and orphan recovery', () => {
 
   it('dismisses a recoverable orphan row from the sidebar without jumping to the top', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const orphanSection = await $('.orphans-section')
+    const orphanSection = await $('.orphans-section').getElement()
     await orphanSection.waitForDisplayed({ timeout: 15_000 })
 
     const scrollBefore = await browser.execute(() => {

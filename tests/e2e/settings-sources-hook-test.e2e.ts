@@ -79,12 +79,15 @@ describe('settings sources hooks (dry-run tester)', () => {
       '[.//span[@class="sources-row-title" and text()="beforeShellExecution"]]' +
       '[div[@class="sources-row-header"]/span[contains(@class,"sources-badge") and text()="project"]]' +
       '[div[@class="sources-row-detail" and text()="Cursor · cat"]]'
-    await browser.waitUntil(async () => (await hooksList.$$(seededRowSelector)).length === 1, {
-      timeout: 15_000,
-      timeoutMsg: 'expected the seeded Cursor hook to be listed',
-    })
+    await browser.waitUntil(
+      async () => (await hooksList.$$(seededRowSelector).getElements()).length === 1,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the seeded Cursor hook to be listed',
+      },
+    )
 
-    assert.equal((await hooksList.$$(seededRowSelector)).length, 1)
+    assert.equal((await hooksList.$$(seededRowSelector).getElements()).length, 1)
     const seededRow = hooksList.$(seededRowSelector)
     await expect(seededRow.$('.sources-row-title')).toHaveText('beforeShellExecution')
     await expect(seededRow.$('.sources-badge')).toHaveText('project', { ignoreCase: true })

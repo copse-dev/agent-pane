@@ -22,9 +22,12 @@ async function turn(prompt: string, name: string, args: Record<string, unknown>)
 async function guest(code: string, index: number): Promise<unknown> {
   return browser.execute(
     async (script, item) => {
-      const view = document.querySelectorAll('.canvas-inline-artefact webview').item(item)
-      const execute = view ? Reflect.get(view, 'executeJavaScript') : undefined
-      return typeof execute === 'function' ? execute.call(view, script) : null
+      const view = document.querySelectorAll<Electron.WebviewTag>(
+        '.canvas-inline-artefact webview',
+      )[item]
+      if (!view) return null
+      const result: unknown = await view.executeJavaScript(script)
+      return result
     },
     code,
     index,
@@ -44,17 +47,17 @@ async function previewId(): Promise<string> {
     .filter((t) => t.name.endsWith('preview_explainer'))
     .at(-1)
   assert.equal(call?.status, 'done')
-  assert.ok((call?.images?.length ?? 0) >= 4, 'actual scene frames must reach the model')
-  const id = call?.result?.match(/Preview ID: ([a-f0-9-]+)/)?.[1]
+  assert.ok((call.images?.length ?? 0) >= 4, 'actual scene frames must reach the model')
+  const id = call.result?.match(/Preview ID: ([a-f0-9-]+)/)?.[1]
   assert.ok(id)
   return id
 }
 
 describe('composed explainer scenes', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-explainer-scenes', {
       model: 'claude-sonnet-4-6',
@@ -68,7 +71,9 @@ describe('composed explainer scenes', () => {
       await window.api.plugins.setSetting('copse.mcp-ui-canvas', 'animatedExplainers', true)
     })
   })
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
   it('previews real frames, publishes the reviewed story and preserves causal state', async function () {
     this.timeout(180_000)
     await waitForPromptReady()
@@ -126,22 +131,19 @@ describe('composed explainer scenes', () => {
         assert.match(String(state), /"conflict":true/)
       }
       await prepareE2eScreenshot()
-      await browser.execute(
-        (item) =>
-          document
-            .querySelectorAll('.canvas-inline-artefact')
-            .item(item)
-            ?.scrollIntoView({ block: 'center' }),
-        index,
-      )
+      await browser.execute((item) => {
+        const card = document.querySelectorAll('.canvas-inline-artefact')[item]
+        if (!card) throw new Error('Expected an explainer scene card')
+        card.scrollIntoView({ block: 'center' })
+      }, index)
       const frame = await browser.execute(async (item) => {
-        const card = document.querySelectorAll('.canvas-inline-artefact').item(item)
-        const view = card?.querySelector('webview')
-        const getId = view ? Reflect.get(view, 'getWebContentsId') : undefined
-        if (typeof getId !== 'function') throw new Error('Expected live guest')
-        const capture = await window.api.browser.captureScreenshot(getId.call(view))
+        const card = document.querySelectorAll('.canvas-inline-artefact')[item]
+        if (!card) throw new Error('Expected an explainer scene card')
+        const view = card.querySelector<Electron.WebviewTag>('webview')
+        if (!view) throw new Error('Expected live guest')
+        const capture = await window.api.browser.captureScreenshot(view.getWebContentsId())
         const image = card.querySelector('img')
-        if (!image || !view) throw new Error('Missing preview')
+        if (!image) throw new Error('Missing preview')
         image.src = capture.dataUrl
         await image.decode()
         image.style.objectFit = 'contain'
@@ -150,10 +152,12 @@ describe('composed explainer scenes', () => {
         return capture.dataUrl
       }, index)
       await writeFile(
-        join(E2E_SCREENSHOT_DIR, `explainer-scenes-${index + 1}-player.png`),
+        join(E2E_SCREENSHOT_DIR, `explainer-scenes-${String(index + 1)}-player.png`),
         Buffer.from(frame.split(',')[1] ?? '', 'base64'),
       )
-      await $('#app').saveScreenshot(join(E2E_SCREENSHOT_DIR, `explainer-scenes-${index + 1}.png`))
+      await $('#app').saveScreenshot(
+        join(E2E_SCREENSHOT_DIR, `explainer-scenes-${String(index + 1)}.png`),
+      )
       await assertNoErrorToasts('composed explainer')
     }
     await browser.reloadSession()

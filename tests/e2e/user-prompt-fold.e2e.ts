@@ -8,9 +8,9 @@ describe('user prompt mid-fold accordion', () => {
   before(async function () {
     this.timeout(90_000)
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedUserPromptFoldFixture(process.cwd())
     await browser.reloadSession()
@@ -24,9 +24,9 @@ describe('user prompt mid-fold accordion', () => {
   })
 
   it('collapses prompts over 10 lines and expands on toggle', async () => {
-    const bubble = await $('[data-message-id="msg-user-fold"]')
-    const toggle = await bubble.$('.msg-user-fold-toggle')
-    const fold = await bubble.$('.message-text.msg-user-fold')
+    const bubble = await $('[data-message-id="msg-user-fold"]').getElement()
+    const toggle = await bubble.$('.msg-user-fold-toggle').getElement()
+    const fold = await bubble.$('.message-text.msg-user-fold').getElement()
 
     await expect(fold).toHaveElementClass('msg-user-fold')
     await expect(fold).not.toHaveElementClass('is-expanded')

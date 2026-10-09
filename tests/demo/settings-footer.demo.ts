@@ -24,24 +24,29 @@ describe('browser-hosted settings footer geometry', () => {
   it('reframes a capture target obscured by the footer and restores the scroll', async () => {
     await prepareE2eScreenshot()
     const before = await browser.execute(() => {
-      const content = document.querySelector<HTMLElement>('.settings-content')!
-      const footer = document.querySelector<HTMLElement>('.settings-buttons')!
+      const content = document.querySelector<HTMLElement>('.settings-content')
+      if (!content) throw new Error('Missing content capture subject')
+      const footer = document.querySelector<HTMLElement>('.settings-buttons')
+      if (!footer) throw new Error('Missing footer capture subject')
       const controls = [
         ...document.querySelectorAll<HTMLElement>(
           '.settings-section.active input, .settings-section.active button',
         ),
       ]
-      const target = controls.reverse().find((control) => control.checkVisibility())!
+      const target = controls.reverse().find((control) => control.checkVisibility())
+      if (!target) throw new Error('Missing target capture subject')
       target.setAttribute('data-capture-target', '')
       // Deliberately reproduce a stale position underneath the sticky bar.
       content.scrollTop +=
         target.getBoundingClientRect().bottom - footer.getBoundingClientRect().top - 20
       const rect = target.getBoundingClientRect()
+      const app = document.getElementById('app')
+      if (!app) throw new Error('Missing app capture frame')
       return {
         top: rect.top,
         bottom: rect.bottom,
         footerTop: footer.getBoundingClientRect().top,
-        shellBottom: document.getElementById('app')!.getBoundingClientRect().bottom,
+        shellBottom: app.getBoundingClientRect().bottom,
         scrollTop: content.scrollTop,
       }
     })
@@ -50,8 +55,12 @@ describe('browser-hosted settings footer geometry', () => {
     const saved = await browser.execute(recentreClippedCapture, '[data-capture-target]', '#app')
     assert.ok(saved, 'nested clipping must trigger reframing')
     const framed = await browser.execute(() => {
-      const rect = document.querySelector('[data-capture-target]')!.getBoundingClientRect()
-      const footer = document.querySelector('.settings-buttons')!.getBoundingClientRect()
+      const rectElement = document.querySelector('[data-capture-target]')
+      if (!rectElement) throw new Error('Missing rect capture element')
+      const rect = rectElement.getBoundingClientRect()
+      const footerElement = document.querySelector('.settings-buttons')
+      if (!footerElement) throw new Error('Missing footer capture element')
+      const footer = footerElement.getBoundingClientRect()
       const atCentre = document.elementFromPoint(
         rect.left + rect.width / 2,
         rect.top + rect.height / 2,
@@ -65,9 +74,11 @@ describe('browser-hosted settings footer geometry', () => {
     assert.equal(framed.ownsCentre, true)
     await saveElementScreenshot('#settings-dialog', 'settings-capture-footer-reframed.png')
     await browser.execute(restoreScrollAfterCapture, '[data-capture-target]', saved)
-    const restored = await browser.execute(
-      () => document.querySelector<HTMLElement>('.settings-content')!.scrollTop,
-    )
+    const restored = await browser.execute(() => {
+      const content = document.querySelector<HTMLElement>('.settings-content')
+      if (!content) throw new Error('Missing settings content')
+      return content.scrollTop
+    })
     assert.equal(restored, before.scrollTop)
   })
 

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { formatRemoteArtifactsSummary } from '../../src/main/services/remote/remote-agent-client.ts'
 import { resetUserData, seedRemoteArtifactFilenameFixture } from './helpers/seed-config.ts'

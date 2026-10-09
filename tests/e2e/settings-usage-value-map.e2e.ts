@@ -112,7 +112,7 @@ describe('settings usage model value map cost axis', () => {
 
     const discoverBtn = fieldset.$('button.frontier-discover')
     await expect(discoverBtn).toBeDisplayed()
-    const discoverLabels = await discoverBtn.$$('.frontier-discover-label')
+    const discoverLabels = await discoverBtn.$$('.frontier-discover-label').getElements()
     assert.equal(discoverLabels.length, 2)
     const inactiveDiscoverLabel = discoverLabels[0]
     const activeDiscoverLabel = discoverLabels[1]

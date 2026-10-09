@@ -6,7 +6,7 @@ import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 // swaps the project tree for status sections or one flat list.
 
 async function titles(): Promise<string[]> {
-  const rows = await $$('.chats-list .chat-title')
+  const rows = await $$('.chats-list .chat-title').getElements()
   return rows.map((row) => row.getText())
 }
 
@@ -16,7 +16,7 @@ async function openMenu(): Promise<void> {
 }
 
 async function choose(label: string): Promise<void> {
-  const items = await $$('.context-menu-item')
+  const items = await $$('.context-menu-item').getElements()
   for (const item of items) {
     if ((await item.getText()) === label) {
       await item.click()
@@ -65,7 +65,7 @@ describe('sidebar thread sort', () => {
   it('opens the header plus with New thread first, and closes it on a second click', async () => {
     await $('.projects-add-btn').click()
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
-    const labels = await (await $$('.context-menu-item')).map((i) => i.getText())
+    const labels = await (await $$('.context-menu-item').getElements()).map((i) => i.getText())
     expect(labels.slice(0, 2)).toEqual(['New thread', 'New project'])
     await saveAppScreenshot('sidebar-add-menu.png')
     await $('.projects-add-btn').click()
@@ -75,7 +75,7 @@ describe('sidebar thread sort', () => {
   it('counts each projects threads in the project menu', async () => {
     await $('.projects-filters .projects-filter-btn').click()
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
-    const rows = await (await $$('.context-menu-item')).map((i) => i.getText())
+    const rows = await (await $$('.context-menu-item').getElements()).map((i) => i.getText())
     expect(rows[0]).toMatch(/^All projects\s+\d+$/)
     await saveAppScreenshot('sidebar-project-menu.png')
     await $('.projects-filters .projects-filter-btn').click()
@@ -84,7 +84,7 @@ describe('sidebar thread sort', () => {
 
   it('offers the sorts and marks the current one', async () => {
     await openMenu()
-    const labels = await (await $$('.context-menu-item')).map((i) => i.getText())
+    const labels = await (await $$('.context-menu-item').getElements()).map((i) => i.getText())
     expect(labels).toEqual([
       'Status',
       'Project',
@@ -95,7 +95,9 @@ describe('sidebar thread sort', () => {
       'Reverse order',
       'Compact rows',
     ])
-    const checked = await (await $$('.context-menu-item.is-checked')).map((i) => i.getText())
+    const checked = await (
+      await $$('.context-menu-item.is-checked').getElements()
+    ).map((i) => i.getText())
     expect(checked).toEqual(['Project', 'Activity order'])
     await saveAppScreenshot('sidebar-thread-sort-menu.png')
     await browser.keys('Escape')
@@ -121,7 +123,9 @@ describe('sidebar thread sort', () => {
     await openMenu()
     await choose('Status')
     await $('.thread-section-heading').waitForExist({ timeout: 5_000 })
-    const headings = await (await $$('.thread-section-heading')).map((h) => h.getText())
+    const headings = await (
+      await $$('.thread-section-heading').getElements()
+    ).map((h) => h.getText())
     expect(headings).toEqual(['Working', 'Recent'])
     await expect($('.project-row')).not.toExist()
     await expect($('.chat-thread-owner')).toExist()
@@ -130,7 +134,9 @@ describe('sidebar thread sort', () => {
 
     await openMenu()
     await choose('None')
-    await browser.waitUntil(async () => (await $$('.thread-section-heading')).length === 0)
+    await browser.waitUntil(
+      async () => (await $$('.thread-section-heading').getElements()).length === 0,
+    )
     expect((await titles()).length).toBe(5)
     await expectOwnerLabelsFit()
     await saveAppScreenshot('sidebar-thread-group-none.png')

@@ -51,7 +51,9 @@ export async function assertPopoutModesAllShown(): Promise<void> {
  */
 export async function assertPopoutModesOverflowAt(width: number): Promise<void> {
   await browser.execute((px) => {
-    document.querySelector<HTMLElement>('.popout-titlebar')?.style.setProperty('width', `${px}px`)
+    document
+      .querySelector<HTMLElement>('.popout-titlebar')
+      ?.style.setProperty('width', `${String(px)}px`)
   }, width)
   try {
     let layout: PanelBarLayout | null = null

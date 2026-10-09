@@ -26,7 +26,11 @@ describe('isolated mermaid diagram rendering', () => {
   })
 
   after(async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await new Promise<void>((resolve) =>
+      server.close(() => {
+        resolve()
+      }),
+    )
     const { resetUserData } = await import('./helpers/seed-config.ts')
     resetUserData()
   })
@@ -34,7 +38,7 @@ describe('isolated mermaid diagram rendering', () => {
   it('renders and expands in opaque frames without inserting SVG into the app', async () => {
     const selector = '.message-text iframe.mermaid-frame[data-rendered="true"]'
     await $(selector).waitForExist({ timeout: 40_000 })
-    const frame = await $(selector)
+    const frame = await $(selector).getElement()
     expect(await frame.getAttribute('sandbox')).toBe('allow-scripts')
     const hostState = await browser.execute(() => {
       const frame = document.querySelector<HTMLIFrameElement>('iframe.mermaid-frame')
@@ -55,7 +59,7 @@ describe('isolated mermaid diagram rendering', () => {
       let parentBlocked = false
       let parentApiBlocked = false
       try {
-        void window.parent.document.body
+        window.parent.document.querySelector('body')
       } catch {
         parentBlocked = true
       }
@@ -88,9 +92,14 @@ describe('isolated mermaid diagram rendering', () => {
     await $('dialog.mermaid-expand-dialog[open]').waitForExist()
     await $('dialog .mermaid-frame[data-rendered="true"]').waitForExist({ timeout: 40_000 })
     expect(await $('dialog .mermaid-expand-stage svg').isExisting()).toBe(false)
-    await browser.switchFrame(await $('dialog .mermaid-frame'))
+    await browser.switchFrame(await $('dialog .mermaid-frame').getElement())
     const expandedFont = await browser.execute(() => ({
-      family: getComputedStyle(document.querySelector('svg')!).fontFamily,
+      family: getComputedStyle(
+        document.querySelector('svg') ??
+          ((): never => {
+            throw new Error("Missing fixture element: document.querySelector('svg')")
+          })(),
+      ).fontFamily,
       loaded: Array.from(document.fonts).filter(
         (font) => font.family === 'Pliant' && font.status === 'loaded',
       ).length,
@@ -131,55 +140,45 @@ describe('isolated mermaid diagram rendering', () => {
   })
 
   it('blocks network, inline script, navigation, and unsolicited parent messages even with code execution in the frame', async () => {
-    const frame = await $('.message-text iframe.mermaid-frame')
+    const frame = await $('.message-text iframe.mermaid-frame').getElement()
     const originalHeight = await frame.getCSSProperty('height')
     await browser.switchFrame(frame)
-    const probes = await browser.executeAsync((url, done) => {
-      const violations: string[] = []
-      document.addEventListener('securitypolicyviolation', (event) =>
-        violations.push(event.effectiveDirective),
-      )
-      const script = document.createElement('script')
-      script.textContent = 'document.body.dataset.inlineExecuted = "yes"'
-      document.body.append(script)
-      const img = document.createElement('img')
-      img.src = `${url}/diagram-image-probe`
-      document.body.append(img)
-      const svg = document.querySelector('svg')
-      for (const tag of ['image', 'use', 'feImage']) {
-        const resource = document.createElementNS('http://www.w3.org/2000/svg', tag)
-        resource.setAttribute('href', `${url}/diagram-svg-${tag}.svg#probe`)
-        svg?.append(resource)
-      }
-      const style = document.createElement('style')
-      style.textContent = `@import url('${url}/diagram-style.css');
-        @font-face { font-family: MermaidProbe; src: url('${url}/diagram-font.woff2'); }
-        .mermaid-probe { font-family: MermaidProbe; background-image: url('${url}/diagram-css-image.png'); }`
-      document.head.append(style)
-      const label = document.createElement('p')
-      label.className = 'mermaid-probe'
-      label.textContent = 'Force font loading'
-      document.body.append(label)
-      window.parent.postMessage({ type: 'rendered', width: 1e9, height: 1e9 }, '*')
-      void fetch(`${url}/diagram-fetch-probe`).then(
-        () =>
-          done({
-            fetchBlocked: false,
-            inlineExecuted: document.body.dataset['inlineExecuted'],
-            violations,
-          }),
-        () =>
-          setTimeout(
-            () =>
-              done({
-                fetchBlocked: true,
-                inlineExecuted: document.body.dataset['inlineExecuted'] ?? null,
-                violations,
-              }),
-            100,
-          ),
-      )
-    }, probeUrl)
+    const probes = await browser.execute(
+      (url) =>
+        new Promise<{ fetchBlocked: boolean; inlineExecuted: string | null; violations: string[] }>(
+          (done) => {
+            const violations: string[] = []
+            document.addEventListener('securitypolicyviolation', (event) =>
+              violations.push(event.effectiveDirective),
+            )
+            const script = document.createElement('script')
+            script.textContent = 'document.body.dataset.inlineExecuted = "yes"'
+            document.body.append(script)
+            const img = document.createElement('img')
+            img.src = `${url}/diagram-image-probe`
+            document.body.append(img)
+            window.parent.postMessage({ type: 'rendered', width: 1e9, height: 1e9 }, '*')
+            void fetch(`${url}/diagram-fetch-probe`).then(
+              () => {
+                done({
+                  fetchBlocked: false,
+                  inlineExecuted: document.body.dataset['inlineExecuted'] ?? null,
+                  violations,
+                })
+              },
+              () =>
+                setTimeout(() => {
+                  done({
+                    fetchBlocked: true,
+                    inlineExecuted: document.body.dataset['inlineExecuted'] ?? null,
+                    violations,
+                  })
+                }, 100),
+            )
+          },
+        ),
+      probeUrl,
+    )
     expect(probes.fetchBlocked).toBe(true)
     expect(probes.inlineExecuted).toBe(null)
     expect(probes.violations).toContain('connect-src')
@@ -191,7 +190,7 @@ describe('isolated mermaid diagram rendering', () => {
       window.location.href = `${url}/diagram-navigation-probe`
     }, probeUrl)
     await browser.switchToParentFrame()
-    await browser.switchFrame(await $('.message-text iframe.mermaid-frame'))
+    await browser.switchFrame(await $('.message-text iframe.mermaid-frame').getElement())
     const navigation = await browser.execute(() => window.location.href)
     // Chromium replaces the cancelled navigation with its local error document.
     // The security assertion is that the destination receives no request.

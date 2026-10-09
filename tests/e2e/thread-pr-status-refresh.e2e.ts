@@ -35,14 +35,14 @@ describe('thread GitHub PR status refresh', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(openThreadTitle)
 
-    const openIcon = await $('.chat-row.selected .chat-pr-status')
+    const openIcon = await $('.chat-row.selected .chat-pr-status').getElement()
     await openIcon.waitForExist({ timeout: 15_000 })
     await expect(openIcon).toHaveElementClass('is-open')
 
     const refreshing = await browser.execute(() => {
       const originalNow = Date.now
       const expiredAt = originalNow() + 60_001
-      Date.now = () => expiredAt
+      Date.now = (): number => expiredAt
       try {
         const searchInput = document.querySelector<HTMLInputElement>('.projects-search-input')
         searchInput?.dispatchEvent(new Event('input', { bubbles: true }))
@@ -57,9 +57,9 @@ describe('thread GitHub PR status refresh', () => {
       }
     })
 
-    await expect(refreshing.exists).toBe(true)
-    await expect(refreshing.open).toBe(true)
-    await expect(refreshing.label).toMatch(/#42.*open/i)
+    expect(refreshing.exists).toBe(true)
+    expect(refreshing.open).toBe(true)
+    expect(refreshing.label).toMatch(/#42.*open/i)
     await saveElementScreenshot('#pane-projects', 'thread-pr-status-refresh.png')
   })
 })

@@ -1,3 +1,5 @@
+import type { ClickOptions } from 'webdriverio'
+
 /**
  * Settings' Save/Cancel bar is `position: sticky` at the bottom of the
  * `.settings-content` scrollport. It paints a translucent wash — see
@@ -50,7 +52,8 @@ export const ACTION_BAR_CLEARANCE_PX = 8
  * {@link ACTION_BAR_CLEARANCE_PX} directly. `settings-action-bar-click.test.ts`
  * pins this by re-parsing the function the way WDIO does.
  */
-export function scrollClearOfSettingsActionBar(element: Element, clearancePx: number): boolean {
+export function scrollClearOfSettingsActionBar(element: unknown, clearancePx: number): boolean {
+  if (!(element instanceof Element)) return false
   const scroller = element.closest('.settings-content')
   if (!(scroller instanceof HTMLElement)) return false
   const bar = scroller.querySelector(':scope > .settings-buttons')
@@ -78,7 +81,7 @@ export function scrollClearOfSettingsActionBar(element: Element, clearancePx: nu
 /** The slice of a WDIO browser this helper needs. Kept structural so unit fakes stay small. */
 export type ActionBarClickSession = {
   execute: (
-    script: (element: Element, clearancePx: number) => boolean,
+    script: (element: unknown, clearancePx: number) => boolean,
     element: unknown,
     clearancePx: number,
   ) => Promise<unknown>
@@ -89,14 +92,14 @@ export type ActionBarClickSession = {
    * `after-test-safety.ts` for the same constraint on `deleteSession`.
    */
   overwriteCommand?: (
-    name: string,
+    name: 'click',
     // WDIO binds `this` to the element; keep it untyped so unit fakes stay simple.
     fn: (
       this: unknown,
-      origCommand: (...args: unknown[]) => unknown,
-      ...args: unknown[]
-    ) => unknown,
-    attachToElement?: boolean,
+      origCommand: (options?: ClickOptions) => unknown,
+      options?: ClickOptions,
+    ) => Promise<unknown>,
+    attachToElement?: true,
   ) => void
 }
 
@@ -148,14 +151,14 @@ export function installSettingsActionBarClickSafety(session: ActionBarClickSessi
     'click',
     async function overwriteClick(
       this: unknown,
-      origClick: (...args: unknown[]) => unknown,
-      ...args: unknown[]
+      origClick: (options?: ClickOptions) => unknown,
+      ...args: [options?: ClickOptions]
     ) {
       try {
         return await origClick.apply(this, args)
       } catch (error) {
         if (!isClickIntercepted(error)) throw error
-        let scrolled = false
+        let scrolled: boolean
         try {
           scrolled =
             (await session.execute(

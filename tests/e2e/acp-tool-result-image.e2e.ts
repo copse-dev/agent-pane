@@ -17,9 +17,9 @@ describe('ACP tool-result images', () => {
     const image = readFileSync(
       join(process.cwd(), 'tests/e2e/fixtures/inline-rollup-prototype.png'),
     )
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     writeSeedConfig({
@@ -111,7 +111,7 @@ describe('ACP tool-result images', () => {
     await expect(thumbnail).toHaveAttribute('alt', 'tool-rollup-options.png')
     await expect(thumbnail).toHaveAttribute('role', 'button')
     await expect(thumbnail).toHaveAttribute('aria-label', 'Expand tool-rollup-options.png')
-    assert.match(await thumbnail.getAttribute('src'), /^data:image\/png;base64,/)
+    assert.match((await thumbnail.getAttribute('src')) ?? '', /^data:image\/png;base64,/)
     const previewHeight = await thumbnail.getSize('height')
     assert.ok(
       previewHeight > 240,
@@ -158,7 +158,10 @@ describe('ACP tool-result images', () => {
     const dialog = $('dialog.attachment-preview-dialog[open]')
     await dialog.waitForDisplayed({ timeout: 5_000 })
     await expect($('.attachment-preview-title')).toHaveText('tool-rollup-options.png')
-    assert.match(await $('.image-expand-image').getAttribute('src'), /^data:image\/png;base64,/)
+    assert.match(
+      (await $('.image-expand-image').getAttribute('src')) ?? '',
+      /^data:image\/png;base64,/,
+    )
     await $('.attachment-preview-close').click()
   })
 })

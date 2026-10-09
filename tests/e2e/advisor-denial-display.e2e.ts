@@ -6,9 +6,9 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
 describe('advisor denial tool card', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedAdvisorDenialFixture(process.cwd())
     await browser.reloadSession()
@@ -19,7 +19,7 @@ describe('advisor denial tool card', () => {
   })
 
   it('shows the denial as readable paragraphs while keeping the call arguments separate', async () => {
-    const card = await $('[data-tool-id="tc-advisor-denial"]')
+    const card = await $('[data-tool-id="tc-advisor-denial"]').getElement()
     await card.waitForExist({ timeout: 30_000 })
     await expect(card).toHaveAttribute('data-status', 'error')
     await expect(card).toHaveAttribute('open')

@@ -79,8 +79,14 @@ describe('classifier connections settings', () => {
     })
     resetUserData()
     await new Promise<void>((resolve, reject) => {
-      if (!server) return resolve()
-      server.close((error) => (error ? reject(error) : resolve()))
+      if (!server) {
+        resolve()
+        return
+      }
+      server.close((error) => {
+        if (error) reject(error)
+        else resolve()
+      })
     })
   })
 
@@ -91,19 +97,19 @@ describe('classifier connections settings', () => {
   async function saveClassifierScreenshot(selector: string, filename: string): Promise<void> {
     await browser.execute(() => {
       for (const input of document.querySelectorAll<HTMLInputElement>('[name="classifierUrl"]')) {
-        input.dataset.e2eReal = input.value
+        input.dataset['e2eReal'] = input.value
         input.value = input.value.replace(/:\d+(?=\/)/, ':4000')
       }
       for (const code of document.querySelectorAll('#settings-classifiers-host .field-hint code')) {
-        code.setAttribute('data-e2e-real', code.textContent ?? '')
-        code.textContent = (code.textContent ?? '').replace(/-[0-9a-f]{8}$/, '-00000000')
+        code.setAttribute('data-e2e-real', code.textContent)
+        code.textContent = code.textContent.replace(/-[0-9a-f]{8}$/, '-00000000')
       }
     })
     await saveElementScreenshot(selector, filename)
     await browser.execute(() => {
       for (const input of document.querySelectorAll<HTMLInputElement>('[data-e2e-real]')) {
-        input.value = input.dataset.e2eReal ?? input.value
-        delete input.dataset.e2eReal
+        input.value = input.dataset['e2eReal'] ?? input.value
+        delete input.dataset['e2eReal']
       }
       for (const code of document.querySelectorAll('code[data-e2e-real]')) {
         code.textContent = code.getAttribute('data-e2e-real')
@@ -208,7 +214,7 @@ describe('classifier connections settings', () => {
     )
     assert.equal(savedProfiles.length, 1)
     assert.equal(savedProfiles[0]?.hasKey, true)
-    assert.equal(savedProfiles[0]?.profile.timeoutMs, 1005)
+    assert.equal(savedProfiles[0].profile.timeoutMs, 1005)
     assert.equal(
       JSON.stringify(savedProfiles).includes('classifier-e2e-secret'),
       false,
@@ -417,9 +423,12 @@ describe('classifier connections settings', () => {
     await assertErrorColor('#settings-classifiers-host .classifier-status .ui-inline-status')
     await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-error.png')
     await clickAction('remove')
-    await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 1, {
-      timeout: 10_000,
-    })
+    await browser.waitUntil(
+      async () => (await host.$$('[data-classifier-id]').getElements()).length === 1,
+      {
+        timeout: 10_000,
+      },
+    )
     // Removing the screening connection hands screening back to the safety model.
     await expect(screening).toHaveValue('')
     assert.equal(await browser.execute(async () => window.api.classifiers.screening()), null)
@@ -427,9 +436,12 @@ describe('classifier connections settings', () => {
     await expect(background).toHaveValue('')
     assert.equal(await browser.execute(async () => window.api.classifiers.background()), null)
     await clickAction('remove')
-    await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 0, {
-      timeout: 10_000,
-    })
+    await browser.waitUntil(
+      async () => (await host.$$('[data-classifier-id]').getElements()).length === 0,
+      {
+        timeout: 10_000,
+      },
+    )
   })
 
   it('keeps a connection removable when its first key save fails validation', async () => {
@@ -459,7 +471,7 @@ describe('classifier connections settings', () => {
     )
     assert.equal(savedProfiles.length, 1)
     assert.equal(savedProfiles[0]?.hasKey, false)
-    assert.equal((await host.$$('[data-classifier-id]')).length, 1)
+    assert.equal((await host.$$('[data-classifier-id]').getElements()).length, 1)
     await expect(host.$('.classifier-remove')).toHaveText('Remove classifier')
     await expect(host.$('.classifier-test')).toBeDisabled()
     await expect(host.$('.classifier-status')).not.toHaveText(
@@ -467,9 +479,12 @@ describe('classifier connections settings', () => {
     )
     await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-key-failure.png')
     await clickAction('remove')
-    await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 0, {
-      timeout: 10_000,
-    })
+    await browser.waitUntil(
+      async () => (await host.$$('[data-classifier-id]').getElements()).length === 0,
+      {
+        timeout: 10_000,
+      },
+    )
     assert.deepEqual(await browser.execute(async () => window.api.classifiers.list()), [])
   })
 })

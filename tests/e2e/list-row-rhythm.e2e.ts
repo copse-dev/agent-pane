@@ -111,10 +111,13 @@ describe('list row rhythm', () => {
 
   it('gives thread, project and project group rows the same block padding', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await browser.waitUntil(async () => (await $$('.chats-list .chat-row')).length > 0, {
-      timeout: 20_000,
-      timeoutMsg: 'expected seeded thread rows in the sidebar',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.chats-list .chat-row').getElements()).length > 0,
+      {
+        timeout: 20_000,
+        timeoutMsg: 'expected seeded thread rows in the sidebar',
+      },
+    )
 
     const rhythm = await rowRhythm()
     assert.ok(rhythm > 0, 'expected --list-row-padding-block to resolve')
@@ -136,7 +139,7 @@ describe('list row rhythm', () => {
     await roadmapButton.click()
 
     try {
-      await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 2, {
+      await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 2, {
         timeout: 20_000,
         timeoutMsg: 'expected two seeded roadmap rows',
       })

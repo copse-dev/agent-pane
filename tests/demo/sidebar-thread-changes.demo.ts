@@ -5,10 +5,10 @@ import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 // PR slot; the detail is tooltip / aria-label only, and clean rows stay bare.
 
 async function glyphLabel(title: string): Promise<string | null> {
-  const rows = await $$('.chats-list .chat-row')
+  const rows = await $$('.chats-list .chat-row').getElements()
   for (const row of rows) {
     if ((await row.$('.chat-title').getText()) !== title) continue
-    const glyph = await row.$('.chat-changes-status')
+    const glyph = await row.$('.chat-changes-status').getElement()
     return (await glyph.isExisting()) ? glyph.getAttribute('aria-label') : null
   }
   throw new Error(`No sidebar row titled "${title}"`)
@@ -26,17 +26,17 @@ describe('sidebar thread changes glyph', () => {
     expect(await glyphLabel('Add a retry to uploads')).toBe('Uncommitted changes')
     expect(await glyphLabel('Update onboarding copy')).toBeNull()
     expect(await glyphLabel('Run the schema migration')).toBeNull()
-    expect(await $$('.chat-changes-status')).toHaveLength(2)
-    expect(await $$('.chat-pr-status')).toHaveLength(0)
+    expect(await $$('.chat-changes-status').getElements()).toHaveLength(2)
+    expect(await $$('.chat-pr-status').getElements()).toHaveLength(0)
     await saveAppScreenshot('sidebar-thread-changes.png')
   })
   for (const width of [800, 1600]) {
-    it(`keeps changes glyphs visible at ${width}px`, async () => {
+    it(`keeps changes glyphs visible at ${String(width)}px`, async () => {
       await browser.setWindowSize(width, 900)
       expect(await glyphLabel('Refactor auth')).toBe('2 unpushed commits')
       expect(await glyphLabel('Add a retry to uploads')).toBe('Uncommitted changes')
       await expect($('.chat-changes-status')).toBeDisplayed()
-      await saveAppScreenshot(`sidebar-thread-changes-${width}.png`)
+      await saveAppScreenshot(`sidebar-thread-changes-${String(width)}.png`)
     })
   }
 })

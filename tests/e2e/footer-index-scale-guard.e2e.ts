@@ -6,10 +6,6 @@ import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
-type CopseE2e = {
-  setSemanticIndexScaleGuard: (phase: 'limited' | 'skipped', reason: string) => Promise<void>
-}
-
 describe('footer index scale guard', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
@@ -27,11 +23,11 @@ describe('footer index scale guard', () => {
 
   it('shows the skipped semantic-index chip with scale-guard reason', async () => {
     await $('.input-footer').waitForExist({ timeout: 30_000 })
-    const chip = await $('.footer-indexing')
+    const chip = await $('.footer-indexing').getElement()
     await expect(chip).not.toBeDisplayed()
 
     await browser.execute(async () => {
-      const e2e = (window as unknown as { __copseE2e?: CopseE2e }).__copseE2e
+      const e2e = window.__copseE2e
       if (!e2e?.setSemanticIndexScaleGuard) {
         throw new Error('__copseE2e.setSemanticIndexScaleGuard unavailable')
       }
@@ -49,9 +45,9 @@ describe('footer index scale guard', () => {
     const divider = await chip.getCSSProperty('border-right-width')
     const inset = await chip.getCSSProperty('padding-right')
     expect(divider.value).toBe('1px')
-    expect(Number.parseFloat(inset.value)).toBeGreaterThan(0)
+    expect(Number.parseFloat(inset.value ?? '')).toBeGreaterThan(0)
 
-    const wheel = await $('.context-wheel')
+    const wheel = await $('.context-wheel').getElement()
     await expect(wheel).toBeDisplayed()
     await expect(wheel).toHaveAttribute('aria-label', /Context 40% used/)
     const geometry = await browser.execute(() => {

@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { build } from 'esbuild'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -8,16 +9,18 @@ const cases = [
   [
     'wide',
     'graph LR\n' +
-      Array.from({ length: 14 }, (_, i) => `N${i}[Step ${i}] --> N${i + 1}[Step ${i + 1}]`).join(
-        '\n',
-      ),
+      Array.from(
+        { length: 14 },
+        (_, i) => `N${String(i)}[Step ${String(i)}] --> N${String(i + 1)}[Step ${String(i + 1)}]`,
+      ).join('\n'),
   ],
   [
     'tall',
     'graph TD\n' +
-      Array.from({ length: 35 }, (_, i) => `N${i}[Step ${i}] --> N${i + 1}[Step ${i + 1}]`).join(
-        '\n',
-      ),
+      Array.from(
+        { length: 35 },
+        (_, i) => `N${String(i)}[Step ${String(i)}] --> N${String(i + 1)}[Step ${String(i + 1)}]`,
+      ).join('\n'),
   ],
   [
     'sequence',
@@ -45,8 +48,28 @@ const cases = [
 ] as const
 
 // Executed inside either the parent document or the opaque frame by WebDriver.
-function measure(selector: string) {
-  const root = document.querySelector(selector)!
+type RenderedMeasure = {
+  svg: true
+  box: [number, number, number, number]
+  texts: string[]
+  font: { family: string; size: string; weight: string; lineHeight: string } | null
+  rect: [number, number]
+  math: number
+  fontRuns: {
+    text: string
+    family: string
+    size: string
+    weight: string
+    style: string
+    lineHeight: string
+  }[]
+  loadedPliant: string[]
+}
+type Measure = RenderedMeasure | { svg: false; text: string | null; fallback: boolean }
+
+function measure(selector: string): Measure {
+  const root = document.querySelector(selector)
+  if (root == null) throw new Error('Missing root in test fixture')
   const svg = root.querySelector('svg')
   if (!svg)
     return {
@@ -58,7 +81,7 @@ function measure(selector: string) {
   const label = svg.querySelector('.nodeLabel, .messageText, text, .label')
   const style = label ? getComputedStyle(label) : null
   const texts = Array.from(svg.querySelectorAll('text, .nodeLabel, .edgeLabel'))
-    .map((e) => e.textContent?.trim())
+    .map((e) => e.textContent.trim())
     .filter(Boolean)
   const rect = svg.getBoundingClientRect()
   const fontRuns = []
@@ -118,13 +141,20 @@ describe('Mermaid same-environment rendering parity', () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'mermaid-parity')
     await browser.reloadSession()
-    const loaded = await browser.executeAsync((done) => {
-      const script = document.createElement('script')
-      script.src = new URL('./mermaid-parity.js', location.href).href
-      script.onload = () => done(true)
-      script.onerror = () => done(false)
-      document.head.append(script)
-    })
+    const loaded = await browser.execute(
+      () =>
+        new Promise<boolean>((done) => {
+          const script = document.createElement('script')
+          script.src = new URL('./mermaid-parity.js', location.href).href
+          script.onload = (): void => {
+            done(true)
+          }
+          script.onerror = (): void => {
+            done(false)
+          }
+          document.head.append(script)
+        }),
+    )
     expect(loaded).toBe(true)
   })
   after(async () => {
@@ -134,14 +164,11 @@ describe('Mermaid same-environment rendering parity', () => {
   })
   for (const [name, source] of cases) {
     it(`compares ${name}`, async () => {
-      await browser.executeAsync(
-        (source, name, done) => {
-          Reflect.get(window, 'mermaidParity')
-            .pair(source, name)
-            .then(
-              () => done(true),
-              (e: unknown) => done(String(e)),
-            )
+      await browser.execute(
+        async (source, name) => {
+          const parity = window.mermaidParity
+          if (!parity) throw new Error('Mermaid parity fixture is not loaded')
+          await parity.pair(source, name)
         },
         source,
         name,
@@ -149,7 +176,7 @@ describe('Mermaid same-environment rendering parity', () => {
       const baseline = await browser.execute(measure, '#baseline')
       let isolated
       if (await $('#isolated iframe').isExisting()) {
-        await browser.switchFrame(await $('#isolated iframe'))
+        await browser.switchFrame(await $('#isolated iframe').getElement())
         isolated = await browser.execute(measure, 'body')
         await browser.switchToParentFrame()
       } else isolated = await browser.execute(measure, '#isolated')
@@ -158,25 +185,31 @@ describe('Mermaid same-environment rendering parity', () => {
         await saveAppScreenshot(`mermaid-parity-${name}.png`)
       expect(isolated.svg).toBe(baseline.svg)
       if (baseline.svg) {
+        if (!isolated.svg) throw new Error('Isolated Mermaid must render the same valid diagram')
         expect(isolated.texts).toEqual(baseline.texts)
         expect(isolated.box).toEqual(baseline.box)
         expect(isolated.font).toEqual(baseline.font)
         expect(isolated.fontRuns).toEqual(baseline.fontRuns)
         expect(isolated.loadedPliant).toEqual(['italic', 'normal'])
         expect(baseline.loadedPliant).toEqual(['italic', 'normal'])
-        for (const run of isolated.fontRuns!) expect(run.family).toContain('Pliant')
+        for (const run of isolated.fontRuns) expect(run.family).toContain('Pliant')
         expect(isolated.math).toBe(baseline.math)
         // Chromium rounds the opaque frame's viewport to whole CSS pixels.
         for (let i = 0; i < 2; i++) {
-          expect(Math.abs(isolated.rect![i]! - baseline.rect![i]!)).toBeLessThan(1)
+          expect(Math.abs(at(isolated.rect, i) - at(baseline.rect, i))).toBeLessThan(1)
         }
-      } else expect(isolated.fallback).toBe(true)
+      } else {
+        if (isolated.svg) throw new Error('Invalid Mermaid source unexpectedly rendered')
+        expect(isolated.fallback).toBe(true)
+      }
     })
   }
   it('streams to a final frame and repeatedly expands and closes it', async () => {
-    const result = await browser.executeAsync((done) =>
-      Reflect.get(window, 'mermaidParity').stream().then(done),
-    )
+    const result = await browser.execute(async () => {
+      const parity = window.mermaidParity
+      if (!parity) throw new Error('Mermaid parity fixture is not loaded')
+      return await parity.stream()
+    })
     expect(result.prematureFrames).toBe(0)
     expect(result.frames).toBe(1)
     expect(result.text).toContain('After diagram.')
@@ -193,17 +226,19 @@ describe('Mermaid same-environment rendering parity', () => {
       expect(await $('.mermaid-expand-zoom-label').getText()).toBe(initialZoom)
       await $('.mermaid-expand-close').click()
       await $('dialog iframe').waitForExist({ reverse: true })
-      expect(await $$('dialog iframe')).toHaveLength(0)
-      expect(await $$('#isolated iframe')).toHaveLength(1)
+      expect(await $$('dialog iframe').getElements()).toHaveLength(0)
+      expect(await $$('#isolated iframe').getElements()).toHaveLength(1)
     }
-    report.streaming = result
-    report.expansionMs = timings
+    report['streaming'] = result
+    report['expansionMs'] = timings
   })
   it('renders a conversation with ten diagrams', async () => {
-    const result = await browser.executeAsync((done) =>
-      Reflect.get(window, 'mermaidParity').many(10).then(done),
-    )
-    report.many = result
+    const result = await browser.execute(async () => {
+      const parity = window.mermaidParity
+      if (!parity) throw new Error('Mermaid parity fixture is not loaded')
+      return await parity.many(10)
+    })
+    report['many'] = result
     expect(result.frames).toBe(10)
     expect(result.fallbacks).toBe(0)
   })

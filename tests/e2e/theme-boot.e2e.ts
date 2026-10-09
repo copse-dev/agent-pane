@@ -35,7 +35,7 @@ describe('theme boot before first paint (#41)', () => {
 
   it('preserves the boot theme query when opening a popout', async () => {
     const mainHandle = (await browser.getWindowHandles())[0]
-    expect(mainHandle).toBeDefined()
+    if (!mainHandle) throw new Error('Expected the main window handle')
     const before = await browser.getWindowHandles()
     await browser.execute(() => window.api.panes.popout('explorer'))
     await browser.waitUntil(async () => (await browser.getWindowHandles()).length > before.length, {
@@ -45,8 +45,8 @@ describe('theme boot before first paint (#41)', () => {
     const popoutHandle = (await browser.getWindowHandles()).find(
       (handle) => !before.includes(handle),
     )
-    expect(popoutHandle).toBeDefined()
-    await browser.switchToWindow(popoutHandle as string)
+    if (!popoutHandle) throw new Error('Expected a new pop-out window handle')
+    await browser.switchToWindow(popoutHandle)
 
     const themeState = await browser.execute(() => ({
       htmlTheme: document.documentElement.dataset['theme'] ?? null,
@@ -67,6 +67,6 @@ describe('theme boot before first paint (#41)', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'theme-boot-popout-light.png'))
 
     await browser.closeWindow()
-    await browser.switchToWindow(mainHandle as string)
+    await browser.switchToWindow(mainHandle)
   })
 })

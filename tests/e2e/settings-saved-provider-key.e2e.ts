@@ -14,8 +14,8 @@ describe('testing a configured provider key', () => {
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.OPENROUTER_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['OPENROUTER_API_KEY'] = ''
 
     server = createServer((request, response) => {
       const url = request.url ?? ''
@@ -52,8 +52,14 @@ describe('testing a configured provider key', () => {
   after(async () => {
     resetUserData()
     await new Promise<void>((resolve, reject) => {
-      if (!server) return resolve()
-      server.close((error) => (error ? reject(error) : resolve()))
+      if (!server) {
+        resolve()
+        return
+      }
+      server.close((error) => {
+        if (error) reject(error)
+        else resolve()
+      })
     })
   })
 

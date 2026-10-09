@@ -30,7 +30,7 @@ describe('native ChatGPT plan connection settings', () => {
     writeE2eEnv({
       COPSE_PRESERVE_PATH: '1',
       PATH: (process.platform === 'win32'
-        ? [join(process.env['SystemRoot'] ?? 'C:\Windows', 'System32')]
+        ? [join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32')]
         : ['/usr/bin', '/bin']
       ).join(delimiter),
     })

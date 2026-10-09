@@ -47,7 +47,7 @@ describe('roadmap items in the quick-open palette (Cmd/Ctrl+P)', () => {
   })
 
   it('lists a matching roadmap item and opens it in the Roadmap pane', async () => {
-    const dialog = await $('#file-search-dialog')
+    const dialog = await $('#file-search-dialog').getElement()
 
     await browser.execute(() => {
       document.dispatchEvent(
@@ -59,11 +59,11 @@ describe('roadmap items in the quick-open palette (Cmd/Ctrl+P)', () => {
     // Results wait on the workspace file index even for roadmap matches (the
     // query runs both lookups), so keep re-typing until the row surfaces —
     // the same pattern as the file-search palette spec.
-    const input = await $('.file-search-input')
+    const input = await $('.file-search-input').getElement()
     await browser.waitUntil(
       async () => {
         await input.setValue('quokka')
-        const rows = await $$('.file-search-roadmap-item')
+        const rows = await $$('.file-search-roadmap-item').getElements()
         return rows.length > 0
       },
       { timeout: 20_000, interval: 1000, timeoutMsg: 'no roadmap result for "quokka"' },
@@ -72,11 +72,11 @@ describe('roadmap items in the quick-open palette (Cmd/Ctrl+P)', () => {
     // Only the quokka item matches; it renders under the "Roadmap" section
     // header. Default `ready` stays silent (no status chip) — same rule as the
     // Roadmap list.
-    const section = await $('.file-search-section')
+    const section = await $('.file-search-section').getElement()
     await expect(section).toHaveText('roadmap', { ignoreCase: true })
-    const rows = await $$('.file-search-roadmap-item')
+    const rows = await $$('.file-search-roadmap-item').getElements()
     expect(rows.length).toBe(1)
-    const name = await $('.file-search-roadmap-item .file-search-name')
+    const name = await $('.file-search-roadmap-item .file-search-name').getElement()
     await expect(name).toHaveText('Polish the quokka onboarding flow')
     assert.equal(
       await $('.file-search-roadmap-item .roadmap-status-badge').isExisting(),
@@ -88,14 +88,14 @@ describe('roadmap items in the quick-open palette (Cmd/Ctrl+P)', () => {
 
     // Choosing the match closes the palette and lands in the Roadmap pane with
     // the item selected and its editor populated.
-    const row = await $('.file-search-roadmap-item')
+    const row = await $('.file-search-roadmap-item').getElement()
     await row.click()
     await dialog.waitForDisplayed({ timeout: 10_000, reverse: true })
 
-    const selectedTitle = await $('.roadmap-row.is-selected .roadmap-row-title')
+    const selectedTitle = await $('.roadmap-row.is-selected .roadmap-row-title').getElement()
     await selectedTitle.waitForDisplayed({ timeout: 10_000 })
     await expect(selectedTitle).toHaveText('Polish the quokka onboarding flow')
-    const prompt = await $('.roadmap-prompt-input')
+    const prompt = await $('.roadmap-prompt-input').getElement()
     await expect(prompt).toHaveValue('Polish the quokka onboarding flow end to end.')
 
     await saveAppScreenshot('roadmap-search-palette-opened.png')

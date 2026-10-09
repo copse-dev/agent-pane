@@ -24,7 +24,7 @@ describe('built-in browser tools setting', () => {
     const permissions = $('.settings-section[data-section="permissions"]')
     await expect(permissions).toBeDisplayed()
 
-    const toggle = await permissions.$('input[name="browserToolsEnabled"]')
+    const toggle = await permissions.$('input[name="browserToolsEnabled"]').getElement()
     await expect(toggle).toBeExisting()
     // On by default: the agent uses the bundled browser instead of installing one.
     assert.equal(await toggle.isSelected(), true)

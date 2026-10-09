@@ -69,14 +69,14 @@ describe('PR panel mixed-case GitHub identity', () => {
 
   it('enriches and agent-links a differently cased chat URL as one PR', async function () {
     this.timeout(120_000)
-    const pane = await $('#pane-files')
+    const pane = await $('#pane-files').getElement()
     if (!(await pane.isDisplayed())) {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
     await $('[aria-label="Open pull requests"]').click()
 
-    const linked = await $('.pr-list-row[data-pr-section="linked"]')
+    const linked = await $('.pr-list-row[data-pr-section="linked"]').getElement()
     await linked.waitForDisplayed({ timeout: 15_000 })
     await expect(linked.$('.pr-list-title')).toHaveText('Add GitHub PR panel tab')
     await expect(linked.$('.pr-list-agent-badge')).toBeDisplayed()

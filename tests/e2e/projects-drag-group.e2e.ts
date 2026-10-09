@@ -64,7 +64,7 @@ describe('projects sidebar groups', () => {
     // the sidebar is still being rebuilt, and a click into that window lands on a
     // row the next render replaces.
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const groupRow = await $('.project-group-row')
+    const groupRow = await $('.project-group-row').getElement()
     await groupRow.waitForExist({ timeout: 10_000 })
 
     // Assert the fold against the group's own members rather than the sidebar's

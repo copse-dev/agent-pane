@@ -9,9 +9,9 @@ import { resetUserData, seedE2eThreePaneLayout } from './helpers/seed-config.ts'
 import { createTodoWorkspace, seedTodoPlanFixtures } from './todo-plan-fixtures.ts'
 
 async function openRightPanel(): Promise<void> {
-  const pane = await $('#pane-files')
+  const pane = await $('#pane-files').getElement()
   if (await pane.isDisplayed()) return
-  await (await $('.titlebar-btn[aria-label="Toggle right panel"]')).click()
+  await (await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()).click()
   await pane.waitForDisplayed({ timeout: 5_000 })
 }
 
@@ -51,27 +51,29 @@ describe('todo plan display', () => {
     // the panel is unambiguously the plan panel from the copse.todos plugin.
     const inlinePanel = await $(
       `.conversation-todos-host .plugin-panel[data-plugin-id="copse.todos"][data-contribution-id="plan"]`,
-    )
+    ).getElement()
     await inlinePanel.waitForExist({ timeout: 30_000 })
 
     const title = (await inlinePanel.$('.plugin-panel-title').getText()).toLowerCase()
-    await expect(title).toBe('to-dos')
+    expect(title).toBe('to-dos')
     // The plugin-panel summary carries the same "N/M done" progress the todo
     // panel used to show; count is derived (5 non-cancelled todos in the
     // fixture, 1 completed).
     await expect(inlinePanel.$('.plugin-panel-summary')).toHaveText('1/5 done')
 
-    const inProgress = await inlinePanel.$('.plugin-panel-row[data-row-id="todo-2"]')
+    const inProgress = await inlinePanel.$('.plugin-panel-row[data-row-id="todo-2"]').getElement()
     await expect(inProgress).toHaveAttribute('data-status', 'in_progress')
     await expect(inProgress.$('.plugin-panel-status-icon svg[data-icon="arrow-right"]')).toExist()
 
-    const completed = await inlinePanel.$('.plugin-panel-row[data-row-id="todo-1"]')
+    const completed = await inlinePanel.$('.plugin-panel-row[data-row-id="todo-1"]').getElement()
     await expect(completed).toHaveAttribute('data-status', 'completed')
 
-    const localBadge = await inlinePanel.$(
-      '.plugin-panel-row[data-row-id="todo-3"] .plugin-panel-badge[data-badge-kind="assigned-model"]',
-    )
-    await expect((await localBadge.getText()).toLowerCase()).toBe('local')
+    const localBadge = await inlinePanel
+      .$(
+        '.plugin-panel-row[data-row-id="todo-3"] .plugin-panel-badge[data-badge-kind="assigned-model"]',
+      )
+      .getElement()
+    expect((await localBadge.getText()).toLowerCase()).toBe('local')
 
     // Cancelled items remain in thread state but are not part of the plan UI.
     await expect(inlinePanel.$('.plugin-panel-row[data-row-id="todo-cancelled"]')).not.toExist()
@@ -82,7 +84,7 @@ describe('todo plan display', () => {
   it('applies expected padding to the todo panel card', async () => {
     const inlinePanel = await $(
       `.conversation-todos-host .plugin-panel[data-plugin-id="copse.todos"][data-contribution-id="plan"]`,
-    )
+    ).getElement()
     await inlinePanel.waitForExist({ timeout: 30_000 })
 
     const padding = await browser.execute(() => {
@@ -105,13 +107,14 @@ describe('todo plan display', () => {
 
     expect(padding).not.toBeNull()
     // Match .review-panel / .comparison-panel: --spacing-sm / --spacing-lg (8px / 16px).
-    expect(padding!.panelPaddingTop).toBe('8px')
-    expect(padding!.panelPaddingBottom).toBe('8px')
-    expect(padding!.panelPaddingLeft).toBe('16px')
-    expect(padding!.panelPaddingRight).toBe('16px')
+    if (!padding) throw new Error('Missing fixture measurement: padding')
+    expect(padding.panelPaddingTop).toBe('8px')
+    expect(padding.panelPaddingBottom).toBe('8px')
+    expect(padding.panelPaddingLeft).toBe('16px')
+    expect(padding.panelPaddingRight).toBe('16px')
     // Rows should have minimal vertical padding (2px) with none horizontally.
-    expect(padding!.rowPaddingTop).toBe('2px')
-    expect(padding!.rowPaddingBottom).toBe('2px')
+    expect(padding.rowPaddingTop).toBe('2px')
+    expect(padding.rowPaddingBottom).toBe('2px')
 
     await saveAppScreenshot('todo-inline-panel.png')
   })

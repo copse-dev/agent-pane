@@ -53,7 +53,16 @@ describe('two-step stop shortcut', function () {
       const stop = document.querySelector<HTMLElement>('.stop-btn')
       const send = document.querySelector<HTMLElement>('.submit-btn')
       if (!stop || !send) return null
-      const geometry = (button: HTMLElement) => {
+      const geometry = (
+        button: HTMLElement,
+      ): {
+        height: number
+        borderRadius: string
+        paddingInline: string
+        fontSize: string
+        fontWeight: string
+        lineHeight: string
+      } => {
         const rect = button.getBoundingClientRect()
         const style = getComputedStyle(button)
         return {

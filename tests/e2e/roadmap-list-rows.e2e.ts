@@ -58,7 +58,7 @@ describe('roadmap list rows (quiet single-line layout)', () => {
     await roadmapButton.waitForDisplayed({ timeout: 10_000 })
     await roadmapButton.click()
 
-    await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 3, {
+    await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 3, {
       timeout: 20_000,
       timeoutMsg: 'expected three seeded roadmap rows',
     })

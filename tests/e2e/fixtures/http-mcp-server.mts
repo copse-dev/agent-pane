@@ -11,9 +11,12 @@ import { randomUUID } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import { mcpHttpProtocolTransport } from '../helpers/mcp-http-adapter.mts'
 
-const token = process.env.MCP_HTTP_TOKEN ?? ''
-const port = Number(process.env.MCP_HTTP_PORT ?? '0')
+const token = process.env['MCP_HTTP_TOKEN'] ?? ''
+const port = Number(process.env['MCP_HTTP_PORT'] ?? '0')
 
 function createServer(): McpServer {
   const server = new McpServer({ name: 'http-mock', version: '0.0.1' })
@@ -25,7 +28,8 @@ function createServer(): McpServer {
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
-    async () => ({ content: [{ type: 'text', text: 'authenticated-user' }] }),
+    (): Promise<CallToolResult> =>
+      Promise.resolve({ content: [{ type: 'text', text: 'authenticated-user' }] }),
   )
 
   server.registerTool(
@@ -35,7 +39,8 @@ function createServer(): McpServer {
       inputSchema: { a: z.number(), b: z.number() },
       annotations: { readOnlyHint: true },
     },
-    async ({ a, b }) => ({ content: [{ type: 'text', text: String(a + b) }] }),
+    ({ a, b }): Promise<CallToolResult> =>
+      Promise.resolve({ content: [{ type: 'text', text: String(a + b) }] }),
   )
   return server
 }
@@ -44,7 +49,10 @@ function createServer(): McpServer {
 // transport; a previously initialized transport cannot accept another initialize.
 const transports = new Map<string, StreamableHTTPServerTransport>()
 
-async function handleAuthenticatedRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+async function handleAuthenticatedRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<void> {
   const sessionId = req.headers['mcp-session-id']
   let transport = typeof sessionId === 'string' ? transports.get(sessionId) : undefined
   if (!transport) {
@@ -53,14 +61,18 @@ async function handleAuthenticatedRequest(req: http.IncomingMessage, res: http.S
       res.end()
       return
     }
-    const next = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (id) => transports.set(id, next),
+    const next: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: (): string => randomUUID(),
+      onsessioninitialized: (id): void => {
+        protocolTransport.sessionId = id
+        transports.set(id, next)
+      },
     })
-    next.onclose = () => {
+    next.onclose = (): void => {
       if (next.sessionId) transports.delete(next.sessionId)
     }
-    await createServer().connect(next)
+    const protocolTransport: Transport = mcpHttpProtocolTransport(next)
+    await createServer().connect(protocolTransport)
     transport = next
   }
   await transport.handleRequest(req, res)
@@ -83,5 +95,5 @@ const httpServer = http.createServer((req, res) => {
 httpServer.listen(port, () => {
   const addr = httpServer.address()
   const actualPort = typeof addr === 'object' && addr ? addr.port : port
-  console.log(`PORT=${actualPort}`)
+  console.log(`PORT=${String(actualPort)}`)
 })

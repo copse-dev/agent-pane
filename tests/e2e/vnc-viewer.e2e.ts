@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server, type Socket } from 'node:net'
@@ -223,7 +224,17 @@ async function listenOnVncPort(server: Server): Promise<number> {
 }
 
 /** The VNC severity recipe as rendered: gutter dot, title hue, and the tokens. */
-async function readVncSeverity(containerSelector: string, titleSelector: string) {
+async function readVncSeverity(
+  containerSelector: string,
+  titleSelector: string,
+): Promise<{
+  titleColor: string
+  dotColor: string
+  gutter: string
+  columnGap: string
+  icons: number
+  tokens: { warning: string; error: string; accent: string }
+} | null> {
   return browser.execute(
     (container, title) => {
       const host = document.querySelector<HTMLElement>(container)
@@ -268,9 +279,9 @@ describe('VNC viewer', function () {
   let authenticationUsername = ''
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     server = createServer((socket) => {
       sockets.add(socket)
@@ -301,14 +312,7 @@ describe('VNC viewer', function () {
           user: 'alexandra-morgan',
         },
       ])
-      const e2e = (
-        window as unknown as {
-          __copseE2e?: {
-            openWorkspace: (root: string) => Promise<string>
-            setVncNearbyServers: (servers: unknown) => Promise<void>
-          }
-        }
-      ).__copseE2e
+      const e2e = window.__copseE2e
       if (!e2e) throw new Error('__copseE2e unavailable')
       await e2e.setVncNearbyServers([
         {
@@ -349,7 +353,9 @@ describe('VNC viewer', function () {
               resolve()
               return
             }
-            runningServer.close(() => resolve())
+            runningServer.close(() => {
+              resolve()
+            })
           }),
       ),
     )
@@ -676,8 +682,10 @@ describe('VNC viewer', function () {
       }
     })
     assert.deepEqual(sampled?.left, [255, 90, 165, 255])
-    assert.deepEqual(sampled?.right, [0, 74, 70, 255])
-    await browser.execute(() => window.scrollTo(0, 0))
+    assert.deepEqual(sampled.right, [0, 74, 70, 255])
+    await browser.execute(() => {
+      window.scrollTo(0, 0)
+    })
     await saveElementScreenshot('#pane-files', 'vnc-viewer-read-only.png')
 
     await controlButton.click()
@@ -719,7 +727,9 @@ describe('VNC viewer', function () {
       },
     )
     assert.equal(await $('.context-menu').isExisting(), false)
-    await browser.execute(() => window.scrollTo(0, 0))
+    await browser.execute(() => {
+      window.scrollTo(0, 0)
+    })
     await saveElementScreenshot('#pane-files', 'vnc-viewer-control-enabled.png')
 
     await browser.execute(() => {
@@ -746,7 +756,7 @@ describe('VNC viewer', function () {
     await expect(shareMenu).not.toBeExisting()
     const sharedScreen = $('.attachment-chips .image-chip img')
     await sharedScreen.waitForDisplayed({ timeout: 5_000 })
-    assert.match(await sharedScreen.getAttribute('src'), /^data:image\/png;base64,/)
+    assert.match((await sharedScreen.getAttribute('src')) ?? '', /^data:image\/png;base64,/)
     assert.deepEqual(
       await browser.execute(() => {
         const image = document.querySelector<HTMLImageElement>('.attachment-chips .image-chip img')
@@ -802,16 +812,18 @@ describe('VNC viewer', function () {
     assert.equal(await $$('.vnc-viewer-panel .vnc-screen canvas').length, 2)
     assert.equal(await $('.vnc-viewer-panel:not([hidden]) .vnc-screen canvas').isDisplayed(), true)
     assert.equal(await $('.vnc-viewer-panel[hidden] .vnc-screen canvas').isDisplayed(), false)
-    await browser.execute(() => window.scrollTo(0, 0))
+    await browser.execute(() => {
+      window.scrollTo(0, 0)
+    })
     await saveElementScreenshot('#pane-files', 'vnc-viewer-tabs.png')
 
-    await $$('.vnc-tab')[0].click()
+    await at([...(await $$('.vnc-tab').getElements())], 0).click()
     assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'localhost 1')
     assert.equal(
       await $('.vnc-controls-panel:not([hidden]) .vnc-status-title').getText(),
       'Connected to localhost',
     )
-    await $$('.vnc-tab')[1].click()
+    await at([...(await $$('.vnc-tab').getElements())], 1).click()
     await $('.vnc-tab.is-active .vnc-tab-close').click()
     assert.equal(await $$('.vnc-tab').length, 1)
     assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'localhost')
@@ -822,7 +834,9 @@ describe('VNC viewer', function () {
     )
 
     await browser.execute(async () => {
-      await window.__copseE2e.setVncNearbyServers([])
+      const bridge = window.__copseE2e
+      if (!bridge) throw new Error('__copseE2e unavailable')
+      await bridge.setVncNearbyServers([])
     })
     await $('.vnc-tabs-new-btn').click()
     const retryControls = '.vnc-controls-panel:not([hidden])'

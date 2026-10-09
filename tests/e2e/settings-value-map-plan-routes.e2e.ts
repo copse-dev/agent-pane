@@ -60,7 +60,10 @@ async function startOpenRouterServer(): Promise<{ apiBase: string; close: () => 
     apiBase,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()))
+        server.close((error) => {
+          if (error) reject(error)
+          else resolve()
+        })
       }),
   }
 }
@@ -106,7 +109,7 @@ describe('model value map respects subscription billing routes', function () {
     await expect(fieldset.$(`circle.frontier-point.plan[data-model-id="${PLAN_ROUTE}"]`)).toExist()
     const paid = fieldset.$(`circle.frontier-point[data-model-id="${PAID_ROUTE}"]`)
     await expect(paid).toExist()
-    assert.equal((await paid.getAttribute('class')).split(' ').includes('plan'), false)
+    assert.equal(((await paid.getAttribute('class')) ?? '').split(' ').includes('plan'), false)
     assert.equal(
       await fieldset.$(`circle.frontier-plan-badge[data-model-id="${PAID_ROUTE}"]`).isExisting(),
       false,

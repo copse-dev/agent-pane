@@ -78,12 +78,12 @@ describe('environment API-key detection (Settings → General)', () => {
     // (blanked) environment and reports the empty result.
     await scanBtn.click()
     const status = host.$('.env-key-actions .key-status')
-    await browser.waitUntil(
-      async () => /no provider keys found/i.test((await status.getText()) ?? ''),
-      { timeout: 10_000, timeoutMsg: 'scan never reported a result' },
-    )
+    await browser.waitUntil(async () => /no provider keys found/i.test(await status.getText()), {
+      timeout: 10_000,
+      timeoutMsg: 'scan never reported a result',
+    })
 
-    assert.equal((await host.$$('.env-key-row')).length, 0)
+    assert.equal((await host.$$('.env-key-row').getElements()).length, 0)
     await expect(host.$('button=Import keys')).not.toBeDisplayed()
   })
 })

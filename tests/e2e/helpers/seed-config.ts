@@ -13,6 +13,9 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
+import { safeJsonParse } from '@copse/std/safe-json.ts'
+import { parseMessageValue } from '../../../packages/thread-store/src/thread-boundary.ts'
 import { USAGE_EVENTS_DIR, type UsageEvent } from '../../../src/shared/usage/usage-event.ts'
 import {
   supervisedTaskMetaSchema,
@@ -65,7 +68,7 @@ const sha256 = (input: string): string => createHash('sha256').update(input, 'ut
 
 /** New-format chat-store root; mirrors `thread-store.ts` (COPSE_WORKSPACE_DIR override). */
 export function e2eWorkspaceDir(): string {
-  const override = process.env.COPSE_WORKSPACE_DIR?.trim()
+  const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
   return override && override.length > 0 ? override : join(USER_DATA, 'workspace')
 }
 
@@ -76,7 +79,7 @@ export function invalidateThreadCatalog(projectId: string): void {
 
 /** Agent Plugins discovery root; mirrors `userPluginsRoot()` (COPSE_PLUGINS_DIR). */
 export function e2ePluginsDir(): string {
-  const override = process.env.COPSE_PLUGINS_DIR?.trim()
+  const override = process.env['COPSE_PLUGINS_DIR']?.trim()
   return override && override.length > 0 ? override : join(homedir(), '.copse', 'plugins')
 }
 
@@ -130,25 +133,30 @@ export function resetAgentPlugins(): void {
 // Fixtures embed loose thread JSON where messages/tool-calls may omit fields the
 // real store explode path requires (`toolCalls`, tool `result`). Fill those in
 // so the seed matches what the app would have persisted.
-function normalizeMessage(msg: Record<string, unknown>): Record<string, unknown> {
-  const toolCalls = Array.isArray(msg.toolCalls) ? msg.toolCalls : []
-  return {
+function normalizeMessage(msg: unknown): Message {
+  if (!isRecord(msg)) throw new Error('Seeded message must be an object')
+  const toolCalls: unknown[] = Array.isArray(msg['toolCalls']) ? msg['toolCalls'] : []
+  const normalized = parseMessageValue({
     ...msg,
-    toolCalls: toolCalls.map((tc) => normalizeToolCall(tc as Record<string, unknown>)),
-  }
+    toolCalls: toolCalls.map(normalizeToolCall),
+  })
+  if (normalized === null) throw new Error('Seeded message has invalid persisted fields')
+  return normalized
 }
 
-function normalizeToolCall(tc: Record<string, unknown>): Record<string, unknown> {
+function normalizeToolCall(tc: unknown): Record<string, unknown> {
+  if (!isRecord(tc)) throw new Error('Seeded tool call must be an object')
   const out: Record<string, unknown> = {
     ...tc,
-    result: tc.result === undefined ? null : tc.result,
+    result: tc['result'] === undefined ? null : tc['result'],
   }
-  const sub = tc.subagent as Record<string, unknown> | undefined
-  if (sub) {
-    const subMessages = Array.isArray(sub.messages) ? sub.messages : []
-    out.subagent = {
+  const sub = tc['subagent']
+  if (sub !== undefined) {
+    if (!isRecord(sub)) throw new Error('Seeded subagent must be an object')
+    const subMessages: unknown[] = Array.isArray(sub['messages']) ? sub['messages'] : []
+    out['subagent'] = {
       ...sub,
-      messages: subMessages.map((m) => normalizeMessage(m as Record<string, unknown>)),
+      messages: subMessages.map(normalizeMessage),
     }
   }
   return out
@@ -160,7 +168,10 @@ function normalizeToolCall(tc: Record<string, unknown>): Record<string, unknown>
  * explode/spine logic the app persists with. The catalog is intentionally not
  * written — the store rebuilds it from the thread dirs on first read.
  */
-function seedThreadDir(projectId: string, thread: Record<string, unknown>): void {
+function seedThreadDir(projectId: string, thread: unknown): void {
+  if (!isRecord(thread) || typeof thread['id'] !== 'string') {
+    throw new Error('Seeded thread must have a string id')
+  }
   const { messages, ...rest } = thread
   // `usage` is REQUIRED by the thread store's meta decoder: `parseUsage`
   // (shared/threads/thread-boundary.ts) returns null when it is missing, which
@@ -171,13 +182,12 @@ function seedThreadDir(projectId: string, thread: Record<string, unknown>): void
   // Most fixtures pass `usage` by hand; defaulting it here means the ones that
   // forget cannot reintroduce that trap. An explicit `usage` still wins.
   const meta = { usage: { inputTokens: 0, outputTokens: 0 }, ...rest }
-  const normalized = (Array.isArray(messages) ? messages : []).map((m) =>
-    normalizeMessage(m as Record<string, unknown>),
-  )
-  const dir = join(e2eWorkspaceDir(), projectId, String(meta.id))
+  const messageValues: unknown[] = Array.isArray(messages) ? messages : []
+  const normalized = messageValues.map(normalizeMessage)
+  const dir = join(e2eWorkspaceDir(), projectId, thread['id'])
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
-  const { spine, files } = explodeThread(normalized as unknown as Message[], sha256)
+  const { spine, files } = explodeThread(normalized, sha256)
   for (const file of files) {
     const full = join(dir, file.ref)
     mkdirSync(dirname(full), { recursive: true })
@@ -204,8 +214,8 @@ function seedThreadDir(projectId: string, thread: Record<string, unknown>): void
 function pinSeededProjectCheckouts(projects: unknown): void {
   if (!Array.isArray(projects)) return
   for (const project of projects) {
-    if (project && typeof project === 'object' && !('worktreeMode' in project)) {
-      ;(project as Record<string, unknown>)['worktreeMode'] = 'never'
+    if (isRecord(project) && !Object.hasOwn(project, 'worktreeMode')) {
+      project['worktreeMode'] = 'never'
     }
   }
 }
@@ -219,10 +229,11 @@ export function writeSeedConfig(
   const seededProjectIds = new Set<string>()
   for (const [key, value] of Object.entries(config)) {
     const match = /^threads:(.+)$/.exec(key)
-    if (match && Array.isArray(value)) {
-      seededProjectIds.add(match[1])
+    const projectId = match?.[1]
+    if (projectId !== undefined && Array.isArray(value)) {
+      seededProjectIds.add(projectId)
       for (const thread of value) {
-        seedThreadDir(match[1], thread as Record<string, unknown>)
+        seedThreadDir(projectId, thread)
       }
     } else {
       if (key === 'projects' && options.preserveProductWorktreeDefault !== true) {
@@ -318,7 +329,9 @@ export function seedOnboardingFixture(extra: Record<string, unknown> = {}): void
  * will see).
  */
 export function readSeededSettings(): Record<string, unknown> {
-  return JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')) as Record<string, unknown>
+  const settings = safeJsonParse(readFileSync(SETTINGS_PATH, 'utf8'))
+  if (!isRecord(settings)) throw new Error('Seeded settings must be a JSON object')
+  return settings
 }
 
 export function writeSettings(settings: Record<string, unknown>): void {
@@ -388,7 +401,7 @@ export function seedStableWorkspace(options: { files?: Record<string, string> } 
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, content, 'utf8')
   }
-  const git = (...args: string[]) =>
+  const git = (...args: string[]): Buffer =>
     execFileSync('git', args, {
       cwd: root,
       stdio: 'pipe',
@@ -470,7 +483,7 @@ export function seedMessageImageFixture(
       },
     ],
   }
-  seedConfig.pluginDisabled = pluginDisabledSeed(
+  seedConfig['pluginDisabled'] = pluginDisabledSeed(
     options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : [],
   )
   writeSeedConfig(seedConfig)
@@ -615,17 +628,17 @@ export function seedEmptyProject(
     path: workspaceRoot,
     name: 'workspace',
   }
-  if (options?.projectGroup) project.groupId = options.projectGroup.id
+  if (options?.projectGroup) project['groupId'] = options.projectGroup.id
   if (options?.worktreeMode && options.worktreeMode !== 'default') {
-    project.worktreeMode = options.worktreeMode
+    project['worktreeMode'] = options.worktreeMode
   }
-  if (options?.sshHost) project.sshHost = options.sshHost
+  if (options?.sshHost) project['sshHost'] = options.sshHost
   const seedConfig: Record<string, unknown> = {
     projects: [project],
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   }
-  if (options?.projectGroup) seedConfig.projectGroups = [options.projectGroup]
+  if (options?.projectGroup) seedConfig['projectGroups'] = [options.projectGroup]
   // Plugin enablement lives in `config.json` under `pluginDisabled` (what the
   // plugin service reads via `storageGet`). Write it explicitly: an explicit
   // `pluginDisabled` wins, otherwise the host defaults with the opted-in
@@ -636,12 +649,12 @@ export function seedEmptyProject(
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
   if (options?.mcpUiCanvasEnabled) enabledPlugins.push('copse.mcp-ui-canvas')
   if (options?.ciInvestigatorEnabled) enabledPlugins.push('copse.ci-investigator')
-  seedConfig.pluginDisabled =
+  seedConfig['pluginDisabled'] =
     options?.pluginDisabled !== undefined
       ? [...options.pluginDisabled]
       : pluginDisabledSeed(enabledPlugins)
   if (options?.pluginSources) {
-    seedConfig.pluginSources = [...options.pluginSources]
+    seedConfig['pluginSources'] = [...options.pluginSources]
   }
   if (options?.usageEvents) {
     // The ledger is a directory of `.jsonl` files, one record per line, not a
@@ -658,83 +671,83 @@ export function seedEmptyProject(
   })
   const settings: Record<string, unknown> = {}
   if (options?.webAllowedOrigins !== undefined) {
-    settings.webAllowedOrigins = options.webAllowedOrigins
+    settings['webAllowedOrigins'] = options.webAllowedOrigins
   }
   if (options?.subagentsEnabled !== undefined) {
-    settings.subagentsEnabled = options.subagentsEnabled
+    settings['subagentsEnabled'] = options.subagentsEnabled
   }
   if (options?.mockFollowUps) {
-    settings.mockFollowUps = true
+    settings['mockFollowUps'] = true
   }
   if (options?.nextStepSuggestionEnabled !== undefined) {
-    settings.nextStepSuggestionEnabled = options.nextStepSuggestionEnabled
+    settings['nextStepSuggestionEnabled'] = options.nextStepSuggestionEnabled
   }
   if (options?.containerRunsEnabled !== undefined) {
-    settings.containerRunsEnabled = options.containerRunsEnabled
+    settings['containerRunsEnabled'] = options.containerRunsEnabled
   }
   if (options?.model) {
-    settings.model = options.model
+    settings['model'] = options.model
   }
   if (options?.advisorModel) {
-    settings.advisorModel = options.advisorModel
+    settings['advisorModel'] = options.advisorModel
   }
   if (options?.localServerUrl) {
-    settings.localServerUrl = options.localServerUrl
+    settings['localServerUrl'] = options.localServerUrl
   }
   if (options?.localDefaultModel) {
-    settings.localDefaultModel = options.localDefaultModel
+    settings['localDefaultModel'] = options.localDefaultModel
   }
   if (options?.subagentModel) {
-    settings.subagentModel = options.subagentModel
+    settings['subagentModel'] = options.subagentModel
   }
   if (options?.smallTasksModel !== undefined) {
-    settings.smallTasksModel = options.smallTasksModel
+    settings['smallTasksModel'] = options.smallTasksModel
   }
   if (options?.safetyModel !== undefined) {
-    settings.safetyModel = options.safetyModel
+    settings['safetyModel'] = options.safetyModel
   }
   if (options?.reviewModel !== undefined) {
-    settings.reviewModel = options.reviewModel
+    settings['reviewModel'] = options.reviewModel
   }
   if (options?.roleModels !== undefined) {
-    settings.roleModels = options.roleModels
+    settings['roleModels'] = options.roleModels
   }
   if (options?.modelParameters !== undefined) {
-    settings.modelParameters = options.modelParameters
+    settings['modelParameters'] = options.modelParameters
   }
   if (options?.localSubagentsEnabled !== undefined) {
-    settings.localSubagentsEnabled = options.localSubagentsEnabled
+    settings['localSubagentsEnabled'] = options.localSubagentsEnabled
   }
   if (options?.autoPortraitRightPanel !== undefined) {
-    settings.autoPortraitRightPanel = options.autoPortraitRightPanel
+    settings['autoPortraitRightPanel'] = options.autoPortraitRightPanel
   }
   if (options?.rightPanelPosition !== undefined) {
-    settings.rightPanelPosition = options.rightPanelPosition
+    settings['rightPanelPosition'] = options.rightPanelPosition
   }
-  if (options?.theme !== undefined) settings.theme = options.theme
-  if (options?.uiAccentColor !== undefined) settings.uiAccentColor = options.uiAccentColor
-  if (options?.uiTintColor !== undefined) settings.uiTintColor = options.uiTintColor
-  if (options?.uiTintStrength !== undefined) settings.uiTintStrength = options.uiTintStrength
+  if (options?.theme !== undefined) settings['theme'] = options.theme
+  if (options?.uiAccentColor !== undefined) settings['uiAccentColor'] = options.uiAccentColor
+  if (options?.uiTintColor !== undefined) settings['uiTintColor'] = options.uiTintColor
+  if (options?.uiTintStrength !== undefined) settings['uiTintStrength'] = options.uiTintStrength
   if (options?.developerMode !== undefined) {
-    settings.developerMode = options.developerMode
+    settings['developerMode'] = options.developerMode
   }
   if (options?.vncEnabled !== undefined) {
-    settings.vncEnabled = options.vncEnabled
+    settings['vncEnabled'] = options.vncEnabled
   }
   if (options?.autoRunSandboxCommands !== undefined) {
-    settings.autoRunSandboxCommands = options.autoRunSandboxCommands
+    settings['autoRunSandboxCommands'] = options.autoRunSandboxCommands
   }
   if (options?.registeredAcpAgents !== undefined) {
-    settings.registeredAcpAgents = options.registeredAcpAgents
+    settings['registeredAcpAgents'] = options.registeredAcpAgents
   }
   if (options?.windowBounds !== undefined) {
-    settings.windowBounds = options.windowBounds
+    settings['windowBounds'] = options.windowBounds
   }
   if (options?.openRouterPricing !== undefined) {
-    settings.openRouterPricing = options.openRouterPricing
+    settings['openRouterPricing'] = options.openRouterPricing
   }
   if (options?.parallelApiKey !== undefined) {
-    settings.apiKey = {
+    settings['apiKey'] = {
       parallel: {
         v: 1,
         enc: Buffer.from(options.parallelApiKey, 'utf8').toString('base64'),
@@ -3386,6 +3399,7 @@ export function seedCiInvestigatorFixture(workspaceRoot: string): void {
                   messages: [
                     {
                       id: 'sub-ci-msg-1',
+                      createdAt: Date.now(),
                       role: 'assistant',
                       content: 'Reading the **failing run logs** for PR #42.',
                       toolCalls: [
@@ -3407,6 +3421,7 @@ export function seedCiInvestigatorFixture(workspaceRoot: string): void {
                     },
                     {
                       id: 'sub-ci-msg-2',
+                      createdAt: Date.now(),
                       role: 'assistant',
                       content: summary,
                       toolCalls: [],
@@ -3436,11 +3451,11 @@ function buildLargeStagedFile(value: number): string {
     'export const metadata = { version: 1, kind: "demo" }',
   ]
   for (let i = 1; i <= 25; i++) {
-    lines.push(`export function helper${i}(): number { return ${i}; }`)
+    lines.push(`export function helper${String(i)}(): number { return ${String(i)}; }`)
   }
-  lines.push(`export const value = ${value}`)
+  lines.push(`export const value = ${String(value)}`)
   for (let i = 26; i <= 50; i++) {
-    lines.push(`export function helper${i}(): number { return ${i}; }`)
+    lines.push(`export function helper${String(i)}(): number { return ${String(i)}; }`)
   }
   return `${lines.join('\n')}\n`
 }
@@ -3457,7 +3472,8 @@ function initGitChangesFixtureRepo(): void {
   rmSync(join(repoRoot, 'committed.ts'), { force: true })
   writeFileSync(join(repoRoot, 'staged.ts'), buildLargeStagedFile(1), 'utf8')
   writeFileSync(join(repoRoot, 'unstaged.ts'), 'export const name = "old"\n', 'utf8')
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+  const git = (...args: string[]): Buffer =>
+    execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
   git('init', '-q')
   git('config', 'user.email', 'e2e@example.com')
   git('config', 'user.name', 'E2E')
@@ -3478,7 +3494,8 @@ function initGitChangesFixtureRepo(): void {
  */
 function ensureGitChangesFixtureCommit(): void {
   const repoRoot = GIT_CHANGES_FIXTURE_ROOT
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+  const git = (...args: string[]): Buffer =>
+    execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
   const refExists = (ref: string): boolean =>
     spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], { cwd: repoRoot }).status === 0
 
@@ -3532,7 +3549,8 @@ function cleanUntracked(repoRoot: string): void {
 /** Reset the committed git-changes fixture to staged + unstaged + untracked state. */
 export function resetGitChangesFixtureState(): void {
   const repoRoot = GIT_CHANGES_FIXTURE_ROOT
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+  const git = (...args: string[]): Buffer =>
+    execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
   git('checkout', '-f', 'HEAD')
   cleanUntracked(repoRoot)
   ensureGitChangesFixtureCommit()
@@ -3597,7 +3615,8 @@ function initComposerDirtyWarningFixtureRepo(): void {
   const repoRoot = COMPOSER_DIRTY_WARNING_FIXTURE_ROOT
   mkdirSync(repoRoot, { recursive: true })
   writeFileSync(join(repoRoot, 'README.md'), '# fixture\n', 'utf8')
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+  const git = (...args: string[]): Buffer =>
+    execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
   git('init', '-q')
   git('config', 'user.email', 'e2e@example.com')
   git('config', 'user.name', 'E2E')
@@ -3670,7 +3689,8 @@ const GIT_IMAGE_FIXTURES = join(process.cwd(), 'tests/e2e/fixtures')
  */
 export function seedGitImageChangesFixture(): string {
   const repoRoot = mkdtempSync(join(tmpdir(), 'copse-panel-git-img-'))
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+  const git = (...args: string[]): Buffer =>
+    execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
 
   git('init', '-q')
   git('config', 'user.email', 'e2e@example.com')
@@ -5756,7 +5776,20 @@ export function seedAppleDevelopmentFixture(workspaceRoot: string): void {
     status: 'succeeded' | 'failed' | 'cancelled',
     offset: number,
     outcome: Record<string, unknown>,
-  ) => ({
+  ): {
+    operation: {
+      id: string
+      action: typeof action
+      status: typeof status
+      target: typeof selection
+      createdAt: number
+      updatedAt: number
+      outcome: Record<string, unknown>
+    }
+    logs: string
+    requestId: string
+    payloadHash: string
+  } => ({
     operation: {
       id,
       action,

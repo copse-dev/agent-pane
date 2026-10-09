@@ -33,7 +33,6 @@ describe('settings plaintext secret storage', () => {
   it('keeps Settings open and explains the environment opt-in', async function () {
     if (process.platform !== 'linux') {
       this.skip()
-      return
     }
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -47,7 +46,7 @@ describe('settings plaintext secret storage', () => {
         // selecting it can legitimately open the ACP adapter-install approval
         // over Settings; OpenRouter exercises the same key policy without that
         // unrelated setup flow.
-        (candidate) => candidate.textContent?.trim() === 'OpenRouter',
+        (candidate) => candidate.textContent.trim() === 'OpenRouter',
       )
       chip?.click()
       return Boolean(chip)
@@ -63,7 +62,7 @@ describe('settings plaintext secret storage', () => {
       const input = document.querySelector<HTMLInputElement>(
         '#settings-providers-host .provider-form input[type="password"]',
       )
-      if (selectedProvider?.dataset.provider !== 'openrouter' || !input) return null
+      if (selectedProvider?.dataset['provider'] !== 'openrouter' || !input) return null
       input.value = value
       input.dispatchEvent(new Event('input', { bubbles: true }))
       return input.value

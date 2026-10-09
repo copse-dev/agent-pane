@@ -25,7 +25,7 @@ describe('ACP catalog labels before configured settings load', () => {
     await browser.url('/acp-catalog-labels-fixture.html')
     await $('.model-picker-trigger').waitForDisplayed()
     const labels = await browser.execute(() =>
-      [...document.querySelectorAll('.model-picker-label')].map((node) => node.textContent?.trim()),
+      [...document.querySelectorAll('.model-picker-label')].map((node) => node.textContent.trim()),
     )
     assert.deepEqual(labels, ['Codex', 'Codex — GPT-5.6 Sol', 'Gemini CLI', 'unknown-agent'])
     const fits = await browser.execute(() =>

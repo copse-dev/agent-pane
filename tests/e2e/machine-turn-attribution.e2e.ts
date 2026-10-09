@@ -13,9 +13,9 @@ describe('machine turn attribution', function () {
   let workspaceRoot: string
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-machine-attribution-'))
     seedMachineTurnAttributionFixture(workspaceRoot)
@@ -30,7 +30,9 @@ describe('machine turn attribution', function () {
   it('labels a machine prompt and makes the submit action queue during a running turn', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const machineTurn = await $('.msg-machine-origin[data-operation-id="background-checks-17"]')
+    const machineTurn = await $(
+      '.msg-machine-origin[data-operation-id="background-checks-17"]',
+    ).getElement()
     await expect(machineTurn).toBeExisting()
     await expect(machineTurn.$('.msg-machine-origin-marker')).toHaveText(
       'Machine · automatic continuation',

@@ -12,9 +12,9 @@ describe('settings plugin catalogue', function () {
   this.timeout(60_000)
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-plugin-catalogue')
@@ -23,9 +23,9 @@ describe('settings plugin catalogue', function () {
 
   after(() => {
     resetUserData()
-    delete process.env.COPSE_PANEL_MOCK_LLM
-    delete process.env.ANTHROPIC_API_KEY
-    delete process.env.OPENAI_API_KEY
+    delete process.env['COPSE_PANEL_MOCK_LLM']
+    delete process.env['ANTHROPIC_API_KEY']
+    delete process.env['OPENAI_API_KEY']
   })
 
   it('browses the offline catalogue and distinguishes installed packages', async () => {
@@ -60,7 +60,7 @@ describe('settings plugin catalogue', function () {
     await expect(stripe.$('.plugin-catalog-badge')).toHaveText('Untested')
     await expect(stripe.$('.plugin-catalog-action')).toHaveText('Review install')
     const source = stripe.$('.plugin-catalog-source-link')
-    assert.match(await source.getAttribute('href'), /github\.com\/stripe\/ai\/tree\//)
+    assert.match((await source.getAttribute('href')) ?? '', /github\.com\/stripe\/ai\/tree\//)
 
     // Clamp before scrolling: otherwise a tall native window can leave the
     // card's actions underneath the sticky footer after screenshot sizing.
@@ -69,9 +69,13 @@ describe('settings plugin catalogue', function () {
     const framing = await browser.execute(() => {
       const card = document.querySelector(
         '.plugin-catalog-card[data-catalog-id="https://github.com/stripe/ai#providers/claude/plugin"]',
-      )!
-      const footer = document.querySelector('.settings-buttons')!.getBoundingClientRect()
-      const content = document.querySelector('.settings-content')!.getBoundingClientRect()
+      )
+      const footerElement = document.querySelector('.settings-buttons')
+      const contentElement = document.querySelector('.settings-content')
+      if (!card || !footerElement || !contentElement)
+        throw new Error('Expected plugin catalogue framing elements')
+      const footer = footerElement.getBoundingClientRect()
+      const content = contentElement.getBoundingClientRect()
       return {
         cardTop: card.getBoundingClientRect().top,
         contentTop: content.top,

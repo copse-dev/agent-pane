@@ -28,12 +28,12 @@ describe('context label and subagent usage states', () => {
   ] as const) {
     it(`shows ${mode} usage without contradicting the context hover`, async () => {
       await browser.url(`/context-usage-fixture.html?mode=${mode}`)
-      const wheel = await $('.context-wheel')
+      const wheel = await $('.context-wheel').getElement()
       await wheel.waitForDisplayed()
       assert.equal(await wheel.getAttribute('title'), 'Context: 6.8k / 200.0k (3%)')
       assert.equal(await wheel.getAttribute('aria-label'), 'Context 3% used, 6.8k of 200.0k tokens')
       await wheel.moveTo()
-      const popover = await $('.context-wheel-popover')
+      const popover = await $('.context-wheel-popover').getElement()
       await expect(popover).toBeDisplayed()
       await expect(popover.$('.context-wheel-popover-header')).toHaveText(
         'Context · 6.8k / 200.0k (3%)',

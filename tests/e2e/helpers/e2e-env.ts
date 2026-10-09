@@ -1,3 +1,4 @@
+import { nonEmptyStringOr } from '@copse/std/unknown-value.ts'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -17,7 +18,7 @@ export const E2E_GIT_BRANCH = 'work'
  * the footer renders, keeping match/mismatch states deterministic.
  */
 export function e2eGitBranch(): string {
-  return process.env['COPSE_PANEL_MOCK_BRANCH'] || E2E_GIT_BRANCH
+  return nonEmptyStringOr(process.env['COPSE_PANEL_MOCK_BRANCH'], E2E_GIT_BRANCH)
 }
 
 /**
@@ -55,8 +56,8 @@ export function writeE2eEnv(overrides: Record<string, string | undefined>): void
   }
   for (const [key, value] of Object.entries(overrides)) {
     if (value === undefined) {
-      delete env[key]
-      delete process.env[key]
+      Reflect.deleteProperty(env, key)
+      Reflect.deleteProperty(process.env, key)
     } else {
       env[key] = value
       process.env[key] = value

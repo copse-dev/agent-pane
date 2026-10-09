@@ -91,9 +91,9 @@ async function setTintStrength(strength: 'off' | 'subtle' | 'medium' | 'strong')
 
 describe('custom interface colours', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedConversationVisualHierarchyFixture(process.cwd())
     seedE2eViewport({ width: 1280, height: 800 }, { uiTintStrength: 'subtle' })
@@ -130,15 +130,15 @@ describe('custom interface colours', () => {
 
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="appearance"]').click()
-    const accentInput = await $('input[name="uiAccentColor"]')
+    const accentInput = await $('input[name="uiAccentColor"]').getElement()
     await accentInput.waitForDisplayed({ timeout: 30_000 })
     await browser.waitUntil(async () => (await accentInput.getValue()) !== '', {
       timeout: 30_000,
       timeoutMsg: 'expected the saved/default accent to load into Appearance settings',
     })
     expect((await accentInput.getValue()).toLowerCase()).toBe('#ff93d0')
-    const tintInput = await $('input[name="uiTintColor"]')
-    const tintStrength = await $('input[name="uiTintStrength"]')
+    const tintInput = await $('input[name="uiTintColor"]').getElement()
+    const tintStrength = await $('input[name="uiTintStrength"]').getElement()
     expect((await tintInput.getValue()).toLowerCase()).toBe('#244c25')
     expect(await tintStrength.getValue()).toBe('1')
     const settingsActions = await browser.execute(() => {
@@ -163,13 +163,21 @@ describe('custom interface colours', () => {
       const accentFieldset = accent?.closest('fieldset')
       return {
         sameFieldset: accentFieldset != null && accentFieldset === tint?.closest('fieldset'),
-        legend: accentFieldset?.querySelector('legend')?.textContent?.trim() ?? '',
+        legend: accentFieldset?.querySelector('legend')?.textContent.trim() ?? '',
       }
     })
     expect(combinedPanel.sameFieldset).toBe(true)
     expect(combinedPanel.legend).toBe('Interface colours')
     const headingFont = await browser.execute(
-      () => getComputedStyle(document.querySelector('.settings-section.active h3')!).fontFamily,
+      () =>
+        getComputedStyle(
+          document.querySelector('.settings-section.active h3') ??
+            ((): never => {
+              throw new Error(
+                "Missing fixture element: document.querySelector('.settings-section.active h3')",
+              )
+            })(),
+        ).fontFamily,
     )
     expect(headingFont).toContain('Averia Serif Libre')
     await setTintStrength('strong')
@@ -210,7 +218,7 @@ describe('custom interface colours', () => {
     })
     const iconLabels = await browser.execute(() =>
       Array.from(document.querySelectorAll<HTMLElement>('.app-icon-label'), (label) =>
-        label.textContent?.trim(),
+        label.textContent.trim(),
       ),
     )
     expect(iconLabels).toHaveLength(19)

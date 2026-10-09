@@ -108,12 +108,12 @@ describe('new thread default branch checkout', () => {
         await expect(
           menu.$('.branch-picker-option.is-selected .branch-picker-option-label'),
         ).toHaveText('main')
-        assert.equal((await menu.$$('.branch-picker-option.is-selected')).length, 1)
+        assert.equal((await menu.$$('.branch-picker-option.is-selected').getElements()).length, 1)
         await expect(
           menu.$('.branch-picker-option:first-child .branch-picker-default-badge'),
         ).toBeDisplayed()
         if (mode === 'explicit') {
-          const options = await menu.$$('.branch-picker-option')
+          const options = await menu.$$('.branch-picker-option').getElements()
           let selected = false
           for (const option of options) {
             if ((await option.$('.branch-picker-option-label').getText()) !== FEATURE) continue

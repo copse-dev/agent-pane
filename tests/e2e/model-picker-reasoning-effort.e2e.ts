@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { mkdirSync } from 'node:fs'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -51,16 +52,16 @@ describe('per-chat reasoning effort', () => {
 
   it('sits in the model picker and overrides only this chat', async function () {
     this.timeout(60_000)
-    const picker = await $('.footer-model-host .model-picker')
+    const picker = await $('.footer-model-host .model-picker').getElement()
     await picker.$('.model-picker-trigger').click()
-    const row = await picker.$('.model-picker-group-row')
+    const row = await picker.$('.model-picker-group-row').getElement()
     await row.waitForDisplayed({ timeout: 15_000 })
     await expect(row.$('.model-picker-group-row-label')).toHaveText('Effort')
     // Unset by default — the model's own saved level applies.
     await expect(row.$('.model-picker-group-row-value')).toHaveText('Default')
 
     await row.click()
-    const choices = await picker.$$('.model-picker-menu .model-picker-option')
+    const choices = await picker.$$('.model-picker-menu .model-picker-option').getElements()
     // "Default" plus the six-level ladder Opus 5 accepts. A wrong count is
     // almost always the picker offering a *different* model's ladder, and the
     // bare number cannot say which — so name the model on the trigger and the
@@ -72,21 +73,21 @@ describe('per-chat reasoning effort', () => {
       // over it throws "object is not iterable" and reports nothing at all.
       const shown = await browser.execute(() => ({
         labels: [...document.querySelectorAll('.footer-model-host .model-picker-option')].map(
-          (option) => (option.textContent ?? '').trim(),
+          (option) => option.textContent.trim(),
         ),
         trigger:
-          document.querySelector('.footer-model-host .model-picker-trigger')?.textContent?.trim() ??
+          document.querySelector('.footer-model-host .model-picker-trigger')?.textContent.trim() ??
           null,
       }))
       throw new Error(
-        `expected 7 effort choices for claude-opus-5, got ${choices.length}: ${JSON.stringify(shown)}`,
+        `expected 7 effort choices for claude-opus-5, got ${String(choices.length)}: ${JSON.stringify(shown)}`,
       )
     }
     await saveElementScreenshot(
       '.footer-model-host .model-picker-menu',
       'footer-reasoning-effort.png',
     )
-    await choices[choices.length - 1].click()
+    await at([...choices], choices.length - 1).click()
     await expect(picker.$('.model-picker-menu')).not.toBeDisplayed()
 
     // The pick lands on the thread, so it survives a reopen.

@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
@@ -14,7 +15,7 @@ describe('onboarding: pop-out windows are exempt', () => {
     seedEmptyProject(process.cwd(), 'e2e-onboarding-popout')
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
-    mainHandle = (await browser.getWindowHandles())[0]
+    mainHandle = at([...(await browser.getWindowHandles())], 0)
   })
 
   after(async () => {
@@ -37,9 +38,9 @@ describe('onboarding: pop-out windows are exempt', () => {
       timeoutMsg: 'expected a pop-out window',
     })
     const popoutHandle = (await browser.getWindowHandles()).find((h) => !before.includes(h))
-    expect(popoutHandle).toBeDefined()
+    if (!popoutHandle) throw new Error('Expected a new pop-out window handle')
 
-    await browser.switchToWindow(popoutHandle as string)
+    await browser.switchToWindow(popoutHandle)
     await browser.waitUntil(
       async () =>
         browser.execute(

@@ -38,9 +38,9 @@ describe('marketing hero demo', () => {
       window.addEventListener(
         'scroll',
         () => {
-          const seen = (window as unknown as { __pageJumps?: number[] }).__pageJumps ?? []
+          const seen = window.__pageJumps ?? []
           seen.push(Math.round(window.scrollY))
-          ;(window as unknown as { __pageJumps?: number[] }).__pageJumps = seen
+          window.__pageJumps = seen
         },
         { passive: true },
       )
@@ -50,8 +50,9 @@ describe('marketing hero demo', () => {
     await browser.waitUntil(
       () =>
         browser.execute(() => {
-          const frame = document.getElementById('hero-demo-frame') as HTMLIFrameElement | null
-          return frame?.contentDocument?.documentElement.dataset['demoExpandedPane'] === 'browser'
+          const frame = document.getElementById('hero-demo-frame')
+          if (!(frame instanceof HTMLIFrameElement)) throw new Error('Missing hero demo iframe')
+          return frame.contentDocument?.documentElement.dataset['demoExpandedPane'] === 'browser'
         }),
       { timeout: 150_000, timeoutMsg: 'expected the hero run to finish and expand the preview' },
     )
@@ -60,9 +61,7 @@ describe('marketing hero demo', () => {
     // `scrollIntoView` used to yank the page.
     await browser.pause(4_000)
 
-    const jumps = await browser.execute(
-      () => (window as unknown as { __pageJumps?: number[] }).__pageJumps ?? [],
-    )
+    const jumps = await browser.execute(() => window.__pageJumps ?? [])
     expect(jumps).toEqual([])
     expect(await browser.execute(() => Math.round(window.scrollY))).toBe(READING_OFFSET)
   })

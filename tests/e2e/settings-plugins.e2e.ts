@@ -27,7 +27,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 //
 // The removed P1 `copse.noop` skeleton must not leak into the user-facing list.
 
-function settingsSection(section: string) {
+function settingsSection(section: string): ReturnType<typeof $> {
   return $(`.settings-section[data-section="${section}"]`)
 }
 
@@ -263,7 +263,7 @@ describe('settings plugins (about:addons)', function () {
     const restated = await browser.execute(() =>
       [...document.querySelectorAll<HTMLElement>('.plugin-row')]
         .filter((row) => row.querySelector('.plugin-badge-first-party'))
-        .map((row) => row.querySelector('.plugin-row-desc')?.textContent?.trim() ?? '')
+        .map((row) => row.querySelector('.plugin-row-desc')?.textContent.trim() ?? '')
         .filter((desc) => /^[^—.]{1,40} — /.test(desc)),
     )
     assert.deepEqual(restated, [])

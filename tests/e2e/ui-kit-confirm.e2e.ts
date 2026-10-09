@@ -182,21 +182,26 @@ describe('UI kit confirm dialog', () => {
   it('renders kit buttons in the confirm dialog', async function () {
     this.timeout(60_000)
 
-    await browser.waitUntil(async () => (await $$('.chats-list .chat-row')).length >= 2, {
-      timeout: 15_000,
-      timeoutMsg: 'expected two seeded chat rows',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.chats-list .chat-row').getElements()).length >= 2,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected two seeded chat rows',
+      },
+    )
 
     await openDeleteThreadConfirm()
-    const dialog = await $('#confirm-dialog')
-    await expect(await dialog.$('.confirm-dialog-message')).toHaveText('Delete this thread?')
-    await expect(await dialog.$('copse-ui-actions.ui-actions')).toExist()
-    await expect(await dialog.$('button.ui-btn.ui-btn-secondary.confirm-dialog-cancel')).toHaveText(
-      'Cancel',
+    const dialog = await $('#confirm-dialog').getElement()
+    await expect(await dialog.$('.confirm-dialog-message').getElement()).toHaveText(
+      'Delete this thread?',
     )
-    await expect(await dialog.$('button.ui-btn.ui-btn-danger.confirm-dialog-confirm')).toHaveText(
-      'Delete',
-    )
+    await expect(await dialog.$('copse-ui-actions.ui-actions').getElement()).toExist()
+    await expect(
+      await dialog.$('button.ui-btn.ui-btn-secondary.confirm-dialog-cancel').getElement(),
+    ).toHaveText('Cancel')
+    await expect(
+      await dialog.$('button.ui-btn.ui-btn-danger.confirm-dialog-confirm').getElement(),
+    ).toHaveText('Delete')
 
     const capBoxStyle = await browser.execute(() => {
       const button = document.querySelector<HTMLElement>('.confirm-dialog-cancel')

@@ -52,10 +52,10 @@ describe('roadmap category accordion (alignment + scroll)', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const roadmapButton = $('.titlebar-text-btn[aria-label="Open roadmap"]')
     await roadmapButton.waitForDisplayed({ timeout: 10_000 })
-    if (!(await roadmapButton.getAttribute('class')).includes('active')) {
+    if ((await roadmapButton.getAttribute('class'))?.includes('active') !== true) {
       await roadmapButton.click()
     }
-    await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 75, {
+    await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 75, {
       timeout: 20_000,
       timeoutMsg: 'expected 75 seeded roadmap rows across two categories',
     })
@@ -97,9 +97,22 @@ describe('roadmap category accordion (alignment + scroll)', () => {
     // WebDriver's native click, which would scroll the target into view
     // first and defeat the point of starting from a mid-list position).
     await browser.execute(() => {
-      document.querySelector('.roadmap-list')!.scrollTop = 200
+      ;(
+        document.querySelector('.roadmap-list') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.querySelector('.roadmap-list')")
+        })()
+      ).scrollTop = 200
     })
-    const before = await browser.execute(() => document.querySelector('.roadmap-list')!.scrollTop)
+    const before = await browser.execute(
+      () =>
+        (
+          document.querySelector('.roadmap-list') ??
+          ((): never => {
+            throw new Error("Missing fixture element: document.querySelector('.roadmap-list')")
+          })()
+        ).scrollTop,
+    )
     assert.ok(before > 0, 'the list must actually have scrolled before toggling')
 
     await browser.execute(() => {
@@ -116,7 +129,13 @@ describe('roadmap category accordion (alignment + scroll)', () => {
       { timeout: 10_000, timeoutMsg: 'feature group never collapsed' },
     )
     const afterCollapse = await browser.execute(
-      () => document.querySelector('.roadmap-list')!.scrollTop,
+      () =>
+        (
+          document.querySelector('.roadmap-list') ??
+          ((): never => {
+            throw new Error("Missing fixture element: document.querySelector('.roadmap-list')")
+          })()
+        ).scrollTop,
     )
     assert.equal(afterCollapse, before, 'collapsing a group must not move the scroll position')
 
@@ -133,7 +152,13 @@ describe('roadmap category accordion (alignment + scroll)', () => {
       { timeout: 10_000, timeoutMsg: 'feature group never re-expanded' },
     )
     const afterExpand = await browser.execute(
-      () => document.querySelector('.roadmap-list')!.scrollTop,
+      () =>
+        (
+          document.querySelector('.roadmap-list') ??
+          ((): never => {
+            throw new Error("Missing fixture element: document.querySelector('.roadmap-list')")
+          })()
+        ).scrollTop,
     )
     assert.equal(afterExpand, before, 're-expanding a group must not move the scroll position')
 
@@ -172,7 +197,12 @@ describe('roadmap category accordion (alignment + scroll)', () => {
     // it groups — the frame that actually demonstrates the row-indent half of
     // this fix (rows lining up under the label, not the chevron).
     await browser.execute(() => {
-      document.querySelector('.roadmap-list')!.scrollTop = 0
+      ;(
+        document.querySelector('.roadmap-list') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.querySelector('.roadmap-list')")
+        })()
+      ).scrollTop = 0
     })
     await saveAppScreenshot('roadmap-accordion-chevron-alignment.png')
   })

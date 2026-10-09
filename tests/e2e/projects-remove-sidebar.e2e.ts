@@ -7,7 +7,7 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function projectRow(name: string): Promise<WebdriverIO.Element> {
-  const row = await $(`.project-row*=${name}`)
+  const row = await $(`.project-row*=${name}`).getElement()
   await row.waitForExist({ timeout: 10_000 })
   return row
 }
@@ -30,7 +30,7 @@ describe('remove project from sidebar', () => {
     const beta = await projectRow('Project B')
     await beta.click({ button: 'right' })
 
-    const menu = await $('.context-menu')
+    const menu = await $('.context-menu').getElement()
     await menu.waitForDisplayed({ timeout: 5_000 })
     await expect($('.context-menu-item')).toHaveText('Remove from sidebar')
     await saveAppScreenshot('project-remove-sidebar-menu.png')
@@ -39,7 +39,7 @@ describe('remove project from sidebar', () => {
     await browser.waitUntil(
       async () => {
         const names = await browser.execute(() =>
-          Array.from(document.querySelectorAll('.project-name')).map((n) => n.textContent ?? ''),
+          Array.from(document.querySelectorAll('.project-name')).map((n) => n.textContent),
         )
         return names.length === 1 && names[0]?.includes('Project A') === true
       },

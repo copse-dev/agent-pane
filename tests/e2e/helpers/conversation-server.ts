@@ -5,6 +5,7 @@ import { createServer, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
+import type { StoredExtraProvider } from '@copse/llm/extra-providers.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json'
 
 const messageSchema = z.object({
@@ -50,8 +51,27 @@ function messageText(message: z.infer<typeof messageSchema> | undefined): string
   return message?.content?.map((part) => part.text ?? '').join('') ?? ''
 }
 
+export interface ConversationServer {
+  baseUrl: string
+  settings: {
+    model: string
+    smallTasksModel: string
+    nextStepSuggestionEnabled: boolean
+    extraProviders: StoredExtraProvider[]
+  }
+  enqueue(...steps: ConversationResponse[]): void
+  configureEnvironment(overrides?: Record<string, string>): void
+  waitForHold(name: string): Promise<void>
+  release(name: string): void
+  assertTitleRequested(includes: string): void
+  assertComplete(): void
+  close(): Promise<void>
+}
+
 /** A real OpenAI-compatible HTTP endpoint; fixture controls never enter the transcript. */
-export async function startConversationServer(options: { title: string }) {
+export async function startConversationServer(options: {
+  title: string
+}): Promise<ConversationServer> {
   const pending: PendingResponse[] = []
   const failures: string[] = []
   const titleRequests: string[] = []
@@ -131,9 +151,10 @@ export async function startConversationServer(options: { title: string }) {
     trackToolCalls: boolean,
   ): Promise<void> {
     let finished = false
-    let aborted = false
+    const abortState = { aborted: false }
+    const isAborted = (): boolean => abortState.aborted
     response.on('close', () => {
-      if (!finished) aborted = true
+      if (!finished) abortState.aborted = true
     })
     const id = `conversation-${String(++sequence)}`
     const toolCalls = step.toolCalls?.map((call, index) => ({
@@ -154,7 +175,7 @@ export async function startConversationServer(options: { title: string }) {
       const deadline = Date.now() + 30_000
       activeHolds.add(step.hold)
       try {
-        while (!released.delete(step.hold) && !aborted) {
+        while (!released.delete(step.hold) && !isAborted()) {
           assert.ok(Date.now() < deadline, `Hold ${step.hold} was never released or cancelled`)
           await delay(10)
         }
@@ -162,12 +183,12 @@ export async function startConversationServer(options: { title: string }) {
         activeHolds.delete(step.hold)
       }
     }
-    const chunk = (delta: Record<string, unknown>, finishReason: string | null = null) => {
+    const chunk = (delta: Record<string, unknown>, finishReason: string | null = null): void => {
       response.write(
         `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', model: request.model, choices: [{ index: 0, delta, finish_reason: finishReason }] })}\n\n`,
       )
     }
-    if (!aborted && request.stream === false) {
+    if (!isAborted() && request.stream === false) {
       response.writeHead(200, { 'content-type': 'application/json' })
       response.end(
         JSON.stringify({
@@ -191,16 +212,21 @@ export async function startConversationServer(options: { title: string }) {
       finished = true
       return
     }
-    if (!aborted) chunk({ role: 'assistant' })
-    if (step.text && !aborted) {
-      const fragments = step.chunkDelayMs ? [...step.text] : [step.text]
+    if (!isAborted()) chunk({ role: 'assistant' })
+    if (step.text && !isAborted()) {
+      const fragments = step.chunkDelayMs
+        ? Array.from(
+            new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(step.text),
+            ({ segment }) => segment,
+          )
+        : [step.text]
       for (const content of fragments) {
-        if (aborted) break
+        if (isAborted()) break
         chunk({ content })
         if (step.chunkDelayMs) await delay(step.chunkDelayMs)
       }
     }
-    if (aborted) {
+    if (isAborted()) {
       assert.equal(step.allowAbort, true, 'Conversation response was unexpectedly cancelled')
       return
     }
@@ -214,7 +240,7 @@ export async function startConversationServer(options: { title: string }) {
   const server = createServer((request, response) => {
     connections.add(response)
     response.on('close', () => connections.delete(response))
-    void (async () => {
+    void (async (): Promise<void> => {
       if (request.method === 'GET' && request.url === '/v1/models') {
         response.setHeader('content-type', 'application/json')
         response.end(
@@ -270,10 +296,10 @@ export async function startConversationServer(options: { title: string }) {
         },
       ],
     },
-    enqueue(...steps: ConversationResponse[]) {
+    enqueue(...steps: ConversationResponse[]): void {
       pending.push(...steps.map((response) => ({ response, complete: false })))
     },
-    configureEnvironment(overrides: Record<string, string> = {}) {
+    configureEnvironment(overrides: Record<string, string> = {}): void {
       assert.equal(restoreEnvironment, undefined, 'Environment was already configured')
       const path = join(process.cwd(), 'tests/e2e/electron-shell/.e2e-env.json')
       const original = readFileSync(path, 'utf8')
@@ -286,15 +312,15 @@ export async function startConversationServer(options: { title: string }) {
       const previous = new Map(Object.keys(replacement).map((key) => [key, process.env[key]]))
       for (const [key, value] of Object.entries(replacement)) process.env[key] = value
       writeFileSync(path, JSON.stringify({ ...environment, ...replacement }))
-      restoreEnvironment = () => {
+      restoreEnvironment = (): void => {
         writeFileSync(path, original)
         for (const [key, value] of previous) {
-          if (value === undefined) delete process.env[key]
+          if (value === undefined) Reflect.deleteProperty(process.env, key)
           else process.env[key] = value
         }
       }
     },
-    async waitForHold(name: string) {
+    async waitForHold(name: string): Promise<void> {
       const deadline = Date.now() + 20_000
       while (!activeHolds.has(name)) {
         assert.deepEqual(failures, [], 'Conversation fixture failed')
@@ -302,16 +328,16 @@ export async function startConversationServer(options: { title: string }) {
         await delay(10)
       }
     },
-    release(name: string) {
+    release(name: string): void {
       released.add(name)
     },
-    assertTitleRequested(includes: string) {
+    assertTitleRequested(includes: string): void {
       assert.ok(
         titleRequests.some((prompt) => prompt.includes(includes)),
         `Expected a title request containing ${includes}`,
       )
     },
-    assertComplete() {
+    assertComplete(): void {
       assert.deepEqual(failures, [], 'Conversation fixture failed')
       assert.equal(cursor, pending.length, 'Unconsumed conversation responses')
       assert.ok(
@@ -319,15 +345,16 @@ export async function startConversationServer(options: { title: string }) {
         'A conversation response is still active',
       )
     },
-    async close() {
+    async close(): Promise<void> {
       for (const response of connections) response.destroy()
       server.closeAllConnections()
       await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
+        server.close((error) => {
+          if (error) reject(error)
+          else resolve()
+        }),
       )
       restoreEnvironment?.()
     },
   }
 }
-
-export type ConversationServer = Awaited<ReturnType<typeof startConversationServer>>

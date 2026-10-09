@@ -29,7 +29,7 @@ describe('integrated terminal', () => {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
+    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]').getElement()
     await terminalBtn.click()
 
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
@@ -48,7 +48,7 @@ describe('integrated terminal', () => {
     // either is missing. A platform check cannot express that; only observing
     // the dialog can. Assert the wording whenever it does appear, so an
     // unexpected *different* prompt still fails.
-    const approval = await $('#approval-dialog')
+    const approval = await $('#approval-dialog').getElement()
     const unsandboxed = await approval
       .waitForDisplayed({ timeout: 5_000 })
       .then(() => true)

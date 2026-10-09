@@ -29,7 +29,7 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
   })
 
   it('opens on Cmd/Ctrl+P, lists matches while typing, and opens the chosen file', async () => {
-    const dialog = await $('#file-search-dialog')
+    const dialog = await $('#file-search-dialog').getElement()
 
     // Fire the renderer shortcut. metaKey covers macOS, ctrlKey the rest — the
     // handler accepts either. The palette only registers after layout mounts,
@@ -44,28 +44,28 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
     // The workspace index builds asynchronously after boot; keep typing the
     // query (each input re-runs the debounced index lookup) until the unique
     // fixture file surfaces.
-    const input = await $('.file-search-input')
+    const input = await $('.file-search-input').getElement()
     await browser.waitUntil(
       async () => {
         await input.setValue('zebra-widget')
-        const rows = await $$('.file-search-item')
+        const rows = await $$('.file-search-item').getElements()
         return rows.length > 0
       },
       { timeout: 20_000, interval: 1000, timeoutMsg: 'no file-search results for "zebra-widget"' },
     )
 
-    const firstName = await $('.file-search-item .file-search-name')
+    const firstName = await $('.file-search-item .file-search-name').getElement()
     await expect(firstName).toHaveText(expect.stringContaining('zebra-widget.ts'))
 
     await saveAppScreenshot('file-search-palette.png')
 
     // Choosing the match closes the palette, opens the explorer, and loads the
     // file into the viewer (openWorkspaceFile → rightPanelMode: 'explorer').
-    const firstItem = await $('.file-search-item')
+    const firstItem = await $('.file-search-item').getElement()
     await firstItem.click()
     await dialog.waitForDisplayed({ timeout: 10_000, reverse: true })
 
-    const fileTab = await $('.file-tree .tree-row[title="src/zebra-widget.ts"]')
+    const fileTab = await $('.file-tree .tree-row[title="src/zebra-widget.ts"]').getElement()
     await fileTab.waitForDisplayed({ timeout: 10_000 })
   })
 })

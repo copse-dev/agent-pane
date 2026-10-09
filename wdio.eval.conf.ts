@@ -1,5 +1,6 @@
-import type { Options } from '@wdio/types'
-import electronBinary from 'electron'
+import { firstNonEmptyString, nonEmptyStringOr } from '@copse/std/unknown-value.ts'
+import { updateChromeOptions } from './tests/e2e/helpers/chrome-options.ts'
+import { resolveElectronExecutable } from './tests/e2e/helpers/electron-executable.ts'
 import { createRequire } from 'node:module'
 import { rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -23,10 +24,10 @@ import { KNOWN_ACP_AGENTS, canonicalAcpAgentId } from './src/shared/acp-known-ag
 
 const EVAL_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.eval-env.json')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
-const KEEP_EVAL_WDIO = process.env.COPSE_EVAL_KEEP_WDIO === '1'
+const KEEP_EVAL_WDIO = process.env['COPSE_EVAL_KEEP_WDIO'] === '1'
 
 function codexEvalPermissionMode(): string {
-  const requested = process.env.COPSE_EVAL_ACP_PERMISSION_MODE?.trim()
+  const requested = process.env['COPSE_EVAL_ACP_PERMISSION_MODE']?.trim()
   if (requested === 'agent' || requested === 'agent-full-access') return requested
   if (requested) {
     throw new Error(
@@ -37,6 +38,7 @@ function codexEvalPermissionMode(): string {
 }
 
 /** WDIO config for real local-model agent evals (not mock LLM). */
+const electronBinary = resolveElectronExecutable()
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
 const requireFromProject = createRequire(join(process.cwd(), 'package.json'))
 const chromedriverBinary = join(
@@ -63,7 +65,7 @@ function cleanupEvalRunDirs(): void {
   }
 }
 
-export const config: Options.Testrunner = {
+export const config: WebdriverIO.Config = {
   runner: 'local',
   specs: ['./tests/e2e/agent-eval-drive.e2e.ts'],
   maxInstances: 1,
@@ -102,38 +104,39 @@ export const config: Options.Testrunner = {
   reporters: ['spec'],
   mochaOpts: {
     ui: 'bdd',
-    timeout: Number(process.env.COPSE_EVAL_MOCHA_TIMEOUT_MS ?? 45 * 60_000),
+    timeout: Number(process.env['COPSE_EVAL_MOCHA_TIMEOUT_MS'] ?? 45 * 60_000),
   },
   afterTest: async (test) => {
     await assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'agent eval')
   },
   async beforeSession(_config, capabilities) {
-    delete process.env.ELECTRON_RUN_AS_NODE
-    if (process.env.COPSE_EVAL_USE_MOCK === '1') {
-      process.env.COPSE_PANEL_MOCK_LLM = '1'
+    delete process.env['ELECTRON_RUN_AS_NODE']
+    if (process.env['COPSE_EVAL_USE_MOCK'] === '1') {
+      process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     } else {
-      delete process.env.COPSE_PANEL_MOCK_LLM
+      delete process.env['COPSE_PANEL_MOCK_LLM']
     }
-    process.env.COPSE_AGENT_EVAL = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_AGENT_EVAL'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
 
     evalUserDataDir = makeE2eScratchDir(`.wdio-eval-userdata-${randomBytes(4).toString('hex')}-`)
-    process.env.COPSE_PANEL_USER_DATA = evalUserDataDir
+    process.env['COPSE_PANEL_USER_DATA'] = evalUserDataDir
     const evalWorkspaceDir = join(evalUserDataDir, 'workspace')
-    process.env.COPSE_WORKSPACE_DIR = evalWorkspaceDir
-    const scenarioPath = process.env.COPSE_EVAL_SCENARIO?.trim() || DEFAULT_SCENARIO
+    process.env['COPSE_WORKSPACE_DIR'] = evalWorkspaceDir
+    const scenarioPath = nonEmptyStringOr(
+      process.env['COPSE_EVAL_SCENARIO']?.trim(),
+      DEFAULT_SCENARIO,
+    )
     const scenario = loadEvalScenario(scenarioPath)
     const project = createEvalProject(scenario)
     cleanupEvalProject = project.cleanup
     seedEvalWorkspace(project.root, scenario)
-    process.env.COPSE_EVAL_WORKSPACE_ROOT = project.root
+    process.env['COPSE_EVAL_WORKSPACE_ROOT'] = project.root
 
-    const useMock = process.env.COPSE_EVAL_USE_MOCK === '1'
-    // `|| undefined`, not `?.trim()` alone: a matrix that always sets the
-    // variable passes `''` for its native arm, and `'' ?? DEFAULT_APP_CHAT_MODEL`
-    // keeps the empty string — seeding a project with no model at all.
-    const evalModel = process.env.COPSE_EVAL_MODEL?.trim() || undefined
+    const useMock = process.env['COPSE_EVAL_USE_MOCK'] === '1'
+    // Matrix native arms pass an empty string; treat it as an absent model.
+    const evalModel = firstNonEmptyString(process.env['COPSE_EVAL_MODEL']?.trim())
     const acpSelection = evalModel ? parseAcpModelSelection(evalModel) : null
     // Through the rename map, so `acp:codex` (the id in older docs and configs)
     // resolves the same preset as `acp:codex-acp`. Without it the lookup below
@@ -147,9 +150,9 @@ export const config: Options.Testrunner = {
       throw new Error(`COPSE_EVAL_MODEL selected unknown ACP agent "${acpSelection.id}"`)
     }
     const subagentsEnabled =
-      process.env.COPSE_EVAL_SUBAGENTS === '0'
+      process.env['COPSE_EVAL_SUBAGENTS'] === '0'
         ? false
-        : process.env.COPSE_EVAL_SUBAGENTS === '1'
+        : process.env['COPSE_EVAL_SUBAGENTS'] === '1'
           ? true
           : !useMock
     const { resetUserData, seedEmptyProject } = await import('./tests/e2e/helpers/seed-config.ts')
@@ -163,7 +166,9 @@ export const config: Options.Testrunner = {
             model: evalModel ?? DEFAULT_APP_CHAT_MODEL,
             localServerUrl: resolveLocalServerUrl(undefined, {
               COPSE_EVAL_LM_STUDIO_URL:
-                process.env.COPSE_EVAL_LOCAL_SERVER_URL ?? process.env.COPSE_EVAL_LM_STUDIO_URL,
+                process.env['COPSE_EVAL_LOCAL_SERVER_URL'] ??
+                process.env['COPSE_EVAL_LM_STUDIO_URL'] ??
+                '',
             }),
             localDefaultModel: LM_STUDIO_MODEL_IDS.chat,
             subagentModel: LM_STUDIO_MODEL_IDS.smallTasks,
@@ -202,8 +207,8 @@ export const config: Options.Testrunner = {
       ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: '',
     }
-    if (process.env.COPSE_PANEL_MOCK_LLM === '1') {
-      evalEnv.COPSE_PANEL_MOCK_LLM = '1'
+    if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
+      evalEnv['COPSE_PANEL_MOCK_LLM'] = '1'
     }
     for (const key of ['LM_STUDIO_API_KEY', 'LM_API_TOKEN', 'COPSE_EVAL_LM_STUDIO_URL'] as const) {
       const v = process.env[key]?.trim()
@@ -211,21 +216,18 @@ export const config: Options.Testrunner = {
     }
     writeFileSync(EVAL_ENV_FILE, JSON.stringify(evalEnv), 'utf8')
 
-    const cap = capabilities as WebdriverIO.Capabilities & {
-      'goog:chromeOptions'?: { args?: string[] }
-    }
-    const chromeOptions = cap['goog:chromeOptions'] ?? {}
     const debugPort = 19200 + Math.floor(Math.random() * 200)
     evalChromeProfileDir = makeE2eScratchDir(`.wdio-eval-chrome-${randomBytes(4).toString('hex')}-`)
-    cap['goog:chromeOptions'] = {
+    const chromeProfileDir = evalChromeProfileDir
+    updateChromeOptions(capabilities, (chromeOptions) => ({
       ...chromeOptions,
       args: (chromeOptions.args ?? [])
         .filter((a) => !a.startsWith('--remote-debugging-port='))
         .concat([
-          `--user-data-dir=${evalChromeProfileDir}`,
-          `--remote-debugging-port=${debugPort}`,
+          `--user-data-dir=${chromeProfileDir}`,
+          `--remote-debugging-port=${String(debugPort)}`,
         ]),
-    }
+    }))
   },
   afterSession() {
     rmSync(EVAL_ENV_FILE, { force: true })

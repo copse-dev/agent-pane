@@ -146,7 +146,11 @@ describe('shared UI polish', () => {
       if (!path) return null
       const animation = path
         .getAnimations()
-        .find((candidate) => candidate.animationName === 'reasoning-activity-draw')
+        .find(
+          (candidate) =>
+            candidate instanceof CSSAnimation &&
+            candidate.animationName === 'reasoning-activity-draw',
+        )
       if (!animation) return { animated: false as const }
 
       const duration = animation.effect?.getTiming().duration

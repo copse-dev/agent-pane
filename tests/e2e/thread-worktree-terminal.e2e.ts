@@ -28,7 +28,7 @@ async function activeXtermText(): Promise<string> {
 }
 
 async function gitChangePaths(): Promise<string[]> {
-  const elements = await $$('.git-change-path')
+  const elements = await $$('.git-change-path').getElements()
   const paths: string[] = []
   for (let i = 0; i < elements.length; i += 1) {
     const element = elements[i]
@@ -118,7 +118,7 @@ describe('isolated thread terminal cwd', () => {
 
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const worktreeThread = await $(`.chat-row[data-thread-id="${THREAD_ID}"]`)
+    const worktreeThread = await $(`.chat-row[data-thread-id="${THREAD_ID}"]`).getElement()
     await worktreeThread.waitForClickable({ timeout: 30_000 })
     await worktreeThread.click()
     await expect(worktreeThread).toHaveElementClass('selected')
@@ -131,13 +131,13 @@ describe('isolated thread terminal cwd', () => {
 
   it('starts a new shell in the active thread worktree', async function () {
     this.timeout(90_000)
-    const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]')
+    const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]').getElement()
     await terminalBtn.click()
     await approveUnsandboxedTerminalIfPrompted()
 
-    const terminal = await $('.terminal-container .xterm')
+    const terminal = await $('.terminal-container .xterm').getElement()
     await terminal.waitForExist({ timeout: 30_000 })
-    const helper = await $('.xterm-helper-textarea')
+    const helper = await $('.xterm-helper-textarea').getElement()
     await helper.click()
     await browser.keys(['pwd', '\uE007'])
 
@@ -160,15 +160,17 @@ describe('isolated thread terminal cwd', () => {
 
   it('lists and previews files from the active thread worktree', async function () {
     this.timeout(60_000)
-    const explorerBtn = await $('#titlebar .titlebar-btn[aria-label="Toggle right panel"]')
+    const explorerBtn = await $(
+      '#titlebar .titlebar-btn[aria-label="Toggle right panel"]',
+    ).getElement()
     await explorerBtn.click()
 
-    const worktreeFile = await $('.file-tree .tree-row[title="worktree-only.md"]')
+    const worktreeFile = await $('.file-tree .tree-row[title="worktree-only.md"]').getElement()
     await worktreeFile.waitForDisplayed({ timeout: 30_000 })
     await expect($('.file-tree .tree-row[title="project-only.md"]')).not.toExist()
     await worktreeFile.click()
 
-    const preview = await $('.markdown-file-preview')
+    const preview = await $('.markdown-file-preview').getElement()
     await preview.waitForDisplayed({ timeout: 30_000 })
     await expect(preview).toHaveText(expect.stringContaining('Isolated worktree file'))
     await expect(preview).toHaveText(
@@ -183,7 +185,7 @@ describe('isolated thread terminal cwd', () => {
     this.timeout(90_000)
     const mainHandle = (await browser.getWindowHandles())[0]
     assert.ok(mainHandle)
-    const changesBtn = await $('#titlebar .titlebar-btn[aria-label="Open changes"]')
+    const changesBtn = await $('#titlebar .titlebar-btn[aria-label="Open changes"]').getElement()
     await changesBtn.click()
 
     await browser.waitUntil(async () => (await gitChangePaths()).includes('worktree-only.md'), {
@@ -221,12 +223,12 @@ describe('isolated thread terminal cwd', () => {
 
   it('opens a newly added file link from the active thread worktree', async function () {
     this.timeout(60_000)
-    const link = await $('.message-text a[data-workspace-link]')
+    const link = await $('.message-text a[data-workspace-link]').getElement()
     await link.waitForDisplayed({ timeout: 30_000 })
     await expect(link).toHaveAttribute('href', join(staleWorktreeRoot, 'worktree-only.md'))
     await link.click()
 
-    const preview = await $('.markdown-file-preview')
+    const preview = await $('.markdown-file-preview').getElement()
     await preview.waitForDisplayed({ timeout: 30_000 })
     await expect(preview).toHaveText(expect.stringContaining('Isolated worktree file'))
     await assertNoErrorToasts('thread worktree markdown link click')
@@ -247,20 +249,21 @@ describe('isolated thread terminal cwd', () => {
     assert.throws(() => git(worktreeRoot, ['rebase', baseBranch]))
     assert.equal(git(worktreeRoot, ['branch', '--show-current']), '')
 
-    const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]')
-    if (!(await terminalBtn.getAttribute('class')).includes('active')) await terminalBtn.click()
-    const tabsBefore = await $$('.terminals-tab')
+    const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]').getElement()
+    if (!((await terminalBtn.getAttribute('class')) ?? '').includes('active'))
+      await terminalBtn.click()
+    const tabsBefore = await $$('.terminals-tab').getElements()
     await $('.terminals-new-btn').click()
     await approveUnsandboxedTerminalIfPrompted()
     await browser.waitUntil(
-      async () => (await $$('.terminals-tab')).length === tabsBefore.length + 1,
+      async () => (await $$('.terminals-tab').getElements()).length === tabsBefore.length + 1,
       {
         timeout: 30_000,
         timeoutMsg: 'expected a recovery terminal tab to open',
       },
     )
 
-    const helper = await $('.terminals-tab-panel.is-active .xterm-helper-textarea')
+    const helper = await $('.terminals-tab-panel.is-active .xterm-helper-textarea').getElement()
     await helper.waitForExist({ timeout: 30_000 })
     await helper.click()
     await browser.keys(['clear', '\uE007'])

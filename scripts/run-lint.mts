@@ -28,6 +28,11 @@ const shards: readonly { label: string; args: readonly string[] }[] = [
   },
   { label: 'renderer project', args: ['src/renderer', 'tests/setup-dom.ts'] },
   {
+    label: 'e2e project',
+    args: ['tests/e2e', 'wdio.conf.ts', 'wdio.ci.conf.ts', 'wdio.eval.conf.ts'],
+  },
+  { label: 'demo project', args: ['tests/demo', 'wdio.demo.conf.ts'] },
+  {
     label: 'standalone files',
     args: [
       '--ignore-pattern',
@@ -38,6 +43,12 @@ const shards: readonly { label: string; args: readonly string[] }[] = [
       'scripts/**',
       '--ignore-pattern',
       'tests/setup-dom.ts',
+      '--ignore-pattern',
+      'tests/e2e/**',
+      '--ignore-pattern',
+      'tests/demo/**',
+      '--ignore-pattern',
+      'wdio*.conf.ts',
       '.',
     ],
   },

@@ -18,7 +18,7 @@ const CONTROL_KEY = Key.Ctrl
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const name = await $('.workspace-name')
+      const name = await $('.workspace-name').getElement()
       return (await name.isExisting()) && (await name.getText()) !== 'No folder'
     },
     { timeout: 30_000, timeoutMsg: 'expected workspace to be restored' },
@@ -38,16 +38,16 @@ async function focusMonacoInput(): Promise<void> {
     { timeout: 5_000, timeoutMsg: 'expected Monaco textarea to exist' },
   )
   await browser.execute(() => {
-    const input = document.querySelector(
+    const input = document.querySelector<HTMLTextAreaElement>(
       '#file-viewer .monaco-editor textarea',
-    ) as HTMLTextAreaElement | null
+    )
     if (!input) throw new Error('Monaco input textarea not found')
     input.focus()
   })
 }
 
 async function dragSelectFirstMonacoLine(): Promise<void> {
-  const firstLine = await $('#file-viewer .monaco-editor .view-line')
+  const firstLine = await $('#file-viewer .monaco-editor .view-line').getElement()
   await firstLine.waitForDisplayed({ timeout: 5_000 })
   await firstLine.dragAndDrop({ x: 80, y: 0 }, { duration: 300 })
 }
@@ -80,15 +80,15 @@ describe('Monaco selection to chat attachment', () => {
   })
 
   it('adds the selected Monaco text to the current chat with Cmd/Ctrl+L', async () => {
-    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
     if (!(await $('#pane-files').isDisplayed())) await panelBtn.click()
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
 
-    const sampleRow = await $(`.tree-row[title="${SAMPLE_FILE}"]`)
+    const sampleRow = await $(`.tree-row[title="${SAMPLE_FILE}"]`).getElement()
     await sampleRow.waitForDisplayed({ timeout: 30_000 })
     await sampleRow.click()
 
-    const editor = await $('#file-viewer .monaco-editor')
+    const editor = await $('#file-viewer .monaco-editor').getElement()
     await editor.waitForDisplayed({ timeout: 30_000 })
     await $('#file-viewer .monaco-editor .view-line').click()
     await focusMonacoInput()
@@ -98,9 +98,9 @@ describe('Monaco selection to chat attachment', () => {
 
     // The selection lands as a chip inline in the composer text, not in the
     // detached attachment row (composer-editor.ts).
-    const chip = await $('.prompt-input .inline-paste-chip')
+    const chip = await $('.prompt-input .inline-paste-chip').getElement()
     await chip.waitForDisplayed({ timeout: 5_000 })
-    await expect(await chip.getText()).toContain(`${SAMPLE_FILE}:`)
+    expect(await chip.getText()).toContain(`${SAMPLE_FILE}:`)
 
     await browser.waitUntil(
       async () =>

@@ -77,7 +77,7 @@ describe('roadmap AI-generated short names', () => {
       await roadmapButton.waitForDisplayed({ timeout: 10_000 })
       await roadmapButton.click()
 
-      await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 2, {
+      await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 2, {
         timeout: 20_000,
         timeoutMsg: 'expected two seeded roadmap rows',
       })

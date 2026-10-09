@@ -1,6 +1,4 @@
 import { mkdir } from 'node:fs/promises'
-import { homedir, platform } from 'node:os'
-import { join } from 'node:path'
 import { $, browser } from '@wdio/globals'
 import { writeSeedConfig } from './helpers/seed-config.ts'
 import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
@@ -13,11 +11,11 @@ import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts
  * approval dialogs, which can appear at any point in a turn.
  */
 export async function agentIsIdle(): Promise<boolean> {
-  const stopBtn = await $('.stop-btn')
+  const stopBtn = await $('.stop-btn').getElement()
   const stopVisible = (await stopBtn.isExisting()) && (await stopBtn.getProperty('hidden')) !== true
   if (stopVisible) return false
 
-  const queue = await $('.footer-queue')
+  const queue = await $('.footer-queue').getElement()
   if (await queue.isExisting()) {
     const queueHidden = await queue.getProperty('hidden')
     if (queueHidden !== true) return false
@@ -48,7 +46,7 @@ export async function waitForActiveThreadTitle(timeoutMs = 15_000): Promise<void
   await browser.waitUntil(
     async () => {
       const title = await browser.execute(
-        () => document.querySelector('.chat-row.selected .chat-title')?.textContent?.trim() ?? '',
+        () => document.querySelector('.chat-row.selected .chat-title')?.textContent.trim() ?? '',
       )
       return title !== '' && title !== 'New Thread'
     },

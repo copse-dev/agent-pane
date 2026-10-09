@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node", "mocha", "@wdio/globals/types"]
+  },
+  "include": [
+    "tests/e2e/**/*.ts",
+    "tests/e2e/**/*.mts",
+    "wdio.conf.ts",
+    "wdio.ci.conf.ts",
+    "wdio.eval.conf.ts",
+    "tests/e2e/helpers/*.d.ts",
+    "src/preload/api.d.ts",
+    "src/shared/build-constants.d.ts",
+    "src/renderer/types/**/*.d.ts"
+  ],
+  "exclude": []
+}

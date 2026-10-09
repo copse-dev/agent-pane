@@ -149,32 +149,42 @@ describe('switching threads during first-message checkout', () => {
     // The checkout IPC is still pending here: this proves the transition without
     // timing sleeps, replacing the checkout API, or seeding a completed worktree.
     console.info('[checkout-switch] submitting and switching')
-    const switched = await browser.executeAsync(
-      (other, otherPrompt, done) => {
-        const checkout = document.querySelector<HTMLElement>('.footer-checkout-btn')
-        const send = document.querySelector<HTMLButtonElement>('.submit-btn')
-        if (!checkout || !send) return done('Missing composer controls')
-        const timer = window.setTimeout(() => {
-          observer.disconnect()
-          done('Checkout never entered its preparing state')
-        }, 10_000)
-        const observer = new MutationObserver(() => {
-          if (checkout.textContent !== 'Preparing checkout…') return
-          observer.disconnect()
-          document.querySelector<HTMLElement>(`.chat-row[data-thread-id="${other}"]`)?.click()
-          const otherSend = document.querySelector<HTMLButtonElement>('.submit-btn')
-          window.clearTimeout(timer)
-          if (!otherSend || otherSend.disabled) return done('Other thread Send is blocked')
-          const composer = document.querySelector<HTMLElement>('.prompt-input')
-          if (!composer) return done('Other composer is missing')
-          composer.textContent = otherPrompt
-          composer.dispatchEvent(new Event('input', { bubbles: true }))
-          otherSend.click()
-          done('Switched and sent')
-        })
-        observer.observe(checkout, { childList: true, characterData: true, subtree: true })
-        send.click()
-      },
+    const switched = await browser.execute(
+      (other, otherPrompt) =>
+        new Promise<string>((done) => {
+          const checkout = document.querySelector<HTMLElement>('.footer-checkout-btn')
+          const send = document.querySelector<HTMLButtonElement>('.submit-btn')
+          if (!checkout || !send) {
+            done('Missing composer controls')
+            return
+          }
+          const timer = window.setTimeout(() => {
+            observer.disconnect()
+            done('Checkout never entered its preparing state')
+          }, 10_000)
+          const observer = new MutationObserver(() => {
+            if (checkout.textContent !== 'Preparing checkout…') return
+            observer.disconnect()
+            document.querySelector<HTMLElement>(`.chat-row[data-thread-id="${other}"]`)?.click()
+            const otherSend = document.querySelector<HTMLButtonElement>('.submit-btn')
+            window.clearTimeout(timer)
+            if (!otherSend || otherSend.disabled) {
+              done('Other thread Send is blocked')
+              return
+            }
+            const composer = document.querySelector<HTMLElement>('.prompt-input')
+            if (!composer) {
+              done('Other composer is missing')
+              return
+            }
+            composer.textContent = otherPrompt
+            composer.dispatchEvent(new Event('input', { bubbles: true }))
+            otherSend.click()
+            done('Switched and sent')
+          })
+          observer.observe(checkout, { childList: true, characterData: true, subtree: true })
+          send.click()
+        }),
       OTHER,
       OTHER_PROMPT,
     )
@@ -185,7 +195,7 @@ describe('switching threads during first-message checkout', () => {
         browser.execute(
           (prompt) =>
             [...document.querySelectorAll<HTMLElement>('.msg-user')].some((message) =>
-              message.textContent?.includes(prompt),
+              message.textContent.includes(prompt),
             ),
           OTHER_PROMPT,
         ),

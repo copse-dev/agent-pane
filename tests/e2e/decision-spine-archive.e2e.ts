@@ -1,3 +1,4 @@
+import { parseFixtureJsonObject } from './helpers/fixture-json.ts'
 import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { inflateRawSync } from 'node:zlib'
@@ -67,16 +68,7 @@ describe('decision spine archive', () => {
     await browser.pause(1_000)
 
     const exported = await browser.execute(async () => {
-      const api = (
-        window as unknown as {
-          api: {
-            threads: {
-              loadProject: (projectId: string) => Promise<Array<{ id: string }>>
-              exportArchive: (projectId: string, threadId: string) => Promise<{ bytes: Uint8Array }>
-            }
-          }
-        }
-      ).api
+      const api = window.api
       const threads = await api.threads.loadProject('e2e-decision-spine-live')
       const threadId = threads[0]?.id
       if (!threadId) throw new Error('active persisted thread missing')
@@ -89,7 +81,7 @@ describe('decision spine archive', () => {
     const lines = events
       .trim()
       .split('\n')
-      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .map((line) => parseFixtureJsonObject(line))
     const decision = lines.find((line) => line['type'] === 'decision')
     expect(decision).toBeDefined()
     expect(decision?.['actor']).toBe('user')
@@ -98,9 +90,12 @@ describe('decision spine archive', () => {
 
     const argsEntry = [...entries.entries()].find(([path]) => path.endsWith('.args.json'))
     expect(argsEntry).toBeDefined()
-    const args = JSON.parse(argsEntry?.[1] ?? '{}') as { command?: string }
-    expect(args.command?.length).toBeGreaterThan(2_048)
-    expect(args.command).toContain('spine-blob-proof-')
+    const args = parseFixtureJsonObject(argsEntry?.[1] ?? '{}')
+    const archivedCommand = args['command']
+    if (typeof archivedCommand !== 'string')
+      throw new Error('Archived shell args must contain command text')
+    expect(archivedCommand.length).toBeGreaterThan(2_048)
+    expect(archivedCommand).toContain('spine-blob-proof-')
     expect([...entries.keys()].some((path) => path.endsWith('/decisions.jsonl'))).toBe(false)
   })
 })

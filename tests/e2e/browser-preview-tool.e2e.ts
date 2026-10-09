@@ -69,7 +69,7 @@ describe('browser preview tool', () => {
 
     await expect($('.tool-card .tool-name')).toHaveText('Opened preview', { wait: 30_000 })
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
-    const input = await $('.browser-tab-panel.is-active .browser-url-input')
+    const input = await $('.browser-tab-panel.is-active .browser-url-input').getElement()
     await browser.waitUntil(async () => /^http:\/\/localhost:\d+\/$/.test(await input.getValue()), {
       timeout: 10_000,
       timeoutMsg: "expected the visible Browser panel to show Copse's loopback preview URL",
@@ -77,10 +77,10 @@ describe('browser preview tool', () => {
     await browser.waitUntil(
       async () =>
         await browser.execute(() => {
-          const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-            getTitle?: () => string
-          } | null
-          return webview?.getTitle?.() === 'Crumb & Bloom preview'
+          const webview = document.querySelector<Electron.WebviewTag>(
+            '.browser-tab-panel.is-active webview',
+          )
+          return webview?.getTitle() === 'Crumb & Bloom preview'
         }),
       {
         timeout: 15_000,
@@ -90,10 +90,10 @@ describe('browser preview tool', () => {
     await browser.waitUntil(
       async () =>
         await browser.execute(async () => {
-          const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-            executeJavaScript?: (code: string) => Promise<unknown>
-          } | null
-          const text = await webview?.executeJavaScript?.('document.body.innerText')
+          const webview = document.querySelector<Electron.WebviewTag>(
+            '.browser-tab-panel.is-active webview',
+          )
+          const text: unknown = await webview?.executeJavaScript('document.body.innerText')
           return typeof text === 'string' && text.includes('Fresh from the Copse preview')
         }),
       {
@@ -154,7 +154,7 @@ describe('browser preview tool', () => {
   })
 
   it('shows actionable missing-entry guidance without opening or navigating a tab', async () => {
-    const panelsBefore = await $$('.browser-tab-panel')
+    const panelsBefore = await $$('.browser-tab-panel').getElements()
     const addressBefore = await $('.browser-tab-panel.is-active .browser-url-input').getValue()
     // Return to the composer through the visible Browser control before sending another turn.
     await $('[data-panel-control="browser"]').click()

@@ -85,7 +85,7 @@ describe('roadmap review reattach', () => {
     await reviewBtn.click()
     const reviewView = $('.roadmap-review')
     await reviewView.waitForDisplayed({ timeout: 10_000 })
-    const rows = await $$('.roadmap-review-row')
+    const rows = await $$('.roadmap-review-row').getElements()
     if (rows.length !== 2) {
       throw new Error(`expected 2 recovered review rows, got ${String(rows.length)}`)
     }

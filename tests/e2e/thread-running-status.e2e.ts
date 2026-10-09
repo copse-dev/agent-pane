@@ -11,9 +11,9 @@ describe('thread running status dots', () => {
   let idleThreadTitle: string
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     ;({ runningThreadTitle, idleThreadTitle } = seedThreadRunningStatusFixture(process.cwd()))
@@ -31,7 +31,7 @@ describe('thread running status dots', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(runningThreadTitle)
 
-    const seededUnreadRow = await $(`.chat-row*=${idleThreadTitle}`)
+    const seededUnreadRow = await $(`.chat-row*=${idleThreadTitle}`).getElement()
     await expect(seededUnreadRow).toHaveElementClass('is-unread')
     await expect(seededUnreadRow.$('.chat-unread-dot')).toHaveAttribute(
       'aria-label',
@@ -66,7 +66,7 @@ describe('thread running status dots', () => {
     await $('.submit-btn').click()
     await scenario.waitForHold('refactor-status')
 
-    const runningRow = await $('.chat-row.is-running')
+    const runningRow = await $('.chat-row.is-running').getElement()
     await runningRow.waitForExist({ timeout: 15_000 })
     await expect(runningRow.$('.chat-title')).toHaveText(runningThreadTitle)
     await expect(runningRow.$('.chat-running-status')).toExist()
@@ -99,21 +99,21 @@ describe('thread running status dots', () => {
         pathCount: dots.querySelectorAll('path').length,
       }
     }, idleThreadTitle)
-    await expect(placement).not.toBeNull()
-    await expect(placement?.dotsLeftOfTitle).toBe(true)
-    await expect(placement?.dotsInGutter).toBe(true)
-    await expect(placement?.titlesAligned).toBe(true)
-    await expect(placement?.idleHasDots).toBe(false)
-    await expect(placement?.pathCount).toBe(3)
+    expect(placement).not.toBeNull()
+    expect(placement?.dotsLeftOfTitle).toBe(true)
+    expect(placement?.dotsInGutter).toBe(true)
+    expect(placement?.titlesAligned).toBe(true)
+    expect(placement?.idleHasDots).toBe(false)
+    expect(placement?.pathCount).toBe(3)
 
     await saveElementScreenshot('#pane-projects', 'thread-running-status-dots.png')
 
-    const idleRow = await $(`.chat-row*=${idleThreadTitle}`)
+    const idleRow = await $(`.chat-row*=${idleThreadTitle}`).getElement()
     await idleRow.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText(idleThreadTitle)
 
     await scenario.release('refactor-status')
-    const unreadRow = await $(`.chat-row*=${runningThreadTitle}`)
+    const unreadRow = await $(`.chat-row*=${runningThreadTitle}`).getElement()
     await unreadRow.$('.chat-unread-dot').waitForExist({ timeout: 15_000 })
     await expect(unreadRow).toHaveElementClass('is-unread')
     await expect(unreadRow.$('.chat-unread-dot')).toHaveAttribute(
@@ -136,9 +136,9 @@ describe('thread running status dots', () => {
         dotInGutter: dotRect.left >= rowRect.left && dotRect.right <= titleRect.left + 1,
       }
     }, runningThreadTitle)
-    await expect(unreadPlacement).not.toBeNull()
-    await expect(unreadPlacement?.dotLeftOfTitle).toBe(true)
-    await expect(unreadPlacement?.dotInGutter).toBe(true)
+    expect(unreadPlacement).not.toBeNull()
+    expect(unreadPlacement?.dotLeftOfTitle).toBe(true)
+    expect(unreadPlacement?.dotInGutter).toBe(true)
 
     await unreadRow.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText(runningThreadTitle)

@@ -21,13 +21,15 @@ describe('titlebar tooltips', () => {
   })
 
   it('labels a hovered titlebar icon and clears it on the way out', async () => {
-    const terminalBtn = await $('.titlebar-panel-controls [data-panel-control="terminal"]')
+    const terminalBtn = await $(
+      '.titlebar-panel-controls [data-panel-control="terminal"]',
+    ).getElement()
     await terminalBtn.waitForDisplayed({ timeout: 30_000 })
     await expect(terminalBtn).toHaveAttribute('data-tooltip', 'Open terminal')
 
     await prepareE2eScreenshot()
     await terminalBtn.moveTo()
-    const tip = await $('.app-tooltip')
+    const tip = await $('.app-tooltip').getElement()
     await expect(tip).toBeDisplayed({ wait: 5_000 })
     await expect(tip).toHaveText('Open terminal')
 
@@ -48,7 +50,9 @@ describe('titlebar tooltips', () => {
   })
 
   it('keeps the tooltip out of the way once the button is clicked', async () => {
-    const changesBtn = await $('.titlebar-panel-controls [data-panel-control="changes"]')
+    const changesBtn = await $(
+      '.titlebar-panel-controls [data-panel-control="changes"]',
+    ).getElement()
     await changesBtn.moveTo()
     await expect($('.app-tooltip')).toBeDisplayed({ wait: 5_000 })
 
