@@ -116399,7 +116399,7 @@ ${description}
   }
   let classifierUse = null;
   let classifierUseKey = "";
-  let classifierUseThreadId = null;
+  let classifierUseOwner = null;
   let classifierUseSeq = 0;
   let classifierUseInFlight = false;
   function refreshClassifierUse(thread, force = false) {
@@ -116407,15 +116407,16 @@ ${description}
     if (!thread || projectId === null) {
       classifierUse = null;
       classifierUseKey = "";
-      classifierUseThreadId = null;
+      classifierUseOwner = null;
       classifierUseSeq++;
       return;
     }
     const last = thread.messages.at(-1);
     const key = `${projectId}:${thread.id}:${thread.status}:${String(thread.messages.length)}:${String(last?.toolCalls.length ?? 0)}`;
     if (force ? classifierUseInFlight : key === classifierUseKey) return;
-    if (thread.id !== classifierUseThreadId) classifierUse = null;
-    classifierUseThreadId = thread.id;
+    const owner = `${projectId}:${thread.id}`;
+    if (owner !== classifierUseOwner) classifierUse = null;
+    classifierUseOwner = owner;
     classifierUseKey = key;
     const seq = ++classifierUseSeq;
     classifierUseInFlight = true;
