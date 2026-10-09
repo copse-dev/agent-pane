@@ -10,8 +10,10 @@ describe('renderer input guards', () => {
     await $('.chat-row[data-thread-id="demo-sidebar-changes-running"]').click()
     const stop = $('.stop-btn')
     await stop.waitForDisplayed()
-    // Focus the transcript rather than any editor, as a reader would.
-    await $('.messages-list').click()
+    // Nothing focused — no editor, not the composer — as when reading.
+    await browser.execute(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    })
 
     await browser.keys('Escape')
     await expect(stop).toHaveElementClass('stop-pending')
