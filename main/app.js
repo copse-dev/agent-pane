@@ -130387,56 +130387,87 @@ var init_pr_pane_activity = __esm({
 });
 
 // src/renderer/views/pr-thread-relationships.ts
-function renderPrThreadRelationships(rows, openThread) {
+function threadChip(row2, kind, openThread) {
+  const kindLabel2 = row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "pr-open-thread-btn pr-thread-link",
+      "data-thread-id": row2.threadId,
+      "data-relationship": kind,
+      "aria-label": `Open thread: ${row2.title}`
+    },
+    el("span", { class: "pr-thread-title" }, row2.title),
+    ...kind === "related" ? [el("span", { class: "pr-thread-kind" }, kindLabel2)] : []
+  );
+  button.addEventListener("click", () => {
+    openThread(row2.threadId);
+  });
+  return button;
+}
+function renderPrThreadRelationships(rows, openThread, view = {}) {
   const host = el("section", {
     class: "pr-thread-relationships",
     "aria-label": "PR thread relationships"
   });
-  const groups = [
-    {
-      label: "Producing threads",
-      kind: "produced",
-      rows: rows.filter((row2) => row2.kinds.includes("produced"))
-    },
-    {
-      label: "Related threads",
-      kind: "related",
-      rows: rows.filter((row2) => !row2.kinds.includes("produced"))
-    }
-  ];
-  for (const group of groups) {
-    if (group.rows.length === 0) continue;
-    const section = el(
-      "div",
-      { class: "pr-thread-group", "data-relationship-group": group.kind },
-      el("h5", {}, group.label)
+  const produced = rows.filter((row2) => row2.kinds.includes("produced"));
+  const related = rows.filter((row2) => !row2.kinds.includes("produced"));
+  if (produced.length > 0) {
+    host.append(
+      el(
+        "div",
+        { class: "pr-thread-group", "data-relationship-group": "produced" },
+        el("h5", {}, "Produced by"),
+        ...produced.map((row2) => threadChip(row2, "produced", openThread))
+      )
     );
-    for (const row2 of group.rows) {
-      const label = row2.kinds.includes("produced") ? "Created PR" : row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
-      const button = el(
-        "button",
-        {
-          type: "button",
-          class: "pr-open-thread-btn pr-thread-link",
-          "data-thread-id": row2.threadId,
-          "data-relationship": group.kind,
-          "aria-label": `Open thread: ${row2.title}`
-        },
-        el("span", { class: "pr-thread-title" }, row2.title),
-        el("span", { class: "pr-thread-kind" }, label)
-      );
-      button.addEventListener("click", () => {
-        openThread(row2.threadId);
-      });
-      section.append(button);
-    }
-    host.append(section);
   }
+  if (related.length === 0) return host;
+  if (produced.length === 0) {
+    host.append(
+      el(
+        "div",
+        { class: "pr-thread-group", "data-relationship-group": "related" },
+        el("h5", {}, "Related threads"),
+        ...related.map((row2) => threadChip(row2, "related", openThread))
+      )
+    );
+    return host;
+  }
+  let expanded = view.expanded ?? false;
+  const group = el(
+    "div",
+    {
+      class: "pr-thread-group pr-thread-group-more",
+      "data-relationship-group": "related",
+      "aria-label": "Related threads"
+    },
+    ...related.map((row2) => threadChip(row2, "related", openThread))
+  );
+  const toggle = el(
+    "button",
+    { type: "button", class: "pr-thread-toggle" },
+    el("span", {}, `${String(related.length)} related`),
+    chevronRightIcon("ui-icon ui-icon-sm")
+  );
+  const sync = () => {
+    group.hidden = !expanded;
+    toggle.setAttribute("aria-expanded", String(expanded));
+  };
+  sync();
+  toggle.addEventListener("click", () => {
+    expanded = !expanded;
+    sync();
+    view.onToggle?.(expanded);
+  });
+  host.append(toggle, group);
   return host;
 }
 var init_pr_thread_relationships = __esm({
   "src/renderer/views/pr-thread-relationships.ts"() {
     init_helpers();
+    init_icons();
   }
 });
 
@@ -130539,6 +130570,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     class: "pr-detail-sections",
     "aria-label": "Pull request sections"
   });
+  const relationshipsHost = el("div", { class: "pr-relationships-host" });
   const activityHost = el("div", { class: "pr-activity", hidden: true });
   const descriptionHost = el("div", {
     class: "pr-viewer-description message-text streaming-markdown"
@@ -130551,6 +130583,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   viewerRoot.append(
     metaHost,
     sectionsHost,
+    relationshipsHost,
     activityHost,
     descriptionHost,
     filesHost,
@@ -130559,6 +130592,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     emptyState
   );
   let activeSection = "overview";
+  const relatedExpanded = /* @__PURE__ */ new Map();
   let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
@@ -130715,6 +130749,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     clear(listBody);
     listBody.append(paneLoadingRow("Loading pull requests\u2026"));
     clear(metaHost);
+    clear(relationshipsHost);
     clear(descriptionHost);
     descriptionHost.classList.remove("pr-viewer-description-fill");
     clear(filesHost);
@@ -130733,6 +130768,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   function renderGhUnavailableViewer() {
     clear(metaHost);
     clear(sectionsHost);
+    clear(relationshipsHost);
     activityHost.hidden = true;
     clear(descriptionHost);
     descriptionHost.classList.remove("pr-viewer-description-fill");
@@ -131011,17 +131047,33 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     });
     return btn;
   }
-  function renderMeta() {
-    clear(metaHost);
+  function renderRelationships() {
+    clear(relationshipsHost);
     if (!selectedPr) return;
-    const relationships = prRelationships ? renderPrThreadRelationships(prRelationships, (id) => {
-      switchThread(store2, id);
-    }) : el(
+    const prKey = githubPrKey(selectedPr);
+    const relationships = prRelationships ? renderPrThreadRelationships(
+      prRelationships,
+      (id) => {
+        switchThread(store2, id);
+      },
+      {
+        expanded: relatedExpanded.get(prKey),
+        onToggle: (expanded) => {
+          relatedExpanded.set(prKey, expanded);
+        }
+      }
+    ) : el(
       "p",
       { class: "pr-thread-empty", role: "status" },
       relationshipError ? "Thread relationships unavailable." : "Loading thread relationships\u2026"
     );
     relationships.hidden = prDetails !== null && activeSection !== "overview";
+    relationshipsHost.append(relationships);
+  }
+  function renderMeta() {
+    clear(metaHost);
+    renderRelationships();
+    if (!selectedPr) return;
     if (!prDetails) {
       metaHost.append(
         el(
@@ -131037,8 +131089,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           "div",
           { class: "pr-viewer-subtitle" },
           `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`
-        ),
-        relationships
+        )
       );
       return;
     }
@@ -131199,8 +131250,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       branch,
       badges,
       actions,
-      statusLine,
-      relationships
+      statusLine
     );
   }
   function renderDescription() {
@@ -133565,27 +133615,27 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
         }
         const trackedThread = getThreadById(store2, itemThreadId(item));
         if (trackedThread) {
-          const threadChip = el("span", {
+          const threadChip2 = el("span", {
             class: "roadmap-thread-chip",
             role: "link",
             tabindex: "0",
             title: `Reopen thread "${trackedThread.title}"`,
             "aria-label": `Reopen thread "${trackedThread.title}"`
           });
-          threadChip.append(attachmentIcon("thread", "ui-icon roadmap-thread-chip-icon"));
-          threadChip.addEventListener("click", (e3) => {
+          threadChip2.append(attachmentIcon("thread", "ui-icon roadmap-thread-chip-icon"));
+          threadChip2.addEventListener("click", (e3) => {
             e3.stopPropagation();
             switchThread(store2, trackedThread.id);
             getPromptAttachmentHandlers()?.focusComposer?.();
           });
-          threadChip.addEventListener("keydown", (e3) => {
+          threadChip2.addEventListener("keydown", (e3) => {
             if (e3.key !== "Enter" && e3.key !== " ") return;
             e3.preventDefault();
             e3.stopPropagation();
             switchThread(store2, trackedThread.id);
             getPromptAttachmentHandlers()?.focusComposer?.();
           });
-          meta3.append(threadChip);
+          meta3.append(threadChip2);
         }
         const complexity = item.fields["complexity"];
         if (isRoadmapComplexity(complexity)) {
