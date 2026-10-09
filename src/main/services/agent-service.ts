@@ -73,7 +73,12 @@ import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isAppleDevelopmentToolOffered } from './apple-development/apple-development-tool-scope.ts'
 import { dispatchInlineVisualization } from './inline-visualization.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
-import { appendContextCompaction, getThreadMeta, getLatestThreadPlan, updateMeta } from './thread-store.ts'
+import {
+  appendContextCompaction,
+  getThreadMeta,
+  getLatestThreadPlan,
+  updateMeta,
+} from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
