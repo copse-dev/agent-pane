@@ -116589,6 +116589,7 @@ ${description}
       classifierUseKey = "";
       classifierUseOwner = null;
       classifierUseSeq++;
+      classifierUseInFlight = false;
       return;
     }
     const last = thread.messages.at(-1);
@@ -116602,15 +116603,15 @@ ${description}
     classifierUseInFlight = true;
     api2.usage.getThreadClassifierUse(projectId, thread.id).then(
       (use) => {
-        classifierUseInFlight = false;
         if (seq !== classifierUseSeq) return;
+        classifierUseInFlight = false;
         const next = use.calls > 0 ? use : null;
         if (JSON.stringify(next) === JSON.stringify(classifierUse)) return;
         classifierUse = next;
         updateFooter();
       },
       () => {
-        classifierUseInFlight = false;
+        if (seq === classifierUseSeq) classifierUseInFlight = false;
       }
     );
   }
