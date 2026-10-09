@@ -112,13 +112,34 @@ describe('SshWorkspaceFs', () => {
   })
 
   it('reports a missing remote text file as ENOENT', async () => {
-    const transport = new FakeSshTransport()
+    const transport = new FakeSshTransport([{ when: /test -e/, code: 1 }])
     setSshTransportFactory(() => transport)
     const fs = new SshWorkspaceFs('dev', '/home/me/project')
 
     await assert.rejects(() => fs.readFile('/home/me/project/missing.ts', 'utf-8'), {
       code: 'ENOENT',
     })
+  })
+
+  it('does not report a file missing when the existence probe itself fails', async (t) => {
+    // ssh exits 255 for its own failures (connection reset, auth), never `test -e`.
+    const transport = new FakeSshTransport([
+      { when: /test -e/, code: 255, stderr: 'Connection reset by peer' },
+    ])
+    t.mock.method(transport, 'fetchFile', async () => {
+      await Promise.resolve()
+      throw new Error('Connection reset by peer')
+    })
+    setSshTransportFactory(() => transport)
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+
+    await assert.rejects(
+      () => fs.readFile('/home/me/project/src/app.ts', 'utf-8'),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message === 'Connection reset by peer' &&
+        !Object.hasOwn(error, 'code'),
+    )
   })
 
   it('surfaces a failed transfer of an existing file instead of reporting it missing', async (t) => {

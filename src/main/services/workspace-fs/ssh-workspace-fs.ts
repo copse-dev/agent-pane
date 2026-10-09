@@ -183,9 +183,11 @@ export class SshWorkspaceFs implements WorkspaceFsPathProbe {
       await fetchFileOnSshHost(this.hostId, this.remoteRoot, path, localPath)
       return await readFile(localPath, 'utf-8')
     } catch (error) {
-      // Only a confirmed-missing file is ENOENT; a timeout or permission error
-      // must not read as "absent" to a caller that would then create it.
-      if (await this.exists(path)) throw error
+      // Only a confirmed-missing file is ENOENT; a timeout, permission error or
+      // dead connection must not read as "absent" to a caller that would then
+      // create it. `test -e` exits 1 for a missing path; ssh's own failures are 255.
+      const probe = await this.exec(`test -e ${this.quote(path)}`)
+      if (probe.code !== 1) throw error
       const err: NodeJS.ErrnoException = new Error(`ENOENT: no such remote file: ${path}`, {
         cause: error,
       })
