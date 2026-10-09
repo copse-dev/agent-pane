@@ -65524,9 +65524,12 @@ function markNavigationRestored(restored) {
   navigationRestored = true;
   lastNavigation = restored;
 }
+function holdNavigation(projectId) {
+  navigationHeldFor = projectId;
+}
 function serializedNavigation(api2, navigation) {
   if (!ownsNavigation || !navigationRestored) return Promise.resolve();
-  if (lastNavigation !== null && lastNavigation.activeProjectId === navigation.activeProjectId && lastNavigation.activeThreadId === navigation.activeThreadId) {
+  if (navigationHeldFor !== null && navigation.activeProjectId !== navigationHeldFor || lastNavigation !== null && lastNavigation.activeProjectId === navigation.activeProjectId && lastNavigation.activeThreadId === navigation.activeThreadId) {
     return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
   }
   lastNavigation = navigation;
@@ -65831,7 +65834,7 @@ function attachAutosave(store2, api2) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -65844,6 +65847,7 @@ var init_persistence = __esm({
     ownsNavigation = true;
     navigationRestored = true;
     lastNavigation = null;
+    navigationHeldFor = null;
     threadWriteKey = (projectId, threadId) => `thread:${projectId}:${threadId}`;
     persistedMeta = /* @__PURE__ */ new Map();
     AUTOSAVE_DEBOUNCE_MS = 250;
@@ -68215,6 +68219,10 @@ function paginateSidebarThreads(threads, visibleLimit, activeThreadId) {
     hasMore: visibleCount < total2
   };
 }
+function clearPendingSwitch() {
+  pendingSwitch = null;
+  holdNavigation(null);
+}
 function settleActivationWaiter(projectId, error62) {
   const waiter = activationWaiters.get(projectId);
   if (!waiter) return;
@@ -68224,13 +68232,13 @@ function settleActivationWaiter(projectId, error62) {
   else waiter.resolve();
 }
 function endSwitch(gen, projectId) {
-  if (pendingSwitch?.gen === gen) pendingSwitch = null;
+  if (pendingSwitch?.gen === gen) clearPendingSwitch();
   settleActivationWaiter(projectId);
 }
 function supersedePendingSwitch() {
   if (!pendingSwitch) return;
   const superseded = pendingSwitch;
-  pendingSwitch = null;
+  clearPendingSwitch();
   settleActivationWaiter(superseded.projectId);
 }
 function getSidebarThreads(store2, projectId) {
@@ -68311,7 +68319,7 @@ function setWorkspaceInOrder(api2, path, sshHost) {
 function cancelPendingSwitch(store2, api2) {
   const cancelled = pendingSwitch;
   if (!cancelled) return;
-  pendingSwitch = null;
+  clearPendingSwitch();
   switchGeneration += 1;
   settleActivationWaiter(cancelled.projectId);
   if (!cancelled.dispatched) return;
@@ -68323,7 +68331,7 @@ function cancelPendingSwitch(store2, api2) {
 }
 function abortProjectActivation(store2, id, gen, outgoingId, error62) {
   if (gen !== switchGeneration) return;
-  if (pendingSwitch?.gen === gen) pendingSwitch = null;
+  if (pendingSwitch?.gen === gen) clearPendingSwitch();
   settleActivationWaiter(id, error62);
   const revertExpanded = outgoingId ?? store2.getState().activeProjectId;
   if (revertExpanded) {
@@ -68448,7 +68456,10 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
     }
   }
   const flushOutgoing = outgoingId && outgoingId !== id ? flushProjectThreads(api2, outgoingId, outgoingThreads) : Promise.resolve();
-  if (pendingSwitch?.gen === gen) pendingSwitch.dispatched = true;
+  if (pendingSwitch?.gen === gen) {
+    pendingSwitch.dispatched = true;
+    holdNavigation(id);
+  }
   const projectsAtDispatch = store2.getState().projects;
   const persistSelection = saveProjects(api2, projectsAtDispatch, id, pendingThreadId);
   const endWorkspace = begin("switch:workspace-set");
@@ -68461,6 +68472,7 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
     return;
   }
   if (!opened) {
+    holdNavigation(null);
     await markProjectMissing(store2, api2, id);
     endActivate({ outcome: "missing" });
     abortProjectActivation(
@@ -68557,7 +68569,10 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
     outgoingId,
     outgoingThreads,
     pendingThreadId
-  );
+  ).catch((error62) => {
+    endSwitch(gen, id);
+    throw error62;
+  });
 }
 function switchProject(store2, api2, id, pendingThreadId = null) {
   const proj = store2.getState().projects.find((p2) => p2.id === id);
