@@ -108,7 +108,13 @@ describe('settings usage model value map cost axis', () => {
     assert.equal(await fieldset.$('details.frontier-unpriced-list').isExisting(), false)
 
     await prepareE2eScreenshot()
-    await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-task.png')
+    // Keep the pointer outside the chart while capture framing scrolls it.
+    // The full fieldset is taller than the Settings scrollport; capture the
+    // plot itself so its heading and explanatory footer are not cut in half.
+    await $('.settings-nav').moveTo()
+    await expect($('.frontier-tooltip')).not.toBeDisplayed()
+    await saveElementScreenshot('.frontier-controls', 'settings-usage-value-map-task-controls.png')
+    await saveElementScreenshot('.frontier-chart', 'settings-usage-value-map-task.png')
 
     const discoverBtn = fieldset.$('button.frontier-discover')
     await expect(discoverBtn).toBeDisplayed()
