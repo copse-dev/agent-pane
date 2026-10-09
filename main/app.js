@@ -112341,22 +112341,36 @@ function createContextWheel() {
   root.append(svg2, popover);
   let popoverActive = false;
   let currentUsage = null;
-  let engaged = false;
+  let hovered = false;
+  let focused = false;
   function showPopover() {
-    engaged = true;
     if (popoverActive) popover.hidden = false;
   }
   function hidePopover() {
-    engaged = false;
     popover.hidden = true;
   }
   function restoreEngagedPopover() {
-    if (engaged && popoverActive && !root.hidden) popover.hidden = false;
+    if ((hovered || focused) && popoverActive && !root.hidden) popover.hidden = false;
   }
-  root.addEventListener("mouseenter", showPopover);
-  root.addEventListener("mouseleave", hidePopover);
-  root.addEventListener("focusin", showPopover);
-  root.addEventListener("focusout", hidePopover);
+  root.addEventListener("mousedown", (event) => {
+    if (event.target instanceof Node && !popover.contains(event.target)) event.preventDefault();
+  });
+  root.addEventListener("mouseenter", () => {
+    hovered = true;
+    showPopover();
+  });
+  root.addEventListener("mouseleave", () => {
+    hovered = false;
+    if (!focused) hidePopover();
+  });
+  root.addEventListener("focusin", () => {
+    focused = true;
+    showPopover();
+  });
+  root.addEventListener("focusout", () => {
+    focused = false;
+    if (!hovered) hidePopover();
+  });
   function clearSegments() {
     while (segGroup.firstChild) segGroup.firstChild.remove();
   }
