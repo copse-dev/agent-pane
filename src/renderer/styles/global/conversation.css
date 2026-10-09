@@ -62,25 +62,30 @@
 .transcript-selection-quote {
   position: fixed;
   z-index: 999;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
   width: min(360px, calc(100vw - 24px));
+  min-height: 44px;
+  padding: 6px 7px 6px 13px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
   color: var(--text-primary);
   box-shadow: var(--shadow-md);
-  overflow: hidden;
 }
 .transcript-selection-quote[hidden] {
   display: none;
 }
 .transcript-selection-reply {
   display: block;
-  width: 100%;
-  min-height: 76px;
+  flex: 1;
+  min-width: 0;
+  min-height: 26px;
   max-height: 200px;
-  padding: 14px 16px 8px;
+  padding: 1px 0;
   border: 0;
-  border-radius: 0;
   background: transparent;
   color: var(--text-primary);
   font: inherit;
@@ -99,9 +104,7 @@
 }
 .transcript-selection-actions {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 4px 10px 10px;
+  align-items: flex-end;
 }
 .transcript-selection-actions button {
   display: inline-flex;
@@ -126,7 +129,8 @@
   cursor: default;
 }
 .transcript-selection-status {
-  padding: 0 16px 12px;
+  flex-basis: 100%;
+  padding: 0 6px 4px;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
 }
