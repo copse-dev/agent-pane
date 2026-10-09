@@ -522,6 +522,92 @@ test('a project switch that cannot open its folder persists the project it stays
   assert.deepEqual(persistedActive, ['gone-b', 'stay-a'])
 })
 
+test('a failed target thread load restores main and navigation before rejecting its waiter', async () => {
+  resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  markNavigationRestored({ activeProjectId: 'a', activeThreadId: 't-a' })
+  const roots: string[] = []
+  const selections: Array<string | null> = []
+  const api = makeApi({
+    workspaceOpen: async () => '/b',
+    workspaceSet: async (path) => {
+      roots.push(path)
+      return path
+    },
+    setNavigation: async (navigation) => {
+      selections.push(navigation.activeProjectId)
+    },
+    loadProjectThreads: async () => {
+      throw new Error('thread load failed')
+    },
+  })
+  await assert.rejects(addProject(store, api), /thread load failed/)
+  assert.deepEqual(roots, ['/b', '/a'])
+  assert.equal(selections.at(-1), 'a')
+  assert.equal(store.getState().activeProjectId, 'a')
+  assert.equal(store.getState().expandedProjectId, 'a')
+  assert.equal(store.getState().workspaceRoot, '/a')
+  assert.equal(store.getState().threads[0]?.id, 't-a')
+  assert.equal(isProjectSwitchInFlight(store, store.getState().expandedProjectId ?? ''), false)
+  await saveNavigation(api, 'a', 't-next')
+  assert.equal(selections.at(-1), 'a', 'the navigation hold has been released')
+})
+
+test('a superseded thread-load failure cannot roll back a newer project switch', async () => {
+  resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
+  const store = createStore({
+    projects: ['a', 'b', 'c'].map((id) => ({ id, path: `/${id}`, name: id })),
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  markNavigationRestored({ activeProjectId: 'a', activeThreadId: 't-a' })
+  let failLoad: (error: Error) => void = () => undefined
+  let loading = false
+  const load = new Promise<Thread[]>((_resolve, reject) => {
+    failLoad = reject
+  })
+  const roots: string[] = []
+  const selections: Array<string | null> = []
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      roots.push(path)
+      return path
+    },
+    setNavigation: async (navigation) => {
+      selections.push(navigation.activeProjectId)
+    },
+    loadProjectThreads: async (id) => {
+      if (id === 'b') {
+        loading = true
+        return load
+      }
+      return [thread('t-c')]
+    },
+  })
+  switchProject(store, api, 'b')
+  await waitUntil(() => loading)
+  switchProject(store, api, 'c')
+  await waitUntil(() => store.getState().activeProjectId === 'c')
+  failLoad(new Error('old load failed'))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.deepEqual(roots, ['/b', '/c'])
+  assert.equal(selections.at(-1), 'c')
+  assert.equal(store.getState().expandedProjectId, 'c')
+  assert.equal(isProjectSwitchInFlight(store, store.getState().expandedProjectId ?? ''), false)
+})
+
 test('switchProjectThread selects the clicked thread after activation', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({
