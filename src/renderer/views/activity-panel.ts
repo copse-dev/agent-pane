@@ -79,6 +79,7 @@ export function mountActivityPanel(
         view.summary,
         closeButton,
       ),
+      view.notice,
       view.body,
       el(
         'footer',

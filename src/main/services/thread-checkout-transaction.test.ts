@@ -724,6 +724,92 @@ describe('first-message checkout transaction', () => {
     assert.deepEqual(getThread().worktree, recovered)
   })
 
+  describe('taking over the previous automation run’s checkout', () => {
+    const adopted: ThreadWorktree = {
+      path: '/worktrees/thread-1',
+      branch: 'copse/task-previous',
+      baseBranch: 'main',
+      baseCommit: 'd'.repeat(40),
+      createdAt: 6,
+      seededFromDirtyProject: false,
+    }
+    const request = {
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Run again',
+      choice: 'worktree' as const,
+    }
+
+    it('uses an adopted checkout instead of allocating, and persists it like any other', async () => {
+      const calls: string[] = []
+      const { prepare, getThread } = fixture({
+        reuseAutomationWorktree: async (input) => {
+          calls.push(`reuse:${input.baseBranch}`)
+          return adopted
+        },
+        allocate: async () => {
+          throw new Error('must not allocate')
+        },
+        validate: async ({ worktree }) => {
+          calls.push(`validate:${worktree.branch}`)
+          return { branch: worktree.branch }
+        },
+      })
+      const result = await prepare(request)
+      assert.equal(result.checkoutMode, 'worktree')
+      assert.deepEqual(result.worktree, adopted)
+      assert.deepEqual(calls, ['reuse:main', 'validate:copse/task-previous'])
+      assert.deepEqual(getThread().worktree, adopted)
+      assert.equal(getThread().gitBranch, adopted.branch)
+      // Fresh state at the new base, so the renderer may trust the prompt-boundary facts.
+      assert.deepEqual(result.promptState, { startingCommit: adopted.baseCommit, dirty: false })
+    })
+
+    it('falls back to a fresh allocation when nothing can be taken over', async () => {
+      let allocations = 0
+      const { prepare } = fixture({
+        reuseAutomationWorktree: async () => null,
+        allocate: async ({ baseBranch }) => {
+          allocations += 1
+          return { ...adopted, baseBranch, branch: 'copse/fresh' }
+        },
+      })
+      const result = await prepare(request)
+      assert.equal(allocations, 1)
+      assert.equal(result.worktree?.branch, 'copse/fresh')
+    })
+
+    it('never reuses over a checkout recovered from an interrupted attempt', async () => {
+      let reuseCalls = 0
+      const recovered: ThreadWorktree = { ...adopted, branch: 'copse/recovered' }
+      const { prepare } = fixture({
+        recoverUnpersisted: async () => recovered,
+        reuseAutomationWorktree: async () => {
+          reuseCalls += 1
+          return adopted
+        },
+      })
+      const result = await prepare(request)
+      assert.equal(reuseCalls, 0)
+      assert.deepEqual(result.worktree, recovered)
+    })
+
+    it('surfaces a failure after hand-over instead of allocating on top of it', async () => {
+      let allocations = 0
+      const { prepare } = fixture({
+        reuseAutomationWorktree: async () => {
+          throw new Error('Cannot move the worktree to its new thread')
+        },
+        allocate: async () => {
+          allocations += 1
+          return adopted
+        },
+      })
+      await assert.rejects(prepare(request), /Cannot move the worktree/)
+      assert.equal(allocations, 0)
+    })
+  })
+
   it('retains a dirty-seeded worktree when metadata persistence fails', async () => {
     const worktree: ThreadWorktree = {
       path: '/worktrees/thread-1',

@@ -13,7 +13,7 @@ export function bindSelectionQuote(
     class: 'transcript-selection-reply',
     placeholder: 'Reply…',
     'aria-label': 'Reply to selected text',
-    rows: '2',
+    rows: '1',
   })
   input.setAttribute('aria-keyshortcuts', 'Enter Meta+Enter Control+Enter')
   const sendLabel = el('span', {}, 'Send')
@@ -53,6 +53,11 @@ export function bindSelectionQuote(
   let scrollingTo: number | null = null
 
   const hasDraft = (): boolean => input.value.length > 0 || sending
+  const resizeInput = (): void => {
+    input.style.height = 'auto'
+    input.style.height = `${String(Math.min(input.scrollHeight, 200))}px`
+    if (!popup.hidden) position()
+  }
   const updateControls = (): void => {
     input.disabled = sending
     sendButton.disabled = sending || !input.value.trim()
@@ -76,6 +81,7 @@ export function bindSelectionQuote(
       highlight.clear()
     }
     input.value = ''
+    input.style.height = ''
     status.hidden = true
     status.textContent = ''
     sending = false
@@ -176,6 +182,7 @@ export function bindSelectionQuote(
     }
     if (text !== selectedText) {
       input.value = ''
+      input.style.height = ''
       status.hidden = true
       revision++
     }
@@ -231,6 +238,7 @@ export function bindSelectionQuote(
       dismiss()
     } else {
       updateControls()
+      resizeInput()
     }
   })
   input.addEventListener('copy', (event) => {
