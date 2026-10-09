@@ -1,6 +1,9 @@
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import {
   automationPermissionKey,
+  isAutomationFailureCode,
+  type AutomationFailureCode,
+  type AutomationSchedulerHealth,
   type AutomationPermission,
   type AutomationPermissionOption,
   type AutomationLiveWorktreeLimit,
@@ -22,6 +25,7 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 import { mountBranchCiEditor, type AutomationCreationDraft } from './branch-ci-editor.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { describeRetainedWorktrees } from './automation-retained-worktrees.ts'
+import { describeAutomationFailure } from '@shared/automation-failure.ts'
 
 function cleanIpcError(error: unknown): string {
   return ipcErrorMessage(error, 'Automation request failed.')
@@ -135,6 +139,12 @@ function scheduleDescription(cron: string): string {
   return schedule ? simpleScheduleDescription(schedule) : 'Custom schedule'
 }
 
+/** What the manager can ask its host to do; the host owns navigation and the modal it sits in. */
+export interface AutomationManagerActions {
+  /** Open the task a run created (closing whatever holds the manager). */
+  openRun?: (threadId: string) => void
+}
+
 export interface AutomationEditor extends HTMLElement {
   setPluginEnabled: (enabled: boolean) => void
 }
@@ -155,6 +165,7 @@ export function createAutomationPluginSettings(
   revealScheduleId?: string,
   createNew = false,
   projectId = store.getState().activeProjectId,
+  actions: AutomationManagerActions = {},
 ): AutomationEditor {
   const root = el('section', {
     class: 'automation-plugin-settings',
@@ -196,6 +207,11 @@ export function createAutomationPluginSettings(
     hidden: true,
   })
   const status = el('div', { class: 'automation-status', role: 'status', hidden: true })
+  const schedulerNotice = el('div', {
+    class: 'automation-scheduler-notice',
+    role: 'status',
+    hidden: true,
+  })
   const list = el('div', { class: 'automation-list' })
 
   const form = el('form', { class: 'automation-form', hidden: true, novalidate: true })
@@ -345,7 +361,7 @@ export function createAutomationPluginSettings(
     el('label', { class: 'automation-enabled-label' }, enabledInput, 'Schedule enabled'),
     el('div', { class: 'automation-form-actions' }, saveButton, cancelButton),
   )
-  root.append(heading, scope, notice, attention, status, list, form)
+  root.append(heading, scope, notice, schedulerNotice, attention, status, list, form)
   const ciEditor = mountBranchCiEditor({
     root,
     heading,
@@ -357,6 +373,7 @@ export function createAutomationPluginSettings(
     showStatus,
     hideStatus,
     onScheduleSelected: (draft) => void openForm(undefined, draft),
+    ...(actions.openRun ? { onOpenRun: actions.openRun } : {}),
   })
   // A schedule fires unattended, potentially months after it was written, so it
   // stores a rule rather than a model id — the same treatment every plugin-owned
@@ -640,6 +657,122 @@ export function createAutomationPluginSettings(
     await modelPicker.refresh(selectedModel)
   }
 
+  interface ShownProblem {
+    at: number
+    code: AutomationFailureCode | undefined
+    message: string
+    threadId: string | undefined
+    kind: 'failed' | 'pending-start'
+  }
+
+  /**
+   * What the schedule's latest unresolved problem is. Main records trigger failures; a run that
+   * started and then died is only known to the thread, which the renderer holds for this project.
+   */
+  function scheduleProblem(schedule: AutomationSchedule): ShownProblem | undefined {
+    const recorded = schedule.lastProblem
+    if (recorded !== undefined) {
+      return {
+        at: recorded.at,
+        code: recorded.code,
+        message: recorded.message,
+        threadId: recorded.threadId,
+        kind: recorded.kind,
+      }
+    }
+    const latest = store
+      .getState()
+      .threads.find((thread) => thread.id === schedule.lastCreatedThreadId)
+    const failure = latest?.automation?.failure
+    if (
+      !latest ||
+      !failure ||
+      (latest.status !== 'error' && latest.automation?.startFailedAt === undefined)
+    )
+      return undefined
+    return {
+      at: failure.at,
+      code: isAutomationFailureCode(failure.code) ? failure.code : 'unknown',
+      message: failure.message,
+      threadId: latest.id,
+      kind: 'failed',
+    }
+  }
+
+  function problemElement(problem: ShownProblem): HTMLElement {
+    const description = describeAutomationFailure(problem.code ?? 'unknown')
+    const block = el('div', {
+      class: 'automation-row-blocked-message automation-row-problem-message',
+      'data-failure-code':
+        problem.code ?? (problem.kind === 'pending-start' ? 'pending-start' : 'unknown'),
+      role: 'status',
+    })
+    if (problem.code === undefined) {
+      block.textContent = `${problem.kind === 'failed' ? 'Last attempt failed' : 'Last attempt skipped'} ${new Date(problem.at).toLocaleString()}: ${problem.message}`
+    } else {
+      block.append(
+        el('strong', { class: 'automation-problem-title' }, description.title),
+        el(
+          'span',
+          { class: 'automation-problem-time' },
+          ` · ${new Date(problem.at).toLocaleString()}`,
+        ),
+        el('div', { class: 'automation-problem-message' }, problem.message),
+        el('div', { class: 'automation-problem-remedy' }, description.remedy),
+      )
+    }
+    const threadId = problem.threadId
+    if (
+      threadId !== undefined &&
+      actions.openRun &&
+      problem.code !== undefined &&
+      description.action === 'open-run'
+    ) {
+      const openRun = actions.openRun
+      const open = el(
+        'button',
+        {
+          type: 'button',
+          class: 'ui-btn ui-btn-secondary ui-btn-compact automation-problem-action',
+        },
+        description.actionLabel,
+      )
+      open.addEventListener('click', () => {
+        openRun(threadId)
+      })
+      block.append(open)
+    }
+    return block
+  }
+
+  // The scheduler is one supervisor task for every project; if it dies nothing fires, and the
+  // user would otherwise see only silence. It is shown at the top whatever project is open.
+  function showSchedulerHealth(health: AutomationSchedulerHealth): void {
+    if (health.state === 'ok') {
+      schedulerNotice.hidden = true
+      schedulerNotice.textContent = ''
+      return
+    }
+    const description = describeAutomationFailure('scheduler-stopped')
+    schedulerNotice.hidden = false
+    schedulerNotice.dataset['state'] = health.state
+    clear(schedulerNotice)
+    schedulerNotice.append(
+      el('strong', {}, health.state === 'recovering' ? 'Scheduler restarting' : description.title),
+      el('div', {}, health.message ?? description.remedy),
+      el('div', { class: 'automation-problem-remedy' }, description.remedy),
+    )
+  }
+  api.automations.schedulerHealth().then(showSchedulerHealth, () => {})
+  const stopWatchingHealth = api.automations.onSchedulerHealth((health) => {
+    // The manager has no teardown hook; stop listening once it leaves the page.
+    if (!root.isConnected) {
+      stopWatchingHealth()
+      return
+    }
+    showSchedulerHealth(health)
+  })
+
   function renderList(): void {
     clear(list)
     const blocked = schedules.filter((schedule) => schedule.lastWorktreeLimitAt !== undefined)
@@ -695,16 +828,9 @@ export function createAutomationPluginSettings(
           ),
         )
       }
-      if (schedule.lastProblem !== undefined) {
-        copy.append(
-          el(
-            'div',
-            { class: 'automation-row-blocked-message automation-row-problem-message' },
-            `${schedule.lastProblem.kind === 'failed' ? 'Last attempt failed' : 'Last attempt skipped'} ${new Date(schedule.lastProblem.at).toLocaleString()}: ${schedule.lastProblem.message}`,
-          ),
-        )
-      }
-      const actions = el('div', { class: 'automation-row-actions' })
+      const problem = scheduleProblem(schedule)
+      if (problem !== undefined) copy.append(problemElement(problem))
+      const rowActions = el('div', { class: 'automation-row-actions' })
       const edit = el(
         'button',
         { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact automation-row-btn' },
@@ -769,8 +895,8 @@ export function createAutomationPluginSettings(
             showStatus(cleanIpcError(error), true)
           })
       })
-      actions.append(edit, run, remove)
-      row.append(copy, actions)
+      rowActions.append(edit, run, remove)
+      row.append(copy, rowActions)
       list.append(row)
     }
   }
