@@ -12,6 +12,7 @@ import {
 import {
   loadThreads,
   flushProjectThreads,
+  holdNavigation,
   saveNavigation,
   saveProjects,
   serializedSet,
@@ -141,6 +142,16 @@ interface PendingSwitch {
 }
 let pendingSwitch: PendingSwitch | null = null
 
+/**
+ * Forget the in-flight switch and lift its hold on persisted navigation (see
+ * {@link holdNavigation}), so a write that puts the outgoing project back — a
+ * cancel, an abort — is not dropped.
+ */
+function clearPendingSwitch(): void {
+  pendingSwitch = null
+  holdNavigation(null)
+}
+
 type ActivationWaiter = { resolve: () => void; reject: (err: Error) => void; unsub?: () => void }
 const activationWaiters = new Map<string, ActivationWaiter>()
 
@@ -162,7 +173,7 @@ function settleActivationWaiter(projectId: string, error?: Error): void {
  * never mounts.
  */
 function endSwitch(gen: number, projectId: string): void {
-  if (pendingSwitch?.gen === gen) pendingSwitch = null
+  if (pendingSwitch?.gen === gen) clearPendingSwitch()
   settleActivationWaiter(projectId)
 }
 
@@ -170,7 +181,7 @@ function endSwitch(gen: number, projectId: string): void {
 function supersedePendingSwitch(): void {
   if (!pendingSwitch) return
   const superseded = pendingSwitch
-  pendingSwitch = null
+  clearPendingSwitch()
   settleActivationWaiter(superseded.projectId)
 }
 
@@ -320,7 +331,7 @@ function setWorkspaceInOrder(
 function cancelPendingSwitch(store: AppStore, api: ApiClient): void {
   const cancelled = pendingSwitch
   if (!cancelled) return
-  pendingSwitch = null
+  clearPendingSwitch()
   switchGeneration += 1
   settleActivationWaiter(cancelled.projectId)
   // Nothing to undo — and no IPC round trip to spend — if it never got that far.
@@ -343,7 +354,7 @@ function abortProjectActivation(
   error: Error,
 ): void {
   if (gen !== switchGeneration) return
-  if (pendingSwitch?.gen === gen) pendingSwitch = null
+  if (pendingSwitch?.gen === gen) clearPendingSwitch()
   settleActivationWaiter(id, error)
   const revertExpanded = outgoingId ?? store.getState().activeProjectId
   if (revertExpanded) {
@@ -531,8 +542,15 @@ async function finishActivate(
       : Promise.resolve()
   // Record the move before dispatching it: a cancel landing while these are in
   // flight has to know main and config were pointed at `id`, and put them back
-  // (see cancelPendingSwitch).
-  if (pendingSwitch?.gen === gen) pendingSwitch.dispatched = true
+  // (see cancelPendingSwitch). From here until the switch applies, the store
+  // still names the outgoing project, so hold persisted navigation on `id`:
+  // otherwise an autosave flush puts the outgoing project back, and the
+  // project-scoped reads that refresh on `workspace_changed` (the roadmap pane)
+  // list the previous project's data.
+  if (pendingSwitch?.gen === gen) {
+    pendingSwitch.dispatched = true
+    holdNavigation(id)
+  }
   const projectsAtDispatch = store.getState().projects
   const persistSelection = saveProjects(api, projectsAtDispatch, id, pendingThreadId)
   const endWorkspace = perfBegin('switch:workspace-set')
@@ -547,7 +565,9 @@ async function finishActivate(
 
   if (!opened) {
     // Quarantine rather than delete: flag the project missing and stay on the
-    // project the user was already viewing (issue #997).
+    // project the user was already viewing (issue #997) — which means persisting
+    // that project again, so lift the hold first.
+    holdNavigation(null)
     await markProjectMissing(store, api, id)
     endActivate({ outcome: 'missing' })
     abortProjectActivation(
@@ -697,7 +717,13 @@ function activate(
     outgoingId,
     outgoingThreads,
     pendingThreadId,
-  )
+  ).catch((error: unknown) => {
+    // A switch that throws (a failed thread load, say) never reaches endSwitch.
+    // Retire it anyway, or its hold on navigation outlives it and drops every
+    // later write until the next switch.
+    endSwitch(gen, id)
+    throw error
+  })
 }
 
 export function switchProject(
@@ -1108,7 +1134,7 @@ export async function recoverOrphanProject(
 /** Test hook — reset module-level switch state. */
 export function resetProjectSwitchStateForTest(): void {
   switchGeneration = 0
-  pendingSwitch = null
+  clearPendingSwitch()
   workspaceChain = Promise.resolve()
   threadCache.clear()
   liveCacheProjectId = null
