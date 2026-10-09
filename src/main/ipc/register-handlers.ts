@@ -1,4 +1,5 @@
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
+import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
@@ -17,7 +18,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebConten
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
@@ -3218,6 +3219,15 @@ export function registerAllHandlers(
       assertMainFrameSender(event, win)
       const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
       const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
+      if (parsedAgentId.startsWith('openai:')) {
+        const data = await readOpenAiArtifact(parsedAgentId.slice('openai:'.length), parsedPath)
+        const result = await dialog.showSaveDialog(win, {
+          title: 'Save agent artifact',
+          defaultPath: `agent-artifact${extname(parsedPath)}`,
+        })
+        if (!result.canceled && result.filePath) await writeFile(result.filePath, data)
+        return ''
+      }
       return resolveRemoteArtifactDownloadUrl({ agentId: parsedAgentId, path: parsedPath })
     },
   )
