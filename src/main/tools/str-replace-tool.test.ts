@@ -113,6 +113,26 @@ describe('strReplaceTool', () => {
     }
   })
 
+  ownedIt('matches a multi-line old_string copied from read_file in a CRLF file', async () => {
+    // read_file shows CRLF files with LF endings; the edit must still match and
+    // the file must keep its CRLF endings.
+    await writeFile(join(tempRoot, 'f.ts'), 'a\r\nb\r\nc\r\n', 'utf-8')
+    const out = await runStrReplace({
+      path: 'f.ts',
+      old_string: 'a\nb',
+      new_string: 'A\nB\nB2',
+      replace_all: false,
+    })
+    assert.match(out, /Diff staged/)
+    assert.equal(getStagedDiffEntry('f.ts')?.after, 'A\r\nB\r\nB2\r\nc\r\n')
+  })
+
+  ownedIt('writes new lines as CRLF in an all-CRLF file on a single-line match', async () => {
+    await writeFile(join(tempRoot, 'f.ts'), 'a\r\nb\r\n', 'utf-8')
+    await runStrReplace({ path: 'f.ts', old_string: 'a', new_string: 'x\ny', replace_all: false })
+    assert.equal(getStagedDiffEntry('f.ts')?.after, 'x\r\ny\r\nb\r\n')
+  })
+
   ownedIt('agrees with replace_all on a single occurrence', async () => {
     // The two branches used different replacement machinery, so only one of them
     // expanded `$`. On a unique match they must produce the same file.

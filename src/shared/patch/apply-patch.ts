@@ -327,18 +327,42 @@ interface Replacement {
   added: string[]
 }
 
-/** Split into logical lines plus the file's EOL style and trailing-newline state. */
+type Eol = '\n' | '\r\n'
+
+/**
+ * Split into logical lines, each line's own terminator, the file's dominant
+ * EOL style (for lines the patch adds) and its trailing-newline state. Keeping
+ * per-line terminators means a patch to a mixed-EOL file rewrites only the
+ * lines it touches, not every line ending in the file.
+ */
 function splitFile(content: string): {
   lines: string[]
-  eol: '\n' | '\r\n'
+  eols: Eol[]
+  eol: Eol
   finalNewline: boolean
 } {
-  const eol = content.includes('\r\n') ? '\r\n' : '\n'
-  const normalized = eol === '\r\n' ? content.replace(/\r\n/g, '\n') : content
-  const finalNewline = normalized.endsWith('\n')
-  const lines = normalized === '' ? [] : normalized.split('\n')
-  if (finalNewline) lines.pop()
-  return { lines, eol, finalNewline }
+  const finalNewline = content.endsWith('\n')
+  const pieces = content === '' ? [] : content.split('\n')
+  if (finalNewline) pieces.pop()
+  const lines: string[] = []
+  const terminators: (Eol | null)[] = []
+  let crlf = 0
+  for (const [index, piece] of pieces.entries()) {
+    if (index === pieces.length - 1 && !finalNewline) {
+      lines.push(piece)
+      terminators.push(null)
+    } else if (piece.endsWith('\r')) {
+      lines.push(piece.slice(0, -1))
+      terminators.push('\r\n')
+      crlf += 1
+    } else {
+      lines.push(piece)
+      terminators.push('\n')
+    }
+  }
+  const lf = terminators.filter((t) => t === '\n').length
+  const eol: Eol = crlf > 0 && crlf >= lf ? '\r\n' : '\n'
+  return { lines, eols: terminators.map((t) => t ?? eol), eol, finalNewline }
 }
 
 export type ApplyChunksResult = { ok: true; content: string } | { ok: false; error: string }
@@ -349,7 +373,7 @@ export function applyChunks(
   chunks: readonly PatchChunk[],
   path: string,
 ): ApplyChunksResult {
-  const { lines, eol, finalNewline } = splitFile(original)
+  const { lines, eols, eol, finalNewline } = splitFile(original)
   const replacements: Replacement[] = []
   let cursor = 0
 
@@ -405,17 +429,26 @@ export function applyChunks(
     cursor = found + pattern.length
   }
 
+  // Apply bottom-up so earlier offsets stay valid. Chunks are matched in file
+  // order, so `replacements` is already ordered by position; reversing it (not
+  // re-sorting by `start`) keeps an insertion that resolves to the same line as
+  // the following replacement ahead of that replacement's new lines.
   const result = [...lines]
-  for (const { start, removed, added } of [...replacements].sort((a, b) => b.start - a.start)) {
+  const resultEols = [...eols]
+  for (const { start, removed, added } of [...replacements].reverse()) {
     result.splice(start, removed, ...added)
+    resultEols.splice(start, removed, ...added.map(() => eol))
   }
   // Keep the file's trailing-newline state, but never leave a non-empty file
   // unterminated because the edit appended to a file that lacked one.
   const endsWithNewline =
     finalNewline || lines.length === 0 || replacements.some((r) => r.start >= lines.length)
-  const body = result.join('\n')
-  const joined = result.length > 0 && endsWithNewline ? `${body}\n` : body
-  return { ok: true, content: eol === '\r\n' ? joined.replace(/\n/g, '\r\n') : joined }
+  const content = result
+    .map((line, index) =>
+      index < result.length - 1 || endsWithNewline ? `${line}${resultEols[index] ?? eol}` : line,
+    )
+    .join('')
+  return { ok: true, content }
 }
 
 // ─── planning a whole patch ──────────────────────────────────────────────

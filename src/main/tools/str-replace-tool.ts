@@ -18,6 +18,28 @@ function countOccurrences(haystack: string, needle: string): number {
   return count
 }
 
+const toCrlf = (text: string): string => text.replace(/\r?\n/g, '\r\n')
+
+/**
+ * read_file shows CRLF files with LF line endings, so a multi-line old_string
+ * copied from its output never matches the raw bytes. When the text as given
+ * is absent from a file that uses CRLF, match (and write) its CRLF form; and
+ * in an all-CRLF file, write new_string's line breaks as CRLF too, so the edit
+ * never leaves the file with mixed endings.
+ */
+function matchFileLineEndings(
+  content: string,
+  oldString: string,
+  newString: string,
+): { oldString: string; newString: string } {
+  if (!content.includes('\r\n')) return { oldString, newString }
+  if (oldString.includes('\n') && countOccurrences(content, oldString) === 0) {
+    return { oldString: toCrlf(oldString), newString: toCrlf(newString) }
+  }
+  const allCrlf = !/(?:^|[^\r])\n/.test(content)
+  return { oldString, newString: allCrlf ? toCrlf(newString) : newString }
+}
+
 export const strReplaceTool = defineTool({
   name: 'str_replace',
   description:
@@ -45,7 +67,8 @@ export const strReplaceTool = defineTool({
       }
     }
 
-    const occurrences = countOccurrences(before, old_string)
+    const { oldString, newString } = matchFileLineEndings(before, old_string, new_string)
+    const occurrences = countOccurrences(before, oldString)
     if (occurrences === 0) {
       // explore returns a prose summary with approximate line numbers, not
       // verbatim bytes, so telling the model to "re-read" is ambiguous — it
@@ -64,8 +87,8 @@ export const strReplaceTool = defineTool({
     // replacement is taken literally, and matches what the `replace_all` branch
     // has always done — `Array#join` never expanded anything.
     const after = replace_all
-      ? before.split(old_string).join(new_string)
-      : before.replace(old_string, () => new_string)
+      ? before.split(oldString).join(newString)
+      : before.replace(oldString, () => newString)
 
     if (after === before) {
       return 'No change: new_string is identical to old_string.'
