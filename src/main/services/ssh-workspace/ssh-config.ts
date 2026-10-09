@@ -27,8 +27,9 @@ interface ConfigBlock {
   identityFile?: string
 }
 
+/** A concrete host name: not a wildcard, and not a `!pattern` negation (which excludes, never names). */
 function isValidAlias(alias: string): boolean {
-  return alias !== '*' && !alias.includes('*') && !alias.includes('?')
+  return !alias.startsWith('!') && !alias.includes('*') && !alias.includes('?')
 }
 
 function expandHome(path: string): string {
@@ -80,6 +81,11 @@ export function parseSshConfig(content: string): SshConfigAlias[] {
       block = {
         aliases: value.split(/\s+/).filter(isValidAlias),
       }
+      continue
+    }
+    if (key === 'match') {
+      // A Match block's options apply conditionally, never to the preceding Host.
+      flush()
       continue
     }
 

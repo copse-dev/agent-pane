@@ -169,14 +169,31 @@ export class SshWorkspaceFs implements WorkspaceFsPathProbe {
     return result.stdout.trimEnd()
   }
 
+  /**
+   * Stream the whole file to a private local copy rather than `cat` through
+   * exec: command output is capped and truncated in the middle, and callers
+   * such as `str_replace` write what they read back as the entire file.
+   * Uncached, unlike {@link materializeToLocal}, so a read after a write never
+   * sees stale bytes of the same size.
+   */
   async readFile(path: string, _encoding: 'utf-8'): Promise<string> {
-    const result = await this.exec(`cat ${this.quote(path)}`)
-    if (result.code !== 0) {
-      const err = remoteFsError(path, result)
+    const root = await materializationRoot()
+    const localPath = join(root, `${randomUUID()}.txt`)
+    try {
+      await fetchFileOnSshHost(this.hostId, this.remoteRoot, path, localPath)
+      return await readFile(localPath, 'utf-8')
+    } catch (error) {
+      // Only a confirmed-missing file is ENOENT; a timeout or permission error
+      // must not read as "absent" to a caller that would then create it.
+      if (await this.exists(path)) throw error
+      const err: NodeJS.ErrnoException = new Error(`ENOENT: no such remote file: ${path}`, {
+        cause: error,
+      })
       err.code = 'ENOENT'
       throw err
+    } finally {
+      await rm(localPath, { force: true }).catch(() => undefined)
     }
-    return result.stdout
   }
 
   async readFileBytes(path: string, options?: WorkspaceBinaryReadOptions): Promise<Buffer> {
