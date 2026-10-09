@@ -95028,14 +95028,16 @@ function turnStartId(messages, messageId) {
   }
   return null;
 }
+function isOfferCall(toolCall) {
+  return toolCall.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(toolCall);
+}
 function isConciseCollapsedMessage(messages, index, enabled) {
   const msg = messages[index];
   if (!enabled || !msg || !isConciseMessage(msg)) return false;
   const process2 = isConciseWorkingMessage(msg) || isConciseStepsMessage(msg) && messages.slice(index + 1).some((m2) => m2.role === "assistant");
   if (!process2) return false;
   const producesOutput = (msg.visualEvidence?.length ?? 0) > 0 || (msg.canvasArtefacts?.length ?? 0) > 0 || msg.toolCalls.some(
-    (toolCall) => (toolCall.images?.length ?? 0) > 0 || // Offers to the user stay painted in the concise view (see the stylesheet).
-    toolCall.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(toolCall)
+    (toolCall) => (toolCall.images?.length ?? 0) > 0 || isOfferCall(toolCall)
   );
   return !producesOutput;
 }
@@ -95051,18 +95053,19 @@ function conciseTurnSummaries(messages) {
     const turn = messages.slice(start, end);
     const assistants = turn.filter((msg) => msg.role === "assistant");
     if (!assistants.some(isConciseMessage)) return;
-    const toolCallCount = assistants.reduce((sum, msg) => sum + msg.toolCalls.length, 0);
+    const hiddenCalls = assistants.filter(isConciseMessage).flatMap((msg) => msg.toolCalls).filter((toolCall) => !isOfferCall(toolCall));
+    const toolCallCount = hiddenCalls.length;
     const last = assistants.at(-1);
     const outcome2 = last?.turnOutcome;
     const interruption = outcome2?.status === "cancelled" && outcome2.source === "user" ? interruptionCause(outcome2, messages[end]) : null;
-    const edits = assistants.flatMap((msg) => msg.toolCalls).reduce((total2, toolCall) => {
+    const edits = hiddenCalls.reduce((total2, toolCall) => {
       if (!toolCall.editStats) return total2;
       return {
         additions: (total2?.additions ?? 0) + toolCall.editStats.additions,
         deletions: (total2?.deletions ?? 0) + toolCall.editStats.deletions
       };
     }, null);
-    const hasHiddenSteps = toolCallCount > 0 || assistants.some(hasReasoning);
+    const hasHiddenSteps = toolCallCount > 0 || assistants.filter(isConciseMessage).some(hasReasoning);
     if (!hasHiddenSteps && interruption === null) return;
     summaries.push({
       startId: first.id,
