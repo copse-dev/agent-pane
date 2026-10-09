@@ -215,14 +215,6 @@ export function createContextWheel(): {
       renderPopover(breakdown)
     })
 
-    const lines = segments.map(
-      (s) =>
-        `${s.label}: ${formatTokenCount(s.tokens)} (${String(pctOf(s.tokens, contextWindow))}%)`,
-    )
-    root.title = [
-      `Context: ${formatTokenCount(totalTokens)} / ${formatTokenCount(contextWindow)} (${String(pct)}%)`,
-      ...lines,
-    ].join('\n')
     root.setAttribute(
       'aria-label',
       `Estimated context ${String(pct)}% of window, ${formatTokenCount(
@@ -281,19 +273,17 @@ export function createContextWheel(): {
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`,
     )
     setFillState(ratio)
-    // The title and aria-label quote the same figures as the hover beside the
+    // The aria-label quotes the same figures as the hover popover beside the
     // ring: when a part-by-part breakdown is shown it counts the whole window,
-    // while the snapshot counts the conversation budget, and quoting one in
-    // the label and the other in the hover made one control disagree with itself.
+    // while the snapshot counts the conversation budget, and quoting the wrong
+    // one would make the control disagree with itself.
     const shownBreakdown = options?.breakdown
     const labelled =
       shownBreakdown && shownBreakdown.totalTokens > 0 && shownBreakdown.contextWindow > 0
         ? { tokens: shownBreakdown.totalTokens, budget: shownBreakdown.contextWindow }
         : { tokens: snapshot.conversationTokens, budget: snapshot.conversationBudget }
     const pct = pctOf(labelled.tokens, labelled.budget)
-    const contextLine = `Context: ${formatTokenCount(labelled.tokens)} / ${formatTokenCount(labelled.budget)} (${String(pct)}%)`
     const usageLine = options?.usageLine?.trim()
-    root.title = usageLine ? `${contextLine}\n${usageLine}` : contextLine
     const ariaUsage = usageLine ? `; ${usageLine}` : ''
     root.setAttribute(
       'aria-label',
