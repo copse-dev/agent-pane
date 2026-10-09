@@ -424,6 +424,25 @@ repo, or points at an unexpected branch:
 Never automatically change an isolated thread to shared. That turns an infrastructure
 failure into edits in the user's checkout.
 
+### Detached or mid-operation checkouts
+
+An isolated checkout is bound to its branch, so a detached HEAD or an interrupted rebase or
+bisect strands the thread. Causes, and what stops each:
+
+| Cause                                           | Stopped by                                                         |
+| ----------------------------------------------- | ------------------------------------------------------------------ |
+| Agent `git rebase`, `git pull --rebase`         | Shell gate refusal in a managed worktree (`checkout-detach.ts`)    |
+| Rebase pick left staged by a failed signature   | Same refusal; the pick only arises inside a rebase                 |
+| Agent `git bisect start`, `git switch --detach` | Same refusal                                                       |
+| Worktree creation or restore                    | Not a cause: both use `worktree add` onto a branch, never detached |
+| User or external tool outside Copse             | Not preventable; recovery below                                    |
+
+Recovery (**Reattach**, **Continue rebase**, **Commit and continue**, **Reset bisect**) is offered
+only when nothing can write to the checkout: the thread is not running (a turn waiting on
+approval is still running) and main reports no live background task (`agentBusy`). Main refuses
+`reattachWorktree` under the same condition. Operations that exit an interrupted state
+(`rebase --abort`, `bisect reset`) stay allowed to the agent.
+
 ## Bringing work back
 
 Isolation is not complete without a safe return path. Each isolated thread shows dirty
