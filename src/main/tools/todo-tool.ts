@@ -4,6 +4,7 @@ import type { TodoItem, TodoUpdateInput } from '@shared/types/todo.ts'
 import {
   applyTodoUpdate,
   gateCompletedStatus,
+  holdChecksAttachedAtCompletion,
   findNewlyInProgressLocal,
   findNewlyCompleted,
 } from '@shared/todos/todo-logic.ts'
@@ -41,8 +42,9 @@ async function applyAndGate(
   signal: AbortSignal,
 ): Promise<{ todos: TodoItem[]; messages: string[] }> {
   const before = getAgentRunTodos()
-  let todos = applyTodoUpdate(before, incoming, merge)
-  const messages: string[] = []
+  const held = holdChecksAttachedAtCompletion(before, applyTodoUpdate(before, incoming, merge))
+  let todos = held.todos
+  const messages: string[] = [...held.messages]
 
   todos = await Promise.all(
     todos.map(async (item) => {

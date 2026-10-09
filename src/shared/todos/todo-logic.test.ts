@@ -4,6 +4,7 @@ import {
   activeTodos,
   applyTodoUpdate,
   gateCompletedStatus,
+  holdChecksAttachedAtCompletion,
   shouldRouteToLocal,
   shouldSteerTodos,
   todoProgress,
@@ -13,6 +14,67 @@ import {
 import type { TodoItem } from '@shared/types/todo.ts'
 
 describe('todo-logic', () => {
+  describe('holdChecksAttachedAtCompletion', () => {
+    const fetchCheck = { kind: 'shell', command: 'git fetch origin main', expectExit: 0 } as const
+    const prCheck = { kind: 'shell', command: 'gh pr view --json url', expectExit: 0 } as const
+
+    it('keeps an item in_progress when its check first appears in the completing call', () => {
+      // The #1433 shape: t3 went cancelled -> completed and acquired a check in
+      // the same update_todos call, after the fetch it describes never ran.
+      const before: TodoItem[] = [{ id: 't3', content: 'Fetch and rebase', status: 'cancelled' }]
+      const after: TodoItem[] = [
+        { id: 't3', content: 'Fetch and rebase', status: 'completed', check: prCheck },
+      ]
+      const held = holdChecksAttachedAtCompletion(before, after)
+      assert.deepEqual(held.todos, [
+        { id: 't3', content: 'Fetch and rebase', status: 'in_progress', check: prCheck },
+      ])
+      assert.equal(held.messages.length, 1)
+      assert.match(held.messages[0], /Fetch and rebase: acceptance check was attached/)
+    })
+
+    it('holds a completion whose check was swapped for a different one', () => {
+      const before: TodoItem[] = [
+        { id: 't3', content: 'Fetch and rebase', status: 'in_progress', check: fetchCheck },
+      ]
+      const after: TodoItem[] = [
+        { id: 't3', content: 'Fetch and rebase', status: 'completed', check: prCheck },
+      ]
+      const held = holdChecksAttachedAtCompletion(before, after)
+      assert.deepEqual(held.todos, [
+        { id: 't3', content: 'Fetch and rebase', status: 'in_progress', check: prCheck },
+      ])
+      assert.equal(held.messages.length, 1)
+    })
+
+    it('lets a completion through when the check was committed to earlier', () => {
+      const before: TodoItem[] = [
+        { id: 't3', content: 'Fetch and rebase', status: 'in_progress', check: fetchCheck },
+      ]
+      const after: TodoItem[] = [
+        { id: 't3', content: 'Fetch and rebase', status: 'completed', check: { ...fetchCheck } },
+      ]
+      const held = holdChecksAttachedAtCompletion(before, after)
+      assert.deepEqual(held.todos, after)
+      assert.deepEqual(held.messages, [])
+    })
+
+    it('ignores items without a check, already-completed items, and new items', () => {
+      const before: TodoItem[] = [
+        { id: 'a', content: 'No check', status: 'in_progress' },
+        { id: 'b', content: 'Already done', status: 'completed' },
+      ]
+      const after: TodoItem[] = [
+        { id: 'a', content: 'No check', status: 'completed' },
+        { id: 'b', content: 'Already done', status: 'completed', check: prCheck },
+        { id: 'c', content: 'Brand new', status: 'completed', check: prCheck },
+      ]
+      const held = holdChecksAttachedAtCompletion(before, after)
+      assert.deepEqual(held.todos, after)
+      assert.deepEqual(held.messages, [])
+    })
+  })
+
   it('applyTodoUpdate replaces the full list by default', () => {
     const current: TodoItem[] = [{ id: 'a', content: 'Old', status: 'pending' }]
     const next = applyTodoUpdate(

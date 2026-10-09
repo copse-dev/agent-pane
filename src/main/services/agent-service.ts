@@ -135,6 +135,7 @@ import {
   readFileLimitsFromConversationBudget,
 } from './agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
+import { runWithAgentRunExploreMode } from './agent-run-explore-mode.ts'
 import {
   isToolAllowedInReadonlyMode,
   REQUEST_WRITE_ACCESS_TOOL,
@@ -2327,102 +2328,104 @@ async function runAgentWithInlineCanvas(
         await runWithSubagentUsageScope(() =>
           runWithAgentRunReadonly(readonlyMode, async () => {
             await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-              await runAgentLoop({
-                provider,
-                messages: trimmed,
-                tools: parentLoopTools,
-                usageModel: model,
-                maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
-                ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
-                ...(options?.adaptiveExtensions !== undefined
-                  ? { adaptiveExtensions: options.adaptiveExtensions }
-                  : {}),
-                reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
-                reasoningRunawayTextToleranceChars:
-                  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
-                runDeadline: runAbort.deadline,
-                onRunDeadlineActivity: runAbort.schedule,
-                coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
-                getOpenTodos: () => getAgentRunTodos(),
-                continuationBudget,
-                resolvePluginSetting,
-                artifactCheckpointEligible: true,
-                recordHookRun: recordFunctionHookRun,
-                recordAppliedNudge: recordAppliedNudgeRun,
-                onLlmCall: (count) => {
-                  setHookRunStep(count)
-                  // `messages` above is `trimmed`, mutated in place as turns land, so
-                  // this persists everything the previous step produced.
-                  checkpointHistory()
-                  // The previous step's tool results have been streamed; a notice
-                  // here cannot come between a tool call and its result.
-                  flushNestedInstructionNotices()
-                },
-                recordStreamCut: (record) => {
-                  recordStreamCut(record, model)
-                },
-                recordReasoningCheckpoint: (record) => {
-                  recordReasoningCheckpoint(record, model)
-                },
-                executeTool: executeParentTool,
-                signal: controller.signal,
-                maxContextTokens: contextWindow,
-                toolSchemaReserveTokens: toolSchemaReserve,
-                onHistoryTrimmed: () => {
-                  notifyTrimmed(sendTrimNotice)
-                },
-                getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
-                onChunk: (chunk) => {
-                  if (chunk.type === 'done') {
-                    // Suppress the loop's terminal `done` (E3): the run emits one
-                    // terminal `done` after post-turn work. Keep its stop reason.
-                    loopStopReason = chunk.stopReason
-                    return
-                  }
-                  sendChunk(chunk)
-                  if (chunk.type === 'context_compacted' && runContext) {
-                    // The boundary is canonical; the opaque item stays in the
-                    // provider-history projection. Best effort like the other
-                    // observational spine lines: a failed append must not fail the turn.
-                    void appendContextCompaction(runContext.projectId, threadId, {
-                      v: SPINE_SCHEMA_VERSION,
-                      type: 'context_compaction',
-                      id: randomUUID(),
-                      recordedAt: Date.now(),
-                      provider: chunk.provider,
-                      model: chunk.model,
-                      projectionVersion: 1,
-                      itemId: chunk.itemId,
-                    }).catch(() => undefined)
-                  }
-                  if (chunk.type === 'usage') {
-                    inputTokens += chunk.inputTokens
-                    outputTokens += chunk.outputTokens
-                  }
-                },
-              })
-              // A loop that stopped on a tool step (step cap, abort) still owes
-              // the notice for what that step activated.
-              flushNestedInstructionNotices()
-
-              const subUsage = getAccumulatedSubagentUsage()
-              if (subUsage.inputTokens || subUsage.outputTokens) {
-                inputTokens += subUsage.inputTokens
-                outputTokens += subUsage.outputTokens
-                sendChunk({
-                  type: 'usage',
-                  model: subagentUsageModel,
-                  subagentUsage: true,
-                  inputTokens: subUsage.inputTokens,
-                  outputTokens: subUsage.outputTokens,
-                  ...(subUsage.cacheReadTokens !== undefined
-                    ? { cacheReadTokens: subUsage.cacheReadTokens }
+              await runWithAgentRunExploreMode(subagentsEnabled, async () => {
+                await runAgentLoop({
+                  provider,
+                  messages: trimmed,
+                  tools: parentLoopTools,
+                  usageModel: model,
+                  maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
+                  ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+                  ...(options?.adaptiveExtensions !== undefined
+                    ? { adaptiveExtensions: options.adaptiveExtensions }
                     : {}),
-                  ...(subUsage.cacheCreationTokens !== undefined
-                    ? { cacheCreationTokens: subUsage.cacheCreationTokens }
-                    : {}),
+                  reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+                  reasoningRunawayTextToleranceChars:
+                    PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+                  runDeadline: runAbort.deadline,
+                  onRunDeadlineActivity: runAbort.schedule,
+                  coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+                  getOpenTodos: () => getAgentRunTodos(),
+                  continuationBudget,
+                  resolvePluginSetting,
+                  artifactCheckpointEligible: true,
+                  recordHookRun: recordFunctionHookRun,
+                  recordAppliedNudge: recordAppliedNudgeRun,
+                  onLlmCall: (count) => {
+                    setHookRunStep(count)
+                    // `messages` above is `trimmed`, mutated in place as turns land, so
+                    // this persists everything the previous step produced.
+                    checkpointHistory()
+                    // The previous step's tool results have been streamed; a notice
+                    // here cannot come between a tool call and its result.
+                    flushNestedInstructionNotices()
+                  },
+                  recordStreamCut: (record) => {
+                    recordStreamCut(record, model)
+                  },
+                  recordReasoningCheckpoint: (record) => {
+                    recordReasoningCheckpoint(record, model)
+                  },
+                  executeTool: executeParentTool,
+                  signal: controller.signal,
+                  maxContextTokens: contextWindow,
+                  toolSchemaReserveTokens: toolSchemaReserve,
+                  onHistoryTrimmed: () => {
+                    notifyTrimmed(sendTrimNotice)
+                  },
+                  getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
+                  onChunk: (chunk) => {
+                    if (chunk.type === 'done') {
+                      // Suppress the loop's terminal `done` (E3): the run emits one
+                      // terminal `done` after post-turn work. Keep its stop reason.
+                      loopStopReason = chunk.stopReason
+                      return
+                    }
+                    sendChunk(chunk)
+                    if (chunk.type === 'context_compacted' && runContext) {
+                      // The boundary is canonical; the opaque item stays in the
+                      // provider-history projection. Best effort like the other
+                      // observational spine lines: a failed append must not fail the turn.
+                      void appendContextCompaction(runContext.projectId, threadId, {
+                        v: SPINE_SCHEMA_VERSION,
+                        type: 'context_compaction',
+                        id: randomUUID(),
+                        recordedAt: Date.now(),
+                        provider: chunk.provider,
+                        model: chunk.model,
+                        projectionVersion: 1,
+                        itemId: chunk.itemId,
+                      }).catch(() => undefined)
+                    }
+                    if (chunk.type === 'usage') {
+                      inputTokens += chunk.inputTokens
+                      outputTokens += chunk.outputTokens
+                    }
+                  },
                 })
-              }
+                // A loop that stopped on a tool step (step cap, abort) still owes
+                // the notice for what that step activated.
+                flushNestedInstructionNotices()
+
+                const subUsage = getAccumulatedSubagentUsage()
+                if (subUsage.inputTokens || subUsage.outputTokens) {
+                  inputTokens += subUsage.inputTokens
+                  outputTokens += subUsage.outputTokens
+                  sendChunk({
+                    type: 'usage',
+                    model: subagentUsageModel,
+                    subagentUsage: true,
+                    inputTokens: subUsage.inputTokens,
+                    outputTokens: subUsage.outputTokens,
+                    ...(subUsage.cacheReadTokens !== undefined
+                      ? { cacheReadTokens: subUsage.cacheReadTokens }
+                      : {}),
+                    ...(subUsage.cacheCreationTokens !== undefined
+                      ? { cacheCreationTokens: subUsage.cacheCreationTokens }
+                      : {}),
+                  })
+                }
+              })
             })
           }),
         )
@@ -2480,7 +2483,9 @@ async function runAgentWithInlineCanvas(
         // of deterministic continuation turns to reconcile them before review runs.
         if (getAgentRunTodos().length > 0 && hasOpenTodos(getAgentRunTodos())) {
           await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-            await runPreReviewTodoGate(parentContinuationBase)
+            await runWithAgentRunExploreMode(subagentsEnabled, async () => {
+              await runPreReviewTodoGate(parentContinuationBase)
+            })
           })
         }
 
@@ -2659,16 +2664,18 @@ async function runAgentWithInlineCanvas(
             runRemediationTurn: async (nudge) => {
               const remediation = { madeEdits: false }
               await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-                await runParentContinuationTurn({
-                  ...parentContinuationBase,
-                  userNudge: nudge,
-                  maxSteps: 8,
-                  onEditTool: (name: string): void => {
-                    if (isEditTool(name)) {
-                      turnChangedFiles = true
-                      remediation.madeEdits = true
-                    }
-                  },
+                await runWithAgentRunExploreMode(subagentsEnabled, async () => {
+                  await runParentContinuationTurn({
+                    ...parentContinuationBase,
+                    userNudge: nudge,
+                    maxSteps: 8,
+                    onEditTool: (name: string): void => {
+                      if (isEditTool(name)) {
+                        turnChangedFiles = true
+                        remediation.madeEdits = true
+                      }
+                    },
+                  })
                 })
               })
               return remediation
