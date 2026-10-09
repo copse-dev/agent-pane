@@ -132593,6 +132593,7 @@ function messageEl(message2) {
 function renderSideChat(input2) {
   const { side, parent } = input2;
   const archived = side.archivedAt != null;
+  const archiveBlocked = !archived && side.status === "running";
   const anchor2 = parent?.messages.find((m2) => m2.id === side.sideChat?.anchorMessageId);
   const header = el(
     "div",
@@ -132607,7 +132608,9 @@ function renderSideChat(input2) {
         {
           type: "button",
           class: "side-chat-action",
-          "data-action": archived ? "restore-side-chat" : "archive-side-chat"
+          "data-action": archived ? "restore-side-chat" : "archive-side-chat",
+          disabled: archiveBlocked ? true : void 0,
+          title: archiveBlocked ? "Wait for the side chat to finish before archiving" : void 0
         },
         archived ? "Restore" : "Archive"
       )
@@ -132619,7 +132622,7 @@ function renderSideChat(input2) {
     )
   );
   header.querySelector("button")?.addEventListener("click", () => {
-    input2.onArchive(archived);
+    if (!archiveBlocked) input2.onArchive(archived);
   });
   const body = el("div", { class: "side-chat-body" });
   if (side.messages.length === 0) {
