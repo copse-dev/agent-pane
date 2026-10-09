@@ -93,5 +93,4 @@
 // v54 versions event automation shapes.
 // v55 versions host-owned container authentication.
 // v56 versions threads:archive stopProcesses and blocked-running live-work reports.
-// v57 versions classifier usage in the usage summary and the local-classifiers:uninstall channel.
-export const API_PROTOCOL_VERSION = 57 as const
+export const API_PROTOCOL_VERSION = 56 as const

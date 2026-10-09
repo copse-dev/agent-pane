@@ -59,8 +59,11 @@ export interface UsagePeriodSummary {
   totalCostUsd: number
   cloudModels: ModelUsageBreakdown[]
   localModels: ModelUsageBreakdown[]
-  /** Classifier calls in the period. All time is empty: saved threads carry no classifier usage. */
-  classifiers: ClassifierUsageBreakdown[]
+  /**
+   * Classifier calls in the period. All time is empty: saved threads carry no classifier usage.
+   * Optional so a host that predates it stays compatible with this client.
+   */
+  classifiers?: ClassifierUsageBreakdown[]
   totalInputTokens: number
   totalOutputTokens: number
   /** At least one cloud model in this period has usage but no known rate. */

@@ -547,7 +547,7 @@ export function renderClassifierTable(
   const heading = document.createElement('h4')
   heading.textContent = 'Classifiers'
   section.append(heading)
-  if (allTime || rows.length === 0) {
+  if (allTime || !rows || rows.length === 0) {
     const empty = document.createElement('p')
     empty.className = 'usage-empty'
     empty.textContent = allTime

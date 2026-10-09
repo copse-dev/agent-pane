@@ -331,14 +331,14 @@ describe('aggregate usage', () => {
       NOW,
     )
     assert.deepEqual(
-      summary.day.classifiers.map((row) => [row.provider, row.model, row.calls, row.inputTokens]),
+      (summary.day.classifiers ?? []).map((row) => [row.provider, row.model, row.calls, row.inputTokens]),
       [
         ['TypeSafe / Jev', 'jev-1', 1, 400],
         ['Kev (local)', 'kev-4b', 2, 150],
         ['Kev (staging)', 'kev-4b', 1, 10],
       ],
     )
-    assert.equal(summary.month.classifiers.find((row) => row.provider === 'Kev (local)')?.calls, 3)
+    assert.equal((summary.month.classifiers ?? []).find((row) => row.provider === 'Kev (local)')?.calls, 3)
     // They are not chat-model usage: no cloud/local row, no cost, no unpriced warning.
     assert.deepEqual(
       summary.day.cloudModels.map((row) => row.model),
@@ -357,7 +357,7 @@ describe('aggregate usage', () => {
       [],
       NOW,
     )
-    assert.equal(summary.day.classifiers[0]?.provider, 'Classifier')
+    assert.equal(summary.day.classifiers?.[0]?.provider, 'Classifier')
   })
 
   it('keeps a classifier event and its connection through a ledger round trip', () => {
