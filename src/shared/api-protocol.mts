@@ -93,7 +93,4 @@
 // v54 versions event automation shapes.
 // v55 versions host-owned container authentication.
 // v56 versions threads:archive stopProcesses and blocked-running live-work reports.
-// v57 adds `threads:backlinks`, and versions the optional `sideChat` link and the
-// recorded `links` on thread payloads.
-// v58 adds the `side-chat` right-panel mode to the pane and pop-out channels.
-export const API_PROTOCOL_VERSION = 58 as const
+export const API_PROTOCOL_VERSION = 56 as const
