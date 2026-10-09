@@ -435,10 +435,12 @@ describe('Guarded YOLO shell harm gate', () => {
     assert.equal(action(': > /Users/tester/.ssh/id_rsa'), 'prompt')
     assert.equal(action('echo x >> /Users/tester/.bashrc'), 'prompt')
     assert.equal(action('tee /etc/hosts < /dev/null'), 'prompt')
-    // The clobber and both-streams operators truncate exactly as `>` does.
-    assert.equal(action("echo '' >| /etc/hosts"), 'deny')
-    assert.equal(action("echo '' &> /etc/hosts"), 'deny')
-    assert.equal(action("echo '' >& /etc/hosts"), 'deny')
+    // The clobber, both-streams and csh-style operators write exactly as `>`
+    // does, so they meet the same answers rather than reading as no write.
+    for (const operator of ['>|', '&>', '>&']) {
+      assert.equal(action(`echo '' ${operator} /etc/hosts`), 'prompt', operator)
+      assert.equal(action(`echo '' ${operator} /etc/passwd`), 'deny', operator)
+    }
     // In-workspace and /tmp writes are ordinary build output.
     assert.equal(action('echo built > dist/marker.txt'), 'allow')
     assert.equal(action('echo line >> logs/app.log'), 'allow')
