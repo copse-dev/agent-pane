@@ -31,3 +31,16 @@ export const PRODUCT_REASONING_CHECKPOINT_POLICY: Readonly<ReasoningCheckpointPo
   maxRecoveryTokens: PRODUCT_REASONING_RECOVERY_MAX_TOKENS,
   maxTrailingReasoningTokens: PRODUCT_TRAILING_REASONING_MAX_TOKENS,
 }
+
+/**
+ * The product policy, optionally with a different recovery-stream cap. Only an
+ * explicit host profile passes one (a benchmark entry running long-reasoning
+ * tasks); omitted, the product policy applies unchanged.
+ */
+export function productReasoningCheckpointPolicy(
+  recoveryMaxTokens?: number,
+): Readonly<ReasoningCheckpointPolicy> {
+  return recoveryMaxTokens === undefined
+    ? PRODUCT_REASONING_CHECKPOINT_POLICY
+    : { ...PRODUCT_REASONING_CHECKPOINT_POLICY, maxRecoveryTokens: recoveryMaxTokens }
+}

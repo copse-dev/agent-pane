@@ -701,12 +701,17 @@ function sensitiveWriteReason(target: string, context: ShellHarmContext): string
 /**
  * A redirect is the shell's plainest destructive verb and it has no command name,
  * so no argv inspector sees it: `echo "" > /etc/passwd` erases the password file
- * with nothing but `echo` in argv. Truncation of a system file is unrecoverable
- * in-place, so it is denied; appending, and touching credential/startup files,
- * prompts. In-workspace and `/tmp` writes stay routine.
+ * with nothing but `echo` in argv. That is why redirects need their own
+ * inspector, not a reason to treat them more harshly than the named writers:
+ * `tee`, `cp`, `mv`, `dd` and `install` truncate and overwrite a system file just
+ * the same, and `inspectArgumentWrites` prompts for them. A redirect into a system
+ * tree therefore prompts too, so `cat > /etc/nginx/nginx.conf` and
+ * `tee /etc/nginx/nginx.conf` get one answer. Host credential files and
+ * catastrophic targets stay hard-denied for every route, and touching
+ * credential/startup paths prompts. In-workspace and `/tmp` writes stay routine.
  */
 function inspectRedirects(command: string, context: ShellHarmContext, out: MutableDecision): void {
-  for (const { target, truncates } of shellRedirects(command)) {
+  for (const { target } of shellRedirects(command)) {
     const reason = sensitiveWriteReason(target, context)
     if (reason === null) continue
     const catastrophic = catastrophicTarget(target, context)
@@ -716,10 +721,6 @@ function inspectRedirects(command: string, context: ShellHarmContext, out: Mutab
     }
     if (reason.startsWith('writes host credential file')) {
       addUnique(out.deny, `redirect ${reason}: ${target}`)
-      continue
-    }
-    if (truncates && reason.startsWith('writes inside system tree')) {
-      addUnique(out.deny, `truncating redirect ${reason}: ${target}`)
       continue
     }
     addUnique(out.prompt, `redirect ${reason}: ${target}`)
