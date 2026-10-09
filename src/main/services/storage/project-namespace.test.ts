@@ -175,4 +175,18 @@ describe('projectStoreNamespaceDir', () => {
     ])
     assert.deepEqual(scoped, [join(base, 'project-b'), join(base, 'project-b')])
   })
+
+  // Two projects can point at one folder; each keeps its own store.
+  it('keys a folder shared by two projects by whichever is active', () => {
+    const base = tempBase()
+    const shared = '/repos/shared'
+    openProject('project-a', shared)
+    storageSet('projects', [
+      { id: 'project-a', path: shared, name: 'alpha' },
+      { id: 'project-b', path: shared, name: 'beta' },
+    ])
+    assert.equal(projectStoreNamespaceDir(base), join(base, 'project-a'))
+    storageSet('activeProjectId', 'project-b')
+    assert.equal(projectStoreNamespaceDir(base), join(base, 'project-b'))
+  })
 })

@@ -56,15 +56,20 @@ export function projectStoreNamespaceDir(
 ): string {
   if (!root) return join(baseDir, 'shared')
 
-  // Key by the project that owns `root`. The active project's id is only a
-  // fallback for its own root when that project has no persisted path; a
-  // `runWithWorkspaceRoot` scope can make another project's root "active".
+  // Key by the project that owns `root`. Two projects may share one folder,
+  // so the active project wins for its own persisted path; otherwise look the
+  // root up, since a `runWithWorkspaceRoot` scope can make another project's
+  // root "active". The active id is the last resort for an active root that has
+  // no persisted project entry.
   const activeId = getActiveProjectId()
+  const activePath = activeId === null ? null : getProjectRoot(activeId)
   const projectId =
-    getProjectIdForRoot(root) ??
-    (activeId !== null && getProjectRoot(activeId) === null && root === getActiveProjectRoot()
+    activeId !== null && activePath === root
       ? activeId
-      : null)
+      : (getProjectIdForRoot(root) ??
+        (activeId !== null && activePath === null && root === getActiveProjectRoot()
+          ? activeId
+          : null))
   // No id to key by (headless runs scope by workspace root alone): keep the
   // legacy name so those profiles neither migrate nor lose their data.
   if (!projectId) return join(baseDir, legacyPathNamespace(root))
