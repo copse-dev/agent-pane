@@ -84172,7 +84172,9 @@ async function startSideChat(store2, api2, parentThreadId, options = {}) {
   const parent = getThreadById(store2, parentThreadId);
   if (!parent) return null;
   const queued = queuedMessageIds(parent);
-  const anchorMessageId = options.anchorMessageId ?? parent.messages.filter((m2) => !queued.has(m2.id)).at(-1)?.id;
+  const sent = parent.messages.filter((m2) => !queued.has(m2.id));
+  const settled = parent.status === "running" ? sent.filter((m2) => m2.role === "user") : sent;
+  const anchorMessageId = options.anchorMessageId ?? settled.at(-1)?.id;
   if (anchorMessageId === void 0 || queued.has(anchorMessageId)) return null;
   const side = buildSideChatThread(parent, {
     anchorMessageId,
