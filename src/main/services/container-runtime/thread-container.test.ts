@@ -901,6 +901,27 @@ describe('adoptCarryOut', () => {
     }
   })
 
+  it('rechecks a hosted snapshot inside serialized adoption when two results race', async () => {
+    const repo = initRepo()
+    try {
+      const base = git(repo, ['rev-parse', 'HEAD'])
+      const tree = git(repo, ['rev-parse', 'HEAD^{tree}'])
+      runOnRef(repo, base, 'refs/copse/runs/hosted-a', ['one.txt'])
+      runOnRef(repo, base, 'refs/copse/runs/hosted-b', ['two.txt'])
+      const results = await Promise.allSettled([
+        adoptCarryOut(repo, 'refs/copse/runs/hosted-a', base, tree),
+        adoptCarryOut(repo, 'refs/copse/runs/hosted-b', base, tree),
+      ])
+      assert.equal(results[0].status, 'fulfilled')
+      assert.equal(results[1].status, 'rejected')
+      assert.equal(git(repo, ['show', 'HEAD:one.txt']), 'one.txt')
+      assert.equal(git(repo, ['ls-tree', '--name-only', 'HEAD', 'two.txt']), '')
+      assert.equal(git(repo, ['status', '--porcelain']), '')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   it('refuses a dirty checkout and leaves a conflicting pick aborted', async () => {
     const repo = initRepo()
     try {
