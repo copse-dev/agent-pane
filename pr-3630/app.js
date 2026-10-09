@@ -86220,6 +86220,13 @@ var init_projects_drag = __esm({
 });
 
 // src/renderer/views/projects-pane.ts
+function describeLiveResources(running) {
+  return [
+    ...running.agent ? ["\u2022 the chat\u2019s running agent"] : [],
+    ...running.terminals ? ["\u2022 its open terminals"] : [],
+    ...running.backgroundProcesses ? ["\u2022 its background processes"] : []
+  ];
+}
 function attentionBell(label) {
   const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", "chat-attention-bell");
@@ -86693,7 +86700,24 @@ function mountProjectsPane(root, store2, api2) {
     try {
       await flushProjectThreads(api2, projectId, store2.getState().threads);
       if (projectId !== store2.getState().activeProjectId) return;
-      let result = await api2.threads.archive(projectId, threadId, null);
+      let stopProcesses = false;
+      let result = await api2.threads.archive(projectId, threadId, null, stopProcesses);
+      if (result.status === "blocked-running") {
+        const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
+        const confirmed = await showConfirmDialog({
+          message: `Stop running work and archive \u201C${title}\u201D?`,
+          detail: [
+            "Archiving will stop:",
+            ...describeLiveResources(result.running),
+            "Anything still running in the chat\u2019s worktree is ended before it is removed."
+          ].join("\n"),
+          confirmLabel: "Stop and archive",
+          danger: true
+        });
+        if (!confirmed || projectId !== store2.getState().activeProjectId) return;
+        stopProcesses = true;
+        result = await api2.threads.archive(projectId, threadId, null, stopProcesses);
+      }
       let refreshed = false;
       while (result.status === "blocked-dirty") {
         const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
@@ -86712,11 +86736,11 @@ function mountProjectsPane(root, store2, api2) {
           danger: true
         });
         if (!confirmed || projectId !== store2.getState().activeProjectId) return;
-        result = await api2.threads.archive(projectId, threadId, result.fingerprint);
+        result = await api2.threads.archive(projectId, threadId, result.fingerprint, stopProcesses);
         refreshed = true;
       }
       if (result.status === "blocked-running") {
-        showToast("Stop the chat\u2019s agent, terminals and background processes before archiving.", {
+        showToast("Something started in the chat while archiving. Try again.", {
           variant: "error"
         });
         return;
