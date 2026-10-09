@@ -664,7 +664,7 @@ setting.
 - missing worktree blocks edits and presents recovery actions.
 
 Any visible change needs a focused WDIO Electron spec and screenshot following
-`.cursor/skills/screenshot-validate/SKILL.md`. Prefer remote e2e while iterating when
+`.agents/skills/screenshot-validate/SKILL.md`. Prefer remote e2e while iterating when
 configured. Before each PR, run the narrow tests while developing, then `npm run check`;
 for renderer work also run `npm run build` and the focused e2e specs.
 
