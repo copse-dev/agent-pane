@@ -3,6 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { openBrowserUrl, openPullRequest } from '../controller/panels.ts'
 import { parseGithubPrUrl } from '@shared/git/github-pr-url.ts'
 import { bindPrLinkPreviews } from './pr-link-preview.ts'
+import { showErrorToast } from '../views/toast.ts'
 
 function linkHttpHref(link: HTMLAnchorElement): string | null {
   const href = link.href
@@ -66,10 +67,11 @@ export function bindBrowserLinkClicks(
       void api.remoteAgent
         .downloadArtifact(artifact.agentId, artifact.path)
         .then((url) => {
-          openBrowserUrl(store, url)
+          if (url) openBrowserUrl(store, url)
         })
         .catch((err: unknown) => {
           console.warn('[remote-agent] artifact download failed:', err)
+          showErrorToast('Failed to download agent artifact', err)
         })
       return
     }
