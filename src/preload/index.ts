@@ -1550,6 +1550,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:status', projectId, threadId),
     changeStats: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:change-stats', projectId, threadId),
+    threadChangeSummary: (
+      refs: Array<{ projectId: string; threadId: string }>,
+      opts?: { fresh?: boolean },
+    ) => ipcRenderer.invoke('git:thread-change-summary', refs, opts),
     fileDiff: (projectId: string, threadId: string, path: string, staged: boolean) =>
       ipcRenderer.invoke('git:file-diff', projectId, threadId, path, staged),
     workingFileDiff: (projectId: string, threadId: string, path: string) =>
@@ -1612,6 +1616,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('gh:pr-file-diff', owner, repo, number, path),
     resolvePrUrl: (url: string) => ipcRenderer.invoke('gh:resolve-pr-url', url),
     agentPrLinks: () => ipcRenderer.invoke('gh:agent-pr-links'),
+    prThreadRelationships: (pr: import('@shared/git/github-pr-url.ts').GithubPrRef) =>
+      ipcRenderer.invoke('gh:pr-thread-relationships', pr),
+    threadPrRelationships: (threadId: string) =>
+      ipcRenderer.invoke('gh:thread-pr-relationships', threadId),
     rerunFailedRuns: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:rerun-failed-runs', owner, repo, number),
     createPrForThread: (projectId: string, threadId: string, request: PrComposerCreateRequest) =>

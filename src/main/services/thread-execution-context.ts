@@ -12,6 +12,7 @@ import {
   type ThreadExecutionContext,
 } from './thread-execution-context-store.ts'
 import {
+  inspectManagedThreadWorktreePath,
   inspectThreadWorktreeAttachment,
   reattachThreadWorktree,
   restoreRetiredThreadWorktree,
@@ -173,6 +174,42 @@ async function activeThreadWorktreeInput(
   const worktree = threadMeta.worktree
   if (!worktree || worktree.retiredAt !== undefined || worktree.pullRequestUrl) return null
   return { projectId, threadId, projectRoot, worktree }
+}
+
+/**
+ * The checkout a thread would run in, for read-only inspection (sidebar status).
+ * Unlike {@link resolveThreadExecutionContext} this never restores a retired
+ * worktree, validates/adopts a branch, or rewrites thread metadata: a shared
+ * thread yields the project root, an active isolated worktree its managed path
+ * (only when the recorded path really is the managed one), and a retired or PR'd
+ * worktree (which resolution would recreate) yields null.
+ */
+export async function inspectThreadCheckoutRoot(
+  projectId: string,
+  threadId: string,
+  dependencies: Pick<ThreadExecutionContextDependencies, 'getProjectRoot' | 'getThreadMeta'> & {
+    /** Read-only managed-path check; defaults to the worktree manager's. */
+    inspectWorktreePath?: (
+      projectId: string,
+      threadId: string,
+      recordedPath: string,
+    ) => Promise<string | null>
+  } = defaultDependencies,
+): Promise<string | null> {
+  const projectRoot = dependencies.getProjectRoot(projectId)
+  if (!projectRoot) return null
+  const threadMeta = await dependencies.getThreadMeta(projectId, threadId)
+  if (threadMeta?.id !== threadId) return null
+  const worktree = threadMeta.worktree
+  if (!worktree) return projectRoot
+  if (worktree.retiredAt !== undefined || worktree.pullRequestUrl) return null
+  // The persisted path is untrusted: it must be the managed thread path, not
+  // whatever the metadata says, before Git is pointed at it.
+  return (dependencies.inspectWorktreePath ?? inspectManagedThreadWorktreePath)(
+    projectId,
+    threadId,
+    worktree.path,
+  )
 }
 
 /** Whether the thread's isolated checkout is detached; shared and retired checkouts report attached. */

@@ -37,6 +37,7 @@ import {
   getCommittedFileDiff,
   parseNameStatusZ,
   pushBranchToOrigin,
+  readThreadChangeSummary,
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
@@ -1442,5 +1443,97 @@ describe('Git reads under the project sandbox', { skip: !gitOk && 'git not insta
     assert.match(await getGitShowText('HEAD', 'tracked.txt'), /one/)
     assert.match(await getGitLogText(5), /init/)
     assert.ok(overlays.length >= 5, `expected sandboxed Git reads, saw ${String(overlays.length)}`)
+  })
+})
+
+describe('readThreadChangeSummary', { skip: !gitOk && 'git not installed' }, () => {
+  let base = ''
+  let restore: (() => void) | undefined
+  const git = (cwd: string, ...args: string[]): SpawnSyncReturns<Buffer> =>
+    spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd })
+
+  before(async () => {
+    base = await mkdtemp(join(tmpdir(), 'copse-thread-change-'))
+    restore = setWorkspaceRootForTest(base)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    invalidateGitWorkTreeProbe()
+    restore?.()
+    if (base) await rm(base, { recursive: true, force: true })
+  })
+
+  it('is null outside a repository', async () => {
+    const plain = join(base, 'plain')
+    await mkdir(plain)
+    assert.equal(await readThreadChangeSummary(plain), null)
+  })
+
+  it('reports clean, dirty, and unpushed work', async () => {
+    const remote = join(base, 'remote.git')
+    const work = join(base, 'work')
+    git(base, 'init', '-q', '--bare', remote)
+    git(base, 'clone', '-q', remote, work)
+    await writeFile(join(work, 'a.txt'), 'a')
+    git(work, 'add', '.')
+    git(work, 'commit', '-q', '-m', 'one')
+    git(work, 'push', '-q', '-u', 'origin', 'HEAD')
+
+    assert.deepEqual(await readThreadChangeSummary(work), { dirty: false })
+
+    await writeFile(join(work, 'b.txt'), 'b')
+    assert.deepEqual(await readThreadChangeSummary(work), { dirty: true })
+
+    git(work, 'add', '.')
+    git(work, 'commit', '-q', '-m', 'two')
+    assert.deepEqual(await readThreadChangeSummary(work), { dirty: false, unpushed: 1 })
+  })
+
+  it('reports dirty only when the repo has no remote', async () => {
+    const solo = join(base, 'solo')
+    await mkdir(solo)
+    git(solo, 'init', '-q')
+    await writeFile(join(solo, 'a.txt'), 'a')
+    git(solo, 'add', '.')
+    git(solo, 'commit', '-q', '-m', 'one')
+    assert.deepEqual(await readThreadChangeSummary(solo), { dirty: false })
+  })
+
+  it('counts a never-published branch against remote-tracking refs', async () => {
+    const remote = join(base, 'remote2.git')
+    const work = join(base, 'work2')
+    git(base, 'init', '-q', '--bare', remote)
+    git(base, 'clone', '-q', remote, work)
+    await writeFile(join(work, 'a.txt'), 'a')
+    git(work, 'add', '.')
+    git(work, 'commit', '-q', '-m', 'one')
+    git(work, 'push', '-q', '-u', 'origin', 'HEAD')
+    git(work, 'checkout', '-q', '-b', 'feature')
+    await writeFile(join(work, 'b.txt'), 'b')
+    git(work, 'add', '.')
+    git(work, 'commit', '-q', '-m', 'two')
+    assert.deepEqual(await readThreadChangeSummary(work), { dirty: false, unpushed: 1 })
+  })
+
+  it('reports dirty only once a configured upstream has been deleted', async () => {
+    const remote = join(base, 'remote3.git')
+    const work = join(base, 'work3')
+    git(base, 'init', '-q', '--bare', remote)
+    git(base, 'clone', '-q', remote, work)
+    await writeFile(join(work, 'a.txt'), 'a')
+    git(work, 'add', '.')
+    git(work, 'commit', '-q', '-m', 'one')
+    git(work, 'push', '-q', '-u', 'origin', 'HEAD')
+    git(work, 'checkout', '-q', '-b', 'feature')
+    await writeFile(join(work, 'b.txt'), 'b')
+    git(work, 'add', '.')
+    git(work, 'commit', '-q', '-m', 'two')
+    git(work, 'push', '-q', '-u', 'origin', 'feature')
+    git(work, 'checkout', '-q', 'feature')
+    git(remote, 'update-ref', '-d', 'refs/heads/feature')
+    git(work, 'fetch', '-q', '--prune')
+    assert.deepEqual(await readThreadChangeSummary(work), { dirty: false })
   })
 })

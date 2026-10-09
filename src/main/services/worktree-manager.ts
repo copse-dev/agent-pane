@@ -415,6 +415,30 @@ async function assertManagedWorktreePath(projectId: string, path: string): Promi
   if (stat?.isSymbolicLink()) throw new Error('Managed worktree path must not be a symlink')
 }
 
+/**
+ * Read-only check that a recorded thread worktree path is the managed one, for
+ * status reads that must not restore, validate-and-adopt, register or spawn Git.
+ * The recorded path must equal the configured thread path for this owner and sit
+ * under its unredirected project directory with no symlink at the leaf (the same
+ * path rules {@link validateThreadWorktree} enforces). Returns the canonical path,
+ * or null when anything is off or missing. It does not prove Git registration:
+ * callers that run Git there must still confirm it is a work tree.
+ */
+export async function inspectManagedThreadWorktreePath(
+  projectId: string,
+  threadId: string,
+  recordedPath: string,
+): Promise<string | null> {
+  try {
+    const expected = expectedThreadWorktreePath(projectId, threadId)
+    if (!sameWorktreePath(recordedPath, expected)) return null
+    await assertManagedWorktreePath(projectId, expected)
+    return await realpath(expected)
+  } catch {
+    return null
+  }
+}
+
 function ownErrorCode(error: unknown): unknown {
   if (typeof error !== 'object' || error === null || !Object.hasOwn(error, 'code')) return undefined
   return Object.getOwnPropertyDescriptor(error, 'code')?.value

@@ -718,7 +718,8 @@
    accent and a gentle pulse so it reads as "needs attention" without shouting. */
 /* Single GitHub PR icon — color encodes lifecycle (open / merged / closed).
    Details stay in the title / aria-label; no text chip. */
-.chat-pr-status {
+.chat-pr-status,
+.chat-changes-status {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;

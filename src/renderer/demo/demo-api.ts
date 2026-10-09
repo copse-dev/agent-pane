@@ -1,5 +1,6 @@
 import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
+import { ThreadPrRelationshipIndex } from '@shared/git/thread-pr-relations.ts'
 import type { AutomationPermissionOption, AutomationSchedule } from '@shared/types/automations.ts'
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
 import type { AppleProjectState } from '@shared/types/apple-development.ts'
@@ -422,11 +423,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   let mcpStatuses: readonly McpServerStatus[] = scenario.mcpServers ?? DEMO_MCP_STATUSES
   const pendingMcpSignIns = new Map<string, () => void>()
   const storage = new Map<string, unknown>([
-    ['projects', [scenario.project]],
+    [
+      'projects',
+      [scenario.project, ...(scenario.otherProjects ?? []).map((other) => other.project)],
+    ],
     ['activeProjectId', scenario.project.id],
   ])
   let workspaceRoot = scenario.project.path
   let threads: Thread[] = structuredClone(scenario.threads)
+  const prRefsHandlers = new Set<Parameters<ApiClient['threads']['onPrRefs']>[0]>()
   const showAutomationPermissions = scenario.id === 'automation-permissions'
   const demoPlugins = showAutomationPermissions
     ? [...DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN]
@@ -940,7 +945,14 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         return resolved({ status: 'archived', archivedAt, worktree: thread?.worktree })
       },
       loadProject: (projectId: string) =>
-        resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
+        resolved(
+          projectId === scenario.project.id
+            ? structuredClone(threads)
+            : structuredClone(
+                scenario.otherProjects?.find((other) => other.project.id === projectId)?.threads ??
+                  [],
+              ),
+        ),
       // The demo always hands back whole threads, so nothing ever asks to
       // hydrate one; answering from the in-memory list keeps that true. The
       // exceptions are scenarios built around the hydration window itself,
@@ -952,9 +964,23 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           : scenario.failThreadHydration === true
             ? Promise.reject(new Error('demo: transcript read failed'))
             : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
-      // Demo threads always arrive whole, so nothing is ever backfilled.
-      backfillPrRefs: () => resolvedVoid(),
-      onPrRefs: () => () => undefined,
+      // Demo threads link no PRs, so a backfill answers each one with an empty ref set —
+      // the settled "no PR" the sidebar waits for before it draws a row's changes glyph.
+      backfillPrRefs: (projectId: string, threadIds: string[]) => {
+        for (const handler of prRefsHandlers) {
+          handler(
+            projectId,
+            threadIds.map((threadId) => ({ threadId, prRefs: [] })),
+          )
+        }
+        return resolvedVoid()
+      },
+      onPrRefs: (handler) => {
+        prRefsHandlers.add(handler)
+        return (): void => {
+          prRefsHandlers.delete(handler)
+        }
+      },
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => undefined,
       create: (_projectId: string, thread: Thread) => {
@@ -1472,6 +1498,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
       changeStats: () => resolved(scenario.changeStats ? { ...scenario.changeStats } : null),
+      threadChangeSummary: (refs) =>
+        resolved(
+          refs.map(({ threadId }) => {
+            const changes = scenario.threadChanges?.[threadId]
+            return changes ? { ...changes } : null
+          }),
+        ),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
@@ -1507,8 +1540,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     gh: {
       status: () =>
         resolved({
-          installed: false,
-          authenticated: false,
+          installed: Boolean(scenario.pullRequests),
+          authenticated: Boolean(scenario.pullRequests),
           username: null,
           message: 'Unavailable in browser demo',
         }),
@@ -1516,12 +1549,20 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       setListWatch: resolvedVoid,
       onListsTick: subscribe,
       listMyOpenPrs: () => resolved([]),
-      listWorkspaceOpenPrs: emptyArray,
+      listWorkspaceOpenPrs: () => resolved(scenario.pullRequests ?? []),
       prChecks: () => resolved<'no_checks'>('no_checks'),
-      prDetails: () => resolved(null),
+      prDetails: (owner, repo, number) =>
+        resolved(
+          scenario.pullRequests?.find(
+            (pr) => pr.owner === owner && pr.repo === repo && pr.number === number,
+          ) ?? null,
+        ),
       prFileDiff: () => resolved(null),
       resolvePrUrl: () => resolved(null),
       agentPrLinks: emptyArray,
+      prThreadRelationships: (pr) => resolved(new ThreadPrRelationshipIndex(threads).forPr(pr)),
+      threadPrRelationships: (threadId) =>
+        resolved(new ThreadPrRelationshipIndex(threads).forThread(threadId)),
       createPrForThread: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       rerunFailedRuns: () =>

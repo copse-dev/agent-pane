@@ -7,6 +7,7 @@ import type { McpServerStatus } from './types/mcp.ts'
 import type { DemoTrace } from './demo-traces.ts'
 import type { FollowUpSuggestion } from './follow-ups/types.ts'
 import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
+import type { GhPrDetails } from './types/git.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
 
@@ -28,7 +29,11 @@ export interface DemoScenario {
   chatGptPlan?: ChatGptPlanStatus
   project: Project
   threads: Thread[]
+  /** Other projects exposed by the demo boundary, compatible with #3541. */
+  otherProjects?: ReadonlyArray<{ project: Project; threads: Thread[] }>
   settings: Readonly<Record<string, unknown>>
+  /** Optional read-only PR showcase data for the browser demo's PR panel. */
+  pullRequests?: GhPrDetails[]
   /**
    * A recorded turn the demo can replay when its prompt is submitted. Scenarios
    * without one are static fixtures for visual tests; a scenario with one is a
@@ -137,6 +142,8 @@ export interface DemoScenario {
   prBody?: string
   /** Uncommitted line counts the demo's working tree reports for the Changes chip. */
   changeStats?: { readonly additions: number; readonly deletions: number }
+  /** Unlanded work per thread id, for the sidebar's "changes" glyph. */
+  threadChanges?: Readonly<Record<string, { readonly dirty: boolean; readonly unpushed?: number }>>
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -230,11 +237,12 @@ const readingLayoutContent = [
   '',
   '## What changed',
   '',
-  '- A readable column keeps long lines from crossing the entire window.',
+  '- **A readable column:** keeps long lines from crossing the entire window.',
   '- Paragraphs and sections have enough separation to scan.',
   '  - Nested details retain their indentation.',
   '  - A second nested item checks the list rhythm.',
   '- Pending markdown uses the same text size as the completed answer.',
+  '- A [**bold link**](https://example.com) keeps the link colour.',
   '',
   '### Review the details',
   '',
@@ -635,6 +643,7 @@ function conciseThreadScenario(
 }
 
 export const DEMO_SCENARIOS: readonly DemoScenario[] = [
+  // The first scenario remains the marketing landing walkthrough.
   {
     // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
     // visual-test fixture. It is also what the marketing hero iframe embeds.
@@ -961,6 +970,46 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
             createdAt: FIXED_TIME,
           },
         ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'prompt-model-first-ask',
+    label: 'Prompt matching without transcript diagnostics',
+    trace: {
+      id: 'prompt-model-first-ask',
+      label: 'The first ask pins the model in the picker',
+      prompt: 'Check for typos in the README',
+      steps: [
+        {
+          chunk: {
+            type: 'turn_parameters',
+            model: 'claude-haiku-4-5',
+            parameters: {},
+            requestedModel: 'auto:match-prompt',
+          },
+        },
+        { delayMs: 2000, chunk: { type: 'text', text: 'I’ll check the README for typos.' } },
+        { chunk: { type: 'done', stopReason: 'end_turn' } },
+      ],
+    },
+    project: project('demo-prompt-model-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'auto:match-prompt',
+    },
+    threads: [
+      {
+        id: 'demo-prompt-model-thread',
+        title: 'README typo check',
+        status: 'idle',
+        model: 'auto:match-prompt',
+        messages: [],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,
@@ -2051,6 +2100,16 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     })),
   },
   {
+    id: 'sidebar-empty-project',
+    label: 'Empty unopened project in the sidebar',
+    project: project('demo-empty-active'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [],
+    otherProjects: [
+      { project: project('demo-empty-other', 'empty-project', '/demo/empty'), threads: [] },
+    ],
+  },
+  {
     id: 'sidebar-thread-sort',
     label: 'Sidebar thread sort',
     project: project('demo-sidebar-sort-project'),
@@ -2110,6 +2169,64 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME - 5,
         updatedAt: FIXED_TIME - 5,
+      },
+    ],
+  },
+  {
+    id: 'sidebar-thread-changes',
+    label: 'Sidebar changes glyph',
+    project: project('demo-sidebar-changes-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // Two finished threads with unlanded work, one clean, one still running.
+    threadChanges: {
+      'demo-sidebar-changes-commits': { dirty: false, unpushed: 2 },
+      'demo-sidebar-changes-dirty': { dirty: true },
+      'demo-sidebar-changes-clean': { dirty: false },
+    },
+    threads: [
+      {
+        id: 'demo-sidebar-changes-clean',
+        title: 'Update onboarding copy',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+      {
+        id: 'demo-sidebar-changes-commits',
+        title: 'Refactor auth',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 2,
+        updatedAt: FIXED_TIME - 2,
+      },
+      {
+        id: 'demo-sidebar-changes-dirty',
+        title: 'Add a retry to uploads',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 3,
+        updatedAt: FIXED_TIME - 3,
+      },
+      {
+        id: 'demo-sidebar-changes-running',
+        title: 'Run the schema migration',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 4,
+        updatedAt: FIXED_TIME - 4,
       },
     ],
   },
@@ -2360,6 +2477,108 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         updatedAt: FIXED_TIME,
       },
     ],
+  },
+  {
+    id: 'pr-relations',
+    label: 'PR producing and related threads',
+    project: project('demo-pr-relations', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      filesPaneOpen: true,
+      rightPanelMode: 'prs',
+      layout: {
+        projectsPaneWidth: 220,
+        filesPaneWidth: 660,
+        filesPaneHeight: 360,
+        fileTreeWidth: 220,
+      },
+    },
+    threads: [
+      {
+        id: 'pr-producer',
+        title: 'Implement widget',
+        status: 'idle',
+        messages: [],
+        prProductions: [
+          {
+            pr: {
+              owner: 'acme',
+              repo: 'widgets',
+              number: 42,
+              url: 'https://github.com/acme/widgets/pull/42',
+            },
+            source: 'pr-create',
+            eventId: 'demo-create-42',
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'pr-reviewer',
+        title: 'Review widget',
+        status: 'idle',
+        messages: [
+          {
+            id: 'review-refs',
+            role: 'user',
+            content:
+              'Review https://github.com/acme/widgets/pull/42 and https://github.com/acme/widgets/pull/43',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        prRefs: [42, 43].map((number) => ({
+          owner: 'acme',
+          repo: 'widgets',
+          number,
+          url: `https://github.com/acme/widgets/pull/${String(number)}`,
+        })),
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'pr-mentioned',
+        title: 'Release planning',
+        status: 'idle',
+        messages: [
+          {
+            id: 'release-ref',
+            role: 'user',
+            content: 'Include https://github.com/acme/widgets/pull/42 in the release.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        prRefs: [
+          {
+            owner: 'acme',
+            repo: 'widgets',
+            number: 42,
+            url: 'https://github.com/acme/widgets/pull/42',
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    pullRequests: [42, 43].map((number) => ({
+      owner: 'acme',
+      repo: 'widgets',
+      number,
+      url: `https://github.com/acme/widgets/pull/${String(number)}`,
+      title: number === 42 ? 'Add widget support' : 'Follow up on widget review',
+      state: 'OPEN',
+      body: '',
+      files: [],
+      checks: 'success',
+    })),
   },
   {
     id: 'chat-layout-styling',

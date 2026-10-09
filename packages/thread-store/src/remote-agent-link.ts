@@ -3,11 +3,12 @@ import type { Thread } from './thread-types.ts'
 import { githubPrKey, parseGithubPrUrl } from './github-pr-url.ts'
 
 /**
- * Durable link between a cloud-agent run, the GitHub PR it produced, and the
+ * Durable association between a cloud-agent run, a referenced GitHub PR, and the
  * chat thread that launched it (issue #690, Q6). Persisted on the launching
  * thread's `meta.json` as the source of truth; a per-project reverse index
- * (`agent-pr-index.jsonl`) is derived from these so the PR pane can answer
- * "which thread/agent owns PR #123" without scanning every thread.
+ * (`agent-pr-index-v2.jsonl`) is derived from these so the PR pane can list
+ * every associated thread/agent without scanning every thread. This association
+ * alone does not prove the run created the PR or any commit.
  *
  * `agentId` + `provider` + `createdAt` are known at launch; `runId`, `branch`,
  * and `repo` are recorded when available; `prUrl` is filled in once the agent's
@@ -26,7 +27,7 @@ export interface RemoteAgentLink {
    * Copse-owned live turns keep their renderer-owned streaming lifecycle.
    */
   imported?: true
-  /** The PR the agent opened, once detected. */
+  /** A PR associated with the agent, once detected. */
   prUrl?: string
   /** Local branch the run was seeded from. */
   branch?: string

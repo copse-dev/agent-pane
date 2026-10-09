@@ -130,8 +130,11 @@ output, and content density.
 
 ## Assistant reading rhythm
 
-Primary assistant prose uses a 720px maximum width, the scaled 16px type token,
-and 1.65 line-height inside the existing chat column. Paragraph and section
+Primary assistant prose uses a 680px maximum width, the platform text face
+(`--font-prose`, not Pliant, whose tight word gaps make paragraphs run together),
+the scaled 15px type token, and 1.6 line-height inside the existing chat column.
+Body text takes `--text-prose` and bold is weight 600 in `--text-prose-strong`;
+leave letter- and word-spacing at `normal`. Paragraph and section
 spacing use the markdown package's tokens so pending and committed text share
 the same rhythm. Keep this treatment on text that shares a message with tools
 as well; adding a tool must not change the prose size or wrapping. Tool output
@@ -811,6 +814,24 @@ The tooltip / `aria-label` carries the detail (`#42 is open`, `all merged`, …)
 Logic lives in [`thread-pr-status.ts`](../src/shared/git/thread-pr-status.ts). Specs:
 [`projects-pane-pr-status.test.ts`](../src/renderer/views/projects-pane-pr-status.test.ts),
 [`tests/e2e/thread-pr-status.e2e.ts`](../tests/e2e/thread-pr-status.e2e.ts).
+
+## Thread changes glyph (no-PR rows)
+
+A finished sidebar thread with **no PR** that still has unlanded work shows one muted
+git-branch glyph in the same slot as the PR icon (`.chat-changes-status`, `--text-muted`,
+never accent). It means "unpushed commits or a non-clean working tree" and carries no dot and
+no counts on the row; the detail is tooltip / `aria-label` only: `N unpushed commit(s)`,
+`Uncommitted changes`, or both joined with "and". Clean, running and PR-linked rows show nothing
+extra (a PR rollup always wins the slot), and rows wait for PR refs to settle before asking so a
+PR thread never flashes the glyph first.
+
+The read is `git:thread-change-summary`, **inspect-only**: it never arms a working-tree watcher,
+groups threads by resolved checkout (N shared-checkout threads cost one `git status` + one
+`rev-list --count`), caches per root, and limits concurrency. The pane re-reads a row at most
+every 30s and follows working-tree events for the active thread only. Specs:
+[`thread-change-summary.test.ts`](../src/main/services/github/thread-change-summary.test.ts),
+[`projects-pane-thread-changes.test.ts`](../src/renderer/views/projects-pane-thread-changes.test.ts),
+[`tests/demo/sidebar-thread-changes.demo.ts`](../tests/demo/sidebar-thread-changes.demo.ts).
 
 ## SSH chrome — plain text, no decorative emoji
 

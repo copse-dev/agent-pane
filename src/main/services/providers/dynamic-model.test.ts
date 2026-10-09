@@ -13,6 +13,12 @@ const POOL: FrontierPoint[] = computeParetoFrontier([
 ])
 
 describe('resolveDynamicModelId', () => {
+  it('uses best value without assessment for auxiliary prompt-selector consumers', async () => {
+    assert.equal(
+      await resolveDynamicModelId('auto:match-prompt', { pool: POOL }),
+      await resolveDynamicModelId('auto:best-value', { pool: POOL }),
+    )
+  })
   beforeEach(async () => {
     await setSetting('roleModels', {})
   })
