@@ -1,13 +1,63 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <!-- Directional mockup, not a spec. See docs/plans/new-thread-activity-screen.md for shipped divergences. -->
+    <script>
+      // ?win=m|s|xs simulates a narrower window in the same page: the body is constrained to that
+      // width and every width-based @media rule / matchMedia call is evaluated against it.
+      ;(function () {
+        var w = new URLSearchParams(location.search).get('win'),
+          W = { m: 1024, s: 760, xs: 520 }[w]
+        if (!W) return
+        window.__SIMW = W
+        document.documentElement.setAttribute('data-win', w)
+        document.documentElement.style.setProperty('--simw', W + 'px')
+        var rx = /\((min|max)-width:\s*([\d.]+)px\)/g,
+          mm = window.matchMedia.bind(window)
+        window.matchMedia = function (q) {
+          if (!/\((min|max)-width/.test(q)) return mm(q)
+          var ok = true
+          q.replace(rx, function (_, k, v) {
+            if ((k === 'min' && W < +v) || (k === 'max' && W > +v)) ok = false
+            return ''
+          })
+          return {
+            matches: ok,
+            media: q,
+            onchange: null,
+            addEventListener: function () {},
+            removeEventListener: function () {},
+            addListener: function () {},
+            removeListener: function () {},
+            dispatchEvent: function () {
+              return false
+            },
+          }
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+          var fix = function (rules) {
+            for (var i = 0; i < rules.length; i++) {
+              var r = rules[i]
+              if (r.type === 4 && /\((min|max)-width/.test(r.media.mediaText))
+                r.media.mediaText = r.media.mediaText.replace(rx, function (_, k, v) {
+                  return (k === 'min' ? W >= +v : W <= +v) ? '(min-width:0px)' : '(max-width:0px)'
+                })
+              if (r.cssRules) fix(r.cssRules)
+            }
+          }
+          for (var s = 0; s < document.styleSheets.length; s++)
+            try {
+              fix(document.styleSheets[s].cssRules)
+            } catch (e) {}
+          var tag = document.createElement('div')
+          tag.textContent = W + 'px window (simulated)'
+          tag.style.cssText =
+            'position:fixed;left:8px;bottom:6px;font:11px system-ui;color:#888;z-index:99;pointer-events:none'
+          document.body.appendChild(tag)
+        })
+      })()
+    </script>
     <meta charset="utf-8" />
-    <!--
-      Directional mockup, not a spec. This is the design direction for the new-thread
-      Activity screen (docs/plans/new-thread-activity-screen.md). The app has deliberately
-      departed from it in places (see "Divergences from the plan" in that doc), so check
-      the plan before copying a detail.
-    -->
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Copse — New thread activity prototype</title>
     <style>
@@ -1970,10 +2020,10 @@
         stroke-linecap: round;
         stroke-linejoin: round;
       }
-      .app.rp-bottom .topbar .tb:not([data-rp='explorer']) .tl {
+      .app.rp-bottom .topbar .tb:not([data-rp='context']) .tl {
         display: none;
       }
-      .app.rp-bottom .topbar .tb:not([data-rp='explorer']) {
+      .app.rp-bottom .topbar .tb:not([data-rp='context']) {
         padding: 4px 8px;
       }
       @media (max-width: 600px) {
@@ -4374,12 +4424,1252 @@
         color: var(--muted);
         font-size: 13px;
       }
+
+      /* ===== stacked on #3450: threads toggle, side chats, PR surface ===== */
+      .prv-row,
+      .prv-chip,
+      .sc-act,
+      .sc-sw,
+      .sc-sug {
+        background: none;
+        border: 0;
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+      .prv {
+        align-self: stretch;
+        margin: -26px calc(-1 * clamp(22px, 5.4vw, 76px)) -28px;
+        padding-bottom: 220px;
+      }
+      #sbToggle[aria-pressed='false'] {
+        color: var(--muted);
+      }
+      .app.side-hidden {
+        grid-template-columns: 0 minmax(0, 1fr);
+      }
+      .app.side-hidden.rp-open:not(.rp-bottom) {
+        grid-template-columns: 0 minmax(0, 1fr) var(--rw, 440px);
+      }
+      .app.side-hidden > .sidebar {
+        visibility: hidden;
+        overflow: hidden;
+        border-right: 0;
+        padding: 0;
+      }
+      .app.side-hidden #rzSide {
+        display: none;
+      }
+      .msg-assistant {
+        position: relative;
+      }
+      .tb .tl {
+        white-space: nowrap;
+      }
+      .sc-act {
+        margin-top: 8px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 9px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel);
+        color: var(--secondary);
+        font-size: 12px;
+        opacity: 0;
+        transition: opacity 0.1s;
+      }
+      .msg-assistant:hover .sc-act,
+      .sc-act:focus-visible,
+      .sc-act.has {
+        opacity: 1;
+      }
+      .sc-act:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .sc-act svg {
+        width: 13px;
+        height: 13px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .sc-act .sc-dot,
+      .tb.has-dot::after {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--pr-merged);
+        display: inline-block;
+      }
+      .tb.has-dot {
+        position: relative;
+      }
+      .tb.has-dot::after {
+        content: '';
+        position: absolute;
+        top: 4px;
+        right: 4px;
+      }
+      .sc-panel {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+      }
+      .sc-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .sc-sw {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .sc-sw:hover {
+        background: var(--hover);
+      }
+      .sc-sw span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sc-sw svg,
+      .sc-ctx svg {
+        width: 13px;
+        height: 13px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .sc-sp {
+        flex: 1;
+      }
+      .sc-bar select {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--bg);
+        color: var(--secondary);
+        padding: 1px 6px;
+        font-size: 12px;
+      }
+      .sc-ctx {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        font-size: 12px;
+        color: var(--muted);
+        border-bottom: 1px solid var(--line-subtle);
+      }
+      .sc-ctx span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sc-msgs {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .sc-m {
+        max-width: 92%;
+        line-height: 1.5;
+      }
+      .sc-m.u {
+        align-self: flex-end;
+        background: var(--surface);
+        border-radius: 10px;
+        padding: 6px 10px;
+        box-shadow: var(--shadow);
+      }
+      .sc-m small {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        margin-top: 2px;
+      }
+      .sc-empty {
+        margin: auto;
+        text-align: center;
+        color: var(--muted);
+        max-width: 240px;
+      }
+      .sc-sug {
+        display: block;
+        width: 100%;
+        margin-top: 6px;
+        padding: 4px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        text-align: left;
+        color: var(--text);
+      }
+      .sc-sug:hover {
+        background: var(--hover);
+      }
+      .sc-typing {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .sc-form {
+        display: flex;
+        gap: 8px;
+        padding: 8px 10px;
+        border-top: 1px solid var(--line);
+      }
+      .sc-form input {
+        flex: 1;
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 10px;
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+      }
+      .sc-form input:focus {
+        outline: 0;
+        border-color: var(--accent);
+      }
+      .prv {
+        display: none;
+        flex: 1;
+        min-height: 0;
+        flex-direction: column;
+        overflow: auto;
+      }
+      .prv-h {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 12px 18px;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        z-index: 2;
+      }
+      .prv-h b {
+        font-size: 14px;
+        margin-right: 6px;
+      }
+      .prv-chip {
+        padding: 1px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        font-size: 12px;
+        color: var(--secondary);
+      }
+      .prv-chip.on {
+        background: var(--selected);
+        color: var(--text);
+        border-color: transparent;
+      }
+      .prv-grp {
+        padding: 6px 18px;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--panel);
+        border-bottom: 1px solid var(--line-subtle);
+      }
+      .prv-row {
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr) auto;
+        gap: 2px 10px;
+        padding: 10px 18px;
+        width: 100%;
+        text-align: left;
+        border-bottom: 1px solid var(--line-subtle);
+        color: var(--text);
+      }
+      .prv-row:hover {
+        background: var(--hover);
+      }
+      .prv-row.sel {
+        background: var(--selected);
+      }
+      .prv-row .pr {
+        margin-top: 3px;
+      }
+      .prv-row .t {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .prv-row .m {
+        grid-column: 2;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .prv-row .x {
+        grid-row: 1 / span 2;
+        grid-column: 3;
+        align-self: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .prd {
+        padding: 14px 18px;
+        overflow: auto;
+        height: 100%;
+      }
+      .prd h4 {
+        margin: 0 0 4px;
+        font-size: 15px;
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+      }
+      .prd .m {
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 10px;
+      }
+      .prd .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .prd .chips span {
+        padding: 1px 10px;
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--secondary);
+        font-size: 12px;
+      }
+      .prd .ck {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 3px 0;
+        font-size: 13px;
+      }
+      .prd .ck .ok {
+        color: var(--teal);
+      }
+      .prd .ck .bad {
+        color: var(--pr-closed);
+      }
+      .prd .ck .wait {
+        color: var(--warning);
+      }
+      .prd .ck em {
+        margin-left: auto;
+        font-style: normal;
+        color: var(--muted);
+      }
+      .prd .acts {
+        display: flex;
+        gap: 8px;
+        margin: 12px 0;
+        flex-wrap: wrap;
+      }
+      .prd .note {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      /* ===== style options (Prototype menu): side chat entry, PRs entry, scope marker ===== */
+      .sb-nav {
+        display: none;
+        align-items: center;
+        gap: 10px;
+        margin: 0 10px 6px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        background: none;
+        border: 0;
+        color: var(--text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .sb-nav svg {
+        width: 14px;
+        height: 14px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .sb-nav em {
+        margin-left: auto;
+        font-style: normal;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .sb-nav:hover {
+        background: var(--hover);
+      }
+      .sb-nav[aria-pressed='true'] {
+        background: var(--selected);
+      }
+      html[data-prsnav='sidebar'] .sb-nav {
+        display: flex;
+      }
+      html[data-prsnav='sidebar'] .topbar [data-rp='prs'],
+      html[data-prsnav='sidebar'] .pbar [data-rp='prs'] {
+        display: none;
+      }
+      html[data-sc='composer'] .topbar [data-rp='sidechat'],
+      html[data-sc='composer'] .pbar [data-rp='sidechat'],
+      html[data-sc='pill'] .topbar [data-rp='sidechat'],
+      html[data-sc='pill'] .pbar [data-rp='sidechat'] {
+        display: none;
+      }
+      #scChip {
+        display: none;
+      }
+      html[data-sc='composer'] #scChip.show {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #scChip svg {
+        width: 13px;
+        height: 13px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      #scChip .d {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--pr-merged);
+      }
+      .topbar.is-global .crumb {
+        display: none;
+      }
+
+      /* ===== overall vs individual: top bar grouping, right rail, panel tabs ===== */
+      .prv-back {
+        background: none;
+        border: 0;
+        color: var(--secondary);
+        font: inherit;
+        padding: 3px 10px 3px 4px;
+        border-radius: 999px;
+        cursor: pointer;
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .prv-back:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .tgrp {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        position: relative;
+      }
+      html:not([data-grp='none']) .tgrp.t {
+        margin-left: 6px;
+        padding-left: 8px;
+        border-left: 1px solid var(--line);
+      }
+      html[data-grp='labels'] .tgrp::before {
+        content: attr(data-label);
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin: 0 4px 0 2px;
+        white-space: nowrap;
+        opacity: 0.75;
+      }
+      html[data-grp='labels'] .tgrp.g::before {
+        color: var(--teal);
+      }
+      html[data-grp='labels'] .tgrp.t::before {
+        color: var(--pr-merged);
+      }
+      html[data-grp='labels'] .topbar.is-global .tgrp.g::before,
+      html[data-grp='labels'] .topbar:not(.is-global) .tgrp.t::before {
+        opacity: 1;
+        font-weight: 700;
+      }
+      .topbar.is-global .tgrp.t .tb {
+        opacity: 0.5;
+      }
+      @media (max-width: 1500px) {
+        html[data-grp='labels'] .tgrp::before {
+          content: attr(data-short);
+        }
+      }
+      .app.rp-bottom html[data-grp='labels'] .tgrp::before,
+      .app.rp-bottom .tgrp::before {
+        display: none;
+      }
+      /* right rail */
+      .rprail {
+        display: none;
+        position: absolute;
+        right: 0;
+        top: 44px;
+        bottom: 0;
+        width: 46px;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 0;
+        border-left: 1px solid var(--line);
+        background: var(--panel);
+        z-index: 5;
+      }
+      html[data-nav='rail'] .rprail {
+        display: flex;
+      }
+      html[data-nav='rail'] .app {
+        padding-right: 46px;
+        box-sizing: border-box;
+      }
+      html[data-nav='rail'] .topbar .tgrp {
+        display: none;
+      }
+      .rprail .rpr {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 8px;
+        background: none;
+        color: var(--secondary);
+        cursor: pointer;
+        padding: 0;
+      }
+      .rprail .rpr:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .rprail .rpr[aria-pressed='true'] {
+        background: var(--selected);
+        color: var(--text);
+      }
+      .rprail .rpr .tl {
+        display: none;
+      }
+      .rprail .rpr svg {
+        width: 17px;
+        height: 17px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .rprail .cap {
+        font-size: 9px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-top: 2px;
+      }
+      .rprail .cap.g {
+        color: var(--teal);
+      }
+      .rprail .cap.t {
+        color: var(--pr-merged);
+      }
+      .rprail .rsep {
+        width: 24px;
+        height: 1px;
+        background: var(--line);
+        margin: 4px 0;
+      }
+      /* panel tabs */
+      .rptabs {
+        display: none;
+        gap: 2px;
+        padding: 6px 10px 0;
+        border-bottom: 1px solid var(--line);
+        overflow: auto;
+        flex: none;
+      }
+      html[data-nav='tabs'] .rptabs.show {
+        display: flex;
+      }
+      .rptabs button {
+        padding: 6px 10px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        border-radius: 7px 7px 0 0;
+        background: none;
+        color: var(--secondary);
+        font: inherit;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .rptabs button:hover {
+        background: var(--hover);
+      }
+      .rptabs button.on {
+        color: var(--text);
+        border-bottom-color: var(--pr-merged);
+      }
+      html[data-nav='tabs'] .topbar .tgrp.t .tb:not([data-rp='context']) {
+        display: none;
+      }
+
+      /* ===== round 3: rail fixes, rail on the panel, palette, overall destinations by Settings ===== */
+      .rprail {
+        top: 0;
+        padding-top: 52px;
+      }
+      .rprail .cap {
+        display: none;
+      }
+      html[data-nav='rail'] .rprailp {
+        display: none;
+      }
+      .rprailp {
+        right: auto;
+        left: 0;
+        top: 0;
+        padding-top: 8px;
+        border-left: 0;
+        border-right: 1px solid var(--line);
+        background: var(--bg);
+      }
+      html[data-nav='railp'] .rprailp {
+        display: flex;
+      }
+      html[data-nav='railp'] .rpanel {
+        position: relative;
+        padding-left: 46px;
+        box-sizing: border-box;
+      }
+      html[data-nav='railp'] .rprail:not(.rprailp) {
+        display: none;
+      }
+      html[data-nav='railp'] .topbar .tgrp.t .tb:not([data-rp='context']),
+      html[data-nav='palette'] .topbar .tgrp.t .tb:not([data-rp='context']) {
+        display: none;
+      }
+      html[data-all='side'] .topbar .tgrp.g,
+      html[data-all='side'] .rprail .rpr[data-rp='prs'],
+      html[data-all='side'] .rprail .rpr[data-rp='memories'],
+      html[data-all='side'] .rprail .rpr[data-rp='roadmap'],
+      html[data-all='side'] .rprail .rsep {
+        display: none;
+      }
+      html[data-all='side'] .tgrp.t {
+        margin-left: 0;
+        padding-left: 0;
+        border-left: 0;
+      }
+      .tb-links {
+        flex-wrap: wrap;
+      }
+      .tb-links .sba {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      html[data-all='side'] .tb-links .sba {
+        display: inline-flex;
+      }
+      .tb-links .sba:hover,
+      .tb-links .sba[aria-pressed='true'] {
+        color: var(--text);
+      }
+      .tb-links .sba svg {
+        width: 15px;
+        height: 15px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .tb-links .sba .tl {
+        display: inline;
+        font-weight: 400;
+      }
+      /* palette */
+      #palBtn {
+        display: none;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 12px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      html[data-nav='palette'] #palBtn {
+        display: inline-flex;
+      }
+      #palBtn kbd {
+        font: inherit;
+        font-size: 11px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0 5px;
+      }
+      .pal {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        background: #00000055;
+        display: flex;
+        justify-content: center;
+        padding-top: 12vh;
+      }
+      .pal[hidden] {
+        display: none;
+      }
+      .pal-box {
+        width: min(560px, calc(100vw - 32px));
+        max-height: 60vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        align-self: flex-start;
+      }
+      .pal-box input {
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        background: none;
+        color: var(--text);
+        font: inherit;
+        font-size: 15px;
+        padding: 14px 16px;
+        outline: 0;
+      }
+      .pal-list {
+        overflow: auto;
+        padding: 6px;
+      }
+      .pal-h {
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 8px 10px 2px;
+      }
+      .pal-h.g {
+        color: var(--teal);
+      }
+      .pal-h.t {
+        color: var(--pr-merged);
+      }
+      .pal-it {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 0;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        padding: 7px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .pal-it.on,
+      .pal-it:hover {
+        background: var(--selected);
+      }
+
+      /* ===== Context panel (default thread panel): access, links, sources ===== */
+      .cx {
+        padding: 6px 0 24px;
+      }
+      .cx-sec {
+        padding: 12px 16px 6px;
+        border-bottom: 1px solid var(--line);
+      }
+      .cx-h {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-weight: 600;
+        color: var(--secondary);
+        margin-bottom: 4px;
+      }
+      .cx-h button {
+        border: 0;
+        background: none;
+        color: var(--secondary);
+        padding: 2px 6px;
+        border-radius: 6px;
+        cursor: pointer;
+        font: inherit;
+        font-size: 18px;
+        line-height: 1;
+      }
+      .cx-h button:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .cx-sub {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 10px 0 2px 6px;
+      }
+      .cx-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 6px 8px;
+        border: 0;
+        border-radius: 8px;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        text-align: left;
+      }
+      button.cx-row {
+        cursor: pointer;
+      }
+      .cx-row:hover {
+        background: var(--hover);
+      }
+      .cx-row svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        color: var(--secondary);
+      }
+      .cx-row .n {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .cx-row .v {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .cx-row.sel {
+        background: var(--selected);
+      }
+      .cx-link .k {
+        font-size: 11px;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 7px;
+      }
+      .cx-text {
+        padding: 4px 8px 8px;
+        color: var(--secondary);
+      }
+
+      /* ===== round 4: panel strip (n at the bottom, C on the side), no highlights ===== */
+      .rprail .rpr[aria-pressed='true'],
+      html[data-nav='strip'] .pb[aria-pressed='true'] {
+        background: none;
+        color: var(--text);
+      }
+      .rptabs button.on {
+        border-bottom-color: var(--text);
+      }
+      html[data-nav='strip'] .topbar .tgrp.t {
+        display: none;
+      }
+      html[data-nav='strip'] .pb[data-rp='prs'],
+      html[data-nav='strip'] .pb[data-rp='memories'],
+      html[data-nav='strip'] .pb[data-rp='roadmap'] {
+        display: none;
+      }
+      html[data-nav='strip'] .pb .tl {
+        display: none;
+      }
+      html[data-nav='strip'] .pb[data-rp='context'] .tl {
+        display: inline;
+      }
+      html[data-nav='strip'][data-strip='bottom'] .pbar,
+      html[data-nav='strip'] .app.rp-bottom .pbar {
+        display: flex;
+        gap: 2px;
+        margin: 8px auto 0;
+        padding: 2px 6px;
+        border: 1px solid var(--line);
+        border-bottom: 0;
+        border-radius: 8px 8px 0 0;
+        width: min(100%, 800px);
+        overflow: hidden;
+      }
+      html[data-nav='strip'][data-strip='bottom'] .composer-zone {
+        padding-bottom: 0;
+      }
+      .stripc {
+        display: none;
+      }
+      html[data-nav='strip'][data-strip='side'] .app .stripc {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        position: absolute;
+        right: 0;
+        top: 84px;
+        padding: 6px 3px;
+        border: 1px solid var(--line);
+        border-right: 0;
+        border-radius: 10px 0 0 10px;
+        background: var(--bg);
+        z-index: 4;
+      }
+      html[data-nav='strip'][data-strip='side'] .app .main {
+        position: relative;
+        padding-right: 46px;
+        box-sizing: border-box;
+      }
+      html[data-nav='strip'][data-strip='side'] .app #pbar {
+        display: none;
+      }
+      .stripc .pb {
+        padding: 7px;
+        justify-content: center;
+      }
+      .stripc .pb .tl {
+        display: none !important;
+      }
+
+      /* ===== round 5: message gutter (copy, quote, side chat) next to the side strip ===== */
+      .msg {
+        position: relative;
+      }
+      .gut {
+        display: none;
+        position: absolute;
+        right: -46px;
+        top: 2px;
+        flex-direction: column;
+        gap: 2px;
+        opacity: 0.45;
+        transition: opacity 0.1s;
+      }
+      .msg:hover .gut,
+      .gut:focus-within {
+        opacity: 1;
+      }
+      .gut button {
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 6px;
+        background: none;
+        color: var(--muted);
+        cursor: pointer;
+        padding: 0;
+      }
+      .gut button:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .gut svg {
+        width: 15px;
+        height: 15px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      html[data-nav='strip'][data-strip='side'][data-gut='column'] .app .gut {
+        display: flex;
+      }
+      html[data-nav='strip'][data-strip='side'][data-gut='column'] .app .sc-act {
+        display: none;
+      }
+      html[data-nav='strip'][data-strip='side'][data-gut='float'] .app .main {
+        padding-right: 0;
+      }
+      html[data-nav='strip'][data-strip='side'][data-gut='float'] .app .stripc {
+        right: 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+        background: color-mix(in srgb, var(--bg) 94%, transparent);
+      }
+      .gut-toast {
+        position: fixed;
+        left: 50%;
+        bottom: 28px;
+        transform: translateX(-50%);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 14px;
+        font-size: 13px;
+        box-shadow: var(--shadow);
+        z-index: 70;
+      }
+
+      /* full PR mode: no thread strip, no message gutter */
+      html .app.is-pr .stripc,
+      html .app.is-pr #pbar,
+      html .app.is-pr .gut {
+        display: none !important;
+      }
+      html .app.is-pr .main {
+        padding-right: 0 !important;
+      }
+
+      html .app.is-pr .composer-zone {
+        display: none !important;
+      }
+      html .app.is-pr .prv {
+        padding-bottom: 28px;
+      }
+
+      .cx-row.ag {
+        cursor: default;
+      }
+      .cx-row.ag small {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        white-space: normal;
+      }
+      .cx-row.ag .n {
+        white-space: normal;
+      }
+      .agd {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: none;
+        margin: 0 4px;
+      }
+      .agd.done {
+        background: var(--teal);
+      }
+      .agd.running {
+        background: var(--warning);
+        animation: agpulse 1.2s infinite;
+      }
+      .agd.queued {
+        background: var(--muted);
+      }
+      @keyframes agpulse {
+        50% {
+          opacity: 0.35;
+        }
+      }
+
+      /* open a subagent in the chat */
+      button.cx-row.ag {
+        cursor: pointer;
+      }
+      .cx-row.ag.sel {
+        background: var(--hover);
+      }
+      .sub-head {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 0 0 14px;
+        margin-bottom: 14px;
+        border-bottom: 1px solid var(--line);
+      }
+      .sub-head b {
+        font-size: 15px;
+      }
+      .sub-head .m {
+        flex-basis: 100%;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      html .app.is-sub .composer-zone {
+        display: none !important;
+      }
+
+      /* prototype menu in columns */
+      .menu.menu-cols {
+        width: min(1000px, calc(100vw - 16px));
+        max-width: none;
+        overflow: auto;
+      }
+      .menu .mgrid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+        gap: 10px 14px;
+        padding: 4px 6px 8px;
+        align-items: start;
+      }
+      html[data-win] {
+        background: #111;
+      }
+      html[data-win] body {
+        width: var(--simw);
+        max-width: 100%;
+        margin: 0 auto;
+        box-shadow: 0 0 0 1px #333;
+        position: relative;
+        min-height: 100dvh;
+      }
+      .menu .mcol {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .menu.menu-cols button {
+        white-space: normal;
+      }
+      .menu.menu-cols .menu-head {
+        position: static;
+      }
+
+      /* small windows: icon-only top bar */
+      @media (max-width: 860px) {
+        .topbar .tgrp::before {
+          display: none !important;
+        }
+        .topbar .tgrp .tb:not([data-rp='context']) .tl,
+        .topbar .tgrp .tb[data-rp='context'] .tl {
+          display: none;
+        }
+        .topbar .tgrp.t {
+          margin-left: 2px;
+          padding-left: 4px;
+        }
+        .topbar .tb {
+          padding: 5px 7px;
+        }
+      }
+      @media (max-width: 640px) {
+        .topbar .crumb {
+          display: none;
+        }
+        .topbar .top-title {
+          max-width: 90px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+      }
+
+      /* narrow windows: threads open as a drawer over the chat */
+      @media (max-width: 600px) {
+        .app.side-open > .sidebar {
+          display: flex !important;
+          position: absolute;
+          grid-row: 1 / -1;
+          grid-column: 1 / -1;
+          left: 0;
+          top: var(--tbh, 44px);
+          bottom: 0;
+          width: min(86%, 330px);
+          z-index: 40;
+          box-shadow: var(--shadow);
+        }
+        .app.side-open::after {
+          content: '';
+          position: absolute;
+          grid-row: 1 / -1;
+          grid-column: 1 / -1;
+          inset: var(--tbh, 44px) 0 0 0;
+          background: #0006;
+          z-index: 39;
+        }
+      }
+
+      /* narrow windows: the bell moves into the threads button as a dot */
+      #sbToggle {
+        position: relative;
+      }
+      @media (max-width: 600px) {
+        .topbar .bell-btn {
+          display: none !important;
+        }
+        #sbToggle.has-n::after {
+          content: '';
+          position: absolute;
+          top: 3px;
+          right: 2px;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--accent);
+          box-shadow: 0 0 0 2px var(--bg);
+        }
+        .app.side-open #sbToggle.has-n::after {
+          display: none;
+        }
+      }
+
+      /* C strip also works when the panel is at the bottom / the window is narrow */
+      @media (max-width: 600px) {
+        html[data-nav='strip'][data-strip='side'] .gut {
+          display: none !important;
+        }
+        html[data-nav='strip'][data-strip='side'] .app .main {
+          padding-right: 42px;
+        }
+        html[data-nav='strip'][data-strip='side'] .app .stripc {
+          top: 64px;
+        }
+      }
     </style>
   </head>
   <body>
     <div class="app">
       <header class="topbar">
         <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span
+        ><button
+          class="icon-btn"
+          id="sbToggle"
+          aria-label="Hide threads"
+          aria-pressed="true"
+          title="Hide threads"
+        >
+          <svg viewBox="0 0 24 24">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M9 4v16" />
+          </svg></button
         ><button class="icon-btn mobile-activity-nav" id="mobileNew" aria-label="New thread">
           ＋</button
         ><span class="crumb" id="crumbProj">workspace</span><span class="crumb">⎇ work</span
@@ -4393,11 +5683,17 @@
                 d="M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"
               /></svg
             ><span class="count-n"></span></button
-          ><button class="tb" data-rp="explorer" aria-pressed="false" aria-label="Panel">
+          ><button class="tb" data-rp="context" aria-pressed="false" aria-label="Context">
             <svg viewBox="0 0 24 24">
               <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
               <path d="M9 4v16" /></svg
             ><b class="tl">Panel</b></button
+          ><button class="tb" data-rp="explorer" aria-pressed="false" aria-label="Files">
+            <svg viewBox="0 0 24 24">
+              <path
+                d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+              /></svg
+            ><b class="tl">Files</b></button
           ><button class="tb" data-rp="terminal" aria-pressed="false" aria-label="Terminal">
             <svg viewBox="0 0 24 24">
               <path d="m7 8 4 4-4 4" />
@@ -4428,6 +5724,9 @@
               <path d="M8 2v16" />
               <path d="M16 6v16" /></svg
             ><b class="tl">Roadmap</b></button
+          ><button class="tb" data-rp="sidechat" aria-pressed="false" aria-label="Side chat">
+            <svg viewBox="0 0 24 24"><path d="M3 5h18v12H9l-4 3v-3H3z" /></svg
+            ><b class="tl">Side chat</b></button
           ><button class="tb" data-rp="browser" aria-pressed="false" aria-label="Browser">
             <svg viewBox="0 0 24 24">
               <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" />
@@ -4472,6 +5771,14 @@
             <svg class="gl sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
           </button>
         </div>
+        <button class="sb-nav" id="sbPrs" type="button" aria-pressed="false">
+          <svg viewBox="0 0 24 24">
+            <circle cx="6" cy="6" r="3" />
+            <circle cx="18" cy="18" r="3" />
+            <path d="M6 9v12M13 6h3a2 2 0 0 1 2 2v7" />
+          </svg>
+          <span>Pull requests</span><em>All projects</em>
+        </button>
         <div class="side-scroll" id="sideThreads"></div>
         <div class="tb-links"><button>Settings</button></div>
       </aside>
@@ -4484,6 +5791,7 @@
               <div class="detail" id="detail"></div>
             </section>
           </div>
+          <div class="prv" id="prView"></div>
           <div class="thread-view" id="threadView"><div class="convo" id="convo"></div></div>
         </div>
         <div class="composer-zone">
@@ -4579,6 +5887,7 @@
             <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
         </div>
+        <div class="rptabs" id="rpTabs"></div>
         <div class="rp-body" id="rpBody"></div>
       </aside>
       <div
@@ -6397,11 +7706,19 @@
         syncSend()
       })
       function showThread(i) {
+        if (typeof prShow === 'function' && prOn) prShow(false)
+        subOpen = null
+        document.querySelector('.app').classList.remove('is-sub', 'side-open')
+        document
+          .getElementById('sbToggle')
+          .setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
         setTimeout(function () {
           input.focus()
         }, 0)
         opened = i
         const t = threads[i]
+        cxApplyPending()
+        ctxRender()
         t.unread = false
         renderFollowUps(t)
         home.style.display = 'none'
@@ -6409,6 +7726,8 @@
         updateWheel(CTX[t.title] || 42, false)
         const cv = document.getElementById('convo')
         cv.innerHTML = convoFor(t)
+        scDecorate(cv, t)
+        gutDecorate(cv, t)
         cv.querySelectorAll('[data-act]').forEach(function (b) {
           b.addEventListener('click', function () {
             t.kind = 'working'
@@ -6422,6 +7741,7 @@
           })
         })
         document.getElementById('topTitle').textContent = t.title
+        scChipSync()
         document.getElementById('crumbProj').textContent = t.project
         document.getElementById('composerCaption').textContent = ''
         branchSync()
@@ -6433,12 +7753,19 @@
         showThread(i)
       }
       function showHome() {
+        if (typeof prShow === 'function' && prOn) prShow(false)
+        subOpen = null
+        document.querySelector('.app').classList.remove('is-sub', 'side-open')
+        document
+          .getElementById('sbToggle')
+          .setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
         setTimeout(function () {
           input.focus()
         }, 0)
         renderFollowUps(null)
         updateWheel(6, true)
         opened = null
+        ctxRender()
         home.style.display = 'flex'
         threadView.style.display = 'none'
         document.getElementById('topTitle').textContent = 'New Thread'
@@ -6460,6 +7787,8 @@
           b.querySelector('.count-n').textContent = n > 0 ? String(n) : ''
         })
         tb.hidden = n === 0
+        const sbt = document.getElementById('sbToggle')
+        if (sbt) sbt.classList.toggle('has-n', n > 0)
         sb.title = n ? n + ' waiting on you' : 'Activity'
       }
       document.getElementById('sideBell').addEventListener('click', showHome)
@@ -6589,8 +7918,181 @@
                 applyPos()
               },
             },
+            { sep: true },
+            { head: 'Side chat entry' },
+            {
+              label: 'Top bar tab',
+              on: document.documentElement.dataset.sc === 'tab',
+              run: function () {
+                styleSet('sc', 'tab')
+              },
+            },
+            {
+              label: 'Composer chip (thread-scoped)',
+              on: document.documentElement.dataset.sc === 'composer',
+              run: function () {
+                styleSet('sc', 'composer')
+              },
+            },
+            {
+              label: 'Message pill only',
+              on: document.documentElement.dataset.sc === 'pill',
+              run: function () {
+                styleSet('sc', 'pill')
+              },
+            },
+            { sep: true },
+            { head: 'PRs entry' },
+            {
+              label: 'Top bar tab',
+              on: document.documentElement.dataset.prsnav === 'tab',
+              run: function () {
+                styleSet('prsnav', 'tab')
+              },
+            },
+            {
+              label: 'Sidebar row (global)',
+              on: document.documentElement.dataset.prsnav === 'sidebar',
+              run: function () {
+                styleSet('prsnav', 'sidebar')
+              },
+            },
+            { sep: true },
+            { head: 'Top bar grouping' },
+            {
+              label: 'None',
+              on: document.documentElement.dataset.grp === 'none',
+              run: function () {
+                styleSet('grp', 'none')
+              },
+            },
+            {
+              label: 'Divider',
+              on: document.documentElement.dataset.grp === 'divider',
+              run: function () {
+                styleSet('grp', 'divider')
+              },
+            },
+            {
+              label: 'Labelled groups',
+              on: document.documentElement.dataset.grp === 'labels',
+              run: function () {
+                styleSet('grp', 'labels')
+              },
+            },
+            { sep: true },
+            { head: 'Panel switcher' },
+            {
+              label: 'Top bar',
+              on: document.documentElement.dataset.nav === 'top',
+              run: function () {
+                styleSet('nav', 'top')
+              },
+            },
+            {
+              label: 'Right rail · window edge',
+              on: document.documentElement.dataset.nav === 'rail',
+              run: function () {
+                styleSet('nav', 'rail')
+              },
+            },
+            {
+              label: 'Panel tabs (thread tools)',
+              on: document.documentElement.dataset.nav === 'tabs',
+              run: function () {
+                styleSet('nav', 'tabs')
+              },
+            },
+            {
+              label: 'Panel strip · bottom (n shape)',
+              on:
+                document.documentElement.dataset.nav === 'strip' &&
+                document.documentElement.dataset.strip === 'bottom',
+              run: function () {
+                styleSet('strip', 'bottom')
+                styleSet('nav', 'strip')
+              },
+            },
+            {
+              label: 'Panel strip · side (C) with message gutter',
+              on:
+                document.documentElement.dataset.nav === 'strip' &&
+                document.documentElement.dataset.strip === 'side' &&
+                document.documentElement.dataset.gut === 'column',
+              run: function () {
+                styleSet('strip', 'side')
+                styleSet('gut', 'column')
+                styleSet('nav', 'strip')
+              },
+            },
+            {
+              label: 'Panel strip · side (C) floating',
+              on:
+                document.documentElement.dataset.nav === 'strip' &&
+                document.documentElement.dataset.strip === 'side' &&
+                document.documentElement.dataset.gut === 'float',
+              run: function () {
+                styleSet('strip', 'side')
+                styleSet('gut', 'float')
+                styleSet('nav', 'strip')
+              },
+            },
+            {
+              label: 'Palette (⌘K)',
+              on: document.documentElement.dataset.nav === 'palette',
+              run: function () {
+                styleSet('nav', 'palette')
+              },
+            },
+            { sep: true },
+            { head: 'Overall destinations (PRs, Memories, Roadmap)' },
+            {
+              label: 'In the top bar',
+              on: document.documentElement.dataset.all === 'top',
+              run: function () {
+                styleSet('all', 'top')
+              },
+            },
+            {
+              label: 'In the sidebar, by Settings',
+              on: document.documentElement.dataset.all === 'side',
+              run: function () {
+                styleSet('all', 'side')
+              },
+            },
+            { sep: true },
+            { head: 'Window size' },
+            {
+              label: 'Full window',
+              on: !window.__SIMW,
+              run: function () {
+                setWin('full')
+              },
+            },
+            {
+              label: 'Medium · 1024',
+              on: window.__SIMW === 1024,
+              run: function () {
+                setWin('m')
+              },
+            },
+            {
+              label: 'Small · 760',
+              on: window.__SIMW === 760,
+              run: function () {
+                setWin('s')
+              },
+            },
+            {
+              label: 'Narrow · 520',
+              on: window.__SIMW === 520,
+              run: function () {
+                setWin('xs')
+              },
+            },
           ]
         })
+        protoColumns(this)
       })
       input.addEventListener('input', function () {
         syncSend()
@@ -8429,6 +9931,1703 @@
           )
         })
         .join('')
+
+      /* ===== stacked on #3450: side chats + PR surface ===== */
+      RP.sidechat = ['Side chat', '__SIDE__']
+      RP.prdetail = ['Pull request', '__PRD__']
+      const SC_ICON = '<svg viewBox="0 0 24 24"><path d="M3 5h18v12H9l-4 3v-3H3z"/></svg>'
+      const SC_CHEV = '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>'
+      const SC_LOCK =
+        '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
+      const SC_ARCH =
+        '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11h14V8M10 12h4"/></svg>'
+      const SC_MODELS = ['Haiku 4.5', 'Sonnet 5.5', 'Opus 5.5', 'Fable 5.1']
+      const SC_REPLIES = [
+        'It only checks the node exists; the other also needs a non-zero size. Mermaid inserts an empty svg first, so the first one passes too early.',
+        'I only see the main thread up to the message you branched from, so later edits are not visible here.',
+        'Nothing in the main thread changes. “Send summary to main” would post one paragraph there.',
+      ]
+      const SC_SUGG = [
+        'Explain this more simply',
+        'What alternatives did you consider?',
+        'Is this safe to merge?',
+      ]
+      let scN = 10,
+        scTick = 10,
+        sideCur = null,
+        scPending = null
+      const sideChats = [
+        {
+          id: 1,
+          thread: 'Shrink previews on scroll',
+          anchor: 1,
+          ctx: 'Working on it. I have read the relevant files',
+          title: 'Why split schema from io?',
+          model: 'Haiku 4.5',
+          used: 5,
+          archived: false,
+          msgs: [
+            { r: 'u', t: 'Why split the schema from the io layer?' },
+            {
+              r: 'a',
+              t: 'So the schema can be validated without touching disk, which keeps the unit tests fast.',
+              m: 'Haiku 4.5',
+            },
+          ],
+        },
+        {
+          id: 2,
+          thread: 'Shrink previews on scroll',
+          anchor: 1,
+          ctx: 'Working on it. I have read the relevant files',
+          title: 'Alternatives to a Proxy',
+          model: 'Opus 5.5',
+          used: 4,
+          unread: true,
+          archived: false,
+          msgs: [
+            { r: 'u', t: 'Would a Proxy be simpler than the get/set pair?' },
+            {
+              r: 'a',
+              t: 'Simpler to write, harder to debug: a plain get/set pair keeps the stack traces readable.',
+              m: 'Opus 5.5',
+            },
+          ],
+        },
+        {
+          id: 3,
+          thread: 'Shrink previews on scroll',
+          anchor: 1,
+          ctx: 'Working on it. I have read the relevant files',
+          title: 'Why 10s timeout?',
+          model: 'Haiku 4.5',
+          used: 1,
+          archived: true,
+          msgs: [
+            { r: 'u', t: 'Why 10 seconds?' },
+            { r: 'a', t: 'CI p99 was about 6s, so 10s leaves headroom.', m: 'Haiku 4.5' },
+          ],
+        },
+      ]
+      const scKey = function () {
+        return opened != null ? threads[opened].title : '(new thread)'
+      }
+      const scOf = function (key) {
+        return sideChats.filter(function (c) {
+          return c.thread === key
+        })
+      }
+      const scCur = function () {
+        return sideChats.find(function (c) {
+          return c.id === sideCur
+        })
+      }
+      function scBadge() {
+        const any = sideChats.some(function (c) {
+          return c.unread && !c.archived
+        })
+        document.querySelectorAll('[data-rp="sidechat"]').forEach(function (b) {
+          b.classList.toggle('has-dot', any && rpMode !== 'sidechat')
+        })
+      }
+      function scDecorate(cv, t) {
+        cv.querySelectorAll('.msg').forEach(function (m, i) {
+          if (!m.classList.contains('msg-assistant')) return
+          const has = scOf(t.title).some(function (c) {
+            return !c.archived && c.anchor === i
+          })
+          const b = document.createElement('button')
+          b.type = 'button'
+          b.className = 'sc-act' + (has ? ' has' : '')
+          b.title = has
+            ? 'Open the side chat for this message (⌥ for a new one)'
+            : 'Start a side chat from this message'
+          b.innerHTML = SC_ICON + (has ? 'Open side chat' : 'Side chat')
+          b.addEventListener('click', function (e) {
+            e.stopPropagation()
+            openSide(t.title, i, e.altKey, (m.textContent || '').trim().slice(0, 46))
+          })
+          m.appendChild(b)
+        })
+      }
+      function openSide(key, anchor, fresh, ctx, pr) {
+        let c = null
+        if (!fresh)
+          c = scOf(key)
+            .filter(function (x) {
+              return !x.archived && (pr ? x.pr === pr : x.anchor === anchor)
+            })
+            .sort(function (a, b) {
+              return b.used - a.used
+            })[0]
+        if (!c) {
+          c = {
+            id: ++scN,
+            thread: key,
+            anchor: anchor,
+            ctx: ctx || '',
+            pr: pr || null,
+            title: pr
+              ? 'About #' +
+                (
+                  PR_LIST.find(function (p) {
+                    return p.id === pr
+                  }) || {}
+                ).n
+              : 'New side chat',
+            model: 'Haiku 4.5',
+            msgs: [],
+            archived: false,
+            used: 0,
+          }
+          sideChats.push(c)
+        }
+        c.used = ++scTick
+        c.unread = false
+        sideCur = c.id
+        if (rpMode === 'sidechat') scRender()
+        else setRP('sidechat')
+        scBadge()
+      }
+      function sideBuild() {
+        const c = scCur()
+        if (!c)
+          return '<div class="sc-empty">No side chat yet.<br>Hover an assistant message and pick Side chat.</div>'
+        const msgs = c.msgs.length
+          ? c.msgs
+              .map(function (m) {
+                return (
+                  '<div class="sc-m ' +
+                  m.r +
+                  '">' +
+                  escapeText(m.t) +
+                  (m.m ? '<small>' + m.m + '</small>' : '') +
+                  '</div>'
+                )
+              })
+              .join('')
+          : '<div class="sc-empty">Ask without touching the main thread.' +
+            SC_SUGG.map(function (x) {
+              return '<button type="button" class="sc-sug">' + x + '</button>'
+            }).join('') +
+            '</div>'
+        return (
+          '<div class="sc-panel"><div class="sc-bar"><button type="button" class="sc-sw" id="scSw" aria-haspopup="menu">' +
+          SC_ICON +
+          '<span>' +
+          escapeText(c.title) +
+          '</span>' +
+          SC_CHEV +
+          '</button><span class="sc-sp"></span><select id="scModel" aria-label="Model for this side chat">' +
+          SC_MODELS.map(function (m) {
+            return '<option' + (m === c.model ? ' selected' : '') + '>' + m + '</option>'
+          }).join('') +
+          '</select><button class="icon-btn" id="scArchive" aria-label="Archive side chat" title="Archive (restore from the switcher)">' +
+          SC_ARCH +
+          '</button></div><div class="sc-ctx">' +
+          SC_LOCK +
+          '<span>' +
+          (c.pr ? escapeText(c.ctx || 'Pull request') : 'From “' + escapeText(c.ctx) + '…”') +
+          ' · read-only</span></div><div class="sc-msgs" id="scMsgs">' +
+          msgs +
+          (scPending === c.id ? '<div class="sc-typing">Thinking…</div>' : '') +
+          '</div><form class="sc-form" id="scForm"><input id="scInput" placeholder="Ask a side question…" autocomplete="off"><button class="rp-btn primary" type="submit">Send</button></form></div>'
+        )
+      }
+      function scRender() {
+        scChipSync()
+        if (rpMode !== 'sidechat') return
+        const bd = document.getElementById('rpBody')
+        bd.innerHTML = sideBuild()
+        scWire()
+        const m = document.getElementById('scMsgs')
+        if (m) m.scrollTop = m.scrollHeight
+        scBadge()
+      }
+      function scSend(c, text) {
+        if (!text.trim()) return
+        if (c.title === 'New side chat') c.title = text.length > 34 ? text.slice(0, 32) + '…' : text
+        c.msgs.push({ r: 'u', t: text })
+        scPending = c.id
+        scRender()
+        setTimeout(function () {
+          c.msgs.push({
+            r: 'a',
+            t: SC_REPLIES[(c.msgs.length >> 1) % SC_REPLIES.length],
+            m: c.model,
+          })
+          scPending = null
+          if (!(rpMode === 'sidechat' && sideCur === c.id)) c.unread = true
+          scRender()
+          scBadge()
+          const i = document.getElementById('scInput')
+          if (i) i.focus()
+        }, 900)
+      }
+      function scWire() {
+        const c = scCur()
+        const sw = document.getElementById('scSw')
+        if (!c || !sw) return
+        sw.addEventListener('click', function (e) {
+          e.stopPropagation()
+          openMenu(sw, function () {
+            const key = c.thread,
+              alive = scOf(key).filter(function (x) {
+                return !x.archived
+              }),
+              arch = scOf(key).filter(function (x) {
+                return x.archived
+              })
+            const items = [{ head: 'Side chats in this thread' }]
+            alive.forEach(function (x) {
+              items.push({
+                label: x.title + (x.unread ? '  ●' : ''),
+                on: x.id === sideCur,
+                run: function () {
+                  sideCur = x.id
+                  x.unread = false
+                  x.used = ++scTick
+                  scRender()
+                },
+              })
+            })
+            items.push({ sep: true })
+            items.push({
+              label: 'New side chat',
+              run: function () {
+                openSide(key, c.anchor, true, c.ctx)
+              },
+            })
+            if (arch.length) {
+              items.push({ sep: true }, { head: 'Archived' })
+              arch.forEach(function (x) {
+                items.push({
+                  label: 'Restore · ' + x.title,
+                  run: function () {
+                    x.archived = false
+                    sideCur = x.id
+                    scRender()
+                  },
+                })
+              })
+            }
+            return items
+          })
+        })
+        document.getElementById('scModel').addEventListener('change', function () {
+          c.model = this.value
+        })
+        document.getElementById('scArchive').addEventListener('click', function () {
+          c.archived = true
+          const next = scOf(c.thread)
+            .filter(function (x) {
+              return !x.archived
+            })
+            .sort(function (a, b) {
+              return b.used - a.used
+            })[0]
+          sideCur = next ? next.id : null
+          scRender()
+        })
+        document.getElementById('scForm').addEventListener('submit', function (e) {
+          e.preventDefault()
+          const i = document.getElementById('scInput')
+          const v = i.value
+          i.value = ''
+          scSend(c, v)
+        })
+        document.querySelectorAll('#scMsgs .sc-sug').forEach(function (b) {
+          b.addEventListener('click', function () {
+            scSend(c, b.textContent)
+          })
+        })
+      }
+      /* ---- PR surface: a multi-repo list in the middle column; one PR in the panel ---- */
+      const PR_LIST = [
+        {
+          id: 'p1',
+          repo: 'copse-dev/agent-pane',
+          n: 3519,
+          t: 'Stop reading a 1% Claude plan window as 100% used',
+          s: 'open',
+          ci: 'passing',
+          by: 'jonathankingston',
+          w: '2h',
+          rev: 'Approved',
+          f: 3,
+          a: 24,
+          d: 9,
+        },
+        {
+          id: 'p2',
+          repo: 'copse-dev/agent-pane',
+          n: 3497,
+          t: 'Manage saved container runs and temporary build storage',
+          s: 'open',
+          ci: 'pending',
+          by: 'jonathankingston',
+          w: '1d',
+          rev: 'Review requested',
+          f: 12,
+          a: 410,
+          d: 96,
+        },
+        {
+          id: 'p3',
+          repo: 'copse-dev/agent-pane',
+          n: 3386,
+          t: 'Make the activity thread browser the default sidebar',
+          s: 'open',
+          ci: 'failing',
+          by: 'jonathankingston',
+          w: '2d',
+          rev: 'Changes requested',
+          f: 9,
+          a: 322,
+          d: 140,
+        },
+        {
+          id: 'p4',
+          repo: 'copse-dev/agent-pane',
+          n: 3431,
+          t: 'Make sidebar Settings button fill footer width',
+          s: 'open',
+          ci: 'passing',
+          by: 'jonathankingston',
+          w: '3d',
+          rev: 'No reviews',
+          f: 2,
+          a: 8,
+          d: 3,
+        },
+        {
+          id: 'p5',
+          repo: 'copse-dev/agent-pane',
+          n: 3371,
+          t: 'Thread PR icon: purple merge glyph, red closed',
+          s: 'merged',
+          ci: '',
+          by: 'jonathankingston',
+          w: '1d',
+          rev: 'Approved',
+          f: 4,
+          a: 61,
+          d: 20,
+        },
+        {
+          id: 'p6',
+          repo: 'copse-dev/streaming-markdown',
+          n: 212,
+          t: 'Keep nested list indent when a fence closes',
+          s: 'open',
+          ci: 'failing',
+          by: 'jonathankingston',
+          w: '5h',
+          rev: 'Changes requested',
+          f: 2,
+          a: 18,
+          d: 4,
+        },
+        {
+          id: 'p7',
+          repo: 'copse-dev/streaming-markdown',
+          n: 209,
+          t: 'Bump the mermaid renderer',
+          s: 'open',
+          ci: 'pending',
+          by: 'copse-bot',
+          w: '2d',
+          rev: 'No reviews',
+          f: 1,
+          a: 3,
+          d: 3,
+        },
+        {
+          id: 'p8',
+          repo: 'copse-dev/site',
+          n: 88,
+          t: 'Announce side chats',
+          s: 'closed',
+          ci: '',
+          by: 'jonathankingston',
+          w: '4d',
+          rev: 'No reviews',
+          f: 4,
+          a: 120,
+          d: 2,
+        },
+      ]
+      const prOf = function (id) {
+        return PR_LIST.find(function (p) {
+          return p.id === id
+        })
+      }
+      let prOn = false,
+        prSel = null,
+        prFilter = 'all'
+      function prRender() {
+        const v = document.getElementById('prView')
+        const repos = PR_LIST.map(function (p) {
+          return p.repo
+        }).filter(function (r, i, a) {
+          return a.indexOf(r) === i
+        })
+        const list = PR_LIST.filter(function (p) {
+          return prFilter === 'all' || p.repo === prFilter
+        })
+        const groups = repos.filter(function (r) {
+          return list.some(function (p) {
+            return p.repo === r
+          })
+        })
+        v.innerHTML =
+          '<div class="prv-h"><button class="prv-back" id="prvBack" type="button" title="Back (Esc)">← ' +
+          escapeText(opened == null ? 'New thread' : threads[opened].title) +
+          '</button><b>Pull requests</b><button class="prv-chip' +
+          (prFilter === 'all' ? ' on' : '') +
+          '" data-f="all">All repos</button>' +
+          repos
+            .map(function (r) {
+              return (
+                '<button class="prv-chip' +
+                (prFilter === r ? ' on' : '') +
+                '" data-f="' +
+                r +
+                '">' +
+                r.split('/')[1] +
+                '</button>'
+              )
+            })
+            .join('') +
+          '</div>' +
+          groups
+            .map(function (g) {
+              return (
+                '<div class="prv-grp">' +
+                g +
+                '</div>' +
+                list
+                  .filter(function (p) {
+                    return p.repo === g
+                  })
+                  .map(function (p) {
+                    return (
+                      '<button class="prv-row' +
+                      (prSel === p.id ? ' sel' : '') +
+                      '" data-id="' +
+                      p.id +
+                      '" title="Opens in the PR panel — navigates the open PR in place">' +
+                      prIcon({ pr: { s: p.s, ci: p.ci } }) +
+                      '<span class="t">' +
+                      escapeText(p.t) +
+                      '</span><span class="m">#' +
+                      p.n +
+                      ' · ' +
+                      p.by +
+                      ' · ' +
+                      p.w +
+                      '</span><span class="x">' +
+                      p.rev +
+                      '</span></button>'
+                    )
+                  })
+                  .join('')
+              )
+            })
+            .join('')
+        const bk = document.getElementById('prvBack')
+        if (bk) bk.addEventListener('click', prToggle)
+        v.querySelectorAll('.prv-chip').forEach(function (b) {
+          b.addEventListener('click', function () {
+            prFilter = b.dataset.f
+            prRender()
+          })
+        })
+        v.querySelectorAll('.prv-row').forEach(function (b) {
+          b.addEventListener('click', function () {
+            prSelect(b.dataset.id)
+          })
+        })
+      }
+      function prSelect(id) {
+        prSel = id
+        prdFrom = 'list'
+        prRender()
+        if (rpMode === 'prdetail') {
+          document.getElementById('rpBody').innerHTML = prdBuild()
+          prdWire()
+        } else setRP('prdetail')
+      }
+      function prdBuild() {
+        const p = prOf(prSel)
+        if (!p)
+          return '<div class="prd"><div class="note">Pick a pull request from the list.</div></div>'
+        const rows = [
+          ['Build', 'ok'],
+          ['Unit tests', p.ci === 'failing' ? 'bad' : 'ok'],
+          ['Copse Reviewer', p.ci === 'pending' ? 'wait' : 'ok'],
+        ]
+        return (
+          '<div class="prd">' +
+          (prdFrom === 'context'
+            ? '<button class="prv-back" id="prdBack" type="button">← Context</button>'
+            : '') +
+          '<h4>' +
+          prIcon({ pr: { s: p.s, ci: p.ci } }) +
+          '<span>' +
+          escapeText(p.t) +
+          '</span></h4><div class="m">' +
+          p.repo +
+          ' · #' +
+          p.n +
+          ' · ' +
+          p.by +
+          ' · ' +
+          p.w +
+          '</div><div class="chips"><span>' +
+          p.rev +
+          '</span><span>' +
+          p.f +
+          ' files +' +
+          p.a +
+          ' −' +
+          p.d +
+          '</span></div>' +
+          rows
+            .map(function (r) {
+              return (
+                '<div class="ck"><span class="' +
+                r[1] +
+                '">●</span>' +
+                r[0] +
+                '<em>' +
+                (r[1] === 'ok' ? 'passing' : r[1] === 'bad' ? 'failing' : 'running') +
+                '</em></div>'
+              )
+            })
+            .join('') +
+          '<div class="acts"><button class="rp-btn" id="prdDiff" type="button">View diff</button><button class="rp-btn" id="prdAsk" type="button">Ask in a side chat</button></div><div class="note">Prototype data. Only this pull request lives in the panel; the list stays in the main area.</div></div>'
+        )
+      }
+      function prdWire() {
+        const d = document.getElementById('prdDiff'),
+          a = document.getElementById('prdAsk')
+        const bk = document.getElementById('prdBack')
+        if (bk)
+          bk.addEventListener('click', function () {
+            setRP('context')
+          })
+        if (d)
+          d.addEventListener('click', function () {
+            setRP('changes')
+          })
+        if (a)
+          a.addEventListener('click', function () {
+            const p = prOf(prSel)
+            if (p) openSide(scKey(), null, false, 'PR #' + p.n + ' · ' + p.t, p.id)
+          })
+      }
+      function prShow(on) {
+        prOn = on
+        document.querySelector('.app').classList.toggle('is-pr', on)
+        const v = document.getElementById('prView')
+        v.style.display = on ? 'flex' : 'none'
+        if (on) {
+          home.style.display = 'none'
+          threadView.style.display = 'none'
+          document.getElementById('topTitle').textContent = 'Pull requests'
+          if (!prSel) prSel = PR_LIST[0].id
+          prRender()
+          prdFrom = 'list'
+          if (rpMode !== 'prdetail') {
+            prPrevRp = rpMode
+            setRP('prdetail')
+          } else {
+            document.getElementById('rpBody').innerHTML = prdBuild()
+            prdWire()
+          }
+        } else {
+          if (rpMode === 'prdetail' && prdFrom === 'list') {
+            const back = prPrevRp
+            prPrevRp = null
+            setRP(back || 'prdetail')
+          }
+          home.style.display = opened == null ? 'flex' : 'none'
+          threadView.style.display = opened == null ? 'none' : 'block'
+        }
+        document.querySelectorAll('[data-rp="prs"]').forEach(function (b) {
+          b.setAttribute('aria-pressed', String(on))
+        })
+        styleSync()
+      }
+      function prToggle() {
+        if (prOn) {
+          if (opened == null) showHome()
+          else showThread(opened)
+        } else prShow(true)
+      }
+      document
+        .getElementById('sbToggle')
+        .setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+          const a = document.querySelector('.app')
+          if (a.classList.contains('side-open')) {
+            a.classList.remove('side-open')
+            document.getElementById('sbToggle').setAttribute('aria-pressed', 'false')
+          }
+        }
+      })
+      document.querySelector('.app').addEventListener('click', function (e) {
+        if (e.target === this && this.classList.contains('side-open')) {
+          this.classList.remove('side-open')
+          document.getElementById('sbToggle').setAttribute('aria-pressed', 'false')
+        }
+      })
+      document.getElementById('sbPrs').addEventListener('click', function () {
+        prToggle()
+      })
+      document.getElementById('sbToggle').addEventListener('click', function () {
+        if (matchMedia('(max-width: 600px)').matches) {
+          document.documentElement.style.setProperty(
+            '--tbh',
+            document.querySelector('.topbar').offsetHeight + 'px',
+          )
+          const open = document.querySelector('.app').classList.toggle('side-open')
+          this.setAttribute('aria-pressed', String(open))
+          this.setAttribute('aria-label', open ? 'Hide threads' : 'Show threads')
+          this.title = open ? 'Hide threads' : 'Show threads'
+          return
+        }
+        const hidden = document.querySelector('.app').classList.toggle('side-hidden')
+        this.setAttribute('aria-pressed', String(!hidden))
+        this.setAttribute('aria-label', hidden ? 'Show threads' : 'Hide threads')
+        this.title = hidden ? 'Show threads' : 'Hide threads'
+      })
+
+      const STYLE_DEF = {
+        sc: 'tab',
+        prsnav: 'tab',
+        grp: 'labels',
+        nav: 'top',
+        all: 'side',
+        strip: 'bottom',
+        gut: 'column',
+      }
+      function styleSet(k, v) {
+        document.documentElement.dataset[k] = v
+        try {
+          localStorage.setItem('st_' + k, v)
+        } catch (e) {}
+        styleSync()
+      }
+      function styleSync() {
+        const sp = new URLSearchParams(location.search)
+        const d = document.documentElement.dataset
+        Object.keys(STYLE_DEF).forEach(function (k) {
+          if (!d[k]) {
+            let v = sp.get(k)
+            if (!v)
+              try {
+                v = localStorage.getItem('st_' + k)
+              } catch (e) {}
+            d[k] = v || STYLE_DEF[k]
+          }
+        })
+        document.querySelector('.topbar').classList.toggle('is-global', prOn)
+        const nav = document.getElementById('sbPrs')
+        if (nav) nav.setAttribute('aria-pressed', String(prOn))
+        scChipSync()
+      }
+      function scChipSync() {
+        let b = document.getElementById('scChip')
+        if (!b) {
+          b = document.createElement('button')
+          b.type = 'button'
+          b.className = 'small-chip'
+          b.id = 'scChip'
+          b.addEventListener('click', function () {
+            if (opened == null) return
+            const key = scKey(),
+              mine = scOf(key).filter(function (c) {
+                return !c.archived
+              })
+            if (rpMode === 'sidechat') {
+              setRP('sidechat')
+              return
+            }
+            if (mine.length) {
+              const best = mine.slice().sort(function (a, b) {
+                return b.used - a.used
+              })[0]
+              openSide(key, best.anchor, false, best.ctx, best.pr)
+            } else openSide(key, 1, true, 'this thread')
+          })
+          const host = document.querySelector('.composer-actions')
+          const br = document.getElementById('branchButton')
+          if (host && br) host.insertBefore(b, br.nextSibling)
+        }
+        const mine =
+          opened == null
+            ? []
+            : scOf(scKey()).filter(function (c) {
+                return !c.archived
+              })
+        b.classList.toggle('show', opened != null)
+        b.setAttribute('aria-pressed', String(rpMode === 'sidechat'))
+        b.innerHTML =
+          SC_ICON +
+          'Side chats' +
+          (mine.length ? ' · ' + mine.length : '') +
+          (mine.some(function (c) {
+            return c.unread
+          })
+            ? '<i class="d"></i>'
+            : '')
+      }
+
+      /* ---- top bar: overall (all projects) vs individual (this thread) ---- */
+      const THREAD_MODES = ['context', 'explorer', 'terminal', 'changes', 'sidechat', 'browser']
+      const GLOBAL_MODES = ['prs', 'memories', 'roadmap']
+      ;(function () {
+        const act = document.querySelector('.top-actions')
+        const mk = function (cls, label, modes) {
+          const g = document.createElement('span')
+          g.className = 'tgrp ' + cls
+          g.dataset.label = label
+          g.dataset.short = cls === 'g' ? 'All' : 'Thread'
+          modes.forEach(function (k) {
+            const b = act.querySelector('[data-rp="' + k + '"]')
+            if (b) g.appendChild(b)
+          })
+          act.appendChild(g)
+          return g
+        }
+        mk('g', 'All projects', GLOBAL_MODES)
+        mk('t', 'This thread', THREAD_MODES)
+        const rail = document.createElement('nav')
+        rail.className = 'rprail'
+        rail.id = 'rpRail'
+        rail.setAttribute('aria-label', 'Panels')
+        const add = function (modes, cap, cls) {
+          const c = document.createElement('span')
+          c.className = 'cap ' + cls
+          c.textContent = cap
+          rail.appendChild(c)
+          modes.forEach(function (k) {
+            const src = document.querySelector('.topbar [data-rp="' + k + '"]')
+            if (!src) return
+            const b = src.cloneNode(true)
+            b.className = 'rpr'
+            b.title = src.getAttribute('aria-label')
+            rail.appendChild(b)
+          })
+        }
+        add(THREAD_MODES, 'Thread', 't')
+        const sep = document.createElement('i')
+        sep.className = 'rsep'
+        rail.appendChild(sep)
+        add(GLOBAL_MODES, 'All', 'g')
+        document.querySelector('.app').appendChild(rail)
+        const tabs = document.getElementById('rpTabs')
+        const names = {
+          context: 'Context',
+          explorer: 'Files',
+          terminal: 'Terminal',
+          changes: 'Changes',
+          sidechat: 'Side chat',
+          browser: 'Browser',
+        }
+        THREAD_MODES.forEach(function (k) {
+          const b = document.createElement('button')
+          b.type = 'button'
+          b.dataset.tab = k
+          b.textContent = names[k]
+          b.addEventListener('click', function () {
+            if (rpMode !== k) setRP(k)
+          })
+          tabs.appendChild(b)
+        })
+      })()
+      function rpTabsSync() {
+        const t = document.getElementById('rpTabs')
+        if (!t) return
+        t.classList.toggle('show', !!rpMode && THREAD_MODES.indexOf(rpMode) >= 0)
+        t.querySelectorAll('button').forEach(function (b) {
+          b.classList.toggle('on', b.dataset.tab === rpMode)
+        })
+      }
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && prOn && !document.querySelector('.menu')) prToggle()
+      })
+
+      /* ---- round 3: rail on the panel, overall destinations by Settings, palette ---- */
+      ;(function () {
+        const rail = document.getElementById('rpRail')
+        if (rail)
+          rail.querySelectorAll('.cap').forEach(function (c) {
+            c.remove()
+          })
+        // rail attached to the panel (moves with it)
+        const att = document.createElement('nav')
+        att.className = 'rprail rprailp'
+        att.id = 'rpRailP'
+        att.setAttribute('aria-label', 'Thread panels')
+        THREAD_MODES.forEach(function (k) {
+          const src = document.querySelector('.topbar [data-rp="' + k + '"]')
+          if (!src) return
+          const b = src.cloneNode(true)
+          b.className = 'rpr'
+          b.title = src.getAttribute('aria-label')
+          att.appendChild(b)
+        })
+        document.getElementById('rpanel').appendChild(att)
+        // overall destinations next to Settings
+        const links = document.querySelector('.tb-links')
+        const settings = links.querySelector('button')
+        GLOBAL_MODES.forEach(function (k) {
+          const src = document.querySelector('.topbar [data-rp="' + k + '"]')
+          if (!src) return
+          const b = src.cloneNode(true)
+          b.className = 'sba'
+          b.title = src.getAttribute('aria-label')
+          links.insertBefore(b, settings)
+        })
+        // palette
+        const pill = document.createElement('button')
+        pill.type = 'button'
+        pill.id = 'palBtn'
+        pill.innerHTML = 'Jump to… <kbd>⌘K</kbd>'
+        document
+          .querySelector('.top-actions')
+          .insertBefore(pill, document.querySelector('.top-actions').firstChild)
+        const pal = document.createElement('div')
+        pal.className = 'pal'
+        pal.id = 'pal'
+        pal.hidden = true
+        pal.innerHTML =
+          '<div class="pal-box"><input id="palIn" placeholder="Jump to a panel, side chat or pull request…" autocomplete="off"><div class="pal-list" id="palList"></div></div>'
+        document.body.appendChild(pal)
+        let sel = 0,
+          shown = []
+        function items() {
+          const out = [],
+            add = function (g, label, run) {
+              out.push({ g: g, label: label, run: run })
+            }
+          ;[
+            ['context', 'Context'],
+            ['explorer', 'Files'],
+            ['terminal', 'Terminal'],
+            ['changes', 'Changes'],
+            ['browser', 'Browser'],
+          ].forEach(function (m) {
+            add('t', m[1], function () {
+              if (rpMode !== m[0]) setRP(m[0])
+            })
+          })
+          scOf(scKey())
+            .filter(function (c) {
+              return !c.archived
+            })
+            .forEach(function (c) {
+              add('t', 'Side chat · ' + c.title, function () {
+                sideCur = c.id
+                c.unread = false
+                if (rpMode === 'sidechat') scRender()
+                else setRP('sidechat')
+              })
+            })
+          add('t', 'New side chat', function () {
+            openSide(scKey(), 1, true, 'this thread')
+          })
+          add('g', 'Pull requests (list)', function () {
+            if (!prOn) prToggle()
+          })
+          ;[
+            ['memories', 'Memories'],
+            ['roadmap', 'Roadmap'],
+          ].forEach(function (m) {
+            add('g', m[1], function () {
+              if (rpMode !== m[0]) setRP(m[0])
+            })
+          })
+          PR_LIST.forEach(function (p) {
+            add('g', '#' + p.n + ' · ' + p.t, function () {
+              if (!prOn) prShow(true)
+              prSelect(p.id)
+            })
+          })
+          return out
+        }
+        function draw() {
+          const q = document.getElementById('palIn').value.toLowerCase()
+          shown = items().filter(function (x) {
+            return x.label.toLowerCase().indexOf(q) >= 0
+          })
+          if (sel >= shown.length) sel = 0
+          let g = ''
+          document.getElementById('palList').innerHTML = shown
+            .map(function (x, i) {
+              const h =
+                x.g !== g
+                  ? '<div class="pal-h ' +
+                    x.g +
+                    '">' +
+                    (x.g === 't' ? 'This thread' : 'All projects') +
+                    '</div>'
+                  : ''
+              g = x.g
+              return (
+                h +
+                '<button class="pal-it' +
+                (i === sel ? ' on' : '') +
+                '" data-i="' +
+                i +
+                '">' +
+                escapeText(x.label) +
+                '</button>'
+              )
+            })
+            .join('')
+          document.querySelectorAll('#palList .pal-it').forEach(function (b) {
+            b.addEventListener('click', function () {
+              run(+b.dataset.i)
+            })
+          })
+        }
+        function run(i) {
+          const x = shown[i]
+          close()
+          if (x) x.run()
+        }
+        function open() {
+          sel = 0
+          pal.hidden = false
+          const inp = document.getElementById('palIn')
+          inp.value = ''
+          draw()
+          inp.focus()
+        }
+        function close() {
+          pal.hidden = true
+        }
+        pill.addEventListener('click', open)
+        pal.addEventListener('click', function (e) {
+          if (e.target === pal) close()
+        })
+        document.getElementById('palIn').addEventListener('input', draw)
+        document.getElementById('palIn').addEventListener('keydown', function (e) {
+          if (e.key === 'ArrowDown') {
+            sel = Math.min(shown.length - 1, sel + 1)
+            draw()
+            e.preventDefault()
+          } else if (e.key === 'ArrowUp') {
+            sel = Math.max(0, sel - 1)
+            draw()
+            e.preventDefault()
+          } else if (e.key === 'Enter') {
+            run(sel)
+            e.preventDefault()
+          } else if (e.key === 'Escape') {
+            close()
+            e.stopPropagation()
+          }
+        })
+        document.addEventListener('keydown', function (e) {
+          if (
+            (e.metaKey || e.ctrlKey) &&
+            e.key.toLowerCase() === 'k' &&
+            document.documentElement.dataset.nav === 'palette'
+          ) {
+            e.preventDefault()
+            open()
+          }
+        })
+      })()
+
+      /* ---- Context panel ---- */
+      RP.context = ['Context', '__CTX__']
+      const CX_ICON = {
+        repo: '<svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-8 3-12 6"/></svg>',
+        folder:
+          '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+        globe:
+          '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+        cmd: '<svg viewBox="0 0 24 24"><path d="m7 8 4 4-4 4M13 16h4"/></svg>',
+        pr: '<svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v12M13 6h3a2 2 0 0 1 2 2v7"/></svg>',
+        file: '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+        doc: '<svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
+      }
+      const CX_POOL = {
+        repo: ['billing-api', 'design-system', 'mobile-app', 'analytics'],
+        net: ['pypi.org', 'cdn.jsdelivr.net', 'api.openai.com'],
+        cmd: ['pnpm publish', 'docker build', 'terraform apply'],
+      }
+      const CX_BASE = {
+        folders: [],
+        reads: [],
+        net: [],
+        cmds: [],
+        sources: [],
+        links: [],
+        sub: 'None yet',
+      }
+      const PRL = function (id) {
+        const p = PR_LIST.find(function (x) {
+          return x.id === id
+        })
+        return ['PR', '#' + p.n + ' ' + p.t, 'pr:' + id]
+      }
+      const CX_SEEDS = {
+        'Shrink previews on scroll': {
+          folders: [
+            ['copse-panel', 'Primary'],
+            ['docs-site', 'Write'],
+            ['shared-lib', 'Read'],
+            ['infra', 'Write'],
+          ],
+          reads: [['Logs/app', 'Read']],
+          net: [
+            ['api.github.com', 'Allowed'],
+            ['registry.npmjs.org', 'Allowed'],
+          ],
+          cmds: [['git push', 'Allowed']],
+          sources: ['github.com/copse-mock/demo.git'],
+          links: [
+            PRL('p1'),
+            PRL('p2'),
+            ['File', 'src/renderer/markdown/preview.ts', 'rp:explorer'],
+            ['Doc', 'docs/shell-permissions.md', null],
+            ['Attachment', 'preview-trace.json · 12 KB', null],
+          ],
+          sub: '3 done',
+        },
+        'Fix box centering and closing': {
+          folders: [['copse-panel', 'Primary']],
+          net: [['api.github.com', 'Allowed']],
+          cmds: [['pnpm test', 'Allowed']],
+          sources: ['github.com/copse-mock/demo.git'],
+          links: [PRL('p4'), ['File', 'src/renderer/views/pane-resizer.ts', 'rp:explorer']],
+          sub: '1 running',
+        },
+        'Balanced model mode': {
+          folders: [
+            ['copse-panel', 'Primary'],
+            ['shared-lib', 'Read'],
+          ],
+          sources: ['github.com/copse-mock/demo.git'],
+          links: [['Doc', 'docs/models.md', null]],
+          sub: 'None yet',
+        },
+        'Create PR for safe execution': {
+          folders: [
+            ['agent-pane', 'Primary'],
+            ['infra', 'Write'],
+          ],
+          net: [['api.github.com', 'Allowed']],
+          cmds: [
+            ['git push', 'Ask each time'],
+            ['gh pr create', 'Allowed'],
+          ],
+          sources: ['github.com/copse-dev/agent-pane'],
+          links: [PRL('p1')],
+          sub: '2 done',
+        },
+        'Nightly dependency check': {
+          folders: [['agent-pane', 'Primary']],
+          net: [['registry.npmjs.org', 'Allowed']],
+          cmds: [['pnpm audit', 'Allowed']],
+          sources: ['github.com/copse-dev/agent-pane'],
+          sub: '1 done',
+        },
+        'Copse threads not resuming on reopen': {
+          folders: [
+            ['agent-pane', 'Primary'],
+            ['shared-lib', 'Read'],
+          ],
+          reads: [['~/.copse/workspace', 'Read']],
+          cmds: [['pnpm test', 'Allowed']],
+          sources: ['github.com/copse-dev/agent-pane'],
+          links: [
+            ['File', 'src/main/thread-store.ts', 'rp:explorer'],
+            ['Doc', 'docs/thread-store-format.md', null],
+          ],
+          sub: '3 done',
+        },
+        'Mobile view fixes': {
+          folders: [
+            ['docs-site', 'Primary'],
+            ['design-system', 'Read'],
+          ],
+          net: [['fonts.googleapis.com', 'Allowed']],
+          cmds: [['pnpm build', 'Allowed']],
+          sources: ['github.com/copse-mock/docs-site.git'],
+          links: [PRL('p3')],
+          sub: '2 done',
+        },
+        'Update onboarding copy': {
+          folders: [['docs-site', 'Primary']],
+          sources: ['github.com/copse-mock/docs-site.git'],
+          links: [['Doc', 'content/onboarding.md', null]],
+          sub: '1 running',
+        },
+        'Docs link checker': {
+          folders: [['docs-site', 'Primary']],
+          net: [['*.github.io', 'Ask each time']],
+          cmds: [['lychee', 'Allowed']],
+          sources: ['github.com/copse-mock/docs-site.git'],
+          sub: '1 done',
+        },
+      }
+      const CX_AGENTS = {
+        'Shrink previews on scroll': [
+          ['explore-previews', 'Find preview height code in src/renderer', 'done', 'Haiku 4.5'],
+          ['edit-preview', 'Apply the IntersectionObserver change', 'done', 'Sonnet 5.5'],
+          ['run-tests', 'pnpm test -- preview', 'done', 'Haiku 4.5'],
+        ],
+        'Fix box centering and closing': [
+          ['trace-resizer', 'Trace the pane-resizer closing logic', 'running', 'Sonnet 5.5'],
+        ],
+        'Create PR for safe execution': [
+          ['check-local', 'pnpm run check:local', 'done', 'Haiku 4.5'],
+          ['commit', 'Commit the gated auto-run change', 'done', 'Haiku 4.5'],
+        ],
+        'Nightly dependency check': [
+          ['audit', 'pnpm audit across workspaces', 'done', 'Haiku 4.5'],
+        ],
+        'Copse threads not resuming on reopen': [
+          ['repro', 'Reproduce the reopen failure', 'done', 'Sonnet 5.5'],
+          ['read-store', 'Read the thread store loader', 'done', 'Haiku 4.5'],
+          ['patch', 'Fix the resume race', 'done', 'Sonnet 5.5'],
+        ],
+        'Mobile view fixes': [
+          ['css-audit', 'Audit breakpoints', 'done', 'Haiku 4.5'],
+          ['patch-nav', 'Patch the mobile nav', 'done', 'Sonnet 5.5'],
+        ],
+        'Update onboarding copy': [
+          ['draft', 'Rewrite the intro paragraph', 'running', 'Opus 5.5'],
+          ['links', 'Check links in the new copy', 'queued', 'Haiku 4.5'],
+        ],
+        'Docs link checker': [['crawl', 'Crawl docs-site links', 'done', 'Haiku 4.5']],
+      }
+      const CX = {}
+      function cxSeed(key) {
+        const seed = CX_SEEDS[key]
+        const th = threads.find(function (t) {
+          return t.title === key
+        })
+        const project = th ? th.project : document.getElementById('crumbProj').textContent
+        const base = JSON.parse(JSON.stringify(CX_BASE))
+        base.agents = JSON.parse(JSON.stringify(CX_AGENTS[key] || []))
+        if (seed) return Object.assign(base, JSON.parse(JSON.stringify(seed)))
+        base.folders = [[project || 'workspace', 'Primary']]
+        if (project !== 'shared-lib') base.folders.push(['shared-lib', 'Read'])
+        base.sources = ['github.com/copse-mock/' + (project || 'workspace') + '.git']
+        return base
+      }
+      function cxFor() {
+        const k = typeof scKey === 'function' ? scKey() : 'x'
+        return CX[k] || (CX[k] = cxSeed(k))
+      }
+      function agentSummary(list) {
+        const n = function (st) {
+          return list.filter(function (a) {
+            return a[2] === st
+          }).length
+        }
+        const out = []
+        if (n('running')) out.push(n('running') + ' running')
+        if (n('queued')) out.push(n('queued') + ' queued')
+        if (n('done')) out.push(n('done') + ' done')
+        return out.join(' · ')
+      }
+      function ctxBuild() {
+        const c = cxFor()
+        const row = function (icon, name, val, extra) {
+          return (
+            '<button class="cx-row" type="button" ' +
+            (extra || '') +
+            '>' +
+            CX_ICON[icon] +
+            '<span class="n">' +
+            escapeText(name) +
+            '</span><span class="v">' +
+            escapeText(val) +
+            '</span></button>'
+          )
+        }
+        return (
+          '<div class="cx"><div class="cx-sec" style="border-bottom:0;padding-bottom:0"><div class="cx-sub" style="margin-left:0;margin-top:0">' +
+          escapeText(opened == null ? 'New thread' : threads[opened].title) +
+          '</div></div>' +
+          (c.agents.length
+            ? '<div class="cx-sec"><div class="cx-h">Subagents<span class="v" style="font-size:12px;font-weight:400;color:var(--muted)">' +
+              agentSummary(c.agents) +
+              '</span></div>' +
+              c.agents
+                .map(function (a) {
+                  return (
+                    '<button class="cx-row ag' +
+                    (subOpen === a[0] ? ' sel' : '') +
+                    '" type="button" data-ag="' +
+                    escapeText(a[0]) +
+                    '"><span class="agd ' +
+                    a[2] +
+                    '"></span><span class="n">' +
+                    escapeText(a[0]) +
+                    ' <small>' +
+                    escapeText(a[1]) +
+                    '</small></span><span class="v">' +
+                    a[2] +
+                    ' · ' +
+                    a[3] +
+                    '</span></button>'
+                  )
+                })
+                .join('') +
+              '</div>'
+            : '') +
+          '<div class="cx-sec"><div class="cx-h">Access<button type="button" id="cxAdd" aria-label="Add access" title="Add a repository, network host or command">+</button></div>' +
+          '<div class="cx-sub">Folders</div>' +
+          c.folders
+            .map(function (f, i) {
+              return row('repo', f[0], f[1], 'data-g="folders" data-i="' + i + '"')
+            })
+            .join('') +
+          '<div class="cx-sub">Reads outside the project</div>' +
+          c.reads
+            .map(function (f, i) {
+              return row('folder', f[0], f[1], 'data-g="reads" data-i="' + i + '"')
+            })
+            .join('') +
+          '<div class="cx-sub">Network</div>' +
+          c.net
+            .map(function (f, i) {
+              return row('globe', f[0], f[1], 'data-g="net" data-i="' + i + '"')
+            })
+            .join('') +
+          '<div class="cx-sub">Commands</div>' +
+          c.cmds
+            .map(function (f, i) {
+              return row('cmd', f[0], f[1], 'data-g="cmds" data-i="' + i + '"')
+            })
+            .join('') +
+          '</div><div class="cx-sec"><div class="cx-h">Links &amp; references</div>' +
+          c.links
+            .map(function (l, i) {
+              return (
+                '<button class="cx-row cx-link" type="button" data-l="' +
+                i +
+                '">' +
+                CX_ICON[l[0] === 'PR' ? 'pr' : l[0] === 'File' ? 'file' : 'doc'] +
+                '<span class="n">' +
+                escapeText(l[1]) +
+                '</span><span class="k">' +
+                l[0] +
+                '</span></button>'
+              )
+            })
+            .join('') +
+          '</div><div class="cx-sec"><div class="cx-h">Sources</div>' +
+          c.sources
+            .map(function (u) {
+              return '<div class="cx-text">' + escapeText(u) + '</div>'
+            })
+            .join('') +
+          '</div></div>'
+        )
+      }
+      function ctxRender() {
+        if (rpMode !== 'context') return
+        document.getElementById('rpBody').innerHTML = ctxBuild()
+        ctxWire()
+      }
+      function ctxWire() {
+        const c = cxFor(),
+          bd = document.getElementById('rpBody')
+        const add = document.getElementById('cxAdd')
+        if (add)
+          add.addEventListener('click', function (e) {
+            e.stopPropagation()
+            openMenu(add, function () {
+              const left = function (k, cur) {
+                return CX_POOL[k].filter(function (x) {
+                  return !cur.some(function (r) {
+                    return r[0] === x
+                  })
+                })[0]
+              }
+              const r = left('repo', c.folders),
+                n = left('net', c.net),
+                m = left('cmd', c.cmds)
+              const items = [{ head: 'Add to this chat' }]
+              if (r)
+                items.push({
+                  label: 'Repository · ' + r,
+                  run: function () {
+                    c.folders.push([r, 'Read'])
+                    ctxRender()
+                  },
+                })
+              if (n)
+                items.push({
+                  label: 'Network host · ' + n,
+                  run: function () {
+                    c.net.push([n, 'Allowed'])
+                    ctxRender()
+                  },
+                })
+              if (m)
+                items.push({
+                  label: 'Command · ' + m,
+                  run: function () {
+                    c.cmds.push([m, 'Ask each time'])
+                    ctxRender()
+                  },
+                })
+              if (items.length === 1)
+                items.push({ label: 'Nothing else to add (prototype)', run: function () {} })
+              return items
+            })
+          })
+        bd.querySelectorAll('.cx-row[data-g]').forEach(function (b) {
+          b.addEventListener('click', function (e) {
+            e.stopPropagation()
+            const g = b.dataset.g,
+              i = +b.dataset.i,
+              row = c[g][i]
+            const opts =
+              g === 'folders'
+                ? ['Read', 'Write']
+                : g === 'reads'
+                  ? ['Read']
+                  : g === 'net'
+                    ? ['Allowed', 'Ask each time']
+                    : ['Allowed', 'Ask each time']
+            openMenu(b, function () {
+              const items = []
+              if (row[1] === 'Primary') items.push({ head: 'Primary repository' })
+              else {
+                opts.forEach(function (o) {
+                  items.push({
+                    label: o,
+                    on: row[1] === o,
+                    run: function () {
+                      row[1] = o
+                      ctxRender()
+                    },
+                  })
+                })
+                items.push({ sep: true })
+                items.push({
+                  label: 'Remove from this chat',
+                  run: function () {
+                    c[g].splice(i, 1)
+                    ctxRender()
+                  },
+                })
+              }
+              return items
+            })
+          })
+        })
+        bd.querySelectorAll('.cx-row.ag').forEach(function (b) {
+          b.addEventListener('click', function () {
+            const a = c.agents.find(function (x) {
+              return x[0] === b.dataset.ag
+            })
+            if (a) openSubagent(a)
+          })
+        })
+        bd.querySelectorAll('.cx-link').forEach(function (b) {
+          b.addEventListener('click', function () {
+            const l = c.links[+b.dataset.l][2]
+            if (!l) return
+            if (l.indexOf('pr:') === 0) {
+              prOpenFromContext(l.slice(3))
+            } else if (l.indexOf('rp:') === 0) setRP(l.slice(3))
+          })
+        })
+      }
+
+      /* ---- round 4: side strip (C), auto-captured links, PR flows ---- */
+      ;(function () {
+        const c = document.createElement('nav')
+        c.className = 'stripc'
+        c.id = 'stripC'
+        c.setAttribute('aria-label', 'Thread panels')
+        THREAD_MODES.forEach(function (k) {
+          const src = document.querySelector('.topbar [data-rp="' + k + '"]')
+          if (!src) return
+          const b = src.cloneNode(true)
+          b.className = 'pb'
+          b.title = src.getAttribute('aria-label')
+          c.appendChild(b)
+        })
+        document.querySelector('.main').appendChild(c)
+      })()
+      let prdFrom = 'list',
+        prPrevRp = null,
+        pendingLinks = []
+      function extractLinks(text) {
+        const out = []
+        ;(text.match(/https?:\/\/[^\s)]+/g) || []).forEach(function (u) {
+          const m = u.match(/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/)
+          if (m) {
+            const pr = PR_LIST.find(function (x) {
+              return String(x.n) === m[1]
+            })
+            out.push(['PR', '#' + m[1] + (pr ? ' ' + pr.t : ''), pr ? 'pr:' + pr.id : null])
+          } else out.push(['Link', u.replace(/^https?:\/\//, ''), null])
+        })
+        ;(text.match(/(^|\s)#(\d{3,5})\b/g) || []).forEach(function (m) {
+          const n = m.trim().slice(1)
+          const pr = PR_LIST.find(function (x) {
+            return String(x.n) === n
+          })
+          out.push(['PR', '#' + n + (pr ? ' ' + pr.t : ''), pr ? 'pr:' + pr.id : null])
+        })
+        ;(text.match(/\b[\w.-]+(?:\/[\w.-]+)+\.(?:ts|tsx|js|md|json|css|html)\b/g) || []).forEach(
+          function (f) {
+            out.push(['File', f, 'rp:explorer'])
+          },
+        )
+        return out
+      }
+      function addLinks(list) {
+        const c = cxFor()
+        let added = false
+        list.forEach(function (l) {
+          if (
+            !c.links.some(function (x) {
+              return x[1] === l[1]
+            })
+          ) {
+            c.links.push(l)
+            added = true
+          }
+        })
+        if (added) ctxRender()
+      }
+      function cxApplyPending() {
+        if (!pendingLinks.length) return
+        const l = pendingLinks
+        pendingLinks = []
+        addLinks(l)
+      }
+      document.getElementById('composerForm').addEventListener(
+        'submit',
+        function () {
+          const found = extractLinks(input.value || '').concat(
+            DRAFT.map(function (d) {
+              return ['Attachment', d[0], null]
+            }),
+          )
+          if (!found.length) return
+          if (opened == null) pendingLinks = pendingLinks.concat(found)
+          else addLinks(found)
+        },
+        true,
+      )
+      function prOpenFromContext(id) {
+        prSel = id
+        prdFrom = 'context'
+        prRender()
+        if (rpMode === 'prdetail') {
+          document.getElementById('rpBody').innerHTML = prdBuild()
+          prdWire()
+        } else setRP('prdetail')
+      }
+
+      /* ---- round 5: gutter actions on each message ---- */
+      const GUT_ICON = {
+        copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>',
+        quote:
+          '<svg viewBox="0 0 24 24"><path d="M4 11h4a1 1 0 0 1 1 1v4a2 2 0 0 1-2 2H5a1 1 0 0 1-1-1v-6a6 6 0 0 1 6-6M14 11h4a1 1 0 0 1 1 1v4a2 2 0 0 1-2 2h-2a1 1 0 0 1-1-1v-6a6 6 0 0 1 6-6"/></svg>',
+      }
+      function gutToast(t) {
+        document.querySelectorAll('.gut-toast').forEach(function (x) {
+          x.remove()
+        })
+        const e = document.createElement('div')
+        e.className = 'gut-toast'
+        e.textContent = t
+        document.body.appendChild(e)
+        setTimeout(function () {
+          e.remove()
+        }, 1500)
+      }
+      function msgText(m) {
+        const c = m.cloneNode(true)
+        c.querySelectorAll('.gut,.sc-act').forEach(function (x) {
+          x.remove()
+        })
+        return (c.textContent || '').replace(/\s+\n/g, '\n').trim()
+      }
+      function gutDecorate(cv, t) {
+        cv.querySelectorAll('.msg').forEach(function (m, i) {
+          const g = document.createElement('div')
+          g.className = 'gut'
+          const mk = function (title, svg, fn) {
+            const b = document.createElement('button')
+            b.type = 'button'
+            b.title = title
+            b.setAttribute('aria-label', title)
+            b.innerHTML = svg
+            b.addEventListener('click', function (e) {
+              e.stopPropagation()
+              fn(e)
+            })
+            g.appendChild(b)
+          }
+          mk('Copy text', GUT_ICON.copy, function () {
+            const text = msgText(m)
+            if (navigator.clipboard && navigator.clipboard.writeText)
+              navigator.clipboard.writeText(text).then(
+                function () {
+                  gutToast('Copied')
+                },
+                function () {
+                  gutToast('Copy is blocked in this preview')
+                },
+              )
+            else gutToast('Copied (prototype)')
+          })
+          mk('Quote in reply', GUT_ICON.quote, function () {
+            const text = msgText(m).slice(0, 140)
+            input.value = (input.value ? input.value + '\n' : '') + '> ' + text + '\n'
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            input.focus()
+          })
+          if (m.classList.contains('msg-assistant'))
+            mk('Start a side chat from this message', SC_ICON, function (e) {
+              openSide(t.title, i, e.altKey, msgText(m).slice(0, 46))
+            })
+          m.appendChild(g)
+        })
+      }
+
+      /* ---- open a subagent in the chat ---- */
+      let subOpen = null
+      const AG_SCRIPT = {
+        'explore-previews': {
+          tools: [
+            ['search', 'Searched', 'preview height in src/renderer'],
+            ['read', 'Read', 'src/renderer/markdown/preview.ts'],
+          ],
+          body: '<p>The preview height is set in <code>preview.ts</code> and read again in <code>layout.ts</code>. Nothing else depends on it, so a per-preview observer is safe.</p>',
+        },
+        'edit-preview': {
+          tools: [['edit', 'Edited', 'src/renderer/markdown/preview.ts']],
+          body: '<p>Added an <code>IntersectionObserver</code> that toggles <code>.is-compact</code> on each preview, with a 120&nbsp;ms height transition.</p>',
+        },
+        'run-tests': {
+          tools: [['cmd', 'Ran', 'pnpm test -- preview']],
+          body: '<p>12 tests passed in 3.1&nbsp;s.</p>',
+        },
+        'trace-resizer': {
+          tools: [['read', 'Read', 'src/renderer/views/pane-resizer.ts']],
+          body: '<p>Tracing where the closing handler reads the stored width…</p>',
+        },
+      }
+      function openSubagent(a) {
+        if (opened == null) return
+        if (prOn) prShow(false)
+        const th = threads[opened]
+        const sc = AG_SCRIPT[a[0]] || {
+          tools: [
+            ['read', 'Read', 'src/renderer/main.ts'],
+            ['cmd', 'Ran', 'pnpm test'],
+          ],
+          body:
+            '<p>' +
+            (a[2] === 'queued'
+              ? 'Waiting for a free slot.'
+              : 'Reported its result back to the parent thread.') +
+            '</p>',
+        }
+        subOpen = a[0]
+        document.querySelector('.app').classList.add('is-sub')
+        home.style.display = 'none'
+        threadView.style.display = 'block'
+        document.getElementById('topTitle').textContent = th.title + ' / ' + a[0]
+        document.getElementById('convo').innerHTML =
+          '<div class="sub-head"><button class="prv-back" id="subBack" type="button" title="Back (Esc)">← ' +
+          escapeText(th.title) +
+          '</button><b>' +
+          escapeText(a[0]) +
+          '</b><span class="prv-chip">' +
+          a[2] +
+          '</span><span class="prv-chip">' +
+          a[3] +
+          '</span><span class="m">Subagent · read-only. Replies go through the parent thread.</span></div>' +
+          '<div class="msg msg-user">' +
+          escapeText(a[1]) +
+          '</div><div class="msg msg-assistant">' +
+          tools(sc.tools) +
+          sc.body +
+          '</div>' +
+          (a[2] === 'running'
+            ? '<div class="stream"><svg class="gl run-dots" viewBox="0 0 24 24"><path d="M5 12h.01"/><path d="M12 12h.01"/><path d="M19 12h.01"/></svg>Working…</div>'
+            : '')
+        document.getElementById('subBack').addEventListener('click', subClose)
+        document.getElementById('content').scrollTop = 0
+        ctxRender()
+      }
+      function subClose() {
+        if (subOpen == null) return
+        subOpen = null
+        document.querySelector('.app').classList.remove('is-sub', 'side-open')
+        document
+          .getElementById('sbToggle')
+          .setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
+        if (opened != null) showThread(opened)
+      }
+      document.addEventListener('keydown', function (e) {
+        if (
+          e.key === 'Escape' &&
+          subOpen != null &&
+          !document.querySelector('.menu') &&
+          document.getElementById('pal').hidden
+        )
+          subClose()
+      })
+
+      /* ---- prototype menu: columns + window size ---- */
+      function setWin(v) {
+        const u = new URL(location.href)
+        if (v === 'full') u.searchParams.delete('win')
+        else u.searchParams.set('win', v)
+        location.href = u.toString()
+      }
+      function protoColumns(anchor) {
+        const m = document.querySelector('.menu')
+        if (!m) return
+        m.classList.add('menu-cols')
+        const grid = document.createElement('div')
+        grid.className = 'mgrid'
+        let col = null
+        Array.prototype.slice.call(m.children).forEach(function (ch) {
+          if (ch.classList.contains('menu-sep')) {
+            ch.remove()
+            return
+          }
+          if (ch.classList.contains('menu-head') || !col) {
+            col = document.createElement('div')
+            col.className = 'mcol'
+            grid.appendChild(col)
+          }
+          col.appendChild(ch)
+        })
+        m.appendChild(grid)
+        const r = anchor.getBoundingClientRect(),
+          pad = 8
+        m.style.maxHeight = Math.max(240, window.innerHeight - r.bottom - 4 - pad) + 'px'
+        m.style.left =
+          Math.max(pad, Math.min(r.left, window.innerWidth - pad - m.offsetWidth)) + 'px'
+        m.style.top = r.bottom + 4 + 'px'
+      }
       let rpMode = null
       ;(function () {
         const app = document.querySelector('.app'),
@@ -8672,7 +11871,10 @@
         app.classList.toggle('rp-open', !!rpMode)
         rp.hidden = !rpMode
         document.querySelectorAll('[data-rp]').forEach(function (b) {
-          b.setAttribute('aria-pressed', String(b.dataset.rp === rpMode))
+          b.setAttribute(
+            'aria-pressed',
+            String(b.dataset.rp === rpMode || (b.dataset.rp === 'prs' && prOn)),
+          )
         })
         document
           .getElementById('rpanel')
@@ -8693,19 +11895,29 @@
                     ? memBuild()
                     : RP[rpMode][1] === '__ROAD__'
                       ? roadBuild()
-                      : RP[rpMode][1]
+                      : RP[rpMode][1] === '__CTX__'
+                        ? ctxBuild()
+                        : RP[rpMode][1] === '__SIDE__'
+                          ? sideBuild()
+                          : RP[rpMode][1] === '__PRD__'
+                            ? prdBuild()
+                            : RP[rpMode][1]
           bd.style.overflow =
             rpMode === 'changes' ||
             rpMode === 'browser' ||
             rpMode === 'memories' ||
             rpMode === 'roadmap' ||
-            rpMode === 'explorer'
+            rpMode === 'explorer' ||
+            rpMode === 'sidechat'
               ? 'hidden'
               : 'auto'
           if (rpMode === 'explorer') filesWire()
           if (rpMode === 'browser') brWire()
           if (rpMode === 'memories') memWire()
           if (rpMode === 'roadmap') roadWire()
+          if (rpMode === 'sidechat') scWire()
+          if (rpMode === 'context') ctxWire()
+          if (rpMode === 'prdetail') prdWire()
           bd.querySelectorAll('.cg-file').forEach(function (b) {
             b.addEventListener('click', function () {
               chSel = b.dataset.f
@@ -8714,6 +11926,7 @@
             })
           })
         }
+        rpTabsSync()
         setTimeout(function () {
           renderSide()
         }, 0)
@@ -8725,10 +11938,21 @@
       })
       document.querySelectorAll('[data-rp]').forEach(function (b) {
         b.addEventListener('click', function () {
+          if (b.dataset.rp === 'prs') {
+            prToggle()
+            return
+          }
           setRP(b.dataset.rp)
+          scBadge()
         })
       })
       applyPos()
+      styleSync()
+      if (new URLSearchParams(location.search).get('view') === 'prs') {
+        prShow(true)
+        if (new URLSearchParams(location.search).get('pr'))
+          prSelect(new URLSearchParams(location.search).get('pr'))
+      }
       document.getElementById('rpClose').addEventListener('click', function () {
         setRP(rpMode)
       })
