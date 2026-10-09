@@ -84473,9 +84473,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       }
     }
     if (spot.area === "strip") {
-      const card = [...strip.querySelectorAll("[data-project-key]")].find(
-        (node2) => node2.dataset["projectKey"] === spot.projectKey
-      );
+      const cards = [...strip.querySelectorAll("[data-project-key]")];
+      const card = cards.find((node2) => node2.dataset["projectKey"] === spot.projectKey) ?? cards.find((node2) => node2.dataset["projectKey"] === JSON.stringify(null));
       card?.focus({ preventScroll: true });
       return;
     }
