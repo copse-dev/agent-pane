@@ -6,6 +6,7 @@ import {
   existsSync,
   copyFileSync,
   readFileSync,
+  appendFileSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -2445,6 +2446,62 @@ export function seedContextWheelFixture(workspaceRoot: string, conversationToken
       },
     ],
   })
+}
+
+/** One group of identical classifier calls to append to a seeded thread. */
+export interface SeededClassifierCalls {
+  subject: 'shell-scope' | 'shell-tier' | 'terminal-read'
+  /** The classifier or model that answered. */
+  engine: string
+  /** The verdict label it gave; null for a call that produced none. */
+  label: string | null
+  latencyMs: number
+  count: number
+  inputTokens?: number
+  outputTokens?: number
+}
+
+/**
+ * Append `classifier-call` decision lines to an already-seeded thread's spine,
+ * the way the permission gate and screening paths write them, so the footer's
+ * classifier section has real on-disk data to read. Call after the thread has
+ * been seeded (`writeSeedConfig`), which rewrites its `events.jsonl`.
+ */
+export function seedClassifierCalls(
+  projectId: string,
+  threadId: string,
+  groups: SeededClassifierCalls[],
+): void {
+  const now = Date.now()
+  const lines: string[] = []
+  let n = 0
+  for (const group of groups) {
+    for (let i = 0; i < group.count; i += 1) {
+      n += 1
+      lines.push(
+        JSON.stringify({
+          v: 1,
+          type: 'decision',
+          id: `seed-classifier-call-${String(n)}`,
+          at: now + n,
+          kind: 'classifier-call',
+          actor: 'classifier',
+          verdict: group.label === null ? 'ask' : 'classified',
+          subject: group.subject,
+          source: group.engine,
+          latencyMs: group.latencyMs,
+          threadId,
+          ...(group.label === null ? {} : { scope: group.label }),
+          ...(group.inputTokens === undefined ? {} : { inputTokens: group.inputTokens }),
+          ...(group.outputTokens === undefined ? {} : { outputTokens: group.outputTokens }),
+        }),
+      )
+    }
+  }
+  appendFileSync(
+    join(e2eWorkspaceDir(), projectId, threadId, 'events.jsonl'),
+    `${lines.join('\n')}\n`,
+  )
 }
 
 /**

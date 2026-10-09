@@ -47,6 +47,8 @@ export async function classifyShellScope(command: string): Promise<Classificatio
   const { verdict } = await screenWithSafetyModel({
     systemPrompt: SYSTEM_PROMPT,
     content: JSON.stringify(payload),
+    subject: 'shell-scope',
+    verdictLabel: (result) => result.scope,
     parse: parseClassification,
     withClassifier: (id) => classifyShellScopeWithClassifier(id, payload),
   })

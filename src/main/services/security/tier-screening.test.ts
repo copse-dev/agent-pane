@@ -20,9 +20,16 @@ import {
 } from '../thread-models.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import { readDecisionLog } from './decision-log-store.ts'
+import { threadExecutionContextStorage } from '../thread-execution-context-store.ts'
+import { recordClassifierCall } from './classifier-call-log.ts'
+import { guardedYoloTierReason, shadowTierScreening } from './tier-screening.ts'
+import { getThreadClassifierUse } from './classifier-use-report.ts'
+import { CLASSIFIER_CALL_KIND } from '@shared/usage/classifier-use.ts'
 import { armGuardedYolo, disableGuardedYolo } from './guarded-yolo.ts'
 import { ensureToolPermitted } from './permission-gate.ts'
 import { SHELL_TIER_QUESTION } from './safety-classifier-profile.ts'
+import { classifyShellScope } from './safety-classifier.ts'
+import { classifyTerminalSnapshot } from './terminal-read-guard.ts'
 import { resetSafetyModelProblemReportsForTest } from './safety-model-availability.ts'
 import { resetSafetyModelCooldownsForTest } from './safety-model-cooldown.ts'
 
@@ -137,6 +144,178 @@ describe('tier screening through the safety-screening classifier', () => {
     assert.equal(prompts, 1)
     const decisions = await readDecisionLog(PROJECT)
     assert.ok(decisions.some((d) => d.source === 'tier-screening' && d.confidence === 0.9))
+  })
+
+  it('reports the call on the thread: subject, engine, verdict and latency', async () => {
+    await chooseKev()
+    answering(distribution(0.9))
+    await underGuardedYolo(() =>
+      ensureToolPermitted({ toolName: 'run_shell', args: { command: EXTERNAL_READ } }),
+    )
+    const calls = (await readDecisionLog(PROJECT)).filter((d) => d.kind === CLASSIFIER_CALL_KIND)
+    assert.equal(calls.length, 1, 'one line per engine call')
+    const [call] = calls
+    assert.ok(call)
+    assert.equal(call.actor, 'classifier')
+    assert.equal(call.verdict, 'classified')
+    assert.equal(call.subject, 'shell-tier')
+    assert.equal(call.scope, 'ask', 'the label is the tier it thought likeliest')
+    assert.equal(call.confidence, 0.9)
+    assert.equal(call.source, KEV?.label)
+    assert.equal(typeof call.latencyMs, 'number')
+    assert.doesNotMatch(JSON.stringify(call), /example\.com/, 'the command is never recorded')
+
+    const use = await getThreadClassifierUse(PROJECT, THREAD)
+    assert.equal(use.calls, 1)
+    assert.deepEqual(use.rows[0]?.verdicts, [{ label: 'ask', count: 1 }])
+  })
+
+  it('reports shell-scope and terminal-read calls with their verdict labels and tokens', async () => {
+    await chooseKev()
+    mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+      const asksScope = typeof init?.body === 'string' && init.body.includes('sandbox')
+      const probabilities = asksScope
+        ? { sandbox: 0.8, external: 0.2 }
+        : { safe: 0.95, risky: 0.05 }
+      return Response.json({
+        model: 'kev-fixture',
+        answers: {
+          decision: {
+            type: 'choice',
+            choice: Object.keys(probabilities)[0],
+            probabilities,
+          },
+        },
+        usage: { input_tokens: 12, output_tokens: 3 },
+      })
+    })
+    await runWithActiveRunIdentity(THREAD, async () => {
+      setActiveRunThread(THREAD)
+      try {
+        await classifyShellScope('ls')
+        await classifyShellScope('ls -la')
+        await classifyTerminalSnapshot('ordinary output')
+      } finally {
+        clearActiveRunThread(THREAD)
+      }
+    })
+
+    const use = await getThreadClassifierUse(PROJECT, THREAD)
+    assert.equal(use.calls, 3)
+    const scope = use.rows.find((row) => row.subject === 'shell-scope')
+    assert.ok(scope)
+    assert.equal(scope.calls, 2)
+    assert.deepEqual(scope.verdicts, [{ label: 'sandbox', count: 2 }])
+    assert.equal(scope.inputTokens, 24)
+    assert.equal(scope.outputTokens, 6)
+    const terminal = use.rows.find((row) => row.subject === 'terminal-read')
+    assert.ok(terminal)
+    assert.deepEqual(terminal.verdicts, [{ label: 'safe', count: 1 }])
+  })
+
+  const projectSwitchScreens: { subject: string; screen: () => Promise<unknown> | null }[] = [
+    { subject: 'shell-scope', screen: () => classifyShellScope('ls pending-project-switch') },
+    { subject: 'terminal-read', screen: () => classifyTerminalSnapshot('pending project output') },
+    { subject: 'shell-tier', screen: () => guardedYoloTierReason(EXTERNAL_READ, null) },
+    { subject: 'tier-shadow', screen: () => shadowTierScreening(EXTERNAL_READ, null, 'allow') },
+  ]
+  for (const { subject, screen } of projectSwitchScreens) {
+    it(`keeps delayed ${subject} calls on the originating project after selection changes`, async () => {
+      await chooseKev()
+      const started = Promise.withResolvers<boolean>()
+      const response = Promise.withResolvers<Response>()
+      mock.method(globalThis, 'fetch', () => {
+        started.resolve(true)
+        return response.promise
+      })
+      // The renderer may already display another project when a background run starts.
+      storageSet('activeProjectId', 'selected-project')
+      const pending = threadExecutionContextStorage.run(
+        {
+          projectId: PROJECT,
+          threadId: THREAD,
+          projectRoot: home,
+          root: home,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        screen,
+      )
+      assert.ok(pending, 'the screening starts for the originating execution context')
+      await started.promise
+      storageSet('activeProjectId', 'later-selected-project')
+      const probabilities =
+        subject === 'shell-scope'
+          ? { sandbox: 0.9, external: 0.1 }
+          : subject === 'terminal-read'
+            ? { safe: 0.9, risky: 0.1 }
+            : distribution(0.9)
+      response.resolve(
+        Response.json({
+          model: 'project-switch-fixture',
+          answers: {
+            decision: { type: 'choice', choice: Object.keys(probabilities)[0], probabilities },
+          },
+        }),
+      )
+      await pending
+      const use = await getThreadClassifierUse(PROJECT, THREAD)
+      assert.equal(use.calls, 1)
+      assert.equal(use.rows[0]?.subject, subject === 'tier-shadow' ? 'shell-tier' : subject)
+      assert.deepEqual(await readDecisionLog('selected-project'), [])
+      assert.deepEqual(await readDecisionLog('later-selected-project'), [])
+      if (subject === 'tier-shadow' || subject === 'shell-tier') {
+        const decisions = await readDecisionLog(PROJECT)
+        assert.ok(
+          decisions.some(
+            (d) => d.source === (subject === 'tier-shadow' ? 'tier-shadow' : 'tier-screening'),
+          ),
+        )
+      }
+    })
+  }
+
+  it('does not pair an explicit foreign thread with the selected project', async () => {
+    recordClassifierCall({
+      subject: 'shell-scope',
+      engine: 'explicit-fixture',
+      verdictLabel: 'sandbox',
+      latencyMs: 1,
+      threadId: 'foreign-thread',
+    })
+    assert.deepEqual(await readDecisionLog(PROJECT), [])
+    recordClassifierCall({
+      subject: 'shell-scope',
+      engine: 'explicit-fixture',
+      verdictLabel: 'sandbox',
+      latencyMs: 1,
+      threadId: 'foreign-thread',
+      projectId: 'foreign-project',
+    })
+    assert.equal((await getThreadClassifierUse('foreign-project', 'foreign-thread')).calls, 1)
+  })
+
+  it('reports a failed connection as a call with no verdict', async () => {
+    await chooseKev()
+    answering('fail')
+    await underGuardedYolo(() =>
+      ensureToolPermitted({ toolName: 'run_shell', args: { command: EXTERNAL_READ } }),
+    )
+    const calls = (await readDecisionLog(PROJECT)).filter((d) => d.kind === CLASSIFIER_CALL_KIND)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0]?.scope, undefined)
+    assert.equal(calls[0]?.verdict, 'ask')
+    const use = await getThreadClassifierUse(PROJECT, THREAD)
+    assert.equal(use.rows[0]?.noVerdict, 1)
+  })
+
+  it('reports nothing when no connection was asked', async () => {
+    answering(distribution(0.9))
+    await underGuardedYolo(() =>
+      ensureToolPermitted({ toolName: 'run_shell', args: { command: EXTERNAL_READ } }),
+    )
+    const calls = (await readDecisionLog(PROJECT)).filter((d) => d.kind === CLASSIFIER_CALL_KIND)
+    assert.deepEqual(calls, [])
   })
 
   it('lets the harm gate allow stand when ask is unlikely', async () => {

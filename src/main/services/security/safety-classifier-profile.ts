@@ -150,15 +150,26 @@ function seconds(): string {
   return `${String(FETCH_TIMEOUTS.safetyClassification / 1000)} seconds`
 }
 
+/** What one engine call reported, for the thread's classifier-use record. */
+type CallMeta = Pick<Screening<unknown>, 'engine' | 'latencyMs' | 'usage' | 'timedOut'>
+
+interface Attempt {
+  answer: Answer | null
+  problem: SafetyModelProblem | null
+  /** Set only when the connection was actually asked. */
+  meta: CallMeta
+}
+
 async function screen(
   id: string,
   state: ClassifierState,
   question: ClassifierQuestion,
   signal?: AbortSignal,
-): Promise<{ answer: Answer | null; problem: SafetyModelProblem | null }> {
+): Promise<Attempt> {
   // The same timeout cooldown as a slow safety model, keyed apart from model ids.
   const model = `classifier:${id}`
   let label = id
+  let started: number | null = null
   try {
     label = getClassifierProfile(id).label
     if (isSafetyModelCoolingDown(model)) {
@@ -169,32 +180,45 @@ async function screen(
           reason: 'timed-out',
           message: `The screening classifier "${label}" is being skipped for a while after missing the ${seconds()} screening budget.`,
         },
+        meta: {},
       }
     }
     const session = createClassifierSession(id)
+    started = Date.now()
     const [result] = await session.invokeBatch([{ state, questions: { [DECISION]: question } }], {
       timeoutMs: FETCH_TIMEOUTS.safetyClassification,
       ...(signal ? { signal } : {}),
     })
     noteSafetyModelAnswered(model)
-    if (!result) return { answer: null, problem: null }
-    if (result.usage?.inputTokens || result.usage?.outputTokens) {
-      recordUsageEvent({
-        model: result.model,
-        source: 'safety-classifier',
-        inputTokens: result.usage.inputTokens ?? 0,
-        outputTokens: result.usage.outputTokens ?? 0,
-      })
-    }
+    const latencyMs = Date.now() - started
+    if (!result) return { answer: null, problem: null, meta: { engine: label, latencyMs } }
+    const tokens =
+      result.usage?.inputTokens || result.usage?.outputTokens
+        ? {
+            inputTokens: result.usage.inputTokens ?? 0,
+            outputTokens: result.usage.outputTokens ?? 0,
+          }
+        : null
+    if (tokens) recordUsageEvent({ model: result.model, source: 'safety-classifier', ...tokens })
     return {
       answer: { result, source: `the "${label}" classifier (${result.model})` },
       problem: null,
+      meta: { engine: label, latencyMs, ...(tokens ? { usage: tokens } : {}) },
     }
   } catch (error) {
-    if (error instanceof ClassifierError && error.code === 'timeout') {
-      noteSafetyModelTimeout(model, FETCH_TIMEOUTS.safetyClassification)
+    const timedOut = error instanceof ClassifierError && error.code === 'timeout'
+    if (timedOut) noteSafetyModelTimeout(model, FETCH_TIMEOUTS.safetyClassification)
+    // A thrown ClassifierError means the connection was asked and failed; any
+    // other error is a configuration fault raised before a request was made.
+    const elapsedMs = started === null ? null : Date.now() - started
+    return {
+      answer: null,
+      problem: problemFor(model, label, error),
+      meta:
+        error instanceof ClassifierError && elapsedMs !== null
+          ? { engine: label, latencyMs: elapsedMs, ...(timedOut ? { timedOut } : {}) }
+          : {},
     }
-    return { answer: null, problem: problemFor(model, label, error) }
   }
 }
 
@@ -207,10 +231,10 @@ export async function classifyShellScopeWithClassifier(
   id: string,
   payload: { [key: string]: JsonValue },
 ): Promise<Screening<ClassificationResult>> {
-  const { answer, problem } = await screen(id, payload, SHELL_SCOPE_QUESTION)
+  const { answer, problem, meta } = await screen(id, payload, SHELL_SCOPE_QUESTION)
   const external = answer && probabilityOf(answer, 'external')
   const sandbox = answer && probabilityOf(answer, 'sandbox')
-  if (!answer || external === null || sandbox === null) return { verdict: null, problem }
+  if (!answer || external === null || sandbox === null) return { verdict: null, problem, ...meta }
   const scope = external >= sandbox ? 'external' : 'sandbox'
   const confidence = Math.max(external, sandbox)
   return {
@@ -220,6 +244,7 @@ export async function classifyShellScopeWithClassifier(
       reason: `${answer.source} rated it ${scope} with probability ${confidence.toFixed(2)}`,
     },
     problem,
+    ...meta,
   }
 }
 
@@ -233,9 +258,9 @@ export async function classifyTerminalSnapshotWithClassifier(
   text: string,
   signal?: AbortSignal,
 ): Promise<Screening<TerminalReadVerdict>> {
-  const { answer, problem } = await screen(id, text, TERMINAL_READ_QUESTION, signal)
+  const { answer, problem, meta } = await screen(id, text, TERMINAL_READ_QUESTION, signal)
   const safe = answer && probabilityOf(answer, 'safe')
-  if (!answer || safe === null) return { verdict: null, problem }
+  if (!answer || safe === null) return { verdict: null, problem, ...meta }
   if (safe >= TERMINAL_READ_SAFE_PROBABILITY) {
     return {
       verdict: {
@@ -244,6 +269,7 @@ export async function classifyTerminalSnapshotWithClassifier(
         reason: `${answer.source} rated it safe with probability ${safe.toFixed(2)}`,
       },
       problem,
+      ...meta,
     }
   }
   return {
@@ -253,6 +279,7 @@ export async function classifyTerminalSnapshotWithClassifier(
       reason: `${answer.source} gave it only a ${safe.toFixed(2)} probability of being safe; sharing without asking needs ${TERMINAL_READ_SAFE_PROBABILITY.toFixed(2)}`,
     },
     problem,
+    ...meta,
   }
 }
 
@@ -268,13 +295,17 @@ export async function classifyShellTierWithClassifier(
   signal?: AbortSignal,
 ): Promise<Screening<ShellTierVerdict>> {
   const workspace = workspaceRoot ?? 'unknown'
-  const { answer, problem } = await screen(
+  const { answer, problem, meta } = await screen(
     id,
     { workspace, projectRoot: workspace, command },
     SHELL_TIER_QUESTION,
     signal,
   )
   const decision = answer?.result.answers[DECISION]
-  if (!answer || decision?.type !== 'choice') return { verdict: null, problem }
-  return { verdict: { probabilities: decision.probabilities, source: answer.source }, problem }
+  if (!answer || decision?.type !== 'choice') return { verdict: null, problem, ...meta }
+  return {
+    verdict: { probabilities: decision.probabilities, source: answer.source },
+    problem,
+    ...meta,
+  }
 }

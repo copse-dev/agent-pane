@@ -1230,6 +1230,31 @@
 .footer-usage-popover-dot.is-error {
   background: var(--danger);
 }
+.footer-usage-popover-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.footer-usage-popover-pill {
+  font-size: var(--font-size-2xs);
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+}
+.footer-usage-popover-pill.is-ok {
+  border-color: color-mix(in srgb, var(--success) 50%, var(--border));
+}
+.footer-usage-popover-pill.is-warn {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+}
+.footer-usage-popover-row.is-classifier {
+  align-items: flex-start;
+}
+.footer-usage-popover-row.is-classifier + .footer-usage-popover-row.is-classifier {
+  margin-top: 4px;
+}
 .footer-usage-popover-value {
   color: var(--text-muted);
   margin-left: auto;
