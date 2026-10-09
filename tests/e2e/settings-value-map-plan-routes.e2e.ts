@@ -104,21 +104,19 @@ describe('model value map respects subscription billing routes', function () {
     const fieldset = $('.frontier-fieldset')
     await expect(fieldset.$('.frontier-chart svg')).toBeDisplayed()
     await expect(fieldset.$(`circle.frontier-point.plan[data-model-id="${PLAN_ROUTE}"]`)).toExist()
-    const paid = fieldset.$(`circle.frontier-point[data-model-id="${PAID_ROUTE}"]`)
-    await expect(paid).toExist()
-    assert.equal((await paid.getAttribute('class')).split(' ').includes('plan'), false)
-    assert.equal(
-      await fieldset.$(`circle.frontier-plan-badge[data-model-id="${PAID_ROUTE}"]`).isExisting(),
-      false,
-    )
-
-    // The hover text is what a user sees when comparing the expensive route.
-    await fieldset.$(`circle.frontier-hit[data-model-id="${PAID_ROUTE}"]`).moveTo()
-    const tooltip = fieldset.$('.frontier-tooltip')
-    await expect(tooltip).toBeDisplayed()
-    const text = await tooltip.getText()
+    // This route is over four times the price of an equally capable model,
+    // so it belongs in the disclosure rather than on the default chart.
+    await expect(fieldset.$(`circle.frontier-point[data-model-id="${PAID_ROUTE}"]`)).not.toExist()
+    await expect(
+      fieldset.$(`circle.frontier-plan-badge[data-model-id="${PAID_ROUTE}"]`),
+    ).not.toExist()
+    const disclosure = fieldset.$('details.frontier-severely-dominated')
+    await expect(disclosure).toExist()
+    await disclosure.$('summary').click()
+    const text = await disclosure.getText()
+    assert.match(text, /Fable 5/)
+    assert.match(text, /\$45/)
     assert.doesNotMatch(text, /included in your plan/)
-    assert.match(text, /\$45\/MTok/)
     await prepareE2eScreenshot()
     await saveElementScreenshot('.frontier-fieldset', 'settings-value-map-plan-routes.png')
   })
