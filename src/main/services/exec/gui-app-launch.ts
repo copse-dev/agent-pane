@@ -12,7 +12,7 @@ import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
  * server (Mach-port rendezvous / LaunchServices helper). This path is the one
  * Copse's own app-run setup uses for Xcode / Android Studio: unsandboxed
  * `runAppProcess` of `/usr/bin/open`, with env vars and `--args` forwarded so
- * the agent can isolate a branch instance via `COPSE_PANEL_USER_DATA`.
+ * the agent can isolate a branch instance via `COPSE_DIR`.
  *
  * Approval is the caller's job (see `launch_gui_app` tool). This module only
  * validates the target and performs the launch once authorized.

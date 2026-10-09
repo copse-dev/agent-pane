@@ -576,9 +576,8 @@ export interface AllocateDeferredWorktreeInput {
  * idempotent: parallel tool calls in one turn share a single allocation, and a
  * thread that already owns a worktree just returns it.
  *
- * Dirty seeding is decided now rather than at the first message: the deferred
- * turn has been reading the project checkout live, uncommitted work included,
- * so the worktree carries that same work whenever the base still matches.
+ * Never seeds from the project checkout's uncommitted work: the worktree
+ * always starts clean, matching the first-message allocation path.
  */
 export function createDeferredWorktreeAllocation(
   dependencies: ThreadCheckoutTransactionDependencies,
@@ -607,7 +606,6 @@ export function createDeferredWorktreeAllocation(
       const deferred = thread.deferredWorktree
       if (!deferred) throw new Error('This thread did not defer its worktree')
 
-      const inspection = await dependencies.inspect(project, true)
       const recovered = await dependencies.recoverUnpersisted({
         projectId: input.projectId,
         threadId: input.threadId,
@@ -622,7 +620,7 @@ export function createDeferredWorktreeAllocation(
           projectRoot: project.path,
           prompt: '',
           baseBranch: deferred.baseBranch,
-          seedFromDirtyProject: inspection.isDirty && inspection.currentBranch !== null,
+          seedFromDirtyProject: false,
           ...(input.branchTitle ? { branchTitle: input.branchTitle } : {}),
         }))
       if (recovered) {

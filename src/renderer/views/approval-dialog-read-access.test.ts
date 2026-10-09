@@ -21,6 +21,7 @@ interface EmitReq {
   bodyAdvice?: string
   collapseDetails?: boolean
   approveOnceLabel?: string
+  approveLabel?: string
   allowRemember?: boolean
   rememberLabel?: string
 }
@@ -40,6 +41,7 @@ const READ_ACCESS: EmitReq = {
   bodyAdvice: 'The agent wants to read ~/.copse.',
   collapseDetails: true,
   approveOnceLabel: 'Approve this command',
+  approveLabel: 'Allow reads for this chat',
 }
 
 function makeApi(): {
@@ -70,6 +72,7 @@ function makeApi(): {
         type: 'shell',
         collapseDetails: req.collapseDetails,
         approveOnceLabel: req.approveOnceLabel,
+        approveLabel: req.approveLabel,
         allowRemember: req.allowRemember,
         rememberLabel: req.rememberLabel,
       })
@@ -153,6 +156,7 @@ describe('approval dialog — read-access prompt', () => {
     assert.equal(toggle().getAttribute('aria-expanded'), 'false')
     // The per-command answer waits for the command it refers to.
     assert.equal(approveOnce().hidden, true)
+    assert.equal(approve().textContent, 'Allow reads for this chat')
   })
 
   it('reveals the command and the third button on expand, and collapses again', () => {
