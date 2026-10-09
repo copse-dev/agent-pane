@@ -14,10 +14,7 @@ import { getSetting, setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { clearSshWorkspaceFsCacheForTest, SshWorkspaceFs } from './ssh-workspace-fs.ts'
 import { WorkspaceFileTooLargeError } from './workspace-fs.ts'
-import {
-  COMMAND_OUTPUT_MAX_BYTES,
-  truncateCommandOutput,
-} from '../exec/subprocess-output-cap.ts'
+import { COMMAND_OUTPUT_MAX_BYTES, truncateCommandOutput } from '../exec/subprocess-output-cap.ts'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import type { SshExecOptions } from '../ssh-workspace/transport.ts'
 
@@ -41,7 +38,11 @@ describe('SshWorkspaceFs', () => {
       () =>
         new FakeSshTransport([
           { when: /test -e/, code: 0 },
-          { when: /hello\.txt/, stdout: 'remote hello\n', fileBytes: Buffer.from('remote hello\n') },
+          {
+            when: /hello\.txt/,
+            stdout: 'remote hello\n',
+            fileBytes: Buffer.from('remote hello\n'),
+          },
           {
             when: /base64 -d/,
             code: 0,

@@ -150,46 +150,47 @@ function installFakeSsh(t: { after: (fn: () => void) => void }, script: string):
   return dir
 }
 
-describe('OpenSshTransport against a local ssh process', { skip: process.platform === 'win32' }, () => {
-  it('keeps the event loop running while the control master authenticates', async (t) => {
-    // The askpass bridge answers password prompts from this same event loop;
-    // a blocking spawn while ssh waits on askpass would deadlock the main process.
-    installFakeSsh(
-      t,
-      'case " $* " in *" -O check "*) exit 255 ;; esac\nsleep 0.3\nexit 0',
-    )
-    const transport = new OpenSshTransport(host)
-    let ranDuringConnect = false
-    const timer = setTimeout(() => {
-      ranDuringConnect = !transport.isConnected()
-    }, 20)
-    await transport.connect()
-    clearTimeout(timer)
-    assert.equal(transport.isConnected(), true)
-    assert.equal(ranDuringConnect, true)
-  })
-
-  it('reports the control master failure from stderr', async (t) => {
-    installFakeSsh(t, 'echo "Permission denied (publickey)." >&2\nexit 255')
-    const transport = new OpenSshTransport(host)
-    await assert.rejects(() => transport.connect(), /Permission denied \(publickey\)\./)
-    assert.equal(transport.isConnected(), false)
-  })
-
-  it('survives ssh exiting before it reads stdin', async (t) => {
-    installFakeSsh(t, 'exit 3')
-    const transport = new OpenSshTransport(host)
-    const result = await transport.execShell('cat > /dev/null', {
-      stdin: 'x'.repeat(8 * 1024 * 1024),
+describe(
+  'OpenSshTransport against a local ssh process',
+  { skip: process.platform === 'win32' },
+  () => {
+    it('keeps the event loop running while the control master authenticates', async (t) => {
+      // The askpass bridge answers password prompts from this same event loop;
+      // a blocking spawn while ssh waits on askpass would deadlock the main process.
+      installFakeSsh(t, 'case " $* " in *" -O check "*) exit 255 ;; esac\nsleep 0.3\nexit 0')
+      const transport = new OpenSshTransport(host)
+      let ranDuringConnect = false
+      const timer = setTimeout(() => {
+        ranDuringConnect = !transport.isConnected()
+      }, 20)
+      await transport.connect()
+      clearTimeout(timer)
+      assert.equal(transport.isConnected(), true)
+      assert.equal(ranDuringConnect, true)
     })
-    assert.equal(result.code, 3)
-  })
 
-  it('decodes a multibyte character split across output chunks', async (t) => {
-    // "€" is E2 82 AC; the pause makes the pipe deliver it in two reads.
-    installFakeSsh(t, "printf '\\342\\202'\nsleep 0.1\nprintf '\\254\\n'")
-    const transport = new OpenSshTransport(host)
-    const result = await transport.execShell('true')
-    assert.equal(result.stdout, '€\n')
-  })
-})
+    it('reports the control master failure from stderr', async (t) => {
+      installFakeSsh(t, 'echo "Permission denied (publickey)." >&2\nexit 255')
+      const transport = new OpenSshTransport(host)
+      await assert.rejects(() => transport.connect(), /Permission denied \(publickey\)\./)
+      assert.equal(transport.isConnected(), false)
+    })
+
+    it('survives ssh exiting before it reads stdin', async (t) => {
+      installFakeSsh(t, 'exit 3')
+      const transport = new OpenSshTransport(host)
+      const result = await transport.execShell('cat > /dev/null', {
+        stdin: 'x'.repeat(8 * 1024 * 1024),
+      })
+      assert.equal(result.code, 3)
+    })
+
+    it('decodes a multibyte character split across output chunks', async (t) => {
+      // "€" is E2 82 AC; the pause makes the pipe deliver it in two reads.
+      installFakeSsh(t, "printf '\\342\\202'\nsleep 0.1\nprintf '\\254\\n'")
+      const transport = new OpenSshTransport(host)
+      const result = await transport.execShell('true')
+      assert.equal(result.stdout, '€\n')
+    })
+  },
+)
