@@ -135,10 +135,23 @@ function daemonPids(binDir: string): number[] {
   return pids
 }
 
+/**
+ * Whether `pid` still runs. The `--detach` daemon is orphaned once its parent
+ * returns, so after it is killed only init reaps it, and `kill(pid, 0)` keeps
+ * succeeding on the zombie until then. Not every init reaps promptly (a
+ * container or microVM init can take seconds), so on Linux a zombie is gone.
+ */
 function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
-    return true
+  } catch {
+    return false
+  }
+  if (process.platform !== 'linux') return true
+  try {
+    // `pid (comm) state ...`; comm may itself contain ") ".
+    const stat = readFileSync(`/proc/${String(pid)}/stat`, 'utf8')
+    return stat.charAt(stat.lastIndexOf(')') + 2) !== 'Z'
   } catch {
     return false
   }
