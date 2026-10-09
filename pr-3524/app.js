@@ -59971,7 +59971,7 @@ var init_storage_section = __esm({
 });
 
 // src/renderer/views/settings/mcp-section.ts
-function createMcpSection(overlay, api2, onTrusted, onManagePermissions) {
+function createMcpSection(overlay, api2, onTrusted, onManagePermissions, onHeadingsChanged) {
   let generation = 0;
   function mcpOriginChip(s16) {
     const labels = {
@@ -60197,6 +60197,7 @@ function createMcpSection(overlay, api2, onTrusted, onManagePermissions) {
       );
       listEl.append(row2);
     }
+    onHeadingsChanged();
   }
   async function refreshDeclaredMcpServers() {
     const request = generation;
@@ -72956,6 +72957,7 @@ function createSettingsNavigation(overlay, onVisible) {
       searchInput.focus();
     },
     refreshHeadings: () => {
+      if (searchInput.value.trim()) return;
       renderNavSubheadings(activeSection);
     },
     active: () => activeSection,
@@ -73176,6 +73178,9 @@ function mountSettingsDialog(store2, api2) {
         void lifecycle.show(["permissions"], snapshot).then(() => {
           qsRequired(overlay, "#tool-permissions-fieldset").scrollIntoView({ block: "start" });
         });
+    },
+    () => {
+      nav.refreshHeadings();
     }
   );
   const storage = createStorageSection(overlay, api2, store2, closeSettingsDialog);
