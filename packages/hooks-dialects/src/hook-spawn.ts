@@ -19,10 +19,43 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { hooksDialectsEnvironment } from './environment.ts'
 import { safeJsonStringify } from '@copse/std/safe-json.ts'
+import { signalProcessTree } from '@copse/std/process-tree.ts'
 import { childHookEnv, currentHookDepth, HOOK_DEPTH_ENV } from './hook-depth.ts'
 
 /** Default per-hook timeout. Vendor-specific overrides live in each adapter (decision 13, H4). */
 export const DEFAULT_HOOK_TIMEOUT_MS = 5_000
+
+/**
+ * The longest delay `setTimeout` honours. Node clamps anything larger (or
+ * non-finite) to 1 ms, so a hook declaring `"timeout": 2147484` seconds would be
+ * killed instantly — and a blocking hook killed instantly denies every gated
+ * action. Clamping keeps a huge timeout meaning "effectively never".
+ */
+export const MAX_HOOK_TIMEOUT_MS = 2_147_483_647
+
+/**
+ * The timeout a spawn actually arms: the requested value (or the default),
+ * clamped into `setTimeout`'s range. A non-finite or non-positive value falls
+ * back to {@link DEFAULT_HOOK_TIMEOUT_MS}; the adapters' normalizers already
+ * reject those, so this only guards direct callers.
+ */
+export function effectiveHookTimeoutMs(timeoutMs: number | undefined): number {
+  if (timeoutMs === undefined || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return DEFAULT_HOOK_TIMEOUT_MS
+  }
+  return Math.min(Math.ceil(timeoutMs), MAX_HOOK_TIMEOUT_MS)
+}
+
+/**
+ * The runtime error a dialect reports for a timed-out hook, naming the timeout
+ * this run actually armed (the per-hook value, not the dialect default).
+ */
+export function hookTimeoutMessage(spawn: Pick<HookSpawnResult, 'timeoutMs'>): string {
+  const ms = spawn.timeoutMs
+  return ms % 1000 === 0
+    ? `timed out after ${String(ms / 1000)}s`
+    : `timed out after ${String(ms)}ms`
+}
 
 /** Cap captured stream sizes so a runaway hook can't exhaust memory. */
 const OUTPUT_CAP_BYTES = 1_000_000
@@ -44,6 +77,8 @@ export interface HookSpawnResult {
   exitCode: number | null
   /** True when the process was killed for exceeding its timeout. */
   timedOut: boolean
+  /** The timeout this run armed, in ms, after defaulting and clamping ({@link effectiveHookTimeoutMs}). */
+  timeoutMs: number
   /** True when the process failed to start (spawn error / stdin write error). */
   spawnError: boolean
   /**
@@ -186,6 +221,7 @@ export async function spawnHookProcess(
   // reported back for the spine's payload blob, so the recorded stdin is
   // byte-for-byte what the hook read — not a re-serialization that could drift.
   const stdin = serializeStdin(stdinPayload)
+  const timeoutMs = effectiveHookTimeoutMs(opts.timeoutMs)
 
   let child: ChildProcess
   try {
@@ -200,7 +236,6 @@ export async function spawnHookProcess(
       // promise would otherwise hang a *blocking* hook indefinitely (with the
       // run deadline paused, H4). A wrapper that loses the race is reported as
       // a spawn error — same failure surface as a wrapper throw.
-      const timeoutMs = opts.timeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS
       child = await promiseWithTimeout(
         sandboxRuntime().spawnShell(command, {
           cwd: opts.cwd,
@@ -221,6 +256,10 @@ export async function spawnHookProcess(
         shell: true,
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        // Lead a new process group (POSIX) so a timeout or output-cap kill
+        // reaches the command's descendants, not just the `sh -c` wrapper.
+        // The sandbox spawner already detaches for the same reason.
+        detached: process.platform !== 'win32',
         ...(opts.signal ? { signal: opts.signal } : {}),
       })
     }
@@ -234,6 +273,7 @@ export async function spawnHookProcess(
       stderr: '',
       exitCode: null,
       timedOut: false,
+      timeoutMs,
       spawnError: true,
       sandboxed,
       sandboxViolationCount: 0,
@@ -263,6 +303,7 @@ export async function spawnHookProcess(
         stderr,
         exitCode,
         timedOut,
+        timeoutMs,
         spawnError,
         sandboxed,
         sandboxViolationCount,
@@ -273,14 +314,14 @@ export async function spawnHookProcess(
 
     const timer = setTimeout(() => {
       timedOut = true
-      child.kill('SIGKILL')
+      signalProcessTree(child, 'SIGKILL')
       finish(false)
-    }, opts.timeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS)
+    }, timeoutMs)
 
     child.stdout?.on('data', (chunk: Buffer) => {
       // stdout is the response channel: a runaway response is fatal to the hook.
       if (stdout.length <= OUTPUT_CAP_BYTES) stdout += chunk.toString('utf-8')
-      else child.kill('SIGKILL')
+      else signalProcessTree(child, 'SIGKILL')
     })
     // Overflow only truncates the stderr capture; it never kills the hook,
     // because stderr chatter carries no decision.

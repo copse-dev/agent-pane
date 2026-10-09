@@ -77,6 +77,17 @@ describe('cleanThreadTitle', () => {
     assert.equal(cleanThreadTitle('Sure!\nTitle: Improve thread naming'), 'Improve thread naming')
   })
 
+  it('treats a typographic apostrophe like an ASCII one in preambles', () => {
+    const cases: Array<[string, string | null]> = [
+      ['Here’s the title: Improve thread naming', 'Improve thread naming'],
+      ['Sure, here’s a title: Improve thread naming', 'Improve thread naming'],
+      ['I’ll name it after the bug\nTerminal output clipping', 'Terminal output clipping'],
+      ['Let’s see.\nTerminal output clipping', 'Terminal output clipping'],
+      ['Here’s what I think', null],
+    ]
+    for (const [output, expected] of cases) assert.equal(cleanThreadTitle(output), expected, output)
+  })
+
   it('does not apply the user-text opener heuristics to model titles', () => {
     assert.equal(cleanThreadTitle('Make targets fail on Linux'), 'Make targets fail on Linux')
     assert.equal(cleanThreadTitle('IT asset tracker setup'), 'IT asset tracker setup')

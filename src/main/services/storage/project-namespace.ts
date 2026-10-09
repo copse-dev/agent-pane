@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import {
-  getActiveProjectId,
-  getActiveProjectRoot,
-  getProjectIdForRoot,
-  getProjectRoot,
-} from '../workspace.ts'
+  getThreadExecutionContext,
+  wasThreadContextResolvedAt,
+  type ThreadExecutionContext,
+} from '../thread-execution-context.ts'
+import { getActiveProjectId, getActiveProjectRoot, getProjectRoot } from '../workspace.ts'
 
 /**
  * Per-project directory name for the small feature stores (knowledge, long
@@ -38,38 +38,97 @@ function slugify(text: string): string {
 }
 
 /**
- * Resolve `<baseDir>/<namespace>` for the project at `root`, migrating a
- * path-hashed directory from the old scheme into the id-keyed name the first
- * time it is needed.
+ * Which project a store belongs to: its persisted id (the directory name) and
+ * its root (used for the no-project fallback and the one-time legacy
+ * migration). The two always travel together — resolving an id from one
+ * source and a root from another is how one project's legacy directory could
+ * be migrated under another project's id.
+ */
+export interface ProjectStoreScope {
+  /** Persisted project id, or null when there is none to key by (headless runs). */
+  readonly projectId: string | null
+  /** That project's root directory, or null when no project is open. */
+  readonly root: string | null
+}
+
+/**
+ * Project ids this process has seen in the persisted project list. Once a
+ * project is known to be real it stays keyed by its id, so a turn still running
+ * when the user removes its project keeps writing where it started rather than
+ * switching mid-turn to the root-hashed directory. A turn's context was itself
+ * resolved against that list, which covers a removal before the turn's first
+ * store access.
+ */
+const persistedProjectRoots = new Map<string, Set<string>>()
+
+function rememberPersistedProjectRoot(projectId: string, root: string): void {
+  const roots = persistedProjectRoots.get(projectId) ?? new Set<string>()
+  roots.add(root)
+  persistedProjectRoots.set(projectId, roots)
+}
+
+/**
+ * The scope for code running on behalf of a thread: that thread's project.
  *
- * With no project open — a headless run, or before the first folder is opened —
- * both schemes fall back to `shared`, so those callers are unaffected.
+ * A headless run synthesises a project id that is never persisted (and differs
+ * on every run), so only an id the project list knows — now, or earlier in this
+ * process — is used as the key. Otherwise the scope is root-only, and resolves
+ * to the same legacy directory those profiles have always used.
+ */
+export function threadProjectStoreScope(
+  context: Pick<ThreadExecutionContext, 'projectId' | 'projectRoot'>,
+): ProjectStoreScope {
+  const currentRoot = getProjectRoot(context.projectId)
+  if (currentRoot !== null) rememberPersistedProjectRoot(context.projectId, currentRoot)
+  if (wasThreadContextResolvedAt(context.projectId, context.projectRoot)) {
+    // Context resolution already verified this id/root pair while the project
+    // was persisted there. Keep that pairing after the project is removed or
+    // relocated, so first-use migration can still adopt the legacy path-hash
+    // directory of the root this turn started in.
+    rememberPersistedProjectRoot(context.projectId, context.projectRoot)
+  }
+  const persisted = persistedProjectRoots.has(context.projectId)
+  return { projectId: persisted ? context.projectId : null, root: context.projectRoot }
+}
+
+/** The scope of an explicitly named project. */
+export function projectStoreScopeFor(projectId: string): ProjectStoreScope {
+  return { projectId, root: getProjectRoot(projectId) }
+}
+
+/**
+ * The project whose stores the current call belongs to.
  *
- * `root` may be passed explicitly by callers that already resolved it for a
- * specific project rather than the active one; the namespace is then keyed by
- * that project's id, never the active project's, so a background run in one
- * project can neither read another's store nor migrate its legacy directory.
+ * Inside an agent turn that is the turn's own project, not the active one: runs
+ * keep going after the user switches projects, and a background thread must
+ * not read or write the newly active project's knowledge, roadmap or long
+ * tasks. With no turn in scope (IPC from the renderer's panes, which show the
+ * active project) it falls back to the active project.
+ */
+export function currentProjectStoreScope(): ProjectStoreScope {
+  const context = getThreadExecutionContext()
+  if (context) return threadProjectStoreScope(context)
+  return { projectId: getActiveProjectId(), root: getActiveProjectRoot() }
+}
+
+/**
+ * Resolve `<baseDir>/<namespace>` for a project, migrating a path-hashed
+ * directory from the old scheme into the id-keyed name the first time it is
+ * needed.
+ *
+ * With no project open — before the first folder is opened — both schemes fall
+ * back to `shared`, so those callers are unaffected.
+ *
+ * `scope` defaults to {@link currentProjectStoreScope}; callers that already
+ * know which project they act for pass it explicitly.
  */
 export function projectStoreNamespaceDir(
   baseDir: string,
-  root: string | null = getActiveProjectRoot(),
+  scope: ProjectStoreScope = currentProjectStoreScope(),
 ): string {
+  const { projectId, root } = scope
   if (!root) return join(baseDir, 'shared')
 
-  // Key by the project that owns `root`. Two projects may share one folder,
-  // so the active project wins for its own persisted path; otherwise look the
-  // root up, since a `runWithWorkspaceRoot` scope can make another project's
-  // root "active". The active id is the last resort for an active root that has
-  // no persisted project entry.
-  const activeId = getActiveProjectId()
-  const activePath = activeId === null ? null : getProjectRoot(activeId)
-  const projectId =
-    activeId !== null && activePath === root
-      ? activeId
-      : (getProjectIdForRoot(root) ??
-        (activeId !== null && activePath === null && root === getActiveProjectRoot()
-          ? activeId
-          : null))
   // No id to key by (headless runs scope by workspace root alone): keep the
   // legacy name so those profiles neither migrate nor lose their data.
   if (!projectId) return join(baseDir, legacyPathNamespace(root))
@@ -78,7 +137,12 @@ export function projectStoreNamespaceDir(
   if (existsSync(target)) return target
 
   const legacy = join(baseDir, legacyPathNamespace(root))
-  if (legacy !== target && existsSync(legacy)) {
+  // Only adopt the legacy directory when `root` is this project's own persisted
+  // path. A root that belongs to some other project (or to none) must never
+  // have its data moved under this id.
+  const rootBelongsToProject =
+    getProjectRoot(projectId) === root || persistedProjectRoots.get(projectId)?.has(root) === true
+  if (legacy !== target && existsSync(legacy) && rootBelongsToProject) {
     try {
       renameSync(legacy, target)
     } catch {

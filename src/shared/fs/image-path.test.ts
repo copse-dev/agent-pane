@@ -26,4 +26,18 @@ describe('image-path', () => {
     assert.equal(isRasterImagePath('icon.svg'), false)
     assert.equal(isRasterImagePath('README.md'), false)
   })
+
+  it('only maps real image extensions', () => {
+    const cases: Array<[string, string | null]> = [
+      ['notes.constructor', null],
+      ['notes.toString', null],
+      ['a.__proto__', null],
+      ['png', null],
+      ['dir/png', null],
+      ['dir.png/README', null],
+      ['.png', 'image/png'],
+      ['C:\\shots\\a.PNG', 'image/png'],
+    ]
+    for (const [path, expected] of cases) assert.equal(imageMimeType(path), expected, path)
+  })
 })

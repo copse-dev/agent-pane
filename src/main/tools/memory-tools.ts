@@ -8,7 +8,10 @@ import {
   updateKnowledgeNote,
   type KnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
-import { turnIngestedExternalContent } from '../services/security/turn-taint.ts'
+import {
+  markTurnExternalIngestion,
+  turnIngestedExternalContent,
+} from '../services/security/turn-taint.ts'
 
 /**
  * Experimental OKF memories feature. `remember`/`recall` persist durable project
@@ -153,14 +156,14 @@ export const rememberTool = defineTool({
       )
     }
     // Recording only — a tainted turn still saves; the provenance rides along.
-    // A clean-turn rewrite clears the flag: the latest body is what recall
-    // replays, and it was authored without external content in context.
     const tainted = turnIngestedExternalContent()
     let note: KnowledgeNote
     if (existing) {
-      const fields = Object.fromEntries(
-        Object.entries(existing.fields).filter(([key]) => key !== EXTERNAL_CONTEXT_FIELD),
-      )
+      // The marker is sticky across agent rewrites. A "clean" turn can still
+      // carry the old text forward — it may have recalled the memory, or read
+      // its file directly — so only a user edit in the Memories pane, which is
+      // a review, clears it (`memories:update`).
+      const fields = { ...existing.fields }
       if (tainted) fields[EXTERNAL_CONTEXT_FIELD] = 'true'
       // Upgrade retained list fields before changing their encoding marker.
       for (const field of [SOURCES_FIELD, APPLIES_TO_FIELD]) {
@@ -191,6 +194,111 @@ export const rememberTool = defineTool({
     return `Saved memory "${note.title}" (id ${note.id}, revision ${String(noteRevision(note))}) to ${note.file}`
   },
 })
+
+/**
+ * Most characters of memory text one unfiltered `recall` page spends. Paging
+ * bounds how many memories a page holds, not how large they are, so a few
+ * long notes could still crowd the context window; a page stops before this
+ * and the cursor resumes at the first memory left out. A query is how to read
+ * a memory in full, so query pages are not size-capped.
+ */
+export const RECALL_ALL_MAX_CHARS = 20_000
+
+/** Separator `recall` places between the header, each memory and the footer. */
+const RECALL_SEPARATOR = '\n\n'
+
+/**
+ * Characters a page keeps back for its header (`Found N memories (showing
+ * a–b):`), its next-cursor footer and the separators around them, so the whole
+ * page — not just its memories — stays within {@link RECALL_ALL_MAX_CHARS}.
+ * Both lines are fixed text plus at most three counts; even 16-digit counts
+ * need under 150 characters.
+ */
+const RECALL_PAGE_FRAMING_RESERVE = 200
+
+/**
+ * Longest title and longest combined list (tags, sources, applies-to) a
+ * clipped memory keeps, so its heading has a fixed ceiling and the body — the
+ * only part trimmed to fit — always has the rest of the budget.
+ */
+const CLIPPED_TITLE_MAX_CHARS = 200
+const CLIPPED_LIST_MAX_CHARS = 200
+const CLIPPED_UPDATED_AT_MAX_CHARS = 64
+
+/** Keep items in order while their joined length fits, marking any dropped with `…`. */
+function clipList(items: readonly string[]): string[] {
+  const kept: string[] = []
+  let used = 0
+  for (const item of items) {
+    const cost = item.length + (kept.length > 0 ? 2 : 0)
+    if (used + cost > CLIPPED_LIST_MAX_CHARS) {
+      if (kept.length === 0) kept.push(`${item.slice(0, CLIPPED_LIST_MAX_CHARS)}…`)
+      else kept.push('…')
+      return kept
+    }
+    kept.push(item)
+    used += cost
+  }
+  return kept
+}
+
+/**
+ * A memory cut down to `maxChars`. The title and every list are capped and only
+ * the body is trimmed, so the external-content caution — which `formatMemory`
+ * places after the heading — always survives, however long the rest is.
+ */
+function clipMemory(note: KnowledgeNote, maxChars: number): string {
+  const fields: Record<string, string> = {
+    ...note.fields,
+    [MEMORY_SCHEMA_FIELD]: MEMORY_SCHEMA_VERSION,
+    [SOURCES_FIELD]: joinList(clipList(noteList(note, SOURCES_FIELD))),
+    [APPLIES_TO_FIELD]: joinList(clipList(noteList(note, APPLIES_TO_FIELD))),
+  }
+  const clipped: KnowledgeNote = {
+    ...note,
+    title:
+      note.title.length > CLIPPED_TITLE_MAX_CHARS
+        ? `${note.title.slice(0, CLIPPED_TITLE_MAX_CHARS)}…`
+        : note.title,
+    tags: clipList(note.tags),
+    // A timestamp, but read back from a file a person may have edited.
+    updatedAt: note.updatedAt.slice(0, CLIPPED_UPDATED_AT_MAX_CHARS),
+    id: note.id.slice(0, CLIPPED_LIST_MAX_CHARS),
+    fields,
+  }
+  const notice = `${RECALL_SEPARATOR}(Memory truncated at ${RECALL_ALL_MAX_CHARS.toLocaleString('en-GB')} characters; call recall with a query naming it to read it in full.)`
+  const header = formatMemory({ ...clipped, body: '' })
+  // The notice counts against the budget too, so the clipped memory fits it whole.
+  const body = note.body.slice(0, Math.max(0, maxChars - header.length - notice.length))
+  return `${formatMemory({ ...clipped, body })}${notice}`
+}
+
+interface ShownMemory {
+  readonly note: KnowledgeNote
+  readonly text: string
+}
+
+/**
+ * The memories of one unfiltered page that fit the character cap, in order. A
+ * first memory that alone is over the cap is clipped to it rather than
+ * returned whole, so one oversized note cannot defeat the cap.
+ */
+function capPage(page: readonly KnowledgeNote[]): ShownMemory[] {
+  const budget = RECALL_ALL_MAX_CHARS - RECALL_PAGE_FRAMING_RESERVE
+  const shown: ShownMemory[] = []
+  let chars = 0
+  for (const note of page) {
+    const text = formatMemory(note)
+    const cost = (shown.length > 0 ? RECALL_SEPARATOR.length : 0) + text.length
+    if (chars + cost > budget) {
+      if (shown.length === 0) shown.push({ note, text: clipMemory(note, budget) })
+      break
+    }
+    shown.push({ note, text })
+    chars += cost
+  }
+  return shown
+}
 
 export const recallTool = defineTool({
   name: 'recall',
@@ -228,12 +336,19 @@ export const recallTool = defineTool({
     }
     const pageSize = Math.min(limit ?? DEFAULT_RECALL_LIMIT, MAX_RECALL_LIMIT)
     const page = memories.slice(offset, offset + pageSize)
+    const shown = trimmed ? page.map((note) => ({ note, text: formatMemory(note) })) : capPage(page)
+    // Replaying a memory saved with external content in context puts that
+    // content back in this turn's context, so the turn is tainted exactly as
+    // if it had fetched it: anything it remembers next carries the marker.
+    if (shown.some(({ note }) => savedFromExternalTurn(note))) markTurnExternalIngestion()
     const total = memories.length
     const header = `Found ${String(total)} ${total === 1 ? 'memory' : 'memories'}${
-      total > page.length ? ` (showing ${String(offset + 1)}–${String(offset + page.length)})` : ''
+      total > shown.length
+        ? ` (showing ${String(offset + 1)}–${String(offset + shown.length)})`
+        : ''
     }:`
-    const next = offset + page.length
+    const next = offset + shown.length
     const footer = next < total ? [`More memories available. Next cursor: m:${String(next)}`] : []
-    return [header, ...page.map(formatMemory), ...footer].join('\n\n')
+    return [header, ...shown.map(({ text }) => text), ...footer].join(RECALL_SEPARATOR)
   },
 })

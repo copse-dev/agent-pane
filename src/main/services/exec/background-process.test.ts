@@ -20,6 +20,7 @@ import {
   stopBackgroundProcessesForThread,
   stopAllBackgroundProcesses,
 } from './background-process.ts'
+import { hasLiveWorktreeWriter } from '../worktree-writers.ts'
 import {
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
@@ -297,6 +298,33 @@ describe('background process manager', () => {
       [second.id],
     )
     stopBackgroundProcess(second.id, OTHER_OWNER)
+  })
+
+  it('holds a worktree writer lease on its cwd until the task exits (#1700)', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'copse-background-writer-'))
+    try {
+      const running = await startBackgroundProcess({
+        command: 'sleep 30',
+        cwd,
+        waitMs: 10,
+        owner: OWNER,
+      })
+      assert.equal(running.running, true)
+      assert.equal(hasLiveWorktreeWriter(cwd), true, 'a running task may write at any time')
+      await stopBackgroundProcessesForThread(OWNER)
+      assert.equal(hasLiveWorktreeWriter(cwd), false, 'the lease ends with the child')
+
+      const finished = await startBackgroundProcess({
+        command: 'exit 0',
+        cwd,
+        waitMs: 4000,
+        owner: OWNER,
+      })
+      assert.equal(finished.running, false)
+      assert.equal(hasLiveWorktreeWriter(cwd), false, 'a task that exits on its own releases too')
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
   })
 })
 
