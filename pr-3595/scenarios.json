@@ -196,6 +196,14 @@
     "label": "Full thread view for a model below the concise gate"
   },
   {
+    "id": "openai-host-pr",
+    "label": "OpenAI host PR creation result"
+  },
+  {
+    "id": "openai-cancellation-recovery",
+    "label": "OpenAI confirmed cancellation with interrupted recovery"
+  },
+  {
     "id": "concise-thread-working",
     "label": "Concise thread view while a capable model works"
   },
