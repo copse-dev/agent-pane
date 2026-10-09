@@ -10,6 +10,11 @@ import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import type { GhPrDetails } from './types/git.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
+import {
+  browserApprovalDetails,
+  providerApprovalDetails,
+  webApprovalDetails,
+} from './approval-copy.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
 const SIDE_CHATS_MAIN_ID = '7b3e9a10-5c2d-4f6e-8a41-0d9c2b7e5f13'
@@ -106,6 +111,10 @@ export interface DemoScenario {
     bodyFooter?: string
     type: string
     allowRemember?: boolean
+    rememberLabel?: string
+    approveLabel?: string
+    collapseDetails?: boolean
+    approveOnceLabel?: string
   }[]
   /** Seed `ask_user` questions so a browser spec can answer them from the Activity view. */
   askUserRequests?: readonly {
@@ -772,6 +781,30 @@ const SIDE_CHATS_THREADS: Thread[] = [
     updatedAt: FIXED_TIME + 1_000,
   },
 ]
+
+function approvalRiskScenario(
+  id: string,
+  request: NonNullable<DemoScenario['approvalRequests']>[number],
+): DemoScenario {
+  return {
+    id,
+    label: request.title,
+    project: project(`demo-${id}-project`),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: 'Review requested access',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    approvalRequests: [request],
+  }
+}
 
 export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   // The first scenario remains the marketing landing walkthrough.
@@ -3105,4 +3138,38 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
   ...SITE_TOUR_SCENARIOS,
+  approvalRiskScenario('approval-web-url', {
+    id: 'web-url',
+    title: 'Allow web origin?',
+    type: 'web',
+    ...webApprovalDetails(
+      'https://example.com:443',
+      'https://example.com/docs?topic=approvals',
+      true,
+    ),
+    allowRemember: true,
+    rememberLabel: 'Always allow https://example.com:443',
+    approveLabel: 'Allow request',
+  }),
+  approvalRiskScenario('approval-browser-url', {
+    id: 'browser-url',
+    title: 'Allow browser navigation?',
+    type: 'mcp',
+    ...browserApprovalDetails(
+      'https://example.com:443',
+      'https://example.com/docs?topic=approvals',
+      true,
+    ),
+    allowRemember: true,
+    rememberLabel: 'Always allow https://example.com:443',
+    approveLabel: 'Allow navigation',
+  }),
+  approvalRiskScenario('approval-provider-url', {
+    id: 'provider-url',
+    title: 'Allow model provider host?',
+    type: 'web',
+    ...providerApprovalDetails('api.example.com', 'https://api.example.com/v1'),
+    allowRemember: false,
+    approveLabel: 'Always allow host',
+  }),
 ]

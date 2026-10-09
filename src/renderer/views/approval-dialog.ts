@@ -284,6 +284,7 @@ export function mountApprovalDialog(
     type: string
     allowRemember: boolean | undefined
     rememberLabel: string | undefined
+    approveLabel: string | undefined
     collapseDetails: boolean | undefined
     approveOnceLabel: string | undefined
     showWhileSettingsOpen: boolean | undefined
@@ -513,7 +514,8 @@ export function mountApprovalDialog(
       }),
     )
 
-    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : 'Approve'
+    approveButton.textContent =
+      count > 1 ? `Approve all (${String(count)})` : (soloRequest()?.approveLabel ?? 'Approve')
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : 'Reject'
 
     // The narrower answer is offered alongside the details it refers to: with the
@@ -753,6 +755,7 @@ export function mountApprovalDialog(
       type,
       allowRemember,
       rememberLabel,
+      approveLabel,
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
@@ -771,6 +774,7 @@ export function mountApprovalDialog(
         type,
         allowRemember,
         rememberLabel,
+        approveLabel,
         collapseDetails,
         approveOnceLabel,
         showWhileSettingsOpen,

@@ -42,14 +42,14 @@ describe('turn-tree shell replay approval', () => {
     await expect(dialog.$('.approval-heading')).toHaveText('Run shell command?')
     // Why it is asking renders as a real list of sentence-case reasons, not a
     // hand-drawn "•" line with a lowercase fragment.
-    const footer = dialog.$('.approval-footer')
-    await expect(footer).toHaveText(expect.stringContaining('Why this needs approval:'))
-    const reasons = await footer.$$('ul.approval-reasons > li').map((item) => item.getText())
+    const advice = dialog.$('.approval-advice')
+    await expect(advice).toHaveText(expect.stringContaining('Why this needs approval:'))
+    const reasons = await advice.$$('ul.approval-reasons > li').map((item) => item.getText())
     assert.deepEqual(reasons, ['Auto-run for sandbox commands is disabled in Settings'])
-    const footerText = await browser.execute(
-      () => document.querySelector('#approval-dialog .approval-footer')?.textContent ?? '',
+    const adviceText = await browser.execute(
+      () => document.querySelector('#approval-dialog .approval-advice')?.textContent ?? '',
     )
-    assert.doesNotMatch(footerText, /\u2022/)
+    assert.doesNotMatch(adviceText, /\u2022/)
     await saveElementScreenshot('#approval-dialog', 'approval-reasons-list.png')
 
     const leaseOption = dialog.$('.approval-turn-tree')
