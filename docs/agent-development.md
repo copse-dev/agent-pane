@@ -130,7 +130,9 @@ refused if Apple container did not apply every hardening flag it was asked for. 
 engine enforces, and how, is in
 [`thread-in-container.md`](plans/thread-in-container.md#apple-container-as-the-host-engine).
 The opt-in end-to-end test runs on Apple container with
-`COPSE_THREAD_CONTAINER_E2E=apple` (and on Docker with `=1`).
+`COPSE_THREAD_CONTAINER_E2E=apple` (and on Docker with `=1`). The Docker path runs in CI from the
+advisory `thread-container.yml` workflow (PRs touching the runtime, nightly, manual dispatch); it
+is not part of the required `CI Passed` gate yet.
 
 The shared CI runner image can also run on Apple container without Compose. See
 [`ci-runners/README.md`](../ci-runners/README.md#apple-container--apple-silicon-macs)
