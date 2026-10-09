@@ -1,5 +1,7 @@
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
+import { githubShellActionAdvice } from './github-approval-copy.ts'
 import { PRIOR_DENIAL_MARKER } from './denied-operations.ts'
 import {
   analyzeShellCommand,
@@ -74,6 +76,9 @@ const GITHUB_WRITE_PROMPT_TITLES: Record<string, string> = {
 export interface GithubWritePrompt {
   title: string
   body: string
+  bodyAdvice: string
+  bodyFooter: string
+  approveLabel: string
 }
 
 /**
@@ -84,7 +89,32 @@ export interface GithubWritePrompt {
  */
 export function formatGithubWritePrompt(toolName: string, args: unknown): GithubWritePrompt {
   const title = GITHUB_WRITE_PROMPT_TITLES[toolName] ?? `GitHub action: ${toolName}`
-  return { title, body: formatGithubWritePromptBody(toolName, args) }
+  const effects: Record<string, string> = {
+    gh_pr_create:
+      'This publishes the pull request title, body, and branch changes to people with access to the GitHub repository.',
+    gh_pr_rerun_failed_ci:
+      'This restarts failed GitHub workflow runs. They may execute repository code and use CI resources or secrets configured for those workflows.',
+    gh_pr_approve:
+      'This submits an approving review using your GitHub account. It may satisfy a required approval for merging.',
+    gh_pr_mark_ready:
+      'This changes a draft pull request to ready for review and may notify reviewers or trigger workflows.',
+    gh_pr_enable_auto_merge:
+      'This allows GitHub to merge the pull request when its requirements are met, using the repository’s preferred merge strategy.',
+  }
+  return {
+    title,
+    approveLabel:
+      {
+        gh_pr_create: 'Publish pull request',
+        gh_pr_rerun_failed_ci: 'Re-run CI',
+        gh_pr_approve: 'Submit approving review',
+        gh_pr_mark_ready: 'Mark ready for review',
+        gh_pr_enable_auto_merge: 'Enable auto-merge',
+      }[toolName] ?? 'Run GitHub action',
+    body: formatGithubWritePromptBody(toolName, args),
+    bodyAdvice: effects[toolName] ?? 'This changes state on GitHub using your account.',
+    bodyFooter: 'Approval covers this GitHub action once.',
+  }
 }
 
 function nonEmptyStringArg(args: Record<string, unknown>, key: string): string | null {
@@ -105,8 +135,16 @@ function formatGithubWritePromptBody(toolName: string, args: unknown): string {
     const owner = nonEmptyStringArg(args, 'owner')
     const repo = nonEmptyStringArg(args, 'repo')
     const head = nonEmptyStringArg(args, 'head')
-    if (owner && repo) return `${owner}/${repo}: “${title}”`
-    return head ? `Open “${title}” from ${head}.` : `Push the current branch, then open “${title}”.`
+    const base = nonEmptyStringArg(args, 'base')
+    const body = nonEmptyStringArg(args, 'body')
+    return [
+      `Repository: ${owner ?? '(current owner)'}/${repo ?? '(current repository)'}`,
+      `Title: ${title}`,
+      `Head: ${head ?? 'current branch (will be pushed)'}`,
+      `Base: ${base ?? 'repository default branch'}`,
+      `Draft: ${args['draft'] === true ? 'yes' : 'no'}`,
+      `Body:\n${body ?? '(empty)'}`,
+    ].join('\n')
   }
   const number = args['number']
   if (typeof number !== 'number' || !Number.isInteger(number) || number <= 0) {
@@ -334,10 +372,25 @@ function reasonList(reasons: readonly string[]): string {
     .join('\n')
 }
 
-export function formatShellPromptParts(command: string, reasons: string[]): ShellPromptParts {
+export function formatShellPromptParts(
+  command: string,
+  reasons: string[],
+  sandboxed = true,
+): ShellPromptParts {
+  const action = githubShellActionAdvice(command)
   return {
     command,
-    ...(reasons.length ? { bodyFooter: `Why this needs approval:\n${reasonList(reasons)}` } : {}),
+    bodyAdvice: [
+      sandboxed
+        ? 'This runs inside the project sandbox. It can still change or delete project files.'
+        : `The project sandbox is unavailable for this command. ${UNSANDBOXED_ACCESS_WARNING}`,
+      action,
+      reasons.length ? `Why this needs approval:\n${reasonList(reasons)}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    bodyFooter:
+      'Approval covers this command. Any checked retry option also grants the stated bounded retries.',
   }
 }
 
@@ -419,6 +472,7 @@ function buildOutsideSandboxAdvice(options: {
     `${options.leadIn}\n${reasonList(scopeReasons.length ? scopeReasons : NEEDS_OUTSIDE_ACCESS)}`,
   )
   if (options.trailing) sections.push(options.trailing)
+  sections.push(UNSANDBOXED_ACCESS_WARNING)
   return sections.join('\n\n')
 }
 
@@ -436,6 +490,7 @@ export function formatExternalSandboxPromptParts(
     bodyAdvice: buildOutsideSandboxAdvice({
       leadIn: 'The project sandbox would block this command:',
       reasons,
+      trailing: githubShellActionAdvice(command) ?? '',
     }),
     bodyFooter: 'Allow running it once outside the sandbox?',
   }
@@ -456,8 +511,12 @@ export function formatExpectedSandboxBlockPromptParts(
     bodyAdvice: buildOutsideSandboxAdvice({
       leadIn: 'The agent expects the project sandbox to block this command:',
       reasons,
-      trailing:
+      trailing: [
         'It is asking to run outside the sandbox up front, rather than letting it fail inside first.',
+        githubShellActionAdvice(command),
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
     }),
     bodyFooter:
       "This is the agent's expectation, not a confirmed sandbox block. " +
@@ -512,7 +571,9 @@ export function formatInstallPromptParts(
     : 'Package scanning (Socket Firewall) is off in Settings, so packages run unscanned.'
   return {
     command: command.trim(),
-    bodyAdvice: `This installs packages. ${access}\n\n${scan}`,
+    bodyAdvice:
+      `This installs packages. ${access}\n\n${scan}` +
+      (opts.outsideSandbox ? `\n\n${UNSANDBOXED_ACCESS_WARNING}` : ''),
     bodyFooter: 'Allow this install?',
   }
 }
@@ -534,7 +595,9 @@ export function formatEphemeralRunnerPromptParts(
     : 'Package scanning (Socket Firewall) is off in Settings, so packages run unscanned.'
   return {
     command: command.trim(),
-    bodyAdvice: `This may download and run code from the network. ${access}\n\n${scan}`,
+    bodyAdvice:
+      `This may download and run code from the network. ${access}\n\n${scan}` +
+      (opts.outsideSandbox ? `\n\n${UNSANDBOXED_ACCESS_WARNING}` : ''),
     bodyFooter: 'Allow this command?',
   }
 }
@@ -778,16 +841,4 @@ export function fetchUrlFromArgs(args: unknown): string | null {
   if (typeof args !== 'object' || args === null || !('url' in args)) return null
   const url = (args as { url?: unknown }).url
   return typeof url === 'string' ? url : null
-}
-
-export function formatWebPromptBody(origin: string, detail: string): string {
-  return [
-    `The agent wants to access a web origin that is not in the allowlist:`,
-    '',
-    origin,
-    '',
-    detail,
-    '',
-    'Approve once, or check "Always allow" to add this origin to Settings.',
-  ].join('\n')
 }

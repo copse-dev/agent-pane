@@ -72,7 +72,11 @@ describe('GitHub write approval', () => {
     await expect(dialog.$('.approval-heading')).toHaveText('Open pull request on GitHub?')
 
     const body = await dialog.$('.approval-body').getText()
-    expect(body).toBe('Push the current branch, then open “Fix the parser”.')
+    expect(body).toContain('Title: Fix the parser')
+    expect(body).toContain('Head: current branch (will be pushed)')
+    expect(body).toContain('Base: repository default branch')
+    await expect(dialog.$('.approval-advice')).toHaveText(expect.stringContaining('publishes'))
+    await expect(dialog.$('.approval-approve')).toHaveText('Publish pull request')
     expect(body).not.toContain('gh_pr_create')
 
     await saveElementScreenshot('#approval-dialog', 'github-write-approval-create-dialog.png')
