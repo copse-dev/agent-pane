@@ -997,6 +997,29 @@ test('removeProject switches to another project with its connection when the act
   assert.deepEqual(workspaceCalls, [{ path: '/b', sshHost: 'remote-b' }])
 })
 
+test('removeProject does not re-cache the removed active project while switching away', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  const api = makeApi({
+    loadProjectThreads: async (projectId) => (projectId === 'b' ? [thread('t-b')] : []),
+  })
+
+  await removeProject(store, api, 'a')
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+
+  assert.deepEqual(getSidebarThreads(store, 'a'), [])
+})
+
 test('removeProject clears the workspace when the last project is removed', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({

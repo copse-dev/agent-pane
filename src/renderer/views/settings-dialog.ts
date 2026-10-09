@@ -1615,16 +1615,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="containerRunsEnabled" />
-                Let a thread run unattended inside a disposable Docker container
+                Let a thread run unattended inside a disposable container
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
                 snapshot of the thread's checkout with no prompts and brings its commits back for
-                you to apply. Its network reaches only its model's origin, plus, when the run
-                installs dependencies (on by default, per run), the npm registry, GitHub and
-                Electron's download hosts. Needs Docker; the first run builds the worker image. A
-                run carries one credential: the model's API key, or, if you opt in per run, your
-                Codex or Gemini sign-in copied into the container.
+                you to apply. Built-in models infer on the desktop; their keys and sign-in tokens stay there. When the run
+                installs dependencies (on by default, per run), it can reach the npm registry, GitHub and
+                Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
+                External coding agents run in the container with their selected API key, or, if you opt in
+                per run, your Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 
@@ -3676,6 +3676,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     input.dataset['pluginId'] = pluginId
     input.dataset['settingKey'] = field.id
 
+    // What an emptied number field reverts to: the last value it persisted.
+    let lastNumberValue = input.value
     // Persist on change so the manifest schema is the source of truth — no
     // Save-button plumbing needed, mirroring the MCP per-server toggle.
     input.addEventListener('change', () => {
@@ -3686,6 +3688,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         }
         value = input.checked
       } else if (field.kind === 'number') {
+        // An emptied number field is not 0 (`Number('')`): put the stored value back.
+        if (input.value.trim() === '' || !Number.isFinite(Number(input.value))) {
+          input.value = lastNumberValue
+          return
+        }
+        lastNumberValue = input.value
         value = Number(input.value)
       }
       void api.plugins.setSetting(pluginId, field.id, value).catch(() => {
@@ -4965,7 +4973,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : DEFAULT_THEME_PREFERENCE
       // `theme` is the concrete value panes render; `system` resolves against the OS.
       const theme = resolveTheme(themePreference)
-      const fontSize = parseInt(formDataString(data, 'fontSize'), 10)
+      // An emptied field is not a size; keep the current one rather than send NaN.
+      const fontSizeRaw = parseInt(formDataString(data, 'fontSize'), 10)
+      const fontSize = Number.isFinite(fontSizeRaw) ? fontSizeRaw : store.getState().fontSize
       const uiScaleField = data.get('uiScale')
       const uiScaleRaw = typeof uiScaleField === 'string' ? parseFloat(uiScaleField) : Number.NaN
       const uiScale = Number.isFinite(uiScaleRaw)

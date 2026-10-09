@@ -24,9 +24,11 @@ import { HOST_LOCAL_ALIAS } from './egress-rules.ts'
 export function buildGuestProvider(
   description: ProviderDescription,
   apiKey: string | null,
+  fetch?: typeof globalThis.fetch,
 ): LLMProvider {
   return buildProviderFromDescription(description, {
     apiKey,
+    ...(fetch ? { fetch } : {}),
     approvedHosts: [new URL(providerEndpointUrl(description)).hostname],
     hostLocalAlias: HOST_LOCAL_ALIAS,
   })

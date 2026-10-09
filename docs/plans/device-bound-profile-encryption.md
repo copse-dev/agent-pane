@@ -403,7 +403,7 @@ separate explicit suite; mock tests must not count as enclave validation.
 
 **Visual:** focused WDIO Electron specs for locked status, unlock cancellation,
 missing-device recovery, migration results and enrolled-device management, with
-DOM assertions and screenshots. Follow `.cursor/skills/screenshot-validate/SKILL.md`
+DOM assertions and screenshots. Follow `.agents/skills/screenshot-validate/SKILL.md`
 when implementing these screens. Native macOS Touch ID UI requires on-machine
 validation alongside those screenshots; synthetic success must never bypass a
 production authorization boundary.

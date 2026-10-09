@@ -1,7 +1,8 @@
 import { BrowserWindow } from 'electron'
-import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { htmlDataUrl } from '@shared/canvas/artefact.ts'
+
+const EXPLAINER_PREVIEW_PARTITION = 'explainer-preview'
 
 /** The shared player owns the window; generated drawing code runs in its bounded worker. */
 export async function captureExplainerFrames(
@@ -19,7 +20,10 @@ export async function captureExplainerFrames(
       nodeIntegration: false,
       offscreen: true,
       backgroundThrottling: false,
-      partition: `explainer-preview-${randomUUID()}`,
+      // One in-memory partition for every capture: Electron never frees a
+      // session, so a fresh partition per capture leaked one per preview.
+      // Captures load opaque data: URLs, which cannot share storage anyway.
+      partition: EXPLAINER_PREVIEW_PARTITION,
     },
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))

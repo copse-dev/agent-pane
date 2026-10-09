@@ -626,11 +626,16 @@ export interface ApiClient {
       to: string,
     ) => Promise<import('@shared/types').ModelSelectionEvent>
     delete: (projectId: string, threadId: string) => Promise<void>
-    /** Remove a chat's worktree and archive it; discard requires user confirmation. */
+    /**
+     * Remove a chat's worktree and archive it. Discarding files requires the
+     * fingerprint the user confirmed; stopping a live agent, terminals and
+     * background processes requires `stopProcesses`, set only after the user agreed.
+     */
     archive: (
       projectId: string,
       threadId: string,
       confirmation: string | null,
+      stopProcesses: boolean,
     ) => Promise<import('@shared/threads/archive-thread.ts').ThreadArchiveResult>
     /**
      * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,
@@ -1467,8 +1472,18 @@ export interface ApiClient {
   }
 }
 
+/**
+ * Local, synchronous file helpers from the preload — not IPC, so not part of
+ * `ApiClient`'s channel protocol. Absent outside Electron (browser tier, demo).
+ */
+export type FilePathBridge = {
+  /** The on-disk path of a dropped or picked `File`; '' when it has none. */
+  pathForFile: (file: File) => string
+}
+
 declare global {
   interface Window {
     api: ApiClient
+    copseFiles?: FilePathBridge
   }
 }
