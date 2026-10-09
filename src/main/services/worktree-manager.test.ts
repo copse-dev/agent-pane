@@ -49,6 +49,7 @@ import {
   retireThreadWorktree,
   sameWorktreePath,
   ThreadWorktreeDetachedError,
+  ThreadWorktreeOnBaseBranchError,
   validateThreadWorktree,
   validateThreadWorktreeRecovery,
   type DeletedThreadWorktreeResult,
@@ -1053,6 +1054,60 @@ describe('worktree manager', () => {
     })
     assert.equal(validated.branch, 'feat/renamed-in-worktree')
     assert.equal(validated.root, worktree.path)
+  })
+
+  it('rejects a worktree that was checked out onto its base branch (#1882)', async () => {
+    const { repo } = await setup()
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      prompt: 'Checkout onto base inside worktree',
+      baseBranch: 'main',
+    })
+
+    // How it happens. While the project checkout still holds `main`, Git
+    // refuses to check it out a second time in the linked worktree, so an
+    // agent running `git checkout main` there gets a hard failure...
+    assert.throws(
+      () => git(worktree.path, ['checkout', '-q', 'main']),
+      /already (checked out|used by worktree)/,
+    )
+    // ...but once the user has moved the project checkout to another branch,
+    // the same command succeeds and the thread worktree lands on its base.
+    git(repo, ['checkout', '-q', '-b', 'user/elsewhere'])
+    git(worktree.path, ['checkout', '-q', 'main'])
+    assert.equal(git(worktree.path, ['symbolic-ref', '--short', 'HEAD']).trim(), 'main')
+
+    // Validation stays fail-closed, but names the checkout, the branch it is
+    // on, and the thread branch to return to, so the failure is recoverable.
+    const canonicalPath = await realpath(worktree.path)
+    await assert.rejects(
+      validateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        projectRoot: repo,
+        worktree,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof ThreadWorktreeOnBaseBranchError)
+        assert.equal(error.baseBranch, 'main')
+        assert.equal(error.branch, worktree.branch)
+        assert.equal(error.path, canonicalPath)
+        assert.match(error.message, /must differ from its recorded base branch/)
+        return true
+      },
+    )
+
+    // Returning to the thread branch is the whole recovery.
+    git(worktree.path, ['checkout', '-q', worktree.branch])
+    const validated = await validateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      worktree,
+    })
+    assert.equal(validated.branch, worktree.branch)
   })
 
   it('rejects a detached HEAD and other foreign persisted worktree authority', async () => {
