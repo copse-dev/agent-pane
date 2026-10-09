@@ -13,6 +13,7 @@ import type {
 import { runHeadlessAgent, type HeadlessAgentProfile } from './headless-agent-host.ts'
 import { TaskSupervisor } from './supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from './supervisor/task-store.ts'
+import { GUEST_ALLOWED_TOOLS } from './container-runtime/guest-tools.ts'
 
 class TrivialTaskProvider implements LLMProvider {
   readonly seen: Array<{ messages: LLMMessage[]; tools: LLMTool[] }> = []
@@ -38,8 +39,10 @@ class TrivialTaskProvider implements LLMProvider {
 
 class WriteTaskProvider implements LLMProvider {
   private callCount = 0
+  readonly seenTools: LLMTool[][] = []
 
-  async *stream(): AsyncIterable<ProviderStreamChunk> {
+  async *stream(_messages: LLMMessage[], tools: LLMTool[]): AsyncIterable<ProviderStreamChunk> {
+    this.seenTools.push(tools)
     this.callCount++
     if (this.callCount === 1) {
       yield {
@@ -177,6 +180,72 @@ describe('runHeadlessAgent', () => {
       assert.ok(result.toolNames.includes('list_dir'))
       assert.deepEqual(result.skillNames, [])
       assert.equal(result.turnOutcome?.status, 'completed')
+    } finally {
+      await rm(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('registers the reviewed guest tools and offers no desktop services', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'copse-headless-guest-tools-'))
+    const provider = new TrivialTaskProvider()
+    try {
+      const result = await runHeadlessAgent(
+        { ...smokeProfile(workspace), includeTools: GUEST_ALLOWED_TOOLS },
+        { prompt: 'Inspect the workspace.', threadId: 'headless-guest-tools' },
+        { provider, contextWindow: 32_000 },
+      )
+      assert.deepEqual([...result.toolNames].sort(), [...GUEST_ALLOWED_TOOLS].sort())
+      for (const request of provider.seen) {
+        assert.ok(request.tools.some((tool) => tool.name === 'list_dir'))
+        for (const tool of request.tools)
+          assert.ok(GUEST_ALLOWED_TOOLS.includes(tool.name), tool.name)
+        // Ordinary availability still hides archive reading without an attached archive.
+        assert.ok(!request.tools.some((tool) => tool.name === 'read_archive'))
+      }
+    } finally {
+      await rm(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('withholds unlisted tools from both the model and execution', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'copse-headless-allowlist-'))
+    const provider = new WriteTaskProvider()
+    try {
+      const result = await runHeadlessAgent(
+        { ...smokeProfile(workspace), includeTools: ['list_dir'] },
+        { prompt: 'Attempt the write.', threadId: 'headless-allowlist' },
+        { provider, contextWindow: 32_000 },
+      )
+      assert.deepEqual(result.toolNames, ['list_dir'])
+      assert.ok(provider.seenTools.length > 0)
+      for (const tools of provider.seenTools)
+        assert.deepEqual(
+          tools.map((tool) => tool.name),
+          ['list_dir'],
+        )
+      assert.equal(existsSync(join(workspace, 'answer.txt')), false)
+      assert.ok(
+        result.chunks.some(
+          (chunk) =>
+            chunk.type === 'tool_result' && chunk.result.includes('Unknown tool: write_file'),
+        ),
+      )
+    } finally {
+      await rm(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('an explicit empty tool surface does not fall back to desktop tools', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'copse-headless-empty-tools-'))
+    const provider = new CaptureTaskProvider(() => Promise.resolve())
+    try {
+      const result = await runHeadlessAgent(
+        { ...smokeProfile(workspace), includeTools: [] },
+        { prompt: 'Answer without tools.', threadId: 'headless-empty-tools' },
+        { provider, contextWindow: 32_000 },
+      )
+      assert.deepEqual(provider.seenTools, [])
+      assert.deepEqual(result.toolNames, [])
     } finally {
       await rm(workspace, { recursive: true, force: true })
     }
