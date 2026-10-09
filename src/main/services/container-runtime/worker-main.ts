@@ -21,7 +21,7 @@ import { encodeWorkerPhase } from './worker-events.ts'
  * entry's behaviour.
  */
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { threadContainerRunSpecSchema, type ThreadContainerRunSpec as Spec } from './run-spec.ts'
