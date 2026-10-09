@@ -113,10 +113,13 @@ function substitutePathVariables(command: string, context: ShellHarmContext): st
  * `~` is this user's home; `~name` is another user's, which the shell looks up
  * and this assumes sits beside it (`/home/alice`, `/Users/alice`; `~root` is
  * `/root`). Left unexpanded, `~alice/` resolved as a project-relative name, so
- * `rm -rf ~alice/` read as a delete inside the workspace.
+ * `rm -rf ~alice/` read as a delete inside the workspace. `~+` is `$PWD` and
+ * expands the same way; `~-` (`$OLDPWD`) cannot be known here and is left as
+ * written, so a target built on it stays a prompt.
  */
-function expandTilde(token: string, homeDir: string): string {
-  const user = /^~([A-Za-z0-9._-]+)(?=$|[\\/])/.exec(token)
+function expandTilde(token: string, homeDir: string, cwd: string): string {
+  if (/^~\+(?=$|[\\/])/.test(token)) return cwd + token.slice(2)
+  const user = /^~([A-Za-z0-9._][A-Za-z0-9._-]*)(?=$|[\\/])/.exec(token)
   if (user === null) return token.replace(/^~(?=$|[\\/])/, () => homeDir)
   const name = user[1] ?? ''
   const rest = token.slice(user[0].length)
@@ -126,7 +129,7 @@ function expandTilde(token: string, homeDir: string): string {
 }
 
 function expandPathToken(token: string, context: ShellHarmContext): string {
-  let expanded = expandTilde(token, context.homeDir)
+  let expanded = expandTilde(token, context.homeDir, context.workspaceRoot ?? process.cwd())
   for (const { re, value } of pathVariables(context)) {
     expanded = expanded.replace(re, () => value)
   }

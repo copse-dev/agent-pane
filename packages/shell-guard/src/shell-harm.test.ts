@@ -304,6 +304,11 @@ describe('Guarded YOLO shell harm gate', () => {
     // Not caught by the secret-filename check, so this one was allowed outright.
     assert.equal(action('cat ~tester/.aws/config'), 'deny')
     assert.equal(action('ls -la ~tester'), 'deny')
+    // `~+` is `$PWD`, the workspace root here, so it is denied exactly as `.` is.
+    assert.equal(action('rm -rf ~+/'), 'deny')
+    assert.equal(action('rm -rf ~+'), 'deny')
+    // `~-` is `$OLDPWD`, which no static reading knows: still a prompt, never allowed.
+    assert.equal(action('rm -rf ~-/'), 'prompt')
   })
 
   it('denies catastrophic commands hidden in compounds, substitutions, and interpreters', () => {
