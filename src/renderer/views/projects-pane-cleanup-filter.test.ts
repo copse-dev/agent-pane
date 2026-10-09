@@ -174,6 +174,51 @@ describe('projects pane needs-cleanup filter (component)', () => {
     assert.deepEqual(titles(), ['Open PR'])
   })
 
+  for (const state of ['MERGED', 'CLOSED'] as const) {
+    it(`keeps dirty and unpushed work after a ${state} PR, but removes clean threads`, async () => {
+      const base = apiWithSummaries({
+        dirty: { dirty: true },
+        unpushed: { dirty: false, unpushed: 2 },
+        clean: { dirty: false },
+      })
+      const api: ApiClient = {
+        ...base,
+        gh: {
+          ...base.gh,
+          prDetails: async (owner, repo, number): Promise<GhPrDetails> => ({
+            owner,
+            repo,
+            number,
+            state,
+            title: 'Previous PR',
+            url: `https://github.com/${owner}/${repo}/pull/${String(number)}`,
+            body: '',
+            files: [],
+          }),
+        },
+      }
+      mount(
+        ['dirty', 'unpushed', 'clean'].map((id, index) =>
+          thread(id, id, {
+            prRefs: [
+              {
+                owner: 'copse-dev',
+                repo: 'agent-pane',
+                number: index + 1,
+                url: `https://github.com/copse-dev/agent-pane/pull/${String(index + 1)}`,
+              },
+            ],
+          }),
+        ),
+        api,
+      )
+      await settle()
+      toggleNeedsCleanup()
+      await settle()
+      assert.deepEqual(titles().sort(), ['dirty', 'unpushed'])
+    })
+  }
+
   it('shows a dedicated empty state and marks the Show button as filtering', async () => {
     mount([thread('a', 'Clean')], apiWithSummaries({ a: { dirty: false } }))
     await settle()

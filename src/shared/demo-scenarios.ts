@@ -2392,6 +2392,51 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'sidebar-cleanup-after-pr',
+    label: 'Cleanup after merged or closed PRs',
+    project: project('demo-cleanup-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threadChanges: {
+      'cleanup-dirty': { dirty: true },
+      'cleanup-unpushed': { dirty: false, unpushed: 2 },
+      'cleanup-clean': { dirty: false },
+    },
+    threads: ['dirty', 'unpushed', 'clean'].map((state, index) => ({
+      id: `cleanup-${state}`,
+      title:
+        state === 'dirty'
+          ? 'New edits after merge'
+          : state === 'unpushed'
+            ? 'Unpushed follow-up'
+            : 'Finished and clean',
+      status: 'idle',
+      messages: [],
+      messagesLoaded: false,
+      prRefs: [
+        {
+          owner: 'acme',
+          repo: 'widgets',
+          number: index + 1,
+          url: `https://github.com/acme/widgets/pull/${String(index + 1)}`,
+        },
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: FIXED_TIME - index,
+      updatedAt: FIXED_TIME - index,
+    })),
+    pullRequests: [1, 2, 3].map((number) => ({
+      owner: 'acme',
+      repo: 'widgets',
+      number,
+      url: `https://github.com/acme/widgets/pull/${String(number)}`,
+      title: 'Previous change',
+      state: number === 2 ? 'CLOSED' : 'MERGED',
+      body: '',
+      files: [],
+      checks: 'success',
+    })),
+  },
+  {
     id: 'sidebar-thread-changes',
     label: 'Sidebar changes glyph',
     project: project('demo-sidebar-changes-project'),

@@ -975,7 +975,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   function threadNeedsCleanup(project: Project, thread: SidebarThread): boolean {
     if (project.sshHost || thread.status === 'running') return false
     const rollup = rollupForThread(thread)
-    if (rollup) return rollup.kind === 'open'
+    if (rollup?.kind === 'open') return true
+    if (
+      sidebarPrRefs(thread).some(
+        (ref) => (cachedPrLifecycle(githubPrKey(ref)) ?? 'unknown') === 'unknown',
+      )
+    )
+      return true
     const cached = threadChangeCache.get(threadChangeKey(project.id, thread.id))
     if (!cached) return true
     return describeThreadChanges(cached.summary) !== null
@@ -1680,13 +1686,19 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             prRollup.kind === 'open' && conflictsForThread(thread),
           ),
         )
-      } else if (thread.status !== 'running' && thread.prRefs !== undefined && !project.sshHost) {
+      }
+      if (
+        (!prRollup || (needsCleanupOnly && prRollup.kind !== 'open')) &&
+        thread.status !== 'running' &&
+        thread.prRefs !== undefined &&
+        !project.sshHost
+      ) {
         const key = threadChangeKey(project.id, thread.id)
         threadChangeSeen.push({ projectId: project.id, threadId: thread.id })
         threadChangeSeenKeys.add(key)
         const cached = threadChangeCache.get(key)
         const changesLabel = describeThreadChanges(cached?.summary ?? null)
-        if (changesLabel) {
+        if (changesLabel && !prRollup) {
           chatRow.classList.add('has-changes-status')
           chatRow.append(chatChangesStatus(changesLabel))
         }
