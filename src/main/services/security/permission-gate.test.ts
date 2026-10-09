@@ -2995,6 +2995,8 @@ describe('ensureShellCommandPermitted — operations that detach a thread worktr
     'git rebase -i HEAD~3',
     'git pull --rebase',
     'git -c pull.rebase=true pull',
+    'git -c pull.rebase=yes pull',
+    'git pull --rebase=on',
     'git fetch && git rebase origin/main',
     'sh -c "git rebase origin/main"',
     'git bisect start HEAD HEAD~8',

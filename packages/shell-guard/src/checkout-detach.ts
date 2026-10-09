@@ -60,17 +60,36 @@ function gitInvocation(
   return null
 }
 
+/**
+ * Whether a `pull.rebase` / `--rebase=<value>` value makes `git pull` rebase.
+ * Git reads it as a boolean (`true|yes|on`, a non-zero integer) or one of the
+ * rebase modes; a bare key is true, and anything else is an error that stops
+ * before any rebase starts.
+ */
+function rebaseValueRebases(value: string | undefined): boolean {
+  if (value === undefined) return true
+  const normalized = value.toLowerCase()
+  if (['merges', 'm', 'interactive', 'i', 'true', 'yes', 'on'].includes(normalized)) return true
+  return /^-?\d+$/.test(normalized) && Number(normalized) !== 0
+}
+
+/**
+ * Last setting wins, as in Git: `-c pull.rebase=…` entries first (they precede
+ * the subcommand), then the pull's own flags, which override config.
+ */
 function pullRebases(args: readonly string[], config: readonly string[]): boolean {
-  let rebases = config.some((entry) => /^pull\.rebase=(?:true|merges|interactive|i|m)$/.test(entry))
+  let rebases = false
+  for (const entry of config) {
+    const equals = entry.indexOf('=')
+    const key = equals === -1 ? entry : entry.slice(0, equals)
+    if (key !== 'pull.rebase') continue
+    rebases = rebaseValueRebases(equals === -1 ? undefined : entry.slice(equals + 1))
+  }
   for (const arg of args) {
-    if (arg === '--no-rebase' || arg === '--rebase=false') rebases = false
-    else if (
-      arg === '-r' ||
-      arg === '--rebase' ||
-      /^--rebase=(?:true|merges|interactive|i|m)$/.test(arg)
-    ) {
-      rebases = true
-    }
+    if (arg === '--no-rebase') rebases = false
+    else if (arg === '-r' || arg === '--rebase') rebases = true
+    else if (arg.startsWith('--rebase='))
+      rebases = rebaseValueRebases(arg.slice('--rebase='.length))
   }
   return rebases
 }

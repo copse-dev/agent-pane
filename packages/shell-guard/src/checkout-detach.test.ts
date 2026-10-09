@@ -30,6 +30,47 @@ describe('detectCheckoutDetachingCommand', () => {
     assert.equal(operation('git -c pull.rebase=true pull --no-rebase'), undefined)
   })
 
+  it('reads every spelling Git accepts for a rebasing pull', () => {
+    // Git parses pull.rebase and --rebase=<v> as a boolean, so these all rebase.
+    for (const value of [
+      'yes',
+      'on',
+      'true',
+      '1',
+      '2',
+      'YES',
+      'True',
+      'merges',
+      'm',
+      'interactive',
+      'i',
+    ]) {
+      assert.equal(operation(`git -c pull.rebase=${value} pull`), 'git pull --rebase', value)
+      assert.equal(operation(`git pull --rebase=${value}`), 'git pull --rebase', value)
+    }
+    // A key with no value is true, and config keys are case-insensitive.
+    assert.equal(operation('git -c pull.rebase pull'), 'git pull --rebase')
+    assert.equal(operation('git -c Pull.Rebase=yes pull'), 'git pull --rebase')
+    // Falsy spellings do not rebase.
+    for (const value of ['false', 'no', 'off', '0', 'FALSE']) {
+      assert.equal(operation(`git -c pull.rebase=${value} pull`), undefined, value)
+      assert.equal(operation(`git pull --rebase=${value}`), undefined, value)
+    }
+  })
+
+  it('lets the last setting win, as Git does', () => {
+    assert.equal(operation('git -c pull.rebase=true -c pull.rebase=false pull'), undefined)
+    assert.equal(
+      operation('git -c pull.rebase=false -c pull.rebase=true pull'),
+      'git pull --rebase',
+    )
+    assert.equal(operation('git pull --rebase --no-rebase'), undefined)
+    assert.equal(operation('git pull --no-rebase --rebase'), 'git pull --rebase')
+    // The command line overrides config in both directions.
+    assert.equal(operation('git -c pull.rebase=true pull --no-rebase'), undefined)
+    assert.equal(operation('git -c pull.rebase=false pull --rebase'), 'git pull --rebase')
+  })
+
   it('refuses starting a bisect and a detached switch', () => {
     assert.equal(operation('git bisect start HEAD HEAD~10'), 'git bisect start')
     assert.equal(operation('git switch --detach HEAD~2'), 'git switch --detach')
