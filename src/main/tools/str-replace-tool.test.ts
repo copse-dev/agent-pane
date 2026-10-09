@@ -133,6 +133,12 @@ describe('strReplaceTool', () => {
     assert.equal(getStagedDiffEntry('f.ts')?.after, 'x\r\ny\r\nb\r\n')
   })
 
+  ownedIt('keeps each untouched line break in a mixed-EOL file', async () => {
+    await writeFile(join(tempRoot, 'f.ts'), 'a\r\nb\nc\r\nd\n', 'utf-8')
+    await runStrReplace({ path: 'f.ts', old_string: 'b\nc', new_string: 'B', replace_all: false })
+    assert.equal(getStagedDiffEntry('f.ts')?.after, 'a\r\nB\r\nd\n')
+  })
+
   ownedIt('agrees with replace_all on a single occurrence', async () => {
     // The two branches used different replacement machinery, so only one of them
     // expanded `$`. On a unique match they must produce the same file.

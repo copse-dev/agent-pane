@@ -6,38 +6,16 @@ import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { getPendingAfterContent, applyOrStageDiff } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
+import { applyLfViewEdits, toLfView } from '@shared/line-endings.ts'
 
-function countOccurrences(haystack: string, needle: string): number {
-  if (needle === '') return 0
-  let count = 0
-  let idx = 0
-  while ((idx = haystack.indexOf(needle, idx)) !== -1) {
-    count++
-    idx += needle.length
+/** Non-overlapping match offsets, left to right. */
+function matchOffsets(haystack: string, needle: string): number[] {
+  if (needle === '') return []
+  const offsets: number[] = []
+  for (let at = haystack.indexOf(needle); at !== -1; at = haystack.indexOf(needle, at + needle.length)) {
+    offsets.push(at)
   }
-  return count
-}
-
-const toCrlf = (text: string): string => text.replace(/\r?\n/g, '\r\n')
-
-/**
- * read_file shows CRLF files with LF line endings, so a multi-line old_string
- * copied from its output never matches the raw bytes. When the text as given
- * is absent from a file that uses CRLF, match (and write) its CRLF form; and
- * in an all-CRLF file, write new_string's line breaks as CRLF too, so the edit
- * never leaves the file with mixed endings.
- */
-function matchFileLineEndings(
-  content: string,
-  oldString: string,
-  newString: string,
-): { oldString: string; newString: string } {
-  if (!content.includes('\r\n')) return { oldString, newString }
-  if (oldString.includes('\n') && countOccurrences(content, oldString) === 0) {
-    return { oldString: toCrlf(oldString), newString: toCrlf(newString) }
-  }
-  const allCrlf = !/(?:^|[^\r])\n/.test(content)
-  return { oldString, newString: allCrlf ? toCrlf(newString) : newString }
+  return offsets
 }
 
 export const strReplaceTool = defineTool({
@@ -67,8 +45,13 @@ export const strReplaceTool = defineTool({
       }
     }
 
-    const { oldString, newString } = matchFileLineEndings(before, old_string, new_string)
-    const occurrences = countOccurrences(before, oldString)
+    // Match against the same LF view read_file shows (a CRLF file's lines are
+    // shown with `\n`), then write back with the file's own line breaks.
+    const view = toLfView(before)
+    const oldString = toLfView(old_string).text
+    const newString = toLfView(new_string).text
+    const matches = matchOffsets(view.text, oldString)
+    const occurrences = matches.length
     if (occurrences === 0) {
       // explore returns a prose summary with approximate line numbers, not
       // verbatim bytes, so telling the model to "re-read" is ambiguous — it
@@ -80,19 +63,22 @@ export const strReplaceTool = defineTool({
       return `old_string appears ${String(occurrences)} times; include more surrounding context so it is unique, or set replace_all to true.`
     }
 
-    // `String#replace` expands `$$`, `$&`, `` $` `` and `$'` inside a replacement
-    // *string* even when the pattern is a plain string, so the file got something
-    // other than `new_string`: `` `Total: $${price}` `` landed as
-    // `` `Total: ${price}` ``, and `$'` swallowed the rest of the file. A function
-    // replacement is taken literally, and matches what the `replace_all` branch
-    // has always done — `Array#join` never expanded anything.
-    const after = replace_all
-      ? before.split(oldString).join(newString)
-      : before.replace(oldString, () => newString)
-
-    if (after === before) {
+    // The replacement is spliced in by offset, never through `String#replace`,
+    // which expands `$$`, `$&`, `` $` `` and `$'` inside a replacement string:
+    // `` `Total: $${price}` `` used to land as `` `Total: ${price}` ``.
+    // Compared in the LF view: rewriting identical text would otherwise still
+    // normalise the line breaks inside the match.
+    if (newString === oldString) {
       return 'No change: new_string is identical to old_string.'
     }
+    const after = applyLfViewEdits(
+      view,
+      (replace_all ? matches : matches.slice(0, 1)).map((start) => ({
+        start,
+        end: start + oldString.length,
+        replacement: newString,
+      })),
+    )
 
     const language = detectLanguage(path)
     const editStats = computeLineDiffStats(before, after)

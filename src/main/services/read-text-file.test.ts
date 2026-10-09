@@ -9,6 +9,7 @@ import {
   readTextLineRange,
   readTextLineRangeFromUtf8Content,
 } from './read-text-file.ts'
+import { toLfView } from '@shared/line-endings.ts'
 
 describe('read-text-file', () => {
   it('detects UTF-8 BOM and strips content', () => {
@@ -73,6 +74,16 @@ describe('read-text-file', () => {
     })
     assert.equal(result.text, 'line1\nline2')
     assert.equal(result.totalLines, 2)
+  })
+
+  it('shows the same LF view str_replace and apply_patch match against', () => {
+    const content = 'a\r\nb\nc\rd\n'
+    const shown = readTextLineRangeFromUtf8Content(content, {
+      startLine: 1,
+      maxLines: 10,
+      maxChars: 100,
+    }).text
+    assert.equal(`${shown}\n`, toLfView(content).text)
   })
 
   it('pages past a character-limit cut without skipping the rest of the cut line', async () => {

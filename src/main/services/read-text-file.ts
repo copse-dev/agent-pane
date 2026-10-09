@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import { createInterface } from 'node:readline'
+import { toLfView } from '@shared/line-endings.ts'
 
 const SNIFF_BYTES = 8192
 
@@ -238,7 +239,8 @@ export function readTextLineRangeFromUtf8Content(
       : bomSkip > 0
         ? content.slice(bomSkip)
         : content
-  const normalized = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  // The LF view str_replace and apply_patch match against (shared/line-endings.ts).
+  const normalized = toLfView(body).text
   const lines = normalized.split('\n')
   if (lines.at(-1) === '') lines.pop()
 

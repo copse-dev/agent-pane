@@ -29,6 +29,8 @@
  * caller can validate everything before it writes anything.
  */
 
+import { toLfView, type LineBreak } from '@shared/line-endings.ts'
+
 export interface PatchChunk {
   /** `@@` lines that must be located, in order, before the chunk's own lines. */
   contexts: string[]
@@ -327,42 +329,28 @@ interface Replacement {
   added: string[]
 }
 
-type Eol = '\n' | '\r\n'
-
 /**
- * Split into logical lines, each line's own terminator, the file's dominant
- * EOL style (for lines the patch adds) and its trailing-newline state. Keeping
- * per-line terminators means a patch to a mixed-EOL file rewrites only the
- * lines it touches, not every line ending in the file.
+ * Split into logical lines, each line's own break, the file's dominant break
+ * (for lines the patch adds) and its trailing-newline state. Lines come from
+ * the same LF view `read_file` shows ({@link toLfView}), and keeping each
+ * line's break means a patch rewrites only the line endings of lines it touches.
  */
 function splitFile(content: string): {
   lines: string[]
-  eols: Eol[]
-  eol: Eol
+  eols: LineBreak[]
+  eol: LineBreak
   finalNewline: boolean
 } {
-  const finalNewline = content.endsWith('\n')
-  const pieces = content === '' ? [] : content.split('\n')
-  if (finalNewline) pieces.pop()
-  const lines: string[] = []
-  const terminators: (Eol | null)[] = []
-  let crlf = 0
-  for (const [index, piece] of pieces.entries()) {
-    if (index === pieces.length - 1 && !finalNewline) {
-      lines.push(piece)
-      terminators.push(null)
-    } else if (piece.endsWith('\r')) {
-      lines.push(piece.slice(0, -1))
-      terminators.push('\r\n')
-      crlf += 1
-    } else {
-      lines.push(piece)
-      terminators.push('\n')
-    }
+  const view = toLfView(content)
+  const finalNewline = view.text.endsWith('\n')
+  const lines = view.text === '' ? [] : view.text.split('\n')
+  if (finalNewline) lines.pop()
+  return {
+    lines,
+    eols: lines.map((_, index) => view.breaks[index] ?? view.dominant),
+    eol: view.dominant,
+    finalNewline,
   }
-  const lf = terminators.filter((t) => t === '\n').length
-  const eol: Eol = crlf > 0 && crlf >= lf ? '\r\n' : '\n'
-  return { lines, eols: terminators.map((t) => t ?? eol), eol, finalNewline }
 }
 
 export type ApplyChunksResult = { ok: true; content: string } | { ok: false; error: string }
