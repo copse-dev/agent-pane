@@ -1,5 +1,6 @@
 import { openAppRunDialog } from './app-run-dialog.ts'
 import { withoutSideChats } from '@shared/threads/side-chat.ts'
+import type { ThreadLiveResources } from '@shared/threads/archive-thread.ts'
 import { el, clear } from '../dom/helpers.ts'
 import {
   contextMenuClosedByPressOn,
@@ -130,6 +131,14 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
  * approval or an `ask_user` question. Draws the eye to work that would
  * otherwise be silently blocked in another project/thread.
  */
+export function describeLiveResources(running: ThreadLiveResources): string[] {
+  return [
+    ...(running.agent ? ['• the chat’s running agent'] : []),
+    ...(running.terminals ? ['• its open terminals'] : []),
+    ...(running.backgroundProcesses ? ['• its background processes'] : []),
+  ]
+}
+
 function attentionBell(label: string): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, 'svg')
   svg.setAttribute('class', 'chat-attention-bell')
@@ -761,7 +770,24 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     try {
       await flushProjectThreads(api, projectId, store.getState().threads)
       if (projectId !== store.getState().activeProjectId) return
-      let result = await api.threads.archive(projectId, threadId, null)
+      let stopProcesses = false
+      let result = await api.threads.archive(projectId, threadId, null, stopProcesses)
+      if (result.status === 'blocked-running') {
+        const title = store.getState().threads.find((t) => t.id === threadId)?.title ?? 'this chat'
+        const confirmed = await showConfirmDialog({
+          message: `Stop running work and archive “${title}”?`,
+          detail: [
+            'Archiving will stop:',
+            ...describeLiveResources(result.running),
+            'Anything still running in the chat’s worktree is ended before it is removed.',
+          ].join('\n'),
+          confirmLabel: 'Stop and archive',
+          danger: true,
+        })
+        if (!confirmed || projectId !== store.getState().activeProjectId) return
+        stopProcesses = true
+        result = await api.threads.archive(projectId, threadId, null, stopProcesses)
+      }
       let refreshed = false
       while (result.status === 'blocked-dirty') {
         const title = store.getState().threads.find((t) => t.id === threadId)?.title ?? 'this chat'
@@ -782,11 +808,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           danger: true,
         })
         if (!confirmed || projectId !== store.getState().activeProjectId) return
-        result = await api.threads.archive(projectId, threadId, result.fingerprint)
+        result = await api.threads.archive(projectId, threadId, result.fingerprint, stopProcesses)
         refreshed = true
       }
       if (result.status === 'blocked-running') {
-        showToast('Stop the chat’s agent, terminals and background processes before archiving.', {
+        showToast('Something started in the chat while archiving. Try again.', {
           variant: 'error',
         })
         return
