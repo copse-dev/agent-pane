@@ -23436,6 +23436,10 @@ var init_model_families = __esm({
       supportsStrictTools: true,
       supportsVerbosity: true,
       supportsParallelToolCallsControl: true,
+      // Documented for these families: OpenAI's Compaction guide shows server-side
+      // `context_management` on gpt-5.x and gpt-6-astra with `store: false`. If an
+      // endpoint refuses it anyway, `ResponsesProvider` falls back to client-side trim.
+      supportsServerCompaction: true,
       prefersApplyPatch: true,
       acceptsDeveloperRole: true
     };
@@ -65595,6 +65599,17 @@ function getToolCallLabel(tc2) {
   const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
   const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
   const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
+  if (name === "read_skill") {
+    const skillName = stringArg(tc2.args, "name");
+    if (skillName) {
+      if (tc2.status === "running") return `Loading skill ${skillName}`;
+      if (tc2.status === "error") return `Skill ${skillName}`;
+      if (tc2.result?.startsWith("Skill activated by the model: ")) {
+        return `Activated skill ${skillName}`;
+      }
+      return `Read skill ${skillName}`;
+    }
+  }
   if (name === "write_file" || name === "str_replace") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Editing ${path}` : `Edited ${path}`;
@@ -154415,6 +154430,10 @@ function startAgentController(store2, api2) {
         break;
       }
       case "panel_update": {
+        break;
+      }
+      case "provider_state":
+      case "context_compacted": {
         break;
       }
       case "todo_worker_start":
