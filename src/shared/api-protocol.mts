@@ -81,5 +81,6 @@
 // v51 versions the context_compacted agent chunk (OpenAI server-side compaction).
 // v52 versions the OpenAI remote-agent provider in thread and agent-PR-link payloads.
 // v53 versions agentBusy on worktree attachment status.
-// v54 versions classifier usage in the usage summary and the local-classifiers:uninstall channel.
-export const API_PROTOCOL_VERSION = 54 as const
+// v54 versions event automation shapes.
+// v55 versions classifier usage in the usage summary and the local-classifiers:uninstall channel.
+export const API_PROTOCOL_VERSION = 55 as const
