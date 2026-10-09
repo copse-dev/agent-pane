@@ -16,12 +16,19 @@ export class IpcValidationError extends Error {
   }
 }
 
-export function assertMainFrameSender(event: IpcMainInvokeEvent, win: BrowserWindow): void {
+export function assertMainFrameSender(
+  event: Pick<IpcMainInvokeEvent, 'senderFrame'>,
+  win: Pick<BrowserWindow, 'isDestroyed' | 'webContents'>,
+): void {
   const frame = event.senderFrame
-  // The main window's own main frame, or a pane pop-out window we created. Both
+  // Any main window's main frame, or a pane pop-out window we created — all
   // load our renderer; sub-frames and <webview> guests are still rejected.
-  if (frame === win.webContents.mainFrame) return
+  // `win` is the boot-time window the handlers were registered with. It can be
+  // closed while another main window stays open, and Electron throws on
+  // reading `webContents` after destroy, so consult the registry first and
+  // only touch `win` while it is alive.
   if (isTrustedAppFrame(frame)) return
+  if (!win.isDestroyed() && frame === win.webContents.mainFrame) return
   throw new IpcValidationError('Request rejected: it did not come from the app window')
 }
 
@@ -162,9 +169,11 @@ export const zPrComposerCreateRequest = z.object({
 
 /**
  * `hooks:test` request (G2 dry-run tester). The renderer echoes back a
- * discovered hook's identity from Sources; validate it so a compromised
- * renderer cannot smuggle an arbitrary command through the dry-run spawn — the
- * command is still one that hook discovery surfaced, but the shape is pinned.
+ * discovered hook's identity from Sources. This only pins the shape: the
+ * handler resolves the identity against main-process hook discovery and spawns
+ * what discovery surfaced, so a compromised renderer cannot name an arbitrary
+ * command or cwd. `sandbox` is deliberately absent — a renderer-sent
+ * `sandbox: false` is stripped; the escape comes from the discovered hook.
  */
 export const zHookTestRequest = z.object({
   family: z.enum(['cursor', 'claude', 'copse']),
@@ -172,7 +181,6 @@ export const zHookTestRequest = z.object({
   command: z.string().min(1).max(8192),
   source: z.string().max(4096),
   scope: z.enum(['user', 'project']),
-  sandbox: z.boolean().optional(),
 })
 
 /**
