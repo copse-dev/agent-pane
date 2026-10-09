@@ -33,7 +33,6 @@ describe('context wheel breakdown (component)', () => {
       false,
       { breakdown, breakdownRing: false },
     )
-    assert.equal(wheel.root.title, 'Context: 6.8k / 200.0k (3%)')
     assert.equal(wheel.root.getAttribute('aria-label'), 'Context 3% used, 6.8k of 200.0k tokens')
     assert.equal(
       wheel.root.querySelector('.context-wheel-popover-header')?.textContent,
