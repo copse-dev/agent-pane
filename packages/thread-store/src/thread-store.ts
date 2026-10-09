@@ -124,11 +124,11 @@ const STREAM_STATS_FILE = 'stream-stats.jsonl'
 const REASONING_CHECKPOINTS_FILE = 'reasoning-checkpoints.jsonl'
 const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 /**
- * Subdirectory of `blobs/` holding user-attached media (dropped videos and
- * archives; see {@link threadMediaDir}). Its files are never spine refs, so
- * {@link pruneStaleFiles} must leave them alone.
+ * Subdirectories of `blobs/` written outside the spine: user-attached media
+ * ({@link threadMediaDir}) and extracted archives ({@link threadArchivesDir}).
+ * Their files are never spine refs, so {@link pruneStaleFiles} leaves them alone.
  */
-const MEDIA_REF_PREFIX = 'blobs/media/'
+const UNREFERENCED_BLOB_PREFIXES = ['blobs/media/', 'blobs/archives/']
 /** Directories a spine ref may point into (plan artifacts are refs but never pruned). */
 const REF_DIRS = [...CONTENT_DIRS, 'plans']
 
@@ -490,7 +490,7 @@ function pruneStaleFiles(dir: string, files: FileToWrite[], preservedRefs: strin
     const root = join(dir, contentDir)
     if (!existsSync(root)) continue
     for (const rel of listFilesRecursive(root, dir)) {
-      if (!keep.has(rel) && !rel.startsWith(MEDIA_REF_PREFIX)) {
+      if (!keep.has(rel) && !UNREFERENCED_BLOB_PREFIXES.some((prefix) => rel.startsWith(prefix))) {
         try {
           unlinkSync(join(dir, rel))
         } catch {
@@ -2543,6 +2543,14 @@ export function threadBlobsDir(projectId: string, threadId: string): string {
  */
 export function threadMediaDir(projectId: string, threadId: string): string {
   return join(threadBlobsDir(projectId, threadId), 'media')
+}
+
+/**
+ * Where `read_archive` unpacks an attached archive (`blobs/archives/`). Like
+ * {@link threadMediaDir}, a whole-thread save keeps it.
+ */
+export function threadArchivesDir(projectId: string, threadId: string): string {
+  return join(threadBlobsDir(projectId, threadId), 'archives')
 }
 
 /**

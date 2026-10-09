@@ -44,6 +44,7 @@ import {
   clearAcpSessionBinding,
   type AcpSessionBinding,
   findThreadOwners,
+  threadArchivesDir,
   threadMediaDir,
 } from './thread-store.ts'
 import { storageSet } from './storage/storage.ts'
@@ -257,6 +258,17 @@ describe('thread-store', () => {
     assert.ok(existsSync(join(media, 'clip.mov')))
     assert.ok(existsSync(join(media, 'archive-1', 'notes.txt')))
     assert.ok(!existsSync(join(root, 'proj-1', 't1', 'messages', 'a1.md')))
+  })
+
+  it('keeps extracted archives in blobs/archives when a whole-thread save prunes stale blobs', async () => {
+    await saveProjectThread('proj-1', thread('t1', { messages: [assistantMsg('a1', 'x', 'R')] }))
+    // read_archive unpacks here once and reuses the directory; pruning the files
+    // would leave an empty extraction that is "reused" with nothing in it.
+    const extracted = join(threadArchivesDir('proj-1', 't1'), 'bundle-abc123')
+    mkdirSync(join(extracted, 'src'), { recursive: true })
+    writeFileSync(join(extracted, 'src', 'a.txt'), 'extracted')
+    await saveProjectThread('proj-1', thread('t1', { messages: [userMsg('u2', 'y')] }))
+    assert.ok(existsSync(join(extracted, 'src', 'a.txt')))
   })
 
   it('keeps the previous meta.json and spine when a rewrite fails mid-write', async () => {
