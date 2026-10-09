@@ -41,7 +41,12 @@ describe('settings usage model value map cost axis', () => {
           slug: 'legacy',
           label: 'Legacy',
           baseUrl: 'https://legacy.example.invalid/v1',
-          models: [{ id: 'o1-pro', inputPricePerMTok: 150, outputPricePerMTok: 600 }],
+          // A free plan route alone intentionally does not dominate a paid
+          // route. Seed an equally capable priced alternative as well.
+          models: [
+            { id: 'o1-pro', inputPricePerMTok: 150, outputPricePerMTok: 600 },
+            { id: 'gpt-6-astra', inputPricePerMTok: 3, outputPricePerMTok: 12 },
+          ],
         },
       ],
     })
