@@ -35,7 +35,7 @@ import { runContainerWorker } from './worker-main.ts'
 const RUN_DIR_ENV = 'COPSE_HARBOR_RUN_DIR'
 
 const HARBOR_BOUNDARY_LABEL =
-  'terminal-bench/harbor task container: harness-provided boundary, not attested by a Copse host'
+  'terminal-bench/harbor task container: runner-provided boundary, not attested by a Copse host'
 
 /**
  * The product allows one 4,096-token recovery stream after a reasoning circle is
