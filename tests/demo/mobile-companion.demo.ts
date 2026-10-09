@@ -134,6 +134,25 @@ describe('Mobile Companion at phone width', () => {
       )
       expect(await browser.execute(() => document.querySelectorAll('#messages img').length)).toBe(0)
       await expect($('.topbar #back svg')).toExist()
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const messages = document.getElementById('messages')
+            const attention = document.getElementById('attention')
+            const action = attention?.querySelector('.ui-btn-primary')
+            if (!messages || !attention || !action) return false
+            const bounds = action.getBoundingClientRect()
+            return (
+              attention.getBoundingClientRect().top >= messages.getBoundingClientRect().bottom &&
+              bounds.top >= 0 &&
+              bounds.bottom <= window.innerHeight
+            )
+          }),
+        { timeoutMsg: 'New approval must appear below rendered messages with its action in view' },
+      )
+      await screenshot(`mobile-companion-approval-${theme}.png`)
+      // The new approval receives the viewport first; explicitly return to composing.
+      await $('#message').click()
       await expectComposerVisible('message')
       await screenshot(`mobile-companion-thread-${theme}.png`)
       await expect($('#composer')).toBeDisplayed()
