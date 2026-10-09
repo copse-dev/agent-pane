@@ -67,4 +67,20 @@ describe('sidebar thread changes glyph', () => {
       timeoutMsg: 'every thread should be back once the filter is off',
     })
   })
+  it('keeps new work after merged and closed PRs while hiding a clean completed thread', async () => {
+    await browser.url('/?scenario=sidebar-cleanup-after-pr')
+    await $('.chat-pr-status').waitForExist({ timeout: 30_000 })
+    await $('.projects-filter-btn').click()
+    await $('.context-menu-item*=Needs cleanup only').click()
+    await browser.keys('Escape')
+    await browser.waitUntil(
+      async () => {
+        const titles = await $$('.chats-list .chat-title').map((row) => row.getText())
+        return titles.sort().join(',') === 'New edits after merge,Unpushed follow-up'
+      },
+      { timeout: 5_000, timeoutMsg: 'new work must remain after a PR is merged or closed' },
+    )
+    await expect($('.projects-filter-btn')).toHaveElementClass('is-filtering')
+    await saveAppScreenshot('sidebar-cleanup-after-pr.png')
+  })
 })
