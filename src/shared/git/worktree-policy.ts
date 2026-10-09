@@ -97,13 +97,13 @@ export function settledCheckoutMode(
 /**
  * Whether the project's uncommitted work can be carried into the new worktree.
  *
- * Seeding restores a snapshot of the selected local checkout over the new
- * worktree. The allocator performs the final commit check: when a selected
- * default branch has moved upstream, it starts clean rather than applying the
- * snapshot to that newer tree.
+ * Disabled: a new thread's worktree always starts clean. Carrying uncommitted
+ * or untracked files from the shared checkout into a thread the user did not
+ * ask to seed was surprising, so a new thread never copies them in, even when
+ * the project checkout is dirty.
  */
-function canSeedFromDirtyProject(input: WorktreePolicyInput): boolean {
-  return input.isDirty && input.currentBranch !== null
+function canSeedFromDirtyProject(_input: WorktreePolicyInput): boolean {
+  return false
 }
 
 /** Decide the first-message checkout without inspecting mutable process state. */

@@ -74,9 +74,11 @@ These are acceptance criteria, not implementation suggestions.
    backups, diffs, todos, hooks, model state, terminals, or background processes.
 6. The user's checkout, current branch, index, and working files are not mutated when
    an isolated worktree is allocated.
-7. Dirty seeding preserves file content, including staged, unstaged, untracked, and
+7. ~~Dirty seeding preserves file content, including staged, unstaged, untracked, and
    deleted files. V1 does not promise to preserve the staged/unstaged partition inside
-   the new worktree; the UI and tests must state that limitation.
+   the new worktree; the UI and tests must state that limitation.~~ Superseded 2026-10:
+   dirty seeding is disabled — see [Dirty checkout seeding](#dirty-checkout-seeding). A
+   new worktree always starts clean.
 8. No dirty or unmerged worktree is deleted without an explicit, itemized confirmation.
 9. Old threads and non-git projects continue in shared mode without migration work.
 10. macOS sandboxing permits normal git operations in a linked worktree without
@@ -272,7 +274,7 @@ table-driven tests.
 | -------------------------------------------------- | -------------------------------------------------------------------------- |
 | Local git checkout on the resolved default branch  | Worktree                                                                   |
 | Local git checkout on a non-default branch         | Shared                                                                     |
-| Dirty default-branch checkout                      | Worktree seeded with its file content                                      |
+| Dirty default-branch checkout                      | Worktree, starting clean (dirty seeding disabled 2026-10, see below)       |
 | Not a git repository                               | Shared, with reason                                                        |
 | Default branch unresolved or HEAD detached         | Shared, with reason                                                        |
 | Repository uses submodules                         | Shared in v1, with reason                                                  |
@@ -350,6 +352,15 @@ Implementation requirements:
   `registerAllowedWorkspaceRoot()` in a way that makes them selectable projects.
 
 ### Dirty checkout seeding
+
+**2026-10: disabled.** `canSeedFromDirtyProject` (`src/shared/git/worktree-policy.ts`)
+always returns `false`, and both allocation call sites in
+`thread-checkout-transaction.ts` pass `seedFromDirtyProject: false`. Carrying the shared
+checkout's uncommitted/untracked files into a new thread's worktree was surprising with
+no warning before send, so a new thread now always starts clean regardless of the
+project checkout's dirty state. The snapshot/restore machinery below is retained in
+`worktree-manager.ts` (and still exercised directly by its unit tests) in case seeding
+needs to come back as an explicit, opt-in choice, but no product code path triggers it.
 
 Reuse or extract the non-mutating snapshot machinery in `worktree-backup.ts`, but make
 its lifecycle thread-scoped. Tests must cover staged, unstaged, untracked, deleted,
