@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Paper Desk — Changes review explainer</title>
+    <link rel="stylesheet" href="shared.css" />
+  </head>
+  <body>
+    <div class="stage">
+      <svg id="art" viewBox="0 0 1280 720" font-family="Pliant, system-ui, sans-serif">
+        <defs>
+          <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+            <feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#000" flood-opacity="0.38" />
+          </filter>
+          <filter id="shadow-s" x="-20%" y="-20%" width="140%" height="150%">
+            <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.35" />
+          </filter>
+          <filter id="grain" x="0" y="0" width="100%" height="100%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4" />
+            <feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.09 0" />
+          </filter>
+        </defs>
+
+        <!-- desk: layered cut paper -->
+        <rect width="1280" height="720" fill="#0a3f3a" />
+        <rect
+          x="36"
+          y="30"
+          width="1208"
+          height="660"
+          rx="34"
+          fill="#0d4a44"
+          filter="url(#shadow)"
+        />
+        <rect
+          x="56"
+          y="50"
+          width="1168"
+          height="620"
+          rx="24"
+          fill="none"
+          stroke="#2a736b"
+          stroke-width="3"
+          stroke-dasharray="14 12"
+        />
+
+        <!-- changes tray band -->
+        <g id="tray">
+          <rect
+            x="70"
+            y="92"
+            width="1140"
+            height="282"
+            rx="22"
+            fill="#e9f7ee"
+            filter="url(#shadow)"
+          />
+          <rect
+            x="70"
+            y="92"
+            width="1140"
+            height="282"
+            rx="22"
+            fill="none"
+            stroke="#20fd85"
+            stroke-width="4"
+          />
+          <g transform="translate(96,66)" filter="url(#shadow-s)">
+            <rect width="470" height="44" rx="14" fill="#20fd85" />
+            <text x="18" y="30" font-size="22" font-weight="700" fill="#002e2b">
+              Changes: review before you keep
+            </text>
+          </g>
+        </g>
+
+        <!-- folder back -->
+        <g id="folder-back" filter="url(#shadow)" transform="translate(0,-42)">
+          <path d="M490 440 h90 l22 -26 h178 a14 14 0 0 1 14 14 v140 h-304z" fill="#c9f2d9" />
+          <rect x="490" y="440" width="304" height="150" rx="10" fill="#b4e8c8" />
+        </g>
+
+        <g id="sheets"></g>
+
+        <!-- folder front flap -->
+        <g id="folder-front" transform="translate(0,-42)">
+          <path
+            d="M486 478 h312 a10 10 0 0 1 10 10 l-10 104 a12 12 0 0 1 -12 10 h-290 a12 12 0 0 1 -12 -10 l-8 -104 a10 10 0 0 1 10 -10z"
+            fill="#20fd85"
+            filter="url(#shadow-s)"
+          />
+          <text
+            x="642"
+            y="548"
+            text-anchor="middle"
+            font-size="34"
+            font-weight="700"
+            fill="#002e2b"
+            font-family="ui-monospace, Menlo, monospace"
+          >
+            my-app/
+          </text>
+          <text
+            id="folder-sub"
+            x="642"
+            y="578"
+            text-anchor="middle"
+            font-size="18"
+            font-weight="600"
+            fill="#0b5a37"
+          ></text>
+        </g>
+
+        <!-- sticky note -->
+        <g id="note" filter="url(#shadow)">
+          <rect x="-150" y="-70" width="300" height="140" rx="6" fill="#ffd0e4" />
+          <rect x="-150" y="-70" width="300" height="26" rx="6" fill="#ff9fc5" />
+          <text x="0" y="-16" text-anchor="middle" font-size="26" font-weight="700" fill="#002e2b">
+            3 files changed.
+          </text>
+          <text x="0" y="22" text-anchor="middle" font-size="24" font-weight="600" fill="#002e2b">
+            Did it get them all
+          </text>
+          <text x="0" y="52" text-anchor="middle" font-size="24" font-weight="600" fill="#002e2b">
+            right? 🤔
+          </text>
+        </g>
+
+        <!-- pencil (the agent) -->
+        <g id="pencil" filter="url(#shadow)">
+          <g transform="rotate(-38)">
+            <path d="M0 0 L-16 -44 H16z" fill="#f2d6b0" />
+            <path d="M0 0 L-5 -14 H5z" fill="#002e2b" />
+            <rect x="-16" y="-190" width="32" height="146" fill="#ff9fc5" />
+            <rect x="-16" y="-190" width="10" height="146" fill="#ff7fb3" />
+            <rect x="-16" y="-214" width="32" height="26" fill="#c9c2b0" />
+            <rect x="-16" y="-232" width="32" height="20" rx="8" fill="#20fd85" />
+            <g transform="translate(26,-120) rotate(38)">
+              <rect width="96" height="36" rx="10" fill="#fffdf7" />
+              <text
+                x="48"
+                y="25"
+                text-anchor="middle"
+                font-size="21"
+                font-weight="700"
+                fill="#002e2b"
+              >
+                Agent
+              </text>
+            </g>
+          </g>
+        </g>
+
+        <!-- stamp -->
+        <g id="stamp" filter="url(#shadow)">
+          <ellipse cx="0" cy="0" rx="62" ry="14" fill="rgba(0,0,0,0)" />
+          <rect x="-58" y="-12" width="116" height="26" rx="6" id="stamp-base" fill="#002e2b" />
+          <rect x="-16" y="-92" width="32" height="82" fill="#7a4a2b" />
+          <rect x="-34" y="-128" width="68" height="44" rx="20" id="stamp-knob" fill="#20fd85" />
+          <g id="stamp-tag" transform="translate(40,-104)">
+            <rect width="132" height="40" rx="12" fill="#fffdf7" />
+            <text
+              id="stamp-tag-text"
+              x="66"
+              y="28"
+              text-anchor="middle"
+              font-size="24"
+              font-weight="700"
+              fill="#002e2b"
+            >
+              Accept
+            </text>
+          </g>
+        </g>
+      </svg>
+      <div class="caption">
+        <div class="beats">
+          <span class="beat">1 Problem</span><span class="beat">2 Action</span
+          ><span class="beat">3 Result</span>
+        </div>
+        <div class="text"></div>
+      </div>
+      <div class="bar"></div>
+    </div>
+
+    <script src="runtime.js"></script>
+    <script>
+      const { seg, lerp, E, clamp } = Timeline
+      const NS = 'http://www.w3.org/2000/svg'
+      const files = [
+        {
+          name: 'login.ts',
+          color: '#ffe3a3',
+          del: 'retries = 1',
+          add: 'retries = 3',
+          x: 240,
+          ok: true,
+        },
+        {
+          name: 'api.ts',
+          color: '#bfe3ff',
+          del: 'timeout = 5',
+          add: 'timeout = 30',
+          x: 640,
+          ok: true,
+        },
+        {
+          name: 'styles.css',
+          color: '#e3d0ff',
+          del: 'color: blue',
+          add: 'color: hotpink',
+          x: 1040,
+          ok: false,
+        },
+      ]
+      const SHEET_Y = 240
+      const FOLDER = { x: 642, y: 494 }
+      const mono = 'ui-monospace, Menlo, monospace'
+
+      const sheetsEl = document.getElementById('sheets')
+      sheetsEl.innerHTML = files
+        .map(
+          (f, i) => `
+        <g id="sheet${i}" filter="url(#shadow)">
+          <rect x="-150" y="-125" width="300" height="250" rx="14" fill="#fffdf7" />
+          <path d="M-150 -111 a14 14 0 0 1 14 -14 h272 a14 14 0 0 1 14 14 v34 h-300z" fill="${f.color}" />
+          <text x="-130" y="-92" font-size="24" font-weight="700" fill="#002e2b" font-family="${mono}">${f.name}</text>
+          <g class="before">
+            <rect x="-125" y="-55" width="220" height="13" rx="6" fill="#d9d2bf" />
+            <rect x="-125" y="-22" width="170" height="13" rx="6" fill="#d9d2bf" />
+            <rect x="-125" y="11" width="240" height="13" rx="6" fill="#d9d2bf" />
+            <rect x="-125" y="44" width="130" height="13" rx="6" fill="#d9d2bf" />
+            <rect x="-125" y="77" width="200" height="13" rx="6" fill="#d9d2bf" />
+          </g>
+          <path class="scrib" fill="none" stroke="#ff4fa0" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+          <g class="after">
+            <rect x="-132" y="-62" width="264" height="50" rx="8" fill="#ffdada" />
+            <text x="-118" y="-30" font-size="22" fill="#9c1f26" font-family="${mono}">− ${f.del}</text>
+            <rect x="-132" y="-6" width="264" height="50" rx="8" fill="#d2f6df" />
+            <text x="-118" y="26" font-size="22" fill="#0b6b3a" font-family="${mono}">+ ${f.add}</text>
+          </g>
+          <g class="edited">
+            <rect x="52" y="-140" width="100" height="32" rx="16" fill="#ff9fc5" />
+            <text x="102" y="-118" text-anchor="middle" font-size="19" font-weight="700" fill="#002e2b">edited</text>
+          </g>
+          <g class="ink" transform="translate(0,80) rotate(-9)">
+            <rect x="-96" y="-30" width="192" height="60" rx="10" fill="none" stroke-width="6" />
+            <text x="0" y="12" text-anchor="middle" font-size="34" font-weight="800" />
+          </g>
+          <g class="reverted">
+            <rect x="-96" y="96" width="192" height="0" />
+          </g>
+        </g>`,
+        )
+        .join('')
+
+      const $ = (s, r = document) => r.querySelector(s)
+      const sheet = files.map((_, i) => document.getElementById('sheet' + i))
+
+      // Stamp times (thump moments) per sheet.
+      const thump = [6.0, 7.2, 8.5]
+      const flipAt = 4.9
+      const returnAt = [10.0, 10.6, 11.9]
+      const revertFlip = 11.0
+
+      function zig(cx, cy, p) {
+        const n = Math.max(2, Math.floor(p * 26))
+        const pts = []
+        for (let k = 0; k <= n; k++) {
+          const q = (k / 26) * 1
+          const x = cx - 115 + 230 * q
+          const y = cy - 10 + (k % 2 ? 26 : -26) * 1
+          pts.push(`${x.toFixed(1)},${y.toFixed(1)}`)
+        }
+        return pts
+      }
+
+      function render(t) {
+        // ---- tray band
+        const trayK = E.out(seg(t, 4.5, 5.2)) * (1 - E.inOut(seg(t, 12.2, 12.8)))
+        const tray = document.getElementById('tray')
+        tray.style.opacity = trayK
+        tray.setAttribute('transform', `translate(0 ${(1 - trayK) * -30})`)
+
+        // ---- folder
+        const folderK = E.out(seg(t, 0, 0.6))
+        document.getElementById('folder-back').style.opacity = folderK
+        document.getElementById('folder-front').style.opacity = folderK
+        const badgeK = seg(t, 12.6, 13.1)
+        $('#folder-sub').textContent = badgeK > 0 ? '2 edits kept · 1 reverted' : ''
+
+        // ---- sheets
+        const pencil = { x: 0, y: 0, show: 0 }
+        files.forEach((f, i) => {
+          const el = sheet[i]
+          // rise from folder
+          const rise = E.out(seg(t, 0.4 + i * 0.25, 1.3 + i * 0.25))
+          let k = lerp(0.45, 1, rise)
+          let cx = lerp(FOLDER.x, f.x, rise)
+          let cy = lerp(FOLDER.y - 10, SHEET_Y, rise)
+          let rot = lerp(0, [-3, 2, -2][i], rise)
+          // return into folder
+          const back = E.inOut(seg(t, returnAt[i], returnAt[i] + 0.9))
+          k = lerp(k, 0.45, back)
+          cx = lerp(cx, FOLDER.x, back)
+          cy = lerp(cy, FOLDER.y - 14, back)
+          rot = lerp(rot, 0, back)
+          // flip
+          let sx = 1
+          let showAfter = false
+          const flip = seg(t, flipAt + i * 0.1, flipAt + i * 0.1 + 0.6)
+          if (flip > 0 && flip < 1) {
+            sx = Math.abs(Math.cos(Math.PI * flip))
+            showAfter = flip > 0.5
+          } else if (flip >= 1) showAfter = true
+          let reverted = false
+          if (!f.ok) {
+            const rf = seg(t, revertFlip, revertFlip + 0.6)
+            if (rf > 0 && rf < 1) {
+              sx = Math.abs(Math.cos(Math.PI * rf))
+              showAfter = rf <= 0.5
+            } else if (rf >= 1) {
+              showAfter = false
+              reverted = true
+            }
+          }
+          el.setAttribute(
+            'transform',
+            `translate(${cx} ${cy}) rotate(${rot}) scale(${k * sx} ${k})`,
+          )
+          el.style.opacity = rise > 0 ? 1 : 0
+          $('.before', el).style.display = showAfter ? 'none' : ''
+          $('.after', el).style.display = showAfter ? '' : 'none'
+
+          // scribble by pencil
+          const start = 1.5 + i * 0.75
+          const p = seg(t, start, start + 0.7)
+          const scrib = $('.scrib', el)
+          if (p > 0 && !showAfter && !reverted) {
+            scrib.setAttribute('d', 'M' + zig(0, 0, p).join(' L'))
+            scrib.style.display = ''
+          } else scrib.style.display = 'none'
+          if (p > 0 && p < 1) {
+            const n = Math.floor(p * 26)
+            const q = n / 26
+            pencil.x = f.x - 115 + 230 * q
+            pencil.y = SHEET_Y - 10 + (n % 2 ? 26 : -26)
+            pencil.show = 1
+          }
+          const edited = $('.edited', el)
+          edited.style.display = p >= 1 && !showAfter && !reverted && t < 4.9 ? '' : 'none'
+
+          // ink stamp
+          const ink = $('.ink', el)
+          const ik = seg(t, thump[i], thump[i] + 0.16)
+          const inkOn = ik > 0 && t < returnAt[i] + 0.3
+          ink.style.display = inkOn ? '' : 'none'
+          if (inkOn) {
+            const accept = f.ok
+            const c = accept ? '#0b7a45' : '#d6336c'
+            $('rect', ink).setAttribute('stroke', c)
+            const tx = $('text', ink)
+            tx.setAttribute('fill', c)
+            tx.textContent = accept ? 'ACCEPTED' : 'REJECTED'
+            ink.setAttribute('opacity', 0.92 * E.out(ik))
+            ink.setAttribute(
+              'transform',
+              `translate(0,80) rotate(-9) scale(${lerp(1.35, 1, E.out(ik))})`,
+            )
+          }
+        })
+
+        // reverted tag (draw as extra text on the third sheet when folded back)
+        // pencil visibility
+        const pe = document.getElementById('pencil')
+        if (pencil.show) {
+          pe.style.display = ''
+          pe.setAttribute('transform', `translate(${pencil.x + 6} ${pencil.y + 6})`)
+        } else if (t > 1.0 && t < 1.5) {
+          const a = E.out(seg(t, 1.0, 1.5))
+          pe.style.display = ''
+          pe.setAttribute(
+            'transform',
+            `translate(${lerp(1000, files[0].x - 115, a)} ${lerp(-120, SHEET_Y - 36, a)})`,
+          )
+        } else if (t >= 3.8 && t < 4.5) {
+          const a = E.in(seg(t, 3.8, 4.5))
+          pe.style.display = ''
+          pe.setAttribute(
+            'transform',
+            `translate(${lerp(files[2].x + 115, 1300, a)} ${lerp(SHEET_Y + 16, -160, a)})`,
+          )
+        } else pe.style.display = 'none'
+
+        // ---- sticky note
+        const nk = E.back(seg(t, 3.5, 4.1)) * (1 - seg(t, 4.5, 4.9))
+        const note = document.getElementById('note')
+        note.style.opacity = clamp(nk)
+        const wob = Math.sin(t * 9) * 1.6 * seg(t, 4.1, 4.5) * (1 - seg(t, 4.5, 4.9))
+        note.setAttribute(
+          'transform',
+          `translate(1040 500) rotate(${4 + wob}) scale(${Math.max(0.01, nk)})`,
+        )
+
+        // ---- stamp choreography
+        const st = document.getElementById('stamp')
+        let sx = 0,
+          sy = 0,
+          lift = 0,
+          show = 0
+        // visit points
+        const visit = [
+          { at: thump[0], x: files[0].x, y: SHEET_Y + 30 },
+          { at: thump[1], x: files[1].x, y: SHEET_Y + 30 },
+          { at: thump[2], x: files[2].x, y: SHEET_Y + 30 },
+        ]
+        const ent = E.out(seg(t, 5.4, 5.9))
+        if (t > 5.4 && t < 9.4) {
+          show = 1
+          // position
+          let pos = { x: lerp(1280, visit[0].x, ent), y: visit[0].y }
+          for (let i = 1; i < 3; i++) {
+            const m = E.inOut(seg(t, thump[i - 1] + 0.3, thump[i] - 0.45))
+            if (t > thump[i - 1] + 0.3)
+              pos = { x: lerp(visit[i - 1].x, visit[i].x, m), y: visit[i].y }
+          }
+          sx = pos.x
+          sy = pos.y
+          // vertical hover/thump: lift 1 -> 0 at thump
+          lift = 1
+          thump.forEach((tm) => {
+            const d = t - tm
+            if (d > -0.35 && d < 0) lift = Math.min(lift, 1 - E.in(seg(t, tm - 0.35, tm)) * 1)
+            if (d >= 0 && d < 0.45) lift = Math.min(lift, E.out(seg(t, tm + 0.12, tm + 0.45)))
+          })
+          // exit after last
+          const ex = E.in(seg(t, 9.0, 9.6))
+          sx += ex * 500
+          sy -= ex * 300
+        }
+        st.style.display = show ? '' : 'none'
+        const isReject = t > thump[2] - 1.1
+        $('#stamp-tag-text').textContent = isReject ? 'Reject' : 'Accept'
+        $('#stamp-knob').setAttribute('fill', isReject ? '#ff9fc5' : '#20fd85')
+        const scale = lerp(1, 1.18, lift)
+        st.setAttribute('transform', `translate(${sx} ${sy - lift * 34}) scale(${scale})`)
+      }
+      Timeline.start({
+        duration: 14,
+        render,
+        beats: [
+          {
+            at: 0,
+            text: 'The agent edited three files. What exactly changed, and is it what you wanted?',
+          },
+          {
+            at: 4.6,
+            text: 'Every edit shows up in the Changes pane as a diff. Accept what’s right, reject what isn’t.',
+          },
+          {
+            at: 9.8,
+            text: 'Accepted edits stay in your project. The rejected one is reverted. You decide what lands.',
+          },
+        ],
+      })
+    </script>
+  </body>
+</html>
