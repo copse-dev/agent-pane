@@ -48,10 +48,14 @@ styles, markdown, tool cards, terminal/diff surfaces, screenshot fixtures, and v
 
 Add or update the smallest focused WebdriverIO browser/Electron spec that reaches the state, asserts
 the relevant DOM behavior, and saves a screenshot for review. Use
-`.cursor/skills/screenshot-validate/SKILL.md` for DOM/layout work and
-`.cursor/skills/agent-run-eval/SKILL.md` only when the visual depends on an agent/tool loop. A build
+`.agents/skills/screenshot-validate/SKILL.md` for DOM/layout work and
+`.agents/skills/agent-run-eval/SKILL.md` only when the visual depends on an agent/tool loop. A build
 or manual VNC inspection is not sufficient evidence. See [`docs/testing-strategy.md`](docs/testing-strategy.md)
 for the tier boundary and [`docs/ui-taste.md`](docs/ui-taste.md) for appearance conventions.
+
+For PR screenshot review and baseline acceptance, use
+[`pr-screenshot-review`](.agents/skills/pr-screenshot-review/SKILL.md) to distinguish intended
+updates, unrelated drift, and breakage before accepting all or committing selected candidates.
 
 ### Tests must not create product backdoors
 

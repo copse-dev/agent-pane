@@ -42,7 +42,10 @@ export function normalizeBrowserUrl(input: string): string {
   const candidate = `https://${trimmed}`
   if (URL.canParse(candidate)) {
     const parsed = tryParseHttpUrl(candidate)
-    if (parsed && isNavigableHostname(parsed.hostname)) return parsed.href
+    // `mailto:a@b.com` (or a bare email) would otherwise parse as userinfo `mailto:a` on
+    // host `b.com`. Typed text with credentials in it is never a site address.
+    const hasUserinfo = parsed != null && (parsed.username !== '' || parsed.password !== '')
+    if (parsed && !hasUserinfo && isNavigableHostname(parsed.hostname)) return parsed.href
   }
 
   return duckDuckGoSearchUrl(trimmed)

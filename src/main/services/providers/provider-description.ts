@@ -134,6 +134,7 @@ export function providerNeedsKey(description: ProviderDescription): boolean {
 export interface BuildFromDescriptionOptions {
   /** The key for `apiKeySlug`, or null when there is none. */
   apiKey: string | null
+  fetch?: typeof globalThis.fetch
   promptCacheKey?: string
   /** Hosts the user approved for custom endpoints; see `assertProviderHostAllowed`. */
   approvedHosts?: readonly string[]
@@ -170,6 +171,7 @@ export function buildProviderFromDescription(
         description.params,
         options.promptCacheKey,
         options.hostLocalAlias !== undefined ? { loopbackAliases: [options.hostLocalAlias] } : {},
+        options.fetch,
       )
     case 'openrouter':
       if (!apiKey) {
