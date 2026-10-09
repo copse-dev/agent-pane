@@ -79,7 +79,9 @@ revisiting this document, not silently diverging in an implementation PR.
    follow-ups, bounded background-task completion wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
    originating turn tree), ACP unfinished-turn recovery, post-turn remediation cycles,
-   pre-review todo attempts, and todo-closeout turns. **In-loop nudges do not count**
+   pre-review todo attempts, and todo-closeout turns. Agent-managed external-agent
+   turns leave unfinished-turn recovery to the agent, so they spend no recovery
+   continuation. **In-loop nudges do not count**
    (truncation-continue, finalize, loop, and
    reasoning-runaway nudges are mid-turn message pushes inside one `runAgentLoop`
    invocation, already bounded by `maxSteps` / `DEFAULT_MAX_LLM_CALLS` and the run
@@ -277,8 +279,10 @@ revisiting this document, not silently diverging in an implementation PR.
     decision 17: disabling removes contributions from new work while stored data and
     historical rendering remain available.
 20. **`turnStart` assembly is executor-neutral.** The canonical event fires once
-    for the built-in loop and once for an external ACP turn, before either executor
-    receives its prompt. ACP receives the merged trusted outcome in a separately
+    for the built-in loop and once for a Copse-managed external ACP turn, before
+    either executor receives its prompt. Agent-managed external-agent turns omit
+    Copse's prompt assembly so the agent receives its native prompting behavior.
+    Copse-managed ACP receives the merged trusted outcome in a separately
     delimited `Copse guidance` block; the raw user message stays byte-for-byte intact,
     and an explicitly invoked skill remains the last instruction block because it is
     a direct user action. `TurnStartPayload.executor` lets hooks abstain from

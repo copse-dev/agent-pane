@@ -1,5 +1,10 @@
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
-import { openAcpSession, settleAcpChildShutdowns, willSandboxAcpAgent } from './acp-client.ts'
+import {
+  agentManagedSessionOptions,
+  openAcpSession,
+  settleAcpChildShutdowns,
+  willSandboxAcpAgent,
+} from './acp-client.ts'
 import type { AcpSessionCarryOver, AcpSessionHandover } from './acp-session-reattach.ts'
 import { spawnConfigSshTarget } from './acp-ssh-transport.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
@@ -135,6 +140,7 @@ let reaper: NodeJS.Timeout | null = null
 export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
   return JSON.stringify({
     command: config.command,
+    executionMode: config.executionMode ?? 'copse',
     args: config.args ?? [],
     env: config.env ?? {},
     cwd: config.cwd,
@@ -148,7 +154,7 @@ export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
 
 /**
  * What must stay the same for a new process to take over a thread's existing
- * agent session: the same agent (command, args, env) on the same machine.
+ * agent session: the same agent (command, args, env), execution mode, and machine.
  * Everything else in the fingerprint — cwd, sandbox, permission mode, MCP
  * servers — is supplied again when the session is reattached, so changing it
  * costs a process, not the conversation. A different host never inherits a
@@ -157,6 +163,7 @@ export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
 export function acpSessionLineage(config: AcpAgentSpawnConfig): string {
   return JSON.stringify({
     command: config.command,
+    executionMode: config.executionMode ?? 'copse',
     args: config.args ?? [],
     env: config.env ?? {},
     host: spawnConfigSshTarget(config)?.hostId ?? null,
@@ -293,7 +300,11 @@ async function acquireAcpSessionUnlocked(
       // Config options (reasoning level, …) are excluded from the fingerprint so
       // changing one reuses the session instead of respawning it; hand the fresh
       // selection to the open session, which applies the diff next turn.
-      existing.open.desiredConfigOptions = opts.config.configOptions
+      existing.open.desiredConfigOptions =
+        opts.config.executionMode === 'agent'
+          ? agentManagedSessionOptions(existing.open.session.response, opts.config.configOptions)
+              .configOptions
+          : opts.config.configOptions
       return { entry: existing, fresh: false, handover: null }
     }
     // Replaced — faulted, closed, or respawned for a new cwd, sandbox, or

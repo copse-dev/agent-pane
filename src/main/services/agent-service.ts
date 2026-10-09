@@ -726,6 +726,7 @@ function fireAfterToolUseHook(args: {
 }
 
 export interface RunAgentOptions {
+  executionMode?: 'agent'
   invokedSkills?: string[]
   /** Subagent explicitly invoked by the user's leading `/name`. */
   invokedAgent?: string
@@ -1241,25 +1242,27 @@ async function runAgentWithInlineCanvas(
         }
       : null
     try {
-      // `turnStart` is an executor-neutral assembly event (decision 20): ACP
-      // receives the same active first-party plugin hooks as the built-in loop.
-      // Only Copse's bridged tools are listed because the host cannot inspect
-      // the external agent's private tool catalogue.
-      const operatorInstructions = await perfSpan('ttft:acp-turn-assembly', () =>
-        assembleAcpTurnStart({
-          userText: promptTextForSubmit(userPrompt),
-          priorTodos: options?.priorTodos ?? [],
-          model: executorModel,
-          registry,
-          signal: controller.signal,
-          resolveGithubRepoSlug: () => getGithubRepoSlug(),
-          resolvePluginSetting,
-          recordHookRun: recordFunctionHookRun,
-        }),
-      )
+      // Copse-managed ACP turns use the canonical turnStart assembly (decision
+      // 20). Agent-managed turns leave the agent's own prompt behavior intact.
+      const operatorInstructions =
+        options?.executionMode === 'agent'
+          ? ''
+          : await perfSpan('ttft:acp-turn-assembly', () =>
+              assembleAcpTurnStart({
+                userText: promptTextForSubmit(userPrompt),
+                priorTodos: options?.priorTodos ?? [],
+                model: executorModel,
+                registry,
+                signal: controller.signal,
+                resolveGithubRepoSlug: () => getGithubRepoSlug(),
+                resolvePluginSetting,
+                recordHookRun: recordFunctionHookRun,
+              }),
+            )
       let result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpRunAgentId,
+        ...(options?.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
         userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
@@ -1277,7 +1280,9 @@ async function runAgentWithInlineCanvas(
         { role: 'user' as const, content: outboundPrompt },
         ...result.messages,
       ]
-      const endedAfterTools = shouldRecoverAcpTurn(result.stopReason, acpProgress.turn)
+      const endedAfterTools =
+        options?.executionMode !== 'agent' &&
+        shouldRecoverAcpTurn(result.stopReason, acpProgress.turn)
       const endedOn = acpProgress.turn.lastEvent
       let recoveryAttempted = false
       let recoverySucceeded = false

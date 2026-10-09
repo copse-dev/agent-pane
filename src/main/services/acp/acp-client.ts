@@ -107,6 +107,8 @@ export interface AcpClientHandlers {
 
 export interface AcpAgentSpawnConfig {
   command: string
+  /** Thread execution boundary; a change starts a new process and agent session. */
+  executionMode?: 'agent'
   args?: string[]
   env?: Record<string, string>
   /** Absolute workspace root passed as the ACP session `cwd`. */
@@ -272,6 +274,38 @@ export function modeSelectorFrom(response: {
     ...(mode.description ? { description: mode.description } : {}),
   }))
   return { currentValue: modes.currentModeId, choices }
+}
+
+function automaticModeValue(choices: readonly AcpConfigChoice[]): string | undefined {
+  const named = (name: string): string | undefined =>
+    choices.find(
+      (choice) => choice.value.toLowerCase() === name || choice.label.toLowerCase() === name,
+    )?.value
+  return named('auto') ?? named('default')
+}
+
+/** Agent managed uses the agent's automatic mode, without changing saved settings. */
+export function agentManagedSessionOptions(
+  response: { modes?: SessionModeState | null; configOptions?: readonly unknown[] | null },
+  saved: Record<string, string> | undefined,
+): { permissionMode: string | undefined; configOptions: Record<string, string> | undefined } {
+  const modeOptions = configOptionsFrom(response).filter((option) => option.category === 'mode')
+  const modeIds = new Set(modeOptions.map((option) => option.configId))
+  const configOptions = Object.fromEntries(
+    Object.entries(saved ?? {}).filter(([configId]) => !modeIds.has(configId)),
+  )
+  for (const option of modeOptions) {
+    const automatic = automaticModeValue(option.choices)
+    if (automatic) configOptions[option.configId] = automatic
+  }
+  const permissionMode =
+    modeOptions.length === 0
+      ? automaticModeValue(modeSelectorFrom(response)?.choices ?? [])
+      : undefined
+  return {
+    permissionMode,
+    configOptions: Object.keys(configOptions).length > 0 ? configOptions : undefined,
+  }
 }
 
 /**
@@ -1272,15 +1306,23 @@ export async function openAcpSession(
     // (issue #607) — e.g. a sandboxed Claude preset runs in `acceptEdits` since
     // the seatbelt already contains writes. Applied here, before the first
     // prompt, so the session's first tool call already honors the mode.
+    const agentOptions =
+      config.executionMode === 'agent'
+        ? agentManagedSessionOptions(session.response, config.configOptions)
+        : null
     await perfSpan('ttft:acp-session-mode', () =>
-      applySessionMode(connection, session, config.permissionMode),
+      applySessionMode(connection, session, agentOptions?.permissionMode ?? config.permissionMode),
     )
     // Everything else the agent lets us configure (reasoning level, and any
     // other selector it advertises) is applied the same way, before the first
     // prompt. Unlike the mode this is not baked into the session fingerprint —
     // a later change re-applies live at the start of the next turn.
     const appliedConfigOptions = await perfSpan('ttft:acp-session-config', () =>
-      applyConfigOptions(connection, session, config.configOptions),
+      applyConfigOptions(
+        connection,
+        session,
+        agentOptions ? agentOptions.configOptions : config.configOptions,
+      ),
     )
 
     const open: OpenAcpSession = {
@@ -1299,7 +1341,7 @@ export async function openAcpSession(
       carryOverFailure,
       hasHistory: restoredBy !== null && carryOver?.hasHistory === true,
       appliedModel: undefined,
-      desiredConfigOptions: config.configOptions,
+      desiredConfigOptions: agentOptions ? agentOptions.configOptions : config.configOptions,
       appliedConfigOptions,
       suppressChunks: false,
       turnStop: null,

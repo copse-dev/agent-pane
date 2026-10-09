@@ -307,6 +307,8 @@ export interface ThreadReviewReport {
 export interface Thread {
   id: string
   title: string
+  /** Absent means Copse manages the external agent's execution. */
+  executionMode?: 'agent'
   /**
    * How many times auto-naming has written {@link title}. Absent means the title
    * is nobody's but the user's — either the untouched `New Thread` default or a

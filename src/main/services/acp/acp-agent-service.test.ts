@@ -12,7 +12,7 @@ import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
-import { rememberAcpPermission } from './acp-permission-grants.ts'
+import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
 import { acpSessionFingerprint } from './acp-session-pool.ts'
 import { acpSshTarget, spawnConfigSshTarget } from './acp-ssh-transport.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
@@ -783,6 +783,45 @@ describe('remote ACP agents are never treated as sandboxed', () => {
     }
     assert.equal(resolveAcpPermissionMode(claude, remote().sandboxed), undefined)
     assert.equal(resolveAcpPermissionMode(claude, local().sandboxed), 'acceptEdits')
+  })
+
+  it('asks for an agent-managed request without Copse auto-approval', async () => {
+    await rememberAcpPermission('agent-managed-fixture', 'read')
+    const req = permissionRequest({ kind: 'read', title: 'Read src/index.ts' })
+    const response = await respondToPermissionForTest(
+      {
+        id: 'agent-managed-fixture',
+        title: 'Agent',
+        ...local(),
+        executionMode: 'agent',
+      },
+      req,
+      LOCAL_ROOT,
+      LOCAL_ROOT,
+    )
+    assert.equal(prompts.length, 1)
+    assert.deepEqual(response, { outcome: { outcome: 'selected', optionId: REJECT_ONCE.optionId } })
+  })
+
+  it('passes an always decision to the agent without storing a Copse grant', async () => {
+    setApprovalHandler((req) => {
+      prompts.push(req.title)
+      return Promise.resolve({ approved: true, remember: true })
+    })
+    const req = {
+      ...permissionRequest({ kind: 'read', title: 'Read src/index.ts' }),
+      options: [ALLOW_ONCE, ALLOW_ALWAYS, REJECT_ONCE],
+    }
+    const response = await respondToPermissionForTest(
+      { id: 'agent-owned-always-fixture', title: 'Agent', ...local(), executionMode: 'agent' },
+      req,
+      LOCAL_ROOT,
+      LOCAL_ROOT,
+    )
+    assert.deepEqual(response, {
+      outcome: { outcome: 'selected', optionId: ALLOW_ALWAYS.optionId },
+    })
+    assert.equal(isAcpPermissionRemembered('agent-owned-always-fixture', 'read'), false)
   })
 
   async function answer(

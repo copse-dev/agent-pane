@@ -97,6 +97,8 @@ export interface TodoUpdateInput {
  */
 export interface AgentRunPayload {
   content: UserContent
+  /** Thread-scoped external agent execution choice. */
+  executionMode?: 'agent'
   invokedSkills?: string[]
   /** Subagent the user invoked with `/name` this turn. */
   invokedAgent?: string
