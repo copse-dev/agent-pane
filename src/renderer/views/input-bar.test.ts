@@ -72,7 +72,7 @@ function createApi(options: {
   branchStatusCurrentBranch?: string
   onBranchStatus?: () => void
   branches?: Awaited<ReturnType<ApiClient['git']['listBranches']>>
-  onAbort?: () => Promise<void>
+  onAbort?: ApiClient['agent']['abort']
   onRun?: ApiClient['agent']['run']
   onCheckoutBranch?: (branch: string) => Promise<void>
   onPrepareCheckout?: ApiClient['agent']['prepareCheckout']
@@ -4195,5 +4195,106 @@ describe('input bar container target', () => {
     )
     assert.ok(!labels.includes('Run unattended in a container…'), labels.join(', '))
     assert.equal(host.querySelector<HTMLSelectElement>('.composer-target')?.hidden, true)
+  })
+})
+
+describe('composer Send now shortcuts', () => {
+  for (const keys of [['Enter'], ['x', 's']]) {
+    it(`sends an existing queue using Ctrl+${keys.join(' Ctrl+')}`, async () => {
+      const running = thread()
+      running.status = 'running'
+      running.pendingMessages = [
+        { messageId: 'queued', payload: { content: 'follow up' }, createdAt: 1 },
+      ]
+      const aborts: Array<[string, string | undefined]> = []
+      const store = createStore({
+        workspaceRoot: '/repo',
+        projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+        activeProjectId: 'project-1',
+        activeThreadId: running.id,
+        threads: [running],
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      mountInputBar(
+        host,
+        store,
+        createApi({
+          currentBranch: 'main',
+          onAbort: async (id, reason) => {
+            aborts.push([id, reason])
+          },
+        }),
+      )
+      await settle()
+      const composer = host.querySelector<HTMLElement>('.prompt-input')
+      assert.ok(composer)
+      for (const key of keys)
+        composer.dispatchEvent(
+          new window.KeyboardEvent('keydown', {
+            key,
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        )
+      await flush()
+      assert.deepEqual(aborts, [[running.id, 'send_now']])
+      assert.equal(store.getState().threads[0]?.pendingMessages?.length, 1)
+    })
+  }
+
+  it('queues plain Enter without interrupting, and Ctrl+Enter sends a drafted follow-up', async () => {
+    const running = thread('main')
+    running.status = 'running'
+    running.worktreeChoice = 'shared'
+    running.messages = [{ id: 'old', role: 'user', content: 'start', createdAt: 1, toolCalls: [] }]
+    const aborts: Array<[string, string | undefined]> = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: running.id,
+      threads: [running],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onAbort: async (id, reason) => {
+          aborts.push([id, reason])
+        },
+      }),
+    )
+    await settle()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'queue this'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    composer.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    await flush()
+    assert.deepEqual(aborts, [])
+    assert.equal(store.getState().threads[0]?.pendingMessages?.length, 1)
+    composer.textContent = 'send this now'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    composer.dispatchEvent(
+      new window.KeyboardEvent('keydown', {
+        key: 'Enter',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+    await flush()
+    assert.deepEqual(aborts, [[running.id, 'send_now']])
+    assert.equal(
+      store.getState().threads[0]?.pendingMessages?.[0]?.payload.content,
+      'send this now',
+    )
   })
 })
