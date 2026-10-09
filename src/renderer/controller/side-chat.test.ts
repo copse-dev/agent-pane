@@ -2,7 +2,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ForkedHistoryResult, Thread } from '@shared/types'
-import { addMessage, createThread, switchThread } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  archiveThread,
+  createThread,
+  switchThread,
+} from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { enqueueUserMessage } from './message-queue.ts'
 import { promoteSideChat, sendSideChatMessage, startSideChat } from './side-chat.ts'
@@ -166,6 +171,11 @@ test('asking a side chat adds the question to it and runs it without touching th
   assert.equal(store.getState().activeThreadId, parentId)
   assert.equal(sendSideChatMessage(store, api, id, '   '), null)
   assert.equal(sendSideChatMessage(store, api, parentId, 'not a side chat'), null)
+
+  // An archived side chat takes no new questions until it is restored.
+  archiveThread(store, id)
+  assert.equal(sendSideChatMessage(store, api, id, 'Still there?'), null)
+  assert.deepEqual(runs, [id])
 })
 
 test('promoting a side chat makes a thread of the parent slice plus its own turns and archives it', async () => {

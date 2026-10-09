@@ -107,7 +107,7 @@ export function sendSideChatMessage(
 ): string | null {
   const side = getThreadById(store, sideThreadId)
   const prompt = text.trim()
-  if (!side || side.sideChat === undefined || prompt === '') return null
+  if (!side || side.sideChat === undefined || side.archivedAt != null || prompt === '') return null
   const messageId = addMessage(store, sideThreadId, 'user', prompt)
   const payload: AgentRunPayload = {
     content: prompt,

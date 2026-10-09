@@ -132,12 +132,20 @@ export function renderSideChat(input: {
 
   const body = el('div', { class: 'side-chat-body' })
   if (side.messages.length === 0) {
+    // An archived side chat takes no new questions until it is restored, so it
+    // offers no suggestions either (the composer is disabled for the same reason).
     body.append(
       el(
         'div',
         { class: 'side-chat-empty' },
-        el('p', {}, 'Ask anything about this message without touching the main thread.'),
-        ...SIDE_CHAT_SUGGESTIONS.map((text) => {
+        el(
+          'p',
+          {},
+          archived
+            ? 'This side chat is archived. Restore it to ask a question.'
+            : 'Ask anything about this message without touching the main thread.',
+        ),
+        ...(archived ? [] : SIDE_CHAT_SUGGESTIONS).map((text) => {
           const button = el(
             'button',
             { type: 'button', class: 'side-chat-suggestion', 'data-suggestion': '' },

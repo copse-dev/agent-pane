@@ -106,19 +106,29 @@ test('renders the context line, safe messages, tool names, a thinking marker and
 
 test('an empty side chat offers the prototype suggestions, and an archived one offers restore', () => {
   const asked: string[] = []
-  const view = renderSideChat({
-    side: thread('s', { sideChat: link, archivedAt: 3 }),
+  const live = renderSideChat({
+    side: thread('s', { sideChat: link }),
     parent: undefined,
     onSuggestion: (text) => asked.push(text),
     onArchive: () => {},
   })
-  const buttons = [...view.body.querySelectorAll<HTMLElement>('[data-suggestion]')]
+  const buttons = [...live.body.querySelectorAll<HTMLElement>('[data-suggestion]')]
   assert.deepEqual(
     buttons.map((button) => button.textContent),
     [...SIDE_CHAT_SUGGESTIONS],
   )
   buttons[1]?.click()
   assert.deepEqual(asked, ['What alternatives did you consider?'])
+
+  // An archived side chat takes no new questions, so it offers no suggestions.
+  const view = renderSideChat({
+    side: thread('s', { sideChat: link, archivedAt: 3 }),
+    parent: undefined,
+    onSuggestion: (text) => asked.push(text),
+    onArchive: () => {},
+  })
+  assert.equal(view.body.querySelectorAll('[data-suggestion]').length, 0)
+  assert.match(view.body.textContent, /archived/)
   assert.equal(
     view.header.querySelector('[data-action="restore-side-chat"]')?.textContent,
     'Restore',
