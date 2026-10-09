@@ -97,6 +97,9 @@ export function renderSideChat(input: {
 }): { header: HTMLElement; body: HTMLElement } {
   const { side, parent } = input
   const archived = side.archivedAt != null
+  // Archiving only hides a side chat; it would not stop a run in progress, so a
+  // running one is archived once it settles (as the thread archive refuses one).
+  const archiveBlocked = !archived && side.status === 'running'
   const anchor = parent?.messages.find((m) => m.id === side.sideChat?.anchorMessageId)
   const header = el(
     'div',
@@ -114,6 +117,8 @@ export function renderSideChat(input: {
           type: 'button',
           class: 'side-chat-action',
           'data-action': archived ? 'restore-side-chat' : 'archive-side-chat',
+          disabled: archiveBlocked ? true : undefined,
+          title: archiveBlocked ? 'Wait for the side chat to finish before archiving' : undefined,
         },
         archived ? 'Restore' : 'Archive',
       ),
@@ -127,7 +132,7 @@ export function renderSideChat(input: {
     ),
   )
   header.querySelector('button')?.addEventListener('click', () => {
-    input.onArchive(archived)
+    if (!archiveBlocked) input.onArchive(archived)
   })
 
   const body = el('div', { class: 'side-chat-body' })

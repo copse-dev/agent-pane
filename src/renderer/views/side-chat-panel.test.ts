@@ -100,8 +100,9 @@ test('renders the context line, safe messages, tool names, a thinking marker and
   assert.equal(view.body.querySelector('.is-error')?.textContent, 'The model is unavailable')
   assert.match(view.body.querySelector('.side-chat-typing')?.textContent ?? '', /thinking/)
   assert.equal(view.body.querySelectorAll('[data-suggestion]').length, 0)
+  // Still running, so Archive waits for the run to settle.
   view.header.querySelector<HTMLElement>('button')?.click()
-  assert.deepEqual(archived, [false])
+  assert.deepEqual(archived, [])
 })
 
 test('an empty side chat offers the prototype suggestions, and an archived one offers restore', () => {
@@ -137,6 +138,37 @@ test('an empty side chat offers the prototype suggestions, and an archived one o
     view.header.querySelector('[data-side-chat-context]')?.textContent ?? '',
     /up to where it branched/,
   )
+})
+
+test('a running side chat cannot be archived until its run settles', () => {
+  const archived: boolean[] = []
+  const running = renderSideChat({
+    side: thread('s', { sideChat: link, status: 'running' }),
+    parent: undefined,
+    onSuggestion: () => {},
+    onArchive: (value) => archived.push(value),
+  })
+  const button = running.header.querySelector<HTMLButtonElement>(
+    '[data-action="archive-side-chat"]',
+  )
+  assert.ok(button)
+  assert.equal(button.disabled, true)
+  button.click()
+  assert.equal(archived.length, 0)
+
+  const idle = renderSideChat({
+    side: thread('s', { sideChat: link }),
+    parent: undefined,
+    onSuggestion: () => {},
+    onArchive: (value) => archived.push(value),
+  })
+  const idleButton = idle.header.querySelector<HTMLButtonElement>(
+    '[data-action="archive-side-chat"]',
+  )
+  assert.ok(idleButton)
+  assert.equal(idleButton.disabled, false)
+  idleButton.click()
+  assert.deepEqual(archived, [false])
 })
 
 test('the mounted pane shows a requested side chat beside the main thread, sends and promotes', async () => {
