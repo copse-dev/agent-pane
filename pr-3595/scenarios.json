@@ -176,6 +176,10 @@
     "label": "Side chats beside the main thread"
   },
   {
+    "id": "thread-context",
+    "label": "The thread Context panel"
+  },
+  {
     "id": "side-chat-approval",
     "label": "A side chat asks for approval over its parent thread"
   },

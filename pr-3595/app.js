@@ -39232,8 +39232,8 @@ function stripAlertMarker(innerSource) {
 ${rest}`;
 }
 function renderBlockquote(slice, linkRefs) {
-  const firstLine = slice.split("\n")[0] ?? "";
-  const alertType = alertTypeFromMarker(stripBlockquoteMarker(firstLine));
+  const firstLine2 = slice.split("\n")[0] ?? "";
+  const alertType = alertTypeFromMarker(stripBlockquoteMarker(firstLine2));
   const innerSource = stripBlockquoteSource(slice);
   if (alertType) {
     const body = stripAlertMarker(innerSource);
@@ -39906,11 +39906,11 @@ function renderMarkdownCore(raw, options) {
   setActiveFootnoteContext(footnotes);
   try {
     const body = renderBlocks(raw, tokens, renderOpts);
-    const section = renderFootnoteSection(footnotes, linkRefs);
-    if (section === "")
+    const section2 = renderFootnoteSection(footnotes, linkRefs);
+    if (section2 === "")
       return body;
-    return body === "" ? section : `${body}
-${section}`;
+    return body === "" ? section2 : `${body}
+${section2}`;
   } finally {
     setActiveFootnoteContext(previousFootnotes);
   }
@@ -42220,9 +42220,9 @@ var init_streaming_frozen_tail = __esm({
       fnRebuild(completedEl, complete, tokens, linkRefs, linkRefKey, footnoteDefs) {
         const { parts, items, ctx } = this.renderFootnoteFrame(complete, tokens, linkRefs, footnoteDefs);
         const body = parts.map((p2) => p2.html).join("\n");
-        const section = wrapFootnoteSection(items, ctx.idPrefix);
-        const rawHtml = section === "" ? body : body === "" ? section : `${body}
-${section}`;
+        const section2 = wrapFootnoteSection(items, ctx.idPrefix);
+        const rawHtml = section2 === "" ? body : body === "" ? section2 : `${body}
+${section2}`;
         this.committedHasOpenDetails = hasOpenDetailsElement(rawHtml);
         const html2 = sanitizeRenderedMarkdown(rawHtml);
         this.renderedChars += html2.length;
@@ -42239,9 +42239,9 @@ ${section}`;
         this.lastLinkRefs = linkRefs;
         this.frozenLabelCandidates.clear();
         const els = Array.from(completedEl.children);
-        const expected = parts.length + (section === "" ? 0 : 1);
-        const sectionOl = section === "" ? null : els[els.length - 1]?.querySelector("ol") ?? null;
-        if (els.length !== expected || section !== "" && !sectionOl) {
+        const expected = parts.length + (section2 === "" ? 0 : 1);
+        const sectionOl = section2 === "" ? null : els[els.length - 1]?.querySelector("ol") ?? null;
+        if (els.length !== expected || section2 !== "" && !sectionOl) {
           this.resetFootnoteState();
           this.fnGaveUp = true;
           return;
@@ -42440,13 +42440,13 @@ function trailingFootnotesSection(completedEl) {
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
 }
 function tailContentElement(completedEl) {
-  const section = trailingFootnotesSection(completedEl);
-  return section ? section.previousElementSibling : completedEl.lastElementChild;
+  const section2 = trailingFootnotesSection(completedEl);
+  return section2 ? section2.previousElementSibling : completedEl.lastElementChild;
 }
 function appendPendingTail(completedEl, el3) {
-  const section = trailingFootnotesSection(completedEl);
-  if (section)
-    completedEl.insertBefore(el3, section);
+  const section2 = trailingFootnotesSection(completedEl);
+  if (section2)
+    completedEl.insertBefore(el3, section2);
   else
     completedEl.append(el3);
 }
@@ -52589,17 +52589,17 @@ function renderPlanWorthItSection(host, payload, error62, opts) {
   host.append(card);
 }
 function renderModelTable(host, title, rows, emptyText, accounts = []) {
-  const section = document.createElement("div");
-  section.className = "usage-model-group";
+  const section2 = document.createElement("div");
+  section2.className = "usage-model-group";
   const heading = document.createElement("h4");
   heading.textContent = title;
-  section.append(heading);
+  section2.append(heading);
   if (rows.length === 0) {
     const empty = document.createElement("p");
     empty.className = "usage-empty";
     empty.textContent = emptyText;
-    section.append(empty);
-    host.append(section);
+    section2.append(empty);
+    host.append(section2);
     return;
   }
   const table = document.createElement("table");
@@ -52656,21 +52656,21 @@ function renderModelTable(host, title, rows, emptyText, accounts = []) {
     `;
     tbody.append(tr2);
   }
-  section.append(table);
-  host.append(section);
+  section2.append(table);
+  host.append(section2);
 }
 function renderClassifierTable(host, rows, allTime) {
-  const section = document.createElement("div");
-  section.className = "usage-model-group usage-classifier-group";
+  const section2 = document.createElement("div");
+  section2.className = "usage-model-group usage-classifier-group";
   const heading = document.createElement("h4");
   heading.textContent = "Classifiers";
-  section.append(heading);
+  section2.append(heading);
   if (allTime || !rows || rows.length === 0) {
     const empty = document.createElement("p");
     empty.className = "usage-empty";
     empty.textContent = allTime ? "Classifier calls are listed for the day, month and 90-day windows only." : "No classifier usage in this period.";
-    section.append(empty);
-    host.append(section);
+    section2.append(empty);
+    host.append(section2);
     return;
   }
   const table = document.createElement("table");
@@ -52715,8 +52715,8 @@ function renderClassifierTable(host, rows, allTime) {
     body.append(tr2);
   }
   table.append(columns, head, body);
-  section.append(table);
-  host.append(section);
+  section2.append(table);
+  host.append(section2);
 }
 function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
   host.replaceChildren();
@@ -54079,10 +54079,10 @@ function mountBranchCiEditor(options) {
   let pluginEnabled = options.pluginEnabled;
   let definitions = [];
   let editingId = null;
-  const section = el("section", { class: "automation-list automation-ci-list" });
+  const section2 = el("section", { class: "automation-list automation-ci-list" });
   const sectionHeading = el("div", { class: "plugin-settings-heading" }, "Event automations");
   const rows = el("div", { class: "automation-list" });
-  section.append(sectionHeading, rows);
+  section2.append(sectionHeading, rows);
   const fields = [];
   function field(kind, node2) {
     node2.dataset["triggerField"] = kind;
@@ -54224,7 +54224,7 @@ function mountBranchCiEditor(options) {
     matches2,
     el("div", { class: "automation-form-actions" }, preview, cancel, save)
   );
-  root.append(section, form);
+  root.append(section2, form);
   const modelPicker = mountModelSelectPicker(model, {
     loadOptions: (current) => fetchDynamicModelOptions(current),
     ariaLabel: "CI automation model",
@@ -54281,7 +54281,7 @@ function mountBranchCiEditor(options) {
     form.hidden = true;
     heading.hidden = false;
     scheduleList.hidden = false;
-    section.hidden = false;
+    section2.hidden = false;
     matches2.hidden = true;
   }
   async function open2(definition, draft) {
@@ -54306,7 +54306,7 @@ function mountBranchCiEditor(options) {
     heading.hidden = true;
     scheduleList.hidden = true;
     scheduleForm.hidden = true;
-    section.hidden = true;
+    section2.hidden = true;
     form.hidden = false;
     name.focus();
     const defaultModel = definition?.model ?? draft?.model ?? BEST_VALUE_CHAT_MODEL;
@@ -54584,11 +54584,11 @@ function mountBranchCiEditor(options) {
     },
     hideForSchedule() {
       form.hidden = true;
-      section.hidden = true;
+      section2.hidden = true;
     },
     showList() {
       form.hidden = true;
-      section.hidden = false;
+      section2.hidden = false;
     },
     setPluginEnabled(value) {
       pluginEnabled = value;
@@ -64688,9 +64688,9 @@ function collectSubagentUsage(toolCalls, totals) {
 }
 function subagentRunLabel(session) {
   const kind = session.kind === "custom" && session.agentName ? session.agentName : SUBAGENT_KIND_LABEL[session.kind];
-  const firstLine = session.prompt.trim().split("\n")[0] ?? "";
-  if (!firstLine) return kind;
-  const prompt = firstLine.length > RUN_PROMPT_MAX_CHARS ? `${firstLine.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine;
+  const firstLine2 = session.prompt.trim().split("\n")[0] ?? "";
+  if (!firstLine2) return kind;
+  const prompt = firstLine2.length > RUN_PROMPT_MAX_CHARS ? `${firstLine2.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine2;
   return `${kind} \xB7 ${prompt}`;
 }
 function collectSubagentRuns(toolCalls, runs) {
@@ -68366,8 +68366,8 @@ var init_remote_folder_dialog = __esm({
 });
 
 // src/renderer/controller/projects.ts
-function formatSshProjectName(hostLabel2, remotePath) {
-  return `${hostLabel2}:${remotePath}`;
+function formatSshProjectName(hostLabel3, remotePath) {
+  return `${hostLabel3}:${remotePath}`;
 }
 function projectDisplayName(project2) {
   if (!project2.sshHost) return project2.name;
@@ -69211,24 +69211,24 @@ function parseApprovedProviderHosts(value) {
   const text2 = typeof value === "string" ? value : "";
   return text2.split(/\r?\n/).map((line) => line.trim().toLowerCase().replace(/\.$/, "")).filter(Boolean);
 }
-function openSettingsDialog(section) {
+function openSettingsDialog(section2) {
   if (!overlayEl || overlayEl.open) return;
-  pendingSection = section ?? null;
+  pendingSection = section2 ?? null;
   overlayEl.showModal();
   overlayEl.dispatchEvent(new Event("settings-open"));
 }
 function openModelSettings(target = "model") {
   if (!overlayEl) return;
   const pluginTarget = target.startsWith("plugin:") || target === "advisorModel";
-  const section = pluginTarget ? "customise" : target === "orchestrationWorkerModel" ? "experimental" : "general";
+  const section2 = pluginTarget ? "customise" : target === "orchestrationWorkerModel" ? "experimental" : "general";
   if (overlayEl.open) {
-    qsRequired(overlayEl, `.settings-nav-btn[data-section="${section}"]`).click();
+    qsRequired(overlayEl, `.settings-nav-btn[data-section="${section2}"]`).click();
     if (pluginTarget) void revealPluginModel?.(target);
     else focusModelSettings(overlayEl, target);
     return;
   }
   pendingModelFocus = target;
-  openSettingsDialog(section);
+  openSettingsDialog(section2);
 }
 function focusModelSettings(overlay, target) {
   const control = [...overlay.querySelectorAll("[data-model-setting-target]")].find(
@@ -69258,13 +69258,13 @@ function installReviewSkillName(path, pluginId) {
   return parts.at(-2) ?? pluginId;
 }
 function installReviewSection(heading, body) {
-  const section = document.createElement("section");
-  section.className = "plugin-install-review-section";
+  const section2 = document.createElement("section");
+  section2.className = "plugin-install-review-section";
   const title = document.createElement("div");
   title.className = "plugin-install-review-heading";
   title.textContent = heading;
-  section.append(title, body);
-  return section;
+  section2.append(title, body);
+  return section2;
 }
 function closeSettingsDialog() {
   if (!overlayEl || !overlayEl.open) return;
@@ -70656,11 +70656,11 @@ function mountSettingsDialog(store2, api2) {
   function renderNavSubheadings(id) {
     clearNavSubheadings();
     const navBtn = Array.from(navBtns).find((btn) => btn.dataset["section"] === id);
-    const section = Array.from(sections).find((sec) => sec.dataset["section"] === id);
-    if (!navBtn || !section) return;
+    const section2 = Array.from(sections).find((sec) => sec.dataset["section"] === id);
+    if (!navBtn || !section2) return;
     const list = document.createElement("div");
     list.className = "settings-nav-subheadings";
-    for (const block of topLevelBlocks(section)) {
+    for (const block of topLevelBlocks(section2)) {
       if (block.closest("[hidden]")) continue;
       const label = block.querySelector("legend")?.textContent.trim();
       if (!label) continue;
@@ -79447,6 +79447,25 @@ var init_demo_scenarios = __esm({
         threads: SIDE_CHATS_THREADS
       },
       {
+        id: "thread-context",
+        label: "The thread Context panel",
+        project: project("demo-thread-context", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          filesPaneOpen: true,
+          rightPanelMode: "context",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        threads: SIDE_CHATS_THREADS
+      },
+      {
         id: "side-chat-approval",
         label: "A side chat asks for approval over its parent thread",
         project: project("demo-side-chat-approval", "Widgets", "/demo/widgets"),
@@ -82709,6 +82728,13 @@ function panelIcon() {
     "titlebar-btn-icon"
   );
 }
+function contextIcon() {
+  return outlineIcon(
+    "context",
+    ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z", "M12 16v-4", "M12 8h.01"],
+    "titlebar-btn-icon"
+  );
+}
 function sideChatIcon() {
   return outlineIcon(
     "side-chat",
@@ -83086,6 +83112,13 @@ var init_panel_mode_controls = __esm({
         icon: panelIcon
       },
       {
+        id: "context",
+        mode: "context",
+        ariaLabel: "Open thread context",
+        label: "Context",
+        icon: contextIcon
+      },
+      {
         id: "side-chat",
         mode: "side-chat",
         ariaLabel: "Open side chat",
@@ -83218,10 +83251,10 @@ function mountKeyboardShortcutsDialog() {
   dialog2.className = "keyboard-shortcuts-overlay";
   const isMac2 = isMacPlatform();
   const grid = el("div", { class: "keyboard-shortcuts-grid" });
-  for (const section of SECTIONS) {
+  for (const section2 of SECTIONS) {
     const group = el("div", { class: "keyboard-shortcuts-group" });
-    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section.title));
-    for (const shortcut of section.shortcuts) {
+    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section2.title));
+    for (const shortcut of section2.shortcuts) {
       const keys = el("span", { class: "keyboard-shortcuts-keys" });
       shortcut.keys.forEach((token) => {
         keys.append(el("kbd", { class: "keyboard-shortcuts-key" }, keyLabel(token, isMac2)));
@@ -83996,7 +84029,7 @@ function groupRowsByStatus(rows, needsYou) {
     id,
     label,
     rows: rows.filter((row2) => sectionOf(row2) === id)
-  })).filter((section) => section.rows.length > 0);
+  })).filter((section2) => section2.rows.length > 0);
 }
 var STATUS_SECTION_LABELS;
 var init_thread_order = __esm({
@@ -87675,8 +87708,8 @@ function mountProjectsPane(root, store2, api2) {
     return lines.join("\n");
   }
   function renderOrphansSection() {
-    const section = el("div", { class: "orphans-section" });
-    section.append(
+    const section2 = el("div", { class: "orphans-section" });
+    section2.append(
       el(
         "div",
         { class: "orphans-heading" },
@@ -87743,9 +87776,9 @@ function mountProjectsPane(root, store2, api2) {
       });
       actions.append(dismissBtn, recoverBtn);
       row2.append(actions);
-      section.append(row2);
+      section2.append(row2);
     }
-    return section;
+    return section2;
   }
   function refreshOrphansIfProjectSetChanged() {
     const nextIds = new Set(store2.getState().projects.map((project2) => project2.id));
@@ -88236,7 +88269,7 @@ function mountProjectsPane(root, store2, api2) {
       const hasActiveAutomation = allRuns.some((thread) => thread.id === activeThreadId);
       const attentionRuns = allRuns.filter((thread) => isThreadAwaitingAttention(thread.id));
       const sectionExpanded = automationsSectionExpanded || hasActiveAutomation || attentionRuns.length > 0;
-      const section = el("div", { class: "automation-threads-group" });
+      const section2 = el("div", { class: "automation-threads-group" });
       const toggle = el(
         "button",
         {
@@ -88275,7 +88308,7 @@ function mountProjectsPane(root, store2, api2) {
           }
         ]);
       });
-      section.append(
+      section2.append(
         el(
           "div",
           { class: "automation-threads-header" },
@@ -88449,9 +88482,9 @@ function mountProjectsPane(root, store2, api2) {
           }
           rows.append(scheduleGroup);
         }
-        section.append(rows);
+        section2.append(rows);
       }
-      return section;
+      return section2;
     }
     function renderNewThreadButton(project2) {
       const newThreadBtn = el(
@@ -88735,19 +88768,19 @@ function mountProjectsPane(root, store2, api2) {
       if (ordered.length === 0) {
         return [el("div", { class: "sidebar-empty" }, "No threads yet"), ...emptyProjectRows];
       }
-      return sections.map((section) => {
-        const block = el("div", { class: "thread-section", "data-section-id": section.id });
-        if (section.label) {
-          block.append(el("div", { class: "thread-section-heading" }, section.label));
+      return sections.map((section2) => {
+        const block = el("div", { class: "thread-section", "data-section-id": section2.id });
+        if (section2.label) {
+          block.append(el("div", { class: "thread-section-heading" }, section2.label));
         }
-        const byThread = new Map(section.rows.map((row2) => [row2.thread, row2]));
-        const countKey = `section:${mode}:${section.id}`;
+        const byThread = new Map(section2.rows.map((row2) => [row2.thread, row2]));
+        const countKey = `section:${mode}:${section2.id}`;
         const limit = visibleThreadCounts.get(countKey) ?? SIDEBAR_THREADS_PAGE_SIZE;
-        const activeRow = section.rows.find(
+        const activeRow = section2.rows.find(
           (row2) => row2.projectId === activeProjectId && row2.thread.id === activeThreadId
         );
         const paged = paginateSidebarThreads(
-          section.rows.map((row2) => row2.thread),
+          section2.rows.map((row2) => row2.thread),
           limit,
           activeRow?.thread.id
         );
@@ -93819,8 +93852,8 @@ function isTextBlockAttachment(text2) {
   return countNewlines(trimmed2) + 1 >= TEXT_BLOCK_MIN_LINES;
 }
 function textBlockLabel(content) {
-  const firstLine = content.split("\n").find((line) => line.trim() !== "")?.trim() ?? "Pasted text";
-  return firstLine.length > 48 ? `${firstLine.slice(0, 45)}\u2026` : firstLine;
+  const firstLine2 = content.split("\n").find((line) => line.trim() !== "")?.trim() ?? "Pasted text";
+  return firstLine2.length > 48 ? `${firstLine2.slice(0, 45)}\u2026` : firstLine2;
 }
 function countNewlines(s16) {
   let n2 = 0;
@@ -95311,7 +95344,7 @@ function evidenceFigure(asset, caption) {
 }
 function createVisualEvidenceSection(evidence) {
   if (evidence.length === 0) return null;
-  const section = el("div", {
+  const section2 = el("div", {
     class: "message-visual-evidence",
     "aria-label": "Visual evidence"
   });
@@ -95346,7 +95379,7 @@ function createVisualEvidenceSection(evidence) {
       },
       ...item.assets.map((asset) => evidenceFigure(asset, item.caption))
     );
-    section.append(
+    section2.append(
       el(
         "details",
         {
@@ -95360,7 +95393,7 @@ function createVisualEvidenceSection(evidence) {
       )
     );
   }
-  return section;
+  return section2;
 }
 var init_visual_evidence_card = __esm({
   "src/renderer/views/visual-evidence-card.ts"() {
@@ -97871,8 +97904,8 @@ function syncMessageVisualEvidence(msgEl, msg) {
   const body = msgEl.querySelector(":scope > .message-body");
   if (!body) return;
   body.querySelector(":scope > .message-visual-evidence")?.remove();
-  const section = createVisualEvidenceSection(msg.visualEvidence ?? []);
-  if (section) body.append(section);
+  const section2 = createVisualEvidenceSection(msg.visualEvidence ?? []);
+  if (section2) body.append(section2);
   syncToolRunMemberVisibility(msgEl);
 }
 function createIndividualToolCard(tc2, label, api2, threadId, store2) {
@@ -98708,15 +98741,15 @@ function hookCardDetailLines(card) {
   if (card.durationMs > 0) lines.push(`Duration: ${String(card.durationMs)}ms`);
   return lines;
 }
-function createHookInspectorSection(section) {
+function createHookInspectorSection(section2) {
   const copy = el("button", {
     class: "hook-card-raw-copy",
     type: "button",
-    "aria-label": `Copy ${section.label}`
+    "aria-label": `Copy ${section2.label}`
   });
   copy.textContent = "Copy";
   copy.addEventListener("click", () => {
-    void navigator.clipboard.writeText(section.text).then(
+    void navigator.clipboard.writeText(section2.text).then(
       () => {
         copy.textContent = "Copied";
         setTimeout(() => {
@@ -98728,11 +98761,11 @@ function createHookInspectorSection(section) {
       }
     );
   });
-  const heading = el("div", { class: "hook-card-raw-label" }, section.label);
+  const heading = el("div", { class: "hook-card-raw-label" }, section2.label);
   heading.append(copy);
-  const pre = el("pre", { class: "hook-card-raw-pre", "data-format": section.format });
-  pre.textContent = section.text;
-  return el("div", { class: "hook-card-raw-section", "data-section": section.label }, heading, pre);
+  const pre = el("pre", { class: "hook-card-raw-pre", "data-format": section2.format });
+  pre.textContent = section2.text;
+  return el("div", { class: "hook-card-raw-section", "data-section": section2.label }, heading, pre);
 }
 function fillHookInspector(body, detail) {
   clear(body);
@@ -98742,8 +98775,8 @@ function fillHookInspector(body, detail) {
     for (const chip2 of chips) row2.append(el("span", { class: "hook-card-raw-chip" }, chip2));
     body.append(row2);
   }
-  for (const section of hookRunDetailSections(detail)) {
-    body.append(createHookInspectorSection(section));
+  for (const section2 of hookRunDetailSections(detail)) {
+    body.append(createHookInspectorSection(section2));
   }
   const empty = hookRunDetailEmptyReason(detail);
   if (empty !== null) body.append(el("div", { class: "hook-card-raw-status" }, empty));
@@ -119255,6 +119288,7 @@ function mountRightPanelLayout(store2) {
   function syncLayout() {
     const mode = store2.getState().rightPanelMode;
     const isExplorer = mode === "explorer";
+    const isContext = mode === "context";
     const isSideChat = mode === "side-chat";
     const isTerminal = mode === "terminal";
     const isChanges = mode === "changes";
@@ -119264,6 +119298,7 @@ function mountRightPanelLayout(store2) {
     const isBrowser = mode === "browser";
     const isVnc = mode === "vnc";
     const treeHost = document.getElementById("file-tree-host");
+    const contextHost = document.getElementById("context-host");
     const sideChatHost = document.getElementById("side-chat-host");
     const terminalsList = document.getElementById("terminals-list-host");
     const gitChangesHost = document.getElementById("git-changes-host");
@@ -119274,6 +119309,7 @@ function mountRightPanelLayout(store2) {
     const vncControlsHost = document.getElementById("vnc-controls-host");
     const treeResizer = document.getElementById("resizer-tree");
     const fileViewer = document.getElementById("file-viewer");
+    const contextViewer = document.getElementById("context-viewer-host");
     const sideChatViewer = document.getElementById("side-chat-viewer-host");
     const terminalsViewer = document.getElementById("terminals-viewer-host");
     const gitDiffViewer = document.getElementById("git-diff-viewer-host");
@@ -119283,6 +119319,7 @@ function mountRightPanelLayout(store2) {
     const browserViewer = document.getElementById("browser-viewer-host");
     const vncViewer = document.getElementById("vnc-viewer-host");
     if (treeHost) treeHost.hidden = !isExplorer;
+    if (contextHost) contextHost.hidden = !isContext;
     if (sideChatHost) sideChatHost.hidden = !isSideChat;
     if (terminalsList) terminalsList.hidden = !isTerminal;
     if (gitChangesHost) gitChangesHost.hidden = !isChanges;
@@ -119292,6 +119329,7 @@ function mountRightPanelLayout(store2) {
     if (browserTabsHost) browserTabsHost.hidden = !isBrowser;
     if (vncControlsHost) vncControlsHost.hidden = !isVnc;
     if (fileViewer) fileViewer.hidden = !isExplorer;
+    if (contextViewer) contextViewer.hidden = !isContext;
     if (sideChatViewer) sideChatViewer.hidden = !isSideChat;
     if (terminalsViewer) terminalsViewer.hidden = !isTerminal;
     if (gitDiffViewer) gitDiffViewer.hidden = !isChanges;
@@ -128682,7 +128720,7 @@ function terminalModeActive(store2) {
   return filesPaneOpen && rightPanelMode === "terminal";
 }
 function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
-  const section = el("section", {
+  const section2 = el("section", {
     class: "terminal-rail-section terminal-shells-section"
   });
   const listHeader = el(
@@ -128708,8 +128746,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   const tabsWrap = el("div", {
     class: "terminals-list terminal-rail-section-list"
   });
-  section.append(listHeader, tabsWrap);
-  listRoot.append(section);
+  section2.append(listHeader, tabsWrap);
+  listRoot.append(section2);
   const body = el("div", { class: "terminals-body" });
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
@@ -129361,7 +129399,7 @@ ${rendered}
   }
 }
 function mountAgentTasks(listRoot, viewerHost, store2, api2) {
-  const section = el("section", {
+  const section2 = el("section", {
     class: "agent-tasks-section terminal-rail-section"
   });
   const sectionHeader = el(
@@ -129372,8 +129410,8 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
   const tabList = el("div", {
     class: "agent-tasks-tablist terminal-rail-section-list"
   });
-  section.append(sectionHeader, tabList);
-  listRoot.append(section);
+  section2.append(sectionHeader, tabList);
+  listRoot.append(section2);
   const viewerParent = viewerHost.parentElement;
   const tasks = /* @__PURE__ */ new Map();
   const order = [];
@@ -129390,7 +129428,7 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     return count;
   }
   function syncSectionVisibility() {
-    section.hidden = visibleTaskCount() === 0;
+    section2.hidden = visibleTaskCount() === 0;
   }
   function showTaskView(show2) {
     viewerParent?.classList.toggle("showing-agent-task", show2);
@@ -129585,7 +129623,7 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     unsubThreads();
     unsubWorkspace();
     showTaskView(false);
-    section.remove();
+    section2.remove();
   };
 }
 var MAX_TASKS, MAX_OUTPUT_CHARS, ANSI_RE;
@@ -129608,7 +129646,7 @@ function taskLabel(handler) {
   return handler.replaceAll("_", " ");
 }
 function mountSupervisedTasks(listRoot, store2, api2) {
-  const section = el("section", {
+  const section2 = el("section", {
     class: "supervised-tasks-section terminal-rail-section",
     hidden: true
   });
@@ -129620,19 +129658,19 @@ function mountSupervisedTasks(listRoot, store2, api2) {
   const list = el("div", {
     class: "supervised-tasks-list terminal-rail-section-list"
   });
-  section.append(header, list);
-  listRoot.append(section);
+  section2.append(header, list);
+  listRoot.append(section2);
   let loadToken = 0;
   const expanded = /* @__PURE__ */ new Set();
   const feedback = el("p", { class: "supervised-task-feedback", role: "status", hidden: true });
-  section.append(feedback);
+  section2.append(feedback);
   function report(error62) {
     feedback.textContent = error62 instanceof Error ? error62.message : "Unable to update background tasks";
     feedback.hidden = false;
   }
   function render(tasks) {
     clear(list);
-    section.hidden = tasks.length === 0;
+    section2.hidden = tasks.length === 0;
     for (const task of tasks) {
       let showDetail = function(value) {
         clear(detail);
@@ -129751,7 +129789,7 @@ function mountSupervisedTasks(listRoot, store2, api2) {
   return () => {
     loadToken++;
     for (const unsubscribe of unsubs) unsubscribe();
-    section.remove();
+    section2.remove();
   };
 }
 var init_supervised_tasks = __esm({
@@ -130224,8 +130262,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   function renderProposedSection(queue) {
     if (queue.length === 0) return;
-    const section = el("div", { class: "git-changes-section git-changes-section-proposed" });
-    section.append(
+    const section2 = el("div", { class: "git-changes-section git-changes-section-proposed" });
+    section2.append(
       el("div", { class: "git-changes-section-title" }, `Proposed (${String(queue.length)})`)
     );
     for (const entry of queue) {
@@ -130241,14 +130279,14 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
         el("span", { class: "git-change-path" }, entry.path)
       );
       row2.addEventListener("click", () => void selectProposed(entry.path));
-      section.append(row2);
+      section2.append(row2);
     }
-    listBody.append(section);
+    listBody.append(section2);
   }
   function renderGitSection(title, changes, staged) {
     if (changes.length === 0) return;
-    const section = el("div", { class: "git-changes-section" });
-    section.append(
+    const section2 = el("div", { class: "git-changes-section" });
+    section2.append(
       el("div", { class: "git-changes-section-title" }, `${title} (${String(changes.length)})`)
     );
     for (const change of changes) {
@@ -130280,14 +130318,14 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       }
       row2.append(el("span", { class: "git-change-path" }, change.path));
       row2.addEventListener("click", () => void selectGitChange(change.path, staged));
-      section.append(row2);
+      section2.append(row2);
     }
-    listBody.append(section);
+    listBody.append(section2);
   }
   function renderCommittedSection(view) {
     if (view.changes.length === 0) return;
-    const section = el("div", { class: "git-changes-section git-changes-section-committed" });
-    section.append(
+    const section2 = el("div", { class: "git-changes-section git-changes-section-committed" });
+    section2.append(
       el(
         "div",
         {
@@ -130314,9 +130352,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
         el("span", { class: "git-change-path" }, change.path)
       );
       row2.addEventListener("click", () => void selectCommittedChange(change.path));
-      section.append(row2);
+      section2.append(row2);
     }
-    listBody.append(section);
+    listBody.append(section2);
   }
   function renderList() {
     const queue = store2.getState().stagedDiffs;
@@ -131087,7 +131125,7 @@ function externalButton(label, url2, open2) {
   });
   return button;
 }
-function renderPrActivity(host, section, activity, open2, fixCheck) {
+function renderPrActivity(host, section2, activity, open2, fixCheck) {
   clear(host);
   if (!activity || activity.error) {
     host.append(
@@ -131099,7 +131137,7 @@ function renderPrActivity(host, section, activity, open2, fixCheck) {
     );
     return;
   }
-  if (section === "comments") {
+  if (section2 === "comments") {
     host.append(
       el(
         "p",
@@ -131187,11 +131225,11 @@ function renderPrActivity(host, section, activity, open2, fixCheck) {
     const checks = activity.checks.filter((check2) => checkTone(check2.state) === group.tone);
     if (!checks.length) continue;
     const collapsible = group.tone === "success" || group.tone === "unknown";
-    const section2 = collapsible ? el("details", {
+    const section3 = collapsible ? el("details", {
       class: "pr-check-group",
       open: group.tone === "success" && !needsAttention
     }) : el("section", { class: "pr-check-group" });
-    section2.append(
+    section3.append(
       el(
         collapsible ? "summary" : "h4",
         { class: "pr-check-group-heading" },
@@ -131212,7 +131250,7 @@ function renderPrActivity(host, section, activity, open2, fixCheck) {
         "Fix"
       ) : null;
       fixButton?.addEventListener("click", () => fixCheck?.(check2, activity.headSha));
-      section2.append(
+      section3.append(
         el(
           "div",
           { class: "pr-check-row" },
@@ -131232,7 +131270,7 @@ function renderPrActivity(host, section, activity, open2, fixCheck) {
         )
       );
     }
-    host.append(section2);
+    host.append(section3);
   }
 }
 var init_pr_pane_activity = __esm({
@@ -131637,7 +131675,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     emptyState.hidden = false;
     emptyState.textContent = ghStatus?.installed ? "GitHub CLI is not authenticated" : "GitHub CLI is not available";
   }
-  function renderPrRow(pr2, section) {
+  function renderPrRow(pr2, section2) {
     const isSelected = selectedPr?.owner === pr2.owner && selectedPr.repo === pr2.repo && selectedPr.number === pr2.number;
     const ci2 = el("span", {});
     const state = knownChecks(pr2);
@@ -131664,7 +131702,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       {
         type: "button",
         class: `git-change-row pr-list-row${isSelected ? " is-selected" : ""}`,
-        "data-pr-section": section,
+        "data-pr-section": section2,
         "aria-pressed": String(isSelected)
       },
       el("span", { class: "git-change-path pr-list-title", title: titleText }, titleText),
@@ -131673,7 +131711,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         { class: "pr-list-meta" },
         el("span", { class: "pr-list-number" }, `#${String(pr2.number)}`),
         el("span", { class: "pr-list-repo", title: `${pr2.owner}/${pr2.repo}` }, pr2.repo),
-        ...section === "linked" ? [
+        ...section2 === "linked" ? [
           el(
             "span",
             {
@@ -131759,35 +131797,35 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const otherPrs = query ? otherPrsAll.filter((pr2) => prMatchesFilter(pr2, query)) : otherPrsAll;
     if (linkedPrs.length > 0) {
       ensureTitles(linkedPrs);
-      const section = el("div", { class: "git-changes-section" });
-      section.append(
+      const section2 = el("div", { class: "git-changes-section" });
+      section2.append(
         el(
           "div",
           { class: "git-changes-section-title" },
           `Related PRs \xB7 this thread (${String(linkedPrs.length)})`
         )
       );
-      for (const pr2 of linkedPrs) section.append(renderPrRow(pr2, "linked"));
-      listBody.append(section);
+      for (const pr2 of linkedPrs) section2.append(renderPrRow(pr2, "linked"));
+      listBody.append(section2);
     }
     if (repoPrs.length > 0 && ghStatus?.authenticated) {
       ensureTitles(repoPrs);
       const firstRepoPr = at(repoPrs, 0);
       const slug2 = `${firstRepoPr.owner}/${firstRepoPr.repo}`;
-      const section = el("div", { class: "git-changes-section" });
-      section.append(
+      const section2 = el("div", { class: "git-changes-section" });
+      section2.append(
         el(
           "div",
           { class: "git-changes-section-title", title: `Open pull requests in ${slug2}` },
           `${slug2} (${String(repoPrs.length)})`
         )
       );
-      for (const pr2 of repoPrs) section.append(renderPrRow(pr2, "workspace"));
-      listBody.append(section);
+      for (const pr2 of repoPrs) section2.append(renderPrRow(pr2, "workspace"));
+      listBody.append(section2);
     }
     if (ghStatus?.authenticated) {
       const title = repoPrs.length > 0 || linkedPrs.length > 0 ? "Your other open PRs" : "Your open PRs";
-      const section = el("div", { class: "git-changes-section" });
+      const section2 = el("div", { class: "git-changes-section" });
       const header = el(
         "button",
         {
@@ -131803,15 +131841,15 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         el("span", {}, title)
       );
       header.addEventListener("click", () => void toggleOther());
-      section.append(header);
+      section2.append(header);
       if (otherExpanded) {
         if (otherLoading) {
-          section.append(el("div", { class: "git-changes-empty" }, "Loading\u2026"));
+          section2.append(el("div", { class: "git-changes-empty" }, "Loading\u2026"));
         } else if (otherPrs.length > 0) {
           ensureTitles(otherPrs);
-          for (const pr2 of otherPrs) section.append(renderPrRow(pr2, "mine"));
+          for (const pr2 of otherPrs) section2.append(renderPrRow(pr2, "mine"));
         } else {
-          section.append(
+          section2.append(
             el(
               "div",
               { class: "git-changes-empty" },
@@ -131820,7 +131858,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           );
         }
       }
-      listBody.append(section);
+      listBody.append(section2);
     }
     const otherGroupShown = Boolean(ghStatus?.authenticated) && otherExpanded && !otherLoading;
     if (query && linkedPrs.length === 0 && repoPrs.length === 0 && !otherGroupShown) {
@@ -132139,27 +132177,27 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       { key: "checks", label: "Checks" },
       { key: "files", label: "Files" }
     ];
-    for (const section of sections) {
+    for (const section2 of sections) {
       const button = el(
         "button",
         {
           type: "button",
           class: "pr-detail-section",
-          "data-section": section.key,
-          "aria-pressed": String(activeSection === section.key)
+          "data-section": section2.key,
+          "aria-pressed": String(activeSection === section2.key)
         },
-        el("span", {}, section.label)
+        el("span", {}, section2.label)
       );
       const activity = prDetails.activity;
-      const count = section.key === "files" ? prDetails.files.length : activity && !activity.error ? section.key === "comments" ? activity.comments.length : section.key === "checks" ? activity.checks.length : void 0 : void 0;
+      const count = section2.key === "files" ? prDetails.files.length : activity && !activity.error ? section2.key === "comments" ? activity.comments.length : section2.key === "checks" ? activity.checks.length : void 0 : void 0;
       if (count !== void 0) {
-        const truncated = section.key === "comments" ? activity?.commentsTruncated : section.key === "checks" ? activity?.checksTruncated : false;
+        const truncated = section2.key === "comments" ? activity?.commentsTruncated : section2.key === "checks" ? activity?.checksTruncated : false;
         button.append(
           el("span", { class: "pr-section-count" }, `${String(count)}${truncated ? "+" : ""}`)
         );
       }
       button.addEventListener("click", () => {
-        activeSection = section.key;
+        activeSection = section2.key;
         renderMeta();
         clearDiff();
         renderDescription();
@@ -132998,6 +133036,494 @@ var init_memories_pane = __esm({
   }
 });
 
+// src/renderer/views/thread-context-model.ts
+function firstLine(text2) {
+  const line = text2.trim().split("\n", 1)[0] ?? "";
+  return line.length <= 90 ? line : `${line.slice(0, 89)}\u2026`;
+}
+function prLabel(ref) {
+  return `${ref.owner}/${ref.repo}#${String(ref.number)}`;
+}
+function hostLabel(url2) {
+  try {
+    const parsed2 = new URL(url2);
+    const path = parsed2.pathname === "/" ? "" : parsed2.pathname;
+    return `${parsed2.host}${path}`;
+  } catch {
+    return url2;
+  }
+}
+function deriveThreadContext(input2) {
+  const { thread, project: project2, threads } = input2;
+  const loaded = thread.messagesLoaded !== false;
+  const repos = [];
+  if (project2) {
+    const checkout = thread.worktree ? "worktree" : "shared";
+    const branch = thread.worktree?.branch ?? thread.gitBranch;
+    repos.push({
+      name: project2.name,
+      path: project2.path,
+      ...branch !== void 0 ? { branch } : {},
+      checkout
+    });
+  }
+  const merged = mergeThreadLinks(
+    thread.links ?? [],
+    loaded ? collectThreadLinks({ id: thread.id, messages: thread.messages }) : []
+  ).links;
+  const titleById = new Map(threads.map((candidate) => [candidate.id, candidate.title]));
+  const links = [];
+  const seenPr = /* @__PURE__ */ new Set();
+  for (const pr2 of [...thread.prRefs ?? [], ...(thread.prProductions ?? []).map((p2) => p2.pr)]) {
+    const key = githubPrKey(pr2);
+    if (seenPr.has(key)) continue;
+    seenPr.add(key);
+    links.push({ kind: "pr", key: `pr:${key}`, label: prLabel(pr2), target: pr2.url, pr: pr2 });
+  }
+  for (const link of merged) {
+    if (link.kind === "thread") {
+      const title = titleById.get(link.target);
+      links.push({
+        kind: "thread",
+        key: `thread:${link.target}`,
+        label: title ?? "Thread not in this project",
+        target: link.target,
+        ...title === void 0 ? { unresolved: true } : {}
+      });
+    } else {
+      links.push({
+        kind: "url",
+        key: `url:${link.target}`,
+        label: hostLabel(link.target),
+        target: link.target
+      });
+    }
+  }
+  const subagents = [];
+  if (loaded) {
+    for (const message2 of thread.messages) {
+      for (const toolCall of message2.toolCalls) {
+        const session = toolCall.subagent;
+        if (!session) continue;
+        subagents.push({
+          id: session.id,
+          kind: session.kind,
+          status: session.status,
+          prompt: firstLine(session.prompt),
+          ...session.model !== void 0 ? { model: session.model } : {}
+        });
+      }
+    }
+  }
+  const sideChats = sideChatsOf(threads, thread.id, true).sort(
+    (a3, b4) => Number(a3.archived) - Number(b4.archived)
+  );
+  let sideOf;
+  if (thread.sideChat) {
+    const parent = threads.find((candidate) => candidate.id === thread.sideChat?.parentThreadId);
+    const anchor2 = parent?.messages.find((m2) => m2.id === thread.sideChat?.anchorMessageId);
+    sideOf = {
+      parentThreadId: thread.sideChat.parentThreadId,
+      parentTitle: parent?.title ?? "Parent thread",
+      ...anchor2 ? { anchorExcerpt: firstLine(anchor2.content) } : {}
+    };
+  }
+  return {
+    threadId: thread.id,
+    ...sideOf ? { sideOf } : {},
+    repos,
+    links,
+    mentionedIn: [...input2.mentionedIn ?? []],
+    sideChats,
+    subagents
+  };
+}
+var init_thread_context_model = __esm({
+  "src/renderer/views/thread-context-model.ts"() {
+    init_github_pr_url2();
+    init_side_chat2();
+    init_thread_links2();
+  }
+});
+
+// src/renderer/views/thread-context-panel.ts
+function sectionCount(model, section2) {
+  switch (section2) {
+    case "repos":
+      return model.repos.length;
+    case "side-chats":
+      return model.sideChats.filter((row2) => !row2.archived).length;
+    case "links":
+      return model.links.length + model.mentionedIn.length;
+    case "subagents":
+      return model.subagents.length;
+  }
+}
+function section(kind, ...children) {
+  return el(
+    "section",
+    { class: "thread-context-section", "data-context-section": kind },
+    el("h5", {}, SECTION_TITLES[kind]),
+    ...children
+  );
+}
+function emptyNote(text2) {
+  return el("p", { class: "thread-context-empty" }, text2);
+}
+function rowButton(attrs, ...children) {
+  return el("button", { type: "button", class: "thread-context-row", ...attrs }, ...children);
+}
+function reposSection(model) {
+  if (model.repos.length === 0) return section("repos", emptyNote("No repository for this thread."));
+  return section(
+    "repos",
+    ...model.repos.map(
+      (repo) => el(
+        "div",
+        { class: "thread-context-row thread-context-repo", "data-repo-path": repo.path },
+        gitBranchIcon("ui-icon ui-icon-sm"),
+        el(
+          "span",
+          { class: "thread-context-main" },
+          el("span", { class: "thread-context-title" }, repo.name),
+          el("span", { class: "thread-context-sub" }, repo.path)
+        ),
+        repo.branch !== void 0 ? el(
+          "span",
+          { class: "thread-context-chip", "data-checkout": repo.checkout },
+          repo.branch
+        ) : ""
+      )
+    )
+  );
+}
+function sideChatsSection(model, handlers3) {
+  const canStart = model.sideOf === void 0;
+  const header = el(
+    "div",
+    { class: "thread-context-section-actions" },
+    el(
+      "button",
+      {
+        type: "button",
+        class: "thread-context-action",
+        "data-action": "new-side-chat",
+        disabled: !canStart
+      },
+      plusIcon("ui-icon ui-icon-sm"),
+      "New side chat"
+    )
+  );
+  header.querySelector("button")?.addEventListener("click", handlers3.startSideChat);
+  const rows = model.sideChats.map((chat) => {
+    const open2 = rowButton(
+      {
+        "data-side-chat-id": chat.id,
+        "data-archived": chat.archived ? "true" : void 0,
+        "data-unread": chat.unread ? "true" : void 0
+      },
+      chat.unread ? el("span", {
+        class: "chat-unread-dot",
+        role: "img",
+        "aria-label": "Unread reply"
+      }) : "",
+      el(
+        "span",
+        { class: "thread-context-main" },
+        el("span", { class: "thread-context-title" }, chat.title || "Side chat"),
+        chat.model !== void 0 ? el("span", { class: "thread-context-sub" }, chat.model) : ""
+      ),
+      chat.archived ? el("span", { class: "thread-context-chip" }, "Archived") : ""
+    );
+    open2.addEventListener("click", () => {
+      handlers3.openSideChat(chat.id);
+    });
+    const toggle = el(
+      "button",
+      {
+        type: "button",
+        class: "thread-context-action thread-context-row-action",
+        "data-action": chat.archived ? "restore-side-chat" : "archive-side-chat",
+        "data-side-chat-id": chat.id,
+        "aria-label": `${chat.archived ? "Restore" : "Archive"} side chat ${chat.title}`
+      },
+      chat.archived ? "Restore" : "Archive"
+    );
+    toggle.addEventListener("click", () => {
+      if (chat.archived) handlers3.restoreSideChat(chat.id);
+      else handlers3.archiveSideChat(chat.id);
+    });
+    return el("div", { class: "thread-context-row-wrap" }, open2, toggle);
+  });
+  return section(
+    "side-chats",
+    header,
+    rows.length > 0 ? el("div", { class: "thread-context-rows" }, ...rows) : emptyNote(
+      canStart ? "None yet. Ask a side question without touching this thread." : "Side chats do not nest."
+    )
+  );
+}
+function linksSection(model, handlers3) {
+  const groups = [
+    { label: "Pull requests", kind: "pr" },
+    { label: "Threads", kind: "thread" },
+    { label: "Web", kind: "url" }
+  ];
+  const children = [];
+  for (const group of groups) {
+    const rows = model.links.filter((link) => link.kind === group.kind);
+    if (rows.length === 0) continue;
+    children.push(
+      el(
+        "div",
+        { class: "thread-context-group", "data-link-group": group.kind },
+        el("h6", {}, group.label),
+        ...rows.map((link) => {
+          const button = rowButton(
+            {
+              "data-link-key": link.key,
+              "data-unresolved": link.unresolved ? "true" : void 0
+            },
+            link.kind === "pr" ? gitPullRequestIcon("ui-icon ui-icon-sm") : link.kind === "url" ? externalLinkIcon("ui-icon ui-icon-sm") : "",
+            el("span", { class: "thread-context-title" }, link.label)
+          );
+          button.addEventListener("click", () => {
+            if (link.kind === "pr" && link.pr) handlers3.openPr(link.pr);
+            else if (link.kind === "thread" && !link.unresolved) handlers3.openThread(link.target);
+            else if (link.kind === "url") handlers3.openUrl(link.target);
+          });
+          if (link.unresolved) button.disabled = true;
+          return button;
+        })
+      )
+    );
+  }
+  if (model.mentionedIn.length > 0) {
+    children.push(
+      el(
+        "div",
+        { class: "thread-context-group", "data-link-group": "mentioned-in" },
+        el("h6", {}, "Mentioned in"),
+        ...model.mentionedIn.map((row2) => {
+          const button = rowButton(
+            { "data-thread-id": row2.threadId },
+            el("span", { class: "thread-context-title" }, row2.title || "Untitled thread")
+          );
+          button.addEventListener("click", () => {
+            handlers3.openThread(row2.threadId);
+          });
+          return button;
+        })
+      )
+    );
+  }
+  return section(
+    "links",
+    ...children.length > 0 ? children : [emptyNote("No links or references yet.")]
+  );
+}
+function subagentsSection(model) {
+  if (model.subagents.length === 0) return section("subagents", emptyNote("No subagents."));
+  return section(
+    "subagents",
+    ...model.subagents.map(
+      (agent) => el(
+        "div",
+        { class: "thread-context-row", "data-subagent-id": agent.id, "data-status": agent.status },
+        el(
+          "span",
+          { class: "thread-context-main" },
+          el("span", { class: "thread-context-title" }, agent.prompt || agent.kind),
+          el(
+            "span",
+            { class: "thread-context-sub" },
+            [agent.kind, agent.model].filter(Boolean).join(" \xB7 ")
+          )
+        ),
+        el("span", { class: "thread-context-chip", "data-status": agent.status }, agent.status)
+      )
+    )
+  );
+}
+function renderThreadContext(model, handlers3) {
+  const host = el("div", { class: "thread-context", "aria-label": "Thread context" });
+  if (model.sideOf) {
+    const back = el(
+      "button",
+      { type: "button", class: "thread-context-link", "data-action": "back-to-parent" },
+      model.sideOf.parentTitle
+    );
+    back.addEventListener("click", () => {
+      if (model.sideOf) handlers3.openThread(model.sideOf.parentThreadId);
+    });
+    host.append(
+      el(
+        "div",
+        { class: "thread-context-side-banner", "data-context": "side-of" },
+        el("span", { class: "thread-context-kicker" }, "Side chat"),
+        el("span", {}, " of "),
+        back,
+        el(
+          "p",
+          { class: "thread-context-note" },
+          model.sideOf.anchorExcerpt !== void 0 ? `Reads the main thread up to \u201C${model.sideOf.anchorExcerpt}\u201D. Read-only.` : "Reads the main thread up to where it branched. Read-only."
+        )
+      )
+    );
+  }
+  host.append(
+    reposSection(model),
+    sideChatsSection(model, handlers3),
+    linksSection(model, handlers3),
+    subagentsSection(model)
+  );
+  return host;
+}
+function contextModeActive(store2) {
+  const { filesPaneOpen, rightPanelMode } = store2.getState();
+  return filesPaneOpen && rightPanelMode === "context";
+}
+function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
+  listRoot.append(
+    el(
+      "div",
+      { class: "pane-header" },
+      el("span", { class: "pane-header-title" }, "Context"),
+      panePopoutButton(store2, api2, "context", "context"),
+      paneMaximizeButton(store2, "context")
+    )
+  );
+  const index = el("div", { class: "git-changes-list thread-context-index" });
+  listRoot.append(index);
+  let mentionedIn = [];
+  let mentionedFor = null;
+  let token = 0;
+  const handlers3 = {
+    openThread: (threadId) => {
+      switchThread(store2, threadId);
+    },
+    openSideChat: (threadId) => {
+      store2.emit("side_chat_open_requested", threadId);
+    },
+    openPr: (ref) => {
+      openPullRequest(store2, ref);
+    },
+    openUrl: (url2) => {
+      openBrowserUrl(store2, url2);
+    },
+    startSideChat: () => {
+      const thread = getActiveThread(store2);
+      if (thread) void startSideChat(store2, api2, thread.id);
+    },
+    archiveSideChat: (threadId) => {
+      archiveThread(store2, threadId);
+    },
+    restoreSideChat: (threadId) => {
+      restoreThread(store2, threadId);
+    }
+  };
+  function render() {
+    const state = store2.getState();
+    const thread = getActiveThread(store2);
+    clear(viewerRoot);
+    clear(index);
+    if (!thread) {
+      viewerRoot.append(emptyNote("Open a thread to see its context."));
+      return;
+    }
+    const project2 = state.projects.find((candidate) => candidate.id === state.activeProjectId);
+    const model = deriveThreadContext({
+      thread,
+      project: project2,
+      threads: state.threads,
+      mentionedIn: mentionedFor === thread.id ? mentionedIn : []
+    });
+    viewerRoot.append(renderThreadContext(model, handlers3));
+    for (const kind of CONTEXT_SECTIONS) {
+      const jump = el(
+        "button",
+        { type: "button", class: "git-change-row thread-context-index-row", "data-index": kind },
+        el("span", { class: "thread-context-title" }, SECTION_TITLES[kind]),
+        el("span", { class: "thread-context-count" }, String(sectionCount(model, kind)))
+      );
+      jump.addEventListener("click", () => {
+        viewerRoot.querySelector(`[data-context-section="${kind}"]`)?.scrollIntoView({ block: "start" });
+      });
+      index.append(jump);
+    }
+  }
+  async function refreshMentions() {
+    const thread = getActiveThread(store2);
+    const projectId = store2.getState().activeProjectId;
+    if (!thread || !projectId) return;
+    const mine = ++token;
+    let rows = [];
+    try {
+      rows = await api2.threads.backlinks(projectId, "thread", thread.id);
+    } catch (error62) {
+      console.error("[context] backlink lookup failed:", error62);
+    }
+    if (mine !== token || getActiveThread(store2)?.id !== thread.id) return;
+    mentionedIn = rows;
+    mentionedFor = thread.id;
+    if (contextModeActive(store2)) render();
+  }
+  const offs = [
+    store2.on("right_panel_mode_changed", () => {
+      if (!contextModeActive(store2)) return;
+      render();
+      void refreshMentions();
+    }),
+    store2.on("files_pane_changed", () => {
+      if (!contextModeActive(store2)) return;
+      render();
+      void refreshMentions();
+    }),
+    store2.on("threads_changed", () => {
+      if (!contextModeActive(store2)) return;
+      const active2 = getActiveThread(store2)?.id ?? null;
+      render();
+      if (active2 !== mentionedFor) void refreshMentions();
+    }),
+    store2.on("message_done", () => {
+      if (!contextModeActive(store2)) return;
+      render();
+      void refreshMentions();
+    }),
+    store2.on("workspace_changed", () => {
+      mentionedFor = null;
+      if (contextModeActive(store2)) render();
+    })
+  ];
+  if (contextModeActive(store2)) {
+    render();
+    void refreshMentions();
+  }
+  return () => {
+    for (const off of offs) off();
+  };
+}
+var CONTEXT_SECTIONS, SECTION_TITLES;
+var init_thread_context_panel = __esm({
+  "src/renderer/views/thread-context-panel.ts"() {
+    init_helpers();
+    init_icons();
+    init_thread_helpers();
+    init_panels();
+    init_side_chat3();
+    init_pane_maximize_button();
+    init_pane_popout_button();
+    init_thread_context_model();
+    CONTEXT_SECTIONS = ["repos", "side-chats", "links", "subagents"];
+    SECTION_TITLES = {
+      repos: "Repos",
+      "side-chats": "Side chats",
+      links: "Links and references",
+      subagents: "Subagents"
+    };
+  }
+});
+
 // src/renderer/views/side-chat-panel.ts
 function resolveSideChatSelection(threads, activeThreadId, remembered) {
   const active2 = threads.find((thread) => thread.id === activeThreadId);
@@ -133319,7 +133845,7 @@ function mountPortsSection(listRoot, store2, api2) {
   let refreshTail = Promise.resolve();
   let pollRunning = false;
   let pollTimer = null;
-  const section = el("section", {
+  const section2 = el("section", {
     class: "ports-section terminal-rail-section",
     hidden: true
   });
@@ -133329,8 +133855,8 @@ function mountPortsSection(listRoot, store2, api2) {
     "Ports"
   );
   const list = el("div", { class: "ports-list terminal-rail-section-list" });
-  section.append(header, list);
-  listRoot.append(section);
+  section2.append(header, list);
+  listRoot.append(section2);
   function actionButton(label, className, onClick) {
     const button = el(
       "button",
@@ -133386,7 +133912,7 @@ function mountPortsSection(listRoot, store2, api2) {
   function render() {
     clear(list);
     if (rows.length === 0) {
-      section.hidden = scanTool !== null;
+      section2.hidden = scanTool !== null;
       if (scanTool === null) {
         list.append(
           el(
@@ -133398,7 +133924,7 @@ function mountPortsSection(listRoot, store2, api2) {
       }
       return;
     }
-    section.hidden = false;
+    section2.hidden = false;
     for (const row2 of rows) {
       const key = rowKey(row2);
       const selected = key === selectedKey;
@@ -133514,7 +134040,7 @@ function mountPortsSection(listRoot, store2, api2) {
     });
     stopPolling();
     loadToken++;
-    section.remove();
+    section2.remove();
   };
 }
 var POLL_MS2;
@@ -133531,35 +134057,35 @@ var init_ports_section = __esm({
 // src/renderer/views/terminal-rail-resizer.ts
 function visibleSections(root) {
   return Array.from(root.querySelectorAll(SECTION_SELECTOR)).filter(
-    (section) => !section.hidden
+    (section2) => !section2.hidden
   );
 }
 function cssPixels(value) {
   const parsed2 = Number.parseFloat(value);
   return Number.isFinite(parsed2) ? parsed2 : 0;
 }
-function measuredRowHeight(section) {
-  const list = section.querySelector(".terminal-rail-section-list");
-  const row2 = section.querySelector("[data-terminal-rail-row]") ?? list?.firstElementChild;
+function measuredRowHeight(section2) {
+  const list = section2.querySelector(".terminal-rail-section-list");
+  const row2 = section2.querySelector("[data-terminal-rail-row]") ?? list?.firstElementChild;
   return row2?.getBoundingClientRect().height ?? 0;
 }
-function sectionMinimum(root, section) {
-  const header = section.querySelector(".terminal-rail-section-header");
-  const list = section.querySelector(".terminal-rail-section-list");
+function sectionMinimum(root, section2) {
+  const header = section2.querySelector(".terminal-rail-section-header");
+  const list = section2.querySelector(".terminal-rail-section-list");
   const listStyle = list?.ownerDocument.defaultView?.getComputedStyle(list) ?? null;
   const listPadding = listStyle ? cssPixels(listStyle.paddingTop) + cssPixels(listStyle.paddingBottom) : 0;
-  const rowHeight = measuredRowHeight(section);
+  const rowHeight = measuredRowHeight(section2);
   const twoRows = (header?.getBoundingClientRect().height ?? 0) + listPadding + rowHeight * 2;
-  return section.classList.contains("terminal-shells-section") ? Math.max(twoRows, root.clientHeight * SHELLS_MIN_RATIO) : twoRows;
+  return section2.classList.contains("terminal-shells-section") ? Math.max(twoRows, root.clientHeight * SHELLS_MIN_RATIO) : twoRows;
 }
 function syncMinimums(root) {
   if (root.clientHeight === 0) return;
-  for (const section of visibleSections(root)) {
-    section.style.minHeight = `${String(Math.ceil(sectionMinimum(root, section)))}px`;
+  for (const section2 of visibleSections(root)) {
+    section2.style.minHeight = `${String(Math.ceil(sectionMinimum(root, section2)))}px`;
   }
 }
-function previousVisibleSection(section) {
-  let candidate = section.previousElementSibling;
+function previousVisibleSection(section2) {
+  let candidate = section2.previousElementSibling;
   while (candidate) {
     if (candidate instanceof HTMLElement && candidate.classList.contains("terminal-rail-section") && !candidate.hidden) {
       return candidate;
@@ -133568,12 +134094,12 @@ function previousVisibleSection(section) {
   }
   return null;
 }
-function minimumHeight(section) {
-  return Number.parseFloat(section.style.minHeight) || 0;
+function minimumHeight(section2) {
+  return Number.parseFloat(section2.style.minHeight) || 0;
 }
 function assignCurrentWeights(root) {
-  for (const section of visibleSections(root)) {
-    section.style.flex = `${String(section.getBoundingClientRect().height)} 1 0px`;
+  for (const section2 of visibleSections(root)) {
+    section2.style.flex = `${String(section2.getBoundingClientRect().height)} 1 0px`;
   }
 }
 function resizePair(before, after, beforeStart, afterStart, delta) {
@@ -133585,38 +134111,38 @@ function resizePair(before, after, beforeStart, afterStart, delta) {
   before.style.flexGrow = String(beforeSize);
   after.style.flexGrow = String(total2 - beforeSize);
 }
-function sectionLabel(section) {
-  return section.querySelector(".terminal-rail-section-header")?.textContent.trim() ?? "section";
+function sectionLabel(section2) {
+  return section2.querySelector(".terminal-rail-section-header")?.textContent.trim() ?? "section";
 }
 function mountTerminalRailResizers(root) {
   const sections = Array.from(root.querySelectorAll(SECTION_SELECTOR));
   const handles = /* @__PURE__ */ new Map();
-  for (const section of sections.slice(1)) {
+  for (const section2 of sections.slice(1)) {
     const handle = el("div", {
       class: "terminal-rail-resizer",
       role: "separator",
       tabindex: "0",
       "aria-orientation": "horizontal"
     });
-    root.insertBefore(handle, section);
-    handles.set(section, handle);
+    root.insertBefore(handle, section2);
+    handles.set(section2, handle);
     const resizeFromStart = (direction) => {
-      const before = previousVisibleSection(section);
-      if (!before || section.hidden) return;
+      const before = previousVisibleSection(section2);
+      if (!before || section2.hidden) return;
       syncMinimums(root);
       assignCurrentWeights(root);
       resizePair(
         before,
-        section,
+        section2,
         before.getBoundingClientRect().height,
-        section.getBoundingClientRect().height,
-        direction * Math.max(1, measuredRowHeight(section))
+        section2.getBoundingClientRect().height,
+        direction * Math.max(1, measuredRowHeight(section2))
       );
     };
     handle.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
-      const before = previousVisibleSection(section);
-      if (!before || section.hidden) return;
+      const before = previousVisibleSection(section2);
+      if (!before || section2.hidden) return;
       event.preventDefault();
       handle.setPointerCapture(event.pointerId);
       handle.classList.add("is-dragging");
@@ -133624,9 +134150,9 @@ function mountTerminalRailResizers(root) {
       assignCurrentWeights(root);
       const startY = event.clientY;
       const beforeStart = before.getBoundingClientRect().height;
-      const afterStart = section.getBoundingClientRect().height;
+      const afterStart = section2.getBoundingClientRect().height;
       const onMove = (moveEvent) => {
-        resizePair(before, section, beforeStart, afterStart, moveEvent.clientY - startY);
+        resizePair(before, section2, beforeStart, afterStart, moveEvent.clientY - startY);
       };
       const onUp = () => {
         handle.classList.remove("is-dragging");
@@ -133650,14 +134176,14 @@ function mountTerminalRailResizers(root) {
   }
   const sync = () => {
     syncMinimums(root);
-    for (const [section, handle] of handles) {
-      const before = previousVisibleSection(section);
-      const hidden = section.hidden || before === null;
+    for (const [section2, handle] of handles) {
+      const before = previousVisibleSection(section2);
+      const hidden = section2.hidden || before === null;
       if (handle.hidden !== hidden) handle.hidden = hidden;
       if (before) {
         handle.setAttribute(
           "aria-label",
-          `Resize ${sectionLabel(before)} and ${sectionLabel(section)}`
+          `Resize ${sectionLabel(before)} and ${sectionLabel(section2)}`
         );
       }
     }
@@ -152093,7 +152619,7 @@ function isExplicitLocalAddress(host) {
 function isSimulatorMachine(machine) {
   return machine.startsWith(SIMULATOR_MACHINE_PREFIX);
 }
-function hostLabel(host) {
+function hostLabel2(host) {
   const address = host.user ? `${host.user}@${host.host}` : host.host;
   return host.label === address ? host.label : `${host.label} \xB7 ${address}`;
 }
@@ -152813,7 +153339,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (sshHosts.length > 0) {
       const sshGroup = el("optgroup", { label: "Saved SSH machines" });
       for (const host of sshHosts) {
-        sshGroup.append(el("option", { value: sshMachineValue(host.id) }, hostLabel(host)));
+        sshGroup.append(el("option", { value: sshMachineValue(host.id) }, hostLabel2(host)));
       }
       machineSelect.append(sshGroup);
     }
@@ -155315,14 +155841,14 @@ function mountCommandPalette(store2, api2) {
     const icon = el("span", { class: "command-palette-icon" }, searchIcon("ui-icon ui-icon-sm"));
     const cls = `command-palette-item command-palette-item-${entry.kind}${selected ? " selected" : ""}`;
     if (entry.kind === "thread") {
-      const prLabel = entry.hit.prRefs.map((ref) => `#${String(ref.number)}`).join(" ");
-      const tooltip = [entry.hit.title, prLabel, entry.hit.projectName].filter(Boolean).join(" \u2014 ");
+      const prLabel2 = entry.hit.prRefs.map((ref) => `#${String(ref.number)}`).join(" ");
+      const tooltip = [entry.hit.title, prLabel2, entry.hit.projectName].filter(Boolean).join(" \u2014 ");
       return el(
         "div",
         { class: cls, role: "option", title: tooltip },
         icon,
         el("span", { class: "command-palette-name" }, entry.hit.title || "New Thread"),
-        ...prLabel ? [el("span", { class: "command-palette-pr" }, prLabel)] : [],
+        ...prLabel2 ? [el("span", { class: "command-palette-pr" }, prLabel2)] : [],
         el("span", { class: "command-palette-context" }, entry.hit.projectName)
       );
     }
@@ -155339,10 +155865,10 @@ function mountCommandPalette(store2, api2) {
     empty.hidden = entries2.length > 0;
     let lastSection = null;
     entries2.forEach((entry, i2) => {
-      const section = sectionTitle(entry);
-      if (section !== lastSection) {
-        lastSection = section;
-        list.append(el("div", { class: "command-palette-section" }, section));
+      const section2 = sectionTitle(entry);
+      if (section2 !== lastSection) {
+        lastSection = section2;
+        list.append(el("div", { class: "command-palette-section" }, section2));
       }
       const row2 = rowFor(entry, i2 === selectedIdx);
       row2.addEventListener("mousedown", (e3) => {
@@ -167773,6 +168299,12 @@ function mountFullLayout() {
     api
   );
   mountVncPane(requireElement("vnc-controls-host"), requireElement("vnc-viewer-host"), store, api);
+  mountThreadContextPane(
+    requireElement("context-host"),
+    requireElement("context-viewer-host"),
+    store,
+    api
+  );
   mountSideChatPane(
     requireElement("side-chat-host"),
     requireElement("side-chat-viewer-host"),
@@ -167957,6 +168489,7 @@ var init_main = __esm({
     init_git_changes_pane();
     init_pr_pane();
     init_memories_pane();
+    init_thread_context_panel();
     init_side_chat_panel();
     init_ports_section();
     init_terminal_rail_resizer();
@@ -168029,6 +168562,7 @@ var init_main = __esm({
     api = window.api;
     POPOUT_MODES = [
       "explorer",
+      "context",
       "side-chat",
       "terminal",
       "changes",

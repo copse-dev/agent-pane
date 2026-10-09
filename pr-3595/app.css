@@ -3513,6 +3513,188 @@ summary.pr-check-group-heading::-webkit-details-marker {
   flex-shrink: 0;
 }
 
+/* src/renderer/styles/global/thread-context.css */
+.context-viewer-host {
+  padding: var(--spacing-md);
+  overflow-y: auto;
+}
+.thread-context {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-md);
+  align-content: start;
+}
+.thread-context-section h5 {
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.thread-context-group + .thread-context-group {
+  margin-top: var(--spacing-sm);
+}
+.thread-context-group h6 {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.thread-context-rows,
+.thread-context-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+.thread-context-row-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+.thread-context-row-wrap > .thread-context-row {
+  flex: 1;
+  min-width: 0;
+}
+.thread-context-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  text-align: left;
+}
+button.thread-context-row {
+  cursor: pointer;
+}
+button.thread-context-row:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+button.thread-context-row:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+.thread-context-row[data-archived=true] {
+  color: var(--text-muted);
+}
+.thread-context-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.thread-context-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-context-sub {
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-context-chip {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+}
+.thread-context-chip[data-status=running] {
+  color: var(--accent);
+}
+.thread-context-chip[data-status=error] {
+  color: var(--error);
+}
+.thread-context-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.thread-context-section-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+.thread-context-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.thread-context-action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.thread-context-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.thread-context-row-action {
+  flex: none;
+}
+.thread-context-side-banner {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  font-size: var(--font-size-sm);
+}
+.thread-context-note {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  overflow-wrap: anywhere;
+}
+.thread-context-kicker {
+  color: var(--accent);
+  font-weight: 600;
+}
+.thread-context-link {
+  padding: 0;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.thread-context-index-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+.thread-context-count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.thread-context-row .chat-unread-dot {
+  position: static;
+  flex: none;
+  transform: none;
+}
+
 /* src/renderer/styles/global/side-chat.css */
 .side-chat-viewer-host {
   display: flex;
