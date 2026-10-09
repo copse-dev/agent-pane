@@ -188,7 +188,7 @@ import {
   type ThreadDeletionRuntime,
 } from '../services/thread-deletion.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
-import { archiveStoredThread } from '../services/thread-archiving.ts'
+import { archiveStoredThread, type ThreadArchivingRuntime } from '../services/thread-archiving.ts'
 import {
   getElectronAppVersion,
   getElectronBuildCommit,
@@ -597,6 +597,7 @@ export function registerAllHandlers(
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
   threadHistoryEditRuntime: ThreadHistoryEditRuntime,
+  threadArchivingRuntime: ThreadArchivingRuntime,
 ): void {
   ipcMain.handle('mobile:manage', async (event) => {
     assertMainFrameSender(event, win)
@@ -2045,9 +2046,9 @@ export function registerAllHandlers(
   )
   ipcMain.handle(
     'threads:archive',
-    (event, projectId: unknown, threadId: unknown, discard: unknown) => {
+    (event, projectId: unknown, threadId: unknown, discard: unknown, stop: unknown) => {
       assertMainFrameSender(event, win)
-      const [pid, tid, discardChanges] = parseIpcArgs(
+      const [pid, tid, discardChanges, stopProcesses] = parseIpcArgs(
         z.tuple([
           zProjectId,
           zThreadId,
@@ -2055,10 +2056,11 @@ export function registerAllHandlers(
             .string()
             .regex(/^[a-f0-9]{64}$/)
             .nullable(),
+          z.boolean(),
         ]),
-        [projectId, threadId, discard],
+        [projectId, threadId, discard, stop],
       )
-      return archiveStoredThread(pid, tid, discardChanges, threadHistoryEditRuntime)
+      return archiveStoredThread(pid, tid, discardChanges, stopProcesses, threadArchivingRuntime)
     },
   )
   ipcMain.handle('threads:delete', (event, projectId: unknown, threadId: unknown) => {
