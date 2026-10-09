@@ -6,8 +6,8 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { commitThreadModelSelection } from './model-selection.ts'
 import { dispatchAgentRun, startHumanTurnTree } from './message-queue.ts'
 
-export const INTERRUPTED_TURN_CONTINUATION =
-  'Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.'
+import { INTERRUPTED_TURN_CONTINUATION } from '@shared/turn-recovery.ts'
+export { INTERRUPTED_TURN_CONTINUATION } from '@shared/turn-recovery.ts'
 
 export type FailedTurnRecoveryMode = 'current-model' | 'last-known-good'
 

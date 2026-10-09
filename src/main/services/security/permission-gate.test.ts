@@ -370,6 +370,7 @@ describe('ensureToolPermitted', () => {
     setPermissionGateForTests(null)
     const writeTools = [
       'gh_pr_approve',
+      'gh_push',
       'gh_pr_create',
       'gh_pr_enable_auto_merge',
       'gh_pr_mark_ready',
