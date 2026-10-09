@@ -18,7 +18,12 @@ import type { ToolRegistry } from '../tool-registry.ts'
 import type { ToolResultImage } from '@shared/types'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
 import { runWithAdvisorContext } from '../advisor-runner-context.ts'
-import { runWithActiveRunIdentity } from '../thread-models.ts'
+import {
+  getActiveRunThread,
+  getActiveRunTurnTreeId,
+  runWithActiveRunIdentity,
+  setActiveRunTurnTreeId,
+} from '../thread-models.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
 import {
@@ -315,6 +320,7 @@ interface BridgeExecuteContext {
    */
   getExecutionContext: () => ThreadExecutionContext | null
   getInlineCanvasScope: () => ReturnType<typeof captureInlineCanvasScope>
+  getTurnTreeId: () => ReturnType<typeof getActiveRunTurnTreeId>
   networkScopeAlreadyApplies: boolean
   /** The bridge was started for a deferred-worktree thread: offer `request_write_access`. */
   offerWriteAccess: boolean
@@ -476,13 +482,17 @@ function buildMcpServer(
       // set by agent-service around the prompt — not a fresh per-request
       // resolve; the guard above already rejected any call with none bound.
       const inlineCanvasScope = ctx.getInlineCanvasScope()
+      const turnTreeId = ctx.getTurnTreeId()
       const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
         inlineCanvasScope(() =>
-          runWithActiveRunIdentity(ctx.threadId, () =>
-            runWithThreadExecutionContext(executionContext, () =>
+          runWithActiveRunIdentity(ctx.threadId, () => {
+            // HTTP requests do not inherit the owning turn's ALS epoch. A wake
+            // must use that human epoch, never a guessed thread-id fallback.
+            if (turnTreeId !== null) setActiveRunTurnTreeId(turnTreeId)
+            return runWithThreadExecutionContext(executionContext, () =>
               runWithApprovalToolCallId(requestKey, withPermissionContext),
-            ),
-          ),
+            )
+          }),
         )
       const advisor = advisorContext.current
       const { result, images } =
@@ -604,6 +614,7 @@ export async function startAcpNativeBridge(
   let turnSignal: AbortSignal | null = null
   let executionContext: ThreadExecutionContext | null = null
   let inlineCanvasScope = captureInlineCanvasScope()
+  let turnTreeId: ReturnType<typeof getActiveRunTurnTreeId> = null
   let workspaceWriteObserver: ((path: string) => void) | null = null
   const inflightCalls = new Map<string, (detail: string) => void>()
 
@@ -643,6 +654,7 @@ export async function startAcpNativeBridge(
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
         getExecutionContext: () => executionContext,
         getInlineCanvasScope: () => inlineCanvasScope,
+        getTurnTreeId: () => turnTreeId,
         networkScopeAlreadyApplies,
         offerWriteAccess,
         recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
@@ -690,6 +702,8 @@ export async function startAcpNativeBridge(
     setExecutionContext: (context): void => {
       executionContext = context
       inlineCanvasScope = captureInlineCanvasScope()
+      turnTreeId =
+        context !== null && getActiveRunThread() === opts.threadId ? getActiveRunTurnTreeId() : null
     },
     setTurnSignal: (next): void => {
       turnSignal = next
