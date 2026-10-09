@@ -1,4 +1,5 @@
 import type { LLMMessage, UserContent } from '@copse/llm/wire-types.ts'
+import { compactionReplayStart, type CompactionIdentity } from '@copse/llm/provider-state.ts'
 import { CHARS_PER_TOKEN, ESTIMATED_IMAGE_TOKENS } from './token-estimate.ts'
 
 // Re-exported so existing consumers keep importing from a single module.
@@ -66,6 +67,10 @@ function estimateSingleMessageTokens(message: LLMMessage): number {
         JSON.stringify(message.toolResults).length / CHARS_PER_TOKEN +
         toolResultImageAdjustment(message)
       )
+    // An opaque encrypted blob, not prompt text. What it costs in the window is
+    // what the provider reports back (see `effectiveConversationTokens`).
+    case 'provider_state':
+      return 0
     default:
       return 0
   }
@@ -120,8 +125,47 @@ export function conversationTokenBudget(
   })
 }
 
+/**
+ * The messages a provider that replays `compaction` will actually send: the
+ * compaction item stands in for every turn before it, so those are left out, and
+ * the opaque item itself is not prompt text. Instructions stay. With no
+ * applicable compaction this is `messages` minus any provider state, so callers
+ * can size the request without knowing whether a compaction is in play.
+ */
+export function replayWindow(
+  messages: readonly LLMMessage[],
+  compaction: CompactionIdentity | undefined,
+): LLMMessage[] {
+  const anchor = compactionReplayStart(messages, compaction)
+  const out: LLMMessage[] = []
+  for (const [i, message] of messages.entries()) {
+    if (message.role === 'provider_state') continue
+    if (i < anchor && message.role !== 'system' && message.role !== 'developer') continue
+    out.push(message)
+  }
+  return out
+}
+
+/**
+ * Prompt size at which server-side compaction should fire: comfortably below the
+ * point where {@link trimMessagesInPlace} starts dropping turns, so the provider
+ * summarises (keeping its encrypted reasoning) before Copse discards anything.
+ * Client-side trimming stays the fallback for any transport that cannot compact.
+ */
+export const SERVER_COMPACTION_FILL = 0.75
+
+export function serverCompactionThreshold(
+  maxContextTokens: number,
+  opts?: { reserveTokens?: number },
+): number {
+  return Math.max(
+    1,
+    Math.floor(historyTokenBudget(maxContextTokens, opts) * SERVER_COMPACTION_FILL),
+  )
+}
+
 export function estimateConversationTokens(messages: LLMMessage[]): number {
-  const conv = conversationMessages(messages)
+  const conv = conversationMessages(messages).filter((message) => message.role !== 'provider_state')
   let total = JSON.stringify(conv).length / CHARS_PER_TOKEN
   for (const m of conv) {
     if (m.role === 'tool') total += toolResultImageAdjustment(m)
@@ -155,6 +199,7 @@ export function effectiveConversationTokens(messages: LLMMessage[]): number {
  * instead of re-stringifying the entire conversation every iteration (#583).
  */
 function conversationMessageEstimate(message: LLMMessage): number {
+  if (message.role === 'provider_state') return 0
   let tokens = (JSON.stringify(message).length + 1) / CHARS_PER_TOKEN
   if (message.role === 'tool') tokens += toolResultImageAdjustment(message)
   if (message.role === 'user' && Array.isArray(message.content)) {
@@ -204,7 +249,7 @@ export function repairToolUseToolResultPairing(messages: LLMMessage[]): void {
 /** How many messages to remove at `index` (assistant+tool pairs drop together). */
 function droppableSpan(messages: LLMMessage[], index: number): number {
   const m = messages[index]
-  if (!m || m.role === 'user') return 0
+  if (!m || m.role === 'user' || m.role === 'provider_state') return 0
   if (m.role === 'tool') {
     const prev = messages[index - 1]
     if (prev?.role === 'assistant' && Array.isArray(prev.content)) return 0
@@ -217,8 +262,12 @@ function droppableSpan(messages: LLMMessage[], index: number): number {
   return 1
 }
 
-function findOldestDroppableIndex(messages: LLMMessage[], minTail: number): number {
-  const start = contentStartIndex(messages)
+function findOldestDroppableIndex(
+  messages: LLMMessage[],
+  minTail: number,
+  firstCandidate: number,
+): number {
+  const start = Math.max(contentStartIndex(messages), firstCandidate)
   for (let i = start; i < messages.length; i++) {
     if (messages[i]?.role === 'user') continue
     const span = droppableSpan(messages, i)
@@ -241,6 +290,12 @@ export function trimMessagesInPlace(
     reserveTokens?: number
     minTailMessages?: number
     completionReserveTokens?: number
+    /**
+     * The compaction the provider will replay. Turns before it are already
+     * summarised server-side: they are not counted and not dropped, so trimming
+     * only spends the turns that follow it.
+     */
+    compaction?: CompactionIdentity | undefined
   },
 ): boolean {
   const minTail = opts?.minTailMessages ?? 5
@@ -261,7 +316,12 @@ export function trimMessagesInPlace(
   // estimates on every drop. `estimates` stays index-aligned with `messages`; the
   // system prompt is never a drop target.
   const measured = getLastMeasuredInputTokens()
-  const estimates = messages.map(conversationMessageEstimate)
+  const anchor = compactionReplayStart(messages, opts?.compaction)
+  const estimates = messages.map((message, i) =>
+    i < anchor && message.role !== 'system' && message.role !== 'developer'
+      ? 0
+      : conversationMessageEstimate(message),
+  )
   let currentTokens: number
   if (measured != null) {
     currentTokens = measured
@@ -273,7 +333,7 @@ export function trimMessagesInPlace(
   }
 
   while (messages.length > minTail && currentTokens > conversationBudget) {
-    const dropIndex = findOldestDroppableIndex(messages, minTail)
+    const dropIndex = findOldestDroppableIndex(messages, minTail, anchor + 1)
     if (dropIndex < 0) break
     const span = droppableSpan(messages, dropIndex)
     for (let i = dropIndex; i < dropIndex + span; i++) currentTokens -= estimates[i] ?? 0
@@ -292,6 +352,7 @@ export function trimHistory(
     reserveTokens?: number
     minTailMessages?: number
     completionReserveTokens?: number
+    compaction?: CompactionIdentity | undefined
   },
 ): { messages: LLMMessage[]; trimmed: boolean } {
   const copy = [...messages]

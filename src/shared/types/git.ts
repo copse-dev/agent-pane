@@ -101,6 +101,12 @@ export type ThreadWorktreeAttachment =
        * staged, and `git rebase --continue` refuses until they are committed.
        */
       uncommittedPick: UncommittedRebasePick | null
+      /**
+       * An agent turn or background task for this thread can still touch the
+       * checkout. Set by the main process when it answers an inspection, so
+       * recovery is offered only once nothing is writing to the checkout.
+       */
+      agentBusy?: boolean
     }
 
 export interface UncommittedRebasePick {

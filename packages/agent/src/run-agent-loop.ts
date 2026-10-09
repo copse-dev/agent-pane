@@ -8,11 +8,14 @@ import type {
   ToolCallChunk,
   ToolResult,
 } from '@copse/llm/wire-types.ts'
+import type { CompactionIdentity } from '@copse/llm/provider-state.ts'
 import type { ServiceTier } from '@copse/llm/service-tier.ts'
 import type { AgentStreamChunk, ToolExecuteResult } from './wire-types.ts'
 import { normalizeToolExecuteResult } from './wire-types.ts'
 import {
   trimMessagesInPlace,
+  serverCompactionThreshold,
+  replayWindow,
   repairToolUseToolResultPairing,
   CANCELLED_TOOL_RESULT,
   getLastMeasuredInputTokens,
@@ -776,7 +779,12 @@ async function runToolEnabledNudgeTurn(
     })
     if (maxContextTokens) {
       const reserve = tools.length > 0 ? toolSchemaReserveTokens : 0
-      if (trimMessagesInPlace(messages, maxContextTokens, { reserveTokens: reserve })) {
+      if (
+        trimMessagesInPlace(messages, maxContextTokens, {
+          reserveTokens: reserve,
+          compaction: provider.compactionIdentity,
+        })
+      ) {
         onHistoryTrimmed?.()
       }
     }
@@ -1105,6 +1113,7 @@ function handleContextOverflowInLoop(
   maxContextTokens: number | undefined,
   toolSchemaReserveTokens: number,
   tools: LLMTool[],
+  compaction: CompactionIdentity | undefined,
   onChunk: (chunk: AgentStreamChunk) => void,
   onHistoryTrimmed?: () => void,
 ): boolean {
@@ -1114,7 +1123,12 @@ function handleContextOverflowInLoop(
     return true
   }
   const reserve = tools.length > 0 ? toolSchemaReserveTokens : 0
-  if (trimMessagesInPlace(messages, maxContextTokens, { reserveTokens: reserve })) {
+  if (
+    trimMessagesInPlace(messages, maxContextTokens, {
+      reserveTokens: reserve,
+      compaction,
+    })
+  ) {
     onHistoryTrimmed?.()
     return false
   }
@@ -1311,7 +1325,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
     if (maxContextTokens) {
       const escalationInput = {
-        messages,
+        messages: replayWindow(messages, provider.compactionIdentity),
         maxContextTokens,
         toolSchemaReserveTokens,
         toolOnlySteps,
@@ -1427,7 +1441,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         toolOnlySteps <= TRIM_DEFER_MAX_TOOL_STEPS && pressure.fillRatio < TRIM_CRITICAL_FILL
       if (
         !skipSoftTrim &&
-        trimMessagesInPlace(messages, maxContextTokens, { reserveTokens: reserve })
+        trimMessagesInPlace(messages, maxContextTokens, {
+          reserveTokens: reserve,
+          compaction: provider.compactionIdentity,
+        })
       ) {
         trimEvents++
         onHistoryTrimmed?.()
@@ -1515,17 +1532,28 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         ? Math.min(reasoningCheckpointPolicy.intervalTokens, reasoningRunawaySuppressedOutputTokens)
         : reasoningCheckpointPolicy.intervalTokens
       : undefined
+    let historyAssistantTextOffset = 0
     let nextTrailingReasoningCheckpoint = reasoningCheckpointPolicy?.maxTrailingReasoningTokens
       ? reasoningCheckpointPolicy.intervalTokens
       : undefined
 
     budget.deadline.pause()
     try {
+      // The loop owns the context budget, so it alone says when the provider
+      // should compact server-side; only a provider that replays a compaction item
+      // (`compactionIdentity`) is offered the threshold.
+      const compactAtTokens =
+        maxContextTokens && provider.compactionIdentity
+          ? serverCompactionThreshold(maxContextTokens, {
+              reserveTokens: tools.length > 0 ? toolSchemaReserveTokens : 0,
+            })
+          : undefined
       const streamOptions: LLMStreamOptions | undefined =
-        initialToolChoice || suppressReasoning
+        initialToolChoice || suppressReasoning || compactAtTokens !== undefined
           ? {
               ...(initialToolChoice ? { toolChoice: initialToolChoice } : {}),
               ...(suppressReasoning ? { suppressReasoning: true } : {}),
+              ...(compactAtTokens !== undefined ? { compactAtTokens } : {}),
             }
           : undefined
       initialToolChoice = undefined
@@ -1554,6 +1582,23 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           onChunk(chunk)
         }
         if (chunk.type === 'prompt_progress') onChunk(chunk)
+        if (chunk.type === 'provider_state') {
+          // A boundary cannot hide tool calls whose results have not arrived.
+          // Retain the neutral turn rather than replay an orphaned result.
+          if (pendingToolCalls.length > 0) continue
+          // Preserve output order without changing the text streamed to the user
+          // or the complete-turn text used by run policies.
+          const coveredText = assistantText.slice(historyAssistantTextOffset)
+          if (coveredText) messages.push({ role: 'assistant', content: coveredText })
+          historyAssistantTextOffset = assistantText.length
+          messages.push({ role: 'provider_state', state: chunk.state })
+          onChunk({
+            type: 'context_compacted',
+            provider: 'openai-responses',
+            model: chunk.state.model,
+            itemId: chunk.state.itemId,
+          })
+        }
         if (chunk.type === 'usage') {
           streamUsage = {
             ...(chunk.hostingProvider === undefined
@@ -1715,7 +1760,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     if (maxContextTokens) {
       emitContextPressure(
         {
-          messages,
+          messages: replayWindow(messages, provider.compactionIdentity),
           maxContextTokens,
           toolSchemaReserveTokens,
           toolOnlySteps,
@@ -1838,6 +1883,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       })
     }
 
+    // Push only output following the latest accepted compaction boundary.
+    const historyAssistantText = assistantText.slice(historyAssistantTextOffset)
+
     // Every non-soft-cut stream breaks the streak, including malformed recovery
     // streams which continue before ordinary assistant/tool history handling.
     if (!softBudgetCut) softBudgetCutStreak = 0
@@ -1867,8 +1915,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         })
         toolOnlySteps++
         if (signal?.aborted) break
-      } else if (assistantText.trim()) {
-        messages.push({ role: 'assistant', content: assistantText })
+      } else if (historyAssistantText.trim()) {
+        messages.push({ role: 'assistant', content: historyAssistantText })
       }
       messages.push({ role: 'user', content: malformedToolCallNudge })
       recordAppliedNudge(appliedNudgeSink, {
@@ -1901,7 +1949,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       continue
     }
 
-    // Push assistant message to history
+    // Push the retained assistant output to history
     if (pendingToolCalls.length > 0) {
       reasoningRunawayStreak = 0
       messages.push({
@@ -1918,9 +1966,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         })
       }
     } else if (isRefusalStopReason(stopReason)) {
-      const text = assistantText.trim() || REFUSAL_USER_MESSAGE
+      const text = assistantText.trim() ? historyAssistantText : REFUSAL_USER_MESSAGE
       if (!assistantText.trim()) onChunk({ type: 'text', text })
-      messages.push({ role: 'assistant', content: text })
+      if (text) messages.push({ role: 'assistant', content: text })
       finishedWithAnswer = true
       break
     } else if (isContextOverflowStopReason(stopReason)) {
@@ -1930,6 +1978,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           maxContextTokens,
           toolSchemaReserveTokens,
           tools,
+          provider.compactionIdentity,
           onChunk,
           onHistoryTrimmed,
         )
@@ -1941,7 +1990,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     } else if (assistantText.trim() && !reasoningDominatedRunaway) {
       reasoningRunawayStreak = 0
       if (truncationNudge !== undefined) {
-        messages.push({ role: 'assistant', content: assistantText })
+        if (historyAssistantText)
+          messages.push({ role: 'assistant', content: historyAssistantText })
         messages.push({ role: 'user', content: truncationNudge })
         recordAppliedNudge(appliedNudgeSink, {
           step: budget.llmCalls,
@@ -1951,7 +2001,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         })
         continue
       }
-      messages.push({ role: 'assistant', content: assistantText })
+      if (historyAssistantText) messages.push({ role: 'assistant', content: historyAssistantText })
       finishedWithAnswer = true
       break
     } else {
@@ -2006,6 +2056,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
             maxContextTokens,
             toolSchemaReserveTokens,
             tools,
+            provider.compactionIdentity,
             onChunk,
             onHistoryTrimmed,
           )

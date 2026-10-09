@@ -47,6 +47,39 @@ async function collect(provider: AnthropicProvider): Promise<ProviderStreamChunk
   return out
 }
 
+describe('AnthropicProvider provider state', () => {
+  it('never sends an OpenAI compaction item after a mid-thread switch', async () => {
+    const provider = new AnthropicProvider('claude-test', { apiKey: 'test' })
+    const capture = withFakeStream(provider, [{ type: 'message_stop' }])
+
+    for await (const _ of provider.stream(
+      [
+        { role: 'user', content: 'question' },
+        {
+          role: 'provider_state',
+          state: {
+            kind: 'openai-responses-compaction',
+            v: 1,
+            model: 'gpt-5.6-sol',
+            endpoint: '',
+            itemId: 'cmp_1',
+            encryptedContent: 'opaque-secret-blob',
+          },
+        },
+        { role: 'assistant', content: 'answer' },
+      ],
+      [],
+    )) {
+      // Drain the stream so the provider sends and captures the request.
+    }
+
+    const body = JSON.stringify(capture.params)
+    assert.equal(body.includes('opaque-secret-blob'), false)
+    assert.equal(body.includes('provider_state'), false)
+    assert.equal(body.includes('answer'), true)
+  })
+})
+
 describe('AnthropicProvider usage accounting (#111)', () => {
   it('reads authoritative input tokens from message_start, output from message_delta', async () => {
     const provider = new AnthropicProvider('claude-test', { apiKey: 'test' })

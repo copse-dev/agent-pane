@@ -1,3 +1,4 @@
+import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -17,6 +18,7 @@ import {
   setMessageToolSummary,
   setMessageRunSummary,
   setThreadStatus,
+  markAutomationRunFailed,
   addUsageDelta,
   recordContextTrim,
   updateContextSnapshot,
@@ -587,6 +589,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         // fall-through so the exhaustiveness check stays meaningful.
         break
       }
+      case 'provider_state':
+      case 'context_compacted': {
+        // Provider bookkeeping. The opaque item never reaches the renderer (the
+        // loop keeps it in provider history), and the boundary is recorded in the
+        // thread spine by main; nothing to show or store here.
+        break
+      }
       case 'todo_worker_start':
       case 'todo_worker_done': {
         activity(threadId)
@@ -661,6 +670,17 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? 'send_now' : 'stop' }
           : chunk.outcome
         setMessageTurnOutcome(store, threadId, st.msgId, outcome)
+        if (outcome.status === 'failed' && outcome.error) {
+          // A no-op for ordinary threads; for an automation run it is what Activity and
+          // the manager read to say why an unattended run died.
+          const detail = outcome.error
+          markAutomationRunFailed(store, threadId, {
+            code: classifyAutomationFailureMessage(
+              `${detail.message} ${detail.code === undefined ? '' : String(detail.code)}`,
+            ),
+            message: detail.message.slice(0, 500),
+          })
+        }
         break
       }
       case 'done': {

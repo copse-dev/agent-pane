@@ -671,6 +671,9 @@ app
     getAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
     })
+    getAutomationService().onHealthChange((health) => {
+      if (!win.isDestroyed()) win.webContents.send('automations:scheduler-health', health)
+    })
     getBranchCiAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
     })

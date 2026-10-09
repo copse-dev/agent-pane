@@ -138,6 +138,7 @@ export interface BuildSystemPromptOptions {
 export interface SystemPromptBuildResult {
   prompt: string
   instructionMetadata: InstructionLayerMetadata
+  invokedSkillContextBytes: number
 }
 
 /** Assemble the system prompt and retain nested-instruction runtime metadata. */
@@ -192,6 +193,10 @@ export async function buildSystemPromptWithMetadata(
     (threadId ? hasTerminalSessions(threadId) : hasTerminalSessions())
   const customInstructions = getSettingTrimmed('customInstructions')
   const opus5 = opts.model != null && isOpus5Model(opts.model)
+  const invokedSkillsBlock = await buildInvokedSkillsBlock(invokedSkills, {
+    sandboxActive: isProjectSandboxActive(),
+    ...(threadId ? { threadId } : {}),
+  })
   const prompt =
     basePrompt
       .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
@@ -214,10 +219,7 @@ export async function buildSystemPromptWithMetadata(
     (okfMemoriesEnabled ? MEMORY_TOOLS_BLOCK : '') +
     (piiRedactionEnabled ? PII_REDACTION_BLOCK : '') +
     buildSkillsCatalogBlock(opts.availableToolNames) +
-    (await buildInvokedSkillsBlock(invokedSkills, {
-      sandboxActive: isProjectSandboxActive(),
-      ...(threadId ? { threadId } : {}),
-    })) +
+    invokedSkillsBlock +
     agentRulesCatalog +
     buildSemanticSearchPromptBlock() +
     (opus5 ? OPUS_5_TONE_REMINDER : '') +
@@ -225,7 +227,11 @@ export async function buildSystemPromptWithMetadata(
     (instructionLayers.global
       ? `\n\n---\n\n## User instructions\n\n${instructionLayers.global}`
       : '')
-  return { prompt, instructionMetadata: instructionLayers.metadata }
+  return {
+    prompt,
+    instructionMetadata: instructionLayers.metadata,
+    invokedSkillContextBytes: Buffer.byteLength(invokedSkillsBlock, 'utf8'),
+  }
 }
 
 /** Prompt-only compatibility wrapper for estimates, tests, and other callers. */

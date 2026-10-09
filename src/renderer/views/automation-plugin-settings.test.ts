@@ -9,6 +9,8 @@ import type {
   AutomationTriggerEvent,
   BranchCiAutomation,
   BranchCiAutomationInput,
+  EventDeliverySummary,
+  EventMatchPreview,
 } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { BEST_VALUE_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
@@ -98,7 +100,12 @@ function stubApi(
           repository: 'github.com/owner/repo',
           branch: 'main',
           latestFailure: null,
+          recent: [],
         }),
+      eventHistory: () => Promise.resolve([]),
+      reportStartFailure: () => Promise.resolve(false),
+      schedulerHealth: () => Promise.resolve({ state: 'ok', since: null, message: null }),
+      onSchedulerHealth: () => () => {},
       canStart: () => Promise.resolve({ allowed: true }),
       onTriggered(handler): () => void {
         triggerHandlers.add(handler)
@@ -690,7 +697,7 @@ describe('automation plugin settings detail', () => {
     ciForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await tick()
     assert.equal(ciUpserts.length, 1)
-    assert.equal(ciUpserts[0]?.branch, 'release/next')
+    assert.deepEqual(ciUpserts[0]?.trigger, { kind: 'github-ci-failed', branch: 'release/next' })
     assert.equal(ciUpserts[0].prompt, 'Find the failing check.')
     root
       .querySelector<HTMLElement>(`[data-ci-automation-id="${saved.id}"] .automation-row-btn`)
@@ -698,5 +705,222 @@ describe('automation plugin settings detail', () => {
     await tick()
     assert.equal(ciWhen.disabled, true)
     assert.equal(ciWhen.value, 'github-ci-failed')
+  })
+  it('edits pull request and issue-label triggers, previews matches, and lists deliveries', async () => {
+    const { api } = stubApi([])
+    const base = {
+      v: 1 as const,
+      projectId: 'project-a',
+      prompt: 'Look.',
+      model: 'gpt-5.4',
+      enabled: true,
+      maxLiveWorktrees: 1 as const,
+      revision: '22222222-2222-4222-8222-222222222222',
+      createdAt: 1,
+      updatedAt: 1,
+      seenDeliveries: [],
+    }
+    const saved: BranchCiAutomation[] = [
+      {
+        ...base,
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Review PRs',
+        trigger: {
+          kind: 'github-pr-changed',
+          repository: 'github.com/owner/repo',
+          baseBranch: 'main',
+          transition: 'ready-for-review',
+        },
+      },
+      {
+        ...base,
+        id: '33333333-3333-4333-8333-333333333333',
+        name: 'Triage',
+        trigger: {
+          kind: 'github-issue-labeled',
+          repository: 'github.com/owner/repo',
+          label: 'needs-triage',
+        },
+        lastProblem: {
+          at: 5,
+          kind: 'failed',
+          message: 'Could not read GitHub: rate limited',
+          code: 'unknown',
+        },
+      },
+    ]
+    const [prDef, issueDef] = saved
+    assert.ok(prDef && issueDef)
+    const upserts: BranchCiAutomationInput[] = []
+    const previews: unknown[] = []
+    api.automations.listBranchCi = (): Promise<BranchCiAutomation[]> => Promise.resolve(saved)
+    api.automations.upsertBranchCi = (_projectId, input): Promise<BranchCiAutomation> => {
+      upserts.push(input)
+      return Promise.resolve(prDef)
+    }
+    api.automations.testBranchCi = (_projectId, trigger): Promise<EventMatchPreview> => {
+      previews.push(trigger)
+      return Promise.resolve({
+        repository: 'github.com/owner/repo',
+        branch: 'main',
+        latestFailure: null,
+        recent: ['#4 Fix the parser'],
+      })
+    }
+    api.automations.eventHistory = (_projectId, id): Promise<EventDeliverySummary[]> =>
+      Promise.resolve(
+        id === prDef.id
+          ? [
+              {
+                key: 'k1',
+                deliveryId: 'pr:4:aaaa:ready',
+                outcome: 'started' as const,
+                summary: '#4 Fix the parser',
+                receivedAt: 10,
+                threadId: 'run-1',
+              },
+              {
+                key: 'k2',
+                deliveryId: 'pr:5:bbbb:ready',
+                outcome: 'filtered' as const,
+                reason: 'Pull request transition or base branch does not match',
+                summary: '#5 Docs',
+                receivedAt: 5,
+              },
+            ]
+          : [],
+      )
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const opened: string[] = []
+    const root = createAutomationPluginSettings(store, api, true, undefined, false, 'project-a', {
+      openRun: (threadId) => opened.push(threadId),
+    })
+    document.body.append(root)
+    await tick()
+
+    const rows = root.querySelector('.automation-ci-list')?.textContent ?? ''
+    assert.match(rows, /PR ready for review · github\.com\/owner\/repo · main/)
+    assert.match(rows, /Issue labelled · github\.com\/owner\/repo · needs-triage/)
+    const triage = root.querySelector(`[data-ci-automation-id="${issueDef.id}"]`)
+    assert.match(
+      triage?.querySelector('.automation-problem-message')?.textContent ?? '',
+      /rate limited/,
+    )
+    assert.match(
+      triage?.querySelector('.automation-problem-title')?.textContent ?? '',
+      /Could not check GitHub/,
+    )
+
+    const details = root.querySelector<HTMLDetailsElement>(
+      `[data-ci-automation-id="${prDef.id}"] .automation-deliveries`,
+    )
+    assert.ok(details)
+    details.open = true
+    details.dispatchEvent(new Event('toggle'))
+    await tick()
+    const outcomes = [...details.querySelectorAll('.automation-delivery')].map((item) =>
+      item.getAttribute('data-delivery-outcome'),
+    )
+    assert.deepEqual(outcomes, ['started', 'filtered'])
+    assert.match(details.textContent, /transition or base branch does not match/)
+    details.querySelector<HTMLButtonElement>('.automation-delivery-open')?.click()
+    assert.deepEqual(opened, ['run-1'])
+
+    root
+      .querySelector<HTMLElement>(`[data-ci-automation-id="${prDef.id}"] .automation-row-btn`)
+      ?.click()
+    await tick()
+    const form = root.querySelector<HTMLFormElement>('.automation-ci-form')
+    assert.ok(form)
+    const fieldVisible = (kind: string): boolean =>
+      [...form.querySelectorAll<HTMLElement>(`[data-trigger-field="${kind}"]`)].every(
+        (node) => !node.hidden,
+      )
+    assert.equal(fieldVisible('github-pr-changed'), true)
+    assert.equal(fieldVisible('github-ci-failed'), false)
+    assert.equal(fieldVisible('github-issue-labeled'), false)
+    assert.equal(form.querySelector<HTMLInputElement>('.automation-pr-base')?.value, 'main')
+    assert.match(
+      form.querySelector('.automation-ci-summary')?.textContent ?? '',
+      /becomes ready for review/,
+    )
+
+    const transition = form.querySelector<HTMLSelectElement>('.automation-pr-transition')
+    assert.ok(transition)
+    transition.value = 'new-commits'
+    transition.dispatchEvent(new Event('change'))
+    assert.match(
+      form.querySelector('.automation-ci-summary')?.textContent ?? '',
+      /gets new commits/,
+    )
+
+    form.querySelector<HTMLButtonElement>('.automation-ci-preview')?.click()
+    await tick()
+    assert.deepEqual(previews, [
+      { kind: 'github-pr-changed', baseBranch: 'main', transition: 'new-commits' },
+    ])
+    assert.match(
+      form.querySelector('.automation-ci-matches')?.textContent ?? '',
+      /#4 Fix the parser/,
+    )
+
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await tick()
+    assert.deepEqual(upserts[0]?.trigger, {
+      kind: 'github-pr-changed',
+      baseBranch: 'main',
+      transition: 'new-commits',
+    })
+  })
+
+  it('sends workflow filters and a pull request scope for a CI trigger', async () => {
+    const { api } = stubApi([])
+    const upserts: BranchCiAutomationInput[] = []
+    api.automations.upsertBranchCi = (_projectId, input): Promise<BranchCiAutomation> => {
+      upserts.push(input)
+      return Promise.reject(new Error('stop here'))
+    }
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+    root.querySelector<HTMLButtonElement>('.automation-add-btn')?.click()
+    await tick()
+    const scheduleWhen = root.querySelector<HTMLSelectElement>(
+      '.automation-form:not(.automation-ci-form) .automation-when-select',
+    )
+    assert.ok(scheduleWhen)
+    scheduleWhen.value = 'github-ci-failed'
+    scheduleWhen.dispatchEvent(new Event('change'))
+    await tick()
+    const form = root.querySelector<HTMLFormElement>('.automation-ci-form')
+    assert.ok(form)
+    const set = (selector: string, value: string): void => {
+      const input = form.querySelector<HTMLInputElement>(selector)
+      assert.ok(input, selector)
+      input.value = value
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    set('.automation-ci-name', 'Watch PR')
+    set('.automation-ci-pull-request', '42')
+    set('.automation-ci-checks', 'CI, Lint ,')
+    assert.match(
+      form.querySelector('.automation-ci-summary')?.textContent ?? '',
+      /pull request #42 \(only CI, Lint\)/,
+    )
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await tick()
+    assert.deepEqual(upserts[0]?.trigger, {
+      kind: 'github-ci-failed',
+      pullRequest: 42,
+      checks: ['CI', 'Lint'],
+    })
+    assert.match(root.querySelector('.automation-status')?.textContent ?? '', /stop here/)
   })
 })

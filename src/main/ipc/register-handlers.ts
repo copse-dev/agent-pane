@@ -1,4 +1,5 @@
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
+import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
@@ -17,7 +18,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebConten
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
@@ -37,6 +38,7 @@ import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
+import { hasBackgroundProcessesForThread } from '../services/exec/background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
@@ -300,6 +302,7 @@ import {
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
+import { AUTOMATION_FAILURE_CODES } from '@shared/types/automations.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { getBranchCiAutomationService } from '../services/automations/branch-ci-automation-service.ts'
@@ -507,10 +510,34 @@ const zAutomationScheduleInput = z.object({
   permissions: z.array(zAutomationPermission).max(256).optional(),
 })
 
+const zEventTriggerInput = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('github-ci-failed'),
+    branch: z.string().trim().min(1).max(200).optional(),
+    checks: z.array(z.string().trim().min(1).max(200)).max(10).optional(),
+    pullRequest: z.number().int().positive().optional(),
+  }),
+  z.strictObject({
+    kind: z.literal('github-pr-changed'),
+    baseBranch: z.string().trim().min(1).max(200),
+    transition: z.enum(['ready-for-review', 'new-commits']),
+  }),
+  z.strictObject({
+    kind: z.literal('github-issue-labeled'),
+    label: z.string().trim().min(1).max(50),
+  }),
+])
+
+const zAutomationFailureReport = z.strictObject({
+  code: z.enum(AUTOMATION_FAILURE_CODES),
+  message: z.string().trim().min(1).max(2000),
+})
+
 const zBranchCiAutomationInput = z.strictObject({
   id: z.uuid().optional(),
   name: z.string().trim().min(1).max(160),
-  branch: z.string().trim().min(1).max(200),
+  branch: z.string().trim().min(1).max(200).optional(),
+  trigger: zEventTriggerInput.optional(),
   prompt: z.string().trim().min(1).max(100_000),
   model: z.string().trim().min(1).max(1024),
   enabled: z.boolean(),
@@ -2679,7 +2706,8 @@ export function registerAllHandlers(
       return getBranchCiAutomationService().upsert(projectId, {
         ...(input.id ? { id: input.id } : {}),
         name: input.name,
-        branch: input.branch,
+        ...(input.branch !== undefined ? { branch: input.branch } : {}),
+        ...(input.trigger !== undefined ? { trigger: input.trigger } : {}),
         prompt: input.prompt,
         model: input.model,
         enabled: input.enabled,
@@ -2697,15 +2725,46 @@ export function registerAllHandlers(
   )
   ipcMain.handle(
     'automations:test-branch-ci',
-    async (event, rawProjectId: unknown, rawBranch: unknown) => {
+    async (event, rawProjectId: unknown, rawTrigger: unknown) => {
       assertMainFrameSender(event, win)
-      const [projectId, branch] = parseIpcArgs(
-        z.tuple([zProjectId, z.string().trim().min(1).max(200)]),
-        [rawProjectId, rawBranch],
+      const [projectId, trigger] = parseIpcArgs(
+        z.tuple([zProjectId, z.union([z.string().trim().min(1).max(200), zEventTriggerInput])]),
+        [rawProjectId, rawTrigger],
       )
-      return getBranchCiAutomationService().testMatch(projectId, { branch })
+      return getBranchCiAutomationService().testMatch(
+        projectId,
+        typeof trigger === 'string' ? { branch: trigger } : { trigger },
+      )
     },
   )
+  ipcMain.handle(
+    'automations:event-history',
+    async (event, rawProjectId: unknown, rawId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, id] = parseIpcArgs(z.tuple([zProjectId, z.uuid()]), [rawProjectId, rawId])
+      return getBranchCiAutomationService().history(projectId, id)
+    },
+  )
+  // The renderer reports what it saw while starting a run; main accepts it only for the
+  // latest run of a saved automation, so a stale or forged thread id changes nothing.
+  ipcMain.handle(
+    'automations:report-start-failure',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawFailure: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, failure] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256), zAutomationFailureReport]),
+        [rawProjectId, rawThreadId, rawFailure],
+      )
+      return (
+        (await getAutomationService().reportStartFailure(projectId, threadId, failure)) ||
+        (await getBranchCiAutomationService().reportStartFailure(projectId, threadId, failure))
+      )
+    },
+  )
+  ipcMain.handle('automations:scheduler-health', (event) => {
+    assertMainFrameSender(event, win)
+    return getAutomationService().health()
+  })
 
   ipcMain.handle(
     'automations:can-start',
@@ -3042,15 +3101,19 @@ export function registerAllHandlers(
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitBranchStatus(projectId, branch, root)
   })
+  const threadCheckoutBusy = (projectId: string, threadId: string): boolean =>
+    isDispatcherThreadActive(projectId, threadId) ||
+    listRunningThreadIds().includes(threadId) ||
+    hasBackgroundProcessesForThread({ projectId, threadId })
   ipcMain.handle('git:worktree-attachment', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return inspectThreadCheckoutAttachment(projectId, threadId)
+    return inspectThreadCheckoutAttachment(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:reattach-worktree', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return reattachThreadCheckout(projectId, threadId)
+    return reattachThreadCheckout(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -3222,6 +3285,15 @@ export function registerAllHandlers(
       assertMainFrameSender(event, win)
       const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
       const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
+      if (parsedAgentId.startsWith('openai:')) {
+        const data = await readOpenAiArtifact(parsedAgentId.slice('openai:'.length), parsedPath)
+        const result = await dialog.showSaveDialog(win, {
+          title: 'Save agent artifact',
+          defaultPath: `agent-artifact${extname(parsedPath)}`,
+        })
+        if (!result.canceled && result.filePath) await writeFile(result.filePath, data)
+        return ''
+      }
       return resolveRemoteArtifactDownloadUrl({ agentId: parsedAgentId, path: parsedPath })
     },
   )

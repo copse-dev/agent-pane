@@ -51,6 +51,11 @@ export interface StandaloneMainBundle {
 }
 
 export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
+  {
+    entry: 'src/main/services/remote/openai-git-worker-entry.ts',
+    outfile: 'dist/main/openai-git-worker.cjs',
+    external: [],
+  },
   // Seatbelt/bubblewrap-wrapped filesystem worker behind every sandboxed `fs:*`
   // IPC — both the long-lived server and the one-shot fallback exec this path.
   // The manifest pins Node's package.json resolution to this directory: under

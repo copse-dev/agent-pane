@@ -1,3 +1,4 @@
+import { clearOpenAiAgentSession, runOpenAiAgentFromSettings } from './openai-agents-client.ts'
 /**
  * Cursor Cloud Agent HTTP/SSE adapter.
  *
@@ -261,6 +262,7 @@ export function clearRemoteAgentSession(threadId: string): void {
   // Clear the Claude Managed Agents session for this thread too, so a fresh chat
   // starts a new remote session regardless of which provider was last used.
   clearManagedAgentSession(threadId)
+  clearOpenAiAgentSession(threadId)
 }
 
 function cursorAuthHeader(apiKey: string): string {
@@ -1066,6 +1068,7 @@ async function streamRemoteRun(input: {
 export async function runRemoteAgentFromSettings(
   options: RemoteAgentRunOptions,
 ): Promise<RemoteAgentRunResult> {
+  if (options.provider === 'openai') return runOpenAiAgentFromSettings(options)
   // Each remote provider has its own API shape; route to the matching adapter.
   if (options.provider === REMOTE_AGENT_PROVIDER_ANTHROPIC) {
     return runManagedAgentFromSettings(options)
