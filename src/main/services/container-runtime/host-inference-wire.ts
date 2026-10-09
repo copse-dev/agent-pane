@@ -5,6 +5,7 @@ import {
   providerImageSchema as image,
   providerToolCallSchema as toolCall,
   providerStreamChunkSchema as chunk,
+  providerCompactionStateSchema as compactionState,
 } from '@copse/llm/provider-stream-schema.ts'
 
 export const HOST_INFERENCE_TARGET = 'inference.copse.internal:443'
@@ -47,6 +48,10 @@ const message: z.ZodType<LLMMessage> = z.discriminatedUnion('role', [
         })),
     ),
   }),
+  // Server-side compaction state the guest replays verbatim (run-agent-loop keeps
+  // it in history); without it the first request after a compaction would fail
+  // decoding here before reaching the pinned provider.
+  z.object({ role: z.literal('provider_state'), state: compactionState }),
 ])
 export const inferenceRequestSchema = z
   .object({

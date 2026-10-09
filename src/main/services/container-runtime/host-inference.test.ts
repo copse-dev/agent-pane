@@ -1,7 +1,12 @@
 import { describe, it, afterEach, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { PassThrough } from 'node:stream'
-import type { LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
+import type {
+  LLMMessage,
+  LLMProvider,
+  ProviderCompactionState,
+  ProviderStreamChunk,
+} from '@copse/llm/wire-types.ts'
 import { HostInference } from './host-inference.ts'
 import { EgressBroker } from './egress-broker.ts'
 import { EgressLink } from './egress-link.ts'
@@ -115,6 +120,45 @@ describe('run-scoped host inference', () => {
       [HOST_INFERENCE_TARGET],
     )
     assert.equal(await f.link.requestKey(), '')
+  })
+  it('carries provider compaction state across the wire in both directions', async (t) => {
+    const state: ProviderCompactionState = {
+      kind: 'openai-responses-compaction',
+      v: 1,
+      model: 'pinned',
+      endpoint: 'https://api.openai.com/v1',
+      itemId: 'cmp_1',
+      encryptedContent: 'opaque',
+    }
+    const history: LLMMessage[] = [
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Hi' },
+      { role: 'provider_state', state },
+      { role: 'user', content: 'Again' },
+    ]
+    const f = fixture(t, {
+      async *stream(messages) {
+        assert.deepEqual(messages, history)
+        yield { type: 'provider_state', state: { ...state, itemId: 'cmp_2' } }
+        yield { type: 'done' }
+      },
+    })
+    const chunks: ProviderStreamChunk[] = []
+    for await (const chunk of f.provider.stream(history, [])) chunks.push(chunk)
+    assert.deepEqual(chunks, [
+      { type: 'provider_state', state: { ...state, itemId: 'cmp_2' } },
+      { type: 'done' },
+    ])
+    assert.match(
+      await raw(
+        f.link,
+        JSON.stringify({
+          messages: [{ role: 'provider_state', state: { ...state, kind: 'other' } }],
+          tools: [],
+        }),
+      ),
+      /Invalid host inference request/,
+    )
   })
   it('rejects extra authority, invalid JSON and oversized input before calling the provider', async (t) => {
     let calls = 0
