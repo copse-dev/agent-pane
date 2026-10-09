@@ -102,6 +102,8 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --text-secondary: #a6a6a6;
   --text-muted: #808080;
   --text: var(--text-primary);
+  --text-prose: #e6e6e6;
+  --text-prose-strong: #ffffff;
   --text-tertiary: var(--text-muted);
   --border: #414141;
   --border-subtle: #333333;
@@ -152,6 +154,12 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
     "Averia Serif Libre",
     Georgia,
     serif;
+  --font-prose:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    system-ui,
+    sans-serif;
   --font-mono:
     "SFMono-Regular",
     Consolas,
@@ -201,7 +209,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --group-header-font-weight: 600;
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
 .streaming-markdown {
   & .stream-pending {
     white-space: pre-wrap;
@@ -272,7 +280,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   }
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
 .streaming-markdown {
   line-height: var(--sm-line-height, 1.55);
   word-break: break-word;
@@ -1414,6 +1422,10 @@ copse-ui-field input[type=password],
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
 }
+.chats-list .chat-row .chat-thread-owner {
+  flex: 0 0 auto;
+  max-width: 45%;
+}
 .automation-fold-row {
   display: flex;
   align-items: center;
@@ -1528,7 +1540,8 @@ copse-ui-field input[type=password],
     opacity: 1;
   }
 }
-.chat-pr-status {
+.chat-pr-status,
+.chat-changes-status {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -2531,6 +2544,17 @@ summary.pr-check-group-heading::-webkit-details-marker {
 .pr-viewer-files:empty {
   display: none;
 }
+.pr-auth-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  max-width: 34rem;
+  line-height: var(--line-height-base);
+}
+.pr-auth-hint {
+  color: var(--text-muted);
+}
 .pr-viewer-repo-line {
   display: flex;
   align-items: center;
@@ -3406,6 +3430,59 @@ summary.pr-check-group-heading::-webkit-details-marker {
 .git-changes-review-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* src/renderer/styles/global/pr-thread-relationships.css */
+.pr-thread-relationships {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.pr-thread-group h5 {
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: calc(11px * var(--ui-scale));
+  font-weight: 600;
+}
+.pr-thread-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  text-align: left;
+  cursor: pointer;
+}
+.pr-thread-link + .pr-thread-link {
+  margin-top: 4px;
+}
+.pr-thread-link:hover {
+  background: var(--bg-hover);
+}
+.pr-thread-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-thread-kind {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: calc(10px * var(--ui-scale));
+}
+.pr-thread-empty {
+  margin: 4px 0;
+  color: var(--text-secondary);
+  font-size: calc(11px * var(--ui-scale));
+}
+.pr-list-relationship {
+  color: var(--text-secondary);
+  font-size: calc(10px * var(--ui-scale));
+  flex-shrink: 0;
 }
 
 /* src/renderer/styles/global/titlebar.css */
@@ -4881,13 +4958,22 @@ label {
   padding-block: var(--spacing-xs);
 }
 .msg-assistant > .message-body > .message-text {
-  --sm-line-height: 1.65;
+  --sm-line-height: 1.6;
   --sm-space-xs: var(--spacing-sm);
   --sm-space-sm: var(--spacing-lg);
   --sm-space-md: var(--spacing-xl);
-  max-width: 720px;
-  font-size: var(--font-size-lg);
+  max-width: 680px;
+  font-family: var(--font-prose);
+  font-size: var(--font-size-md);
   line-height: var(--sm-line-height);
+  color: var(--text-prose);
+}
+.msg-assistant > .message-body > .message-text :is(strong, b) {
+  font-weight: 600;
+  color: var(--text-prose-strong);
+}
+.msg-assistant > .message-body > .message-text a :is(strong, b) {
+  color: inherit;
 }
 .msg-assistant > .message-body > .message-text pre {
   font-size: var(--sm-font-size-sm);
@@ -10649,6 +10735,52 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .chatgpt-sign-in img {
   flex: none;
+}
+.sources-skill-controls,
+#sources-skills-status {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.sources-skill-controls {
+  display: block;
+  margin-top: var(--spacing-xs);
+}
+.sources-skill-metadata,
+.sources-skill-folders {
+  margin: var(--spacing-sm) 0;
+  color: var(--text-secondary);
+}
+.sources-skill-metadata summary,
+.sources-skill-folders summary {
+  cursor: pointer;
+}
+.sources-skill-metadata dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--spacing-xs) var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+  overflow-wrap: anywhere;
+}
+.sources-skill-metadata dd {
+  margin: 0;
+}
+.sources-skill-folders label {
+  display: block;
+  margin: var(--spacing-sm) 0;
+}
+#sources-skill-roots {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+  font: inherit;
+}
+#sources-skills-status {
+  margin-left: var(--spacing-sm);
 }
 
 /* src/renderer/styles/global/onboarding.css */
@@ -17081,6 +17213,7 @@ h3 {
   --bg-muted: #123f3b;
   --bg-subtle: #043431;
   --text-primary: #f9fcff;
+  --text-prose: var(--text-primary);
   --text-secondary: #b8cbc8;
   --text-muted: #829e9a;
   --border: #28534f;
@@ -17103,6 +17236,8 @@ h3 {
   --highlight-current-bg: #ffcc33;
   --highlight-current-text: #241a00;
   --text-primary: #333333;
+  --text-prose: #333333;
+  --text-prose-strong: #111111;
   --text-secondary: #5f5f5f;
   --text-muted: #767676;
   --select-chevron: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23707070'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E");
