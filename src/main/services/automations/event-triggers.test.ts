@@ -134,7 +134,7 @@ async function world(
       state.threads.set(thread.id, thread)
       return Promise.resolve()
     },
-    releasePreviousRun: () => Promise.resolve(true),
+    releasePreviousRun: () => Promise.resolve({ released: true }),
     supervisor: () => supervisor,
     inboxStore: new FileEventInboxStore(env),
     ...overrides,

@@ -534,7 +534,9 @@ export function createAutomationService(
         if (release.released) continue
         if (
           !handOverClaimed &&
-          (await dependencies.canReusePreviousRun?.(schedule.projectId, thread.id).catch(() => false)) === true
+          (await dependencies
+            .canReusePreviousRun?.(schedule.projectId, thread.id)
+            .catch(() => false)) === true
         ) {
           handOverClaimed = true
           continue

@@ -12,6 +12,7 @@ import type {
   EnqueueSupervisedTaskInput,
   SupervisedTaskHandler,
 } from '../supervisor/task-supervisor.ts'
+import type { AutomationWorktreeRelease } from '../worktree-parking.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { createAutomationService, type AutomationTaskSupervisor } from './automation-service.ts'
 
@@ -565,16 +566,18 @@ describe('AutomationService', () => {
   describe('handing a retained checkout to the next run', () => {
     async function setup(options: {
       canReuse: (threadId: string) => Promise<boolean>
-      release?: () => Promise<boolean>
+      release?: () => Promise<AutomationWorktreeRelease>
     }): Promise<{
       service: ReturnType<typeof createAutomationService>
       schedule: { id: string }
       first: AutomationTriggerEvent
       threads: Map<string, Thread>
+      triggerNext: () => Promise<AutomationTriggerEvent>
       advance: () => void
     }> {
       let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
       const threads = new Map<string, Thread>()
+      const events: AutomationTriggerEvent[] = []
       const service = createAutomationService({
         now: () => now,
         isPluginEnabled: () => true,
@@ -583,11 +586,16 @@ describe('AutomationService', () => {
           return Promise.resolve()
         },
         loadProjectThreads: () => Promise.resolve([...threads.values()]),
-        releasePreviousRun: options.release ?? ((): Promise<boolean> => Promise.resolve(false)),
+        releasePreviousRun:
+          options.release ??
+          ((): Promise<AutomationWorktreeRelease> =>
+            Promise.resolve({ released: false, reason: 'unmerged-commits' })),
         canReusePreviousRun: (_projectId, threadId): Promise<boolean> => options.canReuse(threadId),
         supervisor: () => new FakeTaskSupervisor(),
       })
-      service.start(() => {})
+      service.start((event) => {
+        events.push(event)
+      })
       const schedule = await service.upsert('project-a', {
         name: 'Project health',
         cron: '* * * * *',
@@ -617,6 +625,13 @@ describe('AutomationService', () => {
         schedule,
         first,
         threads,
+        triggerNext: async () => {
+          await service.tick()
+          const event = events.at(-1)
+          assert.ok(event)
+          assert.equal(event.triggeredAt, now)
+          return event
+        },
         advance: (): void => {
           now += 60_000
         },
@@ -624,10 +639,10 @@ describe('AutomationService', () => {
     }
 
     it('does not count the checkout the next run will take over against the cap', async () => {
-      const { service, schedule, first, threads } = await setup({
+      const { service, first, threads, triggerNext } = await setup({
         canReuse: () => Promise.resolve(true),
       })
-      const next = await service.runNow('project-a', schedule.id)
+      const next = await triggerNext()
       assert.equal(next.disposition, 'started')
       assert.notEqual(next.threadId, first.threadId)
       assert.equal(threads.size, 2)
@@ -635,8 +650,8 @@ describe('AutomationService', () => {
     })
 
     it('still enforces the cap when the checkout cannot be handed on', async () => {
-      const { service, schedule, threads } = await setup({ canReuse: () => Promise.resolve(false) })
-      const next = await service.runNow('project-a', schedule.id)
+      const { threads, triggerNext } = await setup({ canReuse: () => Promise.resolve(false) })
+      const next = await triggerNext()
       assert.equal(next.disposition, 'coalesced')
       assert.equal(next.coalescedReason, 'worktree-limit')
       assert.equal(threads.size, 1)
@@ -644,24 +659,21 @@ describe('AutomationService', () => {
 
     it('treats a failing hand-over check, or release, as a retained checkout', async () => {
       const failingCheck = await setup({ canReuse: () => Promise.reject(new Error('git failed')) })
-      assert.equal(
-        (await failingCheck.service.runNow('project-a', failingCheck.schedule.id)).coalescedReason,
-        'worktree-limit',
-      )
+      assert.equal((await failingCheck.triggerNext()).coalescedReason, 'worktree-limit')
       const failingRelease = await setup({
         canReuse: () => Promise.resolve(false),
         release: () => Promise.reject(new Error('worktree is missing')),
       })
-      const outcome = await failingRelease.service.runNow('project-a', failingRelease.schedule.id)
+      const outcome = await failingRelease.triggerNext()
       assert.equal(outcome.coalescedReason, 'worktree-limit')
     })
 
     it('allows only one hand-over per run, so a higher cap still bounds the total', async () => {
-      const { service, schedule, threads, first, advance } = await setup({
+      const { threads, first, advance, triggerNext } = await setup({
         canReuse: (threadId) => Promise.resolve(threadId === first.threadId),
       })
       // A second retained checkout (cap 1) is not covered by the single hand-over.
-      const second = await service.runNow('project-a', schedule.id)
+      const second = await triggerNext()
       assert.equal(second.disposition, 'started')
       const pending = threads.get(second.threadId)
       assert.ok(pending)
@@ -679,7 +691,7 @@ describe('AutomationService', () => {
         },
       })
       advance()
-      const third = await service.runNow('project-a', schedule.id)
+      const third = await triggerNext()
       assert.equal(third.coalescedReason, 'worktree-limit')
     })
   })
@@ -1051,7 +1063,7 @@ describe('AutomationService', () => {
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
       loadProjectThreads: () => Promise.resolve([]),
-      releasePreviousRun: () => Promise.resolve(true),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
     })
     assert.equal(
       await service.reportStartFailure('project-a', 'thread-old', {
