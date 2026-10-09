@@ -33,6 +33,7 @@ import {
   type ApprovalRequests,
   type ApprovalTimer,
 } from './approval-dialog.ts'
+import type { Project } from '@shared/types'
 import type { AskUserRequests } from './ask-user-dialog.ts'
 
 /**
@@ -842,26 +843,55 @@ export function createActivityView(
     return node
   }
 
-  /** All projects, then the ones that need you (most waiting first) and the chosen one. */
+  /** Projects the strip lists: the sidebar's, minus quarantined ones whose folder is missing. */
+  function listedProjects(): Project[] {
+    return store.getState().projects.filter((project) => !project.missing)
+  }
+
+  /** The filter the strip last scrolled to, so a redraw does not fight the reader's own scrolling. */
+  let scrolledFilter: string | null | undefined
+
+  function scrollSelectedCardIntoView(): void {
+    const selected = strip.querySelector<HTMLElement>('[aria-pressed="true"]')
+    if (!selected) return
+    const left = selected.offsetLeft - strip.offsetLeft
+    const right = left + selected.offsetWidth
+    if (left < strip.scrollLeft) strip.scrollLeft = left
+    else if (right > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = right - strip.clientWidth
+    }
+  }
+
+  /**
+   * All projects first, then every listed project by attention: most waiting, then
+   * those with runs working, then the rest by name. A lone project is the same list
+   * as All projects, so its card is left out.
+   */
   function renderStrip(groups: readonly ActivityGroup[]): void {
     const stats = projectStats(groups)
-    if (projectFilter !== null && !stats.has(projectFilter)) {
-      const project = store.getState().projects.find((entry) => entry.id === projectFilter)
-      if (project) stats.set(project.id, { name: project.name, need: 0, working: 0 })
-    }
+    const projects = listedProjects()
     // Aggregate counts include requests whose thread has no project association.
     const need = groups.find((group) => group.id === 'needs-you')?.total ?? 0
     const working = groups.find((group) => group.id === 'working')?.total ?? 0
     const cards = [stripCard(null, 'All projects', need, working)]
-    const shown = [...stats.entries()]
-      .filter(([id, entry]) => entry.need > 0 || id === projectFilter)
-      .sort((a, b) => b[1].need - a[1].need || a[1].name.localeCompare(b[1].name))
-    for (const [id, entry] of shown)
-      cards.push(stripCard(id, entry.name, entry.need, entry.working))
+    const shown = (projects.length > 1 ? projects : [])
+      .map((project) => ({
+        id: project.id,
+        name: project.name,
+        need: stats.get(project.id)?.need ?? 0,
+        working: stats.get(project.id)?.working ?? 0,
+      }))
+      .sort((a, b) => b.need - a.need || b.working - a.working || a.name.localeCompare(b.name))
+    for (const entry of shown)
+      cards.push(stripCard(entry.id, entry.name, entry.need, entry.working))
     patchChildren(strip, cards)
-    const live = new Set<string | null>([null, ...shown.map(([id]) => id)])
+    const live = new Set<string | null>([null, ...shown.map((entry) => entry.id)])
     for (const id of stripCache.keys()) {
       if (!live.has(id)) stripCache.delete(id)
+    }
+    if (scrolledFilter !== projectFilter) {
+      scrolledFilter = projectFilter
+      scrollSelectedCardIntoView()
     }
   }
 
@@ -893,6 +923,10 @@ export function createActivityView(
 
   /** Preserve what the reader is looking at while a live activity update redraws the list. */
   function captureListScrollAnchor(): { rowKey: string; viewportTop: number } | null {
+    // A list resting at the top has no reading position to hold: a request that
+    // arrives above its first row must show, not push the list down to keep the
+    // old first row still. That only shows once the list is short enough to scroll.
+    if (list.scrollTop <= 0) return null
     const listRect = list.getBoundingClientRect()
     for (const row of list.querySelectorAll<HTMLElement>('.activity-row')) {
       const rowKey = row.dataset['rowKey']
@@ -971,9 +1005,12 @@ export function createActivityView(
       }
     }
     if (spot.area === 'strip') {
-      const card = [...strip.querySelectorAll<HTMLElement>('[data-project-key]')].find(
-        (node) => node.dataset['projectKey'] === spot.projectKey,
-      )
+      const cards = [...strip.querySelectorAll<HTMLElement>('[data-project-key]')]
+      // The focused project's card can be gone (its project was removed, or it is now the
+      // only one and has no card); All projects is what the list shows then.
+      const card =
+        cards.find((node) => node.dataset['projectKey'] === spot.projectKey) ??
+        cards.find((node) => node.dataset['projectKey'] === JSON.stringify(null))
       card?.focus({ preventScroll: true })
       return
     }
@@ -1027,6 +1064,15 @@ export function createActivityView(
     const focus = captureFocus()
     const previousListScrollTop = list.scrollTop
     const listScrollAnchor = captureListScrollAnchor()
+    // A removed (or quarantined) project can no longer be filtered to, and a lone project
+    // has no tile to show the filter on; fall back to everything.
+    if (host.projectStrip && projectFilter !== null) {
+      const filterId = projectFilter
+      const listed = listedProjects()
+      if (listed.length < 2 || !listed.some((project) => project.id === filterId)) {
+        projectFilter = null
+      }
+    }
     const allThreads = collectActivityThreads(store)
     const approvals = sources.approvals.pending()
     const questions = sources.questions.pending()

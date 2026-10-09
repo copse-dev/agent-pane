@@ -92,11 +92,14 @@ describe('browser-hosted Activity home', () => {
     expect(probe.groups['working']?.count).toBe('2')
     expect(probe.groups['working']?.rows).toEqual([])
     expect(probe.groups['recent']?.rows).toEqual(['Update onboarding copy'])
-    // The strip: All projects first, then the one project that needs you.
-    expect(probe.strip).toHaveLength(2)
+    // The strip: All projects first, then every project, the one that needs you first.
+    expect(probe.strip).toHaveLength(3)
     expect(probe.strip[0]).toContain('All projects')
     expect(probe.strip[0]).toContain('1 need you')
     expect(probe.strip[1]).toContain('copse-demo')
+    expect(probe.strip[1]).toContain('1 need you')
+    expect(probe.strip[2]).toContain('docs-site')
+    expect(probe.strip[2]).toContain('All clear')
     // The card ends above the caption, which sits just over the composer, so
     // nothing is behind the composer and the card fills the pane down to them. A
     // gap of more than the caption means something else is taking the space (the
@@ -441,6 +444,50 @@ describe('browser-hosted Activity home with a cleared project filter', () => {
     await saveAppScreenshot('activity-home-project-cleared.png')
     await $('#activity-home .activity-strip-card[data-project="all"]').click()
     await expect($('#activity-home .activity-row[data-state="finished"]')).toBeDisplayed()
+  })
+})
+
+describe('browser-hosted Activity home with many projects', () => {
+  before(async () => {
+    await browser.url('about:blank')
+    await browser.url('/?scenario=activity-home-many-projects')
+    await $('#activity-home .activity-row[data-state="needs-approval"]').waitForExist({
+      timeout: 30_000,
+    })
+  })
+
+  it('lists every project by attention and scrolls the selected card into view', async () => {
+    const names = await browser.execute(() =>
+      [...document.querySelectorAll('#activity-home .activity-strip-name')].map(
+        (node) => node.textContent ?? '',
+      ),
+    )
+    // All projects, the one that needs you, then the rest by name.
+    expect(names).toHaveLength(12 + 1)
+    expect(names.slice(0, 3)).toEqual(['All projects', 'copse-demo', 'Atlas'])
+    expect(names.at(-1)).toBe('Kiln')
+    const overflow = await browser.execute(() => {
+      const strip = document.querySelector('#activity-home .activity-strip')
+      return strip ? strip.scrollWidth > strip.clientWidth : false
+    })
+    expect(overflow).toBe(true)
+    // Tab walks the cards; the last one scrolls itself into view when focused.
+    const last = $('#activity-home .activity-strip-card:last-child')
+    await last.click()
+    await expect(last).toHaveAttribute('aria-pressed', 'true')
+    const visible = await browser.execute(() => {
+      const strip = document.querySelector('#activity-home .activity-strip')
+      const card = document.querySelector(
+        '#activity-home .activity-strip-card[aria-pressed="true"]',
+      )
+      if (!strip || !card) return false
+      const a = strip.getBoundingClientRect()
+      const b = card.getBoundingClientRect()
+      return b.left >= a.left - 1 && b.right <= a.right + 1
+    })
+    expect(visible).toBe(true)
+    await saveAppScreenshot('activity-home-many-projects.png')
+    await $('#activity-home .activity-strip-card[data-project="all"]').click()
   })
 })
 

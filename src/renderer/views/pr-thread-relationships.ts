@@ -23,21 +23,12 @@ export function renderPrThreadRelationships(
     },
   ]
   for (const group of groups) {
+    if (group.rows.length === 0) continue
     const section = el(
       'div',
       { class: 'pr-thread-group', 'data-relationship-group': group.kind },
       el('h5', {}, group.label),
     )
-    if (group.rows.length === 0)
-      section.append(
-        el(
-          'p',
-          { class: 'pr-thread-empty' },
-          group.kind === 'produced'
-            ? 'No recorded producing thread.'
-            : 'No related threads recorded.',
-        ),
-      )
     for (const row of group.rows) {
       const label = row.kinds.includes('produced')
         ? 'Created PR'

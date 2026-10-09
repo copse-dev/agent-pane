@@ -45,6 +45,8 @@ import { acpBridgeNetworkScopeAlreadyApplies } from '../acp/acp-bridge-permissio
 import { classifyShellScope } from './safety-classifier.ts'
 import { currentRunIsUnattendedContainer } from './unattended-run.ts'
 import { decideContainedShellEffect } from '@copse/shell-guard/container-effects.ts'
+import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
+import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
 import { requestApproval } from '../approval.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
@@ -1164,12 +1166,41 @@ async function ensureContainedShellCommandPermitted(
   return approved
 }
 
+/**
+ * A thread's isolated worktree is bound to its branch. A rebase that stops, a
+ * bisect or a detached switch leaves it on no branch or mid-operation, and only
+ * a person at a terminal can finish that, so the command is refused outright
+ * (no prompt: approving it would just strand the thread) with what to do
+ * instead. Exits from an operation already under way are not refused.
+ */
+function refuseCheckoutDetachingCommand(
+  command: string,
+  opts: ShellCommandPermissionOptions,
+): void {
+  const found = detectCheckoutDetachingCommand(command)
+  if (!found) return
+  const root = opts.executionRoot ?? getAgentExecutionRoot()
+  if (!root || !isInsideManagedThreadWorktree(root)) return
+  const reason = `${found.operation} would leave this thread's isolated checkout without its branch`
+  recordDecision({
+    kind: 'shell',
+    actor: 'system',
+    verdict: 'blocked',
+    subject: SHELL_DECISION_SUBJECT,
+    scope: 'worktree',
+    reasons: [reason],
+    source: 'thread-worktree-guard',
+  })
+  throw new Error(`Command blocked: ${reason}. ${found.advice}`)
+}
+
 /** Gate a raw shell command string through the same approval flow as run_shell. */
 export async function ensureShellCommandPermitted(
   command: string,
   opts: ShellCommandPermissionOptions = {},
 ): Promise<boolean> {
   if (opts.signal?.aborted) return false
+  refuseCheckoutDetachingCommand(command, opts)
   const forceAsk = opts.toolPolicy === 'ask'
   const runThread = getActiveRunThread()
   // An unattended run inside an attested container answers by blast radius

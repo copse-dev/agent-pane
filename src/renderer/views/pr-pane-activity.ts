@@ -1,4 +1,4 @@
-import type { GhPrActivity } from '@shared/types/git.ts'
+import type { GhPrActivity, GhPrCheck } from '@shared/types/git.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { clear, el } from '../dom/helpers.ts'
 import {
@@ -49,6 +49,7 @@ export function renderPrActivity(
   section: 'comments' | 'checks',
   activity: GhPrActivity | undefined,
   open: (url: string) => void,
+  fixCheck?: (check: GhPrCheck, headSha: string) => void,
 ): void {
   clear(host)
   if (!activity || activity.error) {
@@ -178,6 +179,19 @@ export function renderPrActivity(
             : group.tone === 'pending'
               ? circleIcon()
               : minusIcon()
+      const fixButton =
+        group.tone === 'failure' && fixCheck
+          ? el(
+              'button',
+              {
+                type: 'button',
+                class: 'pr-activity-link pr-check-fix-btn',
+                'aria-label': `Fix ${check.name}`,
+              },
+              'Fix',
+            )
+          : null
+      fixButton?.addEventListener('click', () => fixCheck?.(check, activity.headSha))
       section.append(
         el(
           'div',
@@ -193,6 +207,7 @@ export function renderPrActivity(
               readableState(check.state),
             ),
           ),
+          ...(fixButton ? [fixButton] : []),
           externalButton('Details', check.url, open),
         ),
       )
