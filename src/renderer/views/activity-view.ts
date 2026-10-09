@@ -1005,9 +1005,12 @@ export function createActivityView(
       }
     }
     if (spot.area === 'strip') {
-      const card = [...strip.querySelectorAll<HTMLElement>('[data-project-key]')].find(
-        (node) => node.dataset['projectKey'] === spot.projectKey,
-      )
+      const cards = [...strip.querySelectorAll<HTMLElement>('[data-project-key]')]
+      // The focused project's card can be gone (its project was removed, or it is now the
+      // only one and has no card); All projects is what the list shows then.
+      const card =
+        cards.find((node) => node.dataset['projectKey'] === spot.projectKey) ??
+        cards.find((node) => node.dataset['projectKey'] === JSON.stringify(null))
       card?.focus({ preventScroll: true })
       return
     }

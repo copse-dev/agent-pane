@@ -438,6 +438,17 @@ describe('activity home project strip', () => {
     assert.equal(card(pane, 'all').getAttribute('aria-pressed'), 'true')
   })
 
+  it('moves focus to All projects when the focused card disappears', () => {
+    const { store, pane, home, flush } = mount([thread('t1', { status: 'running' })])
+    home.setShown(true)
+    card(pane, 'p1').focus()
+    assert.equal(document.activeElement, card(pane, 'p1'))
+    store.setState({ projects: [{ id: 'p1', path: '/work', name: 'workspace' }] })
+    store.emit('projects_changed')
+    flush()
+    assert.equal(document.activeElement, card(pane, 'all'), 'focus is not lost with the card')
+  })
+
   it('shows only All projects when there is a single project', () => {
     const { store, pane, home } = mount([thread('t1')])
     store.setState({ projects: [{ id: 'p1', path: '/work', name: 'workspace' }] })
