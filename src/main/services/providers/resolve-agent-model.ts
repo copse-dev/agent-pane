@@ -3,7 +3,6 @@ import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import {
   REMOTE_AGENT_MODELS,
-  REMOTE_AGENT_PROVIDER_CURSOR,
   parseRemoteAgentModel,
   parseRemoteAgentModelSelection,
   type RemoteAgentProvider,
@@ -37,7 +36,7 @@ export interface ResolvedAgentChatModel {
 }
 
 function remoteProviderKeySlug(provider: RemoteAgentProvider): string {
-  return provider === REMOTE_AGENT_PROVIDER_CURSOR ? 'cursor' : 'anthropic'
+  return provider
 }
 
 function remoteAgentLabel(provider: RemoteAgentProvider): string {
@@ -116,6 +115,10 @@ export async function resolveAgentChatModel(requested: string): Promise<Resolved
   const slug = remoteProviderKeySlug(remoteProvider)
   if (await isProviderKeyUsable(slug)) return { model: requested }
 
+  if (remoteProvider === 'openai')
+    throw new Error(
+      'OpenAI Cloud Agent requires a valid Platform API key. Configure it in Settings; this task has not been rerouted.',
+    )
   const fallbackModel = await pickFallbackChatModel()
   const selection = parseRemoteAgentModelSelection(requested)
   return {

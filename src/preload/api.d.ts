@@ -813,6 +813,7 @@ export interface ApiClient {
     }>
   }
   remoteAgent: {
+    /** Returns a remote URL, or an empty string when a native Save dialog handled the download. */
     downloadArtifact: (agentId: string, path: string) => Promise<string>
     artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
     /** Live Cursor Cloud Agent models from `GET /v1/models` (empty without a key). */
