@@ -626,11 +626,16 @@ export interface ApiClient {
       to: string,
     ) => Promise<import('@shared/types').ModelSelectionEvent>
     delete: (projectId: string, threadId: string) => Promise<void>
-    /** Remove a chat's worktree and archive it; discard requires user confirmation. */
+    /**
+     * Remove a chat's worktree and archive it. Discarding files requires the
+     * fingerprint the user confirmed; stopping a live agent, terminals and
+     * background processes requires `stopProcesses`, set only after the user agreed.
+     */
     archive: (
       projectId: string,
       threadId: string,
       confirmation: string | null,
+      stopProcesses: boolean,
     ) => Promise<import('@shared/threads/archive-thread.ts').ThreadArchiveResult>
     /**
      * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,
