@@ -11,8 +11,13 @@ import { copseUserDataDir } from '@copse/store-kit/copse-paths.ts'
 import { createServer, type Server } from 'node:http'
 import type { listClassifierProfiles } from '../../src/main/services/classifiers/classifier-service.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  pinTextForCapture,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import { listenOnFixturePort } from './helpers/fixture-server.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 
@@ -58,13 +63,7 @@ describe('classifier connections settings', () => {
         ),
       )
     })
-    await new Promise<void>((resolve, reject) => {
-      server?.once('error', reject)
-      server?.listen(0, '127.0.0.1', resolve)
-    })
-    const address = server.address()
-    assert.ok(address && typeof address !== 'string')
-    baseUrl = `http://127.0.0.1:${String(address.port)}/v1`
+    baseUrl = `${await listenOnFixturePort(server, 43135)}/v1`
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-classifier-settings')
     await browser.reloadSession()
@@ -99,7 +98,15 @@ describe('classifier connections settings', () => {
         code.textContent = (code.textContent ?? '').replace(/-[0-9a-f]{8}$/, '-00000000')
       }
     })
-    await saveElementScreenshot(selector, filename)
+    const hasDuration = /\b\d+ ms\b/.test(await $('#settings-classifiers-host').getText())
+    const restore = hasDuration
+      ? await pinTextForCapture('#settings-classifiers-host', /\b\d+ ms\b/g, '10 ms')
+      : async (): Promise<void> => {}
+    try {
+      await saveElementScreenshot(selector, filename)
+    } finally {
+      await restore()
+    }
     await browser.execute(() => {
       for (const input of document.querySelectorAll<HTMLInputElement>('[data-e2e-real]')) {
         input.value = input.dataset.e2eReal ?? input.value

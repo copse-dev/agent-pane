@@ -62,6 +62,17 @@ describe('settings-writable', () => {
     }
   })
 
+  it('keeps paired-machine credentials main-process only', () => {
+    for (const key of [
+      'machineConnections',
+      'machineConnections.clients',
+      'machineConnections.identity',
+    ]) {
+      assert.equal(isSecretSettingKey(key), true)
+      assert.equal(isRendererWritableSettingKey(key), false)
+    }
+  })
+
   it('allows benign UI keys', () => {
     assert.equal(isRendererWritableSettingKey('model'), true)
     assert.equal(isRendererWritableSettingKey('appIconVariant'), true)

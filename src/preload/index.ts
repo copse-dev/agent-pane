@@ -1056,6 +1056,15 @@ const api: ApiClient = {
     probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
   },
+  machines: {
+    state: () => ipcRenderer.invoke('machines:state'),
+    pair: (code: string) => ipcRenderer.invoke('machines:pair', code),
+    remove: (id: string) => ipcRenderer.invoke('machines:remove', id),
+    share: (config: import('@shared/machines.ts').MachineSharing) =>
+      ipcRenderer.invoke('machines:share', config),
+    invitation: () => ipcRenderer.invoke('machines:invitation'),
+    revoke: (id: string) => ipcRenderer.invoke('machines:revoke', id),
+  },
   classifiers: {
     list: () => ipcRenderer.invoke('classifiers:list'),
     save: (profile: ClassifierProfile) => ipcRenderer.invoke('classifiers:save', profile),

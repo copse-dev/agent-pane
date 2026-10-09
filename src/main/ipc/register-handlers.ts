@@ -2,6 +2,8 @@ import { inspectStorageMaintenance, saveStorageRetention } from '../services/sto
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
+import { machineManager, syncMachineService } from '../services/machines/machine-service.ts'
+import { machineSharingSchema, REMOTE_SYSTEM_ONE_MODELS_SETTING } from '@shared/machines.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
 import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
@@ -1344,6 +1346,33 @@ export function registerAllHandlers(
     }
   })
 
+  ipcMain.handle('machines:state', async (event) => {
+    assertMainFrameSender(event, win)
+    const manager = machineManager()
+    await manager.refresh()
+    return manager.snapshot()
+  })
+  ipcMain.handle('machines:pair', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().pair(parseIpcArgs(z.string().min(1).max(2048), [raw]))
+  })
+  ipcMain.handle('machines:remove', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().remove(parseIpcArgs(z.uuid(), [raw]))
+  })
+  ipcMain.handle('machines:share', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().share(parseIpcArgs(machineSharingSchema, [raw]))
+  })
+  ipcMain.handle('machines:invitation', (event) => {
+    assertMainFrameSender(event, win)
+    return machineManager().invitation()
+  })
+  ipcMain.handle('machines:revoke', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().revoke(parseIpcArgs(z.uuid(), [raw]))
+  })
+
   ipcMain.handle('classifiers:list', (event) => {
     assertMainFrameSender(event, win)
     return listClassifierProfiles()
@@ -1469,6 +1498,7 @@ export function registerAllHandlers(
     alert('thread-finished', `${title} is ready.`, threadId)
   })
   async function syncChangedSettings(changedKeys: ReadonlySet<string>): Promise<void> {
+    if (changedKeys.has(REMOTE_SYSTEM_ONE_MODELS_SETTING)) await syncMachineService()
     if (changedKeys.has('alertOnInteraction')) refreshNeedsInputBadge()
     if ([...changedKeys].some((key) => SKILLS_RELOAD_KEYS.has(key))) {
       await initSkillsRegistry()
