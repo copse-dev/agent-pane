@@ -22860,7 +22860,7 @@ function modelMakerForSelection(value) {
   const selection2 = parseModelSelection(value);
   if (selection2.namespace === "auto" || selection2.namespace === "plugin-model") return null;
   if (selection2.namespace === "remote-agent" && !selection2.id) {
-    return selection2.agent === "anthropic" ? "anthropic" : null;
+    return selection2.agent === "anthropic" ? "anthropic" : selection2.agent === "openai" ? "openai" : null;
   }
   if (selection2.namespace === "acp" && !selection2.id) return makerFromAgent(selection2.agent);
   const id = selection2.id.toLowerCase();
@@ -23436,6 +23436,10 @@ var init_model_families = __esm({
       supportsStrictTools: true,
       supportsVerbosity: true,
       supportsParallelToolCallsControl: true,
+      // Documented for these families: OpenAI's Compaction guide shows server-side
+      // `context_management` on gpt-5.x and gpt-6-astra with `store: false`. If an
+      // endpoint refuses it anyway, `ResponsesProvider` falls back to client-side trim.
+      supportsServerCompaction: true,
       prefersApplyPatch: true,
       acceptsDeveloperRole: true
     };
@@ -23608,13 +23612,15 @@ var init_managed_agents = __esm({
 });
 
 // packages/thread-store/src/remote-agent-provider.ts
-var REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, REMOTE_AGENT_PROVIDERS, isRemoteAgentProvider;
+var REMOTE_AGENT_PROVIDER_OPENAI, REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, REMOTE_AGENT_PROVIDERS, isRemoteAgentProvider;
 var init_remote_agent_provider = __esm({
   "packages/thread-store/src/remote-agent-provider.ts"() {
     init_member_of();
+    REMOTE_AGENT_PROVIDER_OPENAI = "openai";
     REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
     REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
     REMOTE_AGENT_PROVIDERS = [
+      REMOTE_AGENT_PROVIDER_OPENAI,
       REMOTE_AGENT_PROVIDER_CURSOR,
       REMOTE_AGENT_PROVIDER_ANTHROPIC
     ];
@@ -23661,6 +23667,11 @@ var init_remote_agent = __esm({
     CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
     REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
     REMOTE_AGENT_MODELS = [
+      {
+        provider: REMOTE_AGENT_PROVIDER_OPENAI,
+        value: "remote-agent:openai",
+        label: "OpenAI Cloud Agent"
+      },
       {
         provider: REMOTE_AGENT_PROVIDER_CURSOR,
         value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_CURSOR}`,
@@ -43204,6 +43215,19 @@ var init_inline_status = __esm({
   }
 });
 
+// src/shared/openai-cloud-agent.ts
+var DEFAULT_OPENAI_AGENT_MODEL, OPENAI_AGENT_GROUP, OPENAI_AGENT_RETENTION_NOTICE;
+var init_openai_cloud_agent = __esm({
+  "src/shared/openai-cloud-agent.ts"() {
+    DEFAULT_OPENAI_AGENT_MODEL = "gpt-6.1-sol";
+    OPENAI_AGENT_GROUP = "OpenAI Cloud Agent (prototype)";
+    OPENAI_AGENT_RETENTION_NOTICE = {
+      label: "No ZDR",
+      detail: "OpenAI-hosted Agents API sessions retain session data and are not eligible for zero data retention (ZDR)."
+    };
+  }
+});
+
 // src/shared/acp-retention.ts
 var ACP_RETENTION_NOTICE;
 var init_acp_retention = __esm({
@@ -43785,6 +43809,31 @@ function extraProviderOptions(provider, available, current) {
 }
 async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude = false) {
   const options = [];
+  if (isAvailable("openai")) {
+    const models = CLOUD_MODELS.filter(([, , provider]) => provider === "openai");
+    models.sort(
+      ([a3], [b4]) => Number(b4 === DEFAULT_OPENAI_AGENT_MODEL) - Number(a3 === DEFAULT_OPENAI_AGENT_MODEL)
+    );
+    for (const [id, label] of models) {
+      options.push({
+        value: remoteAgentModelValue("openai", id),
+        label,
+        group: OPENAI_AGENT_GROUP,
+        retention: OPENAI_AGENT_RETENTION_NOTICE,
+        supportsImages: true
+      });
+    }
+    const selected = parseRemoteAgentModelSelection(current);
+    if (selected?.provider === "openai" && !options.some((option) => option.value === current)) {
+      options.push({
+        value: current,
+        label: selected.model ?? "Default",
+        group: OPENAI_AGENT_GROUP,
+        retention: OPENAI_AGENT_RETENTION_NOTICE,
+        supportsImages: false
+      });
+    }
+  }
   if (isAvailable(REMOTE_AGENT_PROVIDER_CURSOR)) {
     const group = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_CURSOR);
     let liveModels = [];
@@ -43961,7 +44010,8 @@ async function fetchModelOptions(api2, current, opts = {}) {
       options.push({
         value: current,
         label: `${modelDisplayLabel(current)} (no valid key)`,
-        group: selection2 ? remoteAgentGroupLabel(selection2.provider) : "Remote agents"
+        group: selection2?.provider === "openai" ? OPENAI_AGENT_GROUP : selection2 ? remoteAgentGroupLabel(selection2.provider) : "Remote agents",
+        ...selection2?.provider === "openai" ? { retention: OPENAI_AGENT_RETENTION_NOTICE } : {}
       });
     } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
       const selection2 = parseAcpModelSelection(current);
@@ -44086,6 +44136,7 @@ function fetchDynamicModelOptions(current, autoLabel) {
 var ACP_GROUP, OPENROUTER_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
 var init_model_options = __esm({
   "src/renderer/views/model-options.ts"() {
+    init_openai_cloud_agent();
     init_acp_retention();
     init_chatgpt_plan();
     init_model_catalog();
@@ -53728,8 +53779,20 @@ var init_guarded_yolo = __esm({
 function automationPermissionKey(permission) {
   return JSON.stringify([permission.kind, permission.toolName]);
 }
+var AUTOMATION_FAILURE_CODES, isAutomationFailureCode;
 var init_automations = __esm({
   "src/shared/types/automations.ts"() {
+    init_member_of2();
+    AUTOMATION_FAILURE_CODES = [
+      "approval-stalled",
+      "no-model",
+      "container-missing",
+      "auth-expired",
+      "worktree-failed",
+      "scheduler-stopped",
+      "unknown"
+    ];
+    isAutomationFailureCode = memberOf(AUTOMATION_FAILURE_CODES);
   }
 });
 
@@ -53864,6 +53927,78 @@ var init_types = __esm({
   }
 });
 
+// src/shared/automation-failure.ts
+function describeAutomationFailure(code) {
+  return DESCRIPTIONS[code];
+}
+function classifyAutomationFailureMessage(message2) {
+  if (/\b(401|unauthori[sz]ed|authentication|sign[- ]?in (expired|required)|invalid api key|api key (was )?(rejected|invalid))/i.test(
+    message2
+  ))
+    return "auth-expired";
+  if (/docker|container engine|apple container/i.test(message2) && /unavailable|not running|cannot connect|not found/i.test(message2))
+    return "container-missing";
+  if (/model.*(not found|unknown|unavailable|not configured|no longer)|no model|does not exist.*model/i.test(
+    message2
+  ))
+    return "no-model";
+  if (/worktree|checkout|isolated/i.test(message2)) return "worktree-failed";
+  return "unknown";
+}
+function isApprovalStalled(since, now) {
+  return since !== null && now - since >= AUTOMATION_APPROVAL_STALL_MS;
+}
+var DESCRIPTIONS, AUTOMATION_APPROVAL_STALL_MS;
+var init_automation_failure = __esm({
+  "src/shared/automation-failure.ts"() {
+    DESCRIPTIONS = {
+      "approval-stalled": {
+        title: "Waiting for approval",
+        remedy: "The run needs an answer nobody has given. Open it to approve or deny; or add the exact tool to the automation so it stops asking.",
+        action: "open-run",
+        actionLabel: "Open run"
+      },
+      "no-model": {
+        title: "Model unavailable",
+        remedy: "The automation\u2019s model is not configured or no longer exists. Pick another model in the automation.",
+        action: "open-automations",
+        actionLabel: "Edit automation"
+      },
+      "container-missing": {
+        title: "Container engine unavailable",
+        remedy: "Start Docker (or fix the container engine), then run again.",
+        action: "open-container-settings",
+        actionLabel: "Container settings"
+      },
+      "auth-expired": {
+        title: "Sign-in expired",
+        remedy: "The provider rejected the credentials. Sign in again or replace the API key.",
+        action: "open-provider-settings",
+        actionLabel: "Provider settings"
+      },
+      "worktree-failed": {
+        title: "Checkout could not be prepared",
+        remedy: "No isolated checkout could be created, so nothing ran. The prompt is kept as a draft in the run; resolve the cause and send it.",
+        action: "open-run",
+        actionLabel: "Open run"
+      },
+      "scheduler-stopped": {
+        title: "Scheduler stopped",
+        remedy: "Scheduled and event triggers are not firing. Copse retries automatically; if this persists, toggle the Automations plugin off and on.",
+        action: "open-automations",
+        actionLabel: "Open Automations"
+      },
+      unknown: {
+        title: "Run failed",
+        remedy: "Open the run to read the error.",
+        action: "open-run",
+        actionLabel: "Open run"
+      }
+    };
+    AUTOMATION_APPROVAL_STALL_MS = 15 * 6e4;
+  }
+});
+
 // src/renderer/views/branch-ci-editor.ts
 function mountBranchCiEditor(options) {
   const { root, heading, scheduleList, scheduleForm, projectId, api: api2, showStatus, hideStatus } = options;
@@ -53871,16 +54006,24 @@ function mountBranchCiEditor(options) {
   let definitions = [];
   let editingId = null;
   const section = el("section", { class: "automation-list automation-ci-list" });
-  const sectionHeading = el("div", { class: "plugin-settings-heading" }, "CI events");
+  const sectionHeading = el("div", { class: "plugin-settings-heading" }, "Event automations");
   const rows = el("div", { class: "automation-list" });
   section.append(sectionHeading, rows);
+  const fields = [];
+  function field(kind, node2) {
+    node2.dataset["triggerField"] = kind;
+    fields.push({ kind, node: node2 });
+    return node2;
+  }
   const form = el("form", { class: "automation-form automation-ci-form", hidden: true });
   const title = el("h4", { class: "automation-form-title" }, "New automation");
   const when = el(
     "select",
     { class: "automation-input automation-when-select" },
     el("option", { value: "schedule" }, "On a schedule"),
-    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch"),
+    el("option", { value: "github-pr-changed" }, "When a pull request changes"),
+    el("option", { value: "github-issue-labeled" }, "When an issue gets a label")
   );
   const name = el("input", {
     type: "text",
@@ -53895,6 +54038,44 @@ function mountBranchCiEditor(options) {
     required: true,
     maxlength: "200",
     placeholder: "main",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const pullRequest = el("input", {
+    type: "number",
+    class: "automation-input automation-ci-pull-request",
+    min: "1",
+    step: "1",
+    placeholder: "Any \u2014 watch the branch",
+    autocomplete: "off"
+  });
+  const checks = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-checks",
+    maxlength: "2000",
+    placeholder: "All workflows \u2014 or e.g. CI, Lint",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const baseBranch = el("input", {
+    type: "text",
+    class: "automation-input automation-pr-base",
+    maxlength: "200",
+    placeholder: "main",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const transition = el(
+    "select",
+    { class: "automation-input automation-pr-transition" },
+    el("option", { value: "ready-for-review" }, "A draft becomes ready for review"),
+    el("option", { value: "new-commits" }, "A ready pull request gets new commits")
+  );
+  const label = el("input", {
+    type: "text",
+    class: "automation-input automation-issue-label",
+    maxlength: "50",
+    placeholder: "needs-triage",
     autocomplete: "off",
     spellcheck: false
   });
@@ -53913,6 +54094,7 @@ function mountBranchCiEditor(options) {
     el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
   );
   const enabled = el("input", { type: "checkbox", class: "automation-ci-enabled" });
+  const matches2 = el("ul", { class: "automation-ci-matches", hidden: true });
   const summary = el("p", { class: "automation-hint automation-ci-summary" });
   const preview = el(
     "button",
@@ -53942,12 +54124,30 @@ function mountBranchCiEditor(options) {
     title,
     el("label", { class: "automation-label automation-trigger-label" }, "When", when),
     el("label", { class: "automation-label" }, "Name", name),
-    el("label", { class: "automation-label" }, "Branch", branch),
+    field("github-ci-failed", el("label", { class: "automation-label" }, "Branch", branch)),
+    field(
+      "github-ci-failed",
+      el("label", { class: "automation-label" }, "Pull request (optional)", pullRequest)
+    ),
+    field(
+      "github-ci-failed",
+      el("label", { class: "automation-label" }, "Only these workflows (optional)", checks)
+    ),
+    field(
+      "github-pr-changed",
+      el("label", { class: "automation-label" }, "Base branch", baseBranch)
+    ),
+    field(
+      "github-pr-changed",
+      el("label", { class: "automation-label" }, "Fires when", transition)
+    ),
+    field("github-issue-labeled", el("label", { class: "automation-label" }, "Label", label)),
     el("label", { class: "automation-label" }, "Model", model),
     el("label", { class: "automation-label" }, "Task", prompt),
     el("label", { class: "automation-label" }, "Maximum live worktrees", worktrees),
-    el("label", { class: "automation-enabled-label" }, enabled, "CI event enabled"),
+    el("label", { class: "automation-enabled-label" }, enabled, "Automation enabled"),
     summary,
+    matches2,
     el("div", { class: "automation-form-actions" }, preview, cancel, save)
   );
   root.append(section, form);
@@ -53956,29 +54156,78 @@ function mountBranchCiEditor(options) {
     ariaLabel: "CI automation model",
     loadOnMount: false
   });
-  function updateSummary() {
-    const selected = branch.value.trim() || "this branch";
-    summary.textContent = `When CI finishes with a failure on ${selected}, investigate it. One task per run attempt on the current branch head; at most three runs per 24 hours.`;
+  function currentKind() {
+    return when.value === "github-pr-changed" || when.value === "github-issue-labeled" ? when.value : "github-ci-failed";
   }
-  branch.addEventListener("input", updateSummary);
+  function splitChecks() {
+    return checks.value.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
+  }
+  function readTrigger() {
+    const kind = currentKind();
+    if (kind === "github-pr-changed") {
+      return {
+        kind,
+        baseBranch: baseBranch.value.trim(),
+        transition: transition.value === "new-commits" ? "new-commits" : "ready-for-review"
+      };
+    }
+    if (kind === "github-issue-labeled") return { kind, label: label.value.trim() };
+    const selected = splitChecks();
+    const number4 = Number.parseInt(pullRequest.value, 10);
+    return {
+      kind,
+      ...Number.isInteger(number4) && number4 > 0 ? { pullRequest: number4 } : { branch: branch.value.trim() },
+      ...selected.length > 0 ? { checks: selected } : {}
+    };
+  }
+  function updateSummary() {
+    const kind = currentKind();
+    for (const item of fields) item.node.hidden = item.kind !== kind;
+    if (kind === "github-pr-changed") {
+      const base = baseBranch.value.trim() || "the base branch";
+      summary.textContent = transition.value === "new-commits" ? `When a ready pull request into ${base} gets new commits, review them. One task per pull request head; at most three runs per 24 hours.` : `When a draft pull request into ${base} becomes ready for review, review it. One task per pull request head; at most three runs per 24 hours.`;
+      return;
+    }
+    if (kind === "github-issue-labeled") {
+      summary.textContent = `When an issue is labelled \u201C${label.value.trim() || "a label"}\u201D, triage it. Removing and re-applying the label starts a new task; at most three runs per 24 hours.`;
+      return;
+    }
+    const number4 = Number.parseInt(pullRequest.value, 10);
+    const target = Number.isInteger(number4) && number4 > 0 ? `pull request #${String(number4)}` : branch.value.trim() || "this branch";
+    const selected = splitChecks();
+    const only = selected.length > 0 ? ` (only ${selected.join(", ")})` : "";
+    summary.textContent = `When CI finishes with a failure on ${target}${only}, investigate it. One task per run attempt on the current head; at most three runs per 24 hours.`;
+  }
+  for (const input2 of [branch, pullRequest, checks, baseBranch, label]) {
+    input2.addEventListener("input", updateSummary);
+  }
+  transition.addEventListener("change", updateSummary);
   function close() {
     editingId = null;
     form.hidden = true;
     heading.hidden = false;
     scheduleList.hidden = false;
     section.hidden = false;
+    matches2.hidden = true;
   }
   async function open2(definition, draft) {
     hideStatus();
     editingId = definition?.id ?? null;
     title.textContent = definition ? "Edit automation" : "New automation";
-    when.value = "github-ci-failed";
+    const trigger = definition?.trigger;
+    when.value = trigger?.kind ?? "github-ci-failed";
     when.disabled = Boolean(definition);
     name.value = definition?.name ?? draft?.name ?? "";
-    branch.value = definition?.trigger.branch ?? "";
+    branch.value = trigger?.kind === "github-ci-failed" ? trigger.branch : "";
+    pullRequest.value = trigger?.kind === "github-ci-failed" && trigger.pullRequest !== void 0 ? String(trigger.pullRequest) : "";
+    checks.value = trigger?.kind === "github-ci-failed" ? (trigger.checks ?? []).join(", ") : "";
+    baseBranch.value = trigger?.kind === "github-pr-changed" ? trigger.baseBranch : "";
+    transition.value = trigger?.kind === "github-pr-changed" ? trigger.transition : "ready-for-review";
+    label.value = trigger?.kind === "github-issue-labeled" ? trigger.label : "";
     prompt.value = definition?.prompt ?? draft?.prompt ?? "";
     worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
     enabled.checked = definition?.enabled ?? draft?.enabled ?? true;
+    matches2.hidden = true;
     updateSummary();
     heading.hidden = true;
     scheduleList.hidden = true;
@@ -53991,16 +54240,124 @@ function mountBranchCiEditor(options) {
     const selected = available.find((item) => item.value === defaultModel && !item.disabled)?.value ?? available.find((item) => item.value && !item.disabled)?.value ?? "";
     await modelPicker.refresh(selected);
   }
+  function triggerLabel(trigger) {
+    if (trigger.kind === "github-pr-changed") {
+      return `${trigger.transition === "new-commits" ? "PR new commits" : "PR ready for review"} \xB7 ${trigger.repository} \xB7 ${trigger.baseBranch}`;
+    }
+    if (trigger.kind === "github-issue-labeled") {
+      return `Issue labelled \xB7 ${trigger.repository} \xB7 ${trigger.label}`;
+    }
+    const scope = trigger.pullRequest !== void 0 ? `PR #${String(trigger.pullRequest)}` : trigger.branch;
+    const only = trigger.checks && trigger.checks.length > 0 ? ` \xB7 ${trigger.checks.join(", ")}` : "";
+    return `Failed CI \xB7 ${trigger.repository} \xB7 ${scope}${only}`;
+  }
+  const OUTCOME_LABEL = {
+    started: "Started",
+    waiting: "Waiting",
+    filtered: "Filtered out",
+    held: "Needs attention"
+  };
+  function renderDeliveries(target, deliveries) {
+    clear(target);
+    if (deliveries.length === 0) {
+      target.append(el("p", { class: "automation-empty" }, "No deliveries yet."));
+      return;
+    }
+    const listEl = el("ul", { class: "automation-delivery-list" });
+    for (const delivery of deliveries) {
+      const item = el(
+        "li",
+        { class: "automation-delivery", "data-delivery-outcome": delivery.outcome },
+        el("span", { class: "automation-delivery-outcome" }, OUTCOME_LABEL[delivery.outcome]),
+        el("span", { class: "automation-delivery-summary" }, delivery.summary),
+        el(
+          "time",
+          {
+            class: "automation-delivery-time",
+            datetime: new Date(delivery.receivedAt).toISOString()
+          },
+          new Date(delivery.receivedAt).toLocaleString()
+        )
+      );
+      if (delivery.reason) {
+        item.append(el("span", { class: "automation-delivery-reason" }, delivery.reason));
+      }
+      if (delivery.threadId && options.onOpenRun) {
+        const threadId = delivery.threadId;
+        const open3 = el(
+          "button",
+          { type: "button", class: "ui-btn ui-btn-ghost ui-btn-compact automation-delivery-open" },
+          "Open task"
+        );
+        open3.addEventListener("click", () => options.onOpenRun?.(threadId));
+        item.append(open3);
+      }
+      listEl.append(item);
+    }
+    target.append(listEl);
+  }
+  function problemBlock(definition) {
+    const problem = definition.lastProblem;
+    if (!problem) return null;
+    const description = describeAutomationFailure(problem.code ?? "unknown");
+    const polling = problem.threadId === void 0 && (problem.code === void 0 || problem.code === "unknown");
+    const title2 = polling ? "Could not check GitHub" : description.title;
+    const remedy = polling ? "Copse retries every minute and clears this once GitHub can be read again." : description.remedy;
+    const block = el(
+      "div",
+      {
+        class: "automation-row-blocked-message automation-row-problem-message",
+        "data-failure-code": problem.code ?? "unknown",
+        role: "status"
+      },
+      el("strong", { class: "automation-problem-title" }, title2),
+      el(
+        "span",
+        { class: "automation-problem-time" },
+        ` \xB7 ${new Date(problem.at).toLocaleString()}`
+      ),
+      el("div", { class: "automation-problem-message" }, problem.message),
+      el("div", { class: "automation-problem-remedy" }, remedy)
+    );
+    const threadId = problem.threadId;
+    if (threadId && options.onOpenRun && description.action === "open-run") {
+      const open3 = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-problem-action"
+        },
+        description.actionLabel
+      );
+      open3.addEventListener("click", () => options.onOpenRun?.(threadId));
+      block.append(open3);
+    } else if (description.action === "open-automations" || description.action === "open-model-settings") {
+      const edit = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-problem-action"
+        },
+        "Edit automation"
+      );
+      edit.addEventListener("click", () => void open2(definition));
+      block.append(edit);
+    }
+    return block;
+  }
   function render() {
     clear(rows);
     if (definitions.length === 0) {
-      rows.append(el("p", { class: "automation-empty" }, "No CI events for this project yet."));
+      rows.append(
+        el("p", { class: "automation-empty" }, "No event automations for this project yet.")
+      );
       return;
     }
     for (const definition of definitions) {
       const row2 = el("article", {
-        class: `automation-row${definition.enabled ? "" : " automation-row-paused"}`,
-        "data-ci-automation-id": definition.id
+        class: `automation-row${definition.enabled ? "" : " automation-row-paused"}${definition.lastProblem ? " automation-row-blocked" : ""}`,
+        "data-ci-automation-id": definition.id,
+        "data-trigger-kind": definition.trigger.kind
       });
       const copy = el(
         "div",
@@ -54009,11 +54366,7 @@ function mountBranchCiEditor(options) {
         el(
           "div",
           { class: "automation-row-meta" },
-          el(
-            "span",
-            {},
-            `Failed CI \xB7 ${definition.trigger.repository} \xB7 ${definition.trigger.branch}`
-          ),
+          el("span", {}, triggerLabel(definition.trigger)),
           el("span", {}, modelDisplayLabel(definition.model)),
           el("span", {}, definition.enabled && pluginEnabled ? "Armed" : "Paused")
         ),
@@ -54023,6 +54376,24 @@ function mountBranchCiEditor(options) {
           definition.lastRunAt ? `Last started ${new Date(definition.lastRunAt).toLocaleString()}` : "Never run"
         )
       );
+      const problem = problemBlock(definition);
+      if (problem) copy.append(problem);
+      const history = el("details", { class: "automation-deliveries" });
+      const body = el("div", { class: "automation-deliveries-body" });
+      history.append(el("summary", {}, "Recent deliveries"), body);
+      history.addEventListener("toggle", () => {
+        if (!history.open || !projectId) return;
+        body.textContent = "Loading\u2026";
+        api2.automations.eventHistory(projectId, definition.id).then(
+          (deliveries) => {
+            renderDeliveries(body, deliveries);
+          },
+          (error62) => {
+            body.textContent = ipcErrorMessage(error62, "Could not load deliveries.");
+          }
+        );
+      });
+      copy.append(history);
       const edit = el(
         "button",
         {
@@ -54045,14 +54416,14 @@ function mountBranchCiEditor(options) {
         void showConfirmDialog({
           message: `Delete \u201C${definition.name}\u201D?`,
           detail: "Already-created tasks are kept.",
-          confirmLabel: "Delete CI event",
+          confirmLabel: "Delete automation",
           danger: true
         }).then(async (confirmed) => {
           if (!confirmed) return;
           await api2.automations.removeBranchCi(projectId, definition.id);
           await refresh();
         }).catch((error62) => {
-          showStatus(ipcErrorMessage(error62, "Could not delete CI event."), true);
+          showStatus(ipcErrorMessage(error62, "Could not delete the automation."), true);
         });
       });
       row2.append(copy, el("div", { class: "automation-row-actions" }, edit, remove));
@@ -54065,27 +54436,36 @@ function mountBranchCiEditor(options) {
     render();
   }
   when.addEventListener("change", () => {
-    if (when.value !== "schedule" || editingId) return;
-    options.onScheduleSelected({
-      name: name.value,
-      prompt: prompt.value,
-      model: model.value || BEST_VALUE_CHAT_MODEL,
-      enabled: enabled.checked,
-      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
-    });
+    if (when.value === "schedule" && !editingId) {
+      options.onScheduleSelected({
+        name: name.value,
+        prompt: prompt.value,
+        model: model.value || BEST_VALUE_CHAT_MODEL,
+        enabled: enabled.checked,
+        maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+      });
+      return;
+    }
+    matches2.hidden = true;
+    updateSummary();
   });
   cancel.addEventListener("click", close);
   preview.addEventListener("click", () => {
-    if (!projectId || !branch.value.trim()) return;
+    if (!projectId) return;
     preview.disabled = true;
-    void api2.automations.testBranchCi(projectId, branch.value.trim()).then(
+    matches2.hidden = true;
+    void api2.automations.testBranchCi(projectId, readTrigger()).then(
       (result) => {
+        clear(matches2);
+        for (const item of result.recent) matches2.append(el("li", {}, item));
+        matches2.hidden = result.recent.length === 0;
+        const where = result.branch ? `${result.repository}/${result.branch}` : result.repository;
         showStatus(
-          result.latestFailure ? `Latest matching failure on ${result.repository}/${result.branch}: ${result.latestFailure}. Test match did not start a task.` : `No failed run on the current head of ${result.repository}/${result.branch}. Test match did not start a task.`
+          result.recent.length > 0 ? `Would have matched ${String(result.recent.length)} recent item${result.recent.length === 1 ? "" : "s"} on ${where}. Test match did not start a task.` : `Nothing recent on ${where} would match. Test match did not start a task.`
         );
       },
       (error62) => {
-        showStatus(ipcErrorMessage(error62, "Could not check recent CI runs."), true);
+        showStatus(ipcErrorMessage(error62, "Could not check recent activity."), true);
       }
     ).finally(() => {
       preview.disabled = false;
@@ -54099,7 +54479,7 @@ function mountBranchCiEditor(options) {
     const input2 = {
       ...editingId ? { id: editingId } : {},
       name: name.value,
-      branch: branch.value,
+      trigger: readTrigger(),
       prompt: prompt.value,
       model: model.value,
       enabled: enabled.checked,
@@ -54111,7 +54491,7 @@ function mountBranchCiEditor(options) {
         await refresh();
       },
       (error62) => {
-        showStatus(ipcErrorMessage(error62, "Could not save CI event."), true);
+        showStatus(ipcErrorMessage(error62, "Could not save the automation."), true);
       }
     ).finally(() => {
       save.disabled = false;
@@ -54144,6 +54524,7 @@ function mountBranchCiEditor(options) {
 }
 var init_branch_ci_editor = __esm({
   "src/renderer/views/branch-ci-editor.ts"() {
+    init_automation_failure();
     init_lm_studio_defaults();
     init_helpers();
     init_ipc_error_message();
@@ -54249,7 +54630,7 @@ function scheduleDescription(cron) {
   const schedule = parseSimpleSchedule(cron);
   return schedule ? simpleScheduleDescription(schedule) : "Custom schedule";
 }
-function createAutomationPluginSettings(store2, api2, pluginEnabled, revealScheduleId, createNew = false, projectId = store2.getState().activeProjectId) {
+function createAutomationPluginSettings(store2, api2, pluginEnabled, revealScheduleId, createNew = false, projectId = store2.getState().activeProjectId, actions = {}) {
   const root = el("section", {
     class: "automation-plugin-settings",
     "data-plugin-detail": AUTOMATIONS_PLUGIN_ID
@@ -54283,6 +54664,11 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     hidden: true
   });
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
+  const schedulerNotice = el("div", {
+    class: "automation-scheduler-notice",
+    role: "status",
+    hidden: true
+  });
   const list = el("div", { class: "automation-list" });
   const form = el("form", { class: "automation-form", hidden: true, novalidate: true });
   const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
@@ -54431,7 +54817,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("label", { class: "automation-enabled-label" }, enabledInput, "Schedule enabled"),
     el("div", { class: "automation-form-actions" }, saveButton, cancelButton)
   );
-  root.append(heading, scope, notice, attention, status, list, form);
+  root.append(heading, scope, notice, schedulerNotice, attention, status, list, form);
   const ciEditor = mountBranchCiEditor({
     root,
     heading,
@@ -54442,7 +54828,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     pluginEnabled,
     showStatus,
     hideStatus,
-    onScheduleSelected: (draft) => void openForm(void 0, draft)
+    onScheduleSelected: (draft) => void openForm(void 0, draft),
+    ...actions.openRun ? { onOpenRun: actions.openRun } : {}
   });
   const modelPicker = mountModelSelectPicker(modelSelect, {
     loadOptions: (current) => fetchDynamicModelOptions(current),
@@ -54673,6 +55060,93 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     const selectedModel = options.find((option) => option.value === defaultModel && !option.disabled)?.value ?? options.find((option) => option.value && !option.disabled)?.value ?? "";
     await modelPicker.refresh(selectedModel);
   }
+  function scheduleProblem(schedule) {
+    const recorded = schedule.lastProblem;
+    if (recorded !== void 0) {
+      return {
+        at: recorded.at,
+        code: recorded.code,
+        message: recorded.message,
+        threadId: recorded.threadId,
+        kind: recorded.kind
+      };
+    }
+    const latest = store2.getState().threads.find((thread) => thread.id === schedule.lastCreatedThreadId);
+    const failure2 = latest?.automation?.failure;
+    if (!latest || !failure2 || latest.status !== "error" && latest.automation?.startFailedAt === void 0)
+      return void 0;
+    return {
+      at: failure2.at,
+      code: isAutomationFailureCode(failure2.code) ? failure2.code : "unknown",
+      message: failure2.message,
+      threadId: latest.id,
+      kind: "failed"
+    };
+  }
+  function problemElement(problem) {
+    const description = describeAutomationFailure(problem.code ?? "unknown");
+    const block = el("div", {
+      class: "automation-row-blocked-message automation-row-problem-message",
+      "data-failure-code": problem.code ?? (problem.kind === "pending-start" ? "pending-start" : "unknown"),
+      role: "status"
+    });
+    if (problem.code === void 0) {
+      block.textContent = `${problem.kind === "failed" ? "Last attempt failed" : "Last attempt skipped"} ${new Date(problem.at).toLocaleString()}: ${problem.message}`;
+    } else {
+      block.append(
+        el("strong", { class: "automation-problem-title" }, description.title),
+        el(
+          "span",
+          { class: "automation-problem-time" },
+          ` \xB7 ${new Date(problem.at).toLocaleString()}`
+        ),
+        el("div", { class: "automation-problem-message" }, problem.message),
+        el("div", { class: "automation-problem-remedy" }, description.remedy)
+      );
+    }
+    const threadId = problem.threadId;
+    if (threadId !== void 0 && actions.openRun && problem.code !== void 0 && description.action === "open-run") {
+      const openRun = actions.openRun;
+      const open2 = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-problem-action"
+        },
+        description.actionLabel
+      );
+      open2.addEventListener("click", () => {
+        openRun(threadId);
+      });
+      block.append(open2);
+    }
+    return block;
+  }
+  function showSchedulerHealth(health) {
+    if (health.state === "ok") {
+      schedulerNotice.hidden = true;
+      schedulerNotice.textContent = "";
+      return;
+    }
+    const description = describeAutomationFailure("scheduler-stopped");
+    schedulerNotice.hidden = false;
+    schedulerNotice.dataset["state"] = health.state;
+    clear(schedulerNotice);
+    schedulerNotice.append(
+      el("strong", {}, health.state === "recovering" ? "Scheduler restarting" : description.title),
+      el("div", {}, health.message ?? description.remedy),
+      el("div", { class: "automation-problem-remedy" }, description.remedy)
+    );
+  }
+  api2.automations.schedulerHealth().then(showSchedulerHealth, () => {
+  });
+  const stopWatchingHealth = api2.automations.onSchedulerHealth((health) => {
+    if (!root.isConnected) {
+      stopWatchingHealth();
+      return;
+    }
+    showSchedulerHealth(health);
+  });
   function renderList() {
     clear(list);
     const blocked = schedules.filter((schedule) => schedule.lastWorktreeLimitAt !== void 0);
@@ -54719,16 +55193,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
           )
         );
       }
-      if (schedule.lastProblem !== void 0) {
-        copy.append(
-          el(
-            "div",
-            { class: "automation-row-blocked-message automation-row-problem-message" },
-            `${schedule.lastProblem.kind === "failed" ? "Last attempt failed" : "Last attempt skipped"} ${new Date(schedule.lastProblem.at).toLocaleString()}: ${schedule.lastProblem.message}`
-          )
-        );
-      }
-      const actions = el("div", { class: "automation-row-actions" });
+      const problem = scheduleProblem(schedule);
+      if (problem !== void 0) copy.append(problemElement(problem));
+      const rowActions = el("div", { class: "automation-row-actions" });
       const edit = el(
         "button",
         { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact automation-row-btn" },
@@ -54783,8 +55250,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
           showStatus(cleanIpcError(error62), true);
         });
       });
-      actions.append(edit, run2, remove);
-      row2.append(copy, actions);
+      rowActions.append(edit, run2, remove);
+      row2.append(copy, rowActions);
       list.append(row2);
     }
   }
@@ -54932,6 +55399,7 @@ var init_automation_plugin_settings = __esm({
     init_branch_ci_editor();
     init_ipc_error_message();
     init_automation_retained_worktrees();
+    init_automation_failure();
     WEEKDAYS = [
       "Sunday",
       "Monday",
@@ -64508,13 +64976,28 @@ function setThreadDraftPrompt(store2, threadId, draftPrompt) {
   }
   store2.emit("thread_draft_changed", threadId);
 }
-function markAutomationStartFailed(store2, threadId) {
+function markAutomationStartFailed(store2, threadId, failure2) {
   patchThreadAnywhere(
     store2,
     threadId,
     (t2) => t2.automation ? {
       ...t2,
-      automation: { ...t2.automation, startFailedAt: Date.now() },
+      automation: {
+        ...t2.automation,
+        startFailedAt: Date.now(),
+        ...failure2 ? { failure: { ...failure2, at: Date.now() } } : {}
+      },
+      updatedAt: Date.now()
+    } : t2
+  );
+}
+function markAutomationRunFailed(store2, threadId, failure2) {
+  patchThreadAnywhere(
+    store2,
+    threadId,
+    (t2) => t2.automation ? {
+      ...t2,
+      automation: { ...t2.automation, failure: { ...failure2, at: Date.now() } },
       updatedAt: Date.now()
     } : t2
   );
@@ -65596,6 +66079,17 @@ function getToolCallLabel(tc2) {
   const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
   const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
   const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
+  if (name === "read_skill") {
+    const skillName = stringArg(tc2.args, "name");
+    if (skillName) {
+      if (tc2.status === "running") return `Loading skill ${skillName}`;
+      if (tc2.status === "error") return `Skill ${skillName}`;
+      if (tc2.result?.startsWith("Skill activated by the model: ")) {
+        return `Activated skill ${skillName}`;
+      }
+      return `Read skill ${skillName}`;
+    }
+  }
   if (name === "write_file" || name === "str_replace") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Editing ${path}` : `Edited ${path}`;
@@ -78058,6 +78552,10 @@ var init_demo_scenarios = __esm({
         // The first thread is the active one and is empty, so the chat pane is the
         // Activity home. The others give it something to list: one waiting on an
         // approval, two running, one that finished while the user was elsewhere.
+        // A second project, so the strip lists projects at all (a lone one adds no card).
+        otherProjects: [
+          { project: project("demo-activity-other-docs", "docs-site", "/demo/docs"), threads: [] }
+        ],
         threads: [
           {
             id: "demo-activity-home-new",
@@ -78123,10 +78621,72 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home-many-projects",
+        label: "Activity home listing twelve projects",
+        project: project("demo-activity-many-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        // Twelve projects overflow the strip, so it scrolls with an edge fade. Only the
+        // open one has thread data, so the rest read "All clear" and sort by name.
+        otherProjects: [
+          "Atlas",
+          "Billing API",
+          "Cobalt",
+          "Docs site",
+          "Edge workers",
+          "Flight deck",
+          "Gateway",
+          "Harbor",
+          "Ingest",
+          "Jupiter",
+          "Kiln"
+        ].map((name) => ({
+          project: {
+            id: `demo-activity-many-${name.toLowerCase().replace(/\W+/g, "-")}`,
+            path: `/demo/${name}`,
+            name
+          },
+          threads: []
+        })),
+        threads: [
+          {
+            id: "demo-activity-many-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-many-refactor",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-activity-many-approval",
+            threadId: "demo-activity-many-refactor",
+            title: "Run shell command?",
+            body: "printf 'auth-check-passed\\n'",
+            type: "shell"
+          }
+        ]
+      },
+      {
         id: "activity-home-project-filter",
         label: "Activity home after a project finishes waiting",
         project: project("demo-activity-home-filter-project"),
         settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        // A second project, so the strip lists projects at all (a lone one adds no card).
+        otherProjects: [
+          { project: project("demo-activity-other-docs", "docs-site", "/demo/docs"), threads: [] }
+        ],
         threads: [
           {
             id: "demo-activity-filter-new",
@@ -78451,6 +79011,101 @@ var init_demo_scenarios = __esm({
         "Full thread view for a model below the concise gate",
         "gpt-4o"
       ),
+      {
+        id: "openai-host-pr",
+        label: "OpenAI host PR creation result",
+        project: project("demo-openai-recovery-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "remote-agent:openai#gpt-6.1-sol"
+        },
+        threads: [
+          {
+            id: "demo-openai-recovery-thread",
+            title: "Create a PR from hosted changes",
+            status: "idle",
+            model: "remote-agent:openai#gpt-6.1-sol",
+            messages: [
+              {
+                id: "recovery-user",
+                role: "user",
+                content: "Can we PR this?",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              },
+              {
+                id: "recovery-assistant",
+                role: "assistant",
+                content: "Changes imported. Done: Created draft PR https://github.com/example/project/pull/42",
+                toolCalls: [
+                  {
+                    id: "openai-publish-turn-push",
+                    name: "gh_push",
+                    args: {},
+                    status: "done",
+                    result: "Done: Pushed feature/mcp-apps to origin. Existing PR updated."
+                  },
+                  {
+                    id: "openai-publish-turn-call",
+                    name: "gh_pr_create",
+                    args: {
+                      title: "docs: MCP Apps support plan",
+                      body: "Document the implementation plan.",
+                      draft: true
+                    },
+                    status: "done",
+                    result: "Done: Created draft PR https://github.com/example/project/pull/42"
+                  }
+                ],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
+        id: "openai-cancellation-recovery",
+        label: "OpenAI confirmed cancellation with interrupted recovery",
+        project: project("demo-openai-recovery-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "remote-agent:openai#gpt-6.1-sol"
+        },
+        threads: [
+          {
+            id: "demo-openai-recovery-thread",
+            title: "Stopped hosted task",
+            status: "idle",
+            model: "remote-agent:openai#gpt-6.1-sol",
+            messages: [
+              {
+                id: "recovery-user",
+                role: "user",
+                content: "Run the public repository tests and report the result.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              },
+              {
+                id: "recovery-assistant",
+                role: "assistant",
+                content: "> An error occurred: OpenAI cancellation was confirmed, but output, usage, or artifacts could not be recovered. Session sess_demo remains linked; resend the previous message to recover it before starting another task.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
       conciseThreadScenario(
         "concise-thread-working",
         "Concise thread view while a capable model works",
@@ -79506,6 +80161,10 @@ function createDemoApi(scenario, options = {}) {
       upsertBranchCi: unsupported,
       removeBranchCi: unsupported,
       testBranchCi: unsupported,
+      eventHistory: emptyArray,
+      reportStartFailure: () => resolved2(false),
+      schedulerHealth: () => resolved2({ state: "ok", since: null, message: null }),
+      onSchedulerHealth: subscribe,
       canStart: () => resolved2({ allowed: true }),
       onTriggered: subscribe
     },
@@ -82341,7 +83000,14 @@ function openAutomationDialog(store2, api2, options = {}) {
       enabled,
       options.scheduleId,
       options.createNew,
-      projectId
+      projectId,
+      {
+        openRun: (threadId) => {
+          if (!projectId) return;
+          close();
+          switchProjectThread(store2, api2, projectId, threadId);
+        }
+      }
     );
     const toggle = el(
       "button",
@@ -82403,6 +83069,7 @@ var init_automation_dialog = __esm({
     init_helpers();
     init_icons();
     init_automation_plugin_settings();
+    init_projects();
     init_dialog_shell();
     init_settings_dialog();
   }
@@ -82859,6 +83526,18 @@ function deriveActivity(input2) {
   ].sort((a3, b4) => (a3.since ?? 0) - (b4.since ?? 0));
   const waitingThreads = new Set(needsYou.flatMap((row2) => row2.threadId ? [row2.threadId] : []));
   const scheduleOf = new Map(input2.threads.map((thread) => [thread.id, thread.schedule]));
+  const issueFor = (code, message2) => {
+    const description = describeAutomationFailure(code);
+    return { code, title: description.title, remedy: description.remedy, message: message2 };
+  };
+  if (input2.now !== void 0) {
+    for (const row2 of needsYou) {
+      const thread = row2.threadId ? byId.get(row2.threadId) : void 0;
+      if (thread?.schedule && isApprovalStalled(row2.since, input2.now)) {
+        row2.issue = issueFor("approval-stalled", null);
+      }
+    }
+  }
   const threadRow = (thread, state, want, since) => ({
     key: `thread:${thread.id}`,
     state,
@@ -82888,11 +83567,25 @@ function deriveActivity(input2) {
         )
       );
     } else {
-      const endedAt = run2?.endedAt ?? thread.unreadAt;
+      const recentStartFailure = thread.schedule && thread.failure?.startFailed && thread.failure.at > (input2.now ?? 0) - 864e5 ? thread.failure.at : void 0;
+      const endedAt = run2?.endedAt ?? thread.unreadAt ?? recentStartFailure;
       if (endedAt === void 0) continue;
-      recent.push(
-        thread.status === "error" ? threadRow(thread, "failed", "Ended with an error", endedAt) : threadRow(thread, "finished", "Finished", endedAt)
-      );
+      if (thread.status === "error") {
+        const row2 = threadRow(thread, "failed", "Ended with an error", endedAt);
+        if (thread.schedule) {
+          const code = thread.failure?.code ?? "unknown";
+          row2.issue = issueFor(code, thread.failure?.message ?? null);
+          row2.want = row2.issue.title;
+        }
+        recent.push(row2);
+      } else if (thread.schedule && thread.failure?.startFailed) {
+        const row2 = threadRow(thread, "failed", "Could not start", endedAt);
+        row2.issue = issueFor(thread.failure.code, thread.failure.message);
+        row2.want = row2.issue.title;
+        recent.push(row2);
+      } else {
+        recent.push(threadRow(thread, "finished", "Finished", endedAt));
+      }
     }
   }
   const newestFirst = (a3, b4) => (b4.since ?? Number.NEGATIVE_INFINITY) - (a3.since ?? Number.NEGATIVE_INFINITY) || a3.threadTitle.localeCompare(b4.threadTitle);
@@ -82950,6 +83643,18 @@ function foldScheduleRuns(recent, scheduleOf) {
   folds.sort((a3, b4) => a3.state === b4.state ? 0 : a3.state === "failed" ? -1 : 1);
   return { folds, rest: recent.filter((row2) => !folded.has(row2)) };
 }
+function failureField(automation) {
+  const failure2 = automation.failure;
+  if (!failure2) return {};
+  return {
+    failure: {
+      code: isAutomationFailureCode(failure2.code) ? failure2.code : "unknown",
+      message: failure2.message,
+      at: failure2.at,
+      startFailed: automation.startFailedAt !== void 0
+    }
+  };
+}
 function collectActivityThreads(store2) {
   const { projects, backgroundThreads } = store2.getState();
   const out = /* @__PURE__ */ new Map();
@@ -82967,7 +83672,8 @@ function collectActivityThreads(store2) {
           schedule: {
             id: thread.automation.scheduleId,
             name: thread.automation.scheduleName
-          }
+          },
+          ...failureField(thread.automation)
         } : {}
       });
     }
@@ -82986,7 +83692,8 @@ function collectActivityThreads(store2) {
         schedule: {
           id: carried.thread.automation.scheduleId,
           name: carried.thread.automation.scheduleName
-        }
+        },
+        ...failureField(carried.thread.automation)
       } : {}
     });
   }
@@ -83037,6 +83744,8 @@ function formatAgeLong(elapsedMs) {
 var RECENT_ROW_LIMIT, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
+    init_types();
+    init_automation_failure();
     init_projects();
     RECENT_ROW_LIMIT = 10;
     SCHEDULE_FOLD_AT = 2;
@@ -83611,6 +84320,25 @@ function createActivityView(api2, store2, sources3, deps, host) {
     "aria-labelledby": `${host.idPrefix}-detail-title`
   });
   const body = el("div", { class: "activity-panel-body" }, list, detail);
+  const notice = el("p", {
+    class: "activity-automation-notice",
+    role: "status",
+    hidden: true
+  });
+  const showSchedulerHealth = (health) => {
+    if (health.state === "ok") {
+      notice.hidden = true;
+      notice.textContent = "";
+      return;
+    }
+    const description = describeAutomationFailure("scheduler-stopped");
+    notice.hidden = false;
+    notice.dataset["state"] = health.state;
+    notice.textContent = `${description.title}: ${health.message ?? description.remedy} ${description.remedy}`;
+  };
+  api2.automations.schedulerHealth().then(showSchedulerHealth, () => {
+  });
+  api2.automations.onSchedulerHealth(showSchedulerHealth);
   const status = el("p", {
     class: "activity-panel-status",
     role: "status",
@@ -83780,6 +84508,24 @@ function createActivityView(api2, store2, sources3, deps, host) {
     node2.disabled = !canOpen(row2);
     return node2;
   }
+  function issueBlock(row2) {
+    const issue2 = row2.issue;
+    if (!issue2) return [];
+    return [
+      el(
+        "div",
+        {
+          class: "activity-issue-detail",
+          role: "group",
+          "aria-label": issue2.title,
+          "data-failure-code": issue2.code
+        },
+        el("p", { class: "activity-issue-title" }, issue2.title),
+        ...issue2.message ? [el("p", { class: "activity-issue-message" }, issue2.message)] : [],
+        el("p", { class: "activity-issue-remedy" }, issue2.remedy)
+      )
+    ];
+  }
   function detailContent(row2) {
     if (row2.state === "needs-approval" && row2.approval) {
       const request = row2.approval;
@@ -83791,6 +84537,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
             role: "region",
             "aria-label": `Approval request: ${request.title}`
           },
+          ...issueBlock(row2),
           el("p", { class: "activity-review-title" }, request.title),
           ...approvalRequestDetails(request)
         )
@@ -83825,6 +84572,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
         el("p", { class: "activity-detail-text" }, row2.want)
       ];
     }
+    if (row2.issue) return issueBlock(row2);
     return [el("p", { class: "activity-detail-text" }, row2.want)];
   }
   function detailActions(row2) {
@@ -83964,7 +84712,15 @@ function createActivityView(api2, store2, sources3, deps, host) {
       { class: "activity-row-second" },
       el("span", { class: "activity-state" }, STATE_SHORT[row2.state])
     );
-    if (row2.state !== "failed" && row2.state !== "finished") {
+    if (row2.issue) {
+      second.append(
+        el(
+          "span",
+          { class: "activity-want-text activity-issue", "data-failure-code": row2.issue.code },
+          row2.issue.title
+        )
+      );
+    } else if (row2.state !== "failed" && row2.state !== "finished") {
       second.append(
         el(
           "span",
@@ -84027,7 +84783,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       elapsed === null ? null : formatAge(elapsed),
       rowLabel(row2, at3),
       row2.fold ? [row2.fold.kind, row2.fold.runs.length, expandedFolds.has(row2.key)] : null,
-      foldRunKeys.has(row2.key)
+      foldRunKeys.has(row2.key),
+      row2.issue ? [row2.issue.code, row2.issue.message] : null
     ]);
   }
   function cachedRow(row2, at3) {
@@ -84148,22 +84905,42 @@ function createActivityView(api2, store2, sources3, deps, host) {
     stripCache.set(id, { signature, node: node2 });
     return node2;
   }
+  function listedProjects() {
+    return store2.getState().projects.filter((project2) => !project2.missing);
+  }
+  let scrolledFilter;
+  function scrollSelectedCardIntoView() {
+    const selected = strip.querySelector('[aria-pressed="true"]');
+    if (!selected) return;
+    const left = selected.offsetLeft - strip.offsetLeft;
+    const right = left + selected.offsetWidth;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (right > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = right - strip.clientWidth;
+    }
+  }
   function renderStrip(groups) {
     const stats = projectStats(groups);
-    if (projectFilter !== null && !stats.has(projectFilter)) {
-      const project2 = store2.getState().projects.find((entry) => entry.id === projectFilter);
-      if (project2) stats.set(project2.id, { name: project2.name, need: 0, working: 0 });
-    }
+    const projects = listedProjects();
     const need = groups.find((group) => group.id === "needs-you")?.total ?? 0;
     const working = groups.find((group) => group.id === "working")?.total ?? 0;
     const cards = [stripCard(null, "All projects", need, working)];
-    const shown = [...stats.entries()].filter(([id, entry]) => entry.need > 0 || id === projectFilter).sort((a3, b4) => b4[1].need - a3[1].need || a3[1].name.localeCompare(b4[1].name));
-    for (const [id, entry] of shown)
-      cards.push(stripCard(id, entry.name, entry.need, entry.working));
+    const shown = (projects.length > 1 ? projects : []).map((project2) => ({
+      id: project2.id,
+      name: project2.name,
+      need: stats.get(project2.id)?.need ?? 0,
+      working: stats.get(project2.id)?.working ?? 0
+    })).sort((a3, b4) => b4.need - a3.need || b4.working - a3.working || a3.name.localeCompare(b4.name));
+    for (const entry of shown)
+      cards.push(stripCard(entry.id, entry.name, entry.need, entry.working));
     patchChildren(strip, cards);
-    const live = /* @__PURE__ */ new Set([null, ...shown.map(([id]) => id)]);
+    const live = /* @__PURE__ */ new Set([null, ...shown.map((entry) => entry.id)]);
     for (const id of stripCache.keys()) {
       if (!live.has(id)) stripCache.delete(id);
+    }
+    if (scrolledFilter !== projectFilter) {
+      scrolledFilter = projectFilter;
+      scrollSelectedCardIntoView();
     }
   }
   function emptyState() {
@@ -84187,6 +84964,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
   }
   function captureListScrollAnchor() {
+    if (list.scrollTop <= 0) return null;
     const listRect = list.getBoundingClientRect();
     for (const row2 of list.querySelectorAll(".activity-row")) {
       const rowKey2 = row2.dataset["rowKey"];
@@ -84249,9 +85027,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       }
     }
     if (spot.area === "strip") {
-      const card = [...strip.querySelectorAll("[data-project-key]")].find(
-        (node2) => node2.dataset["projectKey"] === spot.projectKey
-      );
+      const cards = [...strip.querySelectorAll("[data-project-key]")];
+      const card = cards.find((node2) => node2.dataset["projectKey"] === spot.projectKey) ?? cards.find((node2) => node2.dataset["projectKey"] === JSON.stringify(null));
       card?.focus({ preventScroll: true });
       return;
     }
@@ -84297,6 +85074,13 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const focus = captureFocus();
     const previousListScrollTop = list.scrollTop;
     const listScrollAnchor = captureListScrollAnchor();
+    if (host.projectStrip && projectFilter !== null) {
+      const filterId = projectFilter;
+      const listed = listedProjects();
+      if (listed.length < 2 || !listed.some((project2) => project2.id === filterId)) {
+        projectFilter = null;
+      }
+    }
     const allThreads = collectActivityThreads(store2);
     const approvals = sources3.approvals.pending();
     const questions = sources3.questions.pending();
@@ -84308,7 +85092,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       threads: allThreads,
       approvals,
       questions,
-      runs: timings.runs
+      runs: timings.runs,
+      now: at3
     });
     let groups = everything;
     if (projectFilter !== null) {
@@ -84318,7 +85103,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
         threads: inProject,
         approvals: approvals.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
         questions: questions.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
-        runs: timings.runs
+        runs: timings.runs,
+        now: at3
       });
     }
     if (host.projectStrip) renderStrip(everything);
@@ -84490,11 +85276,12 @@ function createActivityView(api2, store2, sources3, deps, host) {
     }
     tickAges();
   }
-  return { summary, body, strip, status, show: show2, hide: hide3 };
+  return { summary, body, strip, status, notice, show: show2, hide: hide3 };
 }
 var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LONG, AGE_VERB, defaultTimer2;
 var init_activity_view = __esm({
   "src/renderer/views/activity-view.ts"() {
+    init_automation_failure();
     init_helpers();
     init_dist();
     init_inline_markdown();
@@ -84578,6 +85365,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
         view.summary,
         closeButton
       ),
+      view.notice,
       view.body,
       el(
         "footer",
@@ -91202,9 +91990,10 @@ function bindBrowserLinkClicks(root, store2, api2) {
     const artifact = remoteArtifactFromHref(href);
     if (artifact && api2) {
       void api2.remoteAgent.downloadArtifact(artifact.agentId, artifact.path).then((url2) => {
-        openBrowserUrl(store2, url2);
+        if (url2) openBrowserUrl(store2, url2);
       }).catch((err2) => {
         console.warn("[remote-agent] artifact download failed:", err2);
+        showErrorToast("Failed to download agent artifact", err2);
       });
       return;
     }
@@ -91236,6 +92025,7 @@ var init_browser_links = __esm({
     init_panels();
     init_github_pr_url2();
     init_pr_link_preview();
+    init_toast();
   }
 });
 
@@ -91277,6 +92067,17 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
     if (link.dataset["fileReferencePath"]) return;
     const href = workspaceHrefFromLink(link);
     if (!href) return;
+    const artifact = /\/([^/]+)\/blobs\/openai-artifacts\/([a-f0-9]{64}\/[a-f0-9]{64}\.[a-zA-Z0-9]{1,10})$/.exec(
+      href
+    );
+    if (artifact?.[1] && artifact[2]) {
+      event.preventDefault();
+      event.stopPropagation();
+      void api2.remoteAgent.downloadArtifact(`openai:${artifact[1]}`, artifact[2]).catch((error62) => {
+        showErrorToast("Failed to save agent artifact", error62);
+      });
+      return;
+    }
     const parsed2 = workspaceLinkTargetFromHref(href);
     if (!parsed2) return;
     const owner = getActiveThreadOwner(store2);
@@ -95212,6 +96013,14 @@ var init_model_selection2 = __esm({
   }
 });
 
+// src/shared/turn-recovery.ts
+var INTERRUPTED_TURN_CONTINUATION;
+var init_turn_recovery = __esm({
+  "src/shared/turn-recovery.ts"() {
+    INTERRUPTED_TURN_CONTINUATION = "Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.";
+  }
+});
+
 // src/renderer/controller/turn-recovery.ts
 function turnRecoveryForMessage(thread, failedMessageId) {
   if (!thread || thread.messagesLoaded === false) return null;
@@ -95258,13 +96067,13 @@ function recoverFailedTurn(store2, api2, projectId, threadId, failedMessageId, m
   dispatchAgentRun(store2, api2, threadId, payload);
   return true;
 }
-var INTERRUPTED_TURN_CONTINUATION;
-var init_turn_recovery = __esm({
+var init_turn_recovery2 = __esm({
   "src/renderer/controller/turn-recovery.ts"() {
     init_thread_helpers();
     init_model_selection2();
     init_message_queue();
-    INTERRUPTED_TURN_CONTINUATION = "Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.";
+    init_turn_recovery();
+    init_turn_recovery();
   }
 });
 
@@ -95658,7 +96467,7 @@ function bindSelectionQuote(transcript, actions) {
     class: "transcript-selection-reply",
     placeholder: "Reply\u2026",
     "aria-label": "Reply to selected text",
-    rows: "2"
+    rows: "1"
   });
   input2.setAttribute("aria-keyshortcuts", "Enter Meta+Enter Control+Enter");
   const sendLabel = el("span", {}, "Send");
@@ -95697,6 +96506,11 @@ function bindSelectionQuote(transcript, actions) {
   let reservedSpace = false;
   let scrollingTo = null;
   const hasDraft = () => input2.value.length > 0 || sending;
+  const resizeInput = () => {
+    input2.style.height = "auto";
+    input2.style.height = `${String(Math.min(input2.scrollHeight, 200))}px`;
+    if (!popup.hidden) position2();
+  };
   const updateControls = () => {
     input2.disabled = sending;
     sendButton.disabled = sending || !input2.value.trim();
@@ -95720,6 +96534,7 @@ function bindSelectionQuote(transcript, actions) {
       highlight.clear();
     }
     input2.value = "";
+    input2.style.height = "";
     status.hidden = true;
     status.textContent = "";
     sending = false;
@@ -95800,6 +96615,7 @@ function bindSelectionQuote(transcript, actions) {
     }
     if (text2 !== selectedText) {
       input2.value = "";
+      input2.style.height = "";
       status.hidden = true;
       revision++;
     }
@@ -95853,6 +96669,7 @@ function bindSelectionQuote(transcript, actions) {
       dismiss();
     } else {
       updateControls();
+      resizeInput();
     }
   });
   input2.addEventListener("copy", (event) => {
@@ -99474,7 +100291,7 @@ var init_conversation = __esm({
     init_message_queue();
     init_fork_thread3();
     init_resend_message();
-    init_turn_recovery();
+    init_turn_recovery2();
     init_turn_recovery_card();
     init_image_input_support();
     init_toast();
@@ -111577,9 +112394,13 @@ function mountFooterBranchStatus(host, store2, api2) {
   }
   function renderReattach() {
     const current = activeDetached();
-    const shown = current !== null && !isPickerMode() && !wrap.hidden && getActiveThread2()?.status !== "running";
+    const visible = current !== null && !isPickerMode() && !wrap.hidden;
+    const shown = visible && !agentCanTouchCheckout(current);
     reattachButton.hidden = !shown;
-    trigger.classList.toggle("is-detached", current !== null && !isPickerMode() && !wrap.hidden);
+    trigger.classList.toggle("is-detached", visible);
+    if (visible && !shown) {
+      trigger.title = `This checkout is detached from ${current.branch}. Recovery is offered once the agent stops working in it.`;
+    }
     if (!shown) return;
     const title = detachedTitle(current);
     trigger.title = title;
@@ -111613,6 +112434,9 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattachButton.setAttribute("aria-label", `Reattach checkout to ${current.branch}`);
     reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
   }
+  function agentCanTouchCheckout(current) {
+    return getActiveThread2()?.status === "running" || current?.agentBusy === true;
+  }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
   }
@@ -111635,7 +112459,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || getActiveThread2()?.status === "running" || reattaching || activeRecoveryRunId() !== null)
+    if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
     if (current.recovery) {
       const runId = globalThis.crypto.randomUUID();
@@ -112143,22 +112967,36 @@ function createContextWheel() {
   root.append(svg2, popover);
   let popoverActive = false;
   let currentUsage = null;
-  let engaged = false;
+  let hovered = false;
+  let focused = false;
   function showPopover() {
-    engaged = true;
     if (popoverActive) popover.hidden = false;
   }
   function hidePopover() {
-    engaged = false;
     popover.hidden = true;
   }
   function restoreEngagedPopover() {
-    if (engaged && popoverActive && !root.hidden) popover.hidden = false;
+    if ((hovered || focused) && popoverActive && !root.hidden) popover.hidden = false;
   }
-  root.addEventListener("mouseenter", showPopover);
-  root.addEventListener("mouseleave", hidePopover);
-  root.addEventListener("focusin", showPopover);
-  root.addEventListener("focusout", hidePopover);
+  root.addEventListener("mousedown", (event) => {
+    if (event.target instanceof Node && !popover.contains(event.target)) event.preventDefault();
+  });
+  root.addEventListener("mouseenter", () => {
+    hovered = true;
+    showPopover();
+  });
+  root.addEventListener("mouseleave", () => {
+    hovered = false;
+    if (!focused) hidePopover();
+  });
+  root.addEventListener("focusin", () => {
+    focused = true;
+    showPopover();
+  });
+  root.addEventListener("focusout", () => {
+    focused = false;
+    if (!hovered) hidePopover();
+  });
   function clearSegments() {
     while (segGroup.firstChild) segGroup.firstChild.remove();
   }
@@ -129224,15 +130062,28 @@ function prNewThreadDraft(pr2) {
 function prNewThreadTitle(pr2) {
   return `PR #${String(pr2.number)}: ${pr2.title}`;
 }
-function startPrDiscussThread(store2, pr2) {
+function prCheckFixDraft(pr2, check2, headSha) {
+  const details = check2.url && /^https?:\/\//i.test(check2.url) ? ` Check details: ${check2.url}.` : "";
+  return `Fix the failing check "${check2.name}" (${check2.state.toLowerCase()}) on [#${String(pr2.number)} \u2014 ${pr2.title}](${pr2.url}) at head commit ${headSha}.${details} Inspect the failure logs, identify the cause, make the fix, and run the relevant checks.`;
+}
+function startPrThread(store2, draft, title) {
   store2.emit("composer_draft_flush");
-  const threadId = createThread(store2, prNewThreadDraft(pr2));
-  const title = prNewThreadTitle(pr2);
+  const threadId = createThread(store2, draft);
   store2.setState({
     threads: store2.getState().threads.map((t2) => t2.id === threadId ? { ...t2, title } : t2)
   });
   store2.emit("threads_changed");
   return threadId;
+}
+function startPrCheckFixThread(store2, pr2, check2, headSha) {
+  return startPrThread(
+    store2,
+    prCheckFixDraft(pr2, check2, headSha),
+    `Fix PR #${String(pr2.number)}: ${check2.name}`
+  );
+}
+function startPrDiscussThread(store2, pr2) {
+  return startPrThread(store2, prNewThreadDraft(pr2), prNewThreadTitle(pr2));
 }
 var init_pr_pane_thread = __esm({
   "src/renderer/views/pr-pane-thread.ts"() {
@@ -129263,7 +130114,7 @@ function externalButton(label, url2, open2) {
   });
   return button;
 }
-function renderPrActivity(host, section, activity, open2) {
+function renderPrActivity(host, section, activity, open2, fixCheck) {
   clear(host);
   if (!activity || activity.error) {
     host.append(
@@ -129378,6 +130229,16 @@ function renderPrActivity(host, section, activity, open2) {
     );
     for (const check2 of checks) {
       const icon = group.tone === "success" ? checkIcon() : group.tone === "failure" ? closeIcon() : group.tone === "pending" ? circleIcon() : minusIcon();
+      const fixButton = group.tone === "failure" && fixCheck ? el(
+        "button",
+        {
+          type: "button",
+          class: "pr-activity-link pr-check-fix-btn",
+          "aria-label": `Fix ${check2.name}`
+        },
+        "Fix"
+      ) : null;
+      fixButton?.addEventListener("click", () => fixCheck?.(check2, activity.headSha));
       section2.append(
         el(
           "div",
@@ -129393,6 +130254,7 @@ function renderPrActivity(host, section, activity, open2) {
               readableState(check2.state)
             )
           ),
+          ...fixButton ? [fixButton] : [],
           externalButton("Details", check2.url, open2)
         )
       );
@@ -129428,19 +130290,12 @@ function renderPrThreadRelationships(rows, openThread) {
     }
   ];
   for (const group of groups) {
+    if (group.rows.length === 0) continue;
     const section = el(
       "div",
       { class: "pr-thread-group", "data-relationship-group": group.kind },
       el("h5", {}, group.label)
     );
-    if (group.rows.length === 0)
-      section.append(
-        el(
-          "p",
-          { class: "pr-thread-empty" },
-          group.kind === "produced" ? "No recorded producing thread." : "No related threads recorded."
-        )
-      );
     for (const row2 of group.rows) {
       const label = row2.kinds.includes("produced") ? "Created PR" : row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
       const button = el(
@@ -130298,9 +131153,19 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       diffWrap.hidden = true;
       emptyState.hidden = true;
       activityHost.hidden = false;
-      renderPrActivity(activityHost, activeSection, prDetails.activity, (url2) => {
-        void api2.shell.openExternal(url2);
-      });
+      renderPrActivity(
+        activityHost,
+        activeSection,
+        prDetails.activity,
+        (url2) => {
+          void api2.shell.openExternal(url2);
+        },
+        (check2, headSha) => {
+          if (!prDetails) return;
+          startPrCheckFixThread(store2, prDetails, check2, headSha);
+          getPromptAttachmentHandlers()?.focusComposer?.();
+        }
+      );
     }
   }
   function renderFiles() {
@@ -153713,6 +154578,7 @@ function mountActivityHome(pane, api2, store2, sources3, deps = {}) {
   root.append(
     el("h2", { id: "activity-home-title", class: "activity-home-sr" }, "Activity"),
     view.strip,
+    view.notice,
     view.body,
     view.status,
     el("p", { class: "activity-home-caption" }, "Start a new thread")
@@ -154497,6 +155363,10 @@ function startAgentController(store2, api2) {
       case "panel_update": {
         break;
       }
+      case "provider_state":
+      case "context_compacted": {
+        break;
+      }
       case "todo_worker_start":
       case "todo_worker_done": {
         activity(threadId);
@@ -154544,6 +155414,15 @@ function startAgentController(store2, api2) {
         const userCancelled = chunk.outcome.status === "cancelled" && chunk.outcome.source === "user";
         const outcome = userCancelled ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? "send_now" : "stop" } : chunk.outcome;
         setMessageTurnOutcome(store2, threadId, st2.msgId, outcome);
+        if (outcome.status === "failed" && outcome.error) {
+          const detail = outcome.error;
+          markAutomationRunFailed(store2, threadId, {
+            code: classifyAutomationFailureMessage(
+              `${detail.message} ${detail.code === void 0 ? "" : String(detail.code)}`
+            ),
+            message: detail.message.slice(0, 500)
+          });
+        }
         break;
       }
       case "done": {
@@ -154683,6 +155562,7 @@ function tryOpenFileFromResult(_store, _result) {
 var pendingTurn;
 var init_agent = __esm({
   "src/renderer/controller/agent.ts"() {
+    init_automation_failure();
     init_dynamic_model();
     init_thread_helpers();
     init_sync_thread_branch_after_shell();
@@ -154757,6 +155637,7 @@ function attachAutomationController(store2, api2) {
     if (!prompt) return;
     starting.add(threadId);
     let hydrated = false;
+    let checkoutStarted = false;
     try {
       await ensureThreadMessages(projectId, threadId);
       hydrated = true;
@@ -154778,6 +155659,7 @@ function attachAutomationController(store2, api2) {
         return;
       }
       if (!initial.worktreeChoice) {
+        checkoutStarted = true;
         const prepared = await api2.agent.prepareCheckout(
           projectId,
           threadId,
@@ -154787,6 +155669,7 @@ function attachAutomationController(store2, api2) {
         );
         if (store2.getState().activeProjectId !== projectId) return;
         applyPreparedThreadCheckout(store2, threadId, prepared);
+        checkoutStarted = false;
       }
       const current = getThreadById(store2, threadId);
       if (!current || !isPendingAutomation(current)) {
@@ -154817,7 +155700,12 @@ function attachAutomationController(store2, api2) {
     } catch (error62) {
       console.error("[automations] Failed to start scheduled task:", error62);
       if (hydrated) {
-        markAutomationStartFailed(store2, threadId);
+        const message2 = startFailureDetail(error62);
+        const code = checkoutStarted ? "worktree-failed" : classifyAutomationFailureMessage(message2);
+        markAutomationStartFailed(store2, threadId, { code, message: message2 });
+        api2.automations.reportStartFailure(projectId, threadId, { code, message: message2 }).catch((reportError) => {
+          console.error("[automations] Could not report a start failure:", reportError);
+        });
         addMessage(
           store2,
           threadId,
@@ -154867,6 +155755,7 @@ var AUTOMATION_START_RETRY_MS;
 var init_automations2 = __esm({
   "src/renderer/controller/automations.ts"() {
     init_ipc_error_message();
+    init_automation_failure();
     init_thread_helpers();
     init_message_queue();
     init_thread_hydration();
