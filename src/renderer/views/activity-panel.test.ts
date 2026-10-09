@@ -495,6 +495,34 @@ describe('activity panel', () => {
     assert.equal(list.scrollTop, 240, 'a live update must not reset the reader position')
   })
 
+  it('shows a request that arrives above the first row when the list rests at the top', () => {
+    mount([thread('focused'), thread('run')])
+    setThreadStatus(store, 'run', 'running')
+    panel.open()
+
+    const list = qsRequired(document, '#activity-panel .activity-list')
+    // happy-dom lays nothing out: place each row by its order, 50 px apiece, so a
+    // row inserted above shifts the rows below it as it would in a real list.
+    const rectDescriptor = Object.getOwnPropertyDescriptor(
+      Element.prototype,
+      'getBoundingClientRect',
+    )
+    assert.ok(rectDescriptor)
+    Element.prototype.getBoundingClientRect = function (): DOMRect {
+      const index = [...list.querySelectorAll('.activity-row')].indexOf(this)
+      const top = index < 0 ? 0 : index * 50 - list.scrollTop
+      return new DOMRect(0, top, 100, index < 0 ? 0 : 50)
+    }
+    try {
+      list.scrollTop = 0
+      emitApproval(shell('new-action', 'focused'))
+      time.advance(ACTIVITY_RENDER_INTERVAL_MS)
+      assert.equal(list.scrollTop, 0, 'the new request is in view, not scrolled past')
+    } finally {
+      Object.defineProperty(Element.prototype, 'getBoundingClientRect', rectDescriptor)
+    }
+  })
+
   it('is keyboard operable: arrows choose a row, Tab reaches its actions', () => {
     mount([thread('focused'), thread('auth', { title: 'Refactor auth' }), thread('deps')])
     setThreadStatus(store, 'deps', 'running')
