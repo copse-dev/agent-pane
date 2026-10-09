@@ -113,6 +113,11 @@ describe('PR comments and checks', () => {
     await expect(await $$('.pr-check-row')).toBeElementsArrayOfSize(5)
     await expect(await $('.pr-check-state-failure')).toHaveText('failure')
     await expect(await $('.pr-check-state-pending')).toHaveText('in progress')
+    await expect(await $$('.pr-check-fix-btn')).toBeElementsArrayOfSize(1)
+    await expect(await $('.pr-check-fix-btn')).toHaveAttribute(
+      'aria-label',
+      'Fix Electron e2e / Linux',
+    )
     await expect(await $('.pr-check-state-failure')).toBeDisplayed()
     await expect(await $('.pr-check-state-pending')).toBeDisplayed()
     const checkOrder = await $$('.pr-check-group-heading').map((group) => group.getText())
@@ -125,6 +130,15 @@ describe('PR comments and checks', () => {
     })
     expect(fits).toBe(true)
     await saveElementScreenshot('#pane-files', 'pr-activity-checks.png')
+
+    await $('.pr-check-fix-btn').click()
+    await expect(await $('.chat-row.selected .chat-title')).toHaveText(
+      'Fix PR #88: Electron e2e / Linux',
+    )
+    await expect(await $('.prompt-input')).toHaveText(
+      expect.stringMatching(/Electron e2e \/ Linux.*#88.*b3219fce/s),
+    )
+    await saveElementScreenshot('#app', 'pr-check-fix-thread.png')
 
     // Refresh keeps the chosen section and resolves to the same PR.
     await $('.pr-pane-refresh-btn').click()
