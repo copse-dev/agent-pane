@@ -1,3 +1,5 @@
+import { containerStorage } from '../services/container-storage.ts'
+import { containerStorageActionSchema } from '../../shared/types/storage-cleanup.ts'
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { storageCleanup } from '../services/storage-cleanup.ts'
@@ -1776,6 +1778,10 @@ export function registerAllHandlers(
   ipcMain.handle('storage:cleanup', (event, area: unknown) => {
     assertMainFrameSender(event, win)
     return storageCleanup().clean(parseIpcArgs(storageAreaSchema, [area]))
+  })
+  ipcMain.handle('storage:container-cleanup', (event, action: unknown) => {
+    assertMainFrameSender(event, win)
+    return containerStorage().clean(parseIpcArgs(containerStorageActionSchema, [action]))
   })
   ipcMain.handle('storage:retention', (event, policy: unknown) => {
     assertMainFrameSender(event, win)

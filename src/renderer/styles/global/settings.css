@@ -3192,3 +3192,16 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 #sources-skills-status {
   margin-left: var(--spacing-sm);
 }
+#storage-container-breakdown {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--font-size-sm);
+}
+#storage-container-breakdown dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+#storage-container-images {
+  overflow-wrap: anywhere;
+}

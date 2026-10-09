@@ -567,6 +567,9 @@ export interface ApiClient {
     reopenArtefact: (projectId: string, threadId: string, title: string) => Promise<boolean>
   }
   storage: {
+    containerCleanup: (
+      action: import('@shared/types/storage-cleanup.ts').ContainerStorageAction,
+    ) => Promise<import('@shared/types/storage-cleanup.ts').StorageCleanupResult>
     maintenance: () => Promise<import('@shared/types/storage-cleanup.ts').StorageMaintenanceState>
     cleanup: (
       area: import('@shared/types/storage-cleanup.ts').StorageArea,
