@@ -61,7 +61,9 @@ describe('unattended container run dialog', function () {
     await expect(
       dialog.$('.model-picker-trigger[aria-label="Model for the unattended run"]'),
     ).toBeDisplayed()
-    expect(await dialog.$('.container-run-model-hint').getText()).toContain('scoped to the run')
+    expect(await dialog.$('.container-run-model-hint').getText()).toContain(
+      'provider keys and sign-in tokens stay on the desktop',
+    )
     await expect(dialog.$('.container-run-minutes')).toHaveValue('120')
     await expect(dialog.$('.container-run-start')).toBeEnabled()
     await saveElementScreenshot('#container-run-dialog', 'container-run-dialog-electron.png')
