@@ -282,6 +282,25 @@ describe('LocalClassifierManager', () => {
     await until(f, (status) => status.phase === 'running')
   })
 
+  it('does not spawn a server whose uninstall began while its port was probed', async () => {
+    const f = fixture()
+    f.installed.add('winnow')
+    let release: () => void = () => undefined
+    f.portGate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    // Let start reach its port probe, where it is neither installing nor alive.
+    const starting = f.manager.start('winnow')
+    await new Promise((resolve) => setImmediate(resolve))
+    const removing = f.manager.uninstall('winnow')
+    release()
+    f.portGate = null
+    await Promise.all([starting, removing])
+    assert.deepEqual(f.uninstalled, ['winnow'])
+    assert.equal(f.listening.has(WINNOW_PORT), false, 'the server was not spawned')
+    assert.equal(children.length, 0)
+  })
+
   it('refuses to uninstall a server something else is running', async () => {
     const f = fixture()
     f.installed.add('winnow')

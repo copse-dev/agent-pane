@@ -282,6 +282,8 @@ export class LocalClassifierManager {
           `Port ${String(entry.port)} is already in use. Stop whatever is listening there first.`,
         )
       }
+      // Uninstall may have begun while the port was probed; nothing awaits between here and the spawn.
+      this.assertNotUninstalling(id, entry)
       const paths = cachePaths(id, entry)
       state.progress = 'Loading the model…'
       const child = this.deps.spawnServer(entry.serve(paths), paths)
