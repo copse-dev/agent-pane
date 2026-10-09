@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { quarantineScopeDigest } from './e2e-release-policy.mts'
 import {
   collectE2eExclusions,
   exclusionRegistrySchema,
@@ -12,7 +13,7 @@ const marker = 'describeSkipInCi: approval'
 
 function registry(): ExclusionRegistry {
   return {
-    version: 1,
+    version: 2,
     entries: [
       {
         spec,
@@ -24,6 +25,11 @@ function registry(): ExclusionRegistry {
         reviewBy: '2026-09-27',
         coverage: 'Policy tests are not equivalent runtime evidence',
         markers: [marker],
+        accountability: {
+          owner: null,
+          disposition: 'restore',
+          nextStep: 'Repair the fixture and obtain runtime evidence',
+        },
       },
     ],
   }
@@ -242,7 +248,7 @@ describe('validateExclusionRegistry', () => {
     }
     assert.deepEqual(
       validateExclusionRegistry(
-        { version: 1, entries: [] },
+        { version: 2, entries: [] },
         [{ spec, marker }],
         new Set([spec]),
         '2026-09-20',
@@ -262,6 +268,33 @@ describe('validateExclusionRegistry', () => {
     assert.ok(result.errors.includes(`Review date precedes inventory date: ${spec}`))
   })
 
+  it('fails ordinary CI when an existing waiver expires or its evidence changes', () => {
+    const valid = registry()
+    const entry = valid.entries[0]
+    assert.ok(entry?.accountability)
+    entry.accountability.owner = 'maintainer'
+    entry.accountability.waiver = {
+      reviewedBy: 'maintainer',
+      reviewedOn: '2026-10-04',
+      expiresOn: '2026-10-11',
+      decisionUrl: 'https://github.com/copse-dev/agent-pane/issues/2719#issuecomment-123',
+      reason: 'Bounded owner review',
+      scopeDigest: quarantineScopeDigest(entry),
+    }
+    const actual = [{ spec, marker }]
+    const sources = new Set([spec])
+    assert.deepEqual(validateExclusionRegistry(valid, actual, sources, '2026-10-10').errors, [])
+    assert.match(
+      validateExclusionRegistry(valid, actual, sources, '2026-10-11').errors.join('\n'),
+      /expired/,
+    )
+    entry.coverage = 'Changed replacement evidence'
+    assert.match(
+      validateExclusionRegistry(valid, actual, sources, '2026-10-10').errors.join('\n'),
+      /current exclusion/,
+    )
+  })
+
   it('rejects incomplete metadata, invalid dates, and unknown fields in the registry', () => {
     const valid = registry()
     assert.ok(exclusionRegistrySchema.safeParse(valid).success)
@@ -276,7 +309,7 @@ describe('validateExclusionRegistry', () => {
     ]) {
       assert.equal(
         exclusionRegistrySchema.safeParse({
-          version: 1,
+          version: 2,
           entries: [{ ...valid.entries[0], ...patch }],
         }).success,
         false,

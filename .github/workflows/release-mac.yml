@@ -20,6 +20,8 @@ on:
 permissions:
   contents: read
   checks: read
+  issues: read
+  pull-requests: read
   attestations: write
   id-token: write
 
@@ -110,6 +112,9 @@ jobs:
           # body. Generate it from CHANGELOG.md now so a missing or empty
           # `## <version>` section fails in seconds rather than after notarization.
           node scripts/release-notes.mts "$version" > /dev/null
+          # An exclusion review deadline is not acceptance of missing runtime
+          # coverage. Recheck current owner decisions before signing begins.
+          node scripts/check-e2e-release-waivers.mts
           echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "release_type=$release_type" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
