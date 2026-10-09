@@ -97,6 +97,11 @@ export function turnStartId(
   return null
 }
 
+/** Offers to the user stay painted in the concise view, so they are not hidden work. */
+function isOfferCall(toolCall: ToolCall): boolean {
+  return toolCall.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(toolCall)
+}
+
 /**
  * Whether the concise view collapses message `index` to nothing: process-only,
  * with no text, screenshots or other produced output to show. Mirrors the
@@ -120,9 +125,7 @@ export function isConciseCollapsedMessage(
     msg.toolCalls.some(
       (toolCall) =>
         (toolCall.images?.length ?? 0) > 0 ||
-        // Offers to the user stay painted in the concise view (see the stylesheet).
-        toolCall.name === THREAD_PROPOSAL_TOOL ||
-        isReviewerInputCall(toolCall),
+        isOfferCall(toolCall),
     )
   return !producesOutput
 }
@@ -163,23 +166,27 @@ export function conciseTurnSummaries(messages: readonly Message[]): ConciseTurnS
     const turn = messages.slice(start, end)
     const assistants = turn.filter((msg) => msg.role === 'assistant')
     if (!assistants.some(isConciseMessage)) return
-    const toolCallCount = assistants.reduce((sum, msg) => sum + msg.toolCalls.length, 0)
+    // Only concise bubbles hide their tool cards, and offer cards stay visible
+    // even there: what the footer counts is what the view actually hides.
+    const hiddenCalls = assistants
+      .filter(isConciseMessage)
+      .flatMap((msg) => msg.toolCalls)
+      .filter((toolCall) => !isOfferCall(toolCall))
+    const toolCallCount = hiddenCalls.length
     const last = assistants.at(-1)
     const outcome = last?.turnOutcome
     const interruption =
       outcome?.status === 'cancelled' && outcome.source === 'user'
         ? interruptionCause(outcome, messages[end])
         : null
-    const edits = assistants
-      .flatMap((msg) => msg.toolCalls)
-      .reduce<ConciseTurnSummary['edits']>((total, toolCall) => {
+    const edits = hiddenCalls.reduce<ConciseTurnSummary['edits']>((total, toolCall) => {
         if (!toolCall.editStats) return total
         return {
           additions: (total?.additions ?? 0) + toolCall.editStats.additions,
           deletions: (total?.deletions ?? 0) + toolCall.editStats.deletions,
         }
       }, null)
-    const hasHiddenSteps = toolCallCount > 0 || assistants.some(hasReasoning)
+    const hasHiddenSteps = toolCallCount > 0 || assistants.filter(isConciseMessage).some(hasReasoning)
     if (!hasHiddenSteps && interruption === null) return
     summaries.push({
       startId: first.id,

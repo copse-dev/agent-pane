@@ -222,6 +222,20 @@ describe('concise turn summaries', () => {
     ...overrides,
   })
 
+  it('counts only what the view hides: not below-gate bubbles, not offer cards', () => {
+    const edit = { additions: 7, deletions: 3 }
+    const [summary] = conciseTurnSummaries([
+      prompt('u1'),
+      reply('a1', { toolCalls: [tool({ id: 't1', editStats: edit })] }),
+      reply('a2', { model: MODEST, toolCalls: [tool({ id: 't2', editStats: edit })] }),
+      reply('a3', {
+        toolCalls: [tool({ id: 't3', name: 'propose_thread', editStats: edit })],
+      }),
+    ])
+    assert.equal(summary?.toolCallCount, 1)
+    assert.deepEqual(summary.edits, edit)
+  })
+
   it('lists a concise turn that hid tool calls, with the whole turn’s calls', () => {
     const summaries = conciseTurnSummaries([
       prompt('u1'),
