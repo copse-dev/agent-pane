@@ -3447,6 +3447,7 @@ export function registerAllHandlers(
     const parsed = parseIpcArgs(
       z.enum([
         'explorer',
+        'context',
         'side-chat',
         'terminal',
         'changes',
@@ -3466,6 +3467,7 @@ export function registerAllHandlers(
     const parsed = parseIpcArgs(
       z.enum([
         'explorer',
+        'context',
         'side-chat',
         'terminal',
         'changes',
