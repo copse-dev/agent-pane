@@ -27,6 +27,7 @@ function stubSpawn(over: Partial<HookSpawnResult> = {}): HookSpawnResult {
     exitCode: 0,
     durationMs: 1,
     timedOut: false,
+    timeoutMs: 30_000,
     spawnError: false,
     sandboxed: false,
     sandboxViolationCount: 0,
@@ -316,6 +317,46 @@ describe('cursor-adapter', () => {
       assert.equal((await gate('read_file', { path: 'secret.txt' })).permission, 'deny')
     })
 
+    it('does not let a crashed hook`s stdout allow: a non-zero exit fails closed', async () => {
+      const path = join(tempHome, 'allow-then-crash.sh')
+      await writeFile(
+        path,
+        `#!/bin/sh\ncat > /dev/null\nprintf '%s' '{"permission":"allow"}'\nexit 1\n`,
+        'utf-8',
+      )
+      await chmod(path, 0o755)
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: path }] } })
+
+      assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'deny')
+    })
+
+    it('still honours an explicit deny printed before a non-zero exit, even failing open', async () => {
+      const path = join(tempHome, 'deny-then-crash.sh')
+      await writeFile(
+        path,
+        `#!/bin/sh\ncat > /dev/null\nprintf '%s' '{"permission":"deny"}'\nexit 1\n`,
+        'utf-8',
+      )
+      await chmod(path, 0o755)
+      await writeUserHooks({
+        hooks: { beforeShellExecution: [{ command: path, failClosed: false }] },
+      })
+
+      assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'deny')
+    })
+
+    it('fires (rather than hangs) when a matcher backtracks catastrophically', async () => {
+      const script = await writeHookScript('redos-deny.sh', '{"permission":"deny"}')
+      await writeUserHooks({
+        hooks: { beforeShellExecution: [{ command: script, matcher: '^(a+)+$' }] },
+      })
+
+      const started = Date.now()
+      const decision = await gate('run_shell', { command: `${'a'.repeat(64)}!` })
+      assert.equal(decision.permission, 'deny')
+      assert.ok(Date.now() - started < 10_000, 'the matcher was bounded')
+    })
+
     it('only fires the hook whose event matches the gated tool', async () => {
       const readDeny = await writeHookScript('read-deny.sh', '{"permission":"deny"}')
       await writeUserHooks({ hooks: { beforeReadFile: [{ command: readDeny }] } })
@@ -569,6 +610,20 @@ describe('cursor-adapter', () => {
 
       const { hooks } = await listUserHooks()
       assert.match(hooks[0]?.lastError ?? '', /exited with code 2/)
+    })
+
+    it('names the per-hook timeout, not the dialect default, when a hook times out', async () => {
+      const path = join(tempHome, 'slow.sh')
+      await writeFile(path, '#!/bin/sh\ncat > /dev/null\nsleep 5\n', 'utf-8')
+      await chmod(path, 0o755)
+      await writeUserHooks({
+        hooks: { beforeShellExecution: [{ command: path, timeout: 0.2 }] },
+      })
+
+      await gate('run_shell', { command: 'ls' })
+
+      const { hooks } = await listUserHooks()
+      assert.match(hooks[0]?.lastError ?? '', /timed out after 200ms/)
     })
 
     it('keeps the first failure per hook per session (dedupe)', async () => {
