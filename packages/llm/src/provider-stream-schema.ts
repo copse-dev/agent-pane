@@ -28,6 +28,15 @@ export const providerToolCallSchema = z
     ...(argsError !== undefined ? { argsError } : {}),
     ...(kind !== undefined ? { kind } : {}),
   }))
+/** Opaque server-side compaction state a provider emits and later replays. */
+export const providerCompactionStateSchema = z.object({
+  kind: z.literal('openai-responses-compaction'),
+  v: z.literal(1),
+  model: z.string().min(1),
+  endpoint: z.string(),
+  itemId: z.string().min(1),
+  encryptedContent: z.string().min(1),
+})
 const tokenFields = {
   inputTokens: z.number().nonnegative(),
   outputTokens: z.number().nonnegative(),
@@ -130,6 +139,7 @@ export const providerStreamChunkSchema: z.ZodType<ProviderStreamChunk> = z.union
       }),
     ),
   z.object({ type: z.literal('prompt_progress'), fraction: z.number().min(0).max(1) }),
+  z.object({ type: z.literal('provider_state'), state: providerCompactionStateSchema }),
   z
     .object({
       type: z.literal('done'),
