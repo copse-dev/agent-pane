@@ -230,6 +230,7 @@ export async function runHeadlessAgent(
                         let inputTokens = 0
                         let outputTokens = 0
                         const dispatcher = new AgentDispatcher(host, registry, {
+                          loadPlan: (): Promise<null> => Promise.resolve(null),
                           loadHistory: (): Promise<LLMMessage[]> => Promise.resolve(messages),
                           saveHistory: (_projectId, _threadId, nextMessages): Promise<void> => {
                             messages = nextMessages

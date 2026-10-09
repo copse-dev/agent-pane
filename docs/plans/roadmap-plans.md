@@ -1,5 +1,113 @@
 # Roadmap plans
 
+## Roadmap / living plan prototype (2026-09-26)
+
+Task brief: keep the compact backlog and quick capture, with a cleaner document
+view for a selected item. Develop plan saves the brief and opens a real, linked
+draft in the existing revision/approval editor. Linked attempts remain accessible;
+completion evidence is available from the roadmap without copying plan documents.
+Base: `bbbca7e30`, on top of the uncommitted living-plan workflow.
+
+Acceptance examples:
+
+- New items start in Quick edit; saved items open in Document. Switching views
+  preserves Markdown and unsaved edits. Metadata is available under Details.
+- Develop plan saves current edits, carries context/attachments to a task, and
+  opens a saved draft without submitting or approving implementation.
+- Opening a linked plan from the roadmap reaches the same revision as the task.
+  Starting another task preserves older links and their back-links.
+- Linked approved plans show criterion totals and open their evidence. Results
+  remain agent-reported and do not automatically change roadmap status.
+- Narrow panes and a maximized document remain usable, with focused Electron
+  assertions and screenshots plus component/persistence regressions.
+
+Scope: working UI prototype, additive thread-link history, existing plan APIs and
+approval boundaries. Automatic aggregation into model-based roadmap reviews,
+project-owned plan storage and decomposing a roadmap item into child items are
+later work. Persistence and renderer changes require the full local check, build,
+focused roadmap/plan visuals and Markdown suite.
+
+### Prototype implementation and evidence
+
+- New ideas use Quick edit. Saved briefs open in the shared rich Document editor;
+  Format reveals its toolbar and Details holds the secondary metadata/actions.
+  The compact list, search, filters, import, review and direct Start thread remain.
+- Develop plan saves the visible brief and creates a real task-owned draft. An
+  already structured plan retains its Markdown; a short idea becomes a draft with
+  the original brief as context and an explicit placeholder acceptance criterion.
+  Approval remains a separate user action on an exact saved revision.
+- Roadmap notes retain `thread` as the latest shortcut and add `threadHistory`
+  (a JSON array of unique task IDs, most recent first). Legacy notes work without
+  migration; older attempts retain their task-side origin link. Plans and evidence
+  stay in the task store, with only references on the roadmap.
+- Linked work opens that same plan and summarizes met/partial/unverified criteria.
+  Roadmap status remains explicit. Plan actions submit through the normal composer
+  path, including checkout preflight, attachments, existing draft context, and
+  consuming the sent draft. Navigation during a save cannot launch another item's
+  plan by accident.
+- Focused unit/component checks passed **279 tests**, including the isolated retry
+  of an unrelated file-watcher timeout from the first full gate. Electron evidence
+  covers **35 tests across 26 specs**, with the two plan specs passing all six tests
+  on the final targeted rerun. This includes a file attachment reaching the mock
+  model, a cleared composer, approval, reload, history and both editing views.
+- Final `pnpm run check` passed all static gates and **11,074 tests**, with zero
+  failures/skips/cancellations. `pnpm run build` passed. Logs are under
+  `.tmp/roadmap-prototype-*`; the final gate is `roadmap-prototype-check-complete.log`
+  and the final two-plan-spec run is `roadmap-prototype-submit-final.log`.
+- Inspected [Document](../../tests/e2e/screenshots/roadmap-document-editor.png),
+  [Quick edit](../../tests/e2e/screenshots/roadmap-quick-capture.png),
+  [linked plan](../../tests/e2e/screenshots/roadmap-linked-plan.png),
+  [evidence](../../tests/e2e/screenshots/roadmap-plan-evidence.png), and
+  [compact layout](../../tests/e2e/screenshots/roadmap-linked-work-compact.png).
+  Text wraps in the narrow pane, the document has a bounded reading width, and
+  footer actions remain visible while the document scrolls.
+- The oracle remains broad. The full repository Electron suite was not rerun in
+  this slice; the earlier headless ACP setup gap is recorded in
+  [the living-plan evidence](plan-mode-and-rewind.md). Agent execution here uses
+  the model fixture boundary, not live inference. Automatic roadmap review
+  aggregation and project-owned plan storage remain outside this prototype.
+
+### Saved-plan retention fix (2026-09-27)
+
+Task brief: a task containing a saved plan must survive task switches, New task,
+project reload and app restart even when its transcript and composer are empty.
+Ended plans also retain their revision history. Genuinely unused tasks still
+collapse, and explicit task deletion remains available. Base: `bbbca7e30`, on top
+of the uncommitted prototype. Scope is plan retention; unsent attachment recovery
+is separate. The retention signal comes from committed plan events on disk and
+successful plan saves in memory, rather than a synthetic message or prompt.
+Validation: focused store/component regressions, an Electron save/switch/reload
+scenario with screenshot evidence, build, and the full check (persistence impact).
+
+Completion evidence:
+
+- Successful plan saves mark the task as used. Full and metadata-only loads
+  recover that signal from committed plan events; the signal is excluded from
+  mutable metadata writes. Both ordinary plans and roadmap-created plans use it.
+- Five new unit/component regressions cover empty-task cleanup, actual UI saves,
+  autosave deletion, stale snapshots, lazy message hydration, ended plans,
+  explicit deletion and interrupted saves that leave only orphan files.
+- `pnpm run check` passed all static gates and **11,079 tests**, zero failures.
+  `pnpm run build` passed. Logs: `.tmp/plan-retention-check.log` and
+  `.tmp/plan-retention-build.log`.
+- **Seven focused Electron tests passed across the final runs**: four in
+  `thread-plan.e2e.ts` and three in `roadmap-plan-editor.e2e.ts`. The new scenario
+  reopens the same draft revision and feedback after a full app restart, with
+  no messages or composer draft. The roadmap scenario clears its prefilled
+  prompt, opens another task, then reopens the linked plan before and after
+  restart. Ordinary approval, submission and completion evidence also pass.
+- Initial runs hit macOS ChromeDriver window-close timeouts, including setup
+  before any plan was created. Final runs used `--connectionRetryCount 0` to
+  avoid retrying a close on an exited renderer. The restart test allows 60 seconds
+  for native teardown and boot. The roadmap completion assertion now waits for
+  the actual reply, so checkout preparation cannot be mistaken for agent idle.
+  Logs: `.tmp/plan-retention-e2e-final.log` (four plan tests green; the roadmap
+  response-wait race identified) and `.tmp/plan-retention-roadmap-final.log`
+  (all three roadmap tests green after correcting that wait).
+- Inspected [the retained draft](../../tests/e2e/screenshots/thread-plan-retained.png):
+  revision 2, document text and passage feedback remain readable and unchanged
+  after restart. The full repository Electron suite was not rerun for this fix.
+
 Tracking: [#556](https://github.com/copse-dev/agent-pane/issues/556) (closed)
 
 Status: **Resolved core; follow-ups active.** The feature is on `main` and remains

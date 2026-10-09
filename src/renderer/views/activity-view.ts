@@ -329,6 +329,8 @@ export function createActivityView(
     question: string,
     index: number,
     options: readonly string[],
+    recommendedOption: string | undefined,
+    recommendationReason: string | undefined,
   ): HTMLElement {
     const questionId = `${host.idPrefix}-question-${String(index)}`
     const input = el('textarea', {
@@ -371,17 +373,25 @@ export function createActivityView(
           class: 'ui-btn ui-btn-secondary activity-option',
         })
         setInlineMarkdown(choice, option)
+        const answer = choice.textContent
+        if (option === recommendedOption) {
+          choice.classList.add('ask-user-option-recommended')
+          choice.append(el('span', { class: 'ask-user-recommended-label' }, 'Recommended'))
+        }
         // Fills the answer rather than sending it: a click on a row that moved
         // under the pointer must not release the agent. It fills the rendered label,
         // not its Markdown source, as the dialog does.
         choice.addEventListener('click', () => {
-          input.value = choice.textContent
+          input.value = answer
           sync()
           input.focus()
         })
         choices.append(choice)
       }
       field.append(choices)
+    }
+    if (recommendationReason) {
+      field.append(el('p', { class: 'ask-user-recommendation-reason' }, recommendationReason))
     }
     field.append(input)
     return field
@@ -464,7 +474,15 @@ export function createActivityView(
           'div',
           { class: 'activity-answer-form' },
           ...asked.questions.map((question, index) =>
-            answerField(requestId, row, question, index, asked.options[index] ?? []),
+            answerField(
+              requestId,
+              row,
+              question,
+              index,
+              asked.options[index] ?? [],
+              asked.recommendedOptions?.[index],
+              asked.recommendationReasons?.[index],
+            ),
           ),
         ),
       ]

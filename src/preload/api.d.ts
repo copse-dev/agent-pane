@@ -376,7 +376,7 @@ export interface ApiClient {
       handler: (req: {
         id: string
         threadId?: string
-        questions: { question: string; options?: string[] }[]
+        questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
       }) => void,
     ) => () => void
     onAskUserCancelled: (handler: (req: { id: string }) => void) => () => void
@@ -576,6 +576,23 @@ export interface ApiClient {
     ) => Promise<void>
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
+  }
+  plans: {
+    get: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
+    revision: (
+      projectId: string,
+      threadId: string,
+      planId: string,
+      revision: number,
+    ) => Promise<string | null>
+    change: (
+      projectId: string,
+      threadId: string,
+      change: import('@copse/thread-store/plan-schema.ts').PlanChange,
+    ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
   }
   threads: {
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>

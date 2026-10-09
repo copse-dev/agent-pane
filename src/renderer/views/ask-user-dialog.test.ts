@@ -18,7 +18,7 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 interface AskUserRequest {
   id: string
   threadId?: string
-  questions: { question: string; options?: string[] }[]
+  questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
 }
 
 interface Harness {
@@ -248,6 +248,38 @@ describe('ask_user dialog (component)', () => {
 
     assert.deepEqual(harness.responses, [{ id: 'q1', answers: ['Postgres'] }])
     assert.equal(dialog().open, false)
+  })
+
+  it('labels a recommended option while returning only its answer text', () => {
+    const { api, harness } = stubApi()
+    const requests = mountAskUserDialog(api, createStore())
+    shimModal(dialog())
+    harness.emit({
+      id: 'recommendation',
+      questions: [
+        {
+          question: 'Which DB?',
+          options: ['Postgres', 'SQLite'],
+          recommendedOption: 'SQLite',
+          recommendationReason: 'The project already uses SQLite.',
+        },
+      ],
+    })
+    assert.deepEqual(requests.pending()[0]?.recommendedOptions, ['SQLite'])
+    assert.deepEqual(requests.pending()[0]?.recommendationReasons, [
+      'The project already uses SQLite.',
+    ])
+    const button = document.querySelector<HTMLButtonElement>('.ask-user-option-recommended')
+    assert.ok(button)
+    assert.match(button.textContent, /Recommended/)
+    assert.equal(
+      document.querySelector('.ask-user-recommendation-reason')?.textContent,
+      'The project already uses SQLite.',
+    )
+    button.click()
+    assert.equal(at(inputs(), 0).value, 'SQLite')
+    submitForm()
+    assert.deepEqual(harness.responses, [{ id: 'recommendation', answers: ['SQLite'] }])
   })
 
   it('fills the input when a suggested option is clicked', () => {

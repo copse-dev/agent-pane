@@ -404,6 +404,27 @@ describe('activity view answering a question in place', () => {
     assert.equal(sendButton(harness).disabled, true)
   })
 
+  it('shows recommendations without appending the badge to the answer', () => {
+    const { harness, fake } = showAsked([
+      {
+        ...ASKED,
+        recommendedOptions: ['SQLite', undefined],
+        recommendationReasons: ['The project already uses SQLite.', undefined],
+      },
+    ])
+    const choice = harness.view.body.querySelector<HTMLButtonElement>(
+      '.ask-user-option-recommended',
+    )
+    assert.equal(choice?.querySelector('.ask-user-recommended-label')?.textContent, 'Recommended')
+    assert.equal(
+      harness.view.body.querySelector('.ask-user-recommendation-reason')?.textContent,
+      'The project already uses SQLite.',
+    )
+    choice.click()
+    assert.equal(field(harness, 0).value, 'SQLite')
+    assert.deepEqual(fake.answers, [])
+  })
+
   it('fills the field from a quick answer without sending it', () => {
     const { harness, fake } = showAsked()
     harness.view.body.querySelector<HTMLButtonElement>('.activity-option')?.click()

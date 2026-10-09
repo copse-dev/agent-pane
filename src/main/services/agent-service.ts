@@ -1,6 +1,12 @@
 import { runWithInlineCanvas } from './inline-canvas-context.ts'
 import { MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { promptRoutingContext, resolvePromptModel } from './providers/prompt-model-routing.ts'
+import {
+  getRunPlan,
+  isPlanningRun,
+  planToolBlockReason,
+  threadPlanInstructions,
+} from './thread-plan-context.ts'
 import { randomUUID } from 'node:crypto'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { errorMessage } from '@shared/errors.ts'
@@ -67,7 +73,12 @@ import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isAppleDevelopmentToolOffered } from './apple-development/apple-development-tool-scope.ts'
 import { dispatchInlineVisualization } from './inline-visualization.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
-import { appendContextCompaction, getThreadMeta, updateMeta } from './thread-store.ts'
+import {
+  appendContextCompaction,
+  getThreadMeta,
+  getLatestThreadPlan,
+  updateMeta,
+} from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
@@ -391,7 +402,7 @@ function parentTools(
 ): LLMTool[] {
   const executionContext = getThreadExecutionContext()
   let tools = withoutUnofferedWriteAccess(
-    registry.toLLMTools(),
+    registry.toLLMTools().filter((tool) => !planToolBlockReason(tool.name)),
     executionContext?.deferredWorktree !== undefined,
   ).filter((tool) => isAppleDevelopmentToolOffered(tool.name, executionContext?.projectId))
   // Hide the advisor tool when the configured advisor is not more capable than
@@ -930,6 +941,36 @@ async function runAgentWithInlineCanvas(
   // the existing text/`done` channel and return without starting the turn — the
   // blocked prompt never enters LLM history. Spine recording is attributed the
   // same way the turn's own hooks are (decision 6, always-on).
+  if (getRunPlan() && (acpSelection || remoteSelection || pluginModel)) {
+    sendChunk({
+      type: 'text',
+      text: 'Plans currently require a model hosted by Copse. Choose a provider model to continue, or end the plan in Plan.',
+    })
+    recordTurnFailure(new Error('Selected executor cannot enforce the plan workflow'), {
+      source: 'host',
+      stopReason: 'tool_denied',
+    })
+    sendChunk({ type: 'done' })
+    return resultWithOutcome({
+      usage: { inputTokens: 0, outputTokens: 0 },
+      messages: priorMessages,
+    })
+  }
+  if (isPlanningRun() && options?.invokedAgent) {
+    sendChunk({
+      type: 'text',
+      text: 'Child agents are unavailable during draft planning. Submit a normal message to refine the plan.',
+    })
+    recordTurnFailure(new Error('Draft planning cannot invoke a child agent'), {
+      source: 'host',
+      stopReason: 'tool_denied',
+    })
+    sendChunk({ type: 'done' })
+    return resultWithOutcome({
+      usage: { inputTokens: 0, outputTokens: 0 },
+      messages: priorMessages,
+    })
+  }
   const submit = await runBeforeSubmitPrompt(threadId, userPrompt)
   if (submit.blocked) {
     sendChunk({ type: 'text', text: submit.blocked })
@@ -1710,10 +1751,8 @@ async function runAgentWithInlineCanvas(
     const resolvePluginSetting =
       options?.resolvePluginSetting ??
       ((pluginId: string, key: string): unknown => getPluginService().getSetting(pluginId, key))
-    const subagentsEnabled = getSetting<boolean>(
-      SUBAGENTS_ENABLED_SETTING,
-      SUBAGENTS_ENABLED_DEFAULT,
-    )
+    const subagentsEnabled =
+      !isPlanningRun() && getSetting<boolean>(SUBAGENTS_ENABLED_SETTING, SUBAGENTS_ENABLED_DEFAULT)
     const contextWindow = options?.contextWindow ?? (await resolveContextWindow(model))
     const toolSchemaReserve = toolSchemaReserveForModel(model)
     const providerOptions = {
@@ -1797,7 +1836,7 @@ async function runAgentWithInlineCanvas(
       trackInstructionActivation: true,
       nestedInstructionTurn,
     })
-    const systemPrompt = systemPromptBuild.prompt
+    const systemPrompt = systemPromptBuild.prompt + threadPlanInstructions()
     const skillActivationTurn = createSkillActivationTurn(
       invokedSkills,
       parentLoopTools.map((tool) => tool.name),
@@ -2135,6 +2174,8 @@ async function runAgentWithInlineCanvas(
                 'only in a project enrolled in Apple Development on a local Mac.',
             )
           }
+          const planBlock = planToolBlockReason(name)
+          if (planBlock) return planBlock
           const instructionContextPaths = instructionContextPathsForTool(name, args)
           if (instructionContextPaths.length > 0) {
             const activation = await activateNestedInstructionSources(
@@ -2478,7 +2519,7 @@ async function runAgentWithInlineCanvas(
 
         // Pre-review gate: if the plan still has open todos, give the parent a couple
         // of deterministic continuation turns to reconcile them before review runs.
-        if (getAgentRunTodos().length > 0 && hasOpenTodos(getAgentRunTodos())) {
+        if (!isPlanningRun() && getAgentRunTodos().length > 0 && hasOpenTodos(getAgentRunTodos())) {
           await runWithAgentRunReadFileLimits(runReadLimits, async () => {
             await runPreReviewTodoGate(parentContinuationBase)
           })
@@ -2816,6 +2857,18 @@ function beginRetryRun(threadId: string): {
 const RUN_ALREADY_ACTIVE_MESSAGE =
   'Skipped: this thread already has a run in progress. Wait for it to finish, or stop it, then retry.'
 
+/** Standalone review starts outside the dispatcher; enforce the draft boundary too. */
+async function assertStandaloneReviewAllowed(): Promise<void> {
+  const owner = getThreadExecutionContext()
+  if (!owner) return
+  const plan = await getLatestThreadPlan(owner.projectId, owner.threadId)
+  if (plan?.meta.status === 'draft') {
+    throw new Error(
+      'Standalone review is unavailable during draft planning. Use a normal planning turn to inspect the code, or approve or end the plan first.',
+    )
+  }
+}
+
 /**
  * Re-run the post-turn review for a thread on demand — the retry action on a
  * failed review card. The review reads the current working diff, so a failure
@@ -2844,6 +2897,7 @@ export async function retryPostTurnReview(
 
   sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
   try {
+    await assertStandaloneReviewAllowed()
     const contextWindow = await resolveContextWindow(model)
     const toolSchemaReserve = toolSchemaReserveForModel(model)
     const provider = await buildProvider(model, threadId)
@@ -2910,6 +2964,7 @@ export async function runReviewForThread(
   if (!begun) throw new Error(RUN_ALREADY_ACTIVE_MESSAGE)
   const { controller, runAbort } = begun
   try {
+    await assertStandaloneReviewAllowed()
     const result = await runThreadReview({
       threadId,
       root: executionRoot,

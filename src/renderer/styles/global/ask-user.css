@@ -31,6 +31,19 @@
 .ask-user-option:hover {
   border-color: var(--accent);
 }
+.ask-user-option-recommended {
+  border-color: var(--accent);
+}
+.ask-user-recommended-label {
+  margin-left: var(--spacing-sm);
+  color: var(--accent);
+  font-size: var(--font-size-xs);
+}
+.ask-user-recommendation-reason {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
 .ask-user-input {
   width: 100%;
   background: var(--bg-base);

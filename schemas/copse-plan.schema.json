@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://copse.dev/schemas/copse-plan.schema.json",
   "title": "Copse Plan Mode artifacts",
-  "description": "On-disk Plan Mode records under a thread directory (plans/<planId>/). Source of truth for runtime validation is the zod schemas in src/shared/threads/plan-schema.ts; this file mirrors them for docs and external tooling. See docs/plans/plan-mode-and-rewind.md (#1080 P1) and docs/thread-store-format.md.",
+  "description": "On-disk Plan Mode records under a thread directory (plans/<planId>/). Source of truth for runtime validation is the zod schemas in packages/thread-store/src/plan-schema.ts; this file mirrors them for docs and external tooling. See docs/plans/plan-mode-and-rewind.md (#1080 P1) and docs/thread-store-format.md.",
   "$defs": {
     "planStatus": {
       "type": "string",
@@ -41,20 +41,50 @@
         "updatedAt"
       ],
       "properties": {
-        "planId": { "type": "string", "minLength": 1 },
-        "threadId": { "type": "string", "minLength": 1 },
-        "title": { "type": "string", "minLength": 1 },
-        "status": { "$ref": "#/$defs/planStatus" },
-        "currentRevision": { "type": "integer", "minimum": 1 },
-        "createdAt": { "type": "integer" },
-        "updatedAt": { "type": "integer" },
-        "approvedAt": { "type": "integer" },
-        "approvedRevision": { "type": "integer", "minimum": 1 },
-        "executionProfileId": { "type": "string", "minLength": 1 },
+        "planId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "threadId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "$ref": "#/$defs/planStatus"
+        },
+        "currentRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "createdAt": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "integer"
+        },
+        "approvedAt": {
+          "type": "integer"
+        },
+        "approvedRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "executionProfileId": {
+          "type": "string",
+          "minLength": 1
+        },
         "contentHash": {
           "type": "string",
           "minLength": 1,
           "description": "Hex sha256 of the approved revision body."
+        },
+        "supersedesPlanId": {
+          "type": "string",
+          "format": "uuid"
         }
       }
     },
@@ -63,19 +93,42 @@
       "additionalProperties": false,
       "required": ["id", "revision", "body", "createdAt"],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "revision": { "type": "integer", "minimum": 1 },
-        "body": { "type": "string", "minLength": 1 },
-        "createdAt": { "type": "integer" },
-        "author": { "type": "string", "enum": ["user", "agent"] },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "integer"
+        },
+        "author": {
+          "type": "string",
+          "enum": ["user", "agent"]
+        },
         "anchor": {
           "type": "object",
           "additionalProperties": false,
           "required": ["start", "end"],
           "properties": {
-            "start": { "type": "integer", "minimum": 0 },
-            "end": { "type": "integer", "minimum": 0 }
+            "start": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
+        },
+        "quote": {
+          "type": "string"
         }
       }
     },
@@ -86,7 +139,9 @@
       "properties": {
         "comments": {
           "type": "array",
-          "items": { "$ref": "#/$defs/planComment" }
+          "items": {
+            "$ref": "#/$defs/planComment"
+          }
         }
       }
     },
@@ -95,17 +150,113 @@
       "additionalProperties": false,
       "required": ["planId", "approvedRevision", "approvedAt", "executionProfileId", "contentHash"],
       "properties": {
-        "planId": { "type": "string", "minLength": 1 },
-        "approvedRevision": { "type": "integer", "minimum": 1 },
-        "approvedAt": { "type": "integer" },
-        "executionProfileId": { "type": "string", "minLength": 1 },
-        "contentHash": { "type": "string", "minLength": 1 }
+        "planId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approvedRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "approvedAt": {
+          "type": "integer"
+        },
+        "executionProfileId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contentHash": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "planCompletion": {
+      "type": "object",
+      "required": ["planId", "revision", "contentHash", "reportedAt", "results"],
+      "properties": {
+        "planId": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "reportedAt": {
+          "type": "integer"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["criterionId", "status", "evidence"],
+            "properties": {
+              "criterionId": {
+                "type": "string"
+              },
+              "status": {
+                "enum": ["met", "partial", "unverified"]
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "planState": {
+      "type": "object",
+      "required": ["meta", "comments", "approval", "completion"],
+      "properties": {
+        "meta": {
+          "$ref": "#/$defs/planMeta"
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/planComment"
+          }
+        },
+        "approval": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/planApproval"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "completion": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/planCompletion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
       }
     }
   },
   "oneOf": [
-    { "$ref": "#/$defs/planMeta" },
-    { "$ref": "#/$defs/planCommentsFile" },
-    { "$ref": "#/$defs/planApproval" }
+    {
+      "$ref": "#/$defs/planMeta"
+    },
+    {
+      "$ref": "#/$defs/planCommentsFile"
+    },
+    {
+      "$ref": "#/$defs/planApproval"
+    },
+    {
+      "$ref": "#/$defs/planState"
+    }
   ]
 }

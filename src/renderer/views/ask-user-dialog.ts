@@ -5,12 +5,13 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
+import type { AskUserQuestion } from '@copse/agent/ask-user-format.ts'
 
 interface AskUserRequest {
   id: string
   /** Thread this question belongs to; undefined = not tied to a run (show anywhere). */
   threadId: string | undefined
-  questions: { question: string; options?: string[] }[]
+  questions: AskUserQuestion[]
   /** Renderer clock when the question arrived — how long it has been waiting. */
   receivedAt: number
   /** Arrival order; the clock alone ties within a millisecond. */
@@ -25,6 +26,8 @@ export interface PendingQuestionSummary {
   questions: string[]
   /** The quick answers the agent offered for each question, in question order ([] for none). */
   options: readonly (readonly string[])[]
+  recommendedOptions?: readonly (string | undefined)[]
+  recommendationReasons?: readonly (string | undefined)[]
   receivedAt: number
 }
 
@@ -122,15 +125,23 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
         for (const option of q.options) {
           const button = el('button', { type: 'button', class: 'ask-user-option' })
           setInlineMarkdown(button, option)
+          const answer = button.textContent
+          if (option === q.recommendedOption) {
+            button.classList.add('ask-user-option-recommended')
+            button.append(el('span', { class: 'ask-user-recommended-label' }, 'Recommended'))
+          }
           button.addEventListener('click', () => {
             // Insert the rendered label, not its Markdown source, so selecting
             // a command does not put raw backticks back into the visible field.
-            input.value = button.textContent
+            input.value = answer
             input.focus()
           })
           optionRow.append(button)
         }
         field.append(optionRow)
+      }
+      if (q.recommendationReason) {
+        field.append(el('p', { class: 'ask-user-recommendation-reason' }, q.recommendationReason))
       }
       field.append(input)
       form.append(field)
@@ -357,6 +368,8 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
           threadId: req.threadId,
           questions: req.questions.map((q) => q.question),
           options: req.questions.map((q) => q.options ?? []),
+          recommendedOptions: req.questions.map((q) => q.recommendedOption),
+          recommendationReasons: req.questions.map((q) => q.recommendationReason),
           receivedAt: req.receivedAt,
         })),
     answer: answerFrom,

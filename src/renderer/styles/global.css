@@ -19,6 +19,7 @@
 @import './global/onboarding.css';
 @import './global/approval.css';
 @import './global/ask-user.css';
+@import './global/thread-plan.css';
 @import './global/ssh-prompt.css';
 @import './global/update-prompt.css';
 @import './global/product-announcement.css';

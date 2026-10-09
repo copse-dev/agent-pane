@@ -2485,3 +2485,86 @@ describe('roadmap pane', () => {
     }
   })
 })
+
+describe('roadmap document ergonomics', () => {
+  it('does not launch a plan into a different item when navigation happens during save', async () => {
+    const store = createStore({
+      activeProjectId: 'p',
+      filesPaneOpen: true,
+      rightPanelMode: 'roadmap',
+    })
+    const base = makeApi([makeItem('a', 'First'), makeItem('b', 'Second')])
+    let finish: (() => void) | undefined
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const api: ApiClient = {
+      ...base.api,
+      roadmap: {
+        ...base.api.roadmap,
+        update: async (
+          ...args: Parameters<ApiClient['roadmap']['update']>
+        ): Promise<KnowledgeNote | null> => {
+          await pending
+          return base.api.roadmap.update(...args)
+        },
+      },
+    }
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('[data-id="a"]')?.click()
+      viewer.querySelector<HTMLButtonElement>('.roadmap-develop-btn')?.click()
+      list.querySelector<HTMLButtonElement>('[data-id="b"]')?.click()
+      finish?.()
+      await flush()
+      assert.equal(store.getState().threads.length, 0)
+      assert.equal(viewer.querySelector('.roadmap-document-title')?.textContent, 'Second')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('uses quick capture for new ideas and preserves exact Markdown across document switches', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const original =
+      '## A small brief\n\nKeep **the wording** and [reference][ref].\n\n[ref]: https://example.com'
+    const { api, calls, fireChanged } = makeApi([makeItem('a', original)])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    const mode = (label: string): void => {
+      const button = [
+        ...viewer.querySelectorAll<HTMLButtonElement>('.roadmap-editor-modes button'),
+      ].find((b) => b.textContent === label)
+      assert.ok(button)
+      button.click()
+    }
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const source = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      assert.ok(source)
+      assert.equal(source.hidden, true)
+      assert.equal(viewer.querySelector<HTMLDetailsElement>('.roadmap-details')?.open, false)
+      assert.equal(viewer.querySelector('#roadmap-body h2')?.textContent, 'A small brief')
+      mode('Quick edit')
+      assert.equal(source.value, original)
+      source.value += '\n\nAn unsaved addition.'
+      mode('Document')
+      fireChanged()
+      await flush()
+      assert.match(viewer.querySelector('#roadmap-body')?.textContent ?? '', /An unsaved addition/)
+      mode('Quick edit')
+      assert.equal(source.value, `${original}\n\nAn unsaved addition.`)
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.equal(calls.update[0]?.prompt, `${original}\n\nAn unsaved addition.`)
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      assert.equal(source.hidden, false)
+      assert.equal(source.value, '')
+    } finally {
+      unmount()
+    }
+  })
+})
