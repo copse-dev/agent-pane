@@ -153,13 +153,24 @@ export class HostInference {
 
   private async waitForRelease(previous: InferenceSlot, signal: AbortSignal): Promise<void> {
     let timer: NodeJS.Timeout | undefined
+    let stopWaiting: (() => void) | undefined
     const expired = new Promise<void>((resolve) => {
       timer = setTimeout(resolve, CANCELLED_SLOT_RELEASE_MS)
     })
+    // The waiter's own cancellation (guest disconnect or run stop) ends the wait at once,
+    // rather than holding this request and its timer until the predecessor lets go.
+    const aborted = new Promise<void>((resolve) => {
+      stopWaiting = (): void => {
+        resolve()
+      }
+      if (signal.aborted) resolve()
+      else signal.addEventListener('abort', stopWaiting, { once: true })
+    })
     try {
-      await Promise.race([previous.released, expired])
+      await Promise.race([previous.released, expired, aborted])
     } finally {
       clearTimeout(timer)
+      if (stopWaiting) signal.removeEventListener('abort', stopWaiting)
     }
     signal.throwIfAborted()
   }
