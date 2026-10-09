@@ -93,4 +93,5 @@
 // v54 versions event automation shapes.
 // v55 versions host-owned container authentication.
 // v56 versions threads:archive stopProcesses and blocked-running live-work reports.
-export const API_PROTOCOL_VERSION = 56 as const
+// v57 versions approval effect, boundary, and grant-scope details.
+export const API_PROTOCOL_VERSION = 57 as const
