@@ -52,6 +52,25 @@ describe('splitCursorAcpTransportNoise', () => {
     assert.deepEqual(splitCursorAcpTransportNoise(text), { body: text, noise: null })
   })
 
+  it('does not truncate a final sentence that quotes the error', () => {
+    const cases = [
+      'Fixed it.\n\nThe crash was Error: RetriableError: WritableIterable is closed',
+      'Fixed it. We saw Error: RetriableError: WritableIterable is closed',
+      'Fixed it.\n> Error: RetriableError: WritableIterable is closed',
+    ]
+    for (const text of cases) {
+      assert.deepEqual(splitCursorAcpTransportNoise(text), { body: text, noise: null }, text)
+    }
+  })
+
+  it('splits CRLF-separated trailing noise', () => {
+    const text = 'Done.\r\n\r\nError: RetriableError: WritableIterable is closed\r\n'
+    assert.deepEqual(splitCursorAcpTransportNoise(text), {
+      body: 'Done.',
+      noise: 'Error: RetriableError: WritableIterable is closed',
+    })
+  })
+
   it('does not strip Copse classifyAgentError wording', () => {
     const text = 'Answer.\n\nAn error occurred: RetriableError: WritableIterable is closed'
     assert.deepEqual(splitCursorAcpTransportNoise(text), { body: text, noise: null })

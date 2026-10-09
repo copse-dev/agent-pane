@@ -281,6 +281,22 @@ describe('reviewer tools', () => {
     )
   })
 
+  it('fails a catastrophically backtracking search pattern instead of hanging', async () => {
+    const executor = createReviewerToolExecutor(host)
+    await mkdir(join(root, 'redos'), { recursive: true })
+    await writeFile(join(root, 'redos', 'line.txt'), `${'a'.repeat(64)}!\n`)
+    try {
+      const started = Date.now()
+      const result = toolText(
+        await executor.execute('search_code', { pattern: '(a+)+$', path: 'redos' }, signal, 'r1'),
+      )
+      assert.match(result, /budget \(likely catastrophic backtracking\)/)
+      assert.ok(Date.now() - started < 30_000, 'the search returned within its budget')
+    } finally {
+      await rm(join(root, 'redos'), { recursive: true, force: true })
+    }
+  })
+
   it('serves the original per-file diff even when omitted from context', async () => {
     const executor = createReviewerToolExecutor(host)
     assert.match(

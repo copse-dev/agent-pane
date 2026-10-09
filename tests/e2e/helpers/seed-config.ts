@@ -914,6 +914,110 @@ export function seedMemoryNotes(
   return knowledgeDir
 }
 
+/** Where the app keeps project-keyed knowledge (OKF memories) under this run's profile. */
+export function e2eKnowledgeDir(): string {
+  return join(copseDataRoot(), 'knowledge')
+}
+
+/**
+ * Two persisted projects with an idle thread in the first and the OKF memory
+ * tools enabled — for checking that a turn writes to its own project's stores
+ * after the window switches to the other project.
+ */
+export function seedTwoProjectStoresFixture(input: {
+  readonly a: { readonly id: string; readonly path: string; readonly name: string }
+  readonly b: { readonly id: string; readonly path: string; readonly name: string }
+  readonly threadId: string
+}): void {
+  const createdAt = Date.UTC(2026, 9, 1, 12)
+  writeSeedConfig({
+    projects: [input.a, input.b],
+    activeProjectId: input.a.id,
+    expandedProjectId: input.a.id,
+    activeThreadId: input.threadId,
+    pluginDisabled: pluginDisabledSeed(['copse.okf-memories']),
+    [`threads:${input.a.id}`]: [
+      {
+        id: input.threadId,
+        title: 'Record a project convention',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ],
+  })
+}
+
+/**
+ * A completed unfiltered memory recall whose result is a size-capped page: a
+ * memory clipped to the character cap and the cursor for the next page. Unit
+ * coverage exercises the real cap; this persisted transcript keeps the visual
+ * proof small and focused on the copy a user sees in the ordinary tool card.
+ */
+export function seedMemoryRecallTruncationFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-memory-recall-truncation-project'
+  const threadId = 'e2e-memory-recall-truncation-thread'
+  const createdAt = Date.UTC(2026, 8, 29, 12)
+  // A size-capped unfiltered page: its one long memory is clipped to the
+  // character cap, and the cursor resumes at the memory the cap left out.
+  const body = Array.from(
+    { length: 40 },
+    (_, i) => `- Step ${String(i + 1)}: run the release checklist item and record the result.`,
+  ).join('\n')
+  const result = [
+    'Found 3 memories (showing 1–1):',
+    `## Release checklist [release] — 2026-09-01T09:00:00.000Z\n_id: release-checklist, revision: 1 · sources: unknown_\n\n${body}`,
+    '(Memory truncated at 20,000 characters; call recall with a query naming it to read it in full.)',
+    'More memories available. Next cursor: m:1',
+  ].join('\n\n')
+
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    pluginDisabled: pluginDisabledSeed(['copse.okf-memories']),
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Recall project memories',
+        status: 'idle',
+        messages: [
+          {
+            id: 'memory-recall-user',
+            role: 'user',
+            content: 'What project memories do we have?',
+            toolCalls: [],
+            createdAt,
+          },
+          {
+            id: 'memory-recall-assistant',
+            role: 'assistant',
+            content:
+              'There are more memories than fit in an unfiltered result. Use a query to find a specific one.',
+            toolCalls: [
+              {
+                id: 'memory-recall-truncated',
+                name: 'recall',
+                args: {},
+                status: 'done',
+                result,
+              },
+            ],
+            createdAt: createdAt + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt,
+        updatedAt: createdAt + 1,
+      },
+    ],
+  })
+  seedE2eViewport({ width: 1280, height: 800 }, { theme: 'dark' })
+}
+
 /** Two projects on the same workspace root for project-switch e2e (#502). */
 export function seedProjectSwitchFixture(
   workspaceRoot: string,
