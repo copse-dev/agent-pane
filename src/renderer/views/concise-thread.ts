@@ -122,11 +122,7 @@ export function isConciseCollapsedMessage(
   const producesOutput =
     (msg.visualEvidence?.length ?? 0) > 0 ||
     (msg.canvasArtefacts?.length ?? 0) > 0 ||
-    msg.toolCalls.some(
-      (toolCall) =>
-        (toolCall.images?.length ?? 0) > 0 ||
-        isOfferCall(toolCall),
-    )
+    msg.toolCalls.some((toolCall) => (toolCall.images?.length ?? 0) > 0 || isOfferCall(toolCall))
   return !producesOutput
 }
 
@@ -180,13 +176,14 @@ export function conciseTurnSummaries(messages: readonly Message[]): ConciseTurnS
         ? interruptionCause(outcome, messages[end])
         : null
     const edits = hiddenCalls.reduce<ConciseTurnSummary['edits']>((total, toolCall) => {
-        if (!toolCall.editStats) return total
-        return {
-          additions: (total?.additions ?? 0) + toolCall.editStats.additions,
-          deletions: (total?.deletions ?? 0) + toolCall.editStats.deletions,
-        }
-      }, null)
-    const hasHiddenSteps = toolCallCount > 0 || assistants.filter(isConciseMessage).some(hasReasoning)
+      if (!toolCall.editStats) return total
+      return {
+        additions: (total?.additions ?? 0) + toolCall.editStats.additions,
+        deletions: (total?.deletions ?? 0) + toolCall.editStats.deletions,
+      }
+    }, null)
+    const hasHiddenSteps =
+      toolCallCount > 0 || assistants.filter(isConciseMessage).some(hasReasoning)
     if (!hasHiddenSteps && interruption === null) return
     summaries.push({
       startId: first.id,
