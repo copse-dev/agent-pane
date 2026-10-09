@@ -340,6 +340,7 @@ describe('claude-adapter', () => {
         .trim()
         .split('\n')
         .map((line) => expectRecord(JSON.parse(line)))
+      assert.ok(write && edit, 'both gated calls reached the hook')
       assert.equal(write['tool_name'], 'Write')
       assert.deepEqual(write['tool_input'], { file_path: 'a.ts', content: 'x' })
       assert.equal(edit['tool_name'], 'Edit')
