@@ -426,6 +426,18 @@ describe('activity home project strip', () => {
     assert.equal(card(pane, 'all').getAttribute('aria-pressed'), 'true')
   })
 
+  it('clears the filter when removing another project leaves the chosen one alone', () => {
+    const { store, pane, home, flush } = mount([thread('t1', { status: 'running' })])
+    home.setShown(true)
+    card(pane, 'p1').click()
+    assert.equal(card(pane, 'p1').getAttribute('aria-pressed'), 'true')
+    store.setState({ projects: [{ id: 'p1', path: '/work', name: 'workspace' }] })
+    store.emit('projects_changed')
+    flush()
+    assert.deepEqual(names(pane), ['All projects'], 'a lone project has no tile')
+    assert.equal(card(pane, 'all').getAttribute('aria-pressed'), 'true')
+  })
+
   it('shows only All projects when there is a single project', () => {
     const { store, pane, home } = mount([thread('t1')])
     store.setState({ projects: [{ id: 'p1', path: '/work', name: 'workspace' }] })

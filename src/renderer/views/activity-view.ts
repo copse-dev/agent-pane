@@ -1061,10 +1061,14 @@ export function createActivityView(
     const focus = captureFocus()
     const previousListScrollTop = list.scrollTop
     const listScrollAnchor = captureListScrollAnchor()
-    // A removed (or quarantined) project can no longer be filtered to; fall back to everything.
+    // A removed (or quarantined) project can no longer be filtered to, and a lone project
+    // has no tile to show the filter on; fall back to everything.
     if (host.projectStrip && projectFilter !== null) {
       const filterId = projectFilter
-      if (!listedProjects().some((project) => project.id === filterId)) projectFilter = null
+      const listed = listedProjects()
+      if (listed.length < 2 || !listed.some((project) => project.id === filterId)) {
+        projectFilter = null
+      }
     }
     const allThreads = collectActivityThreads(store)
     const approvals = sources.approvals.pending()
