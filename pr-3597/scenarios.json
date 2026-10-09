@@ -148,6 +148,10 @@
     "label": "Activity home on a new thread"
   },
   {
+    "id": "activity-home-many-projects",
+    "label": "Activity home listing twelve projects"
+  },
+  {
     "id": "activity-home-project-filter",
     "label": "Activity home after a project finishes waiting"
   },
@@ -198,6 +202,14 @@
   {
     "id": "concise-thread-full",
     "label": "Full thread view for a model below the concise gate"
+  },
+  {
+    "id": "openai-host-pr",
+    "label": "OpenAI host PR creation result"
+  },
+  {
+    "id": "openai-cancellation-recovery",
+    "label": "OpenAI confirmed cancellation with interrupted recovery"
   },
   {
     "id": "concise-thread-working",
