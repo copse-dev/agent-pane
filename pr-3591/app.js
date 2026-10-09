@@ -78550,6 +78550,10 @@ var init_demo_scenarios = __esm({
         // The first thread is the active one and is empty, so the chat pane is the
         // Activity home. The others give it something to list: one waiting on an
         // approval, two running, one that finished while the user was elsewhere.
+        // A second project, so the strip lists projects at all (a lone one adds no card).
+        otherProjects: [
+          { project: project("demo-activity-other-docs", "docs-site", "/demo/docs"), threads: [] }
+        ],
         threads: [
           {
             id: "demo-activity-home-new",
@@ -78615,10 +78619,72 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home-many-projects",
+        label: "Activity home listing twelve projects",
+        project: project("demo-activity-many-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        // Twelve projects overflow the strip, so it scrolls with an edge fade. Only the
+        // open one has thread data, so the rest read "All clear" and sort by name.
+        otherProjects: [
+          "Atlas",
+          "Billing API",
+          "Cobalt",
+          "Docs site",
+          "Edge workers",
+          "Flight deck",
+          "Gateway",
+          "Harbor",
+          "Ingest",
+          "Jupiter",
+          "Kiln"
+        ].map((name) => ({
+          project: {
+            id: `demo-activity-many-${name.toLowerCase().replace(/\W+/g, "-")}`,
+            path: `/demo/${name}`,
+            name
+          },
+          threads: []
+        })),
+        threads: [
+          {
+            id: "demo-activity-many-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-many-refactor",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-activity-many-approval",
+            threadId: "demo-activity-many-refactor",
+            title: "Run shell command?",
+            body: "printf 'auth-check-passed\\n'",
+            type: "shell"
+          }
+        ]
+      },
+      {
         id: "activity-home-project-filter",
         label: "Activity home after a project finishes waiting",
         project: project("demo-activity-home-filter-project"),
         settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        // A second project, so the strip lists projects at all (a lone one adds no card).
+        otherProjects: [
+          { project: project("demo-activity-other-docs", "docs-site", "/demo/docs"), threads: [] }
+        ],
         threads: [
           {
             id: "demo-activity-filter-new",
@@ -84819,22 +84885,42 @@ function createActivityView(api2, store2, sources3, deps, host) {
     stripCache.set(id, { signature, node: node2 });
     return node2;
   }
+  function listedProjects() {
+    return store2.getState().projects.filter((project2) => !project2.missing);
+  }
+  let scrolledFilter;
+  function scrollSelectedCardIntoView() {
+    const selected = strip.querySelector('[aria-pressed="true"]');
+    if (!selected) return;
+    const left = selected.offsetLeft - strip.offsetLeft;
+    const right = left + selected.offsetWidth;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (right > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = right - strip.clientWidth;
+    }
+  }
   function renderStrip(groups) {
     const stats = projectStats(groups);
-    if (projectFilter !== null && !stats.has(projectFilter)) {
-      const project2 = store2.getState().projects.find((entry) => entry.id === projectFilter);
-      if (project2) stats.set(project2.id, { name: project2.name, need: 0, working: 0 });
-    }
+    const projects = listedProjects();
     const need = groups.find((group) => group.id === "needs-you")?.total ?? 0;
     const working = groups.find((group) => group.id === "working")?.total ?? 0;
     const cards = [stripCard(null, "All projects", need, working)];
-    const shown = [...stats.entries()].filter(([id, entry]) => entry.need > 0 || id === projectFilter).sort((a3, b4) => b4[1].need - a3[1].need || a3[1].name.localeCompare(b4[1].name));
-    for (const [id, entry] of shown)
-      cards.push(stripCard(id, entry.name, entry.need, entry.working));
+    const shown = (projects.length > 1 ? projects : []).map((project2) => ({
+      id: project2.id,
+      name: project2.name,
+      need: stats.get(project2.id)?.need ?? 0,
+      working: stats.get(project2.id)?.working ?? 0
+    })).sort((a3, b4) => b4.need - a3.need || b4.working - a3.working || a3.name.localeCompare(b4.name));
+    for (const entry of shown)
+      cards.push(stripCard(entry.id, entry.name, entry.need, entry.working));
     patchChildren(strip, cards);
-    const live = /* @__PURE__ */ new Set([null, ...shown.map(([id]) => id)]);
+    const live = /* @__PURE__ */ new Set([null, ...shown.map((entry) => entry.id)]);
     for (const id of stripCache.keys()) {
       if (!live.has(id)) stripCache.delete(id);
+    }
+    if (scrolledFilter !== projectFilter) {
+      scrolledFilter = projectFilter;
+      scrollSelectedCardIntoView();
     }
   }
   function emptyState() {
@@ -84921,9 +85007,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       }
     }
     if (spot.area === "strip") {
-      const card = [...strip.querySelectorAll("[data-project-key]")].find(
-        (node2) => node2.dataset["projectKey"] === spot.projectKey
-      );
+      const cards = [...strip.querySelectorAll("[data-project-key]")];
+      const card = cards.find((node2) => node2.dataset["projectKey"] === spot.projectKey) ?? cards.find((node2) => node2.dataset["projectKey"] === JSON.stringify(null));
       card?.focus({ preventScroll: true });
       return;
     }
@@ -84969,6 +85054,13 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const focus = captureFocus();
     const previousListScrollTop = list.scrollTop;
     const listScrollAnchor = captureListScrollAnchor();
+    if (host.projectStrip && projectFilter !== null) {
+      const filterId = projectFilter;
+      const listed = listedProjects();
+      if (listed.length < 2 || !listed.some((project2) => project2.id === filterId)) {
+        projectFilter = null;
+      }
+    }
     const allThreads = collectActivityThreads(store2);
     const approvals = sources3.approvals.pending();
     const questions = sources3.questions.pending();
