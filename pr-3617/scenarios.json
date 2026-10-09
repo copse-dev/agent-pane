@@ -148,6 +148,10 @@
     "label": "Activity home on a new thread"
   },
   {
+    "id": "activity-home-many-projects",
+    "label": "Activity home listing twelve projects"
+  },
+  {
     "id": "activity-home-project-filter",
     "label": "Activity home after a project finishes waiting"
   },
@@ -188,6 +192,14 @@
     "label": "Full thread view for a model below the concise gate"
   },
   {
+    "id": "openai-host-pr",
+    "label": "OpenAI host PR creation result"
+  },
+  {
+    "id": "openai-cancellation-recovery",
+    "label": "OpenAI confirmed cancellation with interrupted recovery"
+  },
+  {
     "id": "concise-thread-working",
     "label": "Concise thread view while a capable model works"
   },
@@ -226,5 +238,17 @@
   {
     "id": "site-mcp-permissions",
     "label": "Copse.dev tour: per-tool MCP permissions"
+  },
+  {
+    "id": "approval-web-url",
+    "label": "Allow web origin?"
+  },
+  {
+    "id": "approval-browser-url",
+    "label": "Allow browser navigation?"
+  },
+  {
+    "id": "approval-provider-url",
+    "label": "Allow model provider host?"
   }
 ]

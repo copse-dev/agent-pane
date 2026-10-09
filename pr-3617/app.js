@@ -20799,15 +20799,17 @@ function fileExtension(name) {
   return dot < 0 ? "" : name.slice(dot).toLowerCase();
 }
 function formatByteSize(bytes) {
-  if (bytes < 1024) return `${String(bytes)} B`;
+  if (!Number.isFinite(bytes) || bytes < 0) return "unknown size";
+  if (bytes < 1024) return `${String(Math.round(bytes))} B`;
   const units = ["KB", "MB", "GB"];
+  const render = (value2) => value2 < 9.95 ? value2.toFixed(1) : Math.round(value2).toString();
   let value = bytes / 1024;
   let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
+  while (Number(render(value)) >= 1024 && unit < units.length - 1) {
     value /= 1024;
     unit += 1;
   }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value).toString()} ${units[unit] ?? "GB"}`;
+  return `${render(value)} ${units[unit] ?? "GB"}`;
 }
 var init_file_bytes = __esm({
   "src/shared/file-bytes.ts"() {
@@ -22104,7 +22106,7 @@ function casedWord(word, leading) {
   return leading ? word.charAt(0).toUpperCase() + word.slice(1) : word;
 }
 function humanizeIdentifier(identifier) {
-  const words = identifier.replace(/([a-z0-9])([A-Z])/gu, "$1 $2").split(/[\s._-]+/u).filter(Boolean).map((word) => word.toLowerCase());
+  const words = identifier.replace(/([a-z0-9])([A-Z])/gu, "$1 $2").replace(/([A-Z])(?=[A-Z][a-z]{2})/gu, "$1 ").split(/[\s._-]+/u).filter(Boolean).map((word) => word.toLowerCase());
   if (words.length === 0) return identifier;
   const merged = [];
   for (const word of words) {
@@ -22860,7 +22862,7 @@ function modelMakerForSelection(value) {
   const selection2 = parseModelSelection(value);
   if (selection2.namespace === "auto" || selection2.namespace === "plugin-model") return null;
   if (selection2.namespace === "remote-agent" && !selection2.id) {
-    return selection2.agent === "anthropic" ? "anthropic" : null;
+    return selection2.agent === "anthropic" ? "anthropic" : selection2.agent === "openai" ? "openai" : null;
   }
   if (selection2.namespace === "acp" && !selection2.id) return makerFromAgent(selection2.agent);
   const id = selection2.id.toLowerCase();
@@ -23612,13 +23614,15 @@ var init_managed_agents = __esm({
 });
 
 // packages/thread-store/src/remote-agent-provider.ts
-var REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, REMOTE_AGENT_PROVIDERS, isRemoteAgentProvider;
+var REMOTE_AGENT_PROVIDER_OPENAI, REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, REMOTE_AGENT_PROVIDERS, isRemoteAgentProvider;
 var init_remote_agent_provider = __esm({
   "packages/thread-store/src/remote-agent-provider.ts"() {
     init_member_of();
+    REMOTE_AGENT_PROVIDER_OPENAI = "openai";
     REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
     REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
     REMOTE_AGENT_PROVIDERS = [
+      REMOTE_AGENT_PROVIDER_OPENAI,
       REMOTE_AGENT_PROVIDER_CURSOR,
       REMOTE_AGENT_PROVIDER_ANTHROPIC
     ];
@@ -23651,7 +23655,7 @@ function remoteAgentDisplayLabel(model, catalog = []) {
   const catalogLabel = catalog.find((entry) => entry.id === selection2.model)?.label;
   return `${title} \u2014 ${catalogLabel ?? cloudModelDisplayLabel(selection2.model)}`;
 }
-var CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
+var DEFAULT_CURSOR_AGENT_BASE_URL, CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
 var init_remote_agent = __esm({
   "src/shared/remote-agent.ts"() {
     init_reserved_prefixes();
@@ -23662,9 +23666,15 @@ var init_remote_agent = __esm({
     init_unknown_value3();
     init_remote_agent_provider();
     init_remote_agent_provider();
+    DEFAULT_CURSOR_AGENT_BASE_URL = "https://api.cursor.com";
     CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
     REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
     REMOTE_AGENT_MODELS = [
+      {
+        provider: REMOTE_AGENT_PROVIDER_OPENAI,
+        value: "remote-agent:openai",
+        label: "OpenAI Cloud Agent"
+      },
       {
         provider: REMOTE_AGENT_PROVIDER_CURSOR,
         value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_CURSOR}`,
@@ -43208,6 +43218,19 @@ var init_inline_status = __esm({
   }
 });
 
+// src/shared/openai-cloud-agent.ts
+var DEFAULT_OPENAI_AGENT_MODEL, OPENAI_AGENT_GROUP, OPENAI_AGENT_RETENTION_NOTICE;
+var init_openai_cloud_agent = __esm({
+  "src/shared/openai-cloud-agent.ts"() {
+    DEFAULT_OPENAI_AGENT_MODEL = "gpt-6.1-sol";
+    OPENAI_AGENT_GROUP = "OpenAI Cloud Agent (prototype)";
+    OPENAI_AGENT_RETENTION_NOTICE = {
+      label: "No ZDR",
+      detail: "OpenAI-hosted Agents API sessions retain session data and are not eligible for zero data retention (ZDR)."
+    };
+  }
+});
+
 // src/shared/acp-retention.ts
 var ACP_RETENTION_NOTICE;
 var init_acp_retention = __esm({
@@ -43789,6 +43812,31 @@ function extraProviderOptions(provider, available, current) {
 }
 async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude = false) {
   const options = [];
+  if (isAvailable("openai")) {
+    const models = CLOUD_MODELS.filter(([, , provider]) => provider === "openai");
+    models.sort(
+      ([a3], [b4]) => Number(b4 === DEFAULT_OPENAI_AGENT_MODEL) - Number(a3 === DEFAULT_OPENAI_AGENT_MODEL)
+    );
+    for (const [id, label] of models) {
+      options.push({
+        value: remoteAgentModelValue("openai", id),
+        label,
+        group: OPENAI_AGENT_GROUP,
+        retention: OPENAI_AGENT_RETENTION_NOTICE,
+        supportsImages: true
+      });
+    }
+    const selected = parseRemoteAgentModelSelection(current);
+    if (selected?.provider === "openai" && !options.some((option) => option.value === current)) {
+      options.push({
+        value: current,
+        label: selected.model ?? "Default",
+        group: OPENAI_AGENT_GROUP,
+        retention: OPENAI_AGENT_RETENTION_NOTICE,
+        supportsImages: false
+      });
+    }
+  }
   if (isAvailable(REMOTE_AGENT_PROVIDER_CURSOR)) {
     const group = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_CURSOR);
     let liveModels = [];
@@ -43965,7 +44013,8 @@ async function fetchModelOptions(api2, current, opts = {}) {
       options.push({
         value: current,
         label: `${modelDisplayLabel(current)} (no valid key)`,
-        group: selection2 ? remoteAgentGroupLabel(selection2.provider) : "Remote agents"
+        group: selection2?.provider === "openai" ? OPENAI_AGENT_GROUP : selection2 ? remoteAgentGroupLabel(selection2.provider) : "Remote agents",
+        ...selection2?.provider === "openai" ? { retention: OPENAI_AGENT_RETENTION_NOTICE } : {}
       });
     } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
       const selection2 = parseAcpModelSelection(current);
@@ -44090,6 +44139,7 @@ function fetchDynamicModelOptions(current, autoLabel) {
 var ACP_GROUP, OPENROUTER_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
 var init_model_options = __esm({
   "src/renderer/views/model-options.ts"() {
+    init_openai_cloud_agent();
     init_acp_retention();
     init_chatgpt_plan();
     init_model_catalog();
@@ -53732,8 +53782,20 @@ var init_guarded_yolo = __esm({
 function automationPermissionKey(permission) {
   return JSON.stringify([permission.kind, permission.toolName]);
 }
+var AUTOMATION_FAILURE_CODES, isAutomationFailureCode;
 var init_automations = __esm({
   "src/shared/types/automations.ts"() {
+    init_member_of2();
+    AUTOMATION_FAILURE_CODES = [
+      "approval-stalled",
+      "no-model",
+      "container-missing",
+      "auth-expired",
+      "worktree-failed",
+      "scheduler-stopped",
+      "unknown"
+    ];
+    isAutomationFailureCode = memberOf(AUTOMATION_FAILURE_CODES);
   }
 });
 
@@ -53868,6 +53930,78 @@ var init_types = __esm({
   }
 });
 
+// src/shared/automation-failure.ts
+function describeAutomationFailure(code) {
+  return DESCRIPTIONS[code];
+}
+function classifyAutomationFailureMessage(message2) {
+  if (/\b(401|unauthori[sz]ed|authentication|sign[- ]?in (expired|required)|invalid api key|api key (was )?(rejected|invalid))/i.test(
+    message2
+  ))
+    return "auth-expired";
+  if (/docker|container engine|apple container/i.test(message2) && /unavailable|not running|cannot connect|not found/i.test(message2))
+    return "container-missing";
+  if (/model.*(not found|unknown|unavailable|not configured|no longer)|no model|does not exist.*model/i.test(
+    message2
+  ))
+    return "no-model";
+  if (/worktree|checkout|isolated/i.test(message2)) return "worktree-failed";
+  return "unknown";
+}
+function isApprovalStalled(since, now) {
+  return since !== null && now - since >= AUTOMATION_APPROVAL_STALL_MS;
+}
+var DESCRIPTIONS, AUTOMATION_APPROVAL_STALL_MS;
+var init_automation_failure = __esm({
+  "src/shared/automation-failure.ts"() {
+    DESCRIPTIONS = {
+      "approval-stalled": {
+        title: "Waiting for approval",
+        remedy: "The run needs an answer nobody has given. Open it to approve or deny; or add the exact tool to the automation so it stops asking.",
+        action: "open-run",
+        actionLabel: "Open run"
+      },
+      "no-model": {
+        title: "Model unavailable",
+        remedy: "The automation\u2019s model is not configured or no longer exists. Pick another model in the automation.",
+        action: "open-automations",
+        actionLabel: "Edit automation"
+      },
+      "container-missing": {
+        title: "Container engine unavailable",
+        remedy: "Start Docker (or fix the container engine), then run again.",
+        action: "open-container-settings",
+        actionLabel: "Container settings"
+      },
+      "auth-expired": {
+        title: "Sign-in expired",
+        remedy: "The provider rejected the credentials. Sign in again or replace the API key.",
+        action: "open-provider-settings",
+        actionLabel: "Provider settings"
+      },
+      "worktree-failed": {
+        title: "Checkout could not be prepared",
+        remedy: "No isolated checkout could be created, so nothing ran. The prompt is kept as a draft in the run; resolve the cause and send it.",
+        action: "open-run",
+        actionLabel: "Open run"
+      },
+      "scheduler-stopped": {
+        title: "Scheduler stopped",
+        remedy: "Scheduled and event triggers are not firing. Copse retries automatically; if this persists, toggle the Automations plugin off and on.",
+        action: "open-automations",
+        actionLabel: "Open Automations"
+      },
+      unknown: {
+        title: "Run failed",
+        remedy: "Open the run to read the error.",
+        action: "open-run",
+        actionLabel: "Open run"
+      }
+    };
+    AUTOMATION_APPROVAL_STALL_MS = 15 * 6e4;
+  }
+});
+
 // src/renderer/views/branch-ci-editor.ts
 function mountBranchCiEditor(options) {
   const { root, heading, scheduleList, scheduleForm, projectId, api: api2, showStatus, hideStatus } = options;
@@ -53875,16 +54009,24 @@ function mountBranchCiEditor(options) {
   let definitions = [];
   let editingId = null;
   const section = el("section", { class: "automation-list automation-ci-list" });
-  const sectionHeading = el("div", { class: "plugin-settings-heading" }, "CI events");
+  const sectionHeading = el("div", { class: "plugin-settings-heading" }, "Event automations");
   const rows = el("div", { class: "automation-list" });
   section.append(sectionHeading, rows);
+  const fields = [];
+  function field(kind, node2) {
+    node2.dataset["triggerField"] = kind;
+    fields.push({ kind, node: node2 });
+    return node2;
+  }
   const form = el("form", { class: "automation-form automation-ci-form", hidden: true });
   const title = el("h4", { class: "automation-form-title" }, "New automation");
   const when = el(
     "select",
     { class: "automation-input automation-when-select" },
     el("option", { value: "schedule" }, "On a schedule"),
-    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch"),
+    el("option", { value: "github-pr-changed" }, "When a pull request changes"),
+    el("option", { value: "github-issue-labeled" }, "When an issue gets a label")
   );
   const name = el("input", {
     type: "text",
@@ -53899,6 +54041,44 @@ function mountBranchCiEditor(options) {
     required: true,
     maxlength: "200",
     placeholder: "main",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const pullRequest = el("input", {
+    type: "number",
+    class: "automation-input automation-ci-pull-request",
+    min: "1",
+    step: "1",
+    placeholder: "Any \u2014 watch the branch",
+    autocomplete: "off"
+  });
+  const checks = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-checks",
+    maxlength: "2000",
+    placeholder: "All workflows \u2014 or e.g. CI, Lint",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const baseBranch = el("input", {
+    type: "text",
+    class: "automation-input automation-pr-base",
+    maxlength: "200",
+    placeholder: "main",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const transition = el(
+    "select",
+    { class: "automation-input automation-pr-transition" },
+    el("option", { value: "ready-for-review" }, "A draft becomes ready for review"),
+    el("option", { value: "new-commits" }, "A ready pull request gets new commits")
+  );
+  const label = el("input", {
+    type: "text",
+    class: "automation-input automation-issue-label",
+    maxlength: "50",
+    placeholder: "needs-triage",
     autocomplete: "off",
     spellcheck: false
   });
@@ -53917,6 +54097,7 @@ function mountBranchCiEditor(options) {
     el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
   );
   const enabled = el("input", { type: "checkbox", class: "automation-ci-enabled" });
+  const matches2 = el("ul", { class: "automation-ci-matches", hidden: true });
   const summary = el("p", { class: "automation-hint automation-ci-summary" });
   const preview = el(
     "button",
@@ -53946,12 +54127,30 @@ function mountBranchCiEditor(options) {
     title,
     el("label", { class: "automation-label automation-trigger-label" }, "When", when),
     el("label", { class: "automation-label" }, "Name", name),
-    el("label", { class: "automation-label" }, "Branch", branch),
+    field("github-ci-failed", el("label", { class: "automation-label" }, "Branch", branch)),
+    field(
+      "github-ci-failed",
+      el("label", { class: "automation-label" }, "Pull request (optional)", pullRequest)
+    ),
+    field(
+      "github-ci-failed",
+      el("label", { class: "automation-label" }, "Only these workflows (optional)", checks)
+    ),
+    field(
+      "github-pr-changed",
+      el("label", { class: "automation-label" }, "Base branch", baseBranch)
+    ),
+    field(
+      "github-pr-changed",
+      el("label", { class: "automation-label" }, "Fires when", transition)
+    ),
+    field("github-issue-labeled", el("label", { class: "automation-label" }, "Label", label)),
     el("label", { class: "automation-label" }, "Model", model),
     el("label", { class: "automation-label" }, "Task", prompt),
     el("label", { class: "automation-label" }, "Maximum live worktrees", worktrees),
-    el("label", { class: "automation-enabled-label" }, enabled, "CI event enabled"),
+    el("label", { class: "automation-enabled-label" }, enabled, "Automation enabled"),
     summary,
+    matches2,
     el("div", { class: "automation-form-actions" }, preview, cancel, save)
   );
   root.append(section, form);
@@ -53960,29 +54159,78 @@ function mountBranchCiEditor(options) {
     ariaLabel: "CI automation model",
     loadOnMount: false
   });
-  function updateSummary() {
-    const selected = branch.value.trim() || "this branch";
-    summary.textContent = `When CI finishes with a failure on ${selected}, investigate it. One task per run attempt on the current branch head; at most three runs per 24 hours.`;
+  function currentKind() {
+    return when.value === "github-pr-changed" || when.value === "github-issue-labeled" ? when.value : "github-ci-failed";
   }
-  branch.addEventListener("input", updateSummary);
+  function splitChecks() {
+    return checks.value.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
+  }
+  function readTrigger() {
+    const kind = currentKind();
+    if (kind === "github-pr-changed") {
+      return {
+        kind,
+        baseBranch: baseBranch.value.trim(),
+        transition: transition.value === "new-commits" ? "new-commits" : "ready-for-review"
+      };
+    }
+    if (kind === "github-issue-labeled") return { kind, label: label.value.trim() };
+    const selected = splitChecks();
+    const number4 = Number.parseInt(pullRequest.value, 10);
+    return {
+      kind,
+      ...Number.isInteger(number4) && number4 > 0 ? { pullRequest: number4 } : { branch: branch.value.trim() },
+      ...selected.length > 0 ? { checks: selected } : {}
+    };
+  }
+  function updateSummary() {
+    const kind = currentKind();
+    for (const item of fields) item.node.hidden = item.kind !== kind;
+    if (kind === "github-pr-changed") {
+      const base = baseBranch.value.trim() || "the base branch";
+      summary.textContent = transition.value === "new-commits" ? `When a ready pull request into ${base} gets new commits, review them. One task per pull request head; at most three runs per 24 hours.` : `When a draft pull request into ${base} becomes ready for review, review it. One task per pull request head; at most three runs per 24 hours.`;
+      return;
+    }
+    if (kind === "github-issue-labeled") {
+      summary.textContent = `When an issue is labelled \u201C${label.value.trim() || "a label"}\u201D, triage it. Removing and re-applying the label starts a new task; at most three runs per 24 hours.`;
+      return;
+    }
+    const number4 = Number.parseInt(pullRequest.value, 10);
+    const target = Number.isInteger(number4) && number4 > 0 ? `pull request #${String(number4)}` : branch.value.trim() || "this branch";
+    const selected = splitChecks();
+    const only = selected.length > 0 ? ` (only ${selected.join(", ")})` : "";
+    summary.textContent = `When CI finishes with a failure on ${target}${only}, investigate it. One task per run attempt on the current head; at most three runs per 24 hours.`;
+  }
+  for (const input2 of [branch, pullRequest, checks, baseBranch, label]) {
+    input2.addEventListener("input", updateSummary);
+  }
+  transition.addEventListener("change", updateSummary);
   function close() {
     editingId = null;
     form.hidden = true;
     heading.hidden = false;
     scheduleList.hidden = false;
     section.hidden = false;
+    matches2.hidden = true;
   }
   async function open2(definition, draft) {
     hideStatus();
     editingId = definition?.id ?? null;
     title.textContent = definition ? "Edit automation" : "New automation";
-    when.value = "github-ci-failed";
+    const trigger = definition?.trigger;
+    when.value = trigger?.kind ?? "github-ci-failed";
     when.disabled = Boolean(definition);
     name.value = definition?.name ?? draft?.name ?? "";
-    branch.value = definition?.trigger.branch ?? "";
+    branch.value = trigger?.kind === "github-ci-failed" ? trigger.branch : "";
+    pullRequest.value = trigger?.kind === "github-ci-failed" && trigger.pullRequest !== void 0 ? String(trigger.pullRequest) : "";
+    checks.value = trigger?.kind === "github-ci-failed" ? (trigger.checks ?? []).join(", ") : "";
+    baseBranch.value = trigger?.kind === "github-pr-changed" ? trigger.baseBranch : "";
+    transition.value = trigger?.kind === "github-pr-changed" ? trigger.transition : "ready-for-review";
+    label.value = trigger?.kind === "github-issue-labeled" ? trigger.label : "";
     prompt.value = definition?.prompt ?? draft?.prompt ?? "";
     worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
     enabled.checked = definition?.enabled ?? draft?.enabled ?? true;
+    matches2.hidden = true;
     updateSummary();
     heading.hidden = true;
     scheduleList.hidden = true;
@@ -53995,16 +54243,124 @@ function mountBranchCiEditor(options) {
     const selected = available.find((item) => item.value === defaultModel && !item.disabled)?.value ?? available.find((item) => item.value && !item.disabled)?.value ?? "";
     await modelPicker.refresh(selected);
   }
+  function triggerLabel(trigger) {
+    if (trigger.kind === "github-pr-changed") {
+      return `${trigger.transition === "new-commits" ? "PR new commits" : "PR ready for review"} \xB7 ${trigger.repository} \xB7 ${trigger.baseBranch}`;
+    }
+    if (trigger.kind === "github-issue-labeled") {
+      return `Issue labelled \xB7 ${trigger.repository} \xB7 ${trigger.label}`;
+    }
+    const scope = trigger.pullRequest !== void 0 ? `PR #${String(trigger.pullRequest)}` : trigger.branch;
+    const only = trigger.checks && trigger.checks.length > 0 ? ` \xB7 ${trigger.checks.join(", ")}` : "";
+    return `Failed CI \xB7 ${trigger.repository} \xB7 ${scope}${only}`;
+  }
+  const OUTCOME_LABEL = {
+    started: "Started",
+    waiting: "Waiting",
+    filtered: "Filtered out",
+    held: "Needs attention"
+  };
+  function renderDeliveries(target, deliveries) {
+    clear(target);
+    if (deliveries.length === 0) {
+      target.append(el("p", { class: "automation-empty" }, "No deliveries yet."));
+      return;
+    }
+    const listEl = el("ul", { class: "automation-delivery-list" });
+    for (const delivery of deliveries) {
+      const item = el(
+        "li",
+        { class: "automation-delivery", "data-delivery-outcome": delivery.outcome },
+        el("span", { class: "automation-delivery-outcome" }, OUTCOME_LABEL[delivery.outcome]),
+        el("span", { class: "automation-delivery-summary" }, delivery.summary),
+        el(
+          "time",
+          {
+            class: "automation-delivery-time",
+            datetime: new Date(delivery.receivedAt).toISOString()
+          },
+          new Date(delivery.receivedAt).toLocaleString()
+        )
+      );
+      if (delivery.reason) {
+        item.append(el("span", { class: "automation-delivery-reason" }, delivery.reason));
+      }
+      if (delivery.threadId && options.onOpenRun) {
+        const threadId = delivery.threadId;
+        const open3 = el(
+          "button",
+          { type: "button", class: "ui-btn ui-btn-ghost ui-btn-compact automation-delivery-open" },
+          "Open task"
+        );
+        open3.addEventListener("click", () => options.onOpenRun?.(threadId));
+        item.append(open3);
+      }
+      listEl.append(item);
+    }
+    target.append(listEl);
+  }
+  function problemBlock(definition) {
+    const problem = definition.lastProblem;
+    if (!problem) return null;
+    const description = describeAutomationFailure(problem.code ?? "unknown");
+    const polling = problem.threadId === void 0 && (problem.code === void 0 || problem.code === "unknown");
+    const title2 = polling ? "Could not check GitHub" : description.title;
+    const remedy = polling ? "Copse retries every minute and clears this once GitHub can be read again." : description.remedy;
+    const block = el(
+      "div",
+      {
+        class: "automation-row-blocked-message automation-row-problem-message",
+        "data-failure-code": problem.code ?? "unknown",
+        role: "status"
+      },
+      el("strong", { class: "automation-problem-title" }, title2),
+      el(
+        "span",
+        { class: "automation-problem-time" },
+        ` \xB7 ${new Date(problem.at).toLocaleString()}`
+      ),
+      el("div", { class: "automation-problem-message" }, problem.message),
+      el("div", { class: "automation-problem-remedy" }, remedy)
+    );
+    const threadId = problem.threadId;
+    if (threadId && options.onOpenRun && description.action === "open-run") {
+      const open3 = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-problem-action"
+        },
+        description.actionLabel
+      );
+      open3.addEventListener("click", () => options.onOpenRun?.(threadId));
+      block.append(open3);
+    } else if (description.action === "open-automations" || description.action === "open-model-settings") {
+      const edit = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-problem-action"
+        },
+        "Edit automation"
+      );
+      edit.addEventListener("click", () => void open2(definition));
+      block.append(edit);
+    }
+    return block;
+  }
   function render() {
     clear(rows);
     if (definitions.length === 0) {
-      rows.append(el("p", { class: "automation-empty" }, "No CI events for this project yet."));
+      rows.append(
+        el("p", { class: "automation-empty" }, "No event automations for this project yet.")
+      );
       return;
     }
     for (const definition of definitions) {
       const row2 = el("article", {
-        class: `automation-row${definition.enabled ? "" : " automation-row-paused"}`,
-        "data-ci-automation-id": definition.id
+        class: `automation-row${definition.enabled ? "" : " automation-row-paused"}${definition.lastProblem ? " automation-row-blocked" : ""}`,
+        "data-ci-automation-id": definition.id,
+        "data-trigger-kind": definition.trigger.kind
       });
       const copy = el(
         "div",
@@ -54013,11 +54369,7 @@ function mountBranchCiEditor(options) {
         el(
           "div",
           { class: "automation-row-meta" },
-          el(
-            "span",
-            {},
-            `Failed CI \xB7 ${definition.trigger.repository} \xB7 ${definition.trigger.branch}`
-          ),
+          el("span", {}, triggerLabel(definition.trigger)),
           el("span", {}, modelDisplayLabel(definition.model)),
           el("span", {}, definition.enabled && pluginEnabled ? "Armed" : "Paused")
         ),
@@ -54027,6 +54379,24 @@ function mountBranchCiEditor(options) {
           definition.lastRunAt ? `Last started ${new Date(definition.lastRunAt).toLocaleString()}` : "Never run"
         )
       );
+      const problem = problemBlock(definition);
+      if (problem) copy.append(problem);
+      const history = el("details", { class: "automation-deliveries" });
+      const body = el("div", { class: "automation-deliveries-body" });
+      history.append(el("summary", {}, "Recent deliveries"), body);
+      history.addEventListener("toggle", () => {
+        if (!history.open || !projectId) return;
+        body.textContent = "Loading\u2026";
+        api2.automations.eventHistory(projectId, definition.id).then(
+          (deliveries) => {
+            renderDeliveries(body, deliveries);
+          },
+          (error62) => {
+            body.textContent = ipcErrorMessage(error62, "Could not load deliveries.");
+          }
+        );
+      });
+      copy.append(history);
       const edit = el(
         "button",
         {
@@ -54049,14 +54419,14 @@ function mountBranchCiEditor(options) {
         void showConfirmDialog({
           message: `Delete \u201C${definition.name}\u201D?`,
           detail: "Already-created tasks are kept.",
-          confirmLabel: "Delete CI event",
+          confirmLabel: "Delete automation",
           danger: true
         }).then(async (confirmed) => {
           if (!confirmed) return;
           await api2.automations.removeBranchCi(projectId, definition.id);
           await refresh();
         }).catch((error62) => {
-          showStatus(ipcErrorMessage(error62, "Could not delete CI event."), true);
+          showStatus(ipcErrorMessage(error62, "Could not delete the automation."), true);
         });
       });
       row2.append(copy, el("div", { class: "automation-row-actions" }, edit, remove));
@@ -54069,27 +54439,36 @@ function mountBranchCiEditor(options) {
     render();
   }
   when.addEventListener("change", () => {
-    if (when.value !== "schedule" || editingId) return;
-    options.onScheduleSelected({
-      name: name.value,
-      prompt: prompt.value,
-      model: model.value || BEST_VALUE_CHAT_MODEL,
-      enabled: enabled.checked,
-      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
-    });
+    if (when.value === "schedule" && !editingId) {
+      options.onScheduleSelected({
+        name: name.value,
+        prompt: prompt.value,
+        model: model.value || BEST_VALUE_CHAT_MODEL,
+        enabled: enabled.checked,
+        maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+      });
+      return;
+    }
+    matches2.hidden = true;
+    updateSummary();
   });
   cancel.addEventListener("click", close);
   preview.addEventListener("click", () => {
-    if (!projectId || !branch.value.trim()) return;
+    if (!projectId) return;
     preview.disabled = true;
-    void api2.automations.testBranchCi(projectId, branch.value.trim()).then(
+    matches2.hidden = true;
+    void api2.automations.testBranchCi(projectId, readTrigger()).then(
       (result) => {
+        clear(matches2);
+        for (const item of result.recent) matches2.append(el("li", {}, item));
+        matches2.hidden = result.recent.length === 0;
+        const where = result.branch ? `${result.repository}/${result.branch}` : result.repository;
         showStatus(
-          result.latestFailure ? `Latest matching failure on ${result.repository}/${result.branch}: ${result.latestFailure}. Test match did not start a task.` : `No failed run on the current head of ${result.repository}/${result.branch}. Test match did not start a task.`
+          result.recent.length > 0 ? `Would have matched ${String(result.recent.length)} recent item${result.recent.length === 1 ? "" : "s"} on ${where}. Test match did not start a task.` : `Nothing recent on ${where} would match. Test match did not start a task.`
         );
       },
       (error62) => {
-        showStatus(ipcErrorMessage(error62, "Could not check recent CI runs."), true);
+        showStatus(ipcErrorMessage(error62, "Could not check recent activity."), true);
       }
     ).finally(() => {
       preview.disabled = false;
@@ -54103,7 +54482,7 @@ function mountBranchCiEditor(options) {
     const input2 = {
       ...editingId ? { id: editingId } : {},
       name: name.value,
-      branch: branch.value,
+      trigger: readTrigger(),
       prompt: prompt.value,
       model: model.value,
       enabled: enabled.checked,
@@ -54115,7 +54494,7 @@ function mountBranchCiEditor(options) {
         await refresh();
       },
       (error62) => {
-        showStatus(ipcErrorMessage(error62, "Could not save CI event."), true);
+        showStatus(ipcErrorMessage(error62, "Could not save the automation."), true);
       }
     ).finally(() => {
       save.disabled = false;
@@ -54148,6 +54527,7 @@ function mountBranchCiEditor(options) {
 }
 var init_branch_ci_editor = __esm({
   "src/renderer/views/branch-ci-editor.ts"() {
+    init_automation_failure();
     init_lm_studio_defaults();
     init_helpers();
     init_ipc_error_message();
@@ -54252,7 +54632,7 @@ function scheduleDescription(cron) {
   const schedule = parseSimpleSchedule(cron);
   return schedule ? simpleScheduleDescription(schedule) : "Custom schedule";
 }
-function createAutomationPluginSettings(store2, api2, pluginEnabled, revealScheduleId, createNew = false, projectId = store2.getState().activeProjectId) {
+function createAutomationPluginSettings(store2, api2, pluginEnabled, revealScheduleId, createNew = false, projectId = store2.getState().activeProjectId, actions = {}) {
   const root = el("section", {
     class: "automation-plugin-settings",
     "data-plugin-detail": AUTOMATIONS_PLUGIN_ID
@@ -54286,6 +54666,11 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     hidden: true
   });
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
+  const schedulerNotice = el("div", {
+    class: "automation-scheduler-notice",
+    role: "status",
+    hidden: true
+  });
   const list = el("div", { class: "automation-list" });
   const form = el("form", { class: "automation-form", hidden: true, novalidate: true });
   const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
@@ -54434,7 +54819,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("label", { class: "automation-enabled-label" }, enabledInput, "Schedule enabled"),
     el("div", { class: "automation-form-actions" }, saveButton, cancelButton)
   );
-  root.append(heading, scope, notice, attention, status, list, form);
+  root.append(heading, scope, notice, schedulerNotice, attention, status, list, form);
   const ciEditor = mountBranchCiEditor({
     root,
     heading,
@@ -54445,7 +54830,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     pluginEnabled,
     showStatus,
     hideStatus,
-    onScheduleSelected: (draft) => void openForm(void 0, draft)
+    onScheduleSelected: (draft) => void openForm(void 0, draft),
+    ...actions.openRun ? { onOpenRun: actions.openRun } : {}
   });
   const modelPicker = mountModelSelectPicker(modelSelect, {
     loadOptions: (current) => fetchDynamicModelOptions(current),
@@ -54676,6 +55062,93 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     const selectedModel = options.find((option) => option.value === defaultModel && !option.disabled)?.value ?? options.find((option) => option.value && !option.disabled)?.value ?? "";
     await modelPicker.refresh(selectedModel);
   }
+  function scheduleProblem(schedule) {
+    const recorded = schedule.lastProblem;
+    if (recorded !== void 0) {
+      return {
+        at: recorded.at,
+        code: recorded.code,
+        message: recorded.message,
+        threadId: recorded.threadId,
+        kind: recorded.kind
+      };
+    }
+    const latest = store2.getState().threads.find((thread) => thread.id === schedule.lastCreatedThreadId);
+    const failure2 = latest?.automation?.failure;
+    if (!latest || !failure2 || latest.status !== "error" && latest.automation?.startFailedAt === void 0)
+      return void 0;
+    return {
+      at: failure2.at,
+      code: isAutomationFailureCode(failure2.code) ? failure2.code : "unknown",
+      message: failure2.message,
+      threadId: latest.id,
+      kind: "failed"
+    };
+  }
+  function problemElement(problem) {
+    const description = describeAutomationFailure(problem.code ?? "unknown");
+    const block = el("div", {
+      class: "automation-row-blocked-message automation-row-problem-message",
+      "data-failure-code": problem.code ?? (problem.kind === "pending-start" ? "pending-start" : "unknown"),
+      role: "status"
+    });
+    if (problem.code === void 0) {
+      block.textContent = `${problem.kind === "failed" ? "Last attempt failed" : "Last attempt skipped"} ${new Date(problem.at).toLocaleString()}: ${problem.message}`;
+    } else {
+      block.append(
+        el("strong", { class: "automation-problem-title" }, description.title),
+        el(
+          "span",
+          { class: "automation-problem-time" },
+          ` \xB7 ${new Date(problem.at).toLocaleString()}`
+        ),
+        el("div", { class: "automation-problem-message" }, problem.message),
+        el("div", { class: "automation-problem-remedy" }, description.remedy)
+      );
+    }
+    const threadId = problem.threadId;
+    if (threadId !== void 0 && actions.openRun && problem.code !== void 0 && description.action === "open-run") {
+      const openRun = actions.openRun;
+      const open2 = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-problem-action"
+        },
+        description.actionLabel
+      );
+      open2.addEventListener("click", () => {
+        openRun(threadId);
+      });
+      block.append(open2);
+    }
+    return block;
+  }
+  function showSchedulerHealth(health) {
+    if (health.state === "ok") {
+      schedulerNotice.hidden = true;
+      schedulerNotice.textContent = "";
+      return;
+    }
+    const description = describeAutomationFailure("scheduler-stopped");
+    schedulerNotice.hidden = false;
+    schedulerNotice.dataset["state"] = health.state;
+    clear(schedulerNotice);
+    schedulerNotice.append(
+      el("strong", {}, health.state === "recovering" ? "Scheduler restarting" : description.title),
+      el("div", {}, health.message ?? description.remedy),
+      el("div", { class: "automation-problem-remedy" }, description.remedy)
+    );
+  }
+  api2.automations.schedulerHealth().then(showSchedulerHealth, () => {
+  });
+  const stopWatchingHealth = api2.automations.onSchedulerHealth((health) => {
+    if (!root.isConnected) {
+      stopWatchingHealth();
+      return;
+    }
+    showSchedulerHealth(health);
+  });
   function renderList() {
     clear(list);
     const blocked = schedules.filter((schedule) => schedule.lastWorktreeLimitAt !== void 0);
@@ -54722,16 +55195,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
           )
         );
       }
-      if (schedule.lastProblem !== void 0) {
-        copy.append(
-          el(
-            "div",
-            { class: "automation-row-blocked-message automation-row-problem-message" },
-            `${schedule.lastProblem.kind === "failed" ? "Last attempt failed" : "Last attempt skipped"} ${new Date(schedule.lastProblem.at).toLocaleString()}: ${schedule.lastProblem.message}`
-          )
-        );
-      }
-      const actions = el("div", { class: "automation-row-actions" });
+      const problem = scheduleProblem(schedule);
+      if (problem !== void 0) copy.append(problemElement(problem));
+      const rowActions = el("div", { class: "automation-row-actions" });
       const edit = el(
         "button",
         { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact automation-row-btn" },
@@ -54786,8 +55252,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
           showStatus(cleanIpcError(error62), true);
         });
       });
-      actions.append(edit, run2, remove);
-      row2.append(copy, actions);
+      rowActions.append(edit, run2, remove);
+      row2.append(copy, rowActions);
       list.append(row2);
     }
   }
@@ -54935,6 +55401,7 @@ var init_automation_plugin_settings = __esm({
     init_branch_ci_editor();
     init_ipc_error_message();
     init_automation_retained_worktrees();
+    init_automation_failure();
     WEEKDAYS = [
       "Sunday",
       "Monday",
@@ -64511,13 +64978,28 @@ function setThreadDraftPrompt(store2, threadId, draftPrompt) {
   }
   store2.emit("thread_draft_changed", threadId);
 }
-function markAutomationStartFailed(store2, threadId) {
+function markAutomationStartFailed(store2, threadId, failure2) {
   patchThreadAnywhere(
     store2,
     threadId,
     (t2) => t2.automation ? {
       ...t2,
-      automation: { ...t2.automation, startFailedAt: Date.now() },
+      automation: {
+        ...t2.automation,
+        startFailedAt: Date.now(),
+        ...failure2 ? { failure: { ...failure2, at: Date.now() } } : {}
+      },
+      updatedAt: Date.now()
+    } : t2
+  );
+}
+function markAutomationRunFailed(store2, threadId, failure2) {
+  patchThreadAnywhere(
+    store2,
+    threadId,
+    (t2) => t2.automation ? {
+      ...t2,
+      automation: { ...t2.automation, failure: { ...failure2, at: Date.now() } },
       updatedAt: Date.now()
     } : t2
   );
@@ -65476,6 +65958,12 @@ var init_review_reports = __esm({
   }
 });
 
+// src/shared/line-endings.ts
+var init_line_endings = __esm({
+  "src/shared/line-endings.ts"() {
+  }
+});
+
 // src/shared/patch/apply-patch.ts
 function normalizePatchPath(raw) {
   return raw.trim().replace(/^(?:\.\/)+/, "");
@@ -65523,6 +66011,7 @@ function summarizePatch(patchText) {
 var ADD, DELETE, UPDATE, MOVE;
 var init_apply_patch = __esm({
   "src/shared/patch/apply-patch.ts"() {
+    init_line_endings();
     ADD = "*** Add File: ";
     DELETE = "*** Delete File: ";
     UPDATE = "*** Update File: ";
@@ -67800,6 +68289,9 @@ function isProjectSwitchInFlight(store2, projectId) {
   if (expandedProjectId === projectId && activeProjectId !== projectId) return true;
   return activeProjectId === projectId && !workspaceRoot;
 }
+function isListedProject(store2, projectId) {
+  return store2.getState().projects.some((project2) => project2.id === projectId);
+}
 function cacheThreads(projectId, threads) {
   if (liveCacheProjectId !== null && liveCacheProjectId !== projectId) {
     const outgoing = threadCache.get(liveCacheProjectId);
@@ -67827,7 +68319,9 @@ async function preloadSidebarThreads(store2, api2) {
 function attachProjectThreadCache(store2) {
   return store2.on("threads_changed", () => {
     const { activeProjectId, threads } = store2.getState();
-    if (activeProjectId) cacheThreads(activeProjectId, threads);
+    if (activeProjectId && isListedProject(store2, activeProjectId)) {
+      cacheThreads(activeProjectId, threads);
+    }
   });
 }
 async function trySetWorkspace(api2, path, sshHost) {
@@ -68082,7 +68576,7 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
   pendingSwitch = { gen, projectId: id, dispatched: false };
   const outgoingId = activeProjectId;
   const outgoingThreads = threads;
-  if (outgoingId) {
+  if (outgoingId && isListedProject(store2, outgoingId)) {
     cacheThreads(outgoingId, outgoingThreads);
     recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store2.getState()));
   }
@@ -68096,9 +68590,28 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
     outgoingId,
     outgoingThreads,
     pendingThreadId
-  ).catch((error62) => {
-    endSwitch(gen, id);
-    throw error62;
+  ).catch(async (error62) => {
+    if (gen !== switchGeneration) {
+      endSwitch(gen, id);
+      return;
+    }
+    holdNavigation(null);
+    const state = store2.getState();
+    const active2 = state.projects.find((project2) => project2.id === state.activeProjectId);
+    const root = active2?.path ?? state.workspaceRoot;
+    await Promise.all([
+      root ? setWorkspaceInOrder(api2, root, active2?.sshHost) : Promise.resolve(),
+      saveNavigation(api2, state.activeProjectId, state.activeThreadId)
+    ]).catch((restoreError) => {
+      console.warn("[projects] could not restore navigation after a failed switch:", restoreError);
+    });
+    const failure2 = error62 instanceof Error ? error62 : new Error(String(error62));
+    if (gen === switchGeneration) {
+      abortProjectActivation(store2, id, gen, state.activeProjectId, failure2);
+    } else {
+      endSwitch(gen, id);
+    }
+    console.warn("[projects] project activation failed:", failure2);
   });
 }
 function switchProject(store2, api2, id, pendingThreadId = null) {
@@ -69623,16 +70136,16 @@ function mountSettingsDialog(store2, api2) {
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="containerRunsEnabled" />
-                Let a thread run unattended inside a disposable Docker container
+                Let a thread run unattended inside a disposable container
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
                 snapshot of the thread's checkout with no prompts and brings its commits back for
-                you to apply. Its network reaches only its model's origin, plus, when the run
-                installs dependencies (on by default, per run), the npm registry, GitHub and
-                Electron's download hosts. Needs Docker; the first run builds the worker image. A
-                run carries one credential: the model's API key, or, if you opt in per run, your
-                Codex or Gemini sign-in copied into the container.
+                you to apply. Built-in models infer on the desktop; their keys and sign-in tokens stay there. When the run
+                installs dependencies (on by default, per run), it can reach the npm registry, GitHub and
+                Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
+                External coding agents run in the container with their selected API key, or, if you opt in
+                per run, your Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 
@@ -71254,6 +71767,7 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     }
     input2.dataset["pluginId"] = pluginId;
     input2.dataset["settingKey"] = field.id;
+    let lastNumberValue = input2.value;
     input2.addEventListener("change", () => {
       let value = input2.value;
       if (field.kind === "boolean") {
@@ -71262,6 +71776,11 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
         }
         value = input2.checked;
       } else if (field.kind === "number") {
+        if (input2.value.trim() === "" || !Number.isFinite(Number(input2.value))) {
+          input2.value = lastNumberValue;
+          return;
+        }
+        lastNumberValue = input2.value;
         value = Number(input2.value);
       }
       void api2.plugins.setSetting(pluginId, field.id, value).catch(() => {
@@ -72194,7 +72713,8 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
       const themePrefRaw = data.get("theme");
       const themePreference = isThemePreference(themePrefRaw) ? themePrefRaw : DEFAULT_THEME_PREFERENCE;
       const theme = resolveTheme(themePreference);
-      const fontSize = parseInt(formDataString(data, "fontSize"), 10);
+      const fontSizeRaw = parseInt(formDataString(data, "fontSize"), 10);
+      const fontSize = Number.isFinite(fontSizeRaw) ? fontSizeRaw : store2.getState().fontSize;
       const uiScaleField = data.get("uiScale");
       const uiScaleRaw = typeof uiScaleField === "string" ? parseFloat(uiScaleField) : Number.NaN;
       const uiScale = Number.isFinite(uiScaleRaw) ? clampUiScale(uiScaleRaw) : normalizeUiScale(store2.getState().uiScale);
@@ -72972,9 +73492,10 @@ var init_panels = __esm({
 
 // src/shared/fs/image-path.ts
 function imageMimeType(path) {
-  const name = path.split("/").pop()?.toLowerCase() ?? "";
-  const ext = name.split(".").pop() ?? "";
-  return IMAGE_MIME_BY_EXT[ext] ?? null;
+  const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return null;
+  return IMAGE_MIME_BY_EXT.get(name.slice(dot + 1)) ?? null;
 }
 function isImagePath(path) {
   return imageMimeType(path) !== null;
@@ -72986,17 +73507,17 @@ function isRasterImagePath(path) {
 var IMAGE_MIME_BY_EXT;
 var init_image_path = __esm({
   "src/shared/fs/image-path.ts"() {
-    IMAGE_MIME_BY_EXT = {
-      avif: "image/avif",
-      bmp: "image/bmp",
-      gif: "image/gif",
-      ico: "image/x-icon",
-      jpeg: "image/jpeg",
-      jpg: "image/jpeg",
-      png: "image/png",
-      svg: "image/svg+xml",
-      webp: "image/webp"
-    };
+    IMAGE_MIME_BY_EXT = /* @__PURE__ */ new Map([
+      ["avif", "image/avif"],
+      ["bmp", "image/bmp"],
+      ["gif", "image/gif"],
+      ["ico", "image/x-icon"],
+      ["jpeg", "image/jpeg"],
+      ["jpg", "image/jpeg"],
+      ["png", "image/png"],
+      ["svg", "image/svg+xml"],
+      ["webp", "image/webp"]
+    ]);
   }
 });
 
@@ -75997,6 +76518,35 @@ var init_demo_site_tour = __esm({
   }
 });
 
+// src/shared/approval-copy.ts
+function webApprovalDetails(origin, url2, allowRemember, context) {
+  return {
+    body: url2,
+    bodyAdvice: `The agent wants to contact ${origin}. The site can see the request and any data in its URL.` + (context ? `
+
+${context}` : ""),
+    bodyFooter: allowRemember ? "Allow this request once. \u201CAlways allow\u201D permits future requests to this origin, including other URLs, and is saved in Settings." : "Allow this request once. This does not add the origin to Settings."
+  };
+}
+function browserApprovalDetails(origin, url2, allowRemember) {
+  return {
+    body: url2,
+    bodyAdvice: `The agent wants to open a browser page on ${origin}. The site can see the request and any data in its URL.`,
+    bodyFooter: "Approval allows navigation to this origin for this chat\u2019s browser session." + (allowRemember ? " \u201CAlways allow\u201D also permits future requests to this origin and is saved in Settings." : "")
+  };
+}
+function providerApprovalDetails(host, baseUrl) {
+  return {
+    body: baseUrl.trim(),
+    bodyAdvice: `Your API key and prompts will be sent to ${host} at this base URL:`,
+    bodyFooter: "Approval always allows this provider host, including other base URLs on it. The grant is saved in Settings."
+  };
+}
+var init_approval_copy = __esm({
+  "src/shared/approval-copy.ts"() {
+  }
+});
+
 // src/shared/demo-scenarios.ts
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
@@ -76218,11 +76768,32 @@ function conciseThreadScenario(id, label, model, {
     ]
   };
 }
+function approvalRiskScenario(id, request) {
+  return {
+    id,
+    label: request.title,
+    project: project(`demo-${id}-project`),
+    settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: "Review requested access",
+        status: "idle",
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME
+      }
+    ],
+    approvalRequests: [request]
+  };
+}
 var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
     init_demo_site_tour();
+    init_approval_copy();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
@@ -76625,8 +77196,8 @@ var init_demo_scenarios = __esm({
           finishedAt: FIXED_TIME + 23 * 6e4,
           prompt: "Clear the lint suppression backlog in the renderer views",
           model: "claude-sonnet-4-6",
-          egressAllowlist: ["api.anthropic.com:443"],
-          credential: "key",
+          egressAllowlist: ["inference.copse.internal:443"],
+          credential: "host",
           settings: {
             budgets: { wallClockMs: 18e4, tokenCeiling: 2e4 },
             installDependencies: false
@@ -76662,10 +77233,10 @@ var init_demo_scenarios = __esm({
               pidsLimit: 512,
               memoryLimit: "4g",
               network: "brokered",
-              egressAllowlist: ["api.anthropic.com:443"],
+              egressAllowlist: ["inference.copse.internal:443"],
               hostMounts: ["/run/copse", "/run/copse/state", "/run/copse/out"]
             },
-            egress: [{ at: FIXED_TIME, origin: "api.anthropic.com:443", event: "connect" }],
+            egress: [{ at: FIXED_TIME, origin: "inference.copse.internal:443", event: "connect" }],
             result: {
               threadId: "demo-container-thread",
               stopReason: "completed",
@@ -76725,7 +77296,7 @@ var init_demo_scenarios = __esm({
             carryIn: { sha: "9b1b901683b9f0e5b2a3c4d5e6f708192a3b4c5d", dirty: false },
             carryOut: { expected: true, ref: "refs/copse/runs/run-demo-1", error: null },
             containerExit: 0,
-            credential: "key",
+            credential: "host",
             teardown: "removed",
             cleanupError: null,
             secretCanary: { present: false, detail: "canary absent from every surface" }
@@ -78086,6 +78657,10 @@ var init_demo_scenarios = __esm({
         // The first thread is the active one and is empty, so the chat pane is the
         // Activity home. The others give it something to list: one waiting on an
         // approval, two running, one that finished while the user was elsewhere.
+        // A second project, so the strip lists projects at all (a lone one adds no card).
+        otherProjects: [
+          { project: project("demo-activity-other-docs", "docs-site", "/demo/docs"), threads: [] }
+        ],
         threads: [
           {
             id: "demo-activity-home-new",
@@ -78151,10 +78726,72 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home-many-projects",
+        label: "Activity home listing twelve projects",
+        project: project("demo-activity-many-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        // Twelve projects overflow the strip, so it scrolls with an edge fade. Only the
+        // open one has thread data, so the rest read "All clear" and sort by name.
+        otherProjects: [
+          "Atlas",
+          "Billing API",
+          "Cobalt",
+          "Docs site",
+          "Edge workers",
+          "Flight deck",
+          "Gateway",
+          "Harbor",
+          "Ingest",
+          "Jupiter",
+          "Kiln"
+        ].map((name) => ({
+          project: {
+            id: `demo-activity-many-${name.toLowerCase().replace(/\W+/g, "-")}`,
+            path: `/demo/${name}`,
+            name
+          },
+          threads: []
+        })),
+        threads: [
+          {
+            id: "demo-activity-many-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-many-refactor",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-activity-many-approval",
+            threadId: "demo-activity-many-refactor",
+            title: "Run shell command?",
+            body: "printf 'auth-check-passed\\n'",
+            type: "shell"
+          }
+        ]
+      },
+      {
         id: "activity-home-project-filter",
         label: "Activity home after a project finishes waiting",
         project: project("demo-activity-home-filter-project"),
         settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        // A second project, so the strip lists projects at all (a lone one adds no card).
+        otherProjects: [
+          { project: project("demo-activity-other-docs", "docs-site", "/demo/docs"), threads: [] }
+        ],
         threads: [
           {
             id: "demo-activity-filter-new",
@@ -78479,6 +79116,101 @@ var init_demo_scenarios = __esm({
         "Full thread view for a model below the concise gate",
         "gpt-4o"
       ),
+      {
+        id: "openai-host-pr",
+        label: "OpenAI host PR creation result",
+        project: project("demo-openai-recovery-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "remote-agent:openai#gpt-6.1-sol"
+        },
+        threads: [
+          {
+            id: "demo-openai-recovery-thread",
+            title: "Create a PR from hosted changes",
+            status: "idle",
+            model: "remote-agent:openai#gpt-6.1-sol",
+            messages: [
+              {
+                id: "recovery-user",
+                role: "user",
+                content: "Can we PR this?",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              },
+              {
+                id: "recovery-assistant",
+                role: "assistant",
+                content: "Changes imported. Done: Created draft PR https://github.com/example/project/pull/42",
+                toolCalls: [
+                  {
+                    id: "openai-publish-turn-push",
+                    name: "gh_push",
+                    args: {},
+                    status: "done",
+                    result: "Done: Pushed feature/mcp-apps to origin. Existing PR updated."
+                  },
+                  {
+                    id: "openai-publish-turn-call",
+                    name: "gh_pr_create",
+                    args: {
+                      title: "docs: MCP Apps support plan",
+                      body: "Document the implementation plan.",
+                      draft: true
+                    },
+                    status: "done",
+                    result: "Done: Created draft PR https://github.com/example/project/pull/42"
+                  }
+                ],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
+        id: "openai-cancellation-recovery",
+        label: "OpenAI confirmed cancellation with interrupted recovery",
+        project: project("demo-openai-recovery-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "remote-agent:openai#gpt-6.1-sol"
+        },
+        threads: [
+          {
+            id: "demo-openai-recovery-thread",
+            title: "Stopped hosted task",
+            status: "idle",
+            model: "remote-agent:openai#gpt-6.1-sol",
+            messages: [
+              {
+                id: "recovery-user",
+                role: "user",
+                content: "Run the public repository tests and report the result.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              },
+              {
+                id: "recovery-assistant",
+                role: "assistant",
+                content: "> An error occurred: OpenAI cancellation was confirmed, but output, usage, or artifacts could not be recovered. Session sess_demo remains linked; resend the previous message to recover it before starting another task.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
       conciseThreadScenario(
         "concise-thread-working",
         "Concise thread view while a capable model works",
@@ -78551,7 +79283,41 @@ var init_demo_scenarios = __esm({
         ]
       },
       // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
-      ...SITE_TOUR_SCENARIOS
+      ...SITE_TOUR_SCENARIOS,
+      approvalRiskScenario("approval-web-url", {
+        id: "web-url",
+        title: "Allow web origin?",
+        type: "web",
+        ...webApprovalDetails(
+          "https://example.com:443",
+          "https://example.com/docs?topic=approvals",
+          true
+        ),
+        allowRemember: true,
+        rememberLabel: "Always allow https://example.com:443",
+        approveLabel: "Allow request"
+      }),
+      approvalRiskScenario("approval-browser-url", {
+        id: "browser-url",
+        title: "Allow browser navigation?",
+        type: "mcp",
+        ...browserApprovalDetails(
+          "https://example.com:443",
+          "https://example.com/docs?topic=approvals",
+          true
+        ),
+        allowRemember: true,
+        rememberLabel: "Always allow https://example.com:443",
+        approveLabel: "Allow navigation"
+      }),
+      approvalRiskScenario("approval-provider-url", {
+        id: "provider-url",
+        title: "Allow model provider host?",
+        type: "web",
+        ...providerApprovalDetails("api.example.com", "https://api.example.com/v1"),
+        allowRemember: false,
+        approveLabel: "Always allow host"
+      })
     ];
   }
 });
@@ -79533,6 +80299,10 @@ function createDemoApi(scenario, options = {}) {
       upsertBranchCi: unsupported,
       removeBranchCi: unsupported,
       testBranchCi: unsupported,
+      eventHistory: emptyArray,
+      reportStartFailure: () => resolved2(false),
+      schedulerHealth: () => resolved2({ state: "ok", since: null, message: null }),
+      onSchedulerHealth: subscribe,
       canStart: () => resolved2({ allowed: true }),
       onTriggered: subscribe
     },
@@ -82368,7 +83138,14 @@ function openAutomationDialog(store2, api2, options = {}) {
       enabled,
       options.scheduleId,
       options.createNew,
-      projectId
+      projectId,
+      {
+        openRun: (threadId) => {
+          if (!projectId) return;
+          close();
+          switchProjectThread(store2, api2, projectId, threadId);
+        }
+      }
     );
     const toggle = el(
       "button",
@@ -82430,6 +83207,7 @@ var init_automation_dialog = __esm({
     init_helpers();
     init_icons();
     init_automation_plugin_settings();
+    init_projects();
     init_dialog_shell();
     init_settings_dialog();
   }
@@ -82869,6 +83647,18 @@ function deriveActivity(input2) {
   ].sort((a3, b4) => (a3.since ?? 0) - (b4.since ?? 0));
   const waitingThreads = new Set(needsYou.flatMap((row2) => row2.threadId ? [row2.threadId] : []));
   const scheduleOf = new Map(input2.threads.map((thread) => [thread.id, thread.schedule]));
+  const issueFor = (code, message2) => {
+    const description = describeAutomationFailure(code);
+    return { code, title: description.title, remedy: description.remedy, message: message2 };
+  };
+  if (input2.now !== void 0) {
+    for (const row2 of needsYou) {
+      const thread = row2.threadId ? byId.get(row2.threadId) : void 0;
+      if (thread?.schedule && isApprovalStalled(row2.since, input2.now)) {
+        row2.issue = issueFor("approval-stalled", null);
+      }
+    }
+  }
   const threadRow = (thread, state, want, since) => ({
     key: `thread:${thread.id}`,
     state,
@@ -82898,11 +83688,25 @@ function deriveActivity(input2) {
         )
       );
     } else {
-      const endedAt = run2?.endedAt ?? thread.unreadAt;
+      const recentStartFailure = thread.schedule && thread.failure?.startFailed && thread.failure.at > (input2.now ?? 0) - 864e5 ? thread.failure.at : void 0;
+      const endedAt = run2?.endedAt ?? thread.unreadAt ?? recentStartFailure;
       if (endedAt === void 0) continue;
-      recent.push(
-        thread.status === "error" ? threadRow(thread, "failed", "Ended with an error", endedAt) : threadRow(thread, "finished", "Finished", endedAt)
-      );
+      if (thread.status === "error") {
+        const row2 = threadRow(thread, "failed", "Ended with an error", endedAt);
+        if (thread.schedule) {
+          const code = thread.failure?.code ?? "unknown";
+          row2.issue = issueFor(code, thread.failure?.message ?? null);
+          row2.want = row2.issue.title;
+        }
+        recent.push(row2);
+      } else if (thread.schedule && thread.failure?.startFailed) {
+        const row2 = threadRow(thread, "failed", "Could not start", endedAt);
+        row2.issue = issueFor(thread.failure.code, thread.failure.message);
+        row2.want = row2.issue.title;
+        recent.push(row2);
+      } else {
+        recent.push(threadRow(thread, "finished", "Finished", endedAt));
+      }
     }
   }
   const newestFirst = (a3, b4) => (b4.since ?? Number.NEGATIVE_INFINITY) - (a3.since ?? Number.NEGATIVE_INFINITY) || a3.threadTitle.localeCompare(b4.threadTitle);
@@ -82960,6 +83764,18 @@ function foldScheduleRuns(recent, scheduleOf) {
   folds.sort((a3, b4) => a3.state === b4.state ? 0 : a3.state === "failed" ? -1 : 1);
   return { folds, rest: recent.filter((row2) => !folded.has(row2)) };
 }
+function failureField(automation) {
+  const failure2 = automation.failure;
+  if (!failure2) return {};
+  return {
+    failure: {
+      code: isAutomationFailureCode(failure2.code) ? failure2.code : "unknown",
+      message: failure2.message,
+      at: failure2.at,
+      startFailed: automation.startFailedAt !== void 0
+    }
+  };
+}
 function collectActivityThreads(store2) {
   const { projects, backgroundThreads } = store2.getState();
   const out = /* @__PURE__ */ new Map();
@@ -82977,7 +83793,8 @@ function collectActivityThreads(store2) {
           schedule: {
             id: thread.automation.scheduleId,
             name: thread.automation.scheduleName
-          }
+          },
+          ...failureField(thread.automation)
         } : {}
       });
     }
@@ -82996,7 +83813,8 @@ function collectActivityThreads(store2) {
         schedule: {
           id: carried.thread.automation.scheduleId,
           name: carried.thread.automation.scheduleName
-        }
+        },
+        ...failureField(carried.thread.automation)
       } : {}
     });
   }
@@ -83047,6 +83865,8 @@ function formatAgeLong(elapsedMs) {
 var RECENT_ROW_LIMIT, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
+    init_types();
+    init_automation_failure();
     init_projects();
     RECENT_ROW_LIMIT = 10;
     SCHEDULE_FOLD_AT = 2;
@@ -83336,7 +84156,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         return el("div", { class: "approval-item" }, ...rowChildren);
       })
     );
-    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : "Approve";
+    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : soloRequest()?.approveLabel ?? "Approve";
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : "Reject";
     const onceLabel = approveOnceGrant();
     const showOnce = onceLabel !== "" && (!collapseDetails || detailsExpanded);
@@ -83481,6 +84301,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       type,
       allowRemember,
       rememberLabel: rememberLabel2,
+      approveLabel,
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
@@ -83499,6 +84320,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         type,
         allowRemember,
         rememberLabel: rememberLabel2,
+        approveLabel,
         collapseDetails,
         approveOnceLabel,
         showWhileSettingsOpen,
@@ -83621,6 +84443,25 @@ function createActivityView(api2, store2, sources3, deps, host) {
     "aria-labelledby": `${host.idPrefix}-detail-title`
   });
   const body = el("div", { class: "activity-panel-body" }, list, detail);
+  const notice = el("p", {
+    class: "activity-automation-notice",
+    role: "status",
+    hidden: true
+  });
+  const showSchedulerHealth = (health) => {
+    if (health.state === "ok") {
+      notice.hidden = true;
+      notice.textContent = "";
+      return;
+    }
+    const description = describeAutomationFailure("scheduler-stopped");
+    notice.hidden = false;
+    notice.dataset["state"] = health.state;
+    notice.textContent = `${description.title}: ${health.message ?? description.remedy} ${description.remedy}`;
+  };
+  api2.automations.schedulerHealth().then(showSchedulerHealth, () => {
+  });
+  api2.automations.onSchedulerHealth(showSchedulerHealth);
   const status = el("p", {
     class: "activity-panel-status",
     role: "status",
@@ -83790,6 +84631,24 @@ function createActivityView(api2, store2, sources3, deps, host) {
     node2.disabled = !canOpen(row2);
     return node2;
   }
+  function issueBlock(row2) {
+    const issue2 = row2.issue;
+    if (!issue2) return [];
+    return [
+      el(
+        "div",
+        {
+          class: "activity-issue-detail",
+          role: "group",
+          "aria-label": issue2.title,
+          "data-failure-code": issue2.code
+        },
+        el("p", { class: "activity-issue-title" }, issue2.title),
+        ...issue2.message ? [el("p", { class: "activity-issue-message" }, issue2.message)] : [],
+        el("p", { class: "activity-issue-remedy" }, issue2.remedy)
+      )
+    ];
+  }
   function detailContent(row2) {
     if (row2.state === "needs-approval" && row2.approval) {
       const request = row2.approval;
@@ -83801,6 +84660,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
             role: "region",
             "aria-label": `Approval request: ${request.title}`
           },
+          ...issueBlock(row2),
           el("p", { class: "activity-review-title" }, request.title),
           ...approvalRequestDetails(request)
         )
@@ -83835,6 +84695,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
         el("p", { class: "activity-detail-text" }, row2.want)
       ];
     }
+    if (row2.issue) return issueBlock(row2);
     return [el("p", { class: "activity-detail-text" }, row2.want)];
   }
   function detailActions(row2) {
@@ -83974,7 +84835,15 @@ function createActivityView(api2, store2, sources3, deps, host) {
       { class: "activity-row-second" },
       el("span", { class: "activity-state" }, STATE_SHORT[row2.state])
     );
-    if (row2.state !== "failed" && row2.state !== "finished") {
+    if (row2.issue) {
+      second.append(
+        el(
+          "span",
+          { class: "activity-want-text activity-issue", "data-failure-code": row2.issue.code },
+          row2.issue.title
+        )
+      );
+    } else if (row2.state !== "failed" && row2.state !== "finished") {
       second.append(
         el(
           "span",
@@ -84037,7 +84906,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       elapsed === null ? null : formatAge(elapsed),
       rowLabel(row2, at3),
       row2.fold ? [row2.fold.kind, row2.fold.runs.length, expandedFolds.has(row2.key)] : null,
-      foldRunKeys.has(row2.key)
+      foldRunKeys.has(row2.key),
+      row2.issue ? [row2.issue.code, row2.issue.message] : null
     ]);
   }
   function cachedRow(row2, at3) {
@@ -84158,22 +85028,42 @@ function createActivityView(api2, store2, sources3, deps, host) {
     stripCache.set(id, { signature, node: node2 });
     return node2;
   }
+  function listedProjects() {
+    return store2.getState().projects.filter((project2) => !project2.missing);
+  }
+  let scrolledFilter;
+  function scrollSelectedCardIntoView() {
+    const selected = strip.querySelector('[aria-pressed="true"]');
+    if (!selected) return;
+    const left = selected.offsetLeft - strip.offsetLeft;
+    const right = left + selected.offsetWidth;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (right > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = right - strip.clientWidth;
+    }
+  }
   function renderStrip(groups) {
     const stats = projectStats(groups);
-    if (projectFilter !== null && !stats.has(projectFilter)) {
-      const project2 = store2.getState().projects.find((entry) => entry.id === projectFilter);
-      if (project2) stats.set(project2.id, { name: project2.name, need: 0, working: 0 });
-    }
+    const projects = listedProjects();
     const need = groups.find((group) => group.id === "needs-you")?.total ?? 0;
     const working = groups.find((group) => group.id === "working")?.total ?? 0;
     const cards = [stripCard(null, "All projects", need, working)];
-    const shown = [...stats.entries()].filter(([id, entry]) => entry.need > 0 || id === projectFilter).sort((a3, b4) => b4[1].need - a3[1].need || a3[1].name.localeCompare(b4[1].name));
-    for (const [id, entry] of shown)
-      cards.push(stripCard(id, entry.name, entry.need, entry.working));
+    const shown = (projects.length > 1 ? projects : []).map((project2) => ({
+      id: project2.id,
+      name: project2.name,
+      need: stats.get(project2.id)?.need ?? 0,
+      working: stats.get(project2.id)?.working ?? 0
+    })).sort((a3, b4) => b4.need - a3.need || b4.working - a3.working || a3.name.localeCompare(b4.name));
+    for (const entry of shown)
+      cards.push(stripCard(entry.id, entry.name, entry.need, entry.working));
     patchChildren(strip, cards);
-    const live = /* @__PURE__ */ new Set([null, ...shown.map(([id]) => id)]);
+    const live = /* @__PURE__ */ new Set([null, ...shown.map((entry) => entry.id)]);
     for (const id of stripCache.keys()) {
       if (!live.has(id)) stripCache.delete(id);
+    }
+    if (scrolledFilter !== projectFilter) {
+      scrolledFilter = projectFilter;
+      scrollSelectedCardIntoView();
     }
   }
   function emptyState() {
@@ -84197,6 +85087,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
   }
   function captureListScrollAnchor() {
+    if (list.scrollTop <= 0) return null;
     const listRect = list.getBoundingClientRect();
     for (const row2 of list.querySelectorAll(".activity-row")) {
       const rowKey2 = row2.dataset["rowKey"];
@@ -84259,9 +85150,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       }
     }
     if (spot.area === "strip") {
-      const card = [...strip.querySelectorAll("[data-project-key]")].find(
-        (node2) => node2.dataset["projectKey"] === spot.projectKey
-      );
+      const cards = [...strip.querySelectorAll("[data-project-key]")];
+      const card = cards.find((node2) => node2.dataset["projectKey"] === spot.projectKey) ?? cards.find((node2) => node2.dataset["projectKey"] === JSON.stringify(null));
       card?.focus({ preventScroll: true });
       return;
     }
@@ -84307,6 +85197,13 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const focus = captureFocus();
     const previousListScrollTop = list.scrollTop;
     const listScrollAnchor = captureListScrollAnchor();
+    if (host.projectStrip && projectFilter !== null) {
+      const filterId = projectFilter;
+      const listed = listedProjects();
+      if (listed.length < 2 || !listed.some((project2) => project2.id === filterId)) {
+        projectFilter = null;
+      }
+    }
     const allThreads = collectActivityThreads(store2);
     const approvals = sources3.approvals.pending();
     const questions = sources3.questions.pending();
@@ -84318,7 +85215,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       threads: allThreads,
       approvals,
       questions,
-      runs: timings.runs
+      runs: timings.runs,
+      now: at3
     });
     let groups = everything;
     if (projectFilter !== null) {
@@ -84328,7 +85226,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
         threads: inProject,
         approvals: approvals.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
         questions: questions.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
-        runs: timings.runs
+        runs: timings.runs,
+        now: at3
       });
     }
     if (host.projectStrip) renderStrip(everything);
@@ -84500,11 +85399,12 @@ function createActivityView(api2, store2, sources3, deps, host) {
     }
     tickAges();
   }
-  return { summary, body, strip, status, show: show2, hide: hide3 };
+  return { summary, body, strip, status, notice, show: show2, hide: hide3 };
 }
 var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LONG, AGE_VERB, defaultTimer2;
 var init_activity_view = __esm({
   "src/renderer/views/activity-view.ts"() {
+    init_automation_failure();
     init_helpers();
     init_dist();
     init_inline_markdown();
@@ -84588,6 +85488,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
         view.summary,
         closeButton
       ),
+      view.notice,
       view.body,
       el(
         "footer",
@@ -85044,8 +85945,8 @@ var init_thread_title = __esm({
       [
         // Interjections only count when punctuated ("Okay," / "Sure!"), so "OK button" survives.
         String.raw`^(?:sure|okay|ok|got it|alright|certainly)(?:[,!.:;—-]|\s*$)`,
-        String.raw`^(?:here(?:'s| is| are)|let me|let's|based on)\b`,
-        String.raw`^i(?:'ll|'m|'d| will| think| would)\b`,
+        String.raw`^(?:here(?:['’]s| is| are)|let me|let['’]s|based on)\b`,
+        String.raw`^i(?:['’]ll|['’]m|['’]d| will| think| would)\b`,
         String.raw`^(?:the|this) (?:user|conversation|request)\s+(?:wants|is|asks|asked|needs|would|has|seems|appears|about)\b`
       ].join("|"),
       "i"
@@ -85449,6 +86350,13 @@ var init_projects_drag = __esm({
 });
 
 // src/renderer/views/projects-pane.ts
+function describeLiveResources(running) {
+  return [
+    ...running.agent ? ["\u2022 the chat\u2019s running agent"] : [],
+    ...running.terminals ? ["\u2022 its open terminals"] : [],
+    ...running.backgroundProcesses ? ["\u2022 its background processes"] : []
+  ];
+}
 function attentionBell(label) {
   const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", "chat-attention-bell");
@@ -85922,7 +86830,24 @@ function mountProjectsPane(root, store2, api2) {
     try {
       await flushProjectThreads(api2, projectId, store2.getState().threads);
       if (projectId !== store2.getState().activeProjectId) return;
-      let result = await api2.threads.archive(projectId, threadId, null);
+      let stopProcesses = false;
+      let result = await api2.threads.archive(projectId, threadId, null, stopProcesses);
+      if (result.status === "blocked-running") {
+        const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
+        const confirmed = await showConfirmDialog({
+          message: `Stop running work and archive \u201C${title}\u201D?`,
+          detail: [
+            "Archiving will stop:",
+            ...describeLiveResources(result.running),
+            "Anything still running in the chat\u2019s worktree is ended before it is removed."
+          ].join("\n"),
+          confirmLabel: "Stop and archive",
+          danger: true
+        });
+        if (!confirmed || projectId !== store2.getState().activeProjectId) return;
+        stopProcesses = true;
+        result = await api2.threads.archive(projectId, threadId, null, stopProcesses);
+      }
       let refreshed = false;
       while (result.status === "blocked-dirty") {
         const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
@@ -85941,11 +86866,11 @@ function mountProjectsPane(root, store2, api2) {
           danger: true
         });
         if (!confirmed || projectId !== store2.getState().activeProjectId) return;
-        result = await api2.threads.archive(projectId, threadId, result.fingerprint);
+        result = await api2.threads.archive(projectId, threadId, result.fingerprint, stopProcesses);
         refreshed = true;
       }
       if (result.status === "blocked-running") {
-        showToast("Stop the chat\u2019s agent, terminals and background processes before archiving.", {
+        showToast("Something started in the chat while archiving. Try again.", {
           variant: "error"
         });
         return;
@@ -88934,7 +89859,8 @@ function normalizeBrowserUrl(input2) {
   const candidate = `https://${trimmed2}`;
   if (URL.canParse(candidate)) {
     const parsed2 = tryParseHttpUrl(candidate);
-    if (parsed2 && isNavigableHostname(parsed2.hostname)) return parsed2.href;
+    const hasUserinfo = parsed2 != null && (parsed2.username !== "" || parsed2.password !== "");
+    if (parsed2 && !hasUserinfo && isNavigableHostname(parsed2.hostname)) return parsed2.href;
   }
   return duckDuckGoSearchUrl(trimmed2);
 }
@@ -89545,7 +90471,7 @@ function argsOf(toolCall) {
     model,
     runtimeId: typeof runtimeId === "string" ? runtimeId : null,
     ref: typeof ref === "string" ? ref : null,
-    credential: credential === "key" || credential === "login" ? credential : "none",
+    credential: credential === "key" || credential === "login" || credential === "host" ? credential : "none",
     continuedFrom: typeof continuedFrom === "string" ? continuedFrom : null,
     report: typeof report === "string" ? report : null,
     ...settings.success ? { settings: settings.data } : {}
@@ -91118,7 +92044,20 @@ function remoteArtifactFromHref(href) {
   const match = url2.pathname.match(/^\/v1\/agents\/([^/]+)\/artifacts\/download$/);
   const path = url2.searchParams.get("path");
   if (!match?.[1] || !path) return null;
-  return { agentId: decodeURIComponent(match[1]), path };
+  return { agentId: decodeURIComponent(match[1]), path, origin: url2.origin };
+}
+function originOf(url2) {
+  try {
+    return new URL(url2).origin;
+  } catch {
+    return null;
+  }
+}
+async function artifactServerOrigin(agentId, settings) {
+  if (agentId.startsWith("openai:")) return OPENAI_AGENTS_ORIGIN;
+  const configured = await settings?.get("remoteAgentBaseUrl");
+  const configuredOrigin = typeof configured === "string" && configured.trim() ? originOf(configured.trim()) : null;
+  return configuredOrigin ?? originOf(DEFAULT_CURSOR_AGENT_BASE_URL);
 }
 function bindBrowserLinkClicks(root, store2, api2) {
   root.classList.add("browser-links-scope");
@@ -91128,6 +92067,20 @@ function bindBrowserLinkClicks(root, store2, api2) {
       return;
     }
     openBrowserUrl(store2, href);
+  };
+  const openLink = (href) => {
+    const githubPr = parseGithubPrUrl(href);
+    if (githubPr && api2?.gh && store2.getState().openLinksInBuiltInBrowser) {
+      void api2.gh.status().then((status) => {
+        if (status.installed && status.authenticated) {
+          openPullRequest(store2, githubPr);
+          return;
+        }
+        openPlainLink(href);
+      });
+      return;
+    }
+    openPlainLink(href);
   };
   const onClick = (event) => {
     const target = event.target;
@@ -91143,25 +92096,20 @@ function bindBrowserLinkClicks(root, store2, api2) {
     event.stopPropagation();
     const artifact = remoteArtifactFromHref(href);
     if (artifact && api2) {
-      void api2.remoteAgent.downloadArtifact(artifact.agentId, artifact.path).then((url2) => {
-        openBrowserUrl(store2, url2);
-      }).catch((err2) => {
-        console.warn("[remote-agent] artifact download failed:", err2);
-      });
-      return;
-    }
-    const githubPr = parseGithubPrUrl(href);
-    if (githubPr && api2?.gh && store2.getState().openLinksInBuiltInBrowser) {
-      void api2.gh.status().then((status) => {
-        if (status.installed && status.authenticated) {
-          openPullRequest(store2, githubPr);
+      void artifactServerOrigin(artifact.agentId, api2.settings).then(async (origin) => {
+        if (origin !== artifact.origin) {
+          openLink(href);
           return;
         }
-        openPlainLink(href);
+        const url2 = await api2.remoteAgent.downloadArtifact(artifact.agentId, artifact.path);
+        if (url2) openBrowserUrl(store2, url2);
+      }).catch((err2) => {
+        console.warn("[remote-agent] artifact download failed:", err2);
+        showErrorToast("Failed to download agent artifact", err2);
       });
       return;
     }
-    openPlainLink(href);
+    openLink(href);
   };
   const unbindPreviews = bindPrLinkPreviews(
     root,
@@ -91173,11 +92121,15 @@ function bindBrowserLinkClicks(root, store2, api2) {
     unbindPreviews();
   };
 }
+var OPENAI_AGENTS_ORIGIN;
 var init_browser_links = __esm({
   "src/renderer/markdown/browser-links.ts"() {
     init_panels();
     init_github_pr_url2();
     init_pr_link_preview();
+    init_toast();
+    init_remote_agent();
+    OPENAI_AGENTS_ORIGIN = "https://api.openai.com";
   }
 });
 
@@ -91219,6 +92171,17 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
     if (link.dataset["fileReferencePath"]) return;
     const href = workspaceHrefFromLink(link);
     if (!href) return;
+    const artifact = /\/([^/]+)\/blobs\/openai-artifacts\/([a-f0-9]{64}\/[a-f0-9]{64}\.[a-zA-Z0-9]{1,10})$/.exec(
+      href
+    );
+    if (artifact?.[1] && artifact[2]) {
+      event.preventDefault();
+      event.stopPropagation();
+      void api2.remoteAgent.downloadArtifact(`openai:${artifact[1]}`, artifact[2]).catch((error62) => {
+        showErrorToast("Failed to save agent artifact", error62);
+      });
+      return;
+    }
     const parsed2 = workspaceLinkTargetFromHref(href);
     if (!parsed2) return;
     const owner = getActiveThreadOwner(store2);
@@ -91439,7 +92402,7 @@ function splitCursorAcpTransportNoise(text2) {
 var TRAILING_RETRIABLE_ERROR_RE;
 var init_acp_cursor_transport_noise = __esm({
   "src/shared/acp-cursor-transport-noise.ts"() {
-    TRAILING_RETRIABLE_ERROR_RE = /(?:\r?\n)*Error:\s*RetriableError:\s*[^\r\n]+(?:\r?\n)*$/;
+    TRAILING_RETRIABLE_ERROR_RE = /(?:^|\n)\s*Error:[ \t]*RetriableError:[^\r\n]+\s*$/;
   }
 });
 
@@ -91469,8 +92432,10 @@ function createInlineVisualizationStreamFilter(onReference) {
       if (separator < 0) {
         if (!final && pending.length <= FRAME_START.length + MAX_OPERATOR_CHARS) return visible;
         if (final) {
-          pending = "";
-          return visible;
+          if (VISUALIZE_OPERATOR.startsWith(pending.slice(FRAME_START.length))) {
+            pending = "";
+            return visible;
+          }
         }
         visible += FRAME_START;
         pending = pending.slice(FRAME_START.length);
@@ -95154,6 +96119,14 @@ var init_model_selection2 = __esm({
   }
 });
 
+// src/shared/turn-recovery.ts
+var INTERRUPTED_TURN_CONTINUATION;
+var init_turn_recovery = __esm({
+  "src/shared/turn-recovery.ts"() {
+    INTERRUPTED_TURN_CONTINUATION = "Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.";
+  }
+});
+
 // src/renderer/controller/turn-recovery.ts
 function turnRecoveryForMessage(thread, failedMessageId) {
   if (!thread || thread.messagesLoaded === false) return null;
@@ -95200,13 +96173,13 @@ function recoverFailedTurn(store2, api2, projectId, threadId, failedMessageId, m
   dispatchAgentRun(store2, api2, threadId, payload);
   return true;
 }
-var INTERRUPTED_TURN_CONTINUATION;
-var init_turn_recovery = __esm({
+var init_turn_recovery2 = __esm({
   "src/renderer/controller/turn-recovery.ts"() {
     init_thread_helpers();
     init_model_selection2();
     init_message_queue();
-    INTERRUPTED_TURN_CONTINUATION = "Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.";
+    init_turn_recovery();
+    init_turn_recovery();
   }
 });
 
@@ -95600,7 +96573,7 @@ function bindSelectionQuote(transcript, actions) {
     class: "transcript-selection-reply",
     placeholder: "Reply\u2026",
     "aria-label": "Reply to selected text",
-    rows: "2"
+    rows: "1"
   });
   input2.setAttribute("aria-keyshortcuts", "Enter Meta+Enter Control+Enter");
   const sendLabel = el("span", {}, "Send");
@@ -95639,6 +96612,11 @@ function bindSelectionQuote(transcript, actions) {
   let reservedSpace = false;
   let scrollingTo = null;
   const hasDraft = () => input2.value.length > 0 || sending;
+  const resizeInput = () => {
+    input2.style.height = "auto";
+    input2.style.height = `${String(Math.min(input2.scrollHeight, 200))}px`;
+    if (!popup.hidden) position2();
+  };
   const updateControls = () => {
     input2.disabled = sending;
     sendButton.disabled = sending || !input2.value.trim();
@@ -95662,6 +96640,7 @@ function bindSelectionQuote(transcript, actions) {
       highlight.clear();
     }
     input2.value = "";
+    input2.style.height = "";
     status.hidden = true;
     status.textContent = "";
     sending = false;
@@ -95742,6 +96721,7 @@ function bindSelectionQuote(transcript, actions) {
     }
     if (text2 !== selectedText) {
       input2.value = "";
+      input2.style.height = "";
       status.hidden = true;
       revision++;
     }
@@ -95795,6 +96775,7 @@ function bindSelectionQuote(transcript, actions) {
       dismiss();
     } else {
       updateControls();
+      resizeInput();
     }
   });
   input2.addEventListener("copy", (event) => {
@@ -98131,10 +99112,18 @@ function mountConversation(root, store2, api2) {
   list.addEventListener("scroll", handleUserScroll, { passive: true });
   const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncStickyImagePreview);
   listResizeObserver?.observe(list);
+  function nestedScrollerTakesWheelUp(target) {
+    for (let node2 = target instanceof Element ? target : null; node2 && node2 !== list; node2 = node2.parentElement) {
+      if (node2.scrollTop <= 0 || node2.scrollHeight <= node2.clientHeight) continue;
+      const { overflowY } = window.getComputedStyle(node2);
+      if (overflowY === "auto" || overflowY === "scroll") return true;
+    }
+    return false;
+  }
   list.addEventListener(
     "wheel",
     (event) => {
-      if (event.deltaY < 0) {
+      if (event.deltaY < 0 && !nestedScrollerTakesWheelUp(event.target)) {
         userScrolledUpAt = Date.now();
         pinnedToBottom = false;
         updateScrollButton();
@@ -99416,7 +100405,7 @@ var init_conversation = __esm({
     init_message_queue();
     init_fork_thread3();
     init_resend_message();
-    init_turn_recovery();
+    init_turn_recovery2();
     init_turn_recovery_card();
     init_image_input_support();
     init_toast();
@@ -110029,6 +111018,10 @@ var init_archive_media = __esm({
 });
 
 // src/renderer/attachments/handle-file-drop.ts
+function diskPathOf(file2) {
+  const path = window.copseFiles?.pathForFile(file2) ?? "";
+  return path === "" ? null : path;
+}
 function readAsDataUrl(blob) {
   return new Promise((res, rej) => {
     const r2 = new FileReader();
@@ -110089,7 +111082,7 @@ async function attachDroppedFile(file2, handlers3, api2, workspaceRoot, owner = 
     await handlers3.attachArchive({ name: file2.name, bytes: await file2.arrayBuffer() });
     return;
   }
-  const absPath = file2.path;
+  const absPath = diskPathOf(file2);
   if (absPath && workspaceRoot) {
     await attachWorkspacePath(absPath, handlers3, api2, workspaceRoot, owner);
     return;
@@ -111039,8 +112032,11 @@ function escapeRegExp(value) {
 function invocationTokenPattern(name) {
   return `\\/${escapeRegExp(name)}(?![a-z0-9-])`;
 }
+function inlineInvocationPattern(name) {
+  return new RegExp(`(^|\\s)${invocationTokenPattern(name)}`);
+}
 function stripInvocationToken(text2, name) {
-  return text2.replace(new RegExp(invocationTokenPattern(name)), "").replace(/\s+/g, " ").trim();
+  return text2.replace(inlineInvocationPattern(name), "$1").replace(/\s+/g, " ").trim();
 }
 function parseLeadingInvocation(text2) {
   const trimmed2 = text2.trim();
@@ -111058,8 +112054,7 @@ function resolveInvocation(text2, invocables) {
   if (!trimmed2 || invocables.length === 0) return null;
   const sorted = [...invocables].sort((a3, b4) => b4.name.length - a3.name.length);
   for (const { name, kind } of sorted) {
-    const re3 = new RegExp(`(?:^|\\s)${invocationTokenPattern(name)}`);
-    if (!re3.test(trimmed2)) continue;
+    if (!inlineInvocationPattern(name).test(trimmed2)) continue;
     return { name, kind, remainder: stripInvocationToken(trimmed2, name) };
   }
   return null;
@@ -111519,9 +112514,13 @@ function mountFooterBranchStatus(host, store2, api2) {
   }
   function renderReattach() {
     const current = activeDetached();
-    const shown = current !== null && !isPickerMode() && !wrap.hidden && getActiveThread2()?.status !== "running";
+    const visible = current !== null && !isPickerMode() && !wrap.hidden;
+    const shown = visible && !agentCanTouchCheckout(current);
     reattachButton.hidden = !shown;
-    trigger.classList.toggle("is-detached", current !== null && !isPickerMode() && !wrap.hidden);
+    trigger.classList.toggle("is-detached", visible);
+    if (visible && !shown) {
+      trigger.title = `This checkout is detached from ${current.branch}. Recovery is offered once the agent stops working in it.`;
+    }
     if (!shown) return;
     const title = detachedTitle(current);
     trigger.title = title;
@@ -111555,6 +112554,9 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattachButton.setAttribute("aria-label", `Reattach checkout to ${current.branch}`);
     reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
   }
+  function agentCanTouchCheckout(current) {
+    return getActiveThread2()?.status === "running" || current?.agentBusy === true;
+  }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
   }
@@ -111577,7 +112579,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || getActiveThread2()?.status === "running" || reattaching || activeRecoveryRunId() !== null)
+    if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
     if (current.recovery) {
       const runId = globalThis.crypto.randomUUID();
@@ -112085,22 +113087,36 @@ function createContextWheel() {
   root.append(svg2, popover);
   let popoverActive = false;
   let currentUsage = null;
-  let engaged = false;
+  let hovered = false;
+  let focused = false;
   function showPopover() {
-    engaged = true;
     if (popoverActive) popover.hidden = false;
   }
   function hidePopover() {
-    engaged = false;
     popover.hidden = true;
   }
   function restoreEngagedPopover() {
-    if (engaged && popoverActive && !root.hidden) popover.hidden = false;
+    if ((hovered || focused) && popoverActive && !root.hidden) popover.hidden = false;
   }
-  root.addEventListener("mouseenter", showPopover);
-  root.addEventListener("mouseleave", hidePopover);
-  root.addEventListener("focusin", showPopover);
-  root.addEventListener("focusout", hidePopover);
+  root.addEventListener("mousedown", (event) => {
+    if (event.target instanceof Node && !popover.contains(event.target)) event.preventDefault();
+  });
+  root.addEventListener("mouseenter", () => {
+    hovered = true;
+    showPopover();
+  });
+  root.addEventListener("mouseleave", () => {
+    hovered = false;
+    if (!focused) hidePopover();
+  });
+  root.addEventListener("focusin", () => {
+    focused = true;
+    showPopover();
+  });
+  root.addEventListener("focusout", () => {
+    focused = false;
+    if (!hovered) hidePopover();
+  });
   function clearSegments() {
     while (segGroup.firstChild) segGroup.firstChild.remove();
   }
@@ -113877,7 +114893,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     tokens.value = String(previousSettings?.budgets.tokenCeiling ?? DEFAULT_TOKEN_CEILING);
     const egressHint = el("p", { class: "field-hint container-run-model-hint" });
     function renderEgressHint() {
-      egressHint.textContent = `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; the key is scoped to the run and blanked once the guest holds it.`;
+      egressHint.textContent = chosenModel.startsWith("acp:") ? `The agent runs in the container and receives its selected credential; network access is limited to its provider.` : `The desktop calls ${modelDisplayLabel(chosenModel)} for this run; provider keys and sign-in tokens stay on the desktop.`;
     }
     renderEgressHint();
     const loginOptIn = el("input", {
@@ -114046,7 +115062,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     rows.push(
       row2(
         "Credential",
-        typeof held === "object" ? `your desktop sign-in, copied in for the run (${held.login.map((d3) => `~/${d3}`).join(", ")})` : held === "key" ? "one API key, scoped to the run" : held === "login" ? "your desktop sign-in, copied in for the run" : "none"
+        typeof held === "object" ? `your desktop sign-in, copied in for the run (${held.login.map((d3) => `~/${d3}`).join(", ")})` : held === "key" ? "one API key, scoped to the run" : held === "login" ? "your desktop sign-in, copied in for the run" : held === "host" ? "Provider authentication held on the desktop; no keys or tokens in the container" : "none"
       )
     );
     const elapsedRow = row2("Elapsed", elapsedLabel(run2));
@@ -114479,7 +115495,94 @@ var init_container_run_control = __esm({
   }
 });
 
+// src/renderer/keyboard-shortcuts.ts
+function isTypingTarget(target) {
+  if (target === null || !("tagName" in target) || typeof target.tagName !== "string") return false;
+  const tag = target.tagName;
+  if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return true;
+  return "isContentEditable" in target && target.isContentEditable === true;
+}
+function matchNewThreadShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return false;
+  return e3.key === "n" || e3.key === "N";
+}
+function matchFindInChatShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return false;
+  return e3.key === "f" || e3.key === "F";
+}
+function matchUiScaleShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return null;
+  if (e3.key === "0" || e3.code === "Digit0" || e3.code === "Numpad0") return "reset";
+  if (e3.key === "=" || e3.key === "+" || e3.code === "Equal" || e3.code === "NumpadAdd") return "in";
+  if (e3.key === "-" || e3.key === "_" || e3.code === "Minus" || e3.code === "NumpadSubtract") {
+    return "out";
+  }
+  return null;
+}
+function matchCommandPaletteShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
+  return e3.key === "k" || e3.key === "K";
+}
+function matchActivityPanelShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
+  return e3.key === "a" || e3.key === "A";
+}
+function matchPanelShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey) return null;
+  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "toggleSidebar";
+  if (!e3.shiftKey && (e3.key === "j" || e3.key === "J")) return "togglePanel";
+  if (e3.shiftKey && (e3.key === "e" || e3.key === "E")) return { openPanel: "explorer" };
+  if (e3.shiftKey && (e3.key === "g" || e3.key === "G")) return { openPanel: "changes" };
+  if (e3.shiftKey && (e3.key === "b" || e3.key === "B")) return { openPanel: "browser" };
+  if (!e3.shiftKey && (e3.key === "`" || e3.code === "Backquote")) return { openPanel: "terminal" };
+  return null;
+}
+function handlePanelShortcut(store2, api2, action) {
+  if (action === "toggleSidebar") {
+    toggleProjectsPane(store2);
+    return;
+  }
+  if (action === "togglePanel") {
+    toggleFilesPaneWithWorkspace(store2, api2);
+    return;
+  }
+  openRightPanelWithWorkspace(store2, api2, action.openPanel);
+}
+function registerPanelKeyboardShortcuts(store2, api2) {
+  document.addEventListener("keydown", (e3) => {
+    if (isAnyDialogOpen()) return;
+    if (matchNewThreadShortcut(e3)) {
+      if (!store2.getState().workspaceRoot) return;
+      e3.preventDefault();
+      openNewThread(store2);
+      return;
+    }
+    if (isTypingTarget(e3.target)) return;
+    const action = matchPanelShortcut(e3);
+    if (!action) return;
+    e3.preventDefault();
+    handlePanelShortcut(store2, api2, action);
+  });
+}
+var init_keyboard_shortcuts = __esm({
+  "src/renderer/keyboard-shortcuts.ts"() {
+    init_thread_helpers();
+    init_panels();
+    init_dialog_shell();
+  }
+});
+
 // src/renderer/views/input-bar.ts
+function pasteBelongsElsewhere(target) {
+  if (isAnyDialogOpen() || isTypingTarget(target)) return true;
+  return target instanceof Element && target.closest(".monaco-editor, .xterm") !== null;
+}
 function mountInputBar(root, store2, api2, opts = {}) {
   const chips = el("div", { class: "attachment-chips" });
   const composer = mountComposerEditor();
@@ -115383,9 +116486,12 @@ ${description}
     draftAutosave.schedule();
   });
   let stopPendingThreadId = null;
+  let stopPendingTimer = null;
   function clearStopPending() {
     stopPendingThreadId = null;
     stopBtn.classList.remove("stop-pending");
+    if (stopPendingTimer !== null) clearTimeout(stopPendingTimer);
+    stopPendingTimer = null;
   }
   function updateTargetPicker() {
     if (!containerRunMounted) return;
@@ -115417,10 +116523,14 @@ ${description}
     composer.el.classList.toggle("with-stop", running);
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending();
   }
-  const handleStopShortcut2 = (key) => {
+  const handleStopShortcut2 = (key, target = null) => {
     const id = getActiveThreadId();
     const thread = getActiveThread(store2);
     if (!id || thread?.status !== "running") {
+      clearStopPending();
+      return false;
+    }
+    if (isTypingTarget(target) && !(target instanceof Node && root.contains(target))) {
       clearStopPending();
       return false;
     }
@@ -115432,10 +116542,16 @@ ${description}
     if (key === "Escape") {
       stopPendingThreadId = id;
       stopBtn.classList.add("stop-pending");
+      stopPendingTimer = setTimeout(clearStopPending, STOP_PENDING_TIMEOUT_MS);
       return true;
     }
     return false;
   };
+  const disarmStopOnOtherKey = (e3) => {
+    if (stopPendingThreadId === null || STOP_SHORTCUT_PASSTHROUGH_KEYS.has(e3.key)) return;
+    clearStopPending();
+  };
+  document.addEventListener("keydown", disarmStopOnOtherKey, true);
   function showBranchMismatch(branch) {
     mismatchBranch = branch;
     branchWarning.hidden = false;
@@ -115697,7 +116813,7 @@ ${description}
     (e3) => {
       if (e3.isComposing || stopPendingThreadId === null) return;
       if (e3.key !== "Escape" && e3.key !== "Enter") return;
-      if (handleStopShortcut2(e3.key)) {
+      if (handleStopShortcut2(e3.key, e3.target)) {
         e3.preventDefault();
         e3.stopPropagation();
       }
@@ -116259,6 +117375,7 @@ ${reply}`);
   };
   fileInput.addEventListener("change", onFileInputChange);
   const onPaste = (e3) => {
+    if (!composer.isFocused() && pasteBelongsElsewhere(e3.target)) return;
     const items = Array.from(e3.clipboardData?.items ?? []);
     const img = items.find((i2) => i2.type.startsWith("image/"));
     if (img) {
@@ -116483,6 +117600,8 @@ ${reply}`);
       unsubWorkspace();
       window.removeEventListener("copse:skills-changed", onSkillsChanged);
       document.removeEventListener("paste", onPaste);
+      document.removeEventListener("keydown", disarmStopOnOtherKey, true);
+      clearStopPending();
       document.removeEventListener("click", closeCheckoutMenu);
       observer.disconnect();
       topEdgeObserver.disconnect();
@@ -116504,7 +117623,7 @@ ${reply}`);
     }
   };
 }
-var IMAGE_DETAIL_LABELS;
+var IMAGE_DETAIL_LABELS, STOP_PENDING_TIMEOUT_MS, STOP_SHORTCUT_PASSTHROUGH_KEYS;
 var init_input_bar = __esm({
   "src/renderer/views/input-bar.ts"() {
     init_helpers();
@@ -116564,11 +117683,23 @@ var init_input_bar = __esm({
     init_estimate_cost();
     init_model_selection2();
     init_perf();
+    init_keyboard_shortcuts();
+    init_dialog_shell();
     IMAGE_DETAIL_LABELS = {
       auto: "Auto detail (provider decides)",
       low: "Low detail \u2014 cheapest, text may be unreadable",
       high: "High detail \u2014 full fidelity, most tokens"
     };
+    STOP_PENDING_TIMEOUT_MS = 3e3;
+    STOP_SHORTCUT_PASSTHROUGH_KEYS = /* @__PURE__ */ new Set([
+      "Escape",
+      "Enter",
+      "Shift",
+      "Control",
+      "Alt",
+      "Meta",
+      "CapsLock"
+    ]);
   }
 });
 
@@ -129166,15 +130297,28 @@ function prNewThreadDraft(pr2) {
 function prNewThreadTitle(pr2) {
   return `PR #${String(pr2.number)}: ${pr2.title}`;
 }
-function startPrDiscussThread(store2, pr2) {
+function prCheckFixDraft(pr2, check2, headSha) {
+  const details = check2.url && /^https?:\/\//i.test(check2.url) ? ` Check details: ${check2.url}.` : "";
+  return `Fix the failing check "${check2.name}" (${check2.state.toLowerCase()}) on [#${String(pr2.number)} \u2014 ${pr2.title}](${pr2.url}) at head commit ${headSha}.${details} Inspect the failure logs, identify the cause, make the fix, and run the relevant checks.`;
+}
+function startPrThread(store2, draft, title) {
   store2.emit("composer_draft_flush");
-  const threadId = createThread(store2, prNewThreadDraft(pr2));
-  const title = prNewThreadTitle(pr2);
+  const threadId = createThread(store2, draft);
   store2.setState({
     threads: store2.getState().threads.map((t2) => t2.id === threadId ? { ...t2, title } : t2)
   });
   store2.emit("threads_changed");
   return threadId;
+}
+function startPrCheckFixThread(store2, pr2, check2, headSha) {
+  return startPrThread(
+    store2,
+    prCheckFixDraft(pr2, check2, headSha),
+    `Fix PR #${String(pr2.number)}: ${check2.name}`
+  );
+}
+function startPrDiscussThread(store2, pr2) {
+  return startPrThread(store2, prNewThreadDraft(pr2), prNewThreadTitle(pr2));
 }
 var init_pr_pane_thread = __esm({
   "src/renderer/views/pr-pane-thread.ts"() {
@@ -129205,7 +130349,7 @@ function externalButton(label, url2, open2) {
   });
   return button;
 }
-function renderPrActivity(host, section, activity, open2) {
+function renderPrActivity(host, section, activity, open2, fixCheck) {
   clear(host);
   if (!activity || activity.error) {
     host.append(
@@ -129320,6 +130464,16 @@ function renderPrActivity(host, section, activity, open2) {
     );
     for (const check2 of checks) {
       const icon = group.tone === "success" ? checkIcon() : group.tone === "failure" ? closeIcon() : group.tone === "pending" ? circleIcon() : minusIcon();
+      const fixButton = group.tone === "failure" && fixCheck ? el(
+        "button",
+        {
+          type: "button",
+          class: "pr-activity-link pr-check-fix-btn",
+          "aria-label": `Fix ${check2.name}`
+        },
+        "Fix"
+      ) : null;
+      fixButton?.addEventListener("click", () => fixCheck?.(check2, activity.headSha));
       section2.append(
         el(
           "div",
@@ -129335,6 +130489,7 @@ function renderPrActivity(host, section, activity, open2) {
               readableState(check2.state)
             )
           ),
+          ...fixButton ? [fixButton] : [],
           externalButton("Details", check2.url, open2)
         )
       );
@@ -129352,63 +130507,87 @@ var init_pr_pane_activity = __esm({
 });
 
 // src/renderer/views/pr-thread-relationships.ts
-function renderPrThreadRelationships(rows, openThread) {
+function threadChip(row2, kind, openThread) {
+  const kindLabel2 = row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "pr-open-thread-btn pr-thread-link",
+      "data-thread-id": row2.threadId,
+      "data-relationship": kind,
+      "aria-label": `Open thread: ${row2.title}`
+    },
+    el("span", { class: "pr-thread-title" }, row2.title),
+    ...kind === "related" ? [el("span", { class: "pr-thread-kind" }, kindLabel2)] : []
+  );
+  button.addEventListener("click", () => {
+    openThread(row2.threadId);
+  });
+  return button;
+}
+function renderPrThreadRelationships(rows, openThread, view = {}) {
   const host = el("section", {
     class: "pr-thread-relationships",
     "aria-label": "PR thread relationships"
   });
-  const groups = [
-    {
-      label: "Producing threads",
-      kind: "produced",
-      rows: rows.filter((row2) => row2.kinds.includes("produced"))
-    },
-    {
-      label: "Related threads",
-      kind: "related",
-      rows: rows.filter((row2) => !row2.kinds.includes("produced"))
-    }
-  ];
-  for (const group of groups) {
-    const section = el(
-      "div",
-      { class: "pr-thread-group", "data-relationship-group": group.kind },
-      el("h5", {}, group.label)
+  const produced = rows.filter((row2) => row2.kinds.includes("produced"));
+  const related = rows.filter((row2) => !row2.kinds.includes("produced"));
+  if (produced.length > 0) {
+    host.append(
+      el(
+        "div",
+        { class: "pr-thread-group", "data-relationship-group": "produced" },
+        el("h5", {}, "Produced by"),
+        ...produced.map((row2) => threadChip(row2, "produced", openThread))
+      )
     );
-    if (group.rows.length === 0)
-      section.append(
-        el(
-          "p",
-          { class: "pr-thread-empty" },
-          group.kind === "produced" ? "No recorded producing thread." : "No related threads recorded."
-        )
-      );
-    for (const row2 of group.rows) {
-      const label = row2.kinds.includes("produced") ? "Created PR" : row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
-      const button = el(
-        "button",
-        {
-          type: "button",
-          class: "pr-open-thread-btn pr-thread-link",
-          "data-thread-id": row2.threadId,
-          "data-relationship": group.kind,
-          "aria-label": `Open thread: ${row2.title}`
-        },
-        el("span", { class: "pr-thread-title" }, row2.title),
-        el("span", { class: "pr-thread-kind" }, label)
-      );
-      button.addEventListener("click", () => {
-        openThread(row2.threadId);
-      });
-      section.append(button);
-    }
-    host.append(section);
   }
+  if (related.length === 0) return host;
+  if (produced.length === 0) {
+    host.append(
+      el(
+        "div",
+        { class: "pr-thread-group", "data-relationship-group": "related" },
+        el("h5", {}, "Related threads"),
+        ...related.map((row2) => threadChip(row2, "related", openThread))
+      )
+    );
+    return host;
+  }
+  let expanded = view.expanded ?? false;
+  const group = el(
+    "div",
+    {
+      class: "pr-thread-group pr-thread-group-more",
+      "data-relationship-group": "related",
+      "aria-label": "Related threads"
+    },
+    ...related.map((row2) => threadChip(row2, "related", openThread))
+  );
+  const toggle = el(
+    "button",
+    { type: "button", class: "pr-thread-toggle" },
+    el("span", {}, `${String(related.length)} related`),
+    chevronRightIcon("ui-icon ui-icon-sm")
+  );
+  const sync = () => {
+    group.hidden = !expanded;
+    toggle.setAttribute("aria-expanded", String(expanded));
+  };
+  sync();
+  toggle.addEventListener("click", () => {
+    expanded = !expanded;
+    sync();
+    view.onToggle?.(expanded);
+  });
+  host.append(toggle, group);
   return host;
 }
 var init_pr_thread_relationships = __esm({
   "src/renderer/views/pr-thread-relationships.ts"() {
     init_helpers();
+    init_icons();
   }
 });
 
@@ -129511,6 +130690,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     class: "pr-detail-sections",
     "aria-label": "Pull request sections"
   });
+  const relationshipsHost = el("div", { class: "pr-relationships-host" });
   const activityHost = el("div", { class: "pr-activity", hidden: true });
   const descriptionHost = el("div", {
     class: "pr-viewer-description message-text streaming-markdown"
@@ -129523,6 +130703,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   viewerRoot.append(
     metaHost,
     sectionsHost,
+    relationshipsHost,
     activityHost,
     descriptionHost,
     filesHost,
@@ -129531,6 +130712,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     emptyState
   );
   let activeSection = "overview";
+  const relatedExpanded = /* @__PURE__ */ new Map();
   let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
@@ -129687,6 +130869,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     clear(listBody);
     listBody.append(paneLoadingRow("Loading pull requests\u2026"));
     clear(metaHost);
+    clear(relationshipsHost);
     clear(descriptionHost);
     descriptionHost.classList.remove("pr-viewer-description-fill");
     clear(filesHost);
@@ -129705,6 +130888,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   function renderGhUnavailableViewer() {
     clear(metaHost);
     clear(sectionsHost);
+    clear(relationshipsHost);
     activityHost.hidden = true;
     clear(descriptionHost);
     descriptionHost.classList.remove("pr-viewer-description-fill");
@@ -129983,17 +131167,33 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     });
     return btn;
   }
-  function renderMeta() {
-    clear(metaHost);
+  function renderRelationships() {
+    clear(relationshipsHost);
     if (!selectedPr) return;
-    const relationships = prRelationships ? renderPrThreadRelationships(prRelationships, (id) => {
-      switchThread(store2, id);
-    }) : el(
+    const prKey = githubPrKey(selectedPr);
+    const relationships = prRelationships ? renderPrThreadRelationships(
+      prRelationships,
+      (id) => {
+        switchThread(store2, id);
+      },
+      {
+        expanded: relatedExpanded.get(prKey),
+        onToggle: (expanded) => {
+          relatedExpanded.set(prKey, expanded);
+        }
+      }
+    ) : el(
       "p",
       { class: "pr-thread-empty", role: "status" },
       relationshipError ? "Thread relationships unavailable." : "Loading thread relationships\u2026"
     );
     relationships.hidden = prDetails !== null && activeSection !== "overview";
+    relationshipsHost.append(relationships);
+  }
+  function renderMeta() {
+    clear(metaHost);
+    renderRelationships();
+    if (!selectedPr) return;
     if (!prDetails) {
       metaHost.append(
         el(
@@ -130009,8 +131209,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           "div",
           { class: "pr-viewer-subtitle" },
           `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`
-        ),
-        relationships
+        )
       );
       return;
     }
@@ -130171,8 +131370,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       branch,
       badges,
       actions,
-      statusLine,
-      relationships
+      statusLine
     );
   }
   function renderDescription() {
@@ -130240,9 +131438,19 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       diffWrap.hidden = true;
       emptyState.hidden = true;
       activityHost.hidden = false;
-      renderPrActivity(activityHost, activeSection, prDetails.activity, (url2) => {
-        void api2.shell.openExternal(url2);
-      });
+      renderPrActivity(
+        activityHost,
+        activeSection,
+        prDetails.activity,
+        (url2) => {
+          void api2.shell.openExternal(url2);
+        },
+        (check2, headSha) => {
+          if (!prDetails) return;
+          startPrCheckFixThread(store2, prDetails, check2, headSha);
+          getPromptAttachmentHandlers()?.focusComposer?.();
+        }
+      );
     }
   }
   function renderFiles() {
@@ -132527,27 +133735,27 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
         }
         const trackedThread = getThreadById(store2, itemThreadId(item));
         if (trackedThread) {
-          const threadChip = el("span", {
+          const threadChip2 = el("span", {
             class: "roadmap-thread-chip",
             role: "link",
             tabindex: "0",
             title: `Reopen thread "${trackedThread.title}"`,
             "aria-label": `Reopen thread "${trackedThread.title}"`
           });
-          threadChip.append(attachmentIcon("thread", "ui-icon roadmap-thread-chip-icon"));
-          threadChip.addEventListener("click", (e3) => {
+          threadChip2.append(attachmentIcon("thread", "ui-icon roadmap-thread-chip-icon"));
+          threadChip2.addEventListener("click", (e3) => {
             e3.stopPropagation();
             switchThread(store2, trackedThread.id);
             getPromptAttachmentHandlers()?.focusComposer?.();
           });
-          threadChip.addEventListener("keydown", (e3) => {
+          threadChip2.addEventListener("keydown", (e3) => {
             if (e3.key !== "Enter" && e3.key !== " ") return;
             e3.preventDefault();
             e3.stopPropagation();
             switchThread(store2, trackedThread.id);
             getPromptAttachmentHandlers()?.focusComposer?.();
           });
-          meta3.append(threadChip);
+          meta3.append(threadChip2);
         }
         const complexity = item.fields["complexity"];
         if (isRoadmapComplexity(complexity)) {
@@ -153655,6 +154863,7 @@ function mountActivityHome(pane, api2, store2, sources3, deps = {}) {
   root.append(
     el("h2", { id: "activity-home-title", class: "activity-home-sr" }, "Activity"),
     view.strip,
+    view.notice,
     view.body,
     view.status,
     el("p", { class: "activity-home-caption" }, "Start a new thread")
@@ -154490,6 +155699,15 @@ function startAgentController(store2, api2) {
         const userCancelled = chunk.outcome.status === "cancelled" && chunk.outcome.source === "user";
         const outcome = userCancelled ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? "send_now" : "stop" } : chunk.outcome;
         setMessageTurnOutcome(store2, threadId, st2.msgId, outcome);
+        if (outcome.status === "failed" && outcome.error) {
+          const detail = outcome.error;
+          markAutomationRunFailed(store2, threadId, {
+            code: classifyAutomationFailureMessage(
+              `${detail.message} ${detail.code === void 0 ? "" : String(detail.code)}`
+            ),
+            message: detail.message.slice(0, 500)
+          });
+        }
         break;
       }
       case "done": {
@@ -154629,6 +155847,7 @@ function tryOpenFileFromResult(_store, _result) {
 var pendingTurn;
 var init_agent = __esm({
   "src/renderer/controller/agent.ts"() {
+    init_automation_failure();
     init_dynamic_model();
     init_thread_helpers();
     init_sync_thread_branch_after_shell();
@@ -154703,6 +155922,7 @@ function attachAutomationController(store2, api2) {
     if (!prompt) return;
     starting.add(threadId);
     let hydrated = false;
+    let checkoutStarted = false;
     try {
       await ensureThreadMessages(projectId, threadId);
       hydrated = true;
@@ -154724,6 +155944,7 @@ function attachAutomationController(store2, api2) {
         return;
       }
       if (!initial.worktreeChoice) {
+        checkoutStarted = true;
         const prepared = await api2.agent.prepareCheckout(
           projectId,
           threadId,
@@ -154733,6 +155954,7 @@ function attachAutomationController(store2, api2) {
         );
         if (store2.getState().activeProjectId !== projectId) return;
         applyPreparedThreadCheckout(store2, threadId, prepared);
+        checkoutStarted = false;
       }
       const current = getThreadById(store2, threadId);
       if (!current || !isPendingAutomation(current)) {
@@ -154763,7 +155985,12 @@ function attachAutomationController(store2, api2) {
     } catch (error62) {
       console.error("[automations] Failed to start scheduled task:", error62);
       if (hydrated) {
-        markAutomationStartFailed(store2, threadId);
+        const message2 = startFailureDetail(error62);
+        const code = checkoutStarted ? "worktree-failed" : classifyAutomationFailureMessage(message2);
+        markAutomationStartFailed(store2, threadId, { code, message: message2 });
+        api2.automations.reportStartFailure(projectId, threadId, { code, message: message2 }).catch((reportError) => {
+          console.error("[automations] Could not report a start failure:", reportError);
+        });
         addMessage(
           store2,
           threadId,
@@ -154813,6 +156040,7 @@ var AUTOMATION_START_RETRY_MS;
 var init_automations2 = __esm({
   "src/renderer/controller/automations.ts"() {
     init_ipc_error_message();
+    init_automation_failure();
     init_thread_helpers();
     init_message_queue();
     init_thread_hydration();
@@ -156218,89 +157446,6 @@ function bindChatComposerLayout(store2, onActivityHome) {
 var init_chat_layout = __esm({
   "src/renderer/views/chat-layout.ts"() {
     init_thread_hydration();
-  }
-});
-
-// src/renderer/keyboard-shortcuts.ts
-function isTypingTarget(target) {
-  if (target === null || !("tagName" in target) || typeof target.tagName !== "string") return false;
-  const tag = target.tagName;
-  if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return true;
-  return "isContentEditable" in target && target.isContentEditable === true;
-}
-function matchNewThreadShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return false;
-  return e3.key === "n" || e3.key === "N";
-}
-function matchFindInChatShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return false;
-  return e3.key === "f" || e3.key === "F";
-}
-function matchUiScaleShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return null;
-  if (e3.key === "0" || e3.code === "Digit0" || e3.code === "Numpad0") return "reset";
-  if (e3.key === "=" || e3.key === "+" || e3.code === "Equal" || e3.code === "NumpadAdd") return "in";
-  if (e3.key === "-" || e3.key === "_" || e3.code === "Minus" || e3.code === "NumpadSubtract") {
-    return "out";
-  }
-  return null;
-}
-function matchCommandPaletteShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
-  return e3.key === "k" || e3.key === "K";
-}
-function matchActivityPanelShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
-  return e3.key === "a" || e3.key === "A";
-}
-function matchPanelShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey) return null;
-  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "toggleSidebar";
-  if (!e3.shiftKey && (e3.key === "j" || e3.key === "J")) return "togglePanel";
-  if (e3.shiftKey && (e3.key === "e" || e3.key === "E")) return { openPanel: "explorer" };
-  if (e3.shiftKey && (e3.key === "g" || e3.key === "G")) return { openPanel: "changes" };
-  if (e3.shiftKey && (e3.key === "b" || e3.key === "B")) return { openPanel: "browser" };
-  if (!e3.shiftKey && (e3.key === "`" || e3.code === "Backquote")) return { openPanel: "terminal" };
-  return null;
-}
-function handlePanelShortcut(store2, api2, action) {
-  if (action === "toggleSidebar") {
-    toggleProjectsPane(store2);
-    return;
-  }
-  if (action === "togglePanel") {
-    toggleFilesPaneWithWorkspace(store2, api2);
-    return;
-  }
-  openRightPanelWithWorkspace(store2, api2, action.openPanel);
-}
-function registerPanelKeyboardShortcuts(store2, api2) {
-  document.addEventListener("keydown", (e3) => {
-    if (isAnyDialogOpen()) return;
-    if (matchNewThreadShortcut(e3)) {
-      if (!store2.getState().workspaceRoot) return;
-      e3.preventDefault();
-      openNewThread(store2);
-      return;
-    }
-    if (isTypingTarget(e3.target)) return;
-    const action = matchPanelShortcut(e3);
-    if (!action) return;
-    e3.preventDefault();
-    handlePanelShortcut(store2, api2, action);
-  });
-}
-var init_keyboard_shortcuts = __esm({
-  "src/renderer/keyboard-shortcuts.ts"() {
-    init_thread_helpers();
-    init_panels();
-    init_dialog_shell();
   }
 });
 
@@ -165688,9 +166833,9 @@ function registerKeyboardShortcuts() {
         closeSettingsDialog();
         return;
       }
-      if (handleStopShortcut?.("Escape")) e3.preventDefault();
+      if (handleStopShortcut?.("Escape", e3.target)) e3.preventDefault();
     }
-    if (e3.key === "Enter" && handleStopShortcut?.("Enter")) {
+    if (e3.key === "Enter" && handleStopShortcut?.("Enter", e3.target)) {
       e3.preventDefault();
     }
     if (e3.ctrlKey && !e3.metaKey && !e3.altKey && e3.key === "Tab") {
