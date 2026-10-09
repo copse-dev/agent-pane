@@ -1,20 +1,25 @@
 /**
  * App binding for the outside-project read classifier, which lives in
  * `@copse/shell-guard`. The analysis (`analyzeReadOutsideProject`,
- * `readOutsideProjectGrantTargets`, `sensitiveTargetReason`,
- * `describeReadOutsideTargets`) is re-exported unchanged; the approval-prompt copy
+ * `readOutsideProjectGrantTargets`, `sensitiveTargetReason`) is re-exported
+ * unchanged; the approval-prompt copy
  * below is product UX and stays here with the other prompt formatters.
  */
 import './shell-guard-environment.ts'
-import {
-  describeReadOutsideTargets,
-  type ReadOutsideProjectAnalysis,
-} from '@copse/shell-guard/read-outside-project.ts'
+import type { ReadOutsideProjectAnalysis } from '@copse/shell-guard/read-outside-project.ts'
 import type { ShellPromptParts } from './permission-policy.ts'
 
 export * from '@copse/shell-guard/read-outside-project.ts'
 
-export const READ_OUTSIDE_PROJECT_TITLE = 'Read outside the project?'
+export const READ_OUTSIDE_PROJECT_TITLE = 'Allow read access outside of the project?'
+
+/**
+ * The warning stays on the prompt even though the shape is a read: a grant does
+ * widen what the agent can see, and the user is the one who knows whether the
+ * paths in question are sensitive.
+ */
+export const READ_OUTSIDE_PROJECT_WARNING =
+  'A listed directory can contain sensitive files. Approving it also covers files nested inside it.'
 
 export function formatReadOutsideProjectPromptParts(
   command: string,
@@ -22,11 +27,13 @@ export function formatReadOutsideProjectPromptParts(
 ): ShellPromptParts {
   return {
     command,
-    bodyAdvice: `The agent wants to read ${describeReadOutsideTargets(analysis.targets)}.`,
-    // A grant does widen what the agent can see, so the footer says what stays
-    // off limits instead of leaving that to a separate warning.
+    bodyAdvice:
+      `The agent requests read access to ${analysis.targets.length === 1 ? 'this path' : 'these paths'} for this thread:\n` +
+      analysis.targets.map((target) => `• ${target}`).join('\n') +
+      `\n\n⚠️ ${READ_OUTSIDE_PROJECT_WARNING}`,
     bodyFooter:
-      'Allow this for the rest of the thread? Writing, installing, and network access ' +
-      'still ask, and so do credential files (.env, ~/.ssh, ~/.aws).',
+      'Approve grants reads of the listed paths and files within listed directories for the rest of this thread. ' +
+      'Other paths ask again. Writes, installs, and network access are not approved. ' +
+      'Commands naming credential files or directories directly also ask again.',
   }
 }
