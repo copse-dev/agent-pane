@@ -105,11 +105,15 @@ async function attemptScreening<T>(request: ScreeningRequest<T>): Promise<Screen
   }
 
   let started = Date.now()
+  // Whether the request itself went out. Building the provider can fail first
+  // (a bare `lmstudio:` with no model loaded), and that asked nothing.
+  let asked = false
   try {
     // A classification, not a reasoning task: cap the depth so a deeply-tuned
     // chat model reused here doesn't bill like the work it was tuned for.
     const provider = await buildProvider(model, undefined, { maxReasoning: 'low' })
     started = Date.now()
+    asked = true
     const { text, usage } = await completeMessagesWithUsage(
       provider,
       [
@@ -137,6 +141,7 @@ async function attemptScreening<T>(request: ScreeningRequest<T>): Promise<Screen
     // A model too slow to finish is worth remembering, so the next call does
     // not buy the same budget of nothing. Other failures say nothing about speed.
     if (!isScreeningTimeout(err, request.signal)) {
+      if (!asked) return { verdict: null, problem: null }
       return { verdict: null, problem: null, engine: model, latencyMs }
     }
     const timedOut = noteSafetyModelTimeout(model, FETCH_TIMEOUTS.safetyClassification)

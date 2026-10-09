@@ -309,6 +309,26 @@ describe('tier screening through the safety-screening classifier', () => {
     assert.equal(use.rows[0]?.noVerdict, 1)
   })
 
+  it('reports nothing when the safety model could not even be built', async () => {
+    // A bare `lmstudio:` passes the up-front check, then building its provider
+    // finds no loaded model and throws before any completion request is sent.
+    await setSetting('safetyModel', 'lmstudio:')
+    mock.method(globalThis, 'fetch', async () => {
+      throw new TypeError('fetch failed')
+    })
+    const verdict = await runWithActiveRunIdentity(THREAD, async () => {
+      setActiveRunThread(THREAD)
+      try {
+        return await classifyShellScope('ls')
+      } finally {
+        clearActiveRunThread(THREAD)
+      }
+    })
+    assert.equal(verdict, null)
+    const calls = (await readDecisionLog(PROJECT)).filter((d) => d.kind === CLASSIFIER_CALL_KIND)
+    assert.deepEqual(calls, [])
+  })
+
   it('reports nothing when no connection was asked', async () => {
     answering(distribution(0.9))
     await underGuardedYolo(() =>
