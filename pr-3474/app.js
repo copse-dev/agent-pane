@@ -21572,6 +21572,152 @@ var init_source_row = __esm({
   }
 });
 
+// src/renderer/views/settings-sources-skills.ts
+function metadataDetails(skill) {
+  const entries2 = [];
+  if (skill.license !== void 0) entries2.push(["License", skill.license]);
+  if (skill.compatibility !== void 0) entries2.push(["Compatibility", skill.compatibility]);
+  if (skill.allowedTools !== void 0)
+    entries2.push(["Declared tools (descriptive only)", skill.allowedTools]);
+  for (const [key, value] of Object.entries(skill.metadata ?? {}).sort(
+    ([a3], [b4]) => a3.localeCompare(b4)
+  ))
+    entries2.push([`Metadata: ${key}`, value]);
+  if (entries2.length === 0) return null;
+  const details = document.createElement("details");
+  details.className = "sources-skill-metadata";
+  const summary = document.createElement("summary");
+  summary.textContent = "Compatibility metadata";
+  const list = document.createElement("dl");
+  for (const [key, value] of entries2) {
+    const term = document.createElement("dt");
+    term.textContent = key;
+    const definition = document.createElement("dd");
+    definition.textContent = value;
+    list.append(term, definition);
+  }
+  details.append(summary, list);
+  return details;
+}
+function mountSkillsSources({
+  root,
+  api: api2,
+  makeSourceRow: makeSourceRow2
+}) {
+  const list = root.querySelector("#sources-skills-list");
+  const diagnostics = root.querySelector("#sources-skills-diagnostics");
+  const folders = root.querySelector("#sources-skill-roots");
+  const save = root.querySelector("#sources-skill-roots-save");
+  const reload = root.querySelector("#sources-skills-reload");
+  const status = root.querySelector("#sources-skills-status");
+  if (!list || !diagnostics || !folders || !save || !reload || !status)
+    throw new Error("Missing skills Sources elements");
+  let generation = 0;
+  const render = (result) => {
+    if (!root.isConnected) return;
+    list.replaceChildren();
+    diagnostics.replaceChildren();
+    folders.value = result.extraRoots.join("\n");
+    for (const skill of result.skills) {
+      const controls = `${skill.userInvocable === false ? "Manual off" : "Manual on"} \xB7 ${skill.disableModelInvocation ? "Model off" : "Model on"}`;
+      const row2 = makeSourceRow2(skill.name, skill.source, skill.description, {
+        titleAttr: skill.skillPath,
+        hoverDetail: skill.skillPath
+      });
+      const eligibility = document.createElement("span");
+      eligibility.className = "sources-skill-controls";
+      eligibility.textContent = controls;
+      row2.append(eligibility);
+      const details = metadataDetails(skill);
+      if (details) row2.append(details);
+      list.append(row2);
+    }
+    if (result.skills.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "sources-empty";
+      empty.textContent = "No skills discovered.";
+      list.append(empty);
+    }
+    for (const diagnostic of result.diagnostics) {
+      diagnostics.append(
+        makeSourceRow2(diagnostic.name || "Skill source", diagnostic.kind, diagnostic.reason, {
+          titleAttr: diagnostic.skillPath,
+          hoverDetail: diagnostic.skillPath
+        })
+      );
+    }
+    window.dispatchEvent(new Event("copse:skills-changed"));
+  };
+  const perform = async (request, pending, completed) => {
+    const revision = ++generation;
+    save.disabled = true;
+    reload.disabled = true;
+    status.textContent = pending;
+    try {
+      const result = await request();
+      if (!root.isConnected || revision !== generation) return;
+      render(result);
+      status.textContent = completed;
+    } catch (error62) {
+      if (root.isConnected && revision === generation)
+        status.textContent = error62 instanceof Error ? error62.message : "Could not refresh skills.";
+    } finally {
+      if (root.isConnected && revision === generation) {
+        save.disabled = false;
+        reload.disabled = false;
+      }
+    }
+  };
+  save.addEventListener("click", () => {
+    const paths = folders.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+    void perform(
+      () => api2.skills.setRoots(paths),
+      "Saving folders\u2026",
+      "Folders saved. Skills reloaded."
+    );
+  });
+  reload.addEventListener("click", () => {
+    void perform(() => api2.skills.sources(), "Reloading skills\u2026", "Skills reloaded.");
+  });
+  return {
+    invalidate() {
+      generation++;
+      save.disabled = false;
+      reload.disabled = false;
+      status.textContent = "";
+    },
+    refresh(result) {
+      generation++;
+      if (!root.isConnected) return;
+      render(result);
+      save.disabled = false;
+      reload.disabled = false;
+      status.textContent = "";
+    }
+  };
+}
+var skillsSourcesMarkup;
+var init_settings_sources_skills = __esm({
+  "src/renderer/views/settings-sources-skills.ts"() {
+    skillsSourcesMarkup = `
+  <fieldset id="sources-skills-fieldset">
+    <legend>Skills</legend>
+    <p class="settings-fieldset-desc">Skill origins, invocation controls, and validation. Files refresh when Sources opens or you reload; changes apply to future turns.</p>
+    <div id="sources-skills-list" class="sources-group"></div>
+    <div id="sources-skills-diagnostics" class="sources-group" aria-label="Skill validation diagnostics"></div>
+    <details class="sources-skill-folders">
+      <summary>Extra skill folders</summary>
+      <label for="sources-skill-roots">Absolute folder paths, one per line, in precedence order</label>
+      <textarea id="sources-skill-roots" rows="3" spellcheck="false"></textarea>
+      <p class="settings-fieldset-desc">Folders may contain skills directly or a Cursor plugin. These sources remain untrusted; adding a folder grants no tool permissions. Earlier sources win duplicate names.</p>
+      <button type="button" class="ui-btn ui-btn-secondary" id="sources-skill-roots-save">Save folders</button>
+    </details>
+    <button type="button" class="ui-btn ui-btn-secondary" id="sources-skills-reload">Reload skills</button>
+    <span id="sources-skills-status" role="status" aria-live="polite"></span>
+  </fieldset>`;
+  }
+});
+
 // src/renderer/views/settings/sources-section.ts
 function createSourcesSection({
   root,
@@ -21580,6 +21726,7 @@ function createSourcesSection({
   onHeadingsChanged
 }) {
   let generation = 0;
+  const skillSources = mountSkillsSources({ root, api: api2, makeSourceRow });
   function makeAgentRows(result) {
     const rows = [];
     for (const agent of result.agents) {
@@ -21850,7 +21997,7 @@ function createSourcesSection({
       const [instructions, cursorRules, skills, agents, hooks] = await Promise.all([
         api2.instructions.list(),
         api2.cursorRules.list(),
-        api2.skills.list(),
+        api2.skills.sources(),
         api2.agents.list(),
         api2.hooks.list()
       ]);
@@ -21887,19 +22034,7 @@ function createSourcesSection({
       qsRequired(root, "#cursor-rules-fieldset").hidden = cursorRules.length === 0;
       if (!root.querySelector(".settings-content")?.classList.contains("settings-searching"))
         onHeadingsChanged();
-      fillSourceList(
-        "#sources-skills-list",
-        skills.map(
-          (s16) => makeSourceRow(s16.name, s16.source, s16.description || null, {
-            // Keep the resting list uncluttered: path lives on hover (and as a
-            // native tooltip fallback). Description stays as the always-visible
-            // detail; when a skill has none, the hover line is the only path.
-            titleAttr: s16.skillPath,
-            hoverDetail: s16.skillPath
-          })
-        ),
-        "No skills discovered."
-      );
+      skillSources.refresh(skills);
       fillSourceList("#sources-agents-list", makeAgentRows(agents), "No agents discovered.");
       fillSourceList(
         "#sources-hooks-list",
@@ -21919,6 +22054,7 @@ function createSourcesSection({
     refresh: refreshSources,
     invalidate: () => {
       generation += 1;
+      skillSources.invalidate();
     }
   };
 }
@@ -21931,6 +22067,7 @@ var init_sources_section = __esm({
     init_attachment_preview();
     init_confirm_dialog();
     init_source_row();
+    init_settings_sources_skills();
   }
 });
 
@@ -22533,7 +22670,7 @@ function dynamicModelChoices() {
     {
       value: BALANCED_MODEL_SELECTOR,
       label: "Balanced",
-      description: "Strong capability at a fair price; favors plans",
+      description: "Strong results at a fair price; favors plans",
       group: AUTOMATIC_GROUP
     },
     {
@@ -23570,7 +23707,7 @@ var init_acp_known_agents = __esm({
         // has been renamed to @agentclientprotocol/claude-agent-acp." It stopped
         // at 0.16.2 (2026-02-17); the renamed package carries on from 0.24.0.
         reason: "Renamed upstream to @agentclientprotocol/claude-agent-acp.",
-        title: "Claude Code (ACP, Zed)",
+        title: "Claude Code (Zed adapter)",
         command: "claude-code-acp",
         args: [],
         envHints: ["ANTHROPIC_API_KEY"],
@@ -23611,7 +23748,7 @@ var init_acp_known_agents = __esm({
         },
         sandboxedPermissionMode: "acceptEdits",
         docsUrl: "https://www.npmjs.com/package/@zed-industries/claude-code-acp",
-        note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or `ANTHROPIC_API_KEY`."
+        note: "Zed's adapter for Claude Code. Sign in with `claude /login` or set `ANTHROPIC_API_KEY`."
       }
     ];
     KNOWN_ACP_AGENTS = [
@@ -23690,7 +23827,7 @@ var init_acp_known_agents = __esm({
         setup: "claude setup-token",
         reauth: "claude /login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
-        note: "Claude Agent SDK over ACP. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`)."
+        note: "Runs Claude Code through its agent SDK. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`)."
       },
       {
         id: "cursor",
@@ -23716,7 +23853,7 @@ var init_acp_known_agents = __esm({
         setup: "cursor-agent login",
         reauth: "cursor-agent login",
         docsUrl: "https://docs.cursor.com/en/cli/overview",
-        note: "Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`."
+        note: "Runs the Cursor CLI (`cursor-agent acp`). Sign in with `cursor-agent login`."
       },
       {
         id: "codex-acp",
@@ -23757,7 +23894,7 @@ var init_acp_known_agents = __esm({
         // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
         reauth: "codex login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/codex-acp",
-        note: "OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
+        note: "Runs OpenAI Codex. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
       }
     ];
   }
@@ -34937,7 +35074,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: true,
       native,
       level: "info",
-      reason: "Advice comes from the configured external ACP agent, consulted on a bare one-off session. No capability annotations, so no strength comparison."
+      reason: "Advice comes from the configured external coding agent, consulted on a bare one-off session. Its strength is not rated, so there is no comparison."
     };
   }
   const executor = annotationFor(executorModel);
@@ -34967,7 +35104,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: true,
       native,
       level: "info",
-      reason: `Cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}; the executor isn\u2019t in the capability annotations, so no strength comparison is possible.`
+      reason: `Cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}; the executor has no strength rating, so no strength comparison is possible.`
     };
   }
   if (advisor.kind === "local") {
@@ -34999,7 +35136,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
     ok: true,
     native,
     level: "info",
-    reason: "Client-side pairing \u2014 any configured executor/advisor combination works. Neither model carries capability annotations, so no strength comparison is possible."
+    reason: "Client-side pairing \u2014 any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible."
   };
 }
 var NATIVE_ADVISOR_COMPAT, INTELLECT_PARITY;
@@ -35117,7 +35254,7 @@ var init_advisor_strategy_plugin = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -35141,14 +35278,14 @@ function withConfig(config2, fn2) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -35188,7 +35325,7 @@ function decodeHtmlEntities(text2) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -35479,7 +35616,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s16, from) {
   let i2 = from;
   while (i2 < s16.length && s16[i2] !== "`")
@@ -35560,12 +35697,12 @@ function renderInlineCode(text2) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -35641,7 +35778,7 @@ function canonicalizeEscapedPunctuation(text2) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -35662,7 +35799,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -35940,7 +36077,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -35949,7 +36086,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i2 = 0; i2 < line.length; i2++) {
@@ -36099,7 +36236,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -36110,17 +36247,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text2) {
   return text2.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -36216,7 +36353,7 @@ function decodeSafeMarkdownEntities(text2) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -36252,7 +36389,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter) {
   const [open2, close] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close))
@@ -36347,7 +36484,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -36361,7 +36498,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -36497,7 +36634,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -36508,17 +36645,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m2 = line.match(ORDERED_LIST_MARKER_RE);
   if (!m2?.[1])
@@ -37285,7 +37422,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -37302,7 +37439,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -37323,7 +37460,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -37336,7 +37473,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -37362,7 +37499,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -37414,7 +37551,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
 function resolveLanguage(lang) {
   const key = lang.trim().toLowerCase();
   if (!key)
@@ -37446,7 +37583,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_ALIASES;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -37485,7 +37622,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -37507,13 +37644,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -37546,7 +37683,7 @@ function restoreRawImages(text2, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -37556,17 +37693,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -37619,13 +37756,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -37828,7 +37965,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -37857,7 +37994,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -37876,7 +38013,7 @@ function restoreInlinePassHtml(text2) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -37895,7 +38032,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -38093,7 +38230,7 @@ function mathHoldStart(s16, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -38104,7 +38241,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -38199,12 +38336,12 @@ function strikethroughHoldStart(s16, mask) {
   return cut;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -38501,7 +38638,7 @@ function renderEmphasisOutsideInlineHtml(text2, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -38518,7 +38655,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -38568,7 +38705,7 @@ function renderAngleAutolinks(text2) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -38578,7 +38715,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t2, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -38797,7 +38934,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -38817,7 +38954,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text2) {
   return text2.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -38913,7 +39050,7 @@ function renderProseBlock(text2, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -38923,7 +39060,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler)
@@ -39372,7 +39509,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -39390,7 +39527,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -39490,7 +39627,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -39498,16 +39635,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -39554,7 +39691,7 @@ function sanitizeIntoElement(target, html2, config2) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -39578,7 +39715,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -39647,7 +39784,7 @@ function sanitizeRenderedMarkdownInto(target, html2) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -39729,9 +39866,12 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+function topLevelRenderOpts() {
+  return { htmlFromIndent: true, indentedCode: activeConfig().indentedCode !== false };
+}
 function scopedConfig(options) {
-  const { tokens, indentedCode, ...config2 } = options;
+  const { tokens, ...config2 } = options;
   return config2;
 }
 function renderMarkdown(raw, options = {}) {
@@ -39743,11 +39883,7 @@ function renderMarkdownUnsafe(raw, options = {}) {
 function renderMarkdownCore(raw, options) {
   const tokens = options.tokens ?? tokenizeBlocks(raw);
   const linkRefs = collectLinkReferenceDefinitions(raw, tokens);
-  const renderOpts = {
-    linkRefs,
-    htmlFromIndent: TOP_LEVEL_RENDER_OPTS.htmlFromIndent,
-    indentedCode: options.indentedCode ?? TOP_LEVEL_RENDER_OPTS.indentedCode
-  };
+  const renderOpts = { linkRefs, ...topLevelRenderOpts() };
   const footnoteDefs = collectFootnoteDefinitions(raw, tokens);
   if (footnoteDefs.size === 0)
     return renderBlocks(raw, tokens, renderOpts);
@@ -39765,19 +39901,17 @@ ${section}`;
     setActiveFootnoteContext(previousFootnotes);
   }
 }
-var TOP_LEVEL_RENDER_OPTS;
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
     init_render_blocks();
     init_sanitize();
-    TOP_LEVEL_RENDER_OPTS = { htmlFromIndent: true, indentedCode: true };
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text2) {
   if (!text2.includes("["))
     return text2;
@@ -39951,7 +40085,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -39965,7 +40099,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -40080,14 +40214,14 @@ function splitForStreamingCore(content, blocks) {
   };
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -40139,7 +40273,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -40324,7 +40458,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -40353,11 +40487,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -40406,13 +40540,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -40456,13 +40590,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text2) {
   return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -40503,11 +40637,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -40557,14 +40691,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -40670,7 +40804,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -40683,7 +40817,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function renderFormingFenceInner(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -40728,7 +40862,7 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -40737,18 +40871,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a3, b4) {
   const aAttrs = a3.attributes;
   const bAttrs = b4.attributes;
@@ -40850,7 +40984,7 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_html_sink();
     TEXT_NODE = 3;
     ELEMENT_NODE = 1;
@@ -40858,7 +40992,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -41043,9 +41177,9 @@ function detailsBalance(html2) {
   const closes = html2.match(DETAILS_CLOSE_RE)?.length ?? 0;
   return opens - closes;
 }
-var RENDER_OPTS, INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
+var INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -41055,7 +41189,6 @@ var init_streaming_frozen_tail = __esm({
     init_html_sink();
     init_renderer();
     init_streaming_dom_morph();
-    RENDER_OPTS = TOP_LEVEL_RENDER_OPTS;
     INTRA_LIST_MIN_ITEMS = 4;
     MAX_LINK_REF_PATCH_PARTS = 8;
     BENIGN_BALANCED_TAGS = ["b", "i", "u", "s", "del", "ins", "sub", "sup", "kbd", "mark"];
@@ -41398,7 +41531,7 @@ var init_streaming_frozen_tail = __esm({
           const to = lowerBound(tokens, part.end);
           const rendered = renderBlocksToParts(complete, tokens.slice(from, to), {
             linkRefs,
-            ...RENDER_OPTS
+            ...topLevelRenderOpts()
           });
           if (rendered.length !== 1)
             return false;
@@ -41624,7 +41757,10 @@ var init_streaming_frozen_tail = __esm({
         const memo2 = this.tailMemo;
         const deltaRenderTokens = filterRenderTokens(deltaTokens);
         if (memo2 !== null && this.openFrames.length === 0 && deltaRenderTokens.length > 0 && memo2.root === completedEl && memo2.atNodeCount === this.frozenNodeCount && memo2.lead === (this.frozenHasHtml ? "\n" : "") && memo2.linkRefKey === linkRefKey && sameRenderTokens(memo2.renderTokens, deltaRenderTokens) && complete.startsWith(memo2.srcText, memo2.srcStart) && !hasUnfreezableRawHtml(memo2.rawHtml)) {
-          const tailParts = renderBlocksToParts(complete, tailTokens, { linkRefs, ...RENDER_OPTS });
+          const tailParts = renderBlocksToParts(complete, tailTokens, {
+            linkRefs,
+            ...topLevelRenderOpts()
+          });
           const tailHtml = tailParts.map((p2) => p2.html).join("\n");
           this.renderedChars += tailHtml.length;
           this.frozenNodeCount += memo2.nodeCount;
@@ -41639,8 +41775,8 @@ var init_streaming_frozen_tail = __esm({
           this.frozenDetailsBalance += detailsBalance(memo2.rawHtml);
           this.committedHasOpenDetails = this.frozenDetailsBalance > 0 || hasOpenDetailsElement(tailHtml);
         } else {
-          const deltaParts = deltaTokens.length ? renderBlocksToParts(complete, deltaTokens, { linkRefs, ...RENDER_OPTS }) : [];
-          const tailParts = tailTokens.length ? renderBlocksToParts(complete, tailTokens, { linkRefs, ...RENDER_OPTS }) : [];
+          const deltaParts = deltaTokens.length ? renderBlocksToParts(complete, deltaTokens, { linkRefs, ...topLevelRenderOpts() }) : [];
+          const tailParts = tailTokens.length ? renderBlocksToParts(complete, tailTokens, { linkRefs, ...topLevelRenderOpts() }) : [];
           const deltaHtml = deltaParts.map((p2) => p2.html).join("\n");
           const tailHtml = tailParts.map((p2) => p2.html).join("\n");
           if (this.openFrames.length > 0 && this.frameCloseAppeared(deltaHtml, tailHtml)) {
@@ -42030,7 +42166,7 @@ var init_streaming_frozen_tail = __esm({
         const previous = getActiveFootnoteContext();
         setActiveFootnoteContext(ctx);
         try {
-          const parts = renderBlocksToParts(complete, tokens, { linkRefs, ...RENDER_OPTS });
+          const parts = renderBlocksToParts(complete, tokens, { linkRefs, ...topLevelRenderOpts() });
           const items = renderFootnoteSectionItems(ctx, linkRefs);
           return { parts, items, ctx };
         } finally {
@@ -42190,7 +42326,10 @@ ${section}`;
             if (!labels || !cached2 || !labels.some((label) => newSet.has(label)))
               continue;
             const partTokens = tokens.filter((t2) => t2.start >= cached2.start && t2.end <= cached2.end);
-            const html2 = renderBlocksToParts(complete, partTokens, { linkRefs, ...RENDER_OPTS }).map((p2) => p2.html).join("\n");
+            const html2 = renderBlocksToParts(complete, partTokens, {
+              linkRefs,
+              ...topLevelRenderOpts()
+            }).map((p2) => p2.html).join("\n");
             if (html2 !== "" && hasUnfreezableRawHtml(html2))
               return "rebuild";
             if (!this.morphPartElement(completedEl, cached2.el, html2))
@@ -42281,7 +42420,7 @@ ${section}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
@@ -42723,7 +42862,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -42991,9 +43130,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -46359,7 +46498,7 @@ function createAcpAgentsSection(api2, opts = {}) {
         }
         return Promise.resolve(pickerOptions);
       },
-      ariaLabel: "ACP agent model",
+      ariaLabel: "Agent model",
       loadOnMount: false
     });
     void modelPicker.refresh(initialModel);
@@ -46974,7 +47113,7 @@ function createProvidersPanel(api2, opts = {}) {
       el(
         "p",
         { class: "field-hint openai-service-tier-scope" },
-        "Applies to OpenAI API-key requests. ChatGPT plan and Codex ACP use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
+        "Applies to OpenAI API-key requests. ChatGPT plan and the Codex agent use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
       )
     );
     tierBlock.dataset["testid"] = "openai-service-tier-block";
@@ -47153,12 +47292,12 @@ function createProvidersPanel(api2, opts = {}) {
     ];
     if (agentIds.length) {
       entries2.push({
-        title: "Codex ACP",
+        title: "Codex agent",
         configured: agentIds.some((id) => agentsPanel.isConfigured(id)),
-        description: "Codex\u2019s agent, running on this machine through ACP.",
+        description: "Codex\u2019s agent, running on this machine.",
         content: connectionDetails(
           "openai-codex-details",
-          "Configure Codex ACP",
+          "Configure Codex agent",
           agentBlock(agentIds)
         ),
         id: "codex"
@@ -49360,12 +49499,79 @@ function createModelRoutingSection(api2, options = {}) {
       loadOnMount: false
     })
   };
-  async function refresh() {
-    const localModel = optionalString(await api2.settings.get("localDefaultModel"));
-    const subagent = optionalString(await api2.settings.get("subagentModel"));
-    const safety = optionalString(await api2.settings.get("safetyModel"));
-    const review = optionalString(await api2.settings.get("reviewModel"));
-    const roleModels = stringRecordOrEmpty(await api2.settings.get("roleModels"));
+  const fieldTargets = {
+    coder: "localDefaultModel",
+    research: "subagentModel",
+    safety: "safetyModel",
+    review: "reviewModel"
+  };
+  for (const [key, picker] of Object.entries(modelPickers)) {
+    const target = fieldTargets[key];
+    if (target)
+      qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+        "data-model-setting-target",
+        target
+      );
+  }
+  let pendingRoles = {};
+  const additionalRoles = modelScope === "all" ? AGENT_ROLES.filter((role) => !["coder", "research", "small-tasks"].includes(role.id)).map(
+    (role) => {
+      const select = el("select", { name: `role:${role.id}` });
+      const field = routingField(
+        role.label,
+        select,
+        `${role.description}. An empty choice inherits the automatic role default.`
+      );
+      select.addEventListener("change", () => {
+        pendingRoles[role.id] = select.value;
+      });
+      const picker = mountModelSelectPicker(select, {
+        loadOptions: (current) => fetchRoleModelOptions(api2, current, "(automatic role default)"),
+        ariaLabel: `${role.label} role model`,
+        loadOnMount: false
+      });
+      qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+        "data-model-setting-target",
+        `role:${role.id}`
+      );
+      return { role, field, picker };
+    }
+  ) : [];
+  if (additionalRoles.length) {
+    fields.append(
+      el(
+        "details",
+        { class: "routing-additional-roles" },
+        disclosureSummary("Additional model roles"),
+        el(
+          "p",
+          { class: "settings-fieldset-desc" },
+          "These assignments are used by \u201CBy role\u201D model rules. The dedicated safety and post-turn review routes above remain separate."
+        ),
+        ...additionalRoles.map((entry) => entry.field)
+      )
+    );
+  }
+  function reset() {
+    pendingRoles = {};
+  }
+  async function refresh(snapshot) {
+    reset();
+    const localModel = optionalString(
+      snapshot ? snapshot.localDefaultModel : await api2.settings.get("localDefaultModel")
+    );
+    const subagent = optionalString(
+      snapshot ? snapshot.subagentModel : await api2.settings.get("subagentModel")
+    );
+    const safety = optionalString(
+      snapshot ? snapshot.safetyModel : await api2.settings.get("safetyModel")
+    );
+    const review = optionalString(
+      snapshot ? snapshot.reviewModel : await api2.settings.get("reviewModel")
+    );
+    const roleModels = stringRecordOrEmpty(
+      snapshot ? snapshot.roleModels : await api2.settings.get("roleModels")
+    );
     if (modelScope === "all") {
       const coder = roleModels["coder"] ?? localModel;
       const research = roleModels["research"] ?? subagent;
@@ -49377,7 +49583,10 @@ function createModelRoutingSection(api2, options = {}) {
         // Unset means the *rule*, not the model we recommend downloading —
         // showing a concrete local id here would misreport what actually runs.
         modelPickers.safety.refresh(safety ? canonicalRoleSelection(safety) : DEFAULT_SAFETY_MODEL),
-        modelPickers.review.refresh(canonicalRoleSelection(review ?? ""))
+        modelPickers.review.refresh(canonicalRoleSelection(review ?? "")),
+        ...additionalRoles.map(
+          (entry) => entry.picker.refresh(canonicalRoleSelection(roleModels[entry.role.id] ?? ""))
+        )
       ]);
       return;
     }
@@ -49405,7 +49614,13 @@ function createModelRoutingSection(api2, options = {}) {
       reviewModel: reviewModel.value.trim()
     };
   }
-  return { root, refresh, readValues };
+  return {
+    root,
+    reset,
+    refresh,
+    readValues,
+    readRoleModels: () => Object.keys(pendingRoles).length ? { ...pendingRoles } : void 0
+  };
 }
 function canonicalRoleSelection(value) {
   const trimmed2 = value.trim();
@@ -49427,6 +49642,8 @@ var init_model_routing_section = __esm({
     init_disclosure_summary();
     init_unknown_value3();
     init_ui();
+    init_agent_roles();
+    init_helpers();
   }
 });
 
@@ -52041,14 +52258,22 @@ function isAbortTimeoutMessage(message2) {
   return /aborted due to timeout|operation was aborted|aborterror|timeout/i.test(message2);
 }
 function claudeReasonNeedsLogin(reason) {
-  return /claude \/login|user:profile|rejected/i.test(reason);
+  return /claude \/login|user:profile|rejected|access token has expired/i.test(reason);
 }
-function createClaudeSignInHandler(store2, onRequestClose) {
+function createPlanSignInHandler(store2, provider, onRequestClose) {
   if (!store2) return null;
   return () => {
     onRequestClose?.();
-    store2.emit("request_terminal_command", "claude /login");
+    store2.emit("request_terminal_command", provider === "claude" ? "claude /login" : "codex login");
   };
+}
+function planSignInProvider(result) {
+  if (result.status !== "unavailable") return null;
+  if (result.provider === "claude" && claudeReasonNeedsLogin(result.reason)) return "claude";
+  if (result.provider === "codex" && /codex login|credentials were rejected/i.test(result.reason)) {
+    return "codex";
+  }
+  return null;
 }
 function formatReset2(resetsAt) {
   if (!resetsAt) return "reset unknown";
@@ -52086,7 +52311,7 @@ function formatPlanWindowStats(window2) {
   if (severity && severity !== "normal") parts.push(severity);
   return parts.join(" \xB7 ");
 }
-function renderPlanProvider(host, result, onClaudeSignIn) {
+function renderPlanProvider(host, result, onSignIn) {
   const card = document.createElement("div");
   card.className = "usage-plan-provider";
   card.dataset["provider"] = result.provider;
@@ -52100,14 +52325,16 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
     hint.className = "usage-plan-status field-hint";
     setInlineMarkdown(hint, result.reason);
     card.append(hint);
-    if (result.provider === "claude" && onClaudeSignIn && claudeReasonNeedsLogin(result.reason)) {
+    const signInProvider = planSignInProvider(result);
+    const onProviderSignIn = signInProvider ? onSignIn?.[signInProvider] : void 0;
+    if (signInProvider && onProviderSignIn) {
       const signIn = document.createElement("button");
       signIn.type = "button";
       signIn.className = "ui-btn ui-btn-primary usage-plan-signin-btn";
-      signIn.textContent = "Sign in to Claude";
-      signIn.title = "Open a terminal and run claude /login";
+      signIn.textContent = signInProvider === "claude" ? "Sign in to Claude" : "Sign in to Codex";
+      signIn.title = `Open a terminal and run ${signInProvider === "claude" ? "claude /login" : "codex login"}`;
       signIn.addEventListener("click", () => {
-        onClaudeSignIn();
+        onProviderSignIn();
       });
       card.append(signIn);
     }
@@ -52170,7 +52397,7 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
   }
   host.append(card);
 }
-function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
+function renderPlanSection(host, snapshot, error62, onSignIn) {
   host.replaceChildren();
   const heading = document.createElement("h4");
   heading.className = "usage-plan-heading";
@@ -52204,7 +52431,7 @@ function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
   const list = document.createElement("div");
   list.className = "usage-plan-providers";
   for (const provider of snapshot.providers) {
-    renderPlanProvider(list, provider, onClaudeSignIn);
+    renderPlanProvider(list, provider, onSignIn);
   }
   host.append(list);
 }
@@ -52409,7 +52636,10 @@ function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
   );
 }
 function createUsageSection(api2, store2, onRequestClose) {
-  const handleClaudeSignIn = createClaudeSignInHandler(store2, onRequestClose);
+  const handleSignIn = {
+    claude: createPlanSignInHandler(store2, "claude", onRequestClose) ?? void 0,
+    codex: createPlanSignInHandler(store2, "codex", onRequestClose) ?? void 0
+  };
   const root = document.createElement("div");
   root.className = "usage-section-root";
   root.innerHTML = `
@@ -52537,15 +52767,15 @@ function createUsageSection(api2, store2, onRequestClose) {
   });
   async function refreshPlan() {
     if (!cachedPlanSnapshot) {
-      renderPlanSection(planEl, null, null, handleClaudeSignIn);
+      renderPlanSection(planEl, null, null, handleSignIn);
     }
     try {
       const snapshot = await api2.usage.getPlanUsage();
       cachedPlanSnapshot = snapshot;
-      renderPlanSection(planEl, snapshot, null, handleClaudeSignIn);
+      renderPlanSection(planEl, snapshot, null, handleSignIn);
     } catch (err2) {
       const message2 = err2 instanceof Error ? err2.message : "Failed to load subscription plan usage.";
-      renderPlanSection(planEl, null, message2, handleClaudeSignIn);
+      renderPlanSection(planEl, null, message2, handleSignIn);
     }
   }
   async function refreshWorthIt() {
@@ -53923,6 +54153,25 @@ var init_branch_ci_editor = __esm({
   }
 });
 
+// src/renderer/views/automation-retained-worktrees.ts
+function describeRetainedWorktrees(retained) {
+  return retained.map((run2) => {
+    const paths = run2.paths?.length ? ` (${run2.paths.join(", ")})` : "";
+    return `\u201C${run2.title}\u201D ${REASON_LABEL[run2.reason]}${paths}`;
+  }).join("; ");
+}
+var REASON_LABEL;
+var init_automation_retained_worktrees = __esm({
+  "src/renderer/views/automation-retained-worktrees.ts"() {
+    REASON_LABEL = {
+      "uncommitted-changes": "has uncommitted changes",
+      "unmerged-commits": "has commits that are not merged",
+      "unpushed-pull-request": "has a pull request branch that is not pushed",
+      "in-use": "still has a terminal or background process open"
+    };
+  }
+});
+
 // src/renderer/views/automation-plugin-settings.ts
 function cleanIpcError(error62) {
   return ipcErrorMessage(error62, "Automation request failed.");
@@ -54465,7 +54714,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
           el(
             "div",
             { class: "automation-row-blocked-message" },
-            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`
+            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.${schedule.lastWorktreeLimitBlockedBy?.length ? ` Held by ${describeRetainedWorktrees(schedule.lastWorktreeLimitBlockedBy)}.` : ""}`
           )
         );
       }
@@ -54508,7 +54757,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         void api2.automations.runNow(projectId, schedule.id).then(
           (event) => {
             showStatus(
-              event.disposition === "started" ? `Started \u201C${schedule.name}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${schedule.name}\u201D has reached its live worktree limit.` : `\u201C${schedule.name}\u201D is already pending or running.`
+              event.disposition === "started" ? `Started \u201C${schedule.name}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${schedule.name}\u201D has reached its live worktree limit.${event.blockedBy?.length ? ` Held by ${describeRetainedWorktrees(event.blockedBy)}.` : ""}` : `\u201C${schedule.name}\u201D is already pending or running.`
             );
             void refresh();
           },
@@ -54681,6 +54930,7 @@ var init_automation_plugin_settings = __esm({
     init_confirm_dialog();
     init_branch_ci_editor();
     init_ipc_error_message();
+    init_automation_retained_worktrees();
     WEEKDAYS = [
       "Sunday",
       "Monday",
@@ -64807,7 +65057,7 @@ function markNavigationRestored(restored) {
 function serializedNavigation(api2, navigation) {
   if (!ownsNavigation || !navigationRestored) return Promise.resolve();
   if (lastNavigation !== null && lastNavigation.activeProjectId === navigation.activeProjectId && lastNavigation.activeThreadId === navigation.activeThreadId) {
-    return Promise.resolve();
+    return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
   }
   lastNavigation = navigation;
   return serializedWrite("mainWindow:navigation", () => api2.windowState.setNavigation(navigation));
@@ -67535,6 +67785,22 @@ function cacheThreads(projectId, threads) {
   liveCacheProjectId = projectId;
   threadCache.set(projectId, threads);
 }
+async function preloadSidebarThreads(store2, api2) {
+  const pending = store2.getState().projects.filter((project2) => !project2.sshHost && !project2.missing).map((project2) => project2.id);
+  const unwanted = (id) => id === store2.getState().activeProjectId || threadCache.has(id) || !store2.getState().projects.some((project2) => project2.id === id);
+  for (const id of pending) {
+    if (unwanted(id)) continue;
+    let loaded;
+    try {
+      loaded = await loadThreads(api2, id);
+    } catch {
+      continue;
+    }
+    if (unwanted(id)) continue;
+    threadCache.set(id, loaded.map(compactSidebarThread));
+    store2.emit("sidebar_threads_loaded");
+  }
+}
 function attachProjectThreadCache(store2) {
   return store2.on("threads_changed", () => {
     const { activeProjectId, threads } = store2.getState();
@@ -67611,6 +67877,7 @@ async function removeProject(store2, api2, id) {
   if (!wasActive) {
     if (wasExpanded) cancelPendingSwitch(store2, api2);
     await saveProjects(api2, projects, state.activeProjectId, state.activeThreadId);
+    threadCache.delete(id);
     store2.setState({
       projects,
       expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId
@@ -68245,6 +68512,30 @@ function openSettingsDialog(section) {
   pendingSection = section ?? null;
   overlayEl.showModal();
   overlayEl.dispatchEvent(new Event("settings-open"));
+}
+function openModelSettings(target = "model") {
+  if (!overlayEl) return;
+  const pluginTarget = target.startsWith("plugin:") || target === "advisorModel";
+  const section = pluginTarget ? "customise" : target === "orchestrationWorkerModel" ? "experimental" : "general";
+  if (overlayEl.open) {
+    qsRequired(overlayEl, `.settings-nav-btn[data-section="${section}"]`).click();
+    if (pluginTarget) void revealPluginModel?.(target);
+    else focusModelSettings(overlayEl, target);
+    return;
+  }
+  pendingModelFocus = target;
+  openSettingsDialog(section);
+}
+function focusModelSettings(overlay, target) {
+  const control = [...overlay.querySelectorAll("[data-model-setting-target]")].find(
+    (element) => element.dataset["modelSettingTarget"] === target
+  );
+  if (!control) return;
+  for (let ancestor = control.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    if (ancestor.tagName === "DETAILS") ancestor.setAttribute("open", "");
+  }
+  control.scrollIntoView({ block: "center" });
+  control.focus({ preventScroll: true });
 }
 function openAutomationSettings(scheduleId) {
   if (!overlayEl || overlayEl.open) return;
@@ -68911,17 +69202,7 @@ function mountSettingsDialog(store2, api2) {
               </div>
             </fieldset>
 
-            <fieldset>
-              <legend>Skills</legend>
-              <p class="settings-fieldset-desc">
-                Skills found on this machine, tagged by where they came from. Hover a row to see
-                its path. Choose whether to include the ones that ship with Copse under
-                Agent \u2192 Skills.
-              </p>
-              <div id="sources-skills-list" class="sources-group">
-                <span class="sources-empty">Loading\u2026</span>
-              </div>
-            </fieldset>
+            ${skillsSourcesMarkup}
 
             <fieldset data-developer-only="hooks" hidden>
               <legend>Hooks</legend>
@@ -69303,7 +69584,7 @@ function mountSettingsDialog(store2, api2) {
               <p class="field-hint">
                 Applies across Copse to new threads using automatic checkout. Eligible agents
                 start by reading your checkout without changing it, then get an isolated worktree
-                before writing. Explicit worktree choices and ACP agents still create one up front.
+                before writing. Explicit worktree choices and agents installed on this device still create one up front.
                 Projects with worktrees disabled and existing threads keep their checkout behavior.
               </p>
             </fieldset>
@@ -69529,6 +69810,12 @@ function mountSettingsDialog(store2, api2) {
       }
     )
   };
+  for (const [target, picker] of Object.entries(settingsModelPickers)) {
+    qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+      "data-model-setting-target",
+      target
+    );
+  }
   const usageSection = createUsageSection(api2, store2, closeSettingsDialog);
   qsRequired(overlay, "#settings-usage-host").append(usageSection.root);
   const aboutSection = createAboutSection(api2);
@@ -70958,6 +71245,10 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
         ariaLabel: field.title,
         loadOnMount: false
       });
+      qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+        "data-model-setting-target",
+        `plugin:${pluginId}:${field.id}`
+      );
       modelFieldPopulated.set(modelSelectInput, picker.refresh(modelFieldCurrent ?? ""));
     }
     if (field.description) {
@@ -71300,6 +71591,14 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     if (fold) fold.open = true;
     row2.scrollIntoView({ block: "start" });
   }
+  revealPluginModel = async (target) => {
+    const resolved3 = target === "advisorModel" ? `plugin:${ADVISOR_STRATEGY_PLUGIN_ID}:${ADVISOR_MODEL_SETTING_ID}` : target;
+    const pluginId = resolved3.split(":")[1];
+    if (!pluginId) return;
+    await revealPluginDetail({ pluginId });
+    if (overlay.open && overlay.querySelector(".settings-section.active")?.getAttribute("data-section") === "customise")
+      focusModelSettings(overlay, resolved3);
+  };
   const mcpSignInPending = /* @__PURE__ */ new Set();
   const mcpSignInErrors = /* @__PURE__ */ new Map();
   function mcpSignInButton(s16) {
@@ -71674,6 +71973,7 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     appearanceBaseline = currentAppearance();
     appearanceCommitted = false;
     resetDirtyState();
+    modelRoutingSection.reset();
     developerModeInput.checked = store2.getState().developerMode;
     syncDeveloperOnlySettings();
     searchContentLoaded = false;
@@ -71683,6 +71983,8 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     applySearch("");
     storageProjectId = null;
     const openedSection = pendingSection ?? "general";
+    const modelFocus = pendingModelFocus;
+    pendingModelFocus = null;
     showSection(openedSection);
     pendingSection = null;
     pluginDetail = pendingPluginDetail;
@@ -71695,13 +71997,16 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     if (openedSection === "experimental") void refreshPlugins();
     if (openedSection === "customise") {
       void refreshSources();
-      void revealPluginDetail();
+      if (modelFocus) void revealPluginModel?.(modelFocus);
+      else void revealPluginDetail();
     }
     if (openedSection === "storage") {
       void refreshWorktrees("", true);
       void storageMaintenance.refresh();
     }
-    searchInput.focus();
+    if (!modelFocus) {
+      searchInput.focus();
+    }
     void (async () => {
       failedRefreshStages.length = 0;
       delete overlay.dataset["settingsRefreshFailed"];
@@ -71790,6 +72095,8 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
         if (iconRadio) iconRadio.checked = true;
       });
       await refreshStage("local-models", () => refreshLocalModelSelects());
+      if (modelFocus && openedSection !== "customise" && overlay.open && overlay.querySelector(".settings-section.active")?.getAttribute("data-section") === openedSection)
+        focusModelSettings(overlay, modelFocus);
       await refreshStage("gh-cli", () => ghCliSection.refreshStatus());
       await refreshStage("mcp-servers", async () => {
         await refreshMcpServers();
@@ -71902,19 +72209,14 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
           })()
         );
       }
-      if (dirtyFieldNames.has("localDefaultModel") || dirtyFieldNames.has("subagentModel") || dirtyFieldNames.has("smallTasksModel")) {
-        writes.push(
-          (async () => {
-            const savedRoleModels = stringRecordOrEmpty(await api2.settings.get("roleModels"));
-            await api2.settings.set("roleModels", {
-              ...savedRoleModels,
-              coder: routingValues.localDefaultModel,
-              research: routingValues.subagentModel,
-              "small-tasks": formDataString(data, "smallTasksModel").trim()
-            });
-          })()
-        );
-      }
+      const roleAssignments = modelRoutingSection.readRoleModels() ?? {};
+      if (dirtyFieldNames.has("localDefaultModel"))
+        roleAssignments["coder"] = routingValues.localDefaultModel;
+      if (dirtyFieldNames.has("subagentModel"))
+        roleAssignments["research"] = routingValues.subagentModel;
+      if (dirtyFieldNames.has("smallTasksModel"))
+        roleAssignments["small-tasks"] = formDataString(data, "smallTasksModel").trim();
+      if (Object.keys(roleAssignments).length) writes.push(api2.settings.update({ roleAssignments }));
       const securityFieldNames = [
         "localServerUrl",
         "safetyModel",
@@ -71999,11 +72301,12 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
   qsRequired(overlay, "#settings-cancel").addEventListener("click", closeSettingsDialog);
   qsRequired(overlay, "#settings-close").addEventListener("click", closeSettingsDialog);
 }
-var isSettingsSection, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingPluginDetail;
+var isSettingsSection, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingModelFocus, revealPluginModel, pendingPluginDetail;
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
     init_storage_maintenance_panel();
     init_sources_section();
+    init_settings_sources_skills();
     init_source_row();
     init_errors4();
     init_ipc_error_message();
@@ -72161,6 +72464,8 @@ var init_settings_dialog = __esm({
     ];
     overlayEl = null;
     pendingSection = null;
+    pendingModelFocus = null;
+    revealPluginModel = null;
     pendingPluginDetail = null;
   }
 });
@@ -77554,6 +77859,71 @@ var init_demo_scenarios = __esm({
         }))
       },
       {
+        id: "sidebar-empty-project",
+        label: "Empty unopened project in the sidebar",
+        project: project("demo-empty-active"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [],
+        otherProjects: [
+          { project: project("demo-empty-other", "empty-project", "/demo/empty"), threads: [] }
+        ]
+      },
+      {
+        id: "sidebar-other-projects",
+        label: "Sidebar listing threads of projects not opened yet",
+        project: project("demo-other-projects-active", "copse-demo", "/demo/copse"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          sidebarThreadGroup: "status"
+        },
+        // The open project has one thread; two more projects hold threads that are only
+        // read in the background after startup, so their titles must still be listed.
+        threads: [
+          {
+            id: "demo-other-projects-active-chat",
+            title: "Open project thread",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        otherProjects: [
+          {
+            project: project("demo-other-projects-docs", "docs-site", "/demo/docs-site"),
+            threads: ["Rewrite the install guide", "Fix broken anchors"].map((title, index) => ({
+              id: `demo-other-projects-docs-${String(index)}`,
+              title,
+              status: "idle",
+              messages: [],
+              messagesLoaded: false,
+              usage: { inputTokens: 0, outputTokens: 0 },
+              createdAt: FIXED_TIME - 10 - index,
+              updatedAt: FIXED_TIME - 10 - index
+            }))
+          },
+          {
+            project: project("demo-other-projects-api", "api-server", "/demo/api-server"),
+            threads: [
+              {
+                id: "demo-other-projects-api-0",
+                title: "Add pagination to the list endpoint",
+                status: "idle",
+                messages: [],
+                messagesLoaded: false,
+                usage: { inputTokens: 0, outputTokens: 0 },
+                createdAt: FIXED_TIME - 20,
+                updatedAt: FIXED_TIME - 20
+              }
+            ]
+          }
+        ]
+      },
+      {
         id: "sidebar-thread-sort",
         label: "Sidebar thread sort",
         project: project("demo-sidebar-sort-project"),
@@ -77613,6 +77983,64 @@ var init_demo_scenarios = __esm({
             usage: { inputTokens: 0, outputTokens: 0 },
             createdAt: FIXED_TIME - 5,
             updatedAt: FIXED_TIME - 5
+          }
+        ]
+      },
+      {
+        id: "sidebar-thread-changes",
+        label: "Sidebar changes glyph",
+        project: project("demo-sidebar-changes-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // Two finished threads with unlanded work, one clean, one still running.
+        threadChanges: {
+          "demo-sidebar-changes-commits": { dirty: false, unpushed: 2 },
+          "demo-sidebar-changes-dirty": { dirty: true },
+          "demo-sidebar-changes-clean": { dirty: false }
+        },
+        threads: [
+          {
+            id: "demo-sidebar-changes-clean",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-sidebar-changes-commits",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          {
+            id: "demo-sidebar-changes-dirty",
+            title: "Add a retry to uploads",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 3,
+            updatedAt: FIXED_TIME - 3
+          },
+          {
+            id: "demo-sidebar-changes-running",
+            title: "Run the schema migration",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 4,
+            updatedAt: FIXED_TIME - 4
           }
         ]
       },
@@ -78155,11 +78583,15 @@ function createDemoApi(scenario, options = {}) {
   let mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
   const pendingMcpSignIns = /* @__PURE__ */ new Map();
   const storage = /* @__PURE__ */ new Map([
-    ["projects", [scenario.project]],
+    [
+      "projects",
+      [scenario.project, ...(scenario.otherProjects ?? []).map((other) => other.project)]
+    ],
     ["activeProjectId", scenario.project.id]
   ]);
   let workspaceRoot = scenario.project.path;
   let threads = structuredClone(scenario.threads);
+  const prRefsHandlers = /* @__PURE__ */ new Set();
   const showAutomationPermissions = scenario.id === "automation-permissions";
   const demoPlugins = showAutomationPermissions ? [...DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN] : DEMO_PLUGINS;
   const automationSchedules = showAutomationPermissions ? [
@@ -78617,16 +79049,34 @@ function createDemoApi(scenario, options = {}) {
         if (thread) thread.archivedAt = archivedAt;
         return resolved2({ status: "archived", archivedAt, worktree: thread?.worktree });
       },
-      loadProject: (projectId) => resolved2(projectId === scenario.project.id ? structuredClone(threads) : []),
+      loadProject: (projectId) => resolved2(
+        projectId === scenario.project.id ? structuredClone(threads) : structuredClone(
+          scenario.otherProjects?.find((other) => other.project.id === projectId)?.threads ?? []
+        )
+      ),
       // The demo always hands back whole threads, so nothing ever asks to
       // hydrate one; answering from the in-memory list keeps that true. The
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
       loadMessages: (_projectId, threadId) => scenario.holdThreadHydration === true ? new Promise(() => void 0) : scenario.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved2(structuredClone(threads.find((t2) => t2.id === threadId)?.messages ?? [])),
-      // Demo threads always arrive whole, so nothing is ever backfilled.
-      backfillPrRefs: () => resolvedVoid(),
-      onPrRefs: () => () => void 0,
+      // Demo threads link no PRs, so a backfill answers each one with an empty ref set —
+      // the settled "no PR" the sidebar waits for before it draws a row's changes glyph.
+      backfillPrRefs: (projectId, threadIds) => {
+        for (const handler of prRefsHandlers) {
+          handler(
+            projectId,
+            threadIds.map((threadId) => ({ threadId, prRefs: [] }))
+          );
+        }
+        return resolvedVoid();
+      },
+      onPrRefs: (handler) => {
+        prRefsHandlers.add(handler);
+        return () => {
+          prRefsHandlers.delete(handler);
+        };
+      },
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => void 0,
       create: (_projectId, thread) => {
@@ -78688,6 +79138,13 @@ function createDemoApi(scenario, options = {}) {
     },
     openRouter: { models: emptyArray },
     models: {
+      invalidations: () => resolved2({
+        evaluated: true,
+        invalidations: [],
+        selections: [],
+        verifiedChoices: []
+      }),
+      recoverSetting: () => resolved2(false),
       bestValueDefault: () => resolved2("lmstudio:qwen/qwen3.6-35b-a3b"),
       resolveDynamic: (value) => resolved2(value.startsWith("auto:") ? "lmstudio:qwen/qwen3.6-35b-a3b" : value)
     },
@@ -78999,7 +79456,16 @@ function createDemoApi(scenario, options = {}) {
       remove: unsupported
     },
     agents: { list: () => resolved2({ agents: [], skipped: [], shadowed: [] }) },
-    skills: { list: emptyArray },
+    skills: {
+      list: emptyArray,
+      sources: () => resolved2({ skills: [], diagnostics: [], extraRoots: [], reload: "manual" }),
+      setRoots: (extraRoots) => resolved2({
+        skills: [],
+        diagnostics: [],
+        extraRoots,
+        reload: "manual"
+      })
+    },
     cursorPlugins: { list: emptyArray },
     bundledSkillPlugins: { list: emptyArray },
     hooks: {
@@ -79105,6 +79571,12 @@ function createDemoApi(scenario, options = {}) {
       isAvailable: () => resolved2(true),
       status: () => resolved2({ staged: [], unstaged: [] }),
       changeStats: () => resolved2(scenario.changeStats ? { ...scenario.changeStats } : null),
+      threadChangeSummary: (refs) => resolved2(
+        refs.map(({ threadId }) => {
+          const changes = scenario.threadChanges?.[threadId];
+          return changes ? { ...changes } : null;
+        })
+      ),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved2(null),
       workingFileDiff: () => resolved2(null),
@@ -79754,9 +80226,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -79865,7 +80337,8 @@ function createStore(initial) {
     request_terminal_command: /* @__PURE__ */ new Set(),
     code_block_run_requested: /* @__PURE__ */ new Set(),
     code_block_run_finished: /* @__PURE__ */ new Set(),
-    attention_changed: /* @__PURE__ */ new Set()
+    attention_changed: /* @__PURE__ */ new Set(),
+    sidebar_threads_loaded: /* @__PURE__ */ new Set()
   };
   function on3(event, handler) {
     listeners[event].add(handler);
@@ -81791,6 +82264,24 @@ function prHasMergeConflicts(pr2) {
 }
 var init_pr_status = __esm({
   "src/renderer/dom/pr-status.ts"() {
+  }
+});
+
+// src/shared/git/thread-change-summary.ts
+function describeThreadChanges(summary) {
+  if (!summary) return null;
+  const unpushed = summary.unpushed ?? 0;
+  if (unpushed > 0) {
+    const commits = `${String(unpushed)} unpushed commit${unpushed === 1 ? "" : "s"}`;
+    return summary.dirty ? `${commits} and uncommitted changes` : commits;
+  }
+  return summary.dirty ? "Uncommitted changes" : null;
+}
+function sameThreadChangeSummary(a3, b4) {
+  return describeThreadChanges(a3) === describeThreadChanges(b4);
+}
+var init_thread_change_summary = __esm({
+  "src/shared/git/thread-change-summary.ts"() {
   }
 });
 
@@ -83940,6 +84431,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   store2.on("threads_changed", onChange);
   store2.on("thread_status_changed", onChange);
   store2.on("projects_changed", onChange);
+  store2.on("sidebar_threads_loaded", onChange);
   store2.on("agent_activity", onChange);
   function hide3() {
     cancelRender?.();
@@ -84969,6 +85461,15 @@ function chatPrStatus(rollup, ciFailing, conflicts) {
     icon
   );
 }
+function chatChangesStatus(label) {
+  const icon = gitBranchIcon("ui-icon ui-icon-sm");
+  icon.setAttribute("aria-hidden", "true");
+  return el(
+    "span",
+    { class: "chat-changes-status", role: "img", "aria-label": label, "data-tooltip": label },
+    icon
+  );
+}
 function settingsIcon(className = "titlebar-btn-icon") {
   const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", className);
@@ -85311,6 +85812,36 @@ function mountProjectsPane(root, store2, api2) {
   const prBackfillRetryTimers = /* @__PURE__ */ new Set();
   let prBackfillRowsByKey = /* @__PURE__ */ new Map();
   let prBackfillObserver = null;
+  const THREAD_CHANGE_TTL_MS = 3e4;
+  const THREAD_CHANGE_MAX_PER_PASS = 60;
+  const threadChangeCache = /* @__PURE__ */ new Map();
+  const threadChangeInFlight = /* @__PURE__ */ new Set();
+  let threadChangeGeneration = 0;
+  let threadChangeTimer = null;
+  const threadChangeKey = (projectId, threadId) => `${projectId}\0${threadId}`;
+  let threadChangeRendered = [];
+  function refreshThreadChanges(refs, opts = {}) {
+    const batch = refs.filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId))).slice(0, THREAD_CHANGE_MAX_PER_PASS);
+    if (batch.length === 0) return;
+    const generation = threadChangeGeneration;
+    for (const ref of batch) threadChangeInFlight.add(threadChangeKey(ref.projectId, ref.threadId));
+    const settle2 = (results) => {
+      let changed = false;
+      for (const [i2, ref] of batch.entries()) {
+        const key = threadChangeKey(ref.projectId, ref.threadId);
+        threadChangeInFlight.delete(key);
+        const summary = results[i2] ?? null;
+        if (!sameThreadChangeSummary(threadChangeCache.get(key)?.summary ?? null, summary)) {
+          changed = true;
+        }
+        threadChangeCache.set(key, { summary, at: Date.now() });
+      }
+      if (changed && generation === threadChangeGeneration) render(true);
+    };
+    void api2.git.threadChangeSummary(batch, opts).then(settle2, () => {
+      settle2([]);
+    });
+  }
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
   const expandedFailedSchedules = /* @__PURE__ */ new Set();
@@ -85452,6 +85983,16 @@ function mountProjectsPane(root, store2, api2) {
         if (lifecycleChanged) render();
       });
     }
+  }
+  function recheckStaleThreadChanges() {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    const now = Date.now();
+    refreshThreadChanges(
+      threadChangeRendered.filter(({ projectId, threadId }) => {
+        const cached2 = threadChangeCache.get(threadChangeKey(projectId, threadId));
+        return !cached2 || now - cached2.at > THREAD_CHANGE_TTL_MS;
+      })
+    );
   }
   function ciFailingForThread(thread) {
     return sidebarPrRefs(thread).some((ref) => {
@@ -85855,6 +86396,9 @@ function mountProjectsPane(root, store2, api2) {
     prBackfillObserver = null;
     clear(list);
     const prBackfillRows = [];
+    const threadChangeWanted = [];
+    const threadChangeSeen = [];
+    const threadChangeSeenKeys = /* @__PURE__ */ new Set();
     syncFilterControls();
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
@@ -86036,6 +86580,19 @@ function mountProjectsPane(root, store2, api2) {
             prRollup.kind === "open" && conflictsForThread(thread)
           )
         );
+      } else if (thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
+        const key = threadChangeKey(project2.id, thread.id);
+        threadChangeSeen.push({ projectId: project2.id, threadId: thread.id });
+        threadChangeSeenKeys.add(key);
+        const cached2 = threadChangeCache.get(key);
+        const changesLabel = describeThreadChanges(cached2?.summary ?? null);
+        if (changesLabel) {
+          chatRow.classList.add("has-changes-status");
+          chatRow.append(chatChangesStatus(changesLabel));
+        }
+        if (!cached2 || Date.now() - cached2.at > THREAD_CHANGE_TTL_MS) {
+          threadChangeWanted.push({ projectId: project2.id, threadId: thread.id });
+        }
       }
       if (thread.prRefs === void 0) {
         prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
@@ -86295,6 +86852,31 @@ function mountProjectsPane(root, store2, api2) {
       }
       return section;
     }
+    function renderNewThreadButton(project2) {
+      const newThreadBtn = el(
+        "button",
+        {
+          type: "button",
+          class: "project-new-thread-btn",
+          "aria-label": "New thread",
+          "data-tooltip": "New thread"
+        },
+        plusIcon("ui-icon ui-icon-sm")
+      );
+      newThreadBtn.addEventListener("click", (e3) => {
+        e3.stopPropagation();
+        if (project2.id !== store2.getState().activeProjectId) {
+          switchProject(store2, api2, project2.id);
+          return;
+        }
+        if (!store2.getState().workspaceRoot) {
+          void addProject(store2, api2);
+          return;
+        }
+        openNewThread(store2);
+      });
+      return newThreadBtn;
+    }
     function renderProjectEntry(project2) {
       const entry = el("div", { class: "project-entry", "data-project-id": project2.id });
       const isExpanded = project2.id === expandedId;
@@ -86425,29 +87007,7 @@ function mountProjectsPane(root, store2, api2) {
         return entry;
       }
       if (isExpanded) {
-        const newThreadBtn = el(
-          "button",
-          {
-            type: "button",
-            class: "project-new-thread-btn",
-            "aria-label": "New thread",
-            "data-tooltip": "New thread"
-          },
-          plusIcon("ui-icon ui-icon-sm")
-        );
-        newThreadBtn.addEventListener("click", (e3) => {
-          e3.stopPropagation();
-          if (project2.id !== store2.getState().activeProjectId) {
-            switchProject(store2, api2, project2.id);
-            return;
-          }
-          if (!store2.getState().workspaceRoot) {
-            void addProject(store2, api2);
-            return;
-          }
-          openNewThread(store2);
-        });
-        projectLine.append(newThreadBtn);
+        projectLine.append(renderNewThreadButton(project2));
       }
       if (!isExpanded) return entry;
       const isFiltering = threadFilter.length > 0 && project2.id === activeProjectId;
@@ -86507,6 +87067,8 @@ function mountProjectsPane(root, store2, api2) {
         );
       } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
+      } else if (!isFiltering && visibleThreads.length === 0) {
+        chats.append(el("div", { class: "sidebar-empty" }, "No threads yet"));
       }
       for (const thread of visibleThreads) {
         chats.append(renderThreadRow(project2, thread));
@@ -86553,8 +87115,24 @@ function mountProjectsPane(root, store2, api2) {
       const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
       const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse);
       const sections = mode === "status" ? groupRowsByStatus(ordered, isThreadAwaitingAttention) : [{ id: "all", label: "", rows: ordered }];
+      const withThreads = new Set(ordered.map((row2) => row2.projectId));
+      const emptyProjectRows = Array.from(owners.values()).filter((project2) => !withThreads.has(project2.id)).map((project2) => {
+        const nameRow = el(
+          "button",
+          { class: "project-row", title: project2.path },
+          el("span", { class: "project-name" }, projectDisplayName(project2))
+        );
+        nameRow.addEventListener("click", () => {
+          switchProject(store2, api2, project2.id);
+        });
+        return el(
+          "div",
+          { class: "project-entry", "data-project-id": project2.id },
+          el("div", { class: "project-line" }, nameRow, renderNewThreadButton(project2))
+        );
+      });
       if (ordered.length === 0) {
-        return [el("div", { class: "sidebar-empty" }, "No threads yet")];
+        return [el("div", { class: "sidebar-empty" }, "No threads yet"), ...emptyProjectRows];
       }
       return sections.map((section) => {
         const block = el("div", { class: "thread-section", "data-section-id": section.id });
@@ -86578,7 +87156,9 @@ function mountProjectsPane(root, store2, api2) {
           const project2 = owners.get(byThread.get(thread)?.projectId ?? "");
           if (!project2) continue;
           const row2 = renderThreadRow(project2, thread);
-          row2.querySelector(".chat-title")?.after(el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project2)}`));
+          row2.querySelector(".chat-title")?.after(
+            el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project2)}`)
+          );
           chats.append(row2);
         }
         if (paged.hasMore) {
@@ -86595,7 +87175,7 @@ function mountProjectsPane(root, store2, api2) {
         }
         block.append(chats);
         return block;
-      });
+      }).concat(emptyProjectRows);
     }
     const groupMode = store2.getState().sidebarThreadGroup;
     if (groupMode !== "project" && threadFilter.length === 0) {
@@ -86669,13 +87249,35 @@ function mountProjectsPane(root, store2, api2) {
       prBackfillObserver = observer;
       for (const { row: row2 } of prBackfillRows) observer.observe(row2);
     }
+    threadChangeRendered = threadChangeSeen;
+    const pruneBefore = Date.now() - 2 * THREAD_CHANGE_TTL_MS;
+    for (const [key, entry] of threadChangeCache) {
+      if (entry.at < pruneBefore && !threadChangeSeenKeys.has(key)) threadChangeCache.delete(key);
+    }
+    refreshThreadChanges(threadChangeWanted);
     if (preserveScroll) list.scrollTop = scrollTop;
   }
+  const unsubWorkingTree = api2.git.onWorkingTreeChanged(() => {
+    if (threadChangeTimer !== null) clearTimeout(threadChangeTimer);
+    threadChangeTimer = setTimeout(() => {
+      threadChangeTimer = null;
+      const { activeProjectId, activeThreadId, projects } = store2.getState();
+      if (!activeProjectId || !activeThreadId) return;
+      if (projects.find((p2) => p2.id === activeProjectId)?.sshHost) return;
+      refreshThreadChanges([{ projectId: activeProjectId, threadId: activeThreadId }], {
+        fresh: true
+      });
+    }, 1500);
+  });
+  window.addEventListener("focus", recheckStaleThreadChanges);
+  document.addEventListener("visibilitychange", recheckStaleThreadChanges);
   const unsubs = [
+    unsubWorkingTree,
     store2.on("projects_changed", render),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", render),
+    store2.on("sidebar_threads_loaded", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", () => {
@@ -86705,6 +87307,13 @@ function mountProjectsPane(root, store2, api2) {
     prBackfillObserver = null;
     prBackfillRowsByKey.clear();
     prStatusGeneration += 1;
+    threadChangeGeneration += 1;
+    if (threadChangeTimer !== null) clearTimeout(threadChangeTimer);
+    threadChangeTimer = null;
+    window.removeEventListener("focus", recheckStaleThreadChanges);
+    document.removeEventListener("visibilitychange", recheckStaleThreadChanges);
+    threadChangeCache.clear();
+    threadChangeInFlight.clear();
     orphanScanGeneration += 1;
     dismissContextMenu();
     renaming = null;
@@ -86724,6 +87333,7 @@ var init_projects_pane = __esm({
     init_rename_blur();
     init_pr_status();
     init_icons();
+    init_thread_change_summary();
     init_thread_helpers();
     init_github_pr_url2();
     init_thread_pr_status2();
@@ -88971,7 +89581,7 @@ function containerRunResultMarkdown(progress) {
   const facts = [`model ${progress.model}`];
   if (result) {
     facts.push(
-      result.harness === "copse" ? "Copse harness" : `${result.harness.acp} agent`,
+      result.harness === "copse" ? "Copse agent" : `${result.harness.acp} agent`,
       `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`
     );
   }
@@ -89425,12 +90035,16 @@ var init_table_copy = __esm({
   }
 });
 
-// src/renderer/markdown/mermaid-frame-protocol.ts
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
 function parseDiagramSize(value) {
-  if (typeof value !== "object" || value === null) return null;
-  if (!("type" in value) || value.type !== "rendered") return null;
-  if (!("width" in value) || !("height" in value)) return null;
-  const { width, height } = value;
+  if (typeof value !== "object" || value === null)
+    return null;
+  if (!Object.hasOwn(value, "type") || Reflect.get(value, "type") !== "rendered")
+    return null;
+  if (!Object.hasOwn(value, "width") || !Object.hasOwn(value, "height"))
+    return null;
+  const width = Reflect.get(value, "width");
+  const height = Reflect.get(value, "height");
   if (typeof width !== "number" || typeof height !== "number" || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0)
     return null;
   return {
@@ -89440,35 +90054,48 @@ function parseDiagramSize(value) {
 }
 var MAX_DIAGRAM_SOURCE_LENGTH, MAX_DIAGRAM_DIMENSION;
 var init_mermaid_frame_protocol = __esm({
-  "src/renderer/markdown/mermaid-frame-protocol.ts"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
     MAX_DIAGRAM_SOURCE_LENGTH = 5e4;
     MAX_DIAGRAM_DIMENSION = 4096;
   }
 });
 
-// src/renderer/markdown/mermaid-frame.ts
-function createMermaidFrame(source, layoutWidth = 300) {
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
+function createMermaidFrame(source, options) {
   const element = document.createElement("iframe");
   element.className = "mermaid-frame";
   element.title = "Mermaid diagram";
   element.setAttribute("sandbox", "allow-scripts");
   element.setAttribute("referrerpolicy", "no-referrer");
   element.setAttribute("tabindex", "-1");
-  element.setAttribute(
-    "allow",
-    "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"
-  );
+  element.setAttribute("allow", "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'");
+  const layoutWidth = options.layoutWidth ?? 300;
   const width = Number.isFinite(layoutWidth) && layoutWidth > 0 ? Math.min(layoutWidth, MAX_DIAGRAM_DIMENSION) : 300;
   element.style.width = `${String(width)}px`;
-  sources2.set(element, { source, layoutWidth: width });
+  let cancel = () => {
+  };
+  const dispose = () => {
+    cancel();
+    element.remove();
+  };
   const ready3 = new Promise((resolve, reject) => {
-    if (source.length > MAX_DIAGRAM_SOURCE_LENGTH) {
-      reject(new Error("Diagram source is too large"));
+    if (source.length > MAX_DIAGRAM_SOURCE_LENGTH || options.signal?.aborted) {
+      reject(new Error("Diagram source is too large or rendering was cancelled"));
       return;
     }
     const channel = new MessageChannel();
+    let settled = false;
+    const observer = new MutationObserver((records) => {
+      if (!element.isConnected && records.some((record2) => Array.from(record2.removedNodes).some((node2) => node2 === element || node2.contains(element))))
+        dispose();
+    });
     const finish = (size) => {
+      if (settled)
+        return;
+      settled = true;
       clearTimeout(timer);
+      observer.disconnect();
+      options.signal?.removeEventListener("abort", dispose);
       channel.port1.close();
       channel.port2.close();
       element.onload = null;
@@ -89479,39 +90106,51 @@ function createMermaidFrame(source, layoutWidth = 300) {
         element.style.height = "auto";
         element.dataset["rendered"] = "true";
         resolve(size);
-      } else {
+      } else
         reject(new Error("Diagram frame did not render"));
+    };
+    const timer = setTimeout(() => finish(null), 3e4);
+    cancel = () => finish(null);
+    channel.port1.onmessage = (event) => finish(parseDiagramSize(event.data));
+    channel.port1.onmessageerror = cancel;
+    element.onerror = cancel;
+    element.onload = () => {
+      element.onload = null;
+      try {
+        element.contentWindow?.postMessage({ type: "render", source }, "*", [channel.port2]);
+      } catch {
+        finish(null);
       }
     };
-    const timer = setTimeout(() => {
-      finish(null);
-    }, FRAME_TIMEOUT_MS);
-    channel.port1.onmessage = (event) => {
-      const size = parseDiagramSize(event.data);
-      if (size) finish(size);
-      else if (typeof event.data === "object" && event.data !== null && "type" in event.data && event.data.type === "failed")
-        finish(null);
-    };
-    element.onerror = () => {
-      finish(null);
-    };
-    element.onload = () => {
-      element.contentWindow?.postMessage({ type: "render", source }, "*", [channel.port2]);
-      element.onload = null;
-    };
-    element.src = new URL("./mermaid-frame.html", window.location.href).href;
+    options.signal?.addEventListener("abort", dispose, { once: true });
+    observer.observe(document, { childList: true, subtree: true });
+    element.src = options.url;
   });
-  return { element, ready: ready3 };
+  return { element, ready: ready3, dispose };
+}
+var init_mermaid_isolated = __esm({
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
+    init_mermaid_frame_protocol();
+  }
+});
+
+// src/renderer/markdown/mermaid-frame.ts
+function createMermaidFrame2(source, layoutWidth = 300) {
+  const frame = createMermaidFrame(source, {
+    url: new URL("./mermaid-frame.html", window.location.href).href,
+    layoutWidth
+  });
+  sources2.set(frame.element, { source, layoutWidth });
+  return frame;
 }
 function recreateMermaidFrame(element) {
   const saved = sources2.get(element);
-  return saved === void 0 ? null : createMermaidFrame(saved.source, saved.layoutWidth);
+  return saved === void 0 ? null : createMermaidFrame2(saved.source, saved.layoutWidth);
 }
-var FRAME_TIMEOUT_MS, sources2;
+var sources2;
 var init_mermaid_frame = __esm({
   "src/renderer/markdown/mermaid-frame.ts"() {
-    init_mermaid_frame_protocol();
-    FRAME_TIMEOUT_MS = 3e4;
+    init_mermaid_isolated();
     sources2 = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -89664,6 +90303,8 @@ function ensureExpandDialog() {
   });
   expandDialog.addEventListener("close", () => {
     resetTransform();
+    expandedFrame?.dispose();
+    expandedFrame = null;
     stageEl?.replaceChildren();
   });
   return expandDialog;
@@ -89674,7 +90315,12 @@ function openMermaidExpand(source, recreate) {
   const frame = recreate(sourceFrame);
   if (!frame) return;
   const dialog2 = ensureExpandDialog();
-  if (!stageEl) return;
+  if (!stageEl) {
+    frame.dispose();
+    return;
+  }
+  expandedFrame?.dispose();
+  expandedFrame = frame;
   stageEl.replaceChildren(frame.element);
   dialog2.showModal();
   void frame.ready.then(() => {
@@ -89705,7 +90351,7 @@ function attachMermaidExpand(root, recreate = recreateMermaidFrame) {
     });
   }
 }
-var MIN_SCALE, MAX_SCALE, ZOOM_STEP, expandDialog, viewportEl, stageEl, zoomLabelEl, scale, translateX, translateY;
+var MIN_SCALE, MAX_SCALE, ZOOM_STEP, expandDialog, viewportEl, stageEl, zoomLabelEl, expandedFrame, scale, translateX, translateY;
 var init_mermaid_expand = __esm({
   "src/renderer/markdown/mermaid-expand.ts"() {
     init_helpers();
@@ -89718,6 +90364,7 @@ var init_mermaid_expand = __esm({
     viewportEl = null;
     stageEl = null;
     zoomLabelEl = null;
+    expandedFrame = null;
     scale = 1;
     translateX = 0;
     translateY = 0;
@@ -89762,13 +90409,13 @@ async function renderMermaidIn(root) {
       const source = node2.textContent;
       const style = getComputedStyle(node2);
       const layoutWidth = node2.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-      const frame = createMermaidFrame(source, layoutWidth);
+      const frame = createMermaidFrame2(source, layoutWidth);
       node2.replaceChildren(frame.element);
       try {
         await frame.ready;
         attachMermaidExpand(container.parentElement ?? root);
       } catch {
-        frame.element.remove();
+        frame.dispose();
         renderMermaidFallback(container, source);
       }
     })
@@ -89782,7 +90429,7 @@ var init_mermaid2 = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
 function defaultNow() {
   const perf = globalThis.performance;
   return typeof perf?.now === "function" ? perf.now() : Date.now();
@@ -89966,7 +90613,7 @@ function createInputSmoother(options) {
 }
 var DEFAULT_CHARS_PER_SECOND3, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
 var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
     DEFAULT_CHARS_PER_SECOND3 = 600;
     DEFAULT_LAG_MS = 120;
     VELOCITY_SMOOTHING_MS = 180;
@@ -90504,9 +91151,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -113398,8 +114045,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       rows.push(row2("Outcome", result.stopReason));
       rows.push(
         row2(
-          "Harness",
-          result.harness === "copse" ? "Copse" : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (ACP agent)`
+          "Agent",
+          result.harness === "copse" ? "Copse" : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (coding agent)`
         )
       );
       rows.push(row2("Prompts reached a handler", String(result.promptsAttempted)));
@@ -114849,7 +115496,7 @@ ${description}
       usage: usage?.tooltip ?? null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
-      snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by ACP agent" : null
+      snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by the agent" : null
     });
     footerOverflow?.update();
     updateContextFitWarning();
@@ -128735,6 +129382,29 @@ var init_pr_thread_relationships = __esm({
   }
 });
 
+// src/renderer/views/pr-auth-error.ts
+function isGithubSamlError(message2) {
+  return /organization SAML enforcement|SAML SSO/i.test(message2);
+}
+function githubSamlAuthorizationUrl(message2, owner) {
+  if (!isGithubSamlError(message2)) return null;
+  const match = message2.match(/https:\/\/github\.com\/orgs\/[a-z\d-]+\/sso\?[^\s<>'"()]+/i);
+  if (!match) return null;
+  try {
+    const url2 = new URL(match[0].replace(/[.,;]+$/, ""));
+    if (url2.origin !== "https://github.com" || url2.username || url2.password || url2.pathname.toLowerCase() !== `/orgs/${owner.toLowerCase()}/sso` || !url2.search) {
+      return null;
+    }
+    return url2.href;
+  } catch {
+    return null;
+  }
+}
+var init_pr_auth_error = __esm({
+  "src/renderer/views/pr-auth-error.ts"() {
+  }
+});
+
 // src/renderer/views/pr-pane.ts
 function agentProviderLabel(provider) {
   return AGENT_PROVIDER_LABEL[provider] ?? provider;
@@ -129706,7 +130376,32 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     } catch (err2) {
       if (requestId !== detailsRequestId) return;
       emptyState.hidden = false;
-      emptyState.textContent = err2 instanceof Error ? err2.message : "Could not load pull request";
+      const message2 = ipcErrorMessage(err2, "Could not load pull request");
+      const ssoUrl = githubSamlAuthorizationUrl(message2, ref.owner);
+      if (ssoUrl) {
+        emptyState.replaceChildren(
+          el(
+            "div",
+            { class: "pr-auth-error" },
+            el("p", {}, `GitHub requires SSO authorization for ${ref.owner}.`),
+            el(
+              "button",
+              { class: "ui-btn ui-btn-primary pr-auth-button", type: "button" },
+              "Sign in with GitHub SSO"
+            ),
+            el("p", { class: "pr-auth-hint" }, "After authorizing, refresh pull requests.")
+          )
+        );
+        emptyState.querySelector(".pr-auth-button")?.addEventListener("click", () => {
+          if (requestId === detailsRequestId && isStillSelected(ref)) {
+            void api2.shell.openExternal(ssoUrl);
+          }
+        });
+      } else if (isGithubSamlError(message2)) {
+        emptyState.textContent = `GitHub requires SSO authorization for ${ref.owner}. Open this pull request on GitHub to authorize access.`;
+      } else {
+        emptyState.textContent = message2;
+      }
       return;
     }
     if (!prDetails) {
@@ -129987,6 +130682,8 @@ var init_pr_pane = __esm({
     init_pr_pane_activity();
     init_thread_pr_relations2();
     init_pr_thread_relationships();
+    init_pr_auth_error();
+    init_ipc_error_message();
     STATUS_LABEL2 = {
       added: "A",
       modified: "M",
@@ -153459,7 +154156,7 @@ function startAgentController(store2, api2) {
             }
             st2.toolSinceText = nextState.toolSinceText;
             st2.currentText = nextState.currentText ?? "";
-            if (st2.msgId === null) throw new Error("assistant message id missing for ACP text");
+            if (st2.msgId === null) throw new Error("assistant message id missing for agent text");
             appendToken(store2, st2.msgId, plan.text);
             st2.writing = plan.text.trim().length > 0;
             if (st2.writing) maybeNameThread(store2, api2, threadId);
@@ -154170,6 +154867,138 @@ var init_best_value_default = __esm({
   "src/renderer/controller/best-value-default.ts"() {
     init_thread_helpers();
     init_dynamic_model();
+    init_model_selection2();
+  }
+});
+
+// src/renderer/controller/provider-invalidation.ts
+function settingsTarget(invalid) {
+  switch (invalid.target) {
+    case "thread":
+      return "model";
+    case "role:coder":
+      return "localDefaultModel";
+    case "role:research":
+      return "subagentModel";
+    case "role:small-tasks":
+      return "smallTasksModel";
+    default:
+      return invalid.target;
+  }
+}
+function acknowledgement(store2, invalid) {
+  const thread = getActiveThread(store2);
+  if (invalid.target === "thread" && thread?.messages.length === 0 && !thread.modelSelections?.length && store2.getState().settings?.model === invalid.model)
+    return JSON.stringify(["model", invalid.model]);
+  return JSON.stringify(
+    invalid.target === "thread" ? [store2.getState().activeProjectId, getActiveThread(store2)?.id, invalid.model] : [invalid.target, invalid.model]
+  );
+}
+async function checkProviderInvalidation(store2, api2, ui2, acknowledged = /* @__PURE__ */ new Set()) {
+  const thread = getActiveThread(store2);
+  const project2 = store2.getState().activeProjectId;
+  const route = thread?.status === "idle" ? thread.model ?? store2.getState().settings?.model : void 0;
+  const alive = () => ui2.isActive?.() ?? true;
+  const stillSelected = () => {
+    const current = getActiveThread(store2);
+    return alive() && store2.getState().activeProjectId === project2 && current?.id === thread?.id && current?.status === "idle" && (current.model ?? store2.getState().settings?.model) === route;
+  };
+  const report = await api2.models.invalidations(route).catch(() => null);
+  if (!report?.evaluated || !alive() || route && !stillSelected()) return [];
+  const invalid = report.invalidations;
+  const selected = new Set(report.selections.map((choice) => acknowledgement(store2, choice)));
+  const verified = new Set(report.verifiedChoices.map((choice) => acknowledgement(store2, choice)));
+  for (const key of acknowledged) {
+    const parts = safeJsonParse(key, decodeWithSchema(external_exports.array(external_exports.string())));
+    if (!parts) continue;
+    const evaluatedSaved = parts.length === 2;
+    const evaluatedThread = route !== void 0 && parts.length === 3 && parts[0] === project2 && parts[1] === thread?.id;
+    if ((evaluatedSaved || evaluatedThread) && (!selected.has(key) || verified.has(key)))
+      acknowledged.delete(key);
+  }
+  const pending = invalid.filter((entry) => !acknowledged.has(acknowledgement(store2, entry)));
+  if (!pending.length) return [];
+  const keys = pending.map((entry) => acknowledgement(store2, entry));
+  const first = pending[0];
+  if (!first) return [];
+  const hasFallback = pending.some((entry) => entry.fallback);
+  const open2 = await ui2.warn({
+    message: "Model settings need attention",
+    detail: pending.map(
+      (entry) => `${entry.label}: ${entry.model}. ${entry.reason} ${entry.fallback ? `Dismiss to use ${entry.fallback.replace(/^lmstudio:/, "")} on this device.` : "No suitable on-device model is available; this choice will be preserved."}`
+    ).join("\n\n"),
+    confirmLabel: "Open Settings",
+    cancelLabel: hasFallback ? "Use local models" : "Dismiss"
+  });
+  if (!alive()) return keys;
+  if (open2) {
+    if (first.target !== "thread" || stillSelected()) ui2.openSettings(settingsTarget(first));
+    return keys;
+  }
+  for (const entry of pending) {
+    if (!alive() || !entry.fallback) continue;
+    if (entry.target === "thread") {
+      if (!thread || !stillSelected()) continue;
+      const latest = await api2.models.invalidations(route, true).catch(() => null);
+      if (!stillSelected() || !latest?.invalidations.some(
+        (item) => item.target === "thread" && item.model === route && item.fallback === entry.fallback
+      ))
+        continue;
+      commitThreadModelSelection(store2, api2, thread.id, "auto", route, entry.fallback);
+    } else {
+      const replaced = await api2.models.recoverSetting(entry.target, entry.model, entry.fallback).catch(() => false);
+      if (!replaced || !alive()) continue;
+      if (entry.target === "model" && store2.getState().settings?.model === entry.model) {
+        store2.setState({ settings: { ...store2.getState().settings, model: entry.fallback } });
+      }
+      store2.emit("settings_changed");
+    }
+  }
+  return keys;
+}
+function attachProviderInvalidationWarning(store2, api2, ui2) {
+  const acknowledged = /* @__PURE__ */ new Set();
+  let checking = false;
+  let pending = false;
+  let disposed = false;
+  const check2 = () => {
+    if (disposed) return;
+    if (checking) {
+      pending = true;
+      return;
+    }
+    checking = true;
+    void checkProviderInvalidation(store2, api2, { ...ui2, isActive: () => !disposed }, acknowledged).then((keys) => {
+      keys.forEach((key) => acknowledged.add(key));
+    }).catch((error62) => {
+      console.error("[models] could not check provider configuration", error62);
+    }).finally(() => {
+      checking = false;
+      if (pending) {
+        pending = false;
+        check2();
+      }
+    });
+  };
+  const unsubscribe = [
+    store2.on("workspace_changed", check2),
+    store2.on("threads_changed", check2),
+    store2.on("settings_changed", check2),
+    store2.on("thread_status_changed", check2)
+  ];
+  check2();
+  return () => {
+    disposed = true;
+    unsubscribe.forEach((stop) => {
+      stop();
+    });
+  };
+}
+var init_provider_invalidation = __esm({
+  "src/renderer/controller/provider-invalidation.ts"() {
+    init_zod();
+    init_safe_json2();
+    init_thread_helpers();
     init_model_selection2();
   }
 });
@@ -157510,7 +158339,7 @@ var init_purify_es = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend
@@ -157534,7 +158363,7 @@ function withGate(config2, run2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
@@ -164332,7 +165161,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -164343,7 +165172,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();
@@ -164517,6 +165346,10 @@ async function boot() {
     attachAutosave(store, api);
     attachMobileChat(store, api, mobileReady);
     attachBestValueDefaultResolver(store, api);
+    attachProviderInvalidationWarning(store, api, {
+      warn: showConfirmDialog,
+      openSettings: openModelSettings
+    });
     attachAutomationController(store, api);
     attachAutomationAppearance(store, api.appIcon);
     attachPrPanelFollow(store, api);
@@ -164616,6 +165449,7 @@ async function boot() {
     await restoreProject(store, api, active2.id, activeThreadId);
     endRestore();
     endBoot({ projects: projects.length });
+    void preloadSidebarThreads(store, api);
     startPerfAutopilot(store);
   } else {
     endBoot({ projects: 0 });
@@ -164924,6 +165758,7 @@ var init_main = __esm({
     init_automations2();
     init_automation_appearance();
     init_best_value_default();
+    init_provider_invalidation();
     init_persistence();
     init_perf();
     init_perf_autopilot();
