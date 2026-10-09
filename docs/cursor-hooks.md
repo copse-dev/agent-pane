@@ -238,7 +238,7 @@ hook can never auto-approve something Copse would otherwise ask about.
   timer range (about 24.8 days) is clamped rather than overflowing to an instant kill, and a
   timeout or output-cap kill signals the hook's whole process group, so commands it
   backgrounded do not outlive it. The recorded error names the timeout the hook actually had.
-- **Matchers are bounded.** Each `matcher` regex is compiled once and run under a 50 ms
+- **Matchers are bounded.** Each `matcher` regex runs under a 50 ms
   budget. A pattern that backtracks past it is logged once and then treated as matching, so
   the hook still decides rather than a gate silently disappearing.
 - **No LLM secrets.** Hook processes inherit `envForRendererChildProcess()` — the same
