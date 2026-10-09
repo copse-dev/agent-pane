@@ -11,7 +11,11 @@ import { copseUserDataDir } from '@copse/store-kit/copse-paths.ts'
 import { createServer, type Server } from 'node:http'
 import type { listClassifierProfiles } from '../../src/main/services/classifiers/classifier-service.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  pinTextForCapture,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { listenOnFixturePort } from './helpers/fixture-server.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
