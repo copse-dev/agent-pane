@@ -20,6 +20,18 @@ export function flagName(token: string): string {
 }
 
 /**
+ * Whether an argv carries `gh auth status`'s token-printing flag in any spelling
+ * pflag accepts: `--show-token`, `--show-token=true`, `-t`, or `t` inside a
+ * short-flag cluster (`-at`). Over-matching (`--show-token=false`, a cluster
+ * whose attached value holds a `t`) only costs a prompt.
+ */
+export function ghShowsToken(argv: readonly string[]): boolean {
+  return argv.some(
+    (token) => flagName(token) === '--show-token' || (/^-[^-]/.test(token) && token.includes('t')),
+  )
+}
+
+/**
  * `gh` subcommand pairs that only read from GitHub. `gh api` is classified
  * separately by {@link isGhApiRead}: it can issue any request, so only the
  * narrow GET shape counts as a read. Artifact downloads are not read-grant shapes:
@@ -92,8 +104,9 @@ const GH_WRITE_FLAGS: ReadonlySet<string> = new Set([
 /**
  * `gh api` flags that change only how a GET's response is shown or paged. Any
  * other flag — a method, a field (`-f`/`-F`, which turn the request into a POST),
- * `--input`, or a header (which could carry `X-HTTP-Method-Override`) — leaves
- * the call unclassified.
+ * `--input`, a header (which could carry `X-HTTP-Method-Override`), or
+ * `--hostname` (which aims the request, and the path's contents, at any host) —
+ * leaves the call unclassified.
  */
 const GH_API_READ_SWITCHES: ReadonlySet<string> = new Set([
   '--paginate',
@@ -109,7 +122,6 @@ const GH_API_READ_VALUED: ReadonlySet<string> = new Set([
   '--template',
   '-t',
   '--cache',
-  '--hostname',
 ])
 const GH_API_METHOD_FLAGS: ReadonlySet<string> = new Set(['--method', '-X'])
 
@@ -159,9 +171,7 @@ export function classifyGhSegment(argv: readonly string[]): GhSegmentKind | null
   // authorize an unsandboxed retry, so downloads must remain prompt-worthy here.
   if (pair === 'run download') return null
   // `gh auth status` reads, except with the flag that prints the token itself.
-  if (pair === 'auth status' && argv.some((token) => token === '--show-token' || token === '-t')) {
-    return null
-  }
+  if (pair === 'auth status' && ghShowsToken(argv)) return null
   if (GH_READ_SUBCOMMANDS.has(pair)) return 'read'
   if (!GH_WRITE_SUBCOMMANDS.has(pair)) return null
   // Writes take an explicit flag allow-list rather than a denylist of `--repo`.

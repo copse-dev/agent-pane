@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { isAbsolute, basename, join, resolve, sep } from 'node:path'
+import { isAbsolute, basename, dirname, join, resolve, sep } from 'node:path'
 import { parse as parseShell } from 'shell-quote'
 import {
   commandName,
@@ -7,9 +7,11 @@ import {
   printfAssignsShellVariable,
   shellInputRedirects,
   shellRedirects,
+  shellSegments,
   shellSegmentsQuoteAware,
   TRUST_TRANSPARENT_WRAPPERS,
   unwrapWrappers,
+  wrapperChain,
 } from './shell-argv.ts'
 import {
   dangerousInSandboxReasons,
@@ -188,6 +190,27 @@ function resolveTarget(token: string, workspaceRoot: string, homeDir: string): s
   return isAbsolute(path) ? resolve(path) : resolve(workspaceRoot, path)
 }
 
+/**
+ * `~name/…` (another user's home) and `~+`/`~-` (the shell's `$PWD`/`$OLDPWD`).
+ * The shell expands them; {@link resolveTarget} does not, and resolving one as a
+ * project-relative name would mistake `~alice/.ssh/id_rsa` for a file in the
+ * project. Refused rather than guessed.
+ */
+const UNRESOLVED_TILDE = /^~[^/]/
+
+/**
+ * Where `~name/…` most likely points (beside this user's home; `~root` is
+ * `/root`), so the credential and breadth refusals can still judge it. Never a
+ * grant target: the guess may be wrong. Null for anything but `~name`.
+ */
+function otherUserHomeGuess(token: string, homeDir: string): string | null {
+  const user = /^~([A-Za-z0-9._-]+)(?=$|\/)/.exec(token)
+  if (user === null) return null
+  const name = user[1] ?? ''
+  const home = name === 'root' ? '/root' : resolve(dirname(homeDir), name)
+  return resolve(home + token.slice(user[0].length))
+}
+
 function looksLikePath(token: string): boolean {
   if (token === '~' || token === '..' || token === '.') return true
   if (token.startsWith('~') || token.startsWith('/') || token.startsWith('$HOME')) return true
@@ -257,11 +280,12 @@ function breadthBlocker(token: string, resolved: string, homeDir: string): strin
  * ({@link TRUST_TRANSPARENT_WRAPPERS}) may be looked through.
  */
 function headBlocker(rawArgv: readonly string[], argv: readonly string[]): string | null {
-  const rawHead = commandName(rawArgv[0])
   const head = commandName(argv[0])
   if (!head) return null
-  if (rawHead !== head && !TRUST_TRANSPARENT_WRAPPERS.has(rawHead)) {
-    return `runs through \`${rawHead}\`, which changes how the command runs`
+  // Every link counts, not just the outermost: `nohup env HOME=/root cat …`.
+  const opaque = wrapperChain(rawArgv).find((word) => !TRUST_TRANSPARENT_WRAPPERS.has(word))
+  if (opaque !== undefined) {
+    return `runs through \`${opaque}\`, which changes how the command runs`
   }
   if (printfAssignsShellVariable(argv)) {
     return '`printf -v` assigns a shell variable before a later command'
@@ -406,13 +430,16 @@ export function analyzeReadOutsideProject(
 
   const targets: string[] = []
   const resolvedTargets: string[] = []
-  const addTarget = (token: string, resolved: string): void => {
+  const addTarget = (token: string, resolvedAsWritten: string): void => {
+    const unresolved = UNRESOLVED_TILDE.test(token)
+    if (unresolved) addBlocker(`names a home directory that cannot be resolved (${token})`)
+    const resolved = otherUserHomeGuess(token, homeDir) ?? resolvedAsWritten
     if (isInsideProject(resolved, root)) return
     const sensitive = sensitiveTargetReason(token, resolved)
     if (sensitive) addBlocker(`reads a ${sensitive}`)
     const breadth = breadthBlocker(token, resolved, homeDir)
     if (breadth) addBlocker(`reads ${breadth}`)
-    if (resolvedTargets.includes(resolved)) return
+    if (unresolved || resolvedTargets.includes(resolved)) return
     targets.push(token)
     resolvedTargets.push(resolved)
   }
@@ -430,7 +457,9 @@ export function analyzeReadOutsideProject(
   // segments come first and in order, so only they move the working directory a
   // `cd` sets; the fallback lexer's repeats still add blockers, and add targets
   // only while no `cd` has moved the base (never a path resolved from a guess).
-  const ordered = shellSegmentsQuoteAware(trimmed).length
+  // Only the first lexer's segments: counting the fallback repeats too let a
+  // repeat of `cat notes.txt` resolve against a `cd` that came after it.
+  const ordered = shellSegments(trimmed, false).length
   let base = root
   let baseToken = '.'
   for (const [index, rawArgv] of shellSegmentsQuoteAware(trimmed).entries()) {
@@ -468,7 +497,7 @@ export function analyzeReadOutsideProject(
       if (!looksLikePath(token) && !(tracked && base !== root)) continue
       operands++
       const resolved = resolveTarget(token, tracked ? base : root, homeDir)
-      if (collect) addTarget(token, resolved)
+      if (collect || UNRESOLVED_TILDE.test(token)) addTarget(token, resolved)
       else if (!isInsideProject(resolved, root)) {
         const sensitive = sensitiveTargetReason(token, resolved)
         if (sensitive) addBlocker(`reads a ${sensitive}`)

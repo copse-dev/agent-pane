@@ -1,4 +1,5 @@
 import { basename } from 'node:path'
+import { ghShowsToken } from './gh-argv.ts'
 import { commandName } from './shell-argv.ts'
 
 /**
@@ -149,9 +150,7 @@ export function tokenPrinterReason(argv: readonly string[]): string | null {
   const head = commandName(argv[0])
   // `gh auth status` is a read, except with the flag that prints the token.
   if (head === 'gh' && argv[1] === 'auth' && argv[2] === 'status') {
-    return argv.some((arg) => arg === '--show-token' || arg === '-t')
-      ? 'prints a GitHub token (gh auth status --show-token)'
-      : null
+    return ghShowsToken(argv) ? 'prints a GitHub token (gh auth status --show-token)' : null
   }
   if (head === 'git' && argv[1] === 'config') {
     // `git config [--global] credential.helper store` sets it; `--get` reads it.
