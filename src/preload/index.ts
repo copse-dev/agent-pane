@@ -1443,8 +1443,27 @@ const api: ApiClient = {
       ipcRenderer.invoke('automations:upsert-branch-ci', projectId, input),
     removeBranchCi: (projectId: string, id: string) =>
       ipcRenderer.invoke('automations:remove-branch-ci', projectId, id),
-    testBranchCi: (projectId: string, branch: string) =>
-      ipcRenderer.invoke('automations:test-branch-ci', projectId, branch),
+    testBranchCi: (projectId: string, trigger) =>
+      ipcRenderer.invoke('automations:test-branch-ci', projectId, trigger),
+    eventHistory: (projectId: string, id: string) =>
+      ipcRenderer.invoke('automations:event-history', projectId, id),
+    reportStartFailure: (projectId: string, threadId: string, failure) =>
+      ipcRenderer.invoke('automations:report-start-failure', projectId, threadId, failure),
+    schedulerHealth: () => ipcRenderer.invoke('automations:scheduler-health'),
+    onSchedulerHealth: (
+      handler: (health: import('@shared/types').AutomationSchedulerHealth) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: import('@shared/types').AutomationSchedulerHealth,
+      ): void => {
+        handler(payload)
+      }
+      ipcRenderer.on('automations:scheduler-health', listener)
+      return (): void => {
+        ipcRenderer.off('automations:scheduler-health', listener)
+      }
+    },
     canStart: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('automations:can-start', projectId, threadId),
     onTriggered: (handler: (event: import('@shared/types').AutomationTriggerEvent) => void) => {
