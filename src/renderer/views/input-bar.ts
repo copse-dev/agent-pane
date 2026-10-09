@@ -1529,8 +1529,11 @@ export function mountInputBar(
         if (seq !== classifierUseSeq) return
         // A re-read that finds the same figures must not repaint: a repaint drops
         // the wheel's tabindex, which blurs it and closes a keyboard-opened hover.
-        if (JSON.stringify(use) === JSON.stringify(classifierUse)) return
-        classifierUse = use
+        // A thread that asked no classifier shows nothing, the same as before the
+        // answer arrived, so that answer needs no repaint either.
+        const next = use.calls > 0 ? use : null
+        if (JSON.stringify(next) === JSON.stringify(classifierUse)) return
+        classifierUse = next
         updateFooter()
       },
       () => {
