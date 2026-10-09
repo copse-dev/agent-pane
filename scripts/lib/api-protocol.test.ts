@@ -10,10 +10,12 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { API_PROTOCOL_VERSION } from '../../src/shared/api-protocol.mts'
+import { isRecord } from '../../src/shared/unknown-value.mts'
 import {
   API_PROTOCOL_MANIFEST_PATH,
   analyzePreloadSource,
@@ -425,6 +427,21 @@ describe('compareApiProtocol', () => {
     assert.deepEqual(compareApiProtocol(before, before), { breaking: [], additive: [] })
   })
 
+  it('tells recursive shapes apart by where the cycle returns, not by def name', () => {
+    const field = (name: string, def: string): JsonSchema => ({
+      type: 'object',
+      properties: { [name]: { $ref: `#/$defs/${def}` } },
+    })
+    const result = (def: string, defs: Record<string, JsonSchema>): ApiProtocolDocument =>
+      doc({ 'a:get': { args: tuple(), result: { $ref: `#/$defs/${def}` } } }, defs)
+    // b, c, b, c, … against b, c, c, c, …: both inlined to b.c.<cycle> by name.
+    const alternating = result('X', { X: field('b', 'Y'), Y: field('c', 'X') })
+    const settling = result('P', { P: field('b', 'X'), X: field('c', 'X') })
+    assert.equal(compareApiProtocol(alternating, settling).breaking.length, 2)
+    const renamed = result('Q', { Q: field('b', 'R'), R: field('c', 'Q') })
+    assert.deepEqual(compareApiProtocol(alternating, renamed), { breaking: [], additive: [] })
+  })
+
   describe('compatible widening', () => {
     const obj = (properties: Record<string, JsonSchema>, required: string[]): JsonSchema => ({
       type: 'object',
@@ -694,6 +711,74 @@ describe('compareApiProtocol', () => {
   it('parses only documents that carry the fields the tooling reads', () => {
     assert.throws(() => parseApiProtocol('{"version":1}'), /not an API protocol document/)
     assert.equal(parseApiProtocol(serializeApiProtocol(doc({}))).version, 1)
+  })
+})
+
+describe('generateApiProtocol parameter optionality', () => {
+  it('keeps `| undefined` on a required parameter, which an optional one leaves to minItems', () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-protocol-params-'))
+    try {
+      mkdirSync(join(root, 'src/preload'), { recursive: true })
+      writeFileSync(
+        join(root, 'tsconfig.node.json'),
+        JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', lib: ['ES2022'] } }),
+      )
+      writeFileSync(
+        join(root, 'src/preload/api.d.ts'),
+        [
+          'export interface ApiClient {',
+          '  a: {',
+          '    set(id: string | undefined): Promise<void>',
+          '    pick(id?: string): Promise<void>',
+          '    onPair(handler: (pair: [string, number | undefined, string?]) => void): () => void',
+          '  }',
+          '}',
+          '',
+        ].join('\n'),
+      )
+      writeFileSync(
+        join(root, 'src/preload/index.ts'),
+        [
+          'const api: ApiClient = {',
+          '  a: {',
+          "    set: (id: string | undefined) => ipcRenderer.invoke('a:set', id),",
+          "    pick: (id?: string) => ipcRenderer.invoke('a:pick', id),",
+          '    onPair: (handler: (pair: [string, number | undefined, string?]) => void) => {',
+          '      const listener = (_e: unknown, pair: [string, number | undefined, string?]): void => {',
+          '        handler(pair)',
+          '      }',
+          "      ipcRenderer.on('a:pair', listener)",
+          "      return (): void => { ipcRenderer.off('a:pair', listener) }",
+          '    },',
+          '  },',
+          '}',
+          "contextBridge.exposeInMainWorld('api', api)",
+          '',
+        ].join('\n'),
+      )
+      const generated = generateApiProtocol({ root, version: 1 })
+      const items = (schema: JsonSchema | undefined): unknown[] => {
+        const prefix = schema?.['prefixItems']
+        return Array.isArray(prefix) ? prefix : []
+      }
+      assert.deepEqual(items(generated.channels.invoke['a:set']?.args)[0], {
+        title: 'id',
+        type: 'string',
+        'x-optional': true,
+      })
+      assert.deepEqual(items(generated.channels.invoke['a:pick']?.args)[0], {
+        title: 'id',
+        type: 'string',
+      })
+      const pair = items(generated.channels.event['a:pair']?.args)[0]
+      assert.deepEqual(items(isRecord(pair) ? pair : undefined), [
+        { type: 'string' },
+        { type: 'number', 'x-optional': true },
+        { type: 'string' },
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 

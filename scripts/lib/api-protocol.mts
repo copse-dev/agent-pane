@@ -359,9 +359,12 @@ function tupleSchema(ctx: SchemaContext, type: ts.TypeReference, target: ts.Tupl
       rest = withTitle(typeToSchema(ctx, element), title)
       continue
     }
-    const item = withTitle(stripOptional(typeToSchema(ctx, element)), title)
-    if (flags & ts.ElementFlags.Required) required = prefixItems.length + 1
-    prefixItems.push(item)
+    // `minItems` already says an optional element may be absent. A required one
+    // keeps `x-optional`, so `T` becoming `T | undefined` stays visible.
+    const isRequired = (flags & ts.ElementFlags.Required) !== 0
+    const schema = typeToSchema(ctx, element)
+    if (isRequired) required = prefixItems.length + 1
+    prefixItems.push(withTitle(isRequired ? schema : stripOptional(schema), title))
   }
   return arraySchema(prefixItems, required, rest)
 }
@@ -732,9 +735,11 @@ function signatureParams(ctx: SchemaContext, sig: ts.Signature): JsonSchema {
     const optional =
       (paramDecl !== undefined && ctx.checker.isOptionalParameter(paramDecl)) ||
       (param.flags & ts.SymbolFlags.Optional) !== 0
-    const schema = withTitle(stripOptional(typeToSchema(ctx, type)), param.name)
+    // As in tupleSchema: only an optional parameter's `undefined` is implied by
+    // `minItems`; a required `T | undefined` parameter keeps `x-optional`.
+    const schema = typeToSchema(ctx, type)
     if (!optional) required = prefixItems.length + 1
-    prefixItems.push(schema)
+    prefixItems.push(withTitle(optional ? stripOptional(schema) : schema, param.name))
   }
   return arraySchema(prefixItems, required, rest)
 }
@@ -1092,8 +1097,10 @@ function resolveRefs(
   const ref = value['$ref']
   if (!isPropertyMap && typeof ref === 'string' && ref.startsWith('#/$defs/')) {
     const name = ref.slice('#/$defs/'.length)
+    // A cycle is marked by how many levels up it returns, not by name: the
+    // name would let a renamed, restructured cycle inline to the same tree.
     const target = seen.includes(name)
-      ? { 'x-recursive': name }
+      ? { 'x-recursive': seen.length - seen.indexOf(name) }
       : resolveRefs(doc, doc.$defs[name] ?? { 'x-missing-def': name }, [...seen, name])
     // Keywords beside a `$ref` qualify it: `T | undefined` for a named `T` is
     // `{ $ref, 'x-optional': true }`, and dropping them would hide that change.

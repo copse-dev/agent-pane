@@ -101,9 +101,9 @@ every member, with two documented escapes:
    apart from two same-typed parameters swapping places), a field added to one
    union member that another member has (a client may tell members apart by
    which fields are present), a new union member or enum value, a field that
-   became required or optional, and a changed type. Union members are matched as
-   a set, since the generator orders them by serialization. Run the check
-   against `main`:
+   became required or optional, and a changed type (including a parameter that
+   becomes `T | undefined`). Union members are matched as a set, since the
+   generator orders them by serialization. Run the check against `main`:
 
    ```bash
    node scripts/gen-api-protocol.mts --compare-ref origin/main
