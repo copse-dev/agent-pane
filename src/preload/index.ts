@@ -338,6 +338,7 @@ const api: ApiClient = {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
@@ -358,6 +359,7 @@ const api: ApiClient = {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          approveLabel?: string
           collapseDetails?: boolean
           approveOnceLabel?: string
           allowTurnTreeLease?: boolean
@@ -855,6 +857,8 @@ const api: ApiClient = {
         targetThreadId,
         throughMessageId,
       ),
+    backlinks: (projectId: string, kind: 'url' | 'thread', target: string) =>
+      ipcRenderer.invoke('threads:backlinks', projectId, kind, target),
     historySnapshot: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:history-snapshot', projectId, threadId),
     editHistory: (
@@ -1075,6 +1079,7 @@ const api: ApiClient = {
     install: (id: string) => ipcRenderer.invoke('local-classifiers:install', id),
     start: (id: string) => ipcRenderer.invoke('local-classifiers:start', id),
     stop: (id: string) => ipcRenderer.invoke('local-classifiers:stop', id),
+    uninstall: (id: string) => ipcRenderer.invoke('local-classifiers:uninstall', id),
     connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
   },
   settings: {

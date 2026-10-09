@@ -8,8 +8,13 @@ import { memberOf } from '@shared/member-of.ts'
 import type { ModelUsage } from '@shared/types'
 import { completeTextWithUsage } from '../providers/llm-complete-text.ts'
 import { smallTasksRoutes, type SmallTasksRoute } from '../providers/small-tasks-provider.ts'
-import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { backgroundClassifierId, createClassifierSession } from './classifier-service.ts'
+import {
+  recordClassifierResultUsage,
+  recordClassifierUsage,
+  type RecordClassifierUsage,
+} from './classifier-usage.ts'
+import { recordUsageEvent } from '../storage/usage-ledger.ts'
 
 /**
  * Background questions: fixed-choice judgements made on the app's behalf — a
@@ -152,7 +157,7 @@ export async function askClassifierBatch(
   requests: readonly ClassifierRequest[],
   options: { timeoutMs?: number; signal?: AbortSignal } = {},
   id: string | null = backgroundClassifierId(),
-  recordUsage: RecordUsage = recordSmallTasksUsage,
+  recordUsage: RecordClassifierUsage = recordClassifierUsage,
 ): Promise<ClassifierResult[] | null> {
   if (!id || requests.length === 0) return null
   try {
@@ -161,12 +166,7 @@ export async function askClassifierBatch(
     for (let start = 0; start < requests.length; start += MAX_BATCH) {
       const batch = await session.invokeBatch(requests.slice(start, start + MAX_BATCH), options)
       for (const result of batch) {
-        if (result.usage?.inputTokens || result.usage?.outputTokens) {
-          recordUsage(result.model, {
-            inputTokens: result.usage.inputTokens ?? 0,
-            outputTokens: result.usage.outputTokens ?? 0,
-          })
-        }
+        recordClassifierResultUsage(session.profile.label, result, recordUsage)
       }
       results.push(...batch)
     }
@@ -186,7 +186,7 @@ export async function askClassifierChoice<T extends string>(
   question: BackgroundChoiceQuestion<T>,
   state: string,
   id: string | null = backgroundClassifierId(),
-  recordUsage: RecordUsage = recordSmallTasksUsage,
+  recordUsage: RecordClassifierUsage = recordClassifierUsage,
   options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<BackgroundChoice<T> | null> {
   const results = await askClassifierBatch(

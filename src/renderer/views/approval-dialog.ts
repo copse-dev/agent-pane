@@ -3,6 +3,8 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
+import { attentionThreadId } from '../controller/projects.ts'
+import { sideChatPromptOrigin } from '../controller/side-chat.ts'
 import { uiActions } from '../ui/actions.ts'
 
 function githubMarkIcon(): SVGSVGElement {
@@ -218,6 +220,9 @@ export function mountApprovalDialog(
     el('span', {}, 'GitHub'),
   )
   const heading = el('h3', { class: 'approval-heading' })
+  // Names the side chat asking, when a request comes from one (it is shown over
+  // the parent thread, which never asked it).
+  const origin = el('p', { class: 'approval-origin', hidden: '' })
   const items = el('div', { class: 'approval-items' })
   const chatScrim = el('div', { class: 'approval-chat-scrim', 'aria-hidden': 'true', hidden: '' })
   // Kit classes carry the look; legacy approval-* hooks stay for existing selectors/tests.
@@ -240,6 +245,7 @@ export function mountApprovalDialog(
   dialog.append(
     githubBrand,
     heading,
+    origin,
     items,
     rememberLabel,
     turnTreeLeaseLabel,
@@ -278,6 +284,7 @@ export function mountApprovalDialog(
     type: string
     allowRemember: boolean | undefined
     rememberLabel: string | undefined
+    approveLabel: string | undefined
     collapseDetails: boolean | undefined
     approveOnceLabel: string | undefined
     showWhileSettingsOpen: boolean | undefined
@@ -329,7 +336,10 @@ export function mountApprovalDialog(
   function isShowable(req: PendingApproval): boolean {
     if (isWindowHidden()) return false
     if (isSettingsDialogOpen() && !req.showWhileSettingsOpen) return false
-    return !req.threadId || req.threadId === store.getState().activeThreadId
+    // A side chat is never the active thread: its requests surface over its parent.
+    return (
+      !req.threadId || attentionThreadId(store, req.threadId) === store.getState().activeThreadId
+    )
   }
 
   // Reflect every queued request that can't currently pop a modal into the shared
@@ -339,8 +349,9 @@ export function mountApprovalDialog(
   function syncAttention(): void {
     const activeThreadId = store.getState().activeThreadId
     const hidden = isWindowHidden()
+    // A side chat's request flags its parent: the side chat has no sidebar row.
     const waiting = queue
-      .map((req) => req.threadId)
+      .map((req) => (req.threadId ? attentionThreadId(store, req.threadId) : undefined))
       .filter((id): id is string => !!id && (hidden || id !== activeThreadId))
     setAttentionThreads(store, 'approval', waiting)
     // Every queue/batch mutation ends here, so this is the one place the
@@ -447,6 +458,12 @@ export function mountApprovalDialog(
 
     heading.textContent =
       count <= 1 ? (batch[0]?.title ?? '') : (sharedTitle ?? `${String(count)} requests`)
+    const asker = sideChatPromptOrigin(
+      store,
+      batch.map((req) => req.threadId),
+    )
+    origin.hidden = asker === null
+    origin.textContent = asker?.label ?? ''
     const isGithubApproval = batch.some((request) => request.title.includes('GitHub'))
     githubBrand.hidden = !isGithubApproval
     dialog.classList.toggle('approval-dialog-github', isGithubApproval)
@@ -497,7 +514,8 @@ export function mountApprovalDialog(
       }),
     )
 
-    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : 'Approve'
+    approveButton.textContent =
+      count > 1 ? `Approve all (${String(count)})` : (soloRequest()?.approveLabel ?? 'Approve')
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : 'Reject'
 
     // The narrower answer is offered alongside the details it refers to: with the
@@ -595,6 +613,12 @@ export function mountApprovalDialog(
     // Each prompt starts collapsed; expanding is a per-prompt decision.
     detailsExpanded = false
     renderBatch()
+    // Show the asking side chat beside its parent so the request has its context.
+    const asker = sideChatPromptOrigin(
+      store,
+      batch.map((req) => req.threadId),
+    )
+    if (asker) store.emit('side_chat_open_requested', asker.firstSideChatId)
     // A Settings-owned provider-host prompt is the one deliberate modal
     // exception: Settings already makes the document inert, so an inline prompt
     // could not be answered. Pop-out windows also have no visible chat pane.
@@ -731,6 +755,7 @@ export function mountApprovalDialog(
       type,
       allowRemember,
       rememberLabel,
+      approveLabel,
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
@@ -749,6 +774,7 @@ export function mountApprovalDialog(
         type,
         allowRemember,
         rememberLabel,
+        approveLabel,
         collapseDetails,
         approveOnceLabel,
         showWhileSettingsOpen,

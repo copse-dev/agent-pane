@@ -24,6 +24,7 @@ import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
   backgroundClassifierId,
+  getClassifierProfile,
   listClassifierProfiles,
   saveClassifierProfile,
   removeClassifierProfile,
@@ -32,6 +33,7 @@ import {
   setScreeningClassifier,
   testClassifierProfile,
 } from '../services/classifiers/classifier-service.ts'
+import { recordClassifierResultUsage } from '../services/classifiers/classifier-usage.ts'
 import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
@@ -475,6 +477,7 @@ import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import {
   lookupPrThreadRelationships,
   lookupThreadPrRelationships,
+  lookupThreadBacklinks,
 } from '../services/thread-store.ts'
 
 import {
@@ -938,6 +941,19 @@ export function registerAllHandlers(
     // models (e.g. a new Opus release) appear on its next open without blocking
     // boot or requiring a manual "Detect models".
     revalidateStaleAcpModels()
+    // Register any already-installed ACP presets so a detected agent (e.g.
+    // `claude`, `codex` on PATH) lands in the model picker without the user
+    // having to open Settings → ACP agents first. Fire-and-forget for the same
+    // reason as above; registering a preset with no package to install never
+    // shows an approval dialog, so this stays silent in the common case. Skipped
+    // under the e2e harness: specs seed `registeredAcpAgents` explicitly, and
+    // this would otherwise pick up whatever ACP CLIs happen to be on the
+    // developer's own PATH.
+    if (process.env['COPSE_E2E'] !== '1') {
+      void runAcpAutoSetup(new AbortController().signal).catch((err: unknown) => {
+        console.warn('[acp] auto-setup on workspace open failed:', err)
+      })
+    }
     return canonical
   })
 
@@ -1391,9 +1407,13 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     return removeClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
-  ipcMain.handle('classifiers:test', (event, raw: unknown) => {
+  ipcMain.handle('classifiers:test', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
-    return testClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+    const id = parseIpcArgs(keyProviderSchema.max(53), [raw])
+    const result = await testClassifierProfile(id)
+    // The sample is a real call: tokens a provider reports for it count like any other.
+    recordClassifierResultUsage(getClassifierProfile(id).label, result)
+    return result
   })
   ipcMain.handle('classifiers:screening', (event) => {
     assertMainFrameSender(event, win)
@@ -1427,6 +1447,10 @@ export function registerAllHandlers(
   ipcMain.handle('local-classifiers:stop', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     return localClassifiers().stop(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:uninstall', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().uninstall(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
   ipcMain.handle('local-classifiers:connect', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
@@ -2065,6 +2089,19 @@ export function registerAllHandlers(
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return deleteThreadResourcesAndStore(pid, tid, threadDeletionRuntime)
   })
+  // Active threads that link to a URL or another thread: an indexed read of
+  // recorded thread metadata that never touches a transcript.
+  ipcMain.handle(
+    'threads:backlinks',
+    (event, projectId: unknown, kind: unknown, target: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, linkKind, linkTarget] = parseIpcArgs(
+        z.tuple([zProjectId, z.enum(['url', 'thread']), z.string().min(1).max(2048)]),
+        [projectId, kind, target],
+      )
+      return lookupThreadBacklinks(pid, linkKind, linkTarget)
+    },
+  )
   // Seed a freshly created fork's provider-format history from the thread it was
   // branched off. The renderer owns the visible transcript copy; this is the
   // half it cannot do, since `agent-history.json` never leaves the main process.
@@ -3408,7 +3445,18 @@ export function registerAllHandlers(
   ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'context',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     createPanePopoutWindow(parsed, seed)
@@ -3417,7 +3465,18 @@ export function registerAllHandlers(
   ipcMain.handle('panes:take-popout-seed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'context',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     return takePopoutSeed(parsed)
@@ -3577,6 +3636,7 @@ export function registerAllHandlers(
       type: z.string().min(1).max(128),
       collapseDetails: z.boolean().optional(),
       approveOnceLabel: z.string().max(500).optional(),
+      approveLabel: z.string().max(500).optional(),
     })
 
     ipcMain.handle('test:setMockScenario', (event, id: unknown, raw: unknown, scope: unknown) => {

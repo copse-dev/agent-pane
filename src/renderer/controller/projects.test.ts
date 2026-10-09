@@ -9,6 +9,8 @@ import {
   applyCachedSidebarPrRefs,
   attachProjectThreadCache,
   getSidebarThreads,
+  getSideChatUnreadParents,
+  attentionThreadId,
   isProjectSwitchInFlight,
   paginateSidebarThreads,
   preloadSidebarThreads,
@@ -27,6 +29,7 @@ import {
 } from './projects.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { __resetPersistenceForTest, markNavigationRestored, saveNavigation } from './persistence.ts'
+import { collectActivityThreads } from './activity-model.ts'
 
 function thread(id: string, title = id): Thread {
   return {
@@ -1618,4 +1621,74 @@ test('removeProject clears a preload that settles while removal persistence is p
     ['active'],
   )
   assert.deepEqual(getSidebarThreads(store, 'gone'), [], 'removal must discard the late preload')
+})
+
+test('side chats stay out of the sidebar and activity lists and roll an unread dot up to the parent', () => {
+  resetProjectSwitchStateForTest()
+  const link = { parentThreadId: 'parent', anchorMessageId: 'parent-msg' }
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [
+      thread('parent'),
+      { ...thread('side'), sideChat: link, unreadAt: 5 },
+      { ...thread('side-archived'), sideChat: link, unreadAt: 5, archivedAt: 6 },
+      { ...thread('other'), unreadAt: 7 },
+    ],
+  })
+
+  assert.deepEqual(
+    getSidebarThreads(store, 'a').map((t) => t.id),
+    ['parent', 'other'],
+  )
+  assert.deepEqual(
+    collectActivityThreads(store).map((t) => t.id),
+    ['parent', 'other'],
+  )
+  assert.deepEqual([...getSideChatUnreadParents(store, 'a')], ['parent'])
+  // Other projects' rows are compacted and not scanned.
+  assert.deepEqual([...getSideChatUnreadParents(store, 'b')], [])
+})
+
+test('attentionThreadId hands a side chat to its parent, in this project or a cached one', () => {
+  resetProjectSwitchStateForTest()
+  const link = { parentThreadId: 'parent', anchorMessageId: 'parent-msg' }
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'b',
+    threads: [
+      thread('b-parent'),
+      { ...thread('b-side'), sideChat: { ...link, parentThreadId: 'b-parent' } },
+    ],
+  })
+  // Project A's list lives in the sidebar cache once B is active.
+  attachProjectThreadCache(store)
+  store.setState({
+    activeProjectId: 'a',
+    threads: [
+      thread('parent'),
+      { ...thread('side'), sideChat: link },
+      // Its parent is not in this list, so it is listed itself and answers for itself.
+      { ...thread('orphan'), sideChat: { ...link, parentThreadId: 'gone' } },
+    ],
+  })
+  store.emit('threads_changed')
+  store.setState({
+    activeProjectId: 'b',
+    threads: [
+      thread('b-parent'),
+      { ...thread('b-side'), sideChat: { ...link, parentThreadId: 'b-parent' } },
+    ],
+  })
+
+  assert.equal(attentionThreadId(store, 'b-side'), 'b-parent')
+  assert.equal(attentionThreadId(store, 'side'), 'parent')
+  assert.equal(attentionThreadId(store, 'orphan'), 'orphan')
+  assert.equal(attentionThreadId(store, 'parent'), 'parent')
+  assert.equal(attentionThreadId(store, 'unknown'), 'unknown')
 })

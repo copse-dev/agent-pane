@@ -367,6 +367,7 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
@@ -657,6 +658,12 @@ export interface ApiClient {
       targetThreadId: string,
       throughMessageId?: string,
     ) => Promise<import('@shared/types').ForkedHistoryResult>
+    /** Active threads that link to a URL or another thread (recorded links only). */
+    backlinks: (
+      projectId: string,
+      kind: 'url' | 'thread',
+      target: string,
+    ) => Promise<import('@shared/threads/thread-links.ts').ThreadBacklink[]>
     historySnapshot: (
       projectId: string,
       threadId: string,
