@@ -67106,8 +67106,8 @@ function sidebarLastPromptAt(thread) {
   return void 0;
 }
 function sidebarHasRun(thread) {
-  if (thread.everRan !== void 0) return thread.everRan;
   if (thread.lastPromptAt !== void 0) return true;
+  if (thread.everRan !== void 0) return thread.everRan;
   if (thread.workingBrief !== void 0 || thread.autoTitleCount !== void 0) return true;
   return (thread.usage?.inputTokens ?? 0) + (thread.usage?.outputTokens ?? 0) > 0;
 }
@@ -67120,7 +67120,8 @@ function compactSidebarThread(thread) {
     ...thread.updatedAt !== void 0 ? { updatedAt: thread.updatedAt } : {},
     ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
     status: thread.status,
-    everRan: sidebarHasRun(thread),
+    // A prompt found in the loaded transcript counts too, matching the `lastPromptAt` kept above.
+    everRan: lastPromptAt !== void 0 || sidebarHasRun(thread),
     ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
     ...thread.automation ? { automation: thread.automation } : {},
