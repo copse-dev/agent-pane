@@ -28,6 +28,7 @@ import { connect, isIP, type Socket, type TcpSocketConnectOpts } from 'node:net'
 import type { Readable } from 'node:stream'
 import type { EgressLogEntry } from '@shared/types/container-run.ts'
 import { EgressLink, type EgressLinkOutput, type MuxStream } from './egress-link.ts'
+import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
 import {
   egressRuleAllows,
   findEgressRule,
@@ -59,6 +60,8 @@ export interface EgressBrokerOptions {
    * container's configuration.
    */
   runKey?: string
+  /** A run-scoped model stream, never a generic HTTP or credential endpoint. */
+  inference?: (stream: MuxStream) => Promise<void>
 }
 
 type LookupFunction = NonNullable<TcpSocketConnectOpts['lookup']>
@@ -170,12 +173,12 @@ async function dialOrigin(
 }
 
 /** Where to dial for a guest-named target, after any `resolve` remap. */
-function dialAddress(
+export function dialAddress(
   resolve: Readonly<Record<string, string>>,
   host: string,
   port: number,
 ): { host: string; port: number } {
-  const mapped = resolve[host]
+  const mapped = Object.hasOwn(resolve, host) ? resolve[host] : undefined
   if (mapped === undefined) return { host, port }
   const bracketedIpv6 = /^\[([^\]]+)\]:(\d{1,5})$/.exec(mapped.trim())
   const bracketedPort = Number(bracketedIpv6?.[2])
@@ -220,8 +223,10 @@ export class EgressBroker {
   private readonly resolve: Readonly<Record<string, string>>
   private readonly lookup = cachedLookup()
   private runKey: string | null
+  private readonly inference: EgressBrokerOptions['inference']
 
   constructor(options: EgressBrokerOptions) {
+    this.inference = options.inference
     this.rules = options.rules
     this.resolve = options.resolve ?? {}
     const refusal = hostLocalAliasRefusal(this.rules, this.resolve)
@@ -254,6 +259,37 @@ export class EgressBroker {
   private open(id: number, target: string): void {
     const link = this.link
     if (!link) return
+    if (target === HOST_INFERENCE_TARGET) {
+      if (!this.inference || findEgressRule(this.rules, 'inference.copse.internal', 443) === null) {
+        this.refuse(link, id, target, 'no host inference for this run')
+        return
+      }
+      const stream = link.accept(id)
+      stream.on('error', () => {
+        this.entries.push({
+          at: Date.now(),
+          origin: target,
+          event: 'error',
+          detail: 'host inference channel closed',
+        })
+      })
+      this.live.add(stream)
+      this.entries.push({
+        at: Date.now(),
+        origin: target,
+        event: 'connect',
+        detail: 'host-authenticated model inference',
+      })
+      void this.inference(stream)
+        .finally(() => {
+          this.live.delete(stream)
+          this.entries.push({ at: Date.now(), origin: target, event: 'close' })
+        })
+        .catch(() => {
+          stream.destroy()
+        })
+      return
+    }
     const parsed = parseEgressTarget(target)
     if (parsed === null) {
       this.refuse(link, id, target.slice(0, 80), 'malformed request')

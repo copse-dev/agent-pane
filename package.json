@@ -298,6 +298,7 @@
     "type-coverage": "2.30.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.1",
+    "undici": "6.28.1",
     "vscode-material-icons": "^0.1.1",
     "webdriverio": "^9.32.0",
     "ws": "^8.22.0",
