@@ -1406,7 +1406,7 @@ export const ACP_TURN_PROMPT_NOTE =
   'For long builds, test suites, and other bounded commands, use copse ' +
   'run_background with action="start", wake_on_completion=true, and timeout_ms ' +
   'rather than your own shell background jobs or monitors. Copse owns these ' +
-  'tasks independently of the ACP session; their completion can resume the ' +
+  'tasks independently of the coding-agent session; their completion can resume the ' +
   "thread after idle session reaping. Use the repository's actual command; " +
   'run_background start example: ' +
   '{"action":"start","command":"pnpm test","wake_on_completion":true,"timeout_ms":1800000}' +

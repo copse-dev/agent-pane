@@ -13,6 +13,7 @@ import {
   runWithActiveRunIdentity,
   setActiveRunTurnTreeId,
 } from '../thread-models.ts'
+import { runWithThreadResourceStateLookup } from '../thread-resource-fence.ts'
 import { runBackgroundTool } from '../../tools/background-process-tool.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
@@ -687,9 +688,18 @@ describe('startAcpNativeBridge', () => {
       await supervisor.start()
       const registry = new ToolRegistry()
       registry.register(runBackgroundTool)
-      bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
-        threadId: 'background-thread',
-      })
+      // This bridge has an isolated host, so give its process fence the live
+      // fixture owner instead of consulting the developer's stored chats.
+      bridge = await runWithThreadResourceStateLookup(
+        async (owner) =>
+          owner.projectId === 'project-1' && owner.threadId === 'background-thread'
+            ? { id: owner.threadId }
+            : null,
+        () =>
+          startAcpNativeBridge(registry, new AbortController().signal, {
+            threadId: 'background-thread',
+          }),
+      )
       assert.ok(bridge)
       const currentBridge = bridge
       runWithActiveRunIdentity('background-thread', () => {
