@@ -37,7 +37,7 @@ import {
   prMatchesFilter,
   type PrRef,
 } from './pr-pane-list.ts'
-import { startPrDiscussThread } from './pr-pane-thread.ts'
+import { startPrCheckFixThread, startPrDiscussThread } from './pr-pane-thread.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
@@ -1089,9 +1089,19 @@ export function mountPrPane(
       diffWrap.hidden = true
       emptyState.hidden = true
       activityHost.hidden = false
-      renderPrActivity(activityHost, activeSection, prDetails.activity, (url) => {
-        void api.shell.openExternal(url)
-      })
+      renderPrActivity(
+        activityHost,
+        activeSection,
+        prDetails.activity,
+        (url) => {
+          void api.shell.openExternal(url)
+        },
+        (check, headSha) => {
+          if (!prDetails) return
+          startPrCheckFixThread(store, prDetails, check, headSha)
+          getPromptAttachmentHandlers()?.focusComposer?.()
+        },
+      )
     }
   }
 

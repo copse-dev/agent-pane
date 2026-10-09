@@ -2,7 +2,13 @@ import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { prNewThreadDraft, prNewThreadTitle, startPrDiscussThread } from './pr-pane-thread.ts'
+import {
+  prCheckFixDraft,
+  prNewThreadDraft,
+  prNewThreadTitle,
+  startPrCheckFixThread,
+  startPrDiscussThread,
+} from './pr-pane-thread.ts'
 
 const PR = {
   number: 42,
@@ -56,6 +62,24 @@ describe('startPrDiscussThread', () => {
     assert.equal(thread.draftPrompt, prNewThreadDraft(PR))
     // No checkout choice is pinned on the thread, so the first message follows
     // the automatic policy (isolated worktree).
+    assert.equal(thread.worktreeChoice, undefined)
+  })
+})
+
+describe('startPrCheckFixThread', () => {
+  it('opens an editable thread with the failed check, PR, and head context', () => {
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
+      activeProjectId: 'p1',
+    })
+    const check = { name: 'Electron e2e / Linux', state: 'FAILURE', url: 'https://ci.example/run' }
+    const threadId = startPrCheckFixThread(store, PR, check, 'abc123456')
+    const thread = store.getState().threads.find((item) => item.id === threadId)
+    assert.ok(thread)
+    assert.equal(store.getState().activeThreadId, threadId)
+    assert.equal(thread.title, 'Fix PR #42: Electron e2e / Linux')
+    assert.equal(thread.draftPrompt, prCheckFixDraft(PR, check, 'abc123456'))
+    assert.match(thread.draftPrompt, /https:\/\/ci\.example\/run/)
     assert.equal(thread.worktreeChoice, undefined)
   })
 })

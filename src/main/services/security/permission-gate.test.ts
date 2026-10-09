@@ -3039,3 +3039,110 @@ describe('browser network approvals', () => {
     }
   })
 })
+
+describe('ensureShellCommandPermitted — operations that detach a thread worktree', () => {
+  const REFUSED = /would leave this thread's isolated checkout/
+
+  async function withWorktreeRoot<T>(
+    run: (managed: string, shared: string) => Promise<T>,
+  ): Promise<T> {
+    setPermissionGateForTests(null)
+    const temp = mkdtempSync(join(tmpdir(), 'copse-gate-detach-'))
+    const previous = process.env['COPSE_WORKTREES_DIR']
+    process.env['COPSE_WORKTREES_DIR'] = join(temp, 'worktrees')
+    const managed = join(temp, 'worktrees', 'project-1', 'thread-1')
+    const shared = join(temp, 'project')
+    mkdirSync(managed, { recursive: true })
+    mkdirSync(shared, { recursive: true })
+    const restore = setWorkspaceRootForTest(managed)
+    setWorkspaceTrusted(managed, true)
+    setWorkspaceTrusted(shared, true)
+    await setSetting('safetyClassifierEnabled', false)
+    try {
+      return await run(managed, shared)
+    } finally {
+      setApprovalHandler(null)
+      setWorkspaceTrusted(managed, false)
+      setWorkspaceTrusted(shared, false)
+      restore()
+      if (previous === undefined) delete process.env['COPSE_WORKTREES_DIR']
+      else process.env['COPSE_WORKTREES_DIR'] = previous
+      rmSync(temp, { recursive: true, force: true })
+    }
+  }
+
+  const CAUSES = [
+    'git rebase origin/main',
+    'git rebase -i HEAD~3',
+    'git pull --rebase',
+    'git -c pull.rebase=true pull',
+    'git -c pull.rebase=yes pull',
+    'git pull --rebase=on',
+    'git fetch && git rebase origin/main',
+    'sh -c "git rebase origin/main"',
+    'git bisect start HEAD HEAD~8',
+    'git switch --detach HEAD~1',
+  ]
+
+  for (const command of CAUSES) {
+    it(`refuses "${command}" in a managed worktree before any prompt`, async () => {
+      await withWorktreeRoot(async (managed) => {
+        let prompted = false
+        setApprovalHandler(() => {
+          prompted = true
+          return Promise.resolve({ approved: true, remember: false })
+        })
+        await assert.rejects(
+          ensureShellCommandPermitted(command, {
+            sandboxEnabled: true,
+            autoRun: true,
+            executionRoot: managed,
+          }),
+          REFUSED,
+        )
+        assert.equal(prompted, false)
+      })
+    })
+  }
+
+  it('leaves the same commands to ordinary policy in a shared checkout', async () => {
+    await withWorktreeRoot(async (_managed, shared) => {
+      setApprovalHandler(() => Promise.resolve({ approved: true, remember: false }))
+      await assert.doesNotReject(
+        ensureShellCommandPermitted('git rebase origin/main', {
+          sandboxEnabled: true,
+          autoRun: true,
+          executionRoot: shared,
+        }),
+      )
+    })
+  })
+
+  it('still lets an agent leave an interrupted operation in a managed worktree', async () => {
+    await withWorktreeRoot(async (managed) => {
+      setApprovalHandler(() => Promise.resolve({ approved: true, remember: false }))
+      for (const command of ['git rebase --abort', 'git bisect reset', 'git rebase --continue']) {
+        await assert.doesNotReject(
+          ensureShellCommandPermitted(command, {
+            sandboxEnabled: true,
+            autoRun: true,
+            executionRoot: managed,
+          }),
+        )
+      }
+    })
+  })
+
+  it('names what to do instead in the refusal', async () => {
+    await withWorktreeRoot(async (managed) => {
+      await assert.rejects(
+        ensureShellCommandPermitted('git pull --rebase', {
+          sandboxEnabled: true,
+          autoRun: true,
+          executionRoot: managed,
+        }),
+        /git pull --no-rebase.*ask the user to run it in a terminal/s,
+      )
+    })
+  })
+})
