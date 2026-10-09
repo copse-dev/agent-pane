@@ -58,13 +58,18 @@ describe('PR panel agent-owned PR (mock gh)', () => {
     const openThreadBtn = await $('.pr-open-thread-btn[data-thread-id="e2e-pr-agent-link-thread"]')
     await openThreadBtn.waitForDisplayed({ timeout: 15_000 })
     expect(await openThreadBtn.getText()).toMatch(/agent-linked/i)
-    await expect($('.pr-thread-group[data-relationship-group="produced"]')).toHaveText(
-      'Producing threads\nNo recorded producing thread.',
-    )
+    await expect($('.pr-thread-group[data-relationship-group="produced"]')).not.toBeExisting()
+    await expect($('.pr-thread-group[data-relationship-group="related"]')).toBeDisplayed()
+
+    await saveElementScreenshot('#pane-files', 'pr-panel-agent-owned.png')
 
     await openThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('Agent PR chat')
 
-    await saveElementScreenshot('#pane-files', 'pr-panel-agent-owned.png')
+    await $('.pr-list-title*=Tidy up workspace status polling').click()
+    await expect($('.pr-viewer-title')).toHaveText('Tidy up workspace status polling')
+    await expect($('.pr-thread-group')).not.toBeExisting()
+    await expect($('.pr-thread-relationships')).not.toBeDisplayed()
+    await saveElementScreenshot('#pane-files', 'pr-panel-no-thread-relationships.png')
   })
 })
