@@ -43,6 +43,16 @@ export function terminatePidTree(pid: number, graceMs = SUBPROCESS_KILL_GRACE_MS
 }
 
 /**
+ * True while the child, or the process group it leads, still has a live member.
+ * A group can outlive its leader: a child that ignored SIGTERM keeps the
+ * group's id reserved, so the group signal still reaches only that group.
+ */
+function treeStillRunning(proc: ChildProcess): boolean {
+  if (proc.exitCode === null && proc.signalCode === null) return true
+  return proc.pid !== undefined && process.platform !== 'win32' && isPidAlive(-proc.pid)
+}
+
+/**
  * Send SIGTERM, then SIGKILL the whole process group after a grace period if the
  * child has not exited. Returns a cleanup function that cancels the pending SIGKILL
  * (call it once the process actually closes so the timer never leaks).
@@ -65,9 +75,7 @@ export function terminateProcessTree(
   // cancels it once the process closes, so it never outlives the subprocess.
   let killTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
     killTimer = undefined
-    if (proc.exitCode === null && proc.signalCode === null) {
-      signalProcessTree(proc, 'SIGKILL')
-    }
+    if (treeStillRunning(proc)) signalProcessTree(proc, 'SIGKILL')
   }, graceMs)
 
   return () => {

@@ -109,6 +109,15 @@ describe('project-instructions', () => {
     assert.match(layers.project, /AGENTS\.md/)
   })
 
+  it('caps how much of a root project instruction file it reads', async () => {
+    const limit = 256 * 1024
+    await writeFile(join(projectRoot, 'AGENTS.md'), `${'a'.repeat(limit)}TAIL-BEYOND-CAP`)
+    const [source] = await withTrust(false, () => loadProjectInstructionSources())
+    assert.ok(source)
+    assert.doesNotMatch(source.content, /TAIL-BEYOND-CAP/)
+    assert.match(source.content, /\[Copse truncated this instruction file at 262144 bytes\.\]$/)
+  })
+
   it('neutralises forged envelope tags inside instruction content', async () => {
     await writeFile(
       join(projectRoot, 'AGENT.md'),
