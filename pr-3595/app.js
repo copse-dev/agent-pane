@@ -82338,7 +82338,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
   }
   function syncSideChatBadge() {
     if (!sideChatBadge) return;
-    const { threads, activeThreadId } = store2.getState();
+    const { threads, activeThreadId, filesPaneOpen, rightPanelMode } = store2.getState();
     const active2 = threads.find((thread) => thread.id === activeThreadId);
     const mainId = active2?.sideChat?.parentThreadId ?? active2?.id;
     const rows = mainId === void 0 ? [] : sideChatsOf(threads, mainId);
@@ -82348,6 +82348,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     sideChatBadge.textContent = String(rows.length);
     btn?.classList.toggle("has-pending", unread > 0);
     if (btn) {
+      applyGate(btn, rows.length > 0 || filesPaneOpen && rightPanelMode === "side-chat");
       setTooltip(
         btn,
         rows.length === 0 ? "Open side chat" : `Open side chat \u2014 ${String(rows.length)} ${rows.length === 1 ? "chat" : "chats"}${unread > 0 ? `, ${String(unread)} unread` : ""}`
@@ -82361,7 +82362,9 @@ function mountPanelModeControls(store2, api2, opts = {}) {
   syncExperimentalBtns();
   const unsubs = [
     store2.on("files_pane_changed", syncPanelBtns),
+    store2.on("files_pane_changed", syncSideChatBadge),
     store2.on("right_panel_mode_changed", syncPanelBtns),
+    store2.on("right_panel_mode_changed", syncSideChatBadge),
     store2.on("staged_diffs_changed", syncChangesBadge),
     store2.on("threads_changed", syncSideChatBadge),
     store2.on("settings_changed", syncExperimentalBtns)
