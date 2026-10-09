@@ -109,8 +109,24 @@ function substitutePathVariables(command: string, context: ShellHarmContext): st
   return result
 }
 
+/**
+ * `~` is this user's home; `~name` is another user's, which the shell looks up
+ * and this assumes sits beside it (`/home/alice`, `/Users/alice`; `~root` is
+ * `/root`). Left unexpanded, `~alice/` resolved as a project-relative name, so
+ * `rm -rf ~alice/` read as a delete inside the workspace.
+ */
+function expandTilde(token: string, homeDir: string): string {
+  const user = /^~([A-Za-z0-9._-]+)(?=$|[\\/])/.exec(token)
+  if (user === null) return token.replace(/^~(?=$|[\\/])/, () => homeDir)
+  const name = user[1] ?? ''
+  const rest = token.slice(user[0].length)
+  if (isWindowsPath(homeDir)) return win32.join(win32.dirname(homeDir), name) + rest
+  if (name === 'root') return `/root${rest}`
+  return resolve(dirname(homeDir), name) + rest
+}
+
 function expandPathToken(token: string, context: ShellHarmContext): string {
-  let expanded = token.replace(/^~(?=$|[\\/])/, () => context.homeDir)
+  let expanded = expandTilde(token, context.homeDir)
   for (const { re, value } of pathVariables(context)) {
     expanded = expanded.replace(re, () => value)
   }

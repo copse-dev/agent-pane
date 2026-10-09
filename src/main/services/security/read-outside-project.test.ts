@@ -93,6 +93,19 @@ describe('analyzeReadOutsideProject — ineligible commands', () => {
     ineligible('sudo cat /etc/shadow', /changes how the command runs|credential file/)
     ineligible('env PATH=/evil cat ~/.gitconfig', /changes how the command runs/)
     ineligible('xargs cat < ~/list', /changes how the command runs|writes to/)
+    // Behind a transparent wrapper the environment change is still there.
+    ineligible('nohup env HOME=/root cat /opt/notes.txt', /runs through `env`/)
+    ineligible('nice xargs cat < ~/list', /runs through `xargs`/)
+    ineligible('nohup sudo cat /opt/notes.txt', /runs through `sudo`/)
+  })
+
+  it("refuses another user's home rather than reading it as a project path", () => {
+    // `~dev/…` is not `./~dev/…`: resolved against the project it read as a file
+    // inside it, and the credential checks never saw the real path.
+    ineligible('cat ~dev/.ssh/id_rsa', /home directory that cannot be resolved/)
+    ineligible('cat ~alice/notes.txt', /home directory that cannot be resolved/)
+    ineligible('cat < ~alice/notes.txt', /home directory that cannot be resolved/)
+    ineligible('ls ~+/x', /home directory that cannot be resolved/)
   })
 
   it('rejects a printf -v assignment that can replace the later reader', () => {

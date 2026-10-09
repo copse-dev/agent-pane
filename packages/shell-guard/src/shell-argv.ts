@@ -228,7 +228,9 @@ export const READ_ONLY_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
 export function isStructurallyReadOnlyShellCommand(command: string): boolean {
   const trimmed = command.trim()
   if (!trimmed) return false
-  if (/[`$<>&();]|\|\|/.test(trimmed) || trimmed.includes('&&')) return false
+  // A newline separates commands exactly as `;` does, but `shell-quote` lexes it
+  // as plain whitespace: `cat x\nrm -rf src` would read as one `cat`.
+  if (/[`$<>&();\r\n]|\|\|/.test(trimmed) || trimmed.includes('&&')) return false
   const segments = trimmed.split('|').map((segment) => segment.trim())
   return segments.length > 0 && segments.every(isReadOnlySimpleCommand)
 }
@@ -240,6 +242,7 @@ export function isStructurallyReadOnlyShellCommand(command: string): boolean {
  * {@link isStructurallyReadOnlyShellCommand}'s whole-line one.
  */
 export function isReadOnlySimpleCommand(segment: string): boolean {
+  if (/[\r\n]/.test(segment)) return false
   let tokens: ReturnType<typeof parseShellCommand>
   try {
     tokens = parseShellCommand(segment)
@@ -491,12 +494,28 @@ export function printfAssignsShellVariable(argv: readonly string[]): boolean {
  * starts at the command that actually runs.
  */
 export function unwrapWrappers(argv: readonly string[]): string[] {
+  return unwrap(argv, [])
+}
+
+/**
+ * Every word {@link unwrapWrappers} looks through on the way to the command: each
+ * wrapper's name and each leading `NAME=value` assignment, outermost first. A
+ * grant must judge the whole chain — `nohup env HOME=/root cat …` hides its `env`
+ * behind a transparent `nohup`.
+ */
+export function wrapperChain(argv: readonly string[]): string[] {
+  const chain: string[] = []
+  unwrap(argv, chain)
+  return chain
+}
+
+function unwrap(argv: readonly string[], chain: string[]): string[] {
   const current = [...argv]
   for (;;) {
-    while (ASSIGNMENT.test(current[0] ?? '')) current.shift()
+    while (ASSIGNMENT.test(current[0] ?? '')) chain.push(current.shift() ?? '')
     const spec = PASS_THROUGH_WRAPPERS.get(commandName(current[0]))
     if (!spec) return current
-    current.shift()
+    chain.push(commandName(current.shift()))
     for (;;) {
       const next = current[0] ?? ''
       const consumable =
@@ -585,8 +604,23 @@ export function rawShellArgv(segment: string): string[] {
  * see a segment the shell would never execute as one, which costs at most an
  * extra prompt.
  */
-/** `>` truncates its target to zero length before writing; `>>` appends. */
-const WRITE_REDIRECTS = new Set(['>', '>>'])
+/**
+ * Operators that open a file for writing, mapped to whether they truncate it.
+ * `>`, the clobber form `>|`, and the both-streams `&>` truncate; `>>` and `&>>`
+ * append. `>&` is here too: with a word target (`>& file`) it is `&>` spelled the
+ * csh way, and only a descriptor target (`2>&1`, `>&-`) makes it a duplication.
+ */
+const WRITE_REDIRECTS: ReadonlyMap<string, boolean> = new Map([
+  ['>', true],
+  ['>|', true],
+  ['&>', true],
+  ['>&', true],
+  ['>>', false],
+  ['&>>', false],
+])
+
+/** A `>&` target that names a descriptor (or closes one) rather than a file. */
+const DESCRIPTOR_TARGET = /^(?:\d+|-)$/
 
 /**
  * Every redirect operator, write or read. The token after any of these names a
@@ -595,7 +629,7 @@ const WRITE_REDIRECTS = new Set(['>', '>>'])
  * inspected safely: src/in.txt" because `src/in.txt` looked like a relative
  * executable.
  */
-const REDIRECTS = new Set([...WRITE_REDIRECTS, '<', '<<', '<<<', '>&', '<&', '&>', '>|'])
+const REDIRECTS = new Set([...WRITE_REDIRECTS.keys(), '<', '<<', '<<<', '<&'])
 
 /**
  * `command` with the inside of every span the shell cannot expand replaced by
@@ -879,8 +913,8 @@ export function hasShellInputRedirect(command: string): boolean {
  *
  * A redirect is the plainest destructive verb the shell has and it has no command
  * name at all, so no argv-based inspector can see it: `echo "" > /etc/passwd`
- * erases the password file with nothing in argv but `echo`. `>&` (file-descriptor
- * duplication, as in `2>&1`) is deliberately excluded — it writes no file.
+ * erases the password file with nothing in argv but `echo`. File-descriptor
+ * duplication (`2>&1`, `>&-`) is deliberately excluded — it writes no file.
  */
 export function shellRedirects(command: string): ShellRedirect[] {
   let tokens: ReturnType<typeof parseShellCommand>
@@ -891,12 +925,13 @@ export function shellRedirects(command: string): ShellRedirect[] {
   }
   const redirects: ShellRedirect[] = []
   let pending: boolean | null = null
+  let duplicates = false
   for (const token of tokens) {
     if (typeof token === 'string') {
-      if (pending !== null) {
+      if (pending !== null && !(duplicates && DESCRIPTOR_TARGET.test(token))) {
         redirects.push({ target: token, truncates: pending })
-        pending = null
       }
+      pending = null
       continue
     }
     if ('op' in token && token.op === 'glob') {
@@ -906,7 +941,8 @@ export function shellRedirects(command: string): ShellRedirect[] {
       }
       continue
     }
-    pending = 'op' in token && WRITE_REDIRECTS.has(token.op) ? token.op === '>' : null
+    pending = 'op' in token ? (WRITE_REDIRECTS.get(token.op) ?? null) : null
+    duplicates = 'op' in token && token.op === '>&'
   }
   return redirects
 }

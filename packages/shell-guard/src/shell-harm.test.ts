@@ -294,6 +294,16 @@ describe('Guarded YOLO shell harm gate', () => {
     }
   })
 
+  it("expands ~name to that user's home instead of a project-relative name", () => {
+    // `~tester/` is this user's home; left unexpanded it resolved inside the
+    // workspace and the home-root deny never saw it.
+    assert.equal(action('rm -rf ~tester/'), 'deny')
+    assert.equal(action('rm -rf ~tester'), 'deny')
+    assert.equal(action('cat ~tester/.ssh/id_rsa'), 'deny')
+    assert.equal(action('cat ~tester/.env'), 'deny')
+    assert.equal(action('ls -la ~tester'), 'deny')
+  })
+
   it('denies catastrophic commands hidden in compounds, substitutions, and interpreters', () => {
     for (const command of [
       'echo ready && rm -rf /',
@@ -416,6 +426,10 @@ describe('Guarded YOLO shell harm gate', () => {
     assert.equal(action(': > /Users/tester/.ssh/id_rsa'), 'prompt')
     assert.equal(action('echo x >> /Users/tester/.bashrc'), 'prompt')
     assert.equal(action('tee /etc/hosts < /dev/null'), 'prompt')
+    // The clobber and both-streams operators truncate exactly as `>` does.
+    assert.equal(action("echo '' >| /etc/hosts"), 'deny')
+    assert.equal(action("echo '' &> /etc/hosts"), 'deny')
+    assert.equal(action("echo '' >& /etc/hosts"), 'deny')
     // In-workspace and /tmp writes are ordinary build output.
     assert.equal(action('echo built > dist/marker.txt'), 'allow')
     assert.equal(action('echo line >> logs/app.log'), 'allow')
