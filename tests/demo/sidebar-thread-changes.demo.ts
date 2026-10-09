@@ -39,4 +39,32 @@ describe('sidebar thread changes glyph', () => {
       await saveAppScreenshot(`sidebar-thread-changes-${width}.png`)
     })
   }
+
+  it('narrows to unlanded threads with Needs cleanup only, and restores the rest when turned off', async () => {
+    await browser.setWindowSize(1280, 900)
+    await $('.projects-filter-btn').click()
+    await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+    const toggle = await $('.context-menu-item*=Needs cleanup only')
+    await toggle.click()
+    await browser.keys('Escape')
+
+    await browser.waitUntil(
+      async () => {
+        const titles = await $$('.chats-list .chat-title').map((row) => row.getText())
+        return titles.sort().join(',') === ['Add a retry to uploads', 'Refactor auth'].join(',')
+      },
+      { timeout: 5_000, timeoutMsg: 'only the two unlanded threads should remain' },
+    )
+    await expect($('.projects-filter-btn')).toHaveElementClass('is-filtering')
+    await saveAppScreenshot('sidebar-thread-changes-needs-cleanup.png')
+
+    await $('.projects-filter-btn').click()
+    await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+    await (await $('.context-menu-item*=Needs cleanup only')).click()
+    await browser.keys('Escape')
+    await browser.waitUntil(async () => (await $$('.chats-list .chat-title')).length === 4, {
+      timeout: 5_000,
+      timeoutMsg: 'every thread should be back once the filter is off',
+    })
+  })
 })
