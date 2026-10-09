@@ -984,7 +984,8 @@ export interface ApiClient {
   }
   appIcon: {
     apply: () => Promise<void>
-    setAutomationMode: (active: boolean) => Promise<void>
+    /** True only in a test-enabled app launched by the end-to-end harness. */
+    readonly testAutomation: boolean
   }
   about: {
     /** The app version and the third-party licence report the build shipped. */

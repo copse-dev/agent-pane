@@ -125,8 +125,8 @@
 }
 
 /* Transient automation mode: preserve the user’s saved appearance while making
-   unattended work unmistakable in the shell. The important custom-property
-   overrides intentionally beat inline saved settings for the duration of a run;
+   test-controlled app sessions unmistakable in the shell. The important custom-property
+   overrides intentionally beat inline saved settings for the duration of a test session;
    removing the attribute reveals those settings unchanged. */
 [data-automation-active] {
   --tint-hue: #9b6d00 !important;
