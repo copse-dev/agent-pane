@@ -12,7 +12,11 @@ import { applyLfViewEdits, toLfView } from '@shared/line-endings.ts'
 function matchOffsets(haystack: string, needle: string): number[] {
   if (needle === '') return []
   const offsets: number[] = []
-  for (let at = haystack.indexOf(needle); at !== -1; at = haystack.indexOf(needle, at + needle.length)) {
+  for (
+    let at = haystack.indexOf(needle);
+    at !== -1;
+    at = haystack.indexOf(needle, at + needle.length)
+  ) {
     offsets.push(at)
   }
   return offsets

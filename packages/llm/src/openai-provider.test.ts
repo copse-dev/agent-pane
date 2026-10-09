@@ -909,14 +909,18 @@ describe('OpenAIProvider stream parsing', () => {
         choices: [
           {
             delta: {
-              tool_calls: [{ id: 'call_a', function: { name: 'read_file', arguments: '{"path":' } }],
+              tool_calls: [
+                { id: 'call_a', function: { name: 'read_file', arguments: '{"path":' } },
+              ],
             },
             finish_reason: null,
           },
         ],
       },
       {
-        choices: [{ delta: { tool_calls: [{ function: { arguments: '"a.ts"}' } }] }, finish_reason: null }],
+        choices: [
+          { delta: { tool_calls: [{ function: { arguments: '"a.ts"}' } }] }, finish_reason: null },
+        ],
       },
       {
         choices: [
