@@ -94,6 +94,33 @@ describe('concise thread view in the conversation', () => {
     assert.deepEqual(conciseClasses(), [[], []])
   })
 
+  it('does not treat a finished turn’s last bubble as narration once another turn follows', async () => {
+    const store = createStore({ conciseThreadsEnabled: true })
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'user', 'First')
+    const last = addMessage(store, threadId, 'assistant', 'Done, wrote it.', undefined, undefined, {
+      model: 'claude-opus-5-5',
+    })
+    addToolCall(store, last, {
+      id: 'write-1',
+      name: 'write_file',
+      args: { path: 'a.ts' },
+      status: 'done',
+      result: '',
+    })
+    addMessage(store, threadId, 'user', 'Second')
+    addMessage(store, threadId, 'assistant', 'Second answer.', undefined, undefined, {
+      model: 'claude-opus-5-5',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // The first turn's only bubble is its last: it keeps its text, so no `mid`.
+    assert.deepEqual(conciseClasses(), [['msg-concise', 'msg-concise-steps'], ['msg-concise']])
+  })
+
   describe('Show steps footer', () => {
     const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
     const footers = (): HTMLElement[] => [
@@ -145,7 +172,10 @@ describe('concise thread view in the conversation', () => {
 
       footers()[0]?.querySelector('button')?.click()
       await flush()
-      assert.deepEqual(conciseClasses(), [['msg-concise', 'msg-concise-steps'], ['msg-concise']])
+      assert.deepEqual(conciseClasses(), [
+        ['msg-concise', 'msg-concise-steps', 'msg-concise-mid'],
+        ['msg-concise'],
+      ])
       assert.match(footers()[0]?.textContent ?? '', /Show steps/)
     })
 

@@ -468,14 +468,14 @@
    only its produced output (screenshots, evidence, canvas previews) remains.
    That holds while a tool runs and once the turn moved on to a later bubble;
    the turn's last bubble stays in full when it finished, even with audit calls. */
-:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant))
+:is(.msg-concise-working, .msg-concise-steps.msg-concise-mid)
   > .message-body
   > :not(.message-visual-evidence, .message-canvas-previews) {
   display: none;
 }
 /* With no produced output at all, the bubble takes no room. (Selectors here
    must not nest :has(): that is invalid CSS and drops the whole rule.) */
-:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant)):not(
+:is(.msg-concise-working, .msg-concise-steps.msg-concise-mid):not(
   :has(
     > .tool-result-content > :not([hidden], .acp-terminal-reference),
     > .thread-proposal,

@@ -97,6 +97,20 @@ export function turnStartId(
   return null
 }
 
+/**
+ * Whether another assistant bubble follows message `index` in the same turn: the
+ * next user prompt ends the search, so a finished turn's last bubble is not made
+ * intermediate by the turns after it.
+ */
+export function hasLaterAssistantInTurn(messages: readonly Message[], index: number): boolean {
+  for (let i = index + 1; i < messages.length; i++) {
+    const role = messages[i]?.role
+    if (role === 'user') return false
+    if (role === 'assistant') return true
+  }
+  return false
+}
+
 /** Offers to the user stay painted in the concise view, so they are not hidden work. */
 function isOfferCall(toolCall: ToolCall): boolean {
   return toolCall.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(toolCall)
@@ -117,7 +131,7 @@ export function isConciseCollapsedMessage(
   if (!enabled || !msg || !isConciseMessage(msg)) return false
   const process =
     isConciseWorkingMessage(msg) ||
-    (isConciseStepsMessage(msg) && messages.slice(index + 1).some((m) => m.role === 'assistant'))
+    (isConciseStepsMessage(msg) && hasLaterAssistantInTurn(messages, index))
   if (!process) return false
   const producesOutput =
     (msg.visualEvidence?.length ?? 0) > 0 ||

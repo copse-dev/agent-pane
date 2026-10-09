@@ -139,7 +139,9 @@ import {
   isConciseThread,
   syncConciseMessageClasses,
   conciseTurnSummaries,
+  hasLaterAssistantInTurn,
   isConciseCollapsedMessage,
+  isConciseStepsMessage,
   type ConciseTurnSummary,
 } from './concise-thread.ts'
 import {
@@ -4404,6 +4406,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const thread = getActiveThread(store)
     const enabled = store.getState().conciseThreadsEnabled
     const liveTurn = thread?.status === 'running' ? liveTurnStartId(thread.messages) : null
+    // A steps bubble followed by another in its own turn is narration; the
+    // stylesheet can't stop a sibling search at the next prompt, so say it here.
+    if (thread) {
+      for (const [index, msg] of thread.messages.entries()) {
+        const msgEl = list.querySelector<HTMLElement>(`:scope > [data-message-id="${msg.id}"]`)
+        msgEl?.classList.toggle(
+          'msg-concise-mid',
+          conciseEnabledFor(thread, msg.id) &&
+            isConciseStepsMessage(msg) &&
+            hasLaterAssistantInTurn(thread.messages, index),
+        )
+      }
+    }
     const wanted = new Map<string, { summary: ConciseTurnSummary; anchor: HTMLElement }>()
     if (thread && enabled) {
       for (const summary of conciseTurnSummaries(thread.messages)) {

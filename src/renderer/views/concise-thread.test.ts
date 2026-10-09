@@ -5,6 +5,7 @@ import type { Message, Thread, ToolCall, TurnOutcome } from '@shared/types'
 import {
   conciseActivityLabel,
   conciseTurnSummaries,
+  hasLaterAssistantInTurn,
   isConciseCollapsedMessage,
   isConciseMessage,
   isConciseThread,
@@ -347,6 +348,16 @@ describe('collapsed concise bubbles', () => {
       const offer = message({ id: 'a1', model: CAPABLE, toolCalls: [tool({ name })] })
       assert.equal(isConciseCollapsedMessage([offer, summary], 0, true), false, name)
     }
+  })
+
+  it('stops looking for a later bubble at the next user prompt', () => {
+    const earlier = message({ id: 'a1', model: CAPABLE, toolCalls: [tool()] })
+    const nextPrompt = message({ id: 'u2', role: 'user', content: 'Again' })
+    const nextReply = message({ id: 'a2', model: CAPABLE })
+    const thread = [earlier, nextPrompt, nextReply]
+    assert.equal(hasLaterAssistantInTurn(thread, 0), false)
+    assert.equal(isConciseCollapsedMessage(thread, 0, true), false)
+    assert.equal(hasLaterAssistantInTurn([earlier, nextReply], 0), true)
   })
 
   it('keeps the turn’s last bubble even when it has tool calls, until a later one arrives', () => {
