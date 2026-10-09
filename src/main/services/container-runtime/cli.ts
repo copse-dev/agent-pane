@@ -12,10 +12,12 @@
  *   --workspace <dir>       git checkout to carry in (default: cwd)
  *   --prompt <text>         the task
  *   --model <id>            model id the provider serves (default: $COPSE_MODEL)
- *   --provider-url <url>    OpenAI-compatible base URL the guest calls; its host:port
- *                           must be allowlisted (default: $COPSE_PROVIDER_URL)
- *   --api-key-env <NAME>    host env var holding the provider key (value passed, name kept)
- *   --allow <host:port>     egress origin the broker forwards to (repeatable)
+ *   --provider-url <url>    OpenAI-compatible base URL this host calls for the guest's
+ *                           inference; the guest never dials it, so it needs no --allow
+ *                           entry (default: $COPSE_PROVIDER_URL)
+ *   --api-key-env <NAME>    host env var holding the provider key (stays on this host)
+ *   --allow <host:port>     guest egress origin the broker forwards to (repeatable);
+ *                           governs the guest only, never the host's provider calls
  *   --resolve <host=addr>   dial <addr> on the host for an allowed origin whose name only
  *                           the guest resolves (repeatable; e.g. a local model server).
  *                           model.copse.internal, if allowed, must map to 127.0.0.1, ::1
