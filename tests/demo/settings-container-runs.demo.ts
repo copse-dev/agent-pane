@@ -15,12 +15,14 @@ describe('browser-hosted container-run setting copy', () => {
     await $('.settings-section[data-section="experimental"]').waitForDisplayed()
   })
 
-  it('lists the dependency-install hosts beside the model origin', async () => {
+  it('explains host-owned authentication and separate dependency-install grants', async () => {
     const fieldset = $('#settings-dialog fieldset:has(input[name="containerRunsEnabled"])')
     await fieldset.scrollIntoView({ block: 'center' })
     await expect(fieldset).toBeDisplayed()
     const hint = fieldset.$('.field-hint')
-    await expect(hint).toHaveText(expect.stringContaining("reaches only its model's origin"))
+    await expect(hint).toHaveText(
+      expect.stringContaining('their keys and sign-in tokens stay there'),
+    )
     await expect(hint).toHaveText(
       expect.stringContaining("the npm registry, GitHub and Electron's download hosts"),
     )
