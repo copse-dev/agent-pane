@@ -172,6 +172,12 @@ export function mountPrPane(
     class: 'pr-detail-sections',
     'aria-label': 'Pull request sections',
   })
+  // Lives below the tab bar, inside the Overview tab's own content, so the
+  // fixed header above it never changes height when switching tabs
+  // (docs/ui-taste.md "Pane headers share one band"). Carries no CSS of its
+  // own: its only child (`.pr-thread-relationships` or `.pr-thread-empty`)
+  // owns its padding, so an empty/hidden child collapses this host to 0px.
+  const relationshipsHost = el('div', { class: 'pr-relationships-host' })
   const activityHost = el('div', { class: 'pr-activity', hidden: true })
   const descriptionHost = el('div', {
     class: 'pr-viewer-description message-text streaming-markdown',
@@ -184,6 +190,7 @@ export function mountPrPane(
   viewerRoot.append(
     metaHost,
     sectionsHost,
+    relationshipsHost,
     activityHost,
     descriptionHost,
     filesHost,
@@ -192,6 +199,9 @@ export function mountPrPane(
     emptyState,
   )
   let activeSection: PrDetailSection = 'overview'
+  // Survives the re-render every tab switch and poll does, so an opened
+  // "N related" toggle stays open while the user reads.
+  const relatedExpanded = new Map<string, boolean>()
   let detailsRequestId = 0
 
   let ghStatus: GhCliStatus | null = null
@@ -418,6 +428,7 @@ export function mountPrPane(
     clear(listBody)
     listBody.append(paneLoadingRow('Loading pull requests…'))
     clear(metaHost)
+    clear(relationshipsHost)
     clear(descriptionHost)
     descriptionHost.classList.remove('pr-viewer-description-fill')
     clear(filesHost)
@@ -443,6 +454,7 @@ export function mountPrPane(
   function renderGhUnavailableViewer(): void {
     clear(metaHost)
     clear(sectionsHost)
+    clear(relationshipsHost)
     activityHost.hidden = true
     clear(descriptionHost)
     descriptionHost.classList.remove('pr-viewer-description-fill')
@@ -803,21 +815,40 @@ export function mountPrPane(
     return btn
   }
 
-  function renderMeta(): void {
-    clear(metaHost)
+  function renderRelationships(): void {
+    clear(relationshipsHost)
     if (!selectedPr) return
+    const prKey = githubPrKey(selectedPr)
     const relationships = prRelationships
-      ? renderPrThreadRelationships(prRelationships, (id) => {
-          switchThread(store, id)
-        })
+      ? renderPrThreadRelationships(
+          prRelationships,
+          (id) => {
+            switchThread(store, id)
+          },
+          {
+            expanded: relatedExpanded.get(prKey),
+            onToggle: (expanded) => {
+              relatedExpanded.set(prKey, expanded)
+            },
+          },
+        )
       : el(
           'p',
           { class: 'pr-thread-empty', role: 'status' },
           relationshipError ? 'Thread relationships unavailable.' : 'Loading thread relationships…',
         )
-    // Keep activity and file views compact; provenance belongs to the overview.
-    // Offline relationships remain available even without GitHub details.
+    // Provenance belongs to the overview, not the other tabs' compact views.
+    // Offline relationships remain available even without GitHub details. The
+    // host itself carries no chrome, so hiding this (its only child) collapses
+    // it to 0px rather than leaving a blank strip under the tab bar.
     relationships.hidden = prDetails !== null && activeSection !== 'overview'
+    relationshipsHost.append(relationships)
+  }
+
+  function renderMeta(): void {
+    clear(metaHost)
+    renderRelationships()
+    if (!selectedPr) return
     if (!prDetails) {
       metaHost.append(
         el(
@@ -834,7 +865,6 @@ export function mountPrPane(
           { class: 'pr-viewer-subtitle' },
           `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`,
         ),
-        relationships,
       )
       return
     }
@@ -1005,7 +1035,6 @@ export function mountPrPane(
       badges,
       actions,
       statusLine,
-      relationships,
     )
   }
 

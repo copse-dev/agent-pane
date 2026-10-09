@@ -59,7 +59,7 @@ describe('PR panel agent-owned PR (mock gh)', () => {
     await openThreadBtn.waitForDisplayed({ timeout: 15_000 })
     expect(await openThreadBtn.getText()).toMatch(/agent-linked/i)
     await expect($('.pr-thread-group[data-relationship-group="produced"]')).not.toBeExisting()
-    await expect($('.pr-thread-group[data-relationship-group="related"]')).toBeDisplayed()
+    await expect($('.pr-thread-link[data-relationship="related"]')).toBeDisplayed()
 
     await saveElementScreenshot('#pane-files', 'pr-panel-agent-owned.png')
 
