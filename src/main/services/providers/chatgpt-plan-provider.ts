@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { ResponsesProvider } from '@copse/llm/responses-provider.ts'
+import { withCredentialOutputRedaction } from '@copse/llm/credential-output-provider.ts'
 import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import { redactSecrets } from '@copse/llm/redact-secrets.ts'
 import type { LLMProvider } from '@shared/types'
@@ -41,7 +42,7 @@ export function createChatGptPlanProvider(
   threadId?: string,
 ): LLMProvider {
   return {
-    async *stream(messages, tools, signal): AsyncIterable<ProviderStreamChunk> {
+    async *stream(messages, tools, signal, options): AsyncIterable<ProviderStreamChunk> {
       const sessionSignal = service.requestSignal(selection.clientId)
       const requestSignal = signal ? AbortSignal.any([signal, sessionSignal]) : sessionSignal
       requestSignal.throwIfAborted()
@@ -62,7 +63,9 @@ export function createChatGptPlanProvider(
         secrets,
       )
       try {
-        for await (const chunk of provider.stream(messages, tools, requestSignal)) {
+        for await (const chunk of withCredentialOutputRedaction(provider, secrets, (error) =>
+          planRequestError(error, secrets),
+        ).stream(messages, tools, requestSignal, options)) {
           yield chunk.type === 'usage' ? { ...chunk, model: modelValue } : chunk
         }
       } catch (error) {

@@ -39,7 +39,7 @@ function fakeRecord(threadId: string): ThreadContainerRecord {
       pidsLimit: 512,
       memoryLimit: '4g',
       network: 'brokered',
-      egressAllowlist: ['api.anthropic.com:443'],
+      egressAllowlist: ['inference.copse.internal:443'],
       hostMounts: ['/run/copse'],
     },
     egress: [{ at: 1, origin: 'api.anthropic.com:443', event: 'connect' }],
@@ -208,7 +208,7 @@ describe('ContainerRunService', () => {
       budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
     })
     assert.equal(first.phase, 'preparing')
-    assert.deepEqual(first.egressAllowlist, ['api.anthropic.com:443'])
+    assert.deepEqual(first.egressAllowlist, ['inference.copse.internal:443'])
 
     const finished = await waitFor(service, THREAD, (p) => p.phase === 'finished')
     assert.equal(seen.length, 1)
@@ -217,12 +217,11 @@ describe('ContainerRunService', () => {
     assert.equal(request.workspace, root)
     assert.equal(request.threadId, THREAD, 'the record names the desktop thread, for follow-ups')
     assert.equal(request.prompt, 'Fix the lint backlog')
-    assert.equal(request.provider?.kind, 'anthropic')
-    assert.equal(request.provider.model, 'claude-sonnet-4-6')
+    assert.equal(request.provider, undefined)
+    assert.ok(request.hostInference)
     assert.equal(request.contextWindow, 1_000_000)
-    // The key travels in memory to the runner, which hands it to the guest
-    // over the stdio link; the host environment never held it (A17).
-    assert.equal(request.apiKey, 'sk-ant-test')
+    assert.equal(request.apiKey, undefined)
+    assert.equal(first.credential, 'host')
     assert.deepEqual(envDuringRun, [])
     assert.ok(!Object.values(process.env).includes('sk-ant-test'))
     assert.ok(finished.record)
@@ -495,13 +494,14 @@ describe('ContainerRunService', () => {
       model: 'lmstudio:qwen3',
       budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
     })
-    assert.deepEqual(started.egressAllowlist, ['model.copse.internal:1234'])
+    assert.deepEqual(started.egressAllowlist, ['inference.copse.internal:443'])
     await waitFor(service, 'loopback', (p) => p.phase === 'finished')
     const request = seen[0]
     assert.ok(request)
-    assert.equal(request.provider?.kind, 'openai-compatible')
-    assert.equal(request.provider.url, 'http://model.copse.internal:1234/v1')
-    assert.deepEqual(request.egressResolve, { 'model.copse.internal': '127.0.0.1' })
+    assert.equal(request.provider, undefined)
+    assert.equal(request.egressResolve, undefined)
+    assert.equal(request.apiKey, undefined)
+    assert.ok(request.hostInference)
   })
 
   it('honours a stop asked for before the container exists', async () => {
