@@ -84230,7 +84230,7 @@ function sendSideChatMessage(store2, api2, sideThreadId, text2) {
 }
 async function promoteSideChat(store2, api2, sideThreadId) {
   const side = getThreadById(store2, sideThreadId);
-  if (!side || side.sideChat === void 0) return null;
+  if (!side || side.sideChat === void 0 || side.status === "running") return null;
   const parent = getThreadById(store2, side.sideChat.parentThreadId);
   const prefix = parent ? buildForkedThread(parent, {
     throughMessageId: side.sideChat.anchorMessageId,
@@ -132785,6 +132785,8 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
     if (atBottom) bodyHost.scrollTop = bodyHost.scrollHeight;
     input2.disabled = side.archivedAt != null;
     send.disabled = side.archivedAt != null || side.status === "running";
+    promote.disabled = side.status === "running";
+    promote.title = promote.disabled ? "Wait for the side chat to finish before promoting" : "";
     if (side.unreadAt !== void 0) markThreadRead(store2, side.id);
   }
   function schedule() {
