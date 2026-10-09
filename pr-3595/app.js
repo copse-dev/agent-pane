@@ -84200,10 +84200,17 @@ async function startSideChat(store2, api2, parentThreadId, options = {}) {
   }
   const projectId = store2.getState().activeProjectId;
   if (projectId) {
+    const seed = api2.threads.fork(projectId, parentThreadId, side.id, anchorMessageId).then(
+      () => void 0,
+      (error62) => {
+        console.error("[side-chat] failed to seed history from the parent:", error62);
+      }
+    );
+    pendingSeeds.set(side.id, seed);
     try {
-      await api2.threads.fork(projectId, parentThreadId, side.id, anchorMessageId);
-    } catch (error62) {
-      console.error("[side-chat] failed to seed history from the parent:", error62);
+      await seed;
+    } finally {
+      pendingSeeds.delete(side.id);
     }
   }
   return side.id;
@@ -84220,15 +84227,21 @@ function sendSideChatMessage(store2, api2, sideThreadId, text2) {
     ...side.workingBrief !== void 0 ? { workingBrief: side.workingBrief } : {}
   };
   const queued = { messageId, payload, createdAt: Date.now() };
-  if (side.status === "running") {
-    enqueueUserMessage(store2, sideThreadId, queued);
-  } else {
-    startHumanTurnTree(store2, sideThreadId);
-    dispatchAgentRun(store2, api2, sideThreadId, payload, queued);
-  }
+  const dispatch = () => {
+    if (getThreadById(store2, sideThreadId)?.status === "running") {
+      enqueueUserMessage(store2, sideThreadId, queued);
+    } else {
+      startHumanTurnTree(store2, sideThreadId);
+      dispatchAgentRun(store2, api2, sideThreadId, payload, queued);
+    }
+  };
+  const seed = pendingSeeds.get(sideThreadId);
+  if (seed) void seed.then(dispatch);
+  else dispatch();
   return messageId;
 }
 async function promoteSideChat(store2, api2, sideThreadId) {
+  await pendingSeeds.get(sideThreadId);
   const side = getThreadById(store2, sideThreadId);
   if (!side || side.sideChat === void 0 || side.status === "running") return null;
   const parent = getThreadById(store2, side.sideChat.parentThreadId);
@@ -84293,6 +84306,7 @@ function sideChatPromptOrigin(store2, threadIds) {
     firstSideChatId
   };
 }
+var pendingSeeds;
 var init_side_chat3 = __esm({
   "src/renderer/controller/side-chat.ts"() {
     init_thread_pr_status2();
@@ -84302,6 +84316,7 @@ var init_side_chat3 = __esm({
     init_side_chat2();
     init_projects();
     init_message_queue();
+    pendingSeeds = /* @__PURE__ */ new Map();
   }
 });
 
@@ -100971,9 +100986,9 @@ function isPopoutSeedEnvelope(seed) {
 }
 function registerPopoutSeedHandlers(mode, next) {
   handlers2.set(mode, next);
-  if (pendingSeeds.has(mode)) {
-    const seed = pendingSeeds.get(mode);
-    pendingSeeds.delete(mode);
+  if (pendingSeeds2.has(mode)) {
+    const seed = pendingSeeds2.get(mode);
+    pendingSeeds2.delete(mode);
     void next.apply(seed);
   }
   return () => {
@@ -101002,17 +101017,17 @@ async function applyPopoutSeed(mode, seed, store2) {
   }
   const handler = handlers2.get(mode);
   if (!handler) {
-    pendingSeeds.set(mode, paneSeed);
+    pendingSeeds2.set(mode, paneSeed);
     return;
   }
   await handler.apply(paneSeed);
 }
-var handlers2, pendingSeeds;
+var handlers2, pendingSeeds2;
 var init_pane_popout_seed = __esm({
   "src/renderer/popout/pane-popout-seed.ts"() {
     init_thread_helpers();
     handlers2 = /* @__PURE__ */ new Map();
-    pendingSeeds = /* @__PURE__ */ new Map();
+    pendingSeeds2 = /* @__PURE__ */ new Map();
   }
 });
 
