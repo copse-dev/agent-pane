@@ -116,6 +116,40 @@ function underAutomation<T>(fn: () => T): T {
   )
 }
 
+describe('package command approval scope', () => {
+  for (const command of ['npm install example-package', 'npx example-package']) {
+    it(`records unsandboxed ${command} as external`, async () => {
+      setPermissionGateForTests(null)
+      const root = mkdtempSync(join(tmpdir(), 'package-scope-'))
+      const restore = setWorkspaceRootForTest(root)
+      setSetting('safetyClassifierEnabled', false)
+      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      let prompts = 0
+      setApprovalHandler(async (request) => {
+        prompts += 1
+        assert.equal(request.cause, 'shell-package-install')
+        assert.equal(request.scope, 'external')
+        return { approved: false, remember: false }
+      })
+      try {
+        assert.equal(
+          await ensureShellCommandPermitted(command, {
+            sandboxEnabled: false,
+            autoRun: false,
+            executionRoot: root,
+          }),
+          false,
+        )
+        assert.equal(prompts, 1)
+      } finally {
+        setApprovalHandler(null)
+        restore()
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+})
+
 describe('prepare_worktree permission', () => {
   it('asks once for the bounded preparation capability', async () => {
     const root = mkdtempSync(join(tmpdir(), 'prepare-permission-'))

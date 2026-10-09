@@ -2838,5 +2838,4 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     allowRemember: false,
     approveLabel: 'Always allow host',
   }),
-
 ]

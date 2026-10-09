@@ -1499,7 +1499,7 @@ export async function ensureShellCommandPermitted(
               }),
             ),
             subject: SHELL_DECISION_SUBJECT,
-            scope: outsideSandbox ? 'external' : 'sandbox',
+            scope: outsideSandbox || !sandboxEnabled ? 'external' : 'sandbox',
             cause: 'shell-package-install',
           }
         : {
@@ -1513,7 +1513,7 @@ export async function ensureShellCommandPermitted(
               }),
             ),
             subject: SHELL_DECISION_SUBJECT,
-            scope: outsideSandbox ? 'external' : 'sandbox',
+            scope: outsideSandbox || !sandboxEnabled ? 'external' : 'sandbox',
             cause: 'shell-package-install',
           },
       opts.signal,
