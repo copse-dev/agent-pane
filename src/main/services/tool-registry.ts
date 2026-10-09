@@ -185,6 +185,13 @@ export class ToolRegistry {
     return tools
   }
 
+  /** Validate a queued call with the same schema used for execution. */
+  validateArgs(name: string, args: unknown): void {
+    const tool = this.tools.get(name)
+    if (!tool) throw new Error(`Unknown tool: ${name}`)
+    tool.parse(args)
+  }
+
   /** Coerce recovered text-tool-call args, leaving invalid known calls for execute to explain. */
   tryCoerceArgs(name: string, rawArgs: unknown): Record<string, unknown> | null {
     const tool = this.tools.get(name)

@@ -1,3 +1,4 @@
+import { OpenAiCancellationError } from './remote/openai-agents-api.ts'
 import { runWithInlineCanvas } from './inline-canvas-context.ts'
 import { MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { promptRoutingContext, resolvePromptModel } from './providers/prompt-model-routing.ts'
@@ -223,6 +224,7 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import { type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
+import { createOpenAiHostTools } from './remote/openai-host-tools.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
 import {
   offerAcpClaudeFallback,
@@ -1525,12 +1527,28 @@ async function runAgentWithInlineCanvas(
       const controller = new AbortController()
       abortMap.set(threadId, controller)
       setActiveRunThread(threadId)
-      const runAbort = createAgentRunAbortScheduler(controller)
+      const runAbort = createAgentRunAbortScheduler(
+        controller,
+        new AgentRunDeadline(
+          AGENT_RUN_IDLE_TIMEOUT_MS,
+          AGENT_RUN_HARD_MAX_MS,
+          Date.now(),
+          Date.now,
+          { excludePausesFromHardMax: remoteSelection.provider === 'openai' },
+        ),
+      )
       runAbort.schedule()
+      if (remoteSelection.provider === 'openai') {
+        registerRunDeadline(threadId, runAbort.deadline)
+        beginHookRunRecording(threadId)
+      }
       try {
         const result = await runRemoteAgentFromSettings({
           threadId,
           provider: remoteSelection.provider,
+          ...(remoteSelection.provider === 'openai'
+            ? { hostTools: createOpenAiHostTools(registry, threadId) }
+            : {}),
           ...(remoteSelection.model ? { model: remoteSelection.model } : {}),
           userPrompt: outboundPrompt,
           priorMessages,
@@ -1552,7 +1570,9 @@ async function runAgentWithInlineCanvas(
         // Abort (Stop / Send now) is a clean interrupt — Cursor's adapter already
         // emits CANCELLED `done` when it handles the signal; if an abort still
         // escapes here, don't paint it as a provider error in the transcript.
-        if (controller.signal.aborted) {
+        // OpenAI cancellation/recovery failures still need a visible notice,
+        // even when Stop has already aborted the local stream.
+        if (controller.signal.aborted && !(err instanceof OpenAiCancellationError)) {
           const timedOut = isAgentRunTimeoutAbort(controller.signal)
           recordTurnFailure(controller.signal.reason, {
             source: timedOut ? 'host' : 'user',
@@ -1572,6 +1592,11 @@ async function runAgentWithInlineCanvas(
       } finally {
         // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
         fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+        if (remoteSelection.provider === 'openai') {
+          cancelApprovalsForThread(threadId)
+          clearRunDeadline(threadId, runAbort.deadline)
+          endHookRunRecording(threadId)
+        }
         runAbort.clear()
         clearActiveRunThread(threadId)
         abortMap.delete(threadId)
