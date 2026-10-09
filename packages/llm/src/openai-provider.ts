@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { withoutProviderState, type ConversationMessage } from './provider-state.ts'
 import type { ChatCompletionFunctionTool } from 'openai/resources/chat/completions'
 import type {
   ImageDetail,
@@ -147,6 +148,7 @@ export class OpenAIProvider implements LLMProvider {
   ): AsyncIterable<ProviderStreamChunk> {
     const { client, model } = this
     const self = this
+    const sendable = withoutProviderState(messages)
     return yieldStreamWithRetry(
       async function* () {
         // `strict: true` only where the caller vouches for the endpoint; see
@@ -189,7 +191,7 @@ export class OpenAIProvider implements LLMProvider {
         //  - A published output ceiling the endpoint won't accept: drop it and
         //    let the server's own default stand. Nothing the user chose is lost;
         //    the ceiling was ours to offer, not theirs to set.
-        let outbound = messages
+        let outbound = sendable
         let ceiling = self.maxOutputTokens
         let droppedImages = false
         let droppedCeiling = false
@@ -240,7 +242,7 @@ export class OpenAIProvider implements LLMProvider {
             }
             if (!droppedImages && isImageUnsupportedError(err)) {
               droppedImages = true
-              outbound = dropImageContent(messages)
+              outbound = withoutProviderState(dropImageContent(sendable))
               continue
             }
             if (!droppedCeiling && ceiling !== undefined && isOutputCeilingRejectedError(err)) {
@@ -370,7 +372,7 @@ function readReasoningDelta(delta: object): string {
   return typeof raw === 'string' ? raw : ''
 }
 
-function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageParam[] {
+function toOpenAIMessages(messages: ConversationMessage[]): OpenAI.ChatCompletionMessageParam[] {
   return messages.flatMap((m): OpenAI.ChatCompletionMessageParam[] => {
     if (m.role === 'system') return [{ role: 'system', content: m.content }]
     if (m.role === 'developer') return [{ role: 'developer', content: m.content }]
