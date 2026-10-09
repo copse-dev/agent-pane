@@ -294,5 +294,17 @@
   {
     "id": "concise-state-model-switch",
     "label": "A thread that switches models between turns"
+  },
+  {
+    "id": "approval-web-url",
+    "label": "Allow web origin?"
+  },
+  {
+    "id": "approval-browser-url",
+    "label": "Allow browser navigation?"
+  },
+  {
+    "id": "approval-provider-url",
+    "label": "Allow model provider host?"
   }
 ]

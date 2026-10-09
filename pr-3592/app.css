@@ -4649,10 +4649,10 @@ label {
 .msg-concise .acp-terminal-reference {
   display: none;
 }
-:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant)) > .message-body > :not(.message-visual-evidence, .message-canvas-previews) {
+:is(.msg-concise-working, .msg-concise-steps.msg-concise-mid) > .message-body > :not(.message-visual-evidence, .message-canvas-previews) {
   display: none;
 }
-:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant)):not(:has(> .tool-result-content > :not([hidden], .acp-terminal-reference), > .thread-proposal, > .reviewer-input-card, > .message-body > .message-visual-evidence, > .message-body > .message-canvas-previews)) {
+:is(.msg-concise-working, .msg-concise-steps.msg-concise-mid):not(:has(> .tool-result-content > :not([hidden], .acp-terminal-reference), > .thread-proposal, > .reviewer-input-card, > .message-body > .message-visual-evidence, > .message-body > .message-canvas-previews)) {
   display: none;
 }
 .messages-list > .concise-turn-footer {

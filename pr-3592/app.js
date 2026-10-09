@@ -76916,6 +76916,35 @@ var init_demo_concise_states = __esm({
   }
 });
 
+// src/shared/approval-copy.ts
+function webApprovalDetails(origin, url2, allowRemember, context) {
+  return {
+    body: url2,
+    bodyAdvice: `The agent wants to contact ${origin}. The site can see the request and any data in its URL.` + (context ? `
+
+${context}` : ""),
+    bodyFooter: allowRemember ? "Allow this request once. \u201CAlways allow\u201D permits future requests to this origin, including other URLs, and is saved in Settings." : "Allow this request once. This does not add the origin to Settings."
+  };
+}
+function browserApprovalDetails(origin, url2, allowRemember) {
+  return {
+    body: url2,
+    bodyAdvice: `The agent wants to open a browser page on ${origin}. The site can see the request and any data in its URL.`,
+    bodyFooter: "Approval allows navigation to this origin for this chat\u2019s browser session." + (allowRemember ? " \u201CAlways allow\u201D also permits future requests to this origin and is saved in Settings." : "")
+  };
+}
+function providerApprovalDetails(host, baseUrl) {
+  return {
+    body: baseUrl.trim(),
+    bodyAdvice: `Your API key and prompts will be sent to ${host} at this base URL:`,
+    bodyFooter: "Approval always allows this provider host, including other base URLs on it. The grant is saved in Settings."
+  };
+}
+var init_approval_copy = __esm({
+  "src/shared/approval-copy.ts"() {
+  }
+});
+
 // src/shared/demo-scenarios.ts
 function demoScenarioPrompt(scenario2) {
   return scenario2.trace?.prompt ?? "";
@@ -77140,12 +77169,33 @@ function conciseThreadScenario(id, label, model, {
     ]
   };
 }
+function approvalRiskScenario(id, request) {
+  return {
+    id,
+    label: request.title,
+    project: project(`demo-${id}-project`),
+    settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: "Review requested access",
+        status: "idle",
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME
+      }
+    ],
+    approvalRequests: [request]
+  };
+}
 var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
     init_demo_site_tour();
     init_demo_concise_states();
+    init_approval_copy();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
@@ -79641,7 +79691,41 @@ var init_demo_scenarios = __esm({
       // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
       ...SITE_TOUR_SCENARIOS,
       // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
-      ...CONCISE_STATE_SCENARIOS
+      ...CONCISE_STATE_SCENARIOS,
+      approvalRiskScenario("approval-web-url", {
+        id: "web-url",
+        title: "Allow web origin?",
+        type: "web",
+        ...webApprovalDetails(
+          "https://example.com:443",
+          "https://example.com/docs?topic=approvals",
+          true
+        ),
+        allowRemember: true,
+        rememberLabel: "Always allow https://example.com:443",
+        approveLabel: "Allow request"
+      }),
+      approvalRiskScenario("approval-browser-url", {
+        id: "browser-url",
+        title: "Allow browser navigation?",
+        type: "mcp",
+        ...browserApprovalDetails(
+          "https://example.com:443",
+          "https://example.com/docs?topic=approvals",
+          true
+        ),
+        allowRemember: true,
+        rememberLabel: "Always allow https://example.com:443",
+        approveLabel: "Allow navigation"
+      }),
+      approvalRiskScenario("approval-provider-url", {
+        id: "provider-url",
+        title: "Allow model provider host?",
+        type: "web",
+        ...providerApprovalDetails("api.example.com", "https://api.example.com/v1"),
+        allowRemember: false,
+        approveLabel: "Always allow host"
+      })
     ];
   }
 });
@@ -84480,7 +84564,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         return el("div", { class: "approval-item" }, ...rowChildren);
       })
     );
-    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : "Approve";
+    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : soloRequest()?.approveLabel ?? "Approve";
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : "Reject";
     const onceLabel = approveOnceGrant();
     const showOnce = onceLabel !== "" && (!collapseDetails || detailsExpanded);
@@ -84625,6 +84709,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       type,
       allowRemember,
       rememberLabel: rememberLabel2,
+      approveLabel,
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
@@ -84643,6 +84728,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         type,
         allowRemember,
         rememberLabel: rememberLabel2,
+        approveLabel,
         collapseDetails,
         approveOnceLabel,
         showWhileSettingsOpen,
@@ -95078,13 +95164,21 @@ function turnStartId(messages, messageId) {
   }
   return null;
 }
+function hasLaterAssistantInTurn(messages, index) {
+  for (let i2 = index + 1; i2 < messages.length; i2++) {
+    const role = messages[i2]?.role;
+    if (role === "user") return false;
+    if (role === "assistant") return true;
+  }
+  return false;
+}
 function isOfferCall(toolCall) {
   return toolCall.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(toolCall);
 }
 function isConciseCollapsedMessage(messages, index, enabled) {
   const msg = messages[index];
   if (!enabled || !msg || !isConciseMessage(msg)) return false;
-  const process2 = isConciseWorkingMessage(msg) || isConciseStepsMessage(msg) && messages.slice(index + 1).some((m2) => m2.role === "assistant");
+  const process2 = isConciseWorkingMessage(msg) || isConciseStepsMessage(msg) && hasLaterAssistantInTurn(messages, index);
   if (!process2) return false;
   const producesOutput = (msg.visualEvidence?.length ?? 0) > 0 || (msg.canvasArtefacts?.length ?? 0) > 0 || msg.toolCalls.some((toolCall) => (toolCall.images?.length ?? 0) > 0 || isOfferCall(toolCall));
   return !producesOutput;
@@ -100203,6 +100297,15 @@ function mountConversation(root, store2, api2) {
     const thread = getActiveThread(store2);
     const enabled = store2.getState().conciseThreadsEnabled;
     const liveTurn = thread?.status === "running" ? liveTurnStartId(thread.messages) : null;
+    if (thread) {
+      for (const [index, msg] of thread.messages.entries()) {
+        const msgEl = list.querySelector(`:scope > [data-message-id="${msg.id}"]`);
+        msgEl?.classList.toggle(
+          "msg-concise-mid",
+          conciseEnabledFor(thread, msg.id) && isConciseStepsMessage(msg) && hasLaterAssistantInTurn(thread.messages, index)
+        );
+      }
+    }
     const wanted = /* @__PURE__ */ new Map();
     if (thread && enabled) {
       for (const summary of conciseTurnSummaries(thread.messages)) {
