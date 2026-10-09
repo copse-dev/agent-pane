@@ -1525,6 +1525,9 @@ export function mountInputBar(
         classifierUseInFlight = false
         // A newer fetch (or a thread switch) has superseded this answer.
         if (seq !== classifierUseSeq) return
+        // A re-read that finds the same figures must not repaint: a repaint drops
+        // the wheel's tabindex, which blurs it and closes a keyboard-opened hover.
+        if (JSON.stringify(use) === JSON.stringify(classifierUse)) return
         classifierUse = use
         updateFooter()
       },
