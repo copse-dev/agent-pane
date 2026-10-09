@@ -105,7 +105,12 @@ describe('buildSkillsCatalogBlock', () => {
     setSkillsForTest([{ ...demoSkill, name: 'imagegen', source: 'user' }])
 
     assert.equal(buildSkillsCatalogBlock([]), '')
-    assert.match(buildSkillsCatalogBlock(['image_gen']), /Demo skill for tests/)
+    assert.match(buildSkillsCatalogBlock(['read_skill', 'image_gen']), /Demo skill for tests/)
+  })
+
+  it('does not advertise activation when read_skill is absent from the actual turn toolset', () => {
+    setSkillsForTest([demoSkill])
+    assert.equal(buildSkillsCatalogBlock(['read_file']), '')
   })
 
   it('marks project/plugin skills as untrusted and user/bundled skills as trusted', () => {
@@ -225,6 +230,19 @@ paths:
     assert.match(block, /<skill_content name="demo-skill" trust="untrusted">/)
     assert.match(block, /# Demo instructions/)
     assert.doesNotMatch(block, /description: Demo skill for tests/)
+  })
+
+  it('injects duplicate explicit invocation exactly once', async () => {
+    const block = await buildInvokedSkillsBlock(['demo-skill', 'demo-skill'])
+    assert.equal(block.split('# Demo instructions').length - 1, 1)
+  })
+
+  it('does not manually inject a model-only skill', async () => {
+    setSkillsForTest([{ ...demoSkill, userInvocable: false }])
+    const block = await buildInvokedSkillsBlock(['demo-skill'], { threadId: 'thread-1' })
+    assert.match(block, /failed to load skill/)
+    assert.doesNotMatch(block, /# Demo instructions/)
+    assert.deepEqual(threadReadRoots('thread-1'), [])
   })
 
   it('authorizes invoked skills as the primary task regardless of source', async () => {
