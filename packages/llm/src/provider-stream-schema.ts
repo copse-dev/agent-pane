@@ -17,13 +17,17 @@ export const providerToolCallSchema = z
   .object({
     id: z.string(),
     name: z.string(),
+    title: z.string().optional(),
+    programmaticName: z.string().optional(),
     args: z.unknown(),
     argsError: z.string().optional(),
     kind: z.string().optional(),
   })
-  .transform(({ id, name, args, argsError, kind }) => ({
+  .transform(({ id, name, title, programmaticName, args, argsError, kind }) => ({
     id,
     name,
+    ...(title !== undefined ? { title } : {}),
+    ...(programmaticName !== undefined ? { programmaticName } : {}),
     args,
     ...(argsError !== undefined ? { argsError } : {}),
     ...(kind !== undefined ? { kind } : {}),
