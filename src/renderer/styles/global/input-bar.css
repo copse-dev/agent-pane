@@ -353,11 +353,10 @@
   outline: 1px solid var(--danger);
 }
 .submit-btn {
-  background: var(--accent-fill);
+  background: color-mix(in srgb, var(--accent-fill) 90%, var(--bg-muted));
   color: var(--text-on-accent);
   border-radius: 999px;
   padding: 6px 16px;
-  filter: saturate(0.8);
 }
 .footer-queue {
   font-size: var(--font-size-xs);
