@@ -38,6 +38,8 @@ describe('Side chats beside the main thread', () => {
     // Open the other thread: now the parent row shows the roll-up dot.
     await $('.chat-row*=Release notes draft').click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('Release notes draft')
+    // A thread with no side chat shows no Side chat control in the titlebar.
+    await expect($('#titlebar [data-panel-control="side-chat"]')).not.toBeDisplayed()
     await $('.chat-row.is-unread .chat-unread-dot').waitForExist({ timeout: 10_000 })
     await expect($('.chat-row.is-unread .chat-title')).toHaveText(MAIN)
     await expect($('.chat-row.is-unread .chat-unread-dot')).toHaveAttribute(

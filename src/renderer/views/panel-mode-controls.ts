@@ -502,10 +502,14 @@ export function mountPanelModeControls(
     syncOverflow?.()
   }
 
-  /** Count of the open thread's live side chats; highlighted while one is unread. */
+  /**
+   * Count of the open thread's live side chats; highlighted while one is unread.
+   * The control shows only while the thread has a side chat or its panel is open:
+   * side chats start from a message, so an empty control would only crowd the row.
+   */
   function syncSideChatBadge(): void {
     if (!sideChatBadge) return
-    const { threads, activeThreadId } = store.getState()
+    const { threads, activeThreadId, filesPaneOpen, rightPanelMode } = store.getState()
     const active = threads.find((thread) => thread.id === activeThreadId)
     const mainId = active?.sideChat?.parentThreadId ?? active?.id
     const rows = mainId === undefined ? [] : sideChatsOf(threads, mainId)
@@ -515,6 +519,7 @@ export function mountPanelModeControls(
     sideChatBadge.textContent = String(rows.length)
     btn?.classList.toggle('has-pending', unread > 0)
     if (btn) {
+      applyGate(btn, rows.length > 0 || (filesPaneOpen && rightPanelMode === 'side-chat'))
       setTooltip(
         btn,
         rows.length === 0
@@ -534,7 +539,9 @@ export function mountPanelModeControls(
 
   const unsubs = [
     store.on('files_pane_changed', syncPanelBtns),
+    store.on('files_pane_changed', syncSideChatBadge),
     store.on('right_panel_mode_changed', syncPanelBtns),
+    store.on('right_panel_mode_changed', syncSideChatBadge),
     store.on('staged_diffs_changed', syncChangesBadge),
     store.on('threads_changed', syncSideChatBadge),
     store.on('settings_changed', syncExperimentalBtns),

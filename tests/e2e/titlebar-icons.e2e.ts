@@ -27,7 +27,6 @@ describe('titlebar panel icons', () => {
 
     const buttons = [
       { label: 'Toggle right panel', icon: 'panel', text: 'Panel' },
-      { label: 'Open side chat', icon: 'side-chat', text: 'Side chat' },
       { label: 'Open terminal', icon: 'terminal', text: 'Terminal' },
       { label: 'Open changes', icon: 'changes', text: 'Changes' },
       { label: 'Open pull requests', icon: 'prs', text: 'PRs' },
@@ -67,7 +66,8 @@ describe('titlebar panel icons', () => {
       await expect(styles.strokeLinecap).toBe('round')
       await expect(styles.strokeLinejoin).toBe('round')
     }
-    // Ten outline-icon buttons: the six checked above, the experimental
+    // Ten outline-icon buttons: the five checked above, Side chat (hidden until
+    // the open thread has a side chat), the experimental
     // Memories and Roadmap buttons (rendered up front but hidden until their
     // flags are on), Desktop (hidden until vncEnabled), and the "Open in
     // editor" primary button (hidden until an editor is detected). All are
