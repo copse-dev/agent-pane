@@ -295,7 +295,12 @@ function renderDecisions(data, row) {
       )
       cards.push(card)
     }
-  document.getElementById('attention').replaceChildren(...cards)
+  const attention = document.getElementById('attention')
+  const hadCards = attention.childElementCount > 0
+  attention.replaceChildren(...cards)
+  // Approvals sit below the messages; bring a newly arrived prompt into view
+  // without yanking the page on every refresh of an already-visible one.
+  if (cards.length && !hadCards) attention.scrollIntoView({ block: 'end', behavior: 'smooth' })
 }
 
 async function refreshThread() {
