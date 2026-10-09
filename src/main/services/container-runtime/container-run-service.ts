@@ -409,9 +409,16 @@ export class ContainerRunService {
     try {
       plan = await resolveContainerProvider(model, {
         useAgentLogin: request.useAgentLogin === true,
+        threadId: request.threadId,
       })
       credential =
-        plan.mode === 'acp' && plan.harness.login ? 'login' : plan.apiKey ? 'key' : 'none'
+        plan.mode === 'host-inference'
+          ? 'host'
+          : plan.harness.login
+            ? 'login'
+            : plan.apiKey
+              ? 'key'
+              : 'none'
       // Only provider resolution and the explicit install choice admit origins.
       egressAllowlist = [
         ...new Set([
@@ -472,7 +479,9 @@ export class ContainerRunService {
           ? 'credential: your desktop sign-in, copied in for the run'
           : credential === 'key'
             ? 'credential: one API key, scoped to the run'
-            : 'credential: none',
+            : credential === 'host'
+              ? 'credential: provider authentication held on the desktop'
+              : 'credential: none',
         `wall-clock ${String(Math.round(request.budgets.wallClockMs / 60_000))} min`,
         `tokens ${String(request.budgets.tokenCeiling)}`,
       ],
@@ -608,12 +617,8 @@ export class ContainerRunService {
         // the checkout is snapshotted afresh and the prompt is the continuity.
         ...(continuation?.ref ? { carryInRef: continuation.ref } : {}),
         model: plan.model,
-        ...(plan.mode === 'provider'
-          ? {
-              provider: plan.provider,
-              contextWindow: plan.contextWindow,
-              ...(plan.egressResolve ? { egressResolve: plan.egressResolve } : {}),
-            }
+        ...(plan.mode === 'host-inference'
+          ? { hostInference: plan.hostInference, contextWindow: plan.contextWindow }
           : { acp: plan.harness }),
         ...(apiKey ? { apiKey } : {}),
         budgets: request.budgets,

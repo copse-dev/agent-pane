@@ -14,6 +14,11 @@ import {
   teardownRuntime,
 } from './thread-container.ts'
 import type { ThreadContainerEngine } from './container-engine.ts'
+import { buildGuestProvider } from './guest-provider.ts'
+import { withCredentialOutputRedaction } from '@copse/llm/credential-output-provider.ts'
+import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
+import { GUEST_ALLOWED_TOOLS } from './guest-tools.ts'
+import { createZipArchive } from '../storage/zip-archive.ts'
 import { startScriptedModelServer } from './scripted-model-server.ts'
 import { bundleThreadContainerWorker } from '../../../../scripts/lib/thread-container-worker-bundle.mts'
 
@@ -35,15 +40,6 @@ import { bundleThreadContainerWorker } from '../../../../scripts/lib/thread-cont
 
 const E2E = process.env['COPSE_THREAD_CONTAINER_E2E']
 const IMAGE = 'copse-worker:e2e'
-const MODEL_HOST = 'model.copse.internal'
-/**
- * The guest is told the model lives on 443, the port a real provider uses and
- * the one the old per-origin listener needed a sysctl to bind. It reaches it
- * through the loopback proxy and the broker, which admits it by wildcard and
- * dials the scripted server's ephemeral port instead.
- */
-const GUEST_MODEL_ORIGIN = `${MODEL_HOST}:443`
-const EGRESS_WILDCARD = '*.copse.internal:443'
 
 /**
  * Runs inside the guest as an ordinary shell child of the agent: tries every
@@ -82,12 +78,22 @@ function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
-function seedRepo(): string {
+async function seedRepo(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'copse-tc-e2e-'))
   git(dir, ['init', '--quiet', '--initial-branch=main'])
   git(dir, ['config', 'user.name', 'test'])
   git(dir, ['config', 'user.email', 'test@copse.invalid'])
   writeFileSync(join(dir, 'README.md'), '# demo\n')
+  writeFileSync(
+    join(dir, 'fixture.zip'),
+    await createZipArchive([
+      {
+        path: 'inside.txt',
+        data: Buffer.from('archive fixture'),
+        modifiedAt: new Date(2026, 0, 1),
+      },
+    ]),
+  )
   git(dir, ['add', '-A'])
   git(dir, ['commit', '--quiet', '-m', 'init'])
   // Uncommitted work must travel too.
@@ -114,7 +120,7 @@ describe('thread in a container (end to end)', { skip: E2E !== '1' }, () => {
       },
       { kind: 'text', text: 'done' },
     ])
-    const repo = seedRepo()
+    const repo = await seedRepo()
     writeFileSync(join(repo, 'probe.mjs'), TOKEN_PROBE)
     const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-tc-runtimes-'))
     const logs: string[] = []
@@ -124,21 +130,25 @@ describe('thread in a container (end to end)', { skip: E2E !== '1' }, () => {
           workspace: repo,
           prompt: 'probe',
           model: 'scripted',
-          provider: {
-            kind: 'openai-compatible',
-            model: 'scripted',
-            apiKeySlug: 'scripted',
-            url: `http://${GUEST_MODEL_ORIGIN}/v1`,
-            label: 'the scripted model',
-            local: true,
-            includeUsage: true,
-            apiStyle: null,
-            extraBody: null,
-            params: {},
-          },
+          hostInference: async (maxOutputTokens) =>
+            buildGuestProvider(
+              {
+                kind: 'openai-compatible',
+                model: 'scripted',
+                apiKeySlug: 'scripted',
+                url: `http://127.0.0.1:${String(model.port)}/v1`,
+                label: 'scripted host model',
+                local: true,
+                includeUsage: true,
+                apiStyle: null,
+                extraBody: null,
+                params: { maxOutputTokens },
+              },
+              null,
+            ),
           budgets: { wallClockMs: 4 * 60_000, tokenCeiling: 1_000_000 },
-          egressAllowlist: [EGRESS_WILDCARD],
-          egressResolve: { [MODEL_HOST]: `127.0.0.1:${String(model.port)}` },
+          egressAllowlist: [HOST_INFERENCE_TARGET, 'model.copse.internal:443'],
+          egressResolve: { 'model.copse.internal': `127.0.0.1:${String(model.port)}` },
           image: IMAGE,
           runtimesDir,
           maxSteps: 4,
@@ -163,7 +173,7 @@ describe('thread in a container (end to end)', { skip: E2E !== '1' }, () => {
         logs.some((l) => l.includes('token isolation: on')),
         logs.filter((l) => l.includes('token isolation')).join('\n'),
       )
-      // 4. The worker itself still reached the model through the proxy.
+      // 4. The worker itself still reached the host model through the private link.
       assert.ok(model.requests >= 2)
       assert.ok(record.egress.some((e) => e.event === 'connect'))
     } finally {
@@ -203,8 +213,13 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
   const model = await startScriptedModelServer([
     // In-guest destruction: the harm gate would prompt; the container tier allows.
     { kind: 'shell', command: 'rm -rf build && mkdir build && echo built > build/out.txt' },
+    // An invented external-write tool must not reach any handler.
+    { kind: 'tool', name: 'gh_pr_create', args: { title: 'Never create this PR' } },
+    // Archive reading remains supported in the actual guest.
+    { kind: 'tool', name: 'read_archive', args: { path: 'fixture.zip' } },
     // Outward effect: must be deferred to the review queue, never run.
     { kind: 'shell', command: 'git push origin HEAD' },
+    { kind: 'shell', command: 'npm publish' },
     // Host escape: must be refused outright.
     { kind: 'shell', command: 'docker ps' },
     // Ordinary work, committed with the product's own git tool (which runs
@@ -218,7 +233,7 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
     },
     { kind: 'text', text: 'Finished the task; the push is waiting for your review.' },
   ])
-  const repo = seedRepo()
+  const repo = await seedRepo()
   const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-tc-runtimes-'))
   const canary = 'copse-canary-e2e-0123456789abcdef'
   const logs: string[] = []
@@ -229,24 +244,30 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
         workspace: repo,
         prompt: 'Build the project, push it, and tidy the README.',
         model: 'scripted',
-        provider: {
-          kind: 'openai-compatible',
-          model: 'scripted',
-          apiKeySlug: 'scripted',
-          url: `http://${GUEST_MODEL_ORIGIN}/v1`,
-          label: 'the scripted model',
-          local: true,
-          includeUsage: true,
-          apiStyle: null,
-          extraBody: null,
-          params: {},
-        },
+        hostInference: async (maxOutputTokens) =>
+          withCredentialOutputRedaction(
+            buildGuestProvider(
+              {
+                kind: 'openai-compatible',
+                model: 'scripted',
+                apiKeySlug: 'scripted',
+                url: `http://127.0.0.1:${String(model.port)}/v1`,
+                label: 'scripted host model',
+                local: true,
+                includeUsage: true,
+                apiStyle: null,
+                extraBody: null,
+                params: { maxOutputTokens },
+              },
+              'host-only-provider-secret-123456',
+            ),
+            ['host-only-provider-secret-123456'],
+          ),
         budgets: { wallClockMs: 4 * 60_000, tokenCeiling: 1_000_000 },
-        egressAllowlist: [EGRESS_WILDCARD],
-        egressResolve: { [MODEL_HOST]: `127.0.0.1:${String(model.port)}` },
+        egressAllowlist: [HOST_INFERENCE_TARGET],
         image: IMAGE,
         runtimesDir,
-        maxSteps: 8,
+        maxSteps: 12,
       },
       { canary, onLog: (line) => logs.push(line) },
     )
@@ -259,6 +280,12 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
     )
 
     // 1. Nobody was asked anything, and the record says Copse ran the loop.
+    assert.deepEqual([...result.toolNames].sort(), [...GUEST_ALLOWED_TOOLS].sort())
+    const calls = record.transcript.flatMap((message) => message.toolCalls)
+    assert.match(calls.find((call) => call.name === 'gh_pr_create')?.result ?? '', /Unknown tool/)
+    const archiveResult = calls.find((call) => call.name === 'read_archive')?.result ?? ''
+    assert.match(archiveResult, /extracted/)
+    assert.match(archiveResult, /inside.txt/)
     assert.equal(result.promptsAttempted, 0)
     assert.equal(result.harness, 'copse')
     // 2. The container declared its containment and the gate used it: the
@@ -269,7 +296,7 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
     assert.equal(record.attestation.isolation, engine === 'apple' ? 'vm' : 'shared-kernel')
     assert.equal(record.attestation.securityProfiles, engine === 'apple' ? 'none' : 'default')
     // 3. The outward effect is in the review queue, and only that.
-    assert.equal(result.deferrals.length, 1)
+    assert.equal(result.deferrals.length, 2)
     assert.match(result.deferrals[0]?.title ?? '', /Outward effect/)
     // The refused host escape is in the record too, not only in the log.
     assert.equal(result.denials.length, 1)
@@ -288,11 +315,16 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
     //    was told, admitted by the wildcard rule; nothing else was asked for.
     const connects = record.egress.filter((e) => e.event === 'connect')
     assert.ok(connects.length > 0)
-    assert.ok(record.egress.every((e) => e.origin === GUEST_MODEL_ORIGIN))
-    assert.ok(connects.every((e) => e.detail === `rule ${EGRESS_WILDCARD}`))
+    assert.ok(record.egress.every((e) => e.origin === HOST_INFERENCE_TARGET))
+    assert.ok(connects.every((e) => e.detail === 'host-authenticated model inference'))
     assert.equal(record.egress.filter((e) => e.event === 'refused').length, 0)
-    assert.deepEqual(record.attestation.egressAllowlist, [EGRESS_WILDCARD])
+    assert.deepEqual(record.attestation.egressAllowlist, [HOST_INFERENCE_TARGET])
     assert.ok(model.requests >= 5)
+    assert.equal(record.credential, 'host')
+    const spec = readFileSync(join(runtimesDir, record.runtimeId, 'run.json'), 'utf8')
+    assert.ok(!spec.includes('host-only-provider-secret-123456'))
+    assert.ok(!spec.includes('127.0.0.1'))
+    assert.ok(!spec.includes('apiKeySlug'))
     // 6. The host's secret never entered the guest.
     assert.equal(record.secretCanary.present, false, record.secretCanary.detail)
     const written = readFileSync(join(runtimesDir, record.runtimeId, 'out', 'result.json'), 'utf8')
@@ -300,6 +332,7 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
     // variable must not be among them, and its value must not appear anywhere.
     assert.ok(!written.includes('COPSE_SECRET_CANARY'))
     assert.ok(!written.includes(canary))
+    assert.ok(!written.includes('host-only-provider-secret-123456'))
     // 7. The decision log and queue live in the run's own state, not the host profile.
     assert.ok(
       readFileSync(
