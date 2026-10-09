@@ -68,6 +68,21 @@ describe('resolveInvocation', () => {
     assert.equal(resolveInvocation('see src/main/index.ts', INVOCABLES), null)
   })
 
+  it('strips the invocation token, not the same name inside an earlier path', () => {
+    const cases: Array<[string, string]> = [
+      ['look at src/reviewer and /reviewer it', 'look at src/reviewer and it'],
+      ['src/reviewer/x.ts needs /reviewer', 'src/reviewer/x.ts needs'],
+      ['/tmp/reviewer then /reviewer', '/tmp/reviewer then'],
+    ]
+    for (const [text, remainder] of cases) {
+      assert.deepEqual(
+        resolveInvocation(text, INVOCABLES),
+        { name: 'reviewer', kind: 'agent', remainder },
+        text,
+      )
+    }
+  })
+
   it('prefers the longest matching name so a prefix cannot steal it', () => {
     const resolved = resolveInvocation('check /demo-skill now', INVOCABLES)
     assert.equal(resolved?.name, 'demo-skill', '/demo must not match inside /demo-skill')

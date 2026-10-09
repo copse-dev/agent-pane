@@ -27,18 +27,29 @@ function utf8ByteLength(text: string): number {
   return Buffer.byteLength(text, 'utf8')
 }
 
+/** Longest prefix within `maxBytes` of UTF-8, never splitting a code point into U+FFFD. */
 function utf8Head(text: string, maxBytes: number): string {
   if (maxBytes <= 0) return ''
-  const buf = Buffer.from(text, 'utf8')
-  if (buf.length <= maxBytes) return text
-  return buf.subarray(0, maxBytes).toString('utf8')
+  return text.slice(0, utf8PrefixFit(text, maxBytes).units)
 }
 
+/** Longest suffix within `maxBytes` of UTF-8, never splitting a code point into U+FFFD. */
 function utf8Tail(text: string, maxBytes: number): string {
-  if (maxBytes <= 0) return ''
-  const buf = Buffer.from(text, 'utf8')
-  if (buf.length <= maxBytes) return text
-  return buf.subarray(buf.length - maxBytes).toString('utf8')
+  let start = text.length
+  let bytes = 0
+  while (start > 0) {
+    let i = start - 1
+    const c = text.charCodeAt(i)
+    if (c >= 0xdc00 && c <= 0xdfff && i > 0) {
+      const prev = text.charCodeAt(i - 1)
+      if (prev >= 0xd800 && prev <= 0xdbff) i -= 1
+    }
+    const cp = codePointUtf8(text, i)
+    if (bytes + cp.bytes > maxBytes) break
+    bytes += cp.bytes
+    start = i
+  }
+  return text.slice(start)
 }
 
 export function truncateCommandOutput(text: string, maxBytes = COMMAND_OUTPUT_MAX_BYTES): string {
@@ -46,7 +57,9 @@ export function truncateCommandOutput(text: string, maxBytes = COMMAND_OUTPUT_MA
   if (total <= maxBytes) return text
 
   const markerBytes = utf8ByteLength(COMMAND_OUTPUT_TRUNCATED_MARKER)
-  const budget = Math.max(0, maxBytes - markerBytes)
+  // A cap too small for the marker keeps a bare head so the result still fits.
+  if (maxBytes < markerBytes) return utf8Head(text, maxBytes)
+  const budget = maxBytes - markerBytes
   const headBytes = Math.floor(budget / 2)
   const tailBytes = budget - headBytes
   return utf8Head(text, headBytes) + COMMAND_OUTPUT_TRUNCATED_MARKER + utf8Tail(text, tailBytes)

@@ -31,6 +31,17 @@ describe('truncateCommandOutput', () => {
     assert.ok(out.startsWith('aaa'))
     assert.ok(out.endsWith('aaa'))
   })
+
+  it('cuts on code-point boundaries and never exceeds the cap', () => {
+    const inputs = ['é'.repeat(200), '日本語'.repeat(100), '😀'.repeat(100), `a${'😀'.repeat(99)}`]
+    for (const text of inputs) {
+      for (const cap of [1, 5, 19, 20, 21, 41, 42, 43, 100, 257]) {
+        const out = truncateCommandOutput(text, cap)
+        assert.ok(!out.includes('\uFFFD'), `U+FFFD at cap ${String(cap)}`)
+        assert.ok(Buffer.byteLength(out, 'utf8') <= cap, `over cap ${String(cap)}`)
+      }
+    }
+  })
 })
 
 describe('CappedOutputAccumulator', () => {

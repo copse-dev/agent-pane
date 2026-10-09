@@ -19,6 +19,7 @@ import {
   writeTerminalSession,
   type TerminalOwner,
 } from './terminal-service.ts'
+import { hasLiveWorktreeWriter } from '../worktree-writers.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { projectStoreDir } from '../storage/copse-paths.ts'
 import { setSetting } from '../storage/settings.ts'
@@ -309,6 +310,35 @@ describe('terminal-service', () => {
     } finally {
       if (sessionId) destroyTerminalSession(sessionId, OWNER)
       restore()
+    }
+  })
+
+  it('holds a worktree writer lease while a shell is open on the tree (#1700)', async (t) => {
+    if (!(await ptySpawnAvailable())) {
+      t.skip('PTY spawn unavailable in this environment')
+      return
+    }
+    const threadRoot = await mkdtemp(join(tmpdir(), 'copse-terminal-writer-'))
+    const restore = setWorkspaceRootForTest(threadRoot)
+    const win = mockWindow()
+    try {
+      // Copse cannot see what the user types, so an open shell counts as a writer.
+      const destroyed = await createTerminalSession(win, 80, 24, { threadId: 'w' }, threadRoot)
+      assert.equal(hasLiveWorktreeWriter(threadRoot), true)
+      destroyTerminalSession(destroyed, OWNER)
+      assert.equal(hasLiveWorktreeWriter(threadRoot), false, 'closing the tab ends the lease')
+
+      const exited = await createTerminalSession(win, 80, 24, { threadId: 'w' }, threadRoot)
+      assert.equal(hasLiveWorktreeWriter(threadRoot), true)
+      writeTerminalSession(exited, OWNER, 'exit\n')
+      const deadline = Date.now() + 5000
+      while (hasLiveWorktreeWriter(threadRoot) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      assert.equal(hasLiveWorktreeWriter(threadRoot), false, 'a shell that exits ends the lease')
+    } finally {
+      restore()
+      await rm(threadRoot, { recursive: true, force: true })
     }
   })
 
