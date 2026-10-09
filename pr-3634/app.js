@@ -68585,8 +68585,11 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
     outgoingThreads,
     pendingThreadId
   ).catch((error62) => {
-    endSwitch(gen, id);
-    throw error62;
+    if (pendingSwitch?.gen === gen) clearPendingSwitch();
+    if (gen === switchGeneration) {
+      settleActivationWaiter(id, error62 instanceof Error ? error62 : new Error(String(error62)));
+    }
+    console.error("[projects] project switch failed", error62);
   });
 }
 function switchProject(store2, api2, id, pendingThreadId = null) {
