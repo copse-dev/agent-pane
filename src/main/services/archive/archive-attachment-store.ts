@@ -8,7 +8,7 @@ import {
 } from '@shared/archive/archive-media.ts'
 import { fileExtension, formatByteSize } from '@shared/file-bytes.ts'
 import { resolveWorkspacePath } from '../workspace.ts'
-import { threadBlobsDir } from '../thread-store.ts'
+import { threadMediaDir } from '../thread-store.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 
 /**
@@ -19,8 +19,6 @@ import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
  *
  * The archive is stored, never inlined. `read_archive` unpacks it from here.
  */
-
-const MEDIA_DIR = 'media'
 
 /** Keep a stored name free of anything path-like; it comes from a renderer `File`. */
 function sanitizeFileName(name: string): string {
@@ -58,7 +56,7 @@ export function storeArchiveAttachment(
     )
   }
 
-  const dir = join(threadBlobsDir(projectId, threadId), MEDIA_DIR)
+  const dir = threadMediaDir(projectId, threadId)
   mkdirSync(dir, { recursive: true })
   // The uuid prefix keeps two drops of `release.zip` from colliding while
   // leaving the original name legible in the path the model is given.

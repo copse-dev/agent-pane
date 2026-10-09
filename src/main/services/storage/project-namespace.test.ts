@@ -125,4 +125,35 @@ describe('projectStoreNamespaceDir', () => {
 
     assert.equal(projectStoreNamespaceDir(base, null), join(base, 'shared'))
   })
+
+  // A background run in project B passes B's root while A is active: B's store
+  // must stay B's, and B's legacy directory must not be renamed into A's id.
+  it('keys an explicit root by its own project id, not the active one', () => {
+    const base = tempBase()
+    const rootA = '/repos/alpha'
+    const rootB = '/repos/beta'
+    const legacyB = join(base, legacyName(rootB))
+    mkdirSync(legacyB, { recursive: true })
+    writeFileSync(join(legacyB, 'notes.txt'), 'beta data')
+
+    openProject('project-a', rootA)
+    storageSet('projects', [
+      { id: 'project-a', path: rootA, name: 'alpha' },
+      { id: 'project-b', path: rootB, name: 'beta' },
+    ])
+
+    const dirB = projectStoreNamespaceDir(base, rootB)
+    assert.equal(dirB, join(base, 'project-b'))
+    assert.equal(readFileSync(join(dirB, 'notes.txt'), 'utf8'), 'beta data')
+    assert.equal(existsSync(join(base, 'project-a')), false)
+    assert.equal(projectStoreNamespaceDir(base), join(base, 'project-a'))
+  })
+
+  it('keeps the legacy name for an explicit root that belongs to no project', () => {
+    const base = tempBase()
+    openProject('project-a', '/repos/alpha')
+    const stray = '/repos/unknown'
+
+    assert.equal(projectStoreNamespaceDir(base, stray), join(base, legacyName(stray)))
+  })
 })

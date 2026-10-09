@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { getActiveProjectId, getActiveProjectRoot } from '../workspace.ts'
+import { getActiveProjectId, getActiveProjectRoot, getProjectIdForRoot } from '../workspace.ts'
 
 /**
  * Per-project directory name for the small feature stores (knowledge, long
@@ -33,7 +33,7 @@ function slugify(text: string): string {
 }
 
 /**
- * Resolve `<baseDir>/<namespace>` for the active project, migrating a
+ * Resolve `<baseDir>/<namespace>` for the project at `root`, migrating a
  * path-hashed directory from the old scheme into the id-keyed name the first
  * time it is needed.
  *
@@ -41,7 +41,9 @@ function slugify(text: string): string {
  * both schemes fall back to `shared`, so those callers are unaffected.
  *
  * `root` may be passed explicitly by callers that already resolved it for a
- * specific project rather than the active one.
+ * specific project rather than the active one; the namespace is then keyed by
+ * that project's id, never the active project's, so a background run in one
+ * project can neither read another's store nor migrate its legacy directory.
  */
 export function projectStoreNamespaceDir(
   baseDir: string,
@@ -49,7 +51,9 @@ export function projectStoreNamespaceDir(
 ): string {
   if (!root) return join(baseDir, 'shared')
 
-  const projectId = getActiveProjectId()
+  const activeId = getActiveProjectId()
+  const projectId =
+    activeId !== null && root === getActiveProjectRoot() ? activeId : getProjectIdForRoot(root)
   // No id to key by (headless runs scope by workspace root alone): keep the
   // legacy name so those profiles neither migrate nor lose their data.
   if (!projectId) return join(baseDir, legacyPathNamespace(root))

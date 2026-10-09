@@ -211,16 +211,26 @@ function metaSig(meta: ThreadMeta): string {
  * field the renderer has dropped (a drained `pendingMessages`, a lifted
  * `queuePaused`, a cleared `contextSnapshot`) would otherwise linger in
  * `meta.json` and, on the next restore, resurrect a phantom "queued" message and
- * re-dispatch its run. Carry the full next meta plus an explicit `undefined` for
- * every key that was present in the last-persisted meta but is now gone: the
- * merge then writes `undefined`, which `JSON.stringify` drops, clearing the field
- * on disk. Fields the renderer never carries (main-owned `remoteAgentLink`) never
- * appear in `prev`, so they are never nulled and stay preserved by the merge.
+ * re-dispatch its run. Carry an explicit `undefined` for every key that was
+ * present in the last-persisted meta but is now gone: the merge then writes
+ * `undefined`, which `JSON.stringify` drops, clearing the field on disk.
+ *
+ * Only keys whose value changed since that baseline are sent. Main writes some
+ * metadata directly (`prRefs`, `remoteAgentLink`, `modelSelections`); the
+ * renderer's copy of those can be stale, and re-sending it with every unrelated
+ * change (a draft keystroke) would overwrite the newer value on disk.
  */
 function metaPatch(prev: ThreadMeta, next: ThreadMeta): Partial<ThreadMeta> {
-  const patch: Record<string, unknown> = { ...next }
-  for (const key of Object.keys(prev)) {
-    if (!Object.hasOwn(next, key)) patch[key] = undefined
+  const before: Record<string, unknown> = { ...prev }
+  const after: Record<string, unknown> = { ...next }
+  const patch: Record<string, unknown> = {}
+  for (const key of Object.keys(after)) {
+    if (!Object.hasOwn(before, key) || JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+      patch[key] = after[key]
+    }
+  }
+  for (const key of Object.keys(before)) {
+    if (!Object.hasOwn(after, key)) patch[key] = undefined
   }
   return patch
 }

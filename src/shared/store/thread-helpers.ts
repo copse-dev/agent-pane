@@ -309,14 +309,10 @@ export function markThreadUnread(store: AppStore, threadId: string, at = Date.no
 
 /** Clear a thread's unread completion marker when it is selected. */
 export function markThreadRead(store: AppStore, threadId: string): void {
-  const { threads } = store.getState()
-  if (!threads.some((thread) => thread.id === threadId && thread.unreadAt !== undefined)) return
-  store.setState({
-    threads: threads.map((thread) => {
-      if (thread.id !== threadId || thread.unreadAt === undefined) return thread
-      const { unreadAt: _read, ...readThread } = thread
-      return readThread
-    }),
+  if (getThreadById(store, threadId)?.unreadAt === undefined) return
+  patchThreadAnywhere(store, threadId, (thread) => {
+    const { unreadAt: _read, ...readThread } = thread
+    return readThread
   })
   store.emit('threads_changed')
 }
@@ -888,12 +884,10 @@ export function updateContextSnapshot(
 }
 
 export function clearContextSnapshot(store: AppStore, threadId: string): void {
-  const threads = store.getState().threads.map((t) => {
-    if (t.id !== threadId) return t
+  patchThreadAnywhere(store, threadId, (t) => {
     const { contextSnapshot: _removed, ...rest } = t
     return rest
   })
-  store.setState({ threads })
   store.emit('context_updated', threadId)
 }
 
@@ -933,17 +927,13 @@ export function setMessageTurnOutcome(
   messageId: string,
   turnOutcome: TurnOutcome,
 ): void {
-  const threads = store.getState().threads.map((thread) => {
-    if (thread.id !== threadId) return thread
-    return {
-      ...thread,
-      messages: thread.messages.map((message) =>
-        message.id === messageId ? { ...message, turnOutcome } : message,
-      ),
-      updatedAt: Date.now(),
-    }
-  })
-  store.setState({ threads })
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    messages: thread.messages.map((message) =>
+      message.id === messageId ? { ...message, turnOutcome } : message,
+    ),
+    updatedAt: Date.now(),
+  }))
   store.emit('threads_changed')
 }
 
@@ -1050,16 +1040,13 @@ export function setReviewFindingDismissed(
 
 /** Suspend/resume FIFO draining of a thread's queued messages (e.g. while editing). */
 export function setQueuePaused(store: AppStore, threadId: string, paused: boolean): void {
-  const { threads } = store.getState()
-  const thread = threads.find((t) => t.id === threadId)
+  const thread = getThreadById(store, threadId)
   if (!thread || Boolean(thread.queuePaused) === paused) return
-  const updated = threads.map((t) => {
-    if (t.id !== threadId) return t
+  patchThreadAnywhere(store, threadId, (t) => {
     if (paused) return { ...t, queuePaused: true, updatedAt: Date.now() }
     const { queuePaused: _removed, ...rest } = t
     return { ...rest, updatedAt: Date.now() }
   })
-  store.setState({ threads: updated })
   store.emit('threads_changed')
 }
 

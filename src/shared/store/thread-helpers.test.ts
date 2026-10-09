@@ -22,9 +22,14 @@ import {
   updateToolCall,
   applyPreparedThreadCheckout,
   setThreadTitle,
+  setMessageTurnOutcome,
+  clearContextSnapshot,
+  setQueuePaused,
+  markThreadRead,
 } from './thread-helpers.ts'
 import type { AppStore } from './store.ts'
 import type { Thread } from '@shared/types'
+import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 
 describe('addMessage prompt provenance', () => {
@@ -1037,5 +1042,60 @@ describe('setThreadTitle', () => {
     assert.ok(thread)
     assert.equal(thread.title, 'Mine')
     assert.equal('autoTitleCount' in thread, false)
+  })
+})
+
+// A run carried across a project switch (#1841) lives in `backgroundThreads`;
+// its terminal outcome and queue/context state must land there, or the turn's
+// durable record is lost before its message is persisted.
+describe('helpers that patch a carried background thread', () => {
+  function carried(): Thread {
+    return {
+      id: 'carried',
+      title: 'carried',
+      status: 'running',
+      messages: [{ id: 'reply', role: 'assistant', content: 'done', toolCalls: [], createdAt: 1 }],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      contextSnapshot: {
+        contextWindow: 2,
+        conversationBudget: 2,
+        conversationTokens: 1,
+        fillRatio: 0.5,
+        updatedAt: 1,
+      },
+      queuePaused: true,
+      unreadAt: 5,
+      createdAt: 1,
+      updatedAt: 1,
+    }
+  }
+
+  it('records turn outcome, context, queue, and read state on the carried copy', () => {
+    const store = createStore({
+      threads: [],
+      backgroundThreads: [{ projectId: 'other-project', thread: carried() }],
+    })
+    const outcome: TurnOutcome = {
+      status: 'completed',
+      stopReason: 'end_turn',
+      source: 'provider',
+      executor: 'local',
+      provider: 'openai',
+      model: 'gpt',
+      endedAt: 2,
+    }
+
+    setMessageTurnOutcome(store, 'carried', 'reply', outcome)
+    clearContextSnapshot(store, 'carried')
+    setQueuePaused(store, 'carried', false)
+    markThreadRead(store, 'carried')
+
+    const thread = getThreadById(store, 'carried')
+    assert.ok(thread)
+    assert.deepEqual(thread.messages[0]?.turnOutcome, outcome)
+    assert.equal(thread.contextSnapshot, undefined)
+    assert.equal(thread.queuePaused, undefined)
+    assert.equal(thread.unreadAt, undefined)
+    assert.deepEqual(store.getState().threads, [])
   })
 })

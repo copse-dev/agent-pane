@@ -399,6 +399,18 @@ export function getProjectRoot(projectId: string): string | null {
   return project?.path ?? null
 }
 
+/** Id of the persisted project whose folder is `root`, or null when no project has that path. */
+export function getProjectIdForRoot(root: string): string | null {
+  const projects = storageGet(PROJECTS_KEY)
+  if (!Array.isArray(projects)) return null
+  for (const candidate of projects) {
+    if (isRecord(candidate) && candidate['path'] === root && typeof candidate['id'] === 'string') {
+      return candidate['id']
+    }
+  }
+  return null
+}
+
 export function getActiveProjectRoot(): string | null {
   const currentRoot = getWorkspaceRoot()
   if (explicitWorkspace.getStore()) return currentRoot
