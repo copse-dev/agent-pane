@@ -112,13 +112,11 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
   destination; the host decides. (`egressResolve` lets the host dial `addr[:port]` for a
   name only the guest resolves, which is how a scripted model server on loopback plays a
   real origin on 443 in the tests.)
-- **No credentials in the guest except one.** The model loop needs a provider key, so the
-  worker collects exactly that value from the host over the container's stdio link before
-  it spawns anything, and consumes it into the provider client (A17: it is never in the
-  container's configuration or any process's initial environment). Git remotes, GitHub
-  tokens and the host's environment never enter. A per-run secret canary, placed only in
-  the environment of the Docker client that creates the container, is checked against every
-  host-owned surface of the run and against the guest's reported environment key names.
+- **Built-in model credentials stay on the host (A1″).** The guest uses a bounded run-scoped
+  inference channel; the host authenticates and calls the pinned provider. External ACP agents
+  still receive their selected credential in the guest under A1/A1′. Git remotes, GitHub tokens,
+  and the host's environment never enter. A per-run secret canary checks the host-owned run
+  surfaces and the guest's reported environment key names.
 - **The thread's checkout, not the project's.** A thread with an isolated worktree has its
   own branch and its own uncommitted edits, so the service resolves the checkout through
   `resolveThreadExecutionContext` (the cold resolver the supervisor also uses) and refuses a
@@ -181,18 +179,18 @@ guest**. The trade is deliberate and is the one the remote-worker assessment rec
 loop that lives on the desktop dies when the laptop closes, and every unattended scenario the
 long-horizon plans want is exactly the one where it does.
 
-| `unattended-runs.md` decision                        | Here                                                                                                                                                                                                                         |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 — container is an SSH host, not a new tool surface | Neither: the container runs the whole headless host, so the tool surface is the product's own, unchanged. No second transport was built. SSH is not involved in v1; it returns when the desktop attaches to a running guest. |
-| 2 — provenance decides capabilities                  | Kept, as an _attestation_: the host records the hardening it applied; the guest declares from that record and refuses a short one.                                                                                           |
-| 3 — no credentials in the guest                      | **Narrowed**, not kept: exactly one credential — the provider key — is in the guest, by value, for the run, and blanked from the environment before any child spawns. Everything else stays out.                             |
-| 4 — egress deny-by-default and named                 | Kept and made structural: no interface at all; named origins only through the broker.                                                                                                                                        |
-| 5 — separate concept from Guarded YOLO               | Kept: separate ledger, separate arming, mutually exclusive, tested both ways.                                                                                                                                                |
-| 6 — the gate never blocks                            | Kept: arming implies deferral mode; the fail-closed handler in the worker counts what would have blocked and the test requires zero.                                                                                         |
-| 7 — budgets mandatory                                | Kept: refused without them; enforced in the guest and backstopped by the host.                                                                                                                                               |
-| 8 — every run produces a review record               | Kept as `record.json`; not yet written to the thread spine as canonical events.                                                                                                                                              |
-| 9 — not a hostile-workload boundary                  | Kept. The container is the user's own disposable machine, not a multi-tenant claim. (It ran `seccomp=unconfined` while a bubblewrap nested inside it; A7 put the default profiles back.)                                     |
-| 10 — classifiers never grant authority               | Kept: `decideContainedShellEffect` routes; the grant is the explicitly armed run on an attested runtime.                                                                                                                     |
+| `unattended-runs.md` decision                        | Here                                                                                                                                                                                                                       |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 — container is an SSH host, not a new tool surface | Neither: the container runs the headless host with a reviewed subset of the product's tools (A10). No second tool transport was built. SSH is not involved in v1; it returns when the desktop attaches to a running guest. |
+| 2 — provenance decides capabilities                  | Kept, as an _attestation_: the host records the hardening it applied; the guest declares from that record and refuses a short one.                                                                                         |
+| 3 — no credentials in the guest                      | **Kept for built-in providers (A1″)**: authentication and inference stay on the host. External ACP agents retain the explicit key/sign-in exceptions in A1/A1′.                                                            |
+| 4 — egress deny-by-default and named                 | Kept and made structural: no interface at all; named origins only through the broker.                                                                                                                                      |
+| 5 — separate concept from Guarded YOLO               | Kept: separate ledger, separate arming, mutually exclusive, tested both ways.                                                                                                                                              |
+| 6 — the gate never blocks                            | Kept: arming implies deferral mode; the fail-closed handler in the worker counts what would have blocked and the test requires zero.                                                                                       |
+| 7 — budgets mandatory                                | Kept: refused without them; enforced in the guest and backstopped by the host.                                                                                                                                             |
+| 8 — every run produces a review record               | Kept as `record.json`; not yet written to the thread spine as canonical events.                                                                                                                                            |
+| 9 — not a hostile-workload boundary                  | Kept. The container is the user's own disposable machine, not a multi-tenant claim. (It ran `seccomp=unconfined` while a bubblewrap nested inside it; A7 put the default profiles back.)                                   |
+| 10 — classifiers never grant authority               | Kept: `decideContainedShellEffect` routes; the grant is the explicitly armed run on an attested runtime.                                                                                                                   |
 
 If the loop-in-guest direction is confirmed, decisions 1 and 3 in `unattended-runs.md` should
 be revised to say so. Until then that document is unchanged and this one records the
@@ -479,6 +477,26 @@ guarantee, and the record must say so.
   method reads that same environment key, whereas the variable alone does not
   authenticate a fresh guest. The request carries no secret and is absent from
   sign-in runs, which continue to use the explicitly carried login files.
+- **A1″ — built-in provider authentication and inference stay on the host.** Requested by the
+  author after the native ChatGPT bridge: all built-in providers, including local servers, use a
+  run-scoped model RPC on private stdio. The guest receives no provider endpoint, API key, or OAuth
+  token. The host pins the selected provider settings/key (OAuth pins its account and refreshes on
+  the host), enforces one concurrent request and run/size/token/time bounds, and cancels
+  inference when the guest disconnects or the run stops. Known authentication literals are scrubbed
+  from streamed responses and diagnostics. The synthetic inference origin is a capability handled
+  by the broker, never a TCP destination. Dependency-install network grants remain separate.
+  A1 and A1′ still govern external ACP agents: their agent processes and tools remain in the guest;
+  this does not move external agent commands onto the user's host. Token reservation is an estimate
+  before a call; reported usage can exhaust the budget during that call and refuses later calls.
+  Generation parameters are captured at plan creation for API-key and ChatGPT providers; only
+  credentials for the pinned ChatGPT account are refreshed between requests. After reserving
+  estimated input, the broker passes the remaining token budget to that pinned provider, whose
+  captured output setting supplies any supported model/user ceiling. CLI `--resolve` changes
+  the transport destination while preserving the logical URL authority, HTTP Host and TLS identity.
+  The broker has no separate request-count ceiling: the time and token budgets selected when
+  starting the run bound inference. An explicit CLI `--max-steps` still bounds the guest loop;
+  shared agent-loop termination and progress safeguards are separate from broker admission.
+
 - **A1′ — the sign-in, on explicit opt-in, for the agents that keep it in files.** Asked
   for by the author after A1 shipped: a user who runs Codex on a ChatGPT login and reaches
   OpenAI models only through OpenRouter has no OpenAI key to give, and the row stayed
@@ -625,17 +643,17 @@ guarantee, and the record must say so.
   image. So the install is three steps — fetch and link with scripts off (required), then
   native builds and the project's own `postinstall`/`prepare` as best effort, each failure
   named and passed over — and the image carries python3, make, g++ and pkg-config.
-- **A10 — no GitHub or CI tool in the guest, by name.** Asked by the author after the
-  first complete run: does the agent hold write tools to GitHub? The bridge's ceiling
-  includes four that write (`gh_pr_create`, `gh_pr_approve`, `gh_pr_mark_ready`,
-  `gh_pr_enable_auto_merge`) and they register on the desktop when `gh` is on the PATH or a
-  GitHub token is in the environment. Neither holds in the guest, so the first run offered
-  23 tools and none of them — but absence by accident is not a property. The headless
-  profile gained `excludeTools`, applied after bootstrap and before the agent sees a list,
-  and the worker passes every GitHub and CI tool name (`guest-tools.ts`, with a test that
-  fails when a new `gh_*` tool reaches the bridge list without joining the exclusion).
-  `run_shell` remains: it has no `gh`, no token, no route to github.com, and a `git push`
-  through it is an outward effect the contained gate refuses and records.
+- **A10 — only supported local coding tools in the guest.** The headless profile's
+  `includeTools` is a positive allowlist, applied after registry/skill/MCP bootstrap and
+  before the model sees a list. The worker supplies `GUEST_ALLOWED_TOOLS` from
+  `guest-tools.ts`: local file editing, text search, Git, shell, todos and archive reading.
+  New tools are absent until explicitly reviewed for guest support. Desktop GUI/terminal,
+  interaction, subagent/provider routes, web tools and semantic search are withheld when
+  the guest cannot support their services. GitHub/CI and other external write tools remain
+  on the parent desktop, where ordinary approval policy applies. Unlisted tool calls fail
+  before execution, even if a model invents their names. `run_shell` retains the contained
+  gate: outward writes are refused or recorded for review, never executed by a guest grant.
+  Dependency-install network grants do not grant permission for external writes.
 - **A11 — an installing run reaches GitHub anonymously, and the image can run an Electron
   e2e suite.** Asked by the author: can the guest reach GitHub without ever holding the
   desktop's credentials? Yes, by construction — the guest gets the environment the runner
@@ -644,8 +662,8 @@ guarantee, and the record must say so.
   for every write, gists included; and a push through `run_shell` is an outward effect the
   gate refuses. So "Install dependencies" admits `github.com`, `*.github.com` and
   `*.githubusercontent.com` on 443 alongside the registry: Electron and chromedriver come
-  down from releases during the install, and the agent's HTTP tools can read public repos,
-  PRs and CI. Anonymous API calls are limited to sixty an hour per address. The image
+  down from releases during the install. The guest tool allowlist does not expose HTTP
+  tools; the install grant does not authorise the agent's commands to write externally. The image
   carries Xvfb, xauth and Electron's shared libraries (the list the Electron project
   documents for Debian), so `xvfb-run` exists and the suite's own `--no-sandbox` and
   `--disable-dev-shm-usage` flags do the rest under Docker's default seccomp. The
@@ -1023,7 +1041,7 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | ACP: guest proxy       | unit        | Absolute-form HTTP streams an SSE body back with hop-by-hop headers dropped; CONNECT tunnels; DENY becomes a 403                                                            | `container-runtime/guest-egress-proxy.test.ts` (A-1)                                                                                   |
 | ACP: broker probe      | unit        | `PING`/`PONG` on the link; the worker fails a run whose host does not answer; a brokered run that reached nothing is warned about, or failed                                | `egress-broker.test.ts`, `guest-egress-proxy.test.ts`, `container-run-service.test.ts` (A8)                                            |
 | ACP: install step      | unit        | Lockfile picks pnpm or npm ci, nothing without one; the store sits beside the checkout; the install env carries the proxy and every download switch off                     | `container-runtime/guest-install.test.ts`, `container-run-service.test.ts` (A9)                                                        |
-| ACP: guest tools       | unit        | Every GitHub write tool, and every gh_*/CI tool the bridge could offer, is on the guest's exclusion list                                                                    | `container-runtime/guest-tools.test.ts` (A10)                                                                                          |
+| ACP: guest tools       | unit        | Guest tools use a reviewed allowlist; GitHub/CI, unsupported desktop services and invented tool calls are absent or refused                                                 | `container-runtime/guest-tools.test.ts` (A10)                                                                                          |
 | ACP: stdio link        | unit        | Frames survive any split; a stream half-closes each way; refusal and reset reach the peer; a severed byte stream fails every stream                                         | `container-runtime/egress-link.test.ts` (A8)                                                                                           |
 | ACP: 443 in the guest  | integration | The model on guest port 443 is reached through the proxy, admitted by a wildcard rule named in the log                                                                      | `container-runtime/thread-container.integration.test.ts`                                                                               |
 | ACP: permission policy | integration | A scripted ACP agent: in-guest write allowed, outward push denied and recorded, host escape denied, harness named                                                           | `container-runtime/acp-container.integration.test.ts` (A-2)                                                                            |

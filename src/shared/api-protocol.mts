@@ -82,7 +82,8 @@
 // v52 versions the OpenAI remote-agent provider in thread and agent-PR-link payloads.
 // v53 versions agentBusy on worktree attachment status.
 // v54 versions event automation shapes.
-// v55 adds `threads:backlinks`, and versions the optional `sideChat` link and the
+// v55 versions host-owned container authentication.
+// v56 adds `threads:backlinks`, and versions the optional `sideChat` link and the
 // recorded `links` on thread payloads.
-// v56 adds the `side-chat` right-panel mode to the pane and pop-out channels.
-export const API_PROTOCOL_VERSION = 56 as const
+// v57 adds the `side-chat` right-panel mode to the pane and pop-out channels.
+export const API_PROTOCOL_VERSION = 57 as const
