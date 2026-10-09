@@ -105,6 +105,8 @@ export const RECENT_ROW_LIMIT = 10
  * what is older is still one click away in the sidebar.
  */
 export const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+/** A persisted time this far ahead of the clock is skew; any further is bad data, not recent. */
+export const FUTURE_SKEW_MS = 24 * 60 * 60 * 1000
 /** This many settled runs of one schedule fold into one row; a single run stays its own row. */
 export const SCHEDULE_FOLD_AT = 2
 /** Long enough to identify the request; the row's own CSS ellipsis does the rest. */
@@ -161,7 +163,8 @@ function questionWant(questions: readonly string[]): string {
 /**
  * When a settled thread last ended, for a run this session never watched.
  *
- * Falls back to the persisted last write, but only inside {@link RECENT_WINDOW_MS}
+ * Falls back to the persisted last write, but only inside {@link RECENT_WINDOW_MS} (and not
+ * further ahead of the clock than {@link FUTURE_SKEW_MS})
  * and only for a thread that was actually prompted — an untouched draft, or the
  * empty active thread, never ran. The same window applies to a stored `error`: the
  * status outlives restarts, so an old one is not a fresh failure, and only one
@@ -169,7 +172,9 @@ function questionWant(questions: readonly string[]): string {
  */
 function persistedEndedAt(thread: ActivityThread, now: number): number | undefined {
   const at = thread.settledAt
-  return at !== undefined && now - at <= RECENT_WINDOW_MS ? at : undefined
+  if (at === undefined) return undefined
+  const age = now - at
+  return age <= RECENT_WINDOW_MS && age >= -FUTURE_SKEW_MS ? at : undefined
 }
 
 export function deriveActivity(input: ActivityInput): ActivityGroup[] {

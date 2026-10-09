@@ -9,6 +9,7 @@ import {
   formatAge,
   formatAgeLong,
   RECENT_ROW_LIMIT,
+  FUTURE_SKEW_MS,
   RECENT_WINDOW_MS,
   trackRunTimings,
   truncateText,
@@ -172,6 +173,24 @@ describe('deriveActivity', () => {
         ['read-yesterday', 'finished', now - 24 * 3_600_000],
         ['read-edge', 'finished', now - RECENT_WINDOW_MS],
       ],
+    )
+  })
+
+  it('ignores a persisted time far in the future but tolerates small clock skew', () => {
+    const now = 10 * RECENT_WINDOW_MS
+    const groups = deriveActivity(
+      input({
+        now,
+        threads: [
+          info('skewed', { settledAt: now + FUTURE_SKEW_MS }),
+          info('bogus', { settledAt: now + FUTURE_SKEW_MS + 1 }),
+          info('way-ahead', { settledAt: now + RECENT_WINDOW_MS + 1 }),
+        ],
+      }),
+    )
+    assert.deepEqual(
+      group(groups, 'recent').rows.map((row) => row.threadId),
+      ['skewed'],
     )
   })
 

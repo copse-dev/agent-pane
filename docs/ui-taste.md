@@ -1455,7 +1455,8 @@ than the card. Differences from the overlay are listed under each point below.
   An empty Needs you still says so ("Nothing needs you right now.") above the other groups.
 - **Recently finished includes what ended before launch.** A settled thread is listed when
   this session watched it end, it finished unread while another thread was open, or its
-  persisted last write (`updatedAt`) is within the last 7 days (`RECENT_WINDOW_MS`), read or
+  persisted last write (`updatedAt`) is within the last 7 days (`RECENT_WINDOW_MS`; a time more than a day ahead of the clock is
+  treated as bad data, not recent), read or
   not; the cap of ten still applies. A thread that never ran (a draft, the empty active
   thread) never lists; "ran" is read from metadata alone (`lastPromptAt`, else recorded token
   usage, a working brief or an auto-title pass), so threads written before `lastPromptAt`
