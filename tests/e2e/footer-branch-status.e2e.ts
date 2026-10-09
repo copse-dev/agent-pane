@@ -274,6 +274,11 @@ describe('footer branch status for a detached thread worktree', function () {
     await expect($('.chat-row.selected')).toHaveElementClass('is-running')
     await expect($('.footer-branch-status')).toHaveElementClass('is-detached')
     await expect($('.branch-reattach-button')).not.toBeDisplayed()
+    // Say why there is no button instead of leaving a silent gap beside the branch.
+    await expect($('.footer-branch-status')).toHaveAttribute(
+      'title',
+      expect.stringContaining('Recovery is offered once the agent stops working in it'),
+    )
     await saveElementScreenshot('#input-bar', 'footer-branch-rebase-agent-running.png')
     await scenario.release('paused-rebase')
     await scenario.waitForComplete()
