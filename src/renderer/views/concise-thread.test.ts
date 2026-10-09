@@ -328,6 +328,13 @@ describe('collapsed concise bubbles', () => {
     assert.equal(isConciseCollapsedMessage([steps, summary], 1, true), false)
   })
 
+  it('keeps a bubble that carries a thread proposal or reviewer-input card', () => {
+    for (const name of ['propose_thread', 'request_review_input']) {
+      const offer = message({ id: 'a1', model: CAPABLE, toolCalls: [tool({ name })] })
+      assert.equal(isConciseCollapsedMessage([offer, summary], 0, true), false, name)
+    }
+  })
+
   it('keeps the turn’s last bubble even when it has tool calls, until a later one arrives', () => {
     assert.equal(isConciseCollapsedMessage([steps], 0, true), false)
   })

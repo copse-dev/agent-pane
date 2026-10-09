@@ -23,6 +23,8 @@ import { resolveModelIntellect } from '@copse/llm/intellect-lookup.ts'
 import type { Message, Thread, ToolCall } from '@shared/types'
 import { formatTodoProgress } from '@shared/todos/todo-logic.ts'
 import { getToolCallLabel, shellCommandLabel } from '@shared/tools/tool-display.ts'
+import { THREAD_PROPOSAL_TOOL } from '@shared/threads/thread-proposal.ts'
+import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { interruptionCause, type InterruptionCause } from './turn-interruption.ts'
 
@@ -115,7 +117,13 @@ export function isConciseCollapsedMessage(
   const producesOutput =
     (msg.visualEvidence?.length ?? 0) > 0 ||
     (msg.canvasArtefacts?.length ?? 0) > 0 ||
-    msg.toolCalls.some((toolCall) => (toolCall.images?.length ?? 0) > 0)
+    msg.toolCalls.some(
+      (toolCall) =>
+        (toolCall.images?.length ?? 0) > 0 ||
+        // Offers to the user stay painted in the concise view (see the stylesheet).
+        toolCall.name === THREAD_PROPOSAL_TOOL ||
+        isReviewerInputCall(toolCall),
+    )
   return !producesOutput
 }
 
