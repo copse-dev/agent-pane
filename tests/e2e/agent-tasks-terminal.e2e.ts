@@ -248,6 +248,23 @@ describe('agent tasks in terminal tab', () => {
     expect(panelText.trimEnd().endsWith('[output truncated]')).toBe(true)
     expect(panelText).not.toContain('\n30000')
 
+    // Pipe chunk sizes change the final streamed line, so a bottom capture
+    // oscillates between unrelated baselines. The assertions above cover the
+    // truncation marker and retained error; capture the stable first lines.
+    await browser.execute(() => {
+      const output = document.querySelector<HTMLElement>('.agent-task-output-panel:not([hidden])')
+      if (!output) throw new Error('Expected the completed task output')
+      output.scrollTop = 0
+    })
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          () =>
+            document.querySelector<HTMLElement>('.agent-task-output-panel:not([hidden])')
+              ?.scrollTop === 0,
+        ),
+      { timeout: 5_000, timeoutMsg: 'completed output must stay at the deterministic start' },
+    )
     await saveAppScreenshot('agent-tasks-over-cap-output.png')
     await scenario.assertComplete()
   })
