@@ -88,7 +88,7 @@ async function readTextFile(path: string): Promise<string | null> {
   }
 }
 
-/** macOS Keychain payload written by `claude /login` (includes user:profile). */
+/** macOS Keychain payload written by `claude auth login` (includes user:profile). */
 export async function readClaudeKeychainCredentialsJson(): Promise<string | null> {
   if (process.platform !== 'darwin') return null
   try {
@@ -459,7 +459,7 @@ function mockAuthErrorSnapshot(): PlanUsageSnapshot {
         status: 'unavailable',
         provider: 'claude',
         reason:
-          'Claude credentials were rejected. Re-run `claude /login` so Copse can read a fresh Claude OAuth login token.',
+          'Claude credentials were rejected. Re-run `claude auth login` so Copse can read a fresh Claude OAuth login token.',
       },
       {
         status: 'ok',

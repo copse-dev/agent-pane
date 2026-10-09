@@ -44,8 +44,8 @@ const KNOWN_AGENTS: KnownAgent[] = [
     args: [],
     envHints: ['ANTHROPIC_API_KEY'],
     install: 'npm install -g @agentclientprotocol/claude-agent-acp',
-    setup: 'claude setup-token',
-    note: 'Claude Agent SDK over ACP. Auth with `claude setup-token` or ANTHROPIC_API_KEY.',
+    setup: 'claude auth login',
+    note: 'Claude Agent SDK over ACP. Auth with `claude auth login` or ANTHROPIC_API_KEY.',
   },
   {
     id: 'claude-code-acp',
@@ -54,8 +54,8 @@ const KNOWN_AGENTS: KnownAgent[] = [
     args: [],
     envHints: ['ANTHROPIC_API_KEY'],
     install: 'npm install -g @zed-industries/claude-code-acp',
-    setup: 'claude setup-token',
-    note: "Zed's Claude Code ACP adapter. Auth with `claude setup-token` or ANTHROPIC_API_KEY.",
+    setup: 'claude auth login',
+    note: "Zed's Claude Code ACP adapter. Auth with `claude auth login` or ANTHROPIC_API_KEY.",
   },
   {
     id: 'cursor',

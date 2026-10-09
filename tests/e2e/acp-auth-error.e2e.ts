@@ -1,6 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedAcpAuthErrorFixture } from './helpers/seed-config.ts'
-import { savePreparedElementScreenshot } from './helpers/screenshot.ts'
+import { saveElementScreenshot, savePreparedElementScreenshot } from './helpers/screenshot.ts'
 
 /**
  * Where each env-var hint rendered: inside the numbered sign-in steps (the
@@ -44,11 +44,27 @@ describe('ACP authentication error presentation', () => {
     resetUserData()
   })
 
+  it('shows the dedicated Claude sign-in command in setup without adapter jargon', async () => {
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
+    await $('.provider-chip[data-provider="anthropic"]').click()
+    const signIn = await $('.acp-cmd-row*=Sign in')
+    await expect(signIn.$('.acp-cmd')).toHaveText('claude auth login')
+    const note = await $('.acp-known-agent-note')
+    await expect(note).toHaveText('Sign in with claude auth login, or set ANTHROPIC_API_KEY.')
+    await expect(note).not.toHaveText(expect.stringContaining('claude-agent-acp'))
+    await expect(signIn).not.toHaveText(expect.stringContaining('--sso'))
+    await saveElementScreenshot(
+      '.provider-capability:has(.acp-known-agent-note)',
+      'claude-sign-in.png',
+    )
+  })
+
   it('leads with recovery and keeps opaque ACP diagnostics subordinate', async () => {
     const message = await $('[data-message-id="msg-assistant-acp-auth"] .message-text')
     const warning = await message.$('.markdown-alert-warning')
     await expect(warning.$('strong')).toHaveText('Claude sign-in expired')
-    await expect(message.$('ol code')).toHaveText('claude /login')
+    await expect(message.$('ol code')).toHaveText('claude auth login')
     await expect(message.$('pre code')).toHaveText(
       expect.stringContaining('ACP error -32603 (Internal error)'),
     )
@@ -91,7 +107,7 @@ describe('ACP authentication error presentation', () => {
     expect(layout.diagnosticLinePitch).toBeLessThanOrEqual(24)
 
     const hints = await hintPlacement('msg-assistant-acp-auth')
-    expect(hints.inSteps).toEqual(['claude /login'])
+    expect(hints.inSteps).toEqual(['claude auth login'])
     expect(hints.inNote).toEqual(['ANTHROPIC_API_KEY'])
 
     await savePreparedElementScreenshot(

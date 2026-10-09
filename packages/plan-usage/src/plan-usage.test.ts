@@ -128,7 +128,7 @@ describe('fetchClaudePlanUsage', () => {
       ),
     })
     assert.equal(result.status, 'unavailable')
-    assert.match(result.reason, /claude \/login/i)
+    assert.match(result.reason, /claude auth login/i)
     assert.match(result.reason, /user:profile/)
   })
 

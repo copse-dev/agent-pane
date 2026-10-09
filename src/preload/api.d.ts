@@ -1304,7 +1304,12 @@ export interface ApiClient {
     create: (
       cols: number,
       rows: number,
-      meta: { label?: string; projectId: string; threadId: string | null },
+      meta: {
+        label?: string
+        projectId: string
+        threadId: string | null
+        executionTarget?: 'local'
+      },
     ) => Promise<{ sessionId: string; checkoutMode: 'shared' | 'worktree' }>
     write: (sessionId: string, data: string) => Promise<void>
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>

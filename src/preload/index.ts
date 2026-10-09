@@ -1511,7 +1511,12 @@ const api: ApiClient = {
     create: (
       cols: number,
       rows: number,
-      meta: { label?: string; projectId: string; threadId: string | null },
+      meta: {
+        label?: string
+        projectId: string
+        threadId: string | null
+        executionTarget?: 'local'
+      },
     ) => ipcRenderer.invoke('terminal:create', cols, rows, meta),
     write: (sessionId: string, data: string) =>
       ipcRenderer.invoke('terminal:write', sessionId, data),

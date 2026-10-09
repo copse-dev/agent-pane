@@ -27,13 +27,13 @@ describe('offerAcpReauth', () => {
     )
   }
 
-  it('launches the re-login command, not the first-run token command', async () => {
+  it('launches the dedicated Claude login command', async () => {
     const command = await withAnswer(
-      () => 'Run `claude /login`',
+      () => 'Run `claude auth login`',
       () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'expired' }),
     )
-    assert.equal(command, 'claude /login')
-    assert.deepEqual(launched, ['claude /login'])
+    assert.equal(command, 'claude auth login')
+    assert.deepEqual(launched, ['claude auth login'])
   })
 
   it('says which agent expired and that the sign-in finishes in the terminal', async () => {
@@ -46,8 +46,9 @@ describe('offerAcpReauth', () => {
       () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'expired' }),
     )
     assert.match(asked, /Claude’s saved sign-in has expired/)
-    assert.match(asked, /claude \/login/)
+    assert.match(asked, /claude auth login/)
     assert.match(asked, /re-send your message/)
+    assert.doesNotMatch(asked, /claude-agent-acp|SDK|ACP|--sso/)
   })
 
   it('launches nothing when the user declines', async () => {
@@ -110,7 +111,7 @@ describe('offerAcpReauth', () => {
 })
 
 // When the agent ran on an SSH host its credential store is there, so the
-// terminal must open on the host — running `claude /login` locally would sign
+// terminal must open on the host — running `claude auth login` locally would sign
 // in the wrong machine and leave the remote agent exactly as unauthenticated.
 describe('offerAcpReauth on an SSH workspace', () => {
   const REMOTE_ROOT = '/remote/project'
@@ -144,10 +145,10 @@ describe('offerAcpReauth on an SSH workspace', () => {
       (req) => Promise.resolve({ answers: req.questions.map(() => 'yes') }),
       () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'expired' }),
     )
-    assert.equal(command, 'claude /login (on dev)')
+    assert.equal(command, 'claude auth login (on dev)')
     assert.equal(launched.length, 1)
     const cmd = launched[0] ?? ''
-    assert.ok(cmd.includes('claude /login'))
+    assert.ok(cmd.includes('claude auth login'))
     assert.ok(cmd.includes('command -v claude'), 'missing-CLI hint guard precedes the login')
     // The Shells tab for an SSH workspace is already a pty on the host, so the
     // command must not be wrapped in ssh — that nests ssh on the host with
@@ -165,7 +166,7 @@ describe('offerAcpReauth on an SSH workspace', () => {
       () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'required' }),
     )
     assert.match(asked, /SSH host dev/)
-    assert.match(asked, /claude \/login/)
+    assert.match(asked, /claude auth login/)
     assert.deepEqual(launched, [])
   })
 })
