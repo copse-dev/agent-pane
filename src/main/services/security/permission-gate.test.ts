@@ -148,6 +148,42 @@ describe('package command approval scope', () => {
       }
     })
   }
+
+  it('names a delete beside a sandboxed npx instead of the package prompt', async () => {
+    setPermissionGateForTests(null)
+    const root = mkdtempSync(join(tmpdir(), 'package-scope-'))
+    const restore = setWorkspaceRootForTest(root)
+    setSetting('safetyClassifierEnabled', false)
+    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    const requests: { title: string; cause: string | undefined }[] = []
+    setApprovalHandler(async ({ title, cause }) => {
+      requests.push({ title, cause })
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('npx wdio run wdio.conf.ts', {
+          sandboxEnabled: true,
+          autoRun: true,
+          executionRoot: root,
+        }),
+        true,
+      )
+      assert.equal(requests.length, 0)
+      await ensureShellCommandPermitted('rm -f probe.e2e.ts && npx wdio run wdio.conf.ts', {
+        sandboxEnabled: true,
+        autoRun: true,
+        executionRoot: root,
+      })
+      assert.equal(requests.length, 1)
+      assert.notEqual(requests[0]?.cause, 'shell-package-install')
+      assert.notEqual(requests[0]?.title, 'Run package command?')
+    } finally {
+      setApprovalHandler(null)
+      restore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('prepare_worktree permission', () => {
