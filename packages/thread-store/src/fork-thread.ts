@@ -1,5 +1,6 @@
 import type { Message, Thread } from './thread-types.ts'
 import { collectThreadPrRefs } from './thread-pr-status.ts'
+import { collectThreadLinks } from './thread-links.ts'
 
 /**
  * Forking a thread (issue: thread forking). A fork is a *new* thread seeded with
@@ -97,14 +98,19 @@ export function buildForkedThread(source: Thread, options: ForkThreadOptions = {
   // against a branch the fork never checks out.
   const gitBranch = source.worktree === undefined ? source.gitBranch : undefined
 
+  const id = randomUUID()
+  // The copied messages are written with the thread, not appended one by one, so
+  // the append-time link recorder never sees them: record their links here.
+  const links = collectThreadLinks({ id, messages })
   return {
-    id: randomUUID(),
+    id,
     title: forkThreadTitle(source.title),
     status: 'idle',
     messages,
     // References follow only the copied transcript; native production belongs
     // to the source thread and is never inherited or inferred from tool text.
     prRefs: collectThreadPrRefs({ messages }),
+    ...(links.length > 0 ? { links } : {}),
     // Usage is a ledger of what a thread spent. The fork has spent nothing yet;
     // the source keeps its own totals.
     usage: { inputTokens: 0, outputTokens: 0 },

@@ -148,6 +148,10 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
         state.localCalls.push(`stop:${id}`)
         return structuredClone(state.local)
       },
+      uninstall: async (id) => {
+        state.localCalls.push(`uninstall:${id}`)
+        return structuredClone(state.local)
+      },
       connect: async (id) => {
         state.localCalls.push(`connect:${id}`)
         return structuredClone(state.local)
@@ -672,6 +676,91 @@ describe('classifier connections settings', () => {
     qsRequired<HTMLButtonElement>(section.root, '.classifier-local-stop').click()
     await setImmediate()
     assert.deepEqual(state.localCalls, ['start:winnow', 'stop:winnow'])
+  })
+
+  it('uninstalls a stopped server only after confirming what will be deleted', async () => {
+    const { section, state } = setup([])
+    state.local = { servers: [{ ...WINNOW_SERVER, phase: 'installed', saved: true }], hosted: [] }
+    await section.refresh()
+    const row = qsRequired(section.root, '[data-local-id="winnow"]')
+    qsRequired<HTMLButtonElement>(row, '.classifier-local-uninstall').click()
+    await setImmediate()
+    const dialog = document.querySelector('#confirm-dialog')
+    assert.match(dialog?.textContent ?? '', /Uninstall Winnow-12B\?/)
+    assert.match(dialog?.textContent ?? '', /12\.5 GB/)
+    assert.match(dialog?.textContent ?? '', /saved connection stays/)
+    clickActiveConfirmDialogCancel()
+    await setImmediate()
+    assert.deepEqual(state.localCalls, [])
+    qsRequired<HTMLButtonElement>(row, '.classifier-local-uninstall').click()
+    await setImmediate()
+    clickActiveConfirmDialogConfirm()
+    await setImmediate()
+    assert.deepEqual(state.localCalls, ['uninstall:winnow'])
+  })
+
+  it('offers no uninstall while a server runs, installs, or is someone else’s', async () => {
+    for (const phase of [
+      'running',
+      'installing',
+      'starting',
+      'external',
+      'not-installed',
+    ] as const) {
+      const { section, state } = setup([])
+      state.local = { servers: [{ ...WINNOW_SERVER, phase }], hosted: [] }
+      await section.refresh()
+      assert.equal(
+        section.root.querySelector('.classifier-local-uninstall'),
+        null,
+        `no uninstall while ${phase}`,
+      )
+      // An installing or starting server is polled; settle it so the timer ends.
+      state.local = { servers: [], hosted: [] }
+      await section.refresh()
+      document.body.replaceChildren()
+      mountConfirmDialog()
+    }
+  })
+
+  it('shows why a download failed on the row, beside a button that retries it', async () => {
+    const { section, state } = setup([])
+    state.local = {
+      servers: [
+        {
+          ...WINNOW_SERVER,
+          error:
+            'Not enough free disk space for Winnow-12B: about 15.6 GB is needed and 3.0 GB is free.',
+        },
+      ],
+      hosted: [],
+    }
+    await section.refresh()
+    const row = qsRequired(section.root, '[data-local-id="winnow"]')
+    assert.equal(row.getAttribute('data-phase'), 'not-installed')
+    assert.match(
+      qsRequired(row, '.classifier-local-error').textContent,
+      /Not enough free disk space for Winnow-12B/,
+    )
+    assert.equal(qsRequired<HTMLButtonElement>(row, '.classifier-local-install').disabled, false)
+  })
+
+  it('shows setup progress with a Cancel button instead of the download button', async () => {
+    const { section, state } = setup([])
+    state.local = {
+      servers: [{ ...WINNOW_SERVER, phase: 'installing', progress: '$ git clone --quiet …' }],
+      hosted: [],
+    }
+    await section.refresh()
+    const row = qsRequired(section.root, '[data-local-id="winnow"]')
+    assert.match(row.textContent, /git clone/)
+    assert.equal(row.querySelector('.classifier-local-install'), null)
+    qsRequired<HTMLButtonElement>(row, '.classifier-local-stop').click()
+    await setImmediate()
+    assert.deepEqual(state.localCalls, ['stop:winnow'])
+    // Cancelling settles the row, which ends the progress polling.
+    state.local = { servers: [WINNOW_SERVER], hosted: [] }
+    await section.refresh()
   })
 
   it('opens a draft for a hosted classifier whose key is already in the environment', async () => {

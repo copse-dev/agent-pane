@@ -67,6 +67,25 @@ describe('buildForkedThread', () => {
     assert.deepEqual(buildForkedThread(thread([userMessage('m', 'No PR here')]))?.prRefs, [])
   })
 
+  it('records the links its copied messages mention, so the fork has backlinks', () => {
+    const source = thread([
+      userMessage(
+        'm1',
+        'See https://example.com/spec and copse://thread/3c1f0a52-8b3e-4d7a-9f10-2a6b7c8d9e01',
+      ),
+      assistantMessage('later', 'Also https://example.com/later'),
+    ])
+
+    const fork = buildForkedThread(source, { throughMessageId: 'm1' })
+
+    assert.ok(fork)
+    assert.deepEqual(
+      fork.links?.map((link) => link.target),
+      ['https://example.com/spec', '3c1f0a52-8b3e-4d7a-9f10-2a6b7c8d9e01'],
+    )
+    assert.equal(buildForkedThread(thread([userMessage('m', 'No links')]))?.links, undefined)
+  })
+
   it('copies the whole conversation into an idle thread with a fresh id', () => {
     const source = thread([userMessage('m1', 'Hello'), assistantMessage('m2', 'Hi')])
 
