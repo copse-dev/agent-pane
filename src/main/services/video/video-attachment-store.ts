@@ -8,7 +8,7 @@ import {
 } from '@shared/video/video-media.ts'
 import { fileExtension, formatByteSize } from '@shared/file-bytes.ts'
 import { resolveLocalChatStorePath, resolveWorkspacePath } from '../workspace.ts'
-import { threadBlobsDir } from '../thread-store.ts'
+import { threadMediaDir } from '../thread-store.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 import { localWorkspaceFs } from '../workspace-fs/local-workspace-fs.ts'
 
@@ -22,8 +22,6 @@ import { localWorkspaceFs } from '../workspace-fs/local-workspace-fs.ts'
  * `video_frames` can open the file without any new path authority. Crucially the
  * video is never turned into model content; only its path is.
  */
-
-const MEDIA_DIR = 'media'
 
 /**
  * Keep a stored name free of anything path-like. The name comes from a
@@ -67,7 +65,7 @@ export function storeVideoAttachment(
     )
   }
 
-  const dir = join(threadBlobsDir(projectId, threadId), MEDIA_DIR)
+  const dir = threadMediaDir(projectId, threadId)
   mkdirSync(dir, { recursive: true })
   // The uuid prefix keeps two drops of `Screen Recording.mov` from colliding
   // while leaving the original name legible in the path the model is given.

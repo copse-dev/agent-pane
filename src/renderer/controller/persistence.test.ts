@@ -426,6 +426,37 @@ test('a metadata change on a known thread emits updateMeta, not create', async (
   autosave.detach()
 })
 
+test('a meta patch carries only changed keys, never stale copies of main-written fields', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const prRef = {
+    owner: 'acme',
+    repo: 'widgets',
+    number: 1,
+    url: 'https://github.com/acme/widgets/pull/1',
+  }
+  const loaded = thread('t1', {
+    prRefs: [prRef],
+    remoteAgentLink: { provider: 'cursor', agentId: 'agent', createdAt: 1 },
+    modelSelections: [{ id: 's1', recordedAt: 1, by: 'user', to: 'model-a' }],
+  })
+  const store = createStore({ activeProjectId: 'p1', threads: [loaded], projects: [] })
+  const autosave = attachAutosave(store, api)
+  store.emit('threads_changed')
+  await waitDebounce()
+
+  // Main has since appended a model selection / PR ref on disk; the renderer's
+  // copies are stale. A draft keystroke must not send them back.
+  store.setState({ threads: [{ ...loaded, draftPrompt: 'typing' }] })
+  store.emit('thread_draft_changed', 't1')
+  await waitDebounce()
+
+  const patch = expectRecord(calls.metas.at(-1)?.patch)
+  assert.deepEqual(Object.keys(patch), ['draftPrompt'])
+  assert.equal(patch['draftPrompt'], 'typing')
+  autosave.detach()
+})
+
 test('clearing an optional field sends an explicit undefined so it is deleted on disk', async () => {
   __resetPersistenceForTest()
   const { api, calls } = fakeApi()
