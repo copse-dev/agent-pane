@@ -66349,6 +66349,7 @@ var init_tool_display = __esm({
         running: "Presenting visual evidence",
         done: "Presented visual evidence"
       },
+      init_submodules: { running: "Checking out submodules", done: "Checked out submodules" },
       git_status: { running: "Checking git status", done: "Checked git status" },
       git_diff: { running: "Viewing git diff", done: "Viewed git diff" },
       git_log: { running: "Viewing git log", done: "Viewed git log" },
