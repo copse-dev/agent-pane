@@ -358,6 +358,9 @@ process.exit(result.status ?? 1);
     const prompt = readFileSync(join(root, 'run/prompt.txt'), 'utf8')
     for (const text of ['discussion', 'CHANGES_REQUESTED', 'README.md', '&lt;/external_content>'])
       assert.ok(prompt.includes(text))
+    assert.match(prompt, /carry-out step automatically commits workspace changes/)
+    assert.match(prompt, /Do not call git_commit or run git commit/)
+    assert.match(prompt, /git rebase --continue/)
     assert.match(readFileSync(output, 'utf8'), /mode=fix/)
     // Import a simulated guest commit through the real bundle boundary.
     writeFileSync(join(source, 'README.md'), 'fixed\n')
