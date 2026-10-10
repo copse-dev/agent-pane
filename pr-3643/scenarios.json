@@ -24,6 +24,10 @@
     "label": "Balanced model rule label"
   },
   {
+    "id": "prompt-model-first-ask",
+    "label": "Prompt matching without transcript diagnostics"
+  },
+  {
     "id": "footer-compact",
     "label": "Responsive composer footer"
   },
@@ -92,6 +96,14 @@
     "label": "Settings scroll + sticky footer geometry"
   },
   {
+    "id": "plugin-install-review",
+    "label": "Plugin catalogue install review"
+  },
+  {
+    "id": "mcp-sign-in",
+    "label": "MCP servers that sign in with OAuth"
+  },
+  {
     "id": "automation-permissions",
     "label": "Automation permission preferences"
   },
@@ -110,6 +122,66 @@
   {
     "id": "apple-development",
     "label": "Apple Development test profile"
+  },
+  {
+    "id": "sidebar-automation-fold",
+    "label": "Sidebar automation fold"
+  },
+  {
+    "id": "sidebar-empty-project",
+    "label": "Empty unopened project in the sidebar"
+  },
+  {
+    "id": "sidebar-other-projects",
+    "label": "Sidebar listing threads of projects not opened yet"
+  },
+  {
+    "id": "sidebar-thread-sort",
+    "label": "Sidebar thread sort"
+  },
+  {
+    "id": "sidebar-thread-changes",
+    "label": "Sidebar changes glyph"
+  },
+  {
+    "id": "activity-home",
+    "label": "Activity home on a new thread"
+  },
+  {
+    "id": "activity-home-many-projects",
+    "label": "Activity home listing twelve projects"
+  },
+  {
+    "id": "activity-home-project-filter",
+    "label": "Activity home after a project finishes waiting"
+  },
+  {
+    "id": "activity-home-automation-fold",
+    "label": "Activity home with automation runs folded"
+  },
+  {
+    "id": "activity-home-question",
+    "label": "Activity home with a question waiting"
+  },
+  {
+    "id": "activity-home-empty",
+    "label": "Activity home with nothing to list"
+  },
+  {
+    "id": "pr-relations",
+    "label": "PR producing and related threads"
+  },
+  {
+    "id": "side-chats",
+    "label": "Side chats beside the main thread"
+  },
+  {
+    "id": "thread-context",
+    "label": "The thread Context panel"
+  },
+  {
+    "id": "side-chat-approval",
+    "label": "A side chat asks for approval over its parent thread"
   },
   {
     "id": "chat-layout-styling",
@@ -132,6 +204,14 @@
     "label": "Full thread view for a model below the concise gate"
   },
   {
+    "id": "openai-host-pr",
+    "label": "OpenAI host PR creation result"
+  },
+  {
+    "id": "openai-cancellation-recovery",
+    "label": "OpenAI confirmed cancellation with interrupted recovery"
+  },
+  {
     "id": "concise-thread-working",
     "label": "Concise thread view while a capable model works"
   },
@@ -142,6 +222,10 @@
   {
     "id": "roadmap-chat-min-width",
     "label": "Roadmap side panel minimum chat width"
+  },
+  {
+    "id": "chatgpt-plan-settings",
+    "label": "ChatGPT plan onboarding and account options"
   },
   {
     "id": "site-fork-resend",
@@ -166,5 +250,17 @@
   {
     "id": "site-mcp-permissions",
     "label": "Copse.dev tour: per-tool MCP permissions"
+  },
+  {
+    "id": "approval-web-url",
+    "label": "Allow web origin?"
+  },
+  {
+    "id": "approval-browser-url",
+    "label": "Allow browser navigation?"
+  },
+  {
+    "id": "approval-provider-url",
+    "label": "Allow model provider host?"
   }
 ]
