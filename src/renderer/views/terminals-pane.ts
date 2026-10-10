@@ -12,6 +12,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { installTerminalFileLinks, type TerminalFileLinks } from './terminal-file-links.ts'
+import { createTerminalWebLinkHandler } from './terminal-web-links.ts'
 import { planScope, tabsForScope } from './scoped-tabs.ts'
 import { at } from '@shared/array-utils.ts'
 import { readXtermScrollback } from '../terminal/xterm-scrollback.ts'
@@ -159,6 +160,7 @@ export function mountTerminalsPane(
       fontSize: scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: xtermThemeFromTokens(readEditorThemeTokens()),
+      linkHandler: createTerminalWebLinkHandler(api.shell),
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
