@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -358,3 +358,127 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
     rmSync(runtimesDir, { recursive: true, force: true })
   }
 }
+
+it(
+  'rebases and edits in the real container, returning publishable commits',
+  { skip: E2E !== '1' },
+  async () => {
+    const workerBundle = await bundleThreadContainerWorker(
+      join(tmpdir(), 'copse-follow-up-worker.e2e.cjs'),
+    )
+    chmodSync(workerBundle, 0o600)
+    await buildWorkerImage({ engine: 'docker', image: IMAGE, workerBundle, acpAgents: [] })
+    const repo = await seedRepo()
+    const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-follow-up-e2e-'))
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-qm', 'clean baseline'])
+    git(repo, ['checkout', '-qb', 'feature'])
+    writeFileSync(join(repo, 'feature.txt'), 'feature\n')
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-qm', 'feature'])
+    const head = git(repo, ['rev-parse', 'HEAD'])
+    git(repo, ['checkout', '-q', 'main'])
+    writeFileSync(join(repo, 'base.txt'), 'base advanced\n')
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-qm', 'base advanced'])
+    const base = git(repo, ['rev-parse', 'HEAD'])
+    git(repo, ['checkout', '-q', 'feature'])
+    const model = await startScriptedModelServer([
+      {
+        kind: 'shell',
+        command:
+          "git rebase refs/copse/rebase-base && printf 'fixed\\n' > feature.txt && git add feature.txt && git commit -qm 'fix comments'",
+      },
+      { kind: 'text', text: 'Rebased and fixed the comments.' },
+    ])
+    const logs: string[] = []
+    const previousUmask = process.umask(0o077)
+    try {
+      const record = await runThreadInContainer(
+        {
+          engine: 'docker',
+          workspace: repo,
+          rebaseOnto: base,
+          prompt: 'Rebase onto refs/copse/rebase-base, then fix feature.txt.',
+          model: 'scripted',
+          hostInference: async (maxOutputTokens) =>
+            buildGuestProvider(
+              {
+                kind: 'openai-compatible',
+                model: 'scripted',
+                apiKeySlug: 'scripted',
+                url: `http://127.0.0.1:${String(model.port)}/v1`,
+                label: 'scripted host model',
+                local: true,
+                includeUsage: true,
+                apiStyle: null,
+                extraBody: null,
+                params: { maxOutputTokens },
+              },
+              null,
+            ),
+          budgets: { wallClockMs: 4 * 60_000, tokenCeiling: 100_000 },
+          egressAllowlist: [HOST_INFERENCE_TARGET],
+          image: IMAGE,
+          runtimesDir,
+          maxSteps: 4,
+        },
+        { onLog: (line) => logs.push(line) },
+      )
+      assert.equal(record.result?.stopReason, 'completed', logs.join('\n'))
+      assert.equal(record.containerExit, 0)
+      assert.equal(record.cleanupError, null)
+      assert.equal(record.teardown, 'removed')
+      assert.equal(record.carryOut.error, null)
+      assert.equal(record.result.promptsAttempted, 0)
+      assert.deepEqual(record.result.deferrals, [])
+      assert.equal(record.result.containment.declared, true)
+      assert.equal(record.secretCanary.present, false)
+      assert.equal(record.carryIn.sha, head)
+      assert.equal(record.carryIn.dirty, false)
+      const ref = record.carryOut.ref
+      assert.ok(ref, logs.join('\n'))
+      git(repo, ['merge-base', '--is-ancestor', base, ref])
+      assert.equal(git(repo, ['show', `${ref}:feature.txt`]), 'fixed')
+      assert.equal(git(repo, ['rev-parse', 'HEAD']), head)
+    } finally {
+      process.umask(previousUmask)
+      await model.stop()
+      rmSync(repo, { recursive: true, force: true })
+      // Docker's guest uid owns private state directories on Linux. Make only
+      // this fixture's guest-owned files removable, using that same unprivileged uid.
+      for (const name of readdirSync(runtimesDir)) {
+        execFileSync('docker', [
+          'run',
+          '--rm',
+          '--network',
+          'none',
+          '--read-only',
+          '--cap-drop',
+          'ALL',
+          '--security-opt',
+          'no-new-privileges',
+          '--user',
+          '1001:1001',
+          '--mount',
+          `type=bind,src=${join(runtimesDir, name)},dst=/run-data`,
+          '--entrypoint',
+          'find',
+          IMAGE,
+          '/run-data',
+          '-user',
+          '1001',
+          '!',
+          '-type',
+          'l',
+          '-exec',
+          'chmod',
+          'a+rwX',
+          '{}',
+          ';',
+        ])
+      }
+      rmSync(runtimesDir, { recursive: true, force: true })
+    }
+  },
+)

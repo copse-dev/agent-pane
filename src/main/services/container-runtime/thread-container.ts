@@ -159,6 +159,8 @@ export interface ThreadContainerRequest {
    * commits without the desktop's checkout having moved.
    */
   carryInRef?: string
+  /** Additional commit made available as refs/copse/rebase-base in the guest. */
+  rebaseOnto?: string
   budgets: UnattendedRunBudgets
   /** `host:port` and `*.suffix:port` rules the broker admits. Nothing else is reachable. */
   egressAllowlist: string[]
@@ -632,7 +634,11 @@ export async function writeCarryInBundle(
   runtimeId: string,
   bundlePath: string,
   fromRef?: string,
+  rebaseOnto?: string,
 ): Promise<{ ref: string; sha: string; dirty: boolean }> {
+  if (rebaseOnto !== undefined && !/^[a-f0-9]{40}$/.test(rebaseOnto)) {
+    throw new Error('rebaseOnto must be an exact commit SHA')
+  }
   const snapshot =
     fromRef === undefined
       ? await createSnapshotCommit(workspace)
@@ -643,9 +649,17 @@ export async function writeCarryInBundle(
   const ref = `${CARRY_IN_REF_PREFIX}${runtimeId}`
   await git(workspace, ['update-ref', ref, snapshot.sha])
   try {
-    await git(workspace, ['bundle', 'create', bundlePath, ref])
+    if (rebaseOnto) await git(workspace, ['update-ref', `${ref}-base`, rebaseOnto])
+    await git(workspace, [
+      'bundle',
+      'create',
+      bundlePath,
+      ref,
+      ...(rebaseOnto ? [`${ref}-base`] : []),
+    ])
   } finally {
     await git(workspace, ['update-ref', '-d', ref])
+    if (rebaseOnto) await git(workspace, ['update-ref', '-d', `${ref}-base`])
   }
   return { ref, sha: snapshot.sha, dirty: snapshot.dirty }
 }
@@ -1922,6 +1936,8 @@ async function runThreadInContainerLeased(
   }
   // The guest runs as an unprivileged uid the host does not share; these
   // directories are its only writable host paths, and they are private to the run.
+  // The private parent stays 0700; the guest mounts this child as its root.
+  chmodSync(runDir, 0o755)
   chmodSync(join(runDir, 'state'), 0o777)
   chmodSync(join(runDir, 'out'), 0o777)
 
@@ -1930,6 +1946,7 @@ async function runThreadInContainerLeased(
     runtimeId,
     join(runDir, 'carry-in.bundle'),
     request.carryInRef,
+    request.rebaseOnto,
   )
   log(`[thread-container] carry-in ${carryIn.sha.slice(0, 12)} as ${carryIn.ref}`)
 
@@ -1975,6 +1992,7 @@ async function runThreadInContainerLeased(
     workspace: GUEST_WORKSPACE,
     carryInRef: carryIn.ref,
     carryInBase: carryIn.sha,
+    ...(request.rebaseOnto ? { rebaseOnto: request.rebaseOnto } : {}),
     originUrl: sanitizedOriginUrl(await duringPreparation(() => originUrlOf(workspace))),
     maxSteps: request.maxSteps ?? null,
   }
@@ -2003,6 +2021,11 @@ async function runThreadInContainerLeased(
   await duringPreparation(() => {
     writeFileSync(join(runDir, 'run.json'), `${JSON.stringify(spec, null, 2)}\n`)
     writeFileSync(join(runDir, 'attestation.json'), `${JSON.stringify(attestation, null, 2)}\n`)
+    // These secret-free, read-only inputs must be readable by the guest uid even
+    // when the host has a restrictive umask. The enclosing host directory is private.
+    for (const input of ['run.json', 'attestation.json', 'carry-in.bundle']) {
+      chmodSync(join(runDir, input), 0o644)
+    }
   })
 
   const hostProvider = request.hostInference
