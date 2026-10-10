@@ -170,6 +170,13 @@ ghost lightbox showing the cleared image’s alt (“Expanded attachment”) and
 (same idea as `[hidden]` in `base.css`). Put flex layout on an inner shell when you
 can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }`.
 
+## Section tabs
+
+Use flat, square-edged section tabs with a straight active underline, matching
+`.pr-detail-section` and `.process-manager-tab`. Do not use rounded or pill-shaped
+buttons for this navigation, or draw an inset underline around rounded corners.
+Keep `.ui-btn` off section tabs so its button radius cannot curve the indicator.
+
 ## UI kit primitives (buttons, fields, action rows)
 
 Background task rows use a native disclosure for failure reasons and execution details.

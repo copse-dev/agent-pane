@@ -1,3 +1,4 @@
+import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
@@ -672,9 +673,10 @@ export function registerAllHandlers(
     }
   })
 
-  ipcMain.handle('process-manager:snapshot', (event) => {
+  ipcMain.handle('process-manager:snapshot', async (event) => {
     assertMainFrameSender(event, win)
-    return processManagerSnapshot()
+    const snapshot = await processManagerSnapshot()
+    return { ...snapshot, network: networkActivity.snapshot() }
   })
 
   ipcMain.handle('process-manager:stop-background', (event, ...rawArgs) => {
