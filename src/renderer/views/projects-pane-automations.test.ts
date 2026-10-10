@@ -1038,6 +1038,13 @@ describe('a schedule with no run yet', () => {
       host.querySelector('.chat-row.is-automation-unrun .chat-title')?.textContent,
       'Fix red CI',
     )
+    host
+      .querySelector('.chat-row.is-automation-unrun')
+      ?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    assert.deepEqual(
+      Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
+      ['Automation setup…'],
+    )
   })
 
   it('opens the schedule’s own setup from its never-run row', async () => {

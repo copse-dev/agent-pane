@@ -14,6 +14,7 @@ import type {
 } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { BEST_VALUE_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
+import { getCachedEventAutomations } from '../controller/automations.ts'
 import { createAutomationPluginSettings } from './automation-plugin-settings.ts'
 import type { ModelOptionsApi } from './model-options.ts'
 
@@ -623,10 +624,13 @@ describe('automation plugin settings detail', () => {
       seenDeliveries: [],
     }
     const ciUpserts: BranchCiAutomationInput[] = []
-    api.automations.listBranchCi = (): Promise<BranchCiAutomation[]> => Promise.resolve([saved])
+    let definitions = [saved]
+    api.automations.listBranchCi = async (): Promise<BranchCiAutomation[]> => definitions
     api.automations.upsertBranchCi = (_projectId, input): Promise<BranchCiAutomation> => {
       ciUpserts.push(input)
-      return Promise.resolve(saved)
+      const updated = { ...saved, name: input.name }
+      definitions = [updated]
+      return Promise.resolve(updated)
     }
     const store = createStore({
       activeProjectId: 'project-a',
@@ -669,6 +673,7 @@ describe('automation plugin settings detail', () => {
     const ciWhen = ciForm.querySelector<HTMLSelectElement>('.automation-when-select')
     assert.ok(name && branch && prompt && ciWhen)
     assert.equal(ciWhen.value, 'github-ci-failed')
+    assert.equal(branch.required, true)
     assert.equal(name.value, 'Investigate release CI')
     assert.equal(prompt.value, 'Find the failing check.')
     ciWhen.value = 'schedule'
@@ -693,6 +698,7 @@ describe('automation plugin settings detail', () => {
     )
     ciForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await tick()
+    assert.equal(getCachedEventAutomations('project-a')[0]?.name, 'Investigate release CI')
     assert.equal(ciUpserts.length, 1)
     assert.deepEqual(ciUpserts[0]?.trigger, { kind: 'github-ci-failed', branch: 'release/next' })
     assert.equal(ciUpserts[0].prompt, 'Find the failing check.')

@@ -374,6 +374,9 @@ export function createAutomationPluginSettings(
     showStatus,
     hideStatus,
     onScheduleSelected: (draft) => void openForm(undefined, draft),
+    onChanged: async () => {
+      if (projectId) await refreshAutomationSchedules(store, api, projectId)
+    },
     ...(actions.openRun ? { onOpenRun: actions.openRun } : {}),
   })
   // A schedule fires unattended, potentially months after it was written, so it
