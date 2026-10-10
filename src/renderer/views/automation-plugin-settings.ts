@@ -928,10 +928,9 @@ export function createAutomationPluginSettings(
     if (!projectId) return
     try {
       const [loadedSchedules, loadedPermissions] = await Promise.all([
-        api.automations.list(projectId),
+        refreshAutomationSchedules(store, api, projectId),
         api.automations.permissionOptions(projectId),
         ciEditor.refresh(),
-        refreshAutomationSchedules(store, api, projectId),
       ])
       schedules = loadedSchedules
       availablePermissions = loadedPermissions
