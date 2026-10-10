@@ -2,7 +2,12 @@ import type { AppStore } from '@shared/store/store.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
 import type { AutomationFailureCode } from '@shared/types'
-import type { AutomationTriggerEvent, Thread } from '@shared/types'
+import type {
+  AutomationSchedule,
+  AutomationTriggerEvent,
+  BranchCiAutomation,
+  Thread,
+} from '@shared/types'
 import {
   addMessage,
   applyPreparedThreadCheckout,
@@ -17,8 +22,68 @@ import { ensureThreadMessages } from './thread-hydration.ts'
 
 export interface AutomationControllerApi {
   agent: Pick<ApiClient['agent'], 'prepareCheckout' | 'run'>
-  automations: Pick<ApiClient['automations'], 'onTriggered' | 'canStart' | 'reportStartFailure'>
+  automations: Pick<
+    ApiClient['automations'],
+    'onTriggered' | 'canStart' | 'reportStartFailure' | 'list' | 'listBranchCi'
+  >
   threads: Pick<ApiClient['threads'], 'loadProject'>
+}
+
+/**
+ * Every schedule and event automation known for a project, cached outside the
+ * store the same way `threadCache` is in `controller/projects.ts`. The sidebar's
+ * Automations section otherwise only learns a schedule exists from a thread
+ * carrying `thread.automation.scheduleId` — so a schedule that has never fired
+ * has no row anywhere until this cache gives it one.
+ */
+const scheduleCache = new Map<string, AutomationSchedule[]>()
+const eventAutomationCache = new Map<string, BranchCiAutomation[]>()
+
+export function getCachedAutomationSchedules(projectId: string): AutomationSchedule[] {
+  return scheduleCache.get(projectId) ?? []
+}
+
+export function getCachedEventAutomations(projectId: string): BranchCiAutomation[] {
+  return eventAutomationCache.get(projectId) ?? []
+}
+
+export interface AutomationScheduleFetchApi {
+  automations: Pick<ApiClient['automations'], 'list' | 'listBranchCi'>
+}
+
+/**
+ * Refetch one project's schedules and event automations into the shared cache
+ * and tell the sidebar to redraw. Called on project activation and after the
+ * settings editor saves, deletes, or runs one — the only writers of this state.
+ */
+export async function refreshAutomationSchedules(
+  store: AppStore,
+  api: AutomationScheduleFetchApi,
+  projectId: string,
+): Promise<void> {
+  const [schedules, eventAutomations] = await Promise.all([
+    api.automations.list(projectId),
+    api.automations.listBranchCi(projectId),
+  ])
+  scheduleCache.set(projectId, schedules)
+  eventAutomationCache.set(projectId, eventAutomations)
+  store.emit('automation_schedules_loaded')
+}
+
+/** Test hook — reset the module-level schedule cache. */
+export function resetAutomationScheduleCacheForTest(): void {
+  scheduleCache.clear()
+  eventAutomationCache.clear()
+}
+
+/** Test hook — seed a project's cached schedules without an IPC round trip. */
+export function setAutomationScheduleCacheForTest(
+  projectId: string,
+  schedules: AutomationSchedule[],
+  eventAutomations: BranchCiAutomation[] = [],
+): void {
+  scheduleCache.set(projectId, schedules)
+  eventAutomationCache.set(projectId, eventAutomations)
 }
 
 export const AUTOMATION_START_RETRY_MS = 15_000
@@ -224,11 +289,23 @@ export function attachAutomationController(
     await startThread(created.id)
   }
 
+  function refreshSchedulesForActiveProject(): void {
+    const projectId = store.getState().activeProjectId
+    if (!projectId) return
+    void refreshAutomationSchedules(store, api, projectId).catch((error: unknown) => {
+      console.error('[automations] Failed to refresh schedules:', error)
+    })
+  }
+
   const unsubscribeTrigger = api.automations.onTriggered((event) => {
     void receiveTrigger(event)
   })
-  const unsubscribeWorkspace = store.on('workspace_changed', startPendingForActiveProject)
+  const unsubscribeWorkspace = store.on('workspace_changed', () => {
+    startPendingForActiveProject()
+    refreshSchedulesForActiveProject()
+  })
   startPendingForActiveProject()
+  refreshSchedulesForActiveProject()
 
   return () => {
     for (const timer of retryTimers.values()) clearTimeout(timer)
