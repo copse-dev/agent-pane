@@ -60,7 +60,7 @@ export async function refreshAutomationSchedules(
   store: AppStore,
   api: AutomationScheduleFetchApi,
   projectId: string,
-): Promise<void> {
+): Promise<AutomationSchedule[]> {
   const [schedules, eventAutomations] = await Promise.all([
     api.automations.list(projectId),
     api.automations.listBranchCi(projectId),
@@ -68,6 +68,7 @@ export async function refreshAutomationSchedules(
   scheduleCache.set(projectId, schedules)
   eventAutomationCache.set(projectId, eventAutomations)
   store.emit('automation_schedules_loaded')
+  return schedules
 }
 
 /** Test hook — reset the module-level schedule cache. */
