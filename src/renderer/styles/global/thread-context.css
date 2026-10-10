@@ -1,16 +1,38 @@
-/* Per-thread Context panel (prototype #3538). The list column is a section index;
-   the viewer column holds repos, side chats, links and subagents. Row, chip and
-   dot primitives are shared with the git-changes list and the sidebar. */
-.context-viewer-host {
-  padding: var(--spacing-md);
+/* Context is one continuous panel, with a fixed header above its sections. */
+.is-context-panel .pane-files-body {
+  flex-direction: column;
+  background: var(--bg-elevated);
+}
+.is-context-panel .context-host {
+  flex: none;
+}
+.is-context-panel .context-viewer-host {
+  padding: 0;
   overflow-y: auto;
+  min-height: 0;
+  border-top: 0;
 }
 /* minmax(0, 1fr): a long line must wrap or ellipsize, never widen the column. */
 .thread-context {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--spacing-md);
+  gap: 0;
   align-content: start;
+}
+.thread-context-section {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.thread-context-thread-title {
+  padding: 16px 16px 4px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.thread-context-label {
+  margin: 8px 6px 4px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
 }
 .thread-context-section h5 {
   margin: 0 0 6px;
@@ -37,7 +59,7 @@
 }
 .thread-context-row-wrap {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 4px;
 }
 .thread-context-row-wrap > .thread-context-row {
@@ -49,12 +71,13 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 6px 8px;
+  padding: 4px 6px;
   color: var(--text-primary);
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: 0;
   font: inherit;
+  font-size: var(--font-size-sm);
   text-align: left;
 }
 button.thread-context-row {
@@ -95,16 +118,10 @@ button.thread-context-row:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding: 0 6px;
-  border-radius: var(--radius);
-  background: var(--bg-hover);
+  border-radius: 8px;
+  border: 1px solid var(--border);
   color: var(--text-muted);
   font-size: var(--font-size-2xs);
-}
-.thread-context-chip[data-status='running'] {
-  color: var(--accent);
-}
-.thread-context-chip[data-status='error'] {
-  color: var(--error);
 }
 .thread-context-empty {
   margin: 0;
@@ -166,20 +183,61 @@ button.thread-context-row:disabled {
   cursor: pointer;
   text-decoration: underline;
 }
-.thread-context-index-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-}
-.thread-context-count {
+.thread-context-meta {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-2xs);
+}
+.thread-context-status-dot {
+  width: 7px;
+  height: 7px;
+  margin: 0 6px;
+  border-radius: 50%;
+  background: var(--success);
+  flex: none;
+}
+.thread-context-row[data-status='running'] .thread-context-status-dot {
+  background: var(--text-muted);
+}
+.thread-context-row[data-status='error'] .thread-context-status-dot {
+  background: var(--error);
 }
 /* The sidebar dot is absolutely positioned inside its row; here it sits in the flow. */
 .thread-context-row .chat-unread-dot {
   position: static;
   flex: none;
   transform: none;
+}
+
+.thread-context-section h5 {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.thread-context-count {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: var(--font-size-2xs);
+}
+
+.thread-context-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.thread-context-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+html.is-popout .thread-context-close {
+  display: none;
 }

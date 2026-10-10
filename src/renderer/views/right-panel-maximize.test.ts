@@ -19,7 +19,10 @@ function mountShell(): { body: HTMLElement; paneFiles: HTMLElement; paneChat: HT
       <div id="body" class="three-pane">
         <div id="pane-chat" class="pane-chat"><textarea id="composer"></textarea></div>
         <div id="pane-files" class="pane-files" hidden>
-          <div id="file-tree-host"></div>
+          <div id="right-sidebar"><div id="file-tree-host"></div></div>
+          <div id="resizer-tree"></div>
+          <div id="context-host"></div>
+          <div id="context-viewer-host"></div>
           <div id="file-viewer"></div>
         </div>
       </div>
@@ -36,6 +39,23 @@ afterEach(() => {
 })
 
 describe('right panel expand-over-chat', () => {
+  it('hides the section sidebar only in Context and restores it in other modes', () => {
+    mountShell()
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'context' })
+    const unmount = mountRightPanelLayout(store)
+    const sidebar = qsRequired(document, '#right-sidebar')
+    const resizer = qsRequired(document, '#resizer-tree')
+    assert.equal(sidebar.hidden, true)
+    assert.equal(resizer.hidden, true)
+    assert.equal(qsRequired(document, '#context-host').hidden, false)
+    store.setState({ rightPanelMode: 'explorer' })
+    store.emit('right_panel_mode_changed')
+    assert.equal(sidebar.hidden, false)
+    assert.equal(resizer.hidden, false)
+    assert.equal(qsRequired(document, '#context-host').hidden, true)
+    unmount()
+  })
+
   it('marks #body only while an open panel is expanded', () => {
     const { body } = mountShell()
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'browser' })

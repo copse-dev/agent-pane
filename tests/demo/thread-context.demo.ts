@@ -18,6 +18,7 @@ describe('The thread Context panel', () => {
     await browser.url('/?scenario=thread-context')
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await openContext()
+    await $('#resizer-files').dragAndDrop({ x: 240, y: 0 })
   })
 
   it('lists repos, side chats, links, mentions and subagents for the open thread', async () => {
@@ -25,7 +26,7 @@ describe('The thread Context panel', () => {
     await expect($('[data-action="archive-thread"]')).toBeEnabled()
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('[data-context-section="repos"] .thread-context-repo')).toHaveText(
-      expect.stringContaining('fix/mermaid-wait'),
+      expect.stringContaining('Primary'),
     )
     await expect($$('.thread-context-row[data-side-chat-id]')).toBeElementsArrayOfSize(2)
     await expect($('.thread-context-row[data-side-chat-id="sc-side-1"]')).toHaveAttribute(
@@ -36,11 +37,11 @@ describe('The thread Context panel', () => {
       'data-archived',
       'true',
     )
-    await expect($('[data-link-group="pr"] .thread-context-row')).toHaveText('acme/widgets#42')
-    await expect($('[data-link-group="url"] .thread-context-row')).toHaveText(
+    await expect($('[data-link-group="pr"] .thread-context-title')).toHaveText('acme/widgets#42')
+    await expect($('[data-context-section="sources"] .thread-context-row')).toHaveText(
       'webdriver.io/docs/api/element/waitForDisplayed',
     )
-    await expect($('[data-link-group="thread"] .thread-context-row')).toHaveText(
+    await expect($('[data-link-group="thread"] .thread-context-title')).toHaveText(
       'Release notes draft',
     )
     await $('[data-link-group="mentioned-in"]').waitForExist({ timeout: 10_000 })
@@ -53,7 +54,36 @@ describe('The thread Context panel', () => {
       return viewer ? viewer.scrollWidth - viewer.clientWidth : -1
     })
     expect(overflow).toBe(0)
+    const layout = await browser.execute(() => {
+      const header = document.querySelector('#context-host')?.getBoundingClientRect()
+      const content = document.querySelector('#context-viewer-host')?.getBoundingClientRect()
+      const row = document.querySelector('.thread-context-repo')
+      return {
+        aligned: header?.left === content?.left && header?.width === content?.width,
+        stacked: !!header && !!content && header.bottom <= content.top,
+        border: row ? getComputedStyle(row).borderTopWidth : null,
+      }
+    })
+    expect(layout).toEqual({ aligned: true, stacked: true, border: '0px' })
+    await expect($('#resizer-tree')).not.toBeDisplayed()
+    await expect($('#right-sidebar')).not.toBeDisplayed()
+    await expect($$('.thread-context-index-row')).toBeElementsArrayOfSize(0)
+    await expect($('.thread-context-thread-title')).toHaveText(MAIN)
+    const paneHeight = await browser.execute(() => {
+      const first = document.querySelector('[data-context-section="subagents"]')
+      return first?.getBoundingClientRect().height ?? 0
+    })
+    expect(paneHeight).toBeLessThan(110)
     await saveElementScreenshot('#pane-files', 'side-chats-context-panel.png')
+  })
+
+  it('expands and closes the single context panel', async () => {
+    await $('[aria-label="Expand context over chat"]').click()
+    await expect($('#body')).toHaveElementClass('is-right-panel-maximized')
+    await $('[aria-label="Restore context"]').click()
+    await $('[aria-label="Close context"]').click()
+    await expect($('#pane-files')).not.toBeDisplayed()
+    await openContext()
   })
 
   it('archives and restores side chats from the panel', async () => {
@@ -75,6 +105,7 @@ describe('The thread Context panel', () => {
     await $('.side-chat-body-host').waitForDisplayed({ timeout: 10_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('.side-chat-row.is-selected')).toHaveAttribute('data-side-chat-id', 'sc-side-2')
+    await expect($('#right-sidebar')).toBeDisplayed()
   })
   it('archives the current thread from Context', async () => {
     await openContext()
