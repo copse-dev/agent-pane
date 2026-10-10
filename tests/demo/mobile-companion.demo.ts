@@ -127,7 +127,19 @@ describe('Mobile Companion at phone width', () => {
       await expect($('.state.finished')).toHaveText('finished')
       await screenshot(`mobile-companion-activity-${theme}.png`)
 
+      // A needs-you row answers in place: tapping it selects the row and
+      // renders the decision inline, without navigating to the thread.
       await $('.group .row').click()
+      await expect($('.group .row.selected')).toBeDisplayed()
+      await expect($('#inline-decision .attention-body')).toHaveText('pnpm run check')
+      await expect($('#activity')).toBeDisplayed()
+      await screenshot(`mobile-companion-activity-decision-${theme}.png`)
+      await $('#inline-decision .decision-actions .ui-btn-primary').click()
+      await expect($('#inline-decision label')).toHaveText('Which tests should I run?')
+      await expect($('#activity')).toBeDisplayed()
+
+      // The full thread stays one tap away for anyone who wants more context.
+      await $('#inline-decision .open-thread-link').click()
       await expect($('#thread-title')).toHaveText('Review the release')
       await expect($('#messages')).toHaveText(
         expect.stringContaining('</p><img src=x onerror=alert(1)>'),
@@ -138,8 +150,6 @@ describe('Mobile Companion at phone width', () => {
       await screenshot(`mobile-companion-thread-${theme}.png`)
       await expect($('#composer')).toBeDisplayed()
       await expect($('#stop')).toBeDisplayed()
-      await expect($('.attention-body')).toHaveText('pnpm run check')
-      await $('.decision-actions .ui-btn-primary').click()
       await expect($('.attention label')).toHaveText('Which tests should I run?')
       await $('.answer').setValue('Keep this draft during polling')
       await browser.waitUntil(async () => {
