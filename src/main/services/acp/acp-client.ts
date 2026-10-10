@@ -1,3 +1,5 @@
+import { observeProcessShutdown } from '../diagnostics/process-memory.ts'
+import { noteAcpSessionActivity } from './acp-session-activity.ts'
 import {
   client,
   methods,
@@ -75,7 +77,7 @@ import {
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import { withSandboxTmpEnv } from '../../project-sandbox/tmp-env.ts'
-import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+import { terminateProcessTree, SUBPROCESS_KILL_GRACE_MS } from '../exec/subprocess-kill.ts'
 import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
 
@@ -610,6 +612,7 @@ export function shutdownAcpChild(
 ): Promise<void> {
   const existing = acpChildShutdowns.get(child)
   if (existing) return existing
+  observeProcessShutdown(child.pid, graceMs + SUBPROCESS_KILL_GRACE_MS + 1_000)
   const done = new Promise<void>((resolve) => {
     let finished = false
     let drainPoll: ReturnType<typeof setInterval> | undefined
@@ -750,6 +753,8 @@ function closedConnectionError(reason: unknown): Error {
  * owner (the session pool) calls `dispose` on eviction.
  */
 export interface OpenAcpSession {
+  /** Live local transport root; absent for in-process transports. */
+  processId?: () => number | undefined
   session: ManagedAcpSession
   connection: ClientConnection
   updates: AcpUpdateQueue
@@ -864,6 +869,8 @@ export function refreshAcpSessionState(
 
 /** A live connection to an agent, however it was reached (local, sandboxed, SSH). */
 export interface AcpTransport {
+  /** Local child PID (the SSH client for remote agents), only while alive. */
+  processId?: () => number | undefined
   stream: Stream
   dispose: () => void | Promise<void>
   /** Descriptor exhaustion seen on the agent's stderr; absent when none is captured. */
@@ -1002,6 +1009,7 @@ async function spawnTransport(
     stream: ndJsonStream(writable, readable),
     dispose: () => shutdownAcpChild(child),
     resourceFault: stderr.resourceFault,
+    processId: () => (child.exitCode === null && child.signalCode === null ? child.pid : undefined),
   }
 }
 
@@ -1031,6 +1039,7 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
         open.turnStop?.reject(err)
         continue
       }
+      noteAcpSessionActivity(open, update)
       refreshAcpSessionState(open, update)
       if (open.suppressChunks) continue
       try {
@@ -1344,6 +1353,7 @@ export async function openAcpSession(
       turnStop: null,
       isClosed: () => disposed || connection.signal.aborted,
       resourceFault: () => transport.resourceFault?.() ?? null,
+      processId: () => transport.processId?.(),
       dispose,
     }
     connection.signal.addEventListener(

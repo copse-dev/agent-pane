@@ -401,3 +401,21 @@ spec that is not deterministic, and re-baselining fixes neither.
 4. **Fix the cause in the spec or product, then re-baseline once.** Never raise
    `SCREENSHOT_IGNORE_RATIO` to hide a recurring shot: it also hides real 1-2px regressions.
 5. Say in the PR which shots were drift, what caused each, and what was fixed.
+
+### Limiting simultaneous primary agent turns
+
+Copse admits up to **four primary agent turns** at once per app process. Additional
+turns wait in first-in, first-out order and show a waiting notice in the transcript.
+Stop (including mobile Stop) cancels a queued turn without starting its provider.
+Permission waits keep their slot; finishing, cancelling, or failing a turn releases it.
+Queue waiting does not consume the agent's execution timeout.
+
+Set `COPSE_MAX_ACTIVE_TURNS` before launching Copse to change the limit. For example,
+`COPSE_MAX_ACTIVE_TURNS=2 make run` admits two turns. `0` disables admission limiting;
+invalid values use the default of four. Restart the app after changing this variable.
+
+The limit covers primary `runAgent` calls from the desktop, headless host, and ACP
+server, including machine continuations. A nested call shares its parent's admission
+to avoid deadlocking a parent that awaits its child. Internal subagents, standalone
+reviews, shells, builds, tests, and retained idle ACP sessions are separate workloads.
+This bounds simultaneous primary turns, not total processes or a hard RAM ceiling.

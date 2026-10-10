@@ -12,6 +12,8 @@ import {
 import type { ToolRegistry } from '../tool-registry.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 import { perfSpan } from '../diagnostics/perf-trace.ts'
+import { acpSessionActivity } from './acp-session-activity.ts'
+import { registerAcpSessionProcess } from './acp-process-registry.ts'
 
 /**
  * Per-thread pool of persistent ACP sessions (issue #605).
@@ -33,6 +35,8 @@ import { perfSpan } from '../diagnostics/perf-trace.ts'
  *   and the caller skips the transcript-replay preamble. When that is not
  *   possible the caller replays history once and is told why
  *   ({@link AcpSessionHandover}), so the thread can say what did not carry over.
+ * - Up to four resumable idle sessions stay warm after a one-minute grace
+ *   period. Active prompts and reported unfinished tools are protected.
  * - Sessions idle longer than {@link IDLE_MS} are reaped (process torn down to
  *   free resources); their session IDs are retained for the next acquire to
  *   reattach to. Everything is disposed at app shutdown.
@@ -72,6 +76,10 @@ export interface AcquireAcpSessionOptions {
 
 const IDLE_MS = 10 * 60 * 1000
 const REAP_INTERVAL_MS = 60 * 1000
+// Keep a small warm cache rather than a process for every recently visited
+// thread. Give background notifications a full minute to arrive first.
+const MAX_WARM_IDLE_SESSIONS = 4
+const WARM_IDLE_GRACE_MS = 60 * 1000
 
 /**
  * How long an agent process must run before descriptor exhaustion reads as
@@ -212,23 +220,50 @@ async function evictAcpSession(
   }
 }
 
-/** Evict sessions idle past `idleMs`. Exported with injectable `now` for tests. */
+function idleSince(entry: PooledAcpSession): number | null {
+  // A dead transport can no longer finish its pending tool notifications.
+  // It must not pin the bridge (or its last activity state) indefinitely.
+  if (entry.open.isClosed()) return 0
+  const activity = acpSessionActivity(entry.open)
+  if (entry.open.turnStop !== null || activity.hasPendingTools) return null
+  return Math.max(entry.lastUsedAt, activity.lastUpdateAt)
+}
+
+/** Reap expired sessions and bound the resumable warm cache, oldest first. */
 export async function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): Promise<string[]> {
   const reaped: string[] = []
-  for (const threadId of [...pool.keys()]) {
+  const oldestFirst = [...pool.entries()].sort(
+    ([, left], [, right]) => (idleSince(left) ?? Infinity) - (idleSince(right) ?? Infinity),
+  )
+  for (const [threadId] of oldestFirst) {
     const didReap = await runThreadOperation(threadId, async () => {
       const entry = pool.get(threadId)
       if (!entry) return false
       // An in-flight turn (including one blocked on session/request_permission)
       // is not idle — reaping it closes the transport under the open approval
       // dialog and surfaces as "ACP connection closed" after a long wait.
-      if (entry.open.turnStop !== null || now - entry.lastUsedAt < idleMs) return false
+      const since = idleSince(entry)
+      if (since === null) return false
+      const expired = entry.open.isClosed() || now - since >= idleMs
+      // Early eviction requires continuity support. Non-resumable agents keep
+      // their existing timeout and handover behavior instead of paying repeated
+      // full transcript replays as the user switches between threads.
+      const warmIdleCount = [...pool.values()].filter(
+        (candidate) =>
+          idleSince(candidate) !== null && (candidate.open.canResume || candidate.open.canLoad),
+      ).length
+      const overBudget =
+        warmIdleCount > MAX_WARM_IDLE_SESSIONS &&
+        now - since >= WARM_IDLE_GRACE_MS &&
+        (entry.open.canResume || entry.open.canLoad)
+      if (!expired && !overBudget) return false
       // Tear down the live process, but keep the opaque session ID — the next
       // acquire spawns a fresh transport and reattaches with `session/resume`
       // or `session/load` instead of replaying the transcript (#830). Keep the
       // thread operation until disposal settles so no replacement can become a
       // second writer for that session in the meantime.
       await evictAcpSession(threadId, entry, true)
+      notifyThreadResourceFinished(threadId)
       return true
     })
     if (didReap) reaped.push(threadId)
@@ -398,6 +433,13 @@ async function acquireAcpSessionUnlocked(
   }
   carryOverCandidates.delete(opts.threadId)
 
+  const unregisterProcess = registerAcpSessionProcess({
+    threadId: opts.threadId,
+    ...(opts.projectId === undefined ? {} : { projectId: opts.projectId }),
+    command: opts.config.command,
+    processId: () => open.processId?.(),
+  })
+
   let disposal: Promise<void> | null = null
   const entry: PooledAcpSession = {
     open,
@@ -411,7 +453,9 @@ async function acquireAcpSessionUnlocked(
       if (disposal) return disposal
       const agentDisposal = open.dispose()
       bridgeAbort.abort()
-      disposal = Promise.all([agentDisposal, bridge?.close() ?? Promise.resolve()]).then(() => {})
+      disposal = Promise.all([agentDisposal, bridge?.close() ?? Promise.resolve()])
+        .then(() => {})
+        .finally(unregisterProcess)
       return disposal
     },
   }
