@@ -1,1 +1,1 @@
-Copse follow-up smoke test: pending.
+Copse follow-up smoke test: second run passed.
