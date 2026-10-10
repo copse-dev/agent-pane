@@ -99,7 +99,7 @@ describe('Simulator desktop preview', function () {
     await expect($(`.vnc-device.is-selected .vnc-device-meta`)).toHaveText('iOS 26.5 · Booted')
     await expect($('.vnc-device.is-selected .vnc-device-details')).toHaveText('Connect')
     await expect($('.vnc-empty')).toHaveText('Connect to view iPhone 17 Pro.')
-    await expect($('.vnc-view-only-note')).not.toBeDisplayed()
+    await expect($('.vnc-view-only-note')).not.toExist()
     await saveAppScreenshot('simulator-desktop-choice.png')
 
     await browser.execute(async (udid) => {
