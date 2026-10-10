@@ -23,6 +23,9 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const isBrowser = mode === 'browser'
     const isVnc = mode === 'vnc'
 
+    const sidebar = document.getElementById('right-sidebar')
+    if (sidebar) sidebar.hidden = isContext
+
     const treeHost = document.getElementById('file-tree-host')
     const contextHost = document.getElementById('context-host')
     const sideChatHost = document.getElementById('side-chat-host')
