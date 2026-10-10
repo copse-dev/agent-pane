@@ -895,6 +895,49 @@ guarantee, and the record must say so.
   and leave installation off for review. Cancelling leaves the draft intact and starts nothing.
   These changes do not prune saved run directories or result refs. Retention needs a separate
   user-facing cleanup policy so saved work is never deleted by an implicit age cutoff.
+- **A20 — benchmark-only external boundary: a separate worker bundle, never a switch.**
+  _Needs security review._ Terminal-Bench / Harbor task containers run as root, with a writable
+  root filesystem and a network route, so they can never meet `containerAttestationShortfall`
+  or `guestContainmentShortfall` (A1's bar). To measure the real unattended worker on those
+  tasks, `runtime-containment.ts` gained `declareExternalContainerBoundary(label)`, which
+  declares the container tier with a synthetic record
+  (`kind: 'external-boundary-unattested'`, plus a label saying whose word it is) and runs
+  **none** of the host attestation checks. Harbor itself is the boundary: the task container is
+  disposable, the grader reads only its files, and the worker holds no credential and no
+  model endpoint (inference crosses the stdio link, as in A17), so what the declaration unlocks
+  — the contained-effect policy running ordinary shell effects without a prompt — runs inside
+  a container someone other than Copse already chose to trust with the task.
+  It is a **separate bundle and entry point, not an environment variable, run field or
+  setting**, because every switch that lives in the product worker is one a misconfigured,
+  stale or hostile `run.json`, image or environment could flip on a user's real run; an entry
+  that is not in the shipped bundle cannot be flipped at all. Concretely: the shared worker is
+  `worker-main.ts`, parameterised in code by a `WorkerProfile` (run directory, containment
+  declaration, in-place or carry-in workspace, environment note, tool availability).
+  `worker-entry.ts` is the product profile, unchanged in behaviour. `worker-entry-harbor.ts`
+  is the only caller of the new function and is built by
+  `scripts/lib/thread-container-worker-bundle.mts` (`bundleHarborWorker`) into
+  `dist-test/` only; the function refuses any output path outside `dist-test/`, it is absent
+  from `STANDALONE_MAIN_BUNDLES`, and the product bundle contains no trace of it (the unused
+  export is tree-shaken). `worker-entry-gating.test.ts` enforces all of this: the product entry's
+  import graph reaches neither the Harbor entry nor a reference to the function, no file under
+  `src/`, `scripts/` or `packages/` calls it but the Harbor entry and its tests, the product
+  bundle's bytes do not contain it, and the Harbor bundle does (so the check can see it).
+  `runtime-containment.test.ts` pins that the function labels the record as unattested and
+  that `declareContainerRuntime` still refuses a root or writable-root guest.
+  What stays on in the Harbor worker, because it is the product behaviour being measured:
+  `armUnattendedRun` and deferral mode, the fail-closed approval handler (a prompt reaching
+  it is refused and counted in `promptsAttempted`, which must stay 0 or be reported), the
+  contained-effect classifier, and the reviewed guest tool allowlist. What differs, each
+  confined to the Harbor entry: the workspace is the task's own directory, baselined with git
+  in place (when the image has git) and nothing is carried out; the run directory is
+  `COPSE_HARBOR_RUN_DIR` (the image may have no writable `/run`); the environment note says
+  the task container is the sandbox and the network may be available; and `rg`/`git`
+  availability is probed rather than assumed (task images ship neither). The host side
+  (`scripts/harbor-container-driver.mts`) serves the stdio link with the product's own
+  `EgressBroker` and `HostInference`, so inference stays outside the container exactly as in
+  A17; the Harbor agent (`benchmarks/terminal_bench/copse_container_agent.py`) uploads the
+  bundle and a Node binary and starts the driver. None of this is reachable from the desktop
+  app or `thread:container`.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:

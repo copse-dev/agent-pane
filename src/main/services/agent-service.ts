@@ -23,7 +23,7 @@ import {
 import { withClassifierToolOffer } from '../tools/classifier-tool.ts'
 import { configuredClassifierProfiles } from './classifiers/classifier-service.ts'
 import {
-  PRODUCT_REASONING_CHECKPOINT_POLICY,
+  productReasoningCheckpointPolicy,
   PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
 } from '@copse/agent/reasoning-checkpoint-policy.ts'
 import {
@@ -758,6 +758,12 @@ export interface RunAgentOptions {
   maxLlmCalls?: number
   /** Disable adaptive budget grants when a host requires exact loop limits. */
   adaptiveExtensions?: boolean
+  /**
+   * Token cap for the one recovery stream after a reasoning circle is cut; the
+   * product default (`PRODUCT_REASONING_RECOVERY_MAX_TOKENS`) applies when omitted.
+   * Set only by an explicit host profile that needs more room.
+   */
+  reasoningRecoveryMaxTokens?: number
   /** Plugin-scoped setting resolver owned by an explicit host profile. */
   resolvePluginSetting?: (pluginId: string, key: string) => unknown
   /**
@@ -2366,7 +2372,9 @@ async function runAgentWithInlineCanvas(
                 ...(options?.adaptiveExtensions !== undefined
                   ? { adaptiveExtensions: options.adaptiveExtensions }
                   : {}),
-                reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+                reasoningCheckpointPolicy: productReasoningCheckpointPolicy(
+                  options?.reasoningRecoveryMaxTokens,
+                ),
                 reasoningRunawayTextToleranceChars:
                   PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
                 runDeadline: runAbort.deadline,

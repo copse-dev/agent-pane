@@ -7,6 +7,7 @@ import {
   PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
   PRODUCT_REASONING_RECOVERY_MAX_TOKENS,
   PRODUCT_TRAILING_REASONING_MAX_TOKENS,
+  productReasoningCheckpointPolicy,
 } from './reasoning-checkpoint-policy.ts'
 
 describe('product reasoning checkpoint policy', () => {
@@ -23,5 +24,18 @@ describe('product reasoning checkpoint policy', () => {
       maxRecoveryTokens: 4_096,
       maxTrailingReasoningTokens: 4_096,
     })
+  })
+})
+
+describe('productReasoningCheckpointPolicy', () => {
+  it('is the product policy itself when no recovery cap is given', () => {
+    assert.equal(productReasoningCheckpointPolicy(), PRODUCT_REASONING_CHECKPOINT_POLICY)
+  })
+
+  it('changes only the recovery cap when a host profile asks for one', () => {
+    const policy = productReasoningCheckpointPolicy(12_288)
+    assert.deepEqual(policy, { ...PRODUCT_REASONING_CHECKPOINT_POLICY, maxRecoveryTokens: 12_288 })
+    // The shared product constant is not mutated.
+    assert.equal(PRODUCT_REASONING_CHECKPOINT_POLICY.maxRecoveryTokens, 4_096)
   })
 })

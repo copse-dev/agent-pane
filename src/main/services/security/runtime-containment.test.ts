@@ -5,6 +5,8 @@ import {
   clearRuntimeContainmentForTests,
   containerAttestationShortfall,
   declareContainerRuntime,
+  declareExternalContainerBoundary,
+  declaredExternalContainerBoundary,
   guestContainmentShortfall,
   parseContainerRuntimeAttestation,
   parseGuestContainment,
@@ -289,6 +291,38 @@ describe('the guest checking itself', () => {
         )
       }
     }
+    assert.notEqual(runtimeContainmentTier(), 'container')
+  })
+})
+
+describe('declareExternalContainerBoundary (benchmark-only)', () => {
+  it('declares the container tier with a record labelled as unattested', () => {
+    assert.notEqual(runtimeContainmentTier(), 'container')
+    const boundary = declareExternalContainerBoundary('task container')
+    assert.deepEqual(boundary, { kind: 'external-boundary-unattested', label: 'task container' })
+    assert.deepEqual(declaredExternalContainerBoundary(), boundary)
+    assert.equal(runtimeContainmentTier(), 'container')
+  })
+
+  it('needs a label, and the test seam forgets it', () => {
+    assert.throws(() => declareExternalContainerBoundary('  '), /needs a label/)
+    declareExternalContainerBoundary('task container')
+    clearRuntimeContainmentForTests()
+    assert.equal(declaredExternalContainerBoundary(), null)
+    assert.notEqual(runtimeContainmentTier(), 'container')
+  })
+
+  it('leaves the product declaration refusing a guest that is not attested', () => {
+    declareExternalContainerBoundary('task container')
+    clearRuntimeContainmentForTests()
+    const root = docker({ user: 0 })
+    assert.throws(() => {
+      declareContainerRuntime(root, contained({ uid: 0 }))
+    }, /Refusing to declare container containment: worker runs as root/)
+    assert.throws(() => {
+      declareContainerRuntime(docker({ readOnlyRootfs: false }), contained())
+    }, /root filesystem is writable/)
+    assert.equal(declaredExternalContainerBoundary(), null)
     assert.notEqual(runtimeContainmentTier(), 'container')
   })
 })

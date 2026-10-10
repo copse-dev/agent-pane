@@ -477,6 +477,7 @@ import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import {
   lookupPrThreadRelationships,
   lookupThreadPrRelationships,
+  lookupThreadBacklinks,
 } from '../services/thread-store.ts'
 
 import {
@@ -2088,6 +2089,19 @@ export function registerAllHandlers(
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return deleteThreadResourcesAndStore(pid, tid, threadDeletionRuntime)
   })
+  // Active threads that link to a URL or another thread: an indexed read of
+  // recorded thread metadata that never touches a transcript.
+  ipcMain.handle(
+    'threads:backlinks',
+    (event, projectId: unknown, kind: unknown, target: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, linkKind, linkTarget] = parseIpcArgs(
+        z.tuple([zProjectId, z.enum(['url', 'thread']), z.string().min(1).max(2048)]),
+        [projectId, kind, target],
+      )
+      return lookupThreadBacklinks(pid, linkKind, linkTarget)
+    },
+  )
   // Seed a freshly created fork's provider-format history from the thread it was
   // branched off. The renderer owns the visible transcript copy; this is the
   // half it cannot do, since `agent-history.json` never leaves the main process.
@@ -3431,7 +3445,18 @@ export function registerAllHandlers(
   ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'context',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     createPanePopoutWindow(parsed, seed)
@@ -3440,7 +3465,18 @@ export function registerAllHandlers(
   ipcMain.handle('panes:take-popout-seed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'context',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     return takePopoutSeed(parsed)

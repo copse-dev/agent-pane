@@ -26,6 +26,8 @@ export interface SidebarThread {
   status: Thread['status']
   unreadAt?: number
   archivedAt?: number
+  /** Marks a side chat: hidden from thread browsers, listed under its parent. */
+  sideChat?: Thread['sideChat']
   automation?: Thread['automation']
   remoteAgentLink?: Thread['remoteAgentLink']
   /** The live transcript. Absent once the entry has been compacted. */
@@ -99,6 +101,7 @@ export function compactSidebarThread(thread: SidebarThread): SidebarThread {
     status: thread.status,
     ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
+    ...(thread.sideChat ? { sideChat: thread.sideChat } : {}),
     ...(thread.automation ? { automation: thread.automation } : {}),
     ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
     prRefs: sidebarPrRefs(thread),

@@ -9,6 +9,7 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createStore, type AppStore } from '@shared/store/store.ts'
 import { mountAskUserDialog } from './ask-user-dialog.ts'
@@ -604,6 +605,81 @@ describe('ask_user dialog thread scoping', () => {
     at(inputs(), 0).value = '2'
     submitForm()
     assert.deepEqual(harness.responses, [{ id: 'q-other', answers: ['2'] }])
+  })
+})
+
+// A side chat never becomes the active thread, so its questions answer to the
+// parent thread it branched from: shown over the parent, flagged on its row.
+describe('ask_user from a side chat', () => {
+  let store: AppStore
+
+  function mountWithSideChat(api: ApiClient, activeThreadId: string): void {
+    const thread = (
+      id: string,
+      sideChat?: { parentThreadId: string; anchorMessageId: string },
+    ): Thread => ({
+      id,
+      title: id === 'side' ? 'Which test runner?' : id,
+      status: 'running',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+      ...(sideChat ? { sideChat } : {}),
+    })
+    store = createStore({
+      activeThreadId,
+      threads: [
+        thread('parent'),
+        thread('other'),
+        thread('side', { parentThreadId: 'parent', anchorMessageId: 'm1' }),
+      ],
+    })
+    mountAskUserDialog(api, store)
+    shimModal(dialog())
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    resetAttention()
+  })
+
+  it('asks over the parent thread, says which side chat is asking, and opens it', () => {
+    const { api, harness } = stubApi()
+    mountWithSideChat(api, 'parent')
+    const opened: string[] = []
+    store.on('side_chat_open_requested', (id) => opened.push(id))
+
+    harness.emit({ id: 'q', threadId: 'side', questions: [{ question: 'Vitest or node:test?' }] })
+
+    assert.equal(dialog().open, true)
+    assert.equal(
+      document.querySelector('.ask-user-title')?.textContent,
+      'A side chat has a question',
+    )
+    assert.equal(
+      document.querySelector('.ask-user-origin')?.textContent,
+      'From the side chat “Which test runner?”',
+    )
+    assert.deepEqual(opened, ['side'])
+    at(inputs(), 0).value = 'node:test'
+    submitForm()
+    assert.deepEqual(harness.responses, [{ id: 'q', answers: ['node:test'] }])
+  })
+
+  it('flags the parent row while another thread is focused, then asks on return', () => {
+    const { api, harness } = stubApi()
+    mountWithSideChat(api, 'other')
+
+    harness.emit({ id: 'q', threadId: 'side', questions: [{ question: 'Vitest or node:test?' }] })
+
+    assert.equal(dialog().open, false)
+    assert.equal(isThreadAwaitingAttention('parent'), true)
+    assert.equal(isThreadAwaitingAttention('side'), false)
+    store.setState({ activeThreadId: 'parent' })
+    store.emit('threads_changed')
+    assert.equal(dialog().open, true)
+    assert.equal(isThreadAwaitingAttention('parent'), false)
   })
 })
 
