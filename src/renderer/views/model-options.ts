@@ -81,6 +81,7 @@ import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { blockedModelMaker, parseBlockedModelMakers } from '@copse/llm/model-maker-block.ts'
+import { isSuppressedByNewerVersion } from '@copse/llm/model-version-suppression.ts'
 import { modelCoverage, type ModelCoverage } from './model-coverage.ts'
 
 const ACP_GROUP = 'Agents on this device'
@@ -737,9 +738,14 @@ export async function fetchModelOptions(
   }
   const visibleOptions = options.flatMap((option) => {
     const maker = blockedModelMaker(option.value, blockedMakers)
-    if (!maker) return [option]
+    if (maker) {
+      if (option.value !== current) return []
+      return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }]
+    }
+    const isSuppressed = isSuppressedByNewerVersion(option.value)
+    if (!isSuppressed) return [option]
     if (option.value !== current) return []
-    return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }]
+    return [{ ...option, label: `${option.label} (newer version available)`, disabled: true }]
   })
 
   // Only when nothing at all is configured (no cloud key, no provider, no local
