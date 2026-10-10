@@ -54256,6 +54256,7 @@ function mountBranchCiEditor(options) {
   }
   function updateSummary() {
     const kind = currentKind();
+    branch.required = kind === "github-ci-failed" && pullRequest.value.trim() === "";
     for (const item of fields) item.node.hidden = item.kind !== kind;
     if (kind === "github-pr-changed") {
       const base = baseBranch.value.trim() || "the base branch";
@@ -54496,6 +54497,7 @@ function mountBranchCiEditor(options) {
           if (!confirmed) return;
           await api2.automations.removeBranchCi(projectId, definition.id);
           await refresh();
+          await options.onChanged?.();
         }).catch((error62) => {
           showStatus(ipcErrorMessage(error62, "Could not delete the automation."), true);
         });
@@ -54563,6 +54565,7 @@ function mountBranchCiEditor(options) {
       async () => {
         close();
         await refresh();
+        await options.onChanged?.();
       },
       (error62) => {
         showStatus(ipcErrorMessage(error62, "Could not save the automation."), true);
@@ -59755,6 +59758,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     showStatus,
     hideStatus,
     onScheduleSelected: (draft) => void openForm(void 0, draft),
+    onChanged: async () => {
+      if (projectId) await refreshAutomationSchedules(store2, api2, projectId);
+    },
     ...actions.openRun ? { onOpenRun: actions.openRun } : {}
   });
   const modelPicker = mountModelSelectPicker(modelSelect, {
@@ -87329,14 +87335,20 @@ function startRunNow(api2, target) {
   });
 }
 function automationMenuEntries(api2, target, openSetup) {
-  return [
-    { heading: target.scheduleName },
+  const eventAutomation = getCachedEventAutomations(target.project.id).some(
+    (definition) => definition.id === target.scheduleId
+  );
+  const runEntries = eventAutomation ? [] : [
     {
       label: "Run now",
       onSelect: () => {
         startRunNow(api2, target);
       }
-    },
+    }
+  ];
+  return [
+    { heading: target.scheduleName },
+    ...runEntries,
     {
       label: "Automation setup\u2026",
       onSelect: openSetup
