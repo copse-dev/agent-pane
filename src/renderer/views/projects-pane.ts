@@ -71,6 +71,12 @@ import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.t
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import {
+  heldAutomationRuns,
+  heldRunsLabel,
+  heldRunsTooltip,
+} from '../controller/automation-held-runs.ts'
+import { describeRetainedWorktree } from './automation-retained-worktrees.ts'
 import { forkThread } from '../controller/fork-thread.ts'
 import {
   createThreadFilter,
@@ -283,6 +289,57 @@ function startRunNow(api: ApiClient, target: AutomationMenuTarget): void {
     })
 }
 
+/** "Mar 3, 9:30 AM", the way a run row names itself, so identically titled runs tell apart. */
+function runWhenLabel(triggeredAt: number | undefined): string {
+  return triggeredAt
+    ? new Date(triggeredAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+    : 'Unknown time'
+}
+
+/**
+ * Release the finished runs of one schedule whose checkouts are safe to remove,
+ * through the same path the scheduler uses, then say what is left. Anything that
+ * is not safe stays put: the dialog names each such run and why, and offers to
+ * open the first one so the user can commit, discard or delete it themselves.
+ */
+async function cleanUpScheduleRuns(
+  store: AppStore,
+  api: ApiClient,
+  target: AutomationMenuTarget,
+): Promise<void> {
+  try {
+    const result = await api.automations.cleanupRuns(target.project.id, target.scheduleId)
+    const freed = result.released.length
+    const freedText = `${String(freed)} worktree${freed === 1 ? '' : 's'}`
+    if (result.retained.length === 0) {
+      showToast(
+        freed === 0
+          ? `Nothing to clean up for “${target.scheduleName}”.`
+          : `Freed ${freedText} for “${target.scheduleName}”.`,
+      )
+      return
+    }
+    const known = new Map(getSidebarThreads(store, target.project.id).map((t) => [t.id, t]))
+    const lines = result.retained.map((run) => {
+      const when = runWhenLabel(known.get(run.threadId)?.automation?.triggeredAt)
+      return `• ${describeRetainedWorktree(run, `${run.title} · ${when}`)}`
+    })
+    const first = result.retained[0]
+    const opened = await showConfirmDialog({
+      message: `${String(result.retained.length)} run${result.retained.length === 1 ? '' : 's'} of “${target.scheduleName}” still hold${result.retained.length === 1 ? 's' : ''} a worktree`,
+      detail: `${freed > 0 ? `Freed ${freedText}. ` : ''}These need a decision from you, so they were left alone:\n${lines.join('\n')}`,
+      confirmLabel: result.retained.length === 1 ? 'Open run' : 'Open first run',
+      cancelLabel: 'Close',
+    })
+    if (opened && first) switchProjectThread(store, api, target.project.id, first.threadId)
+  } catch (error) {
+    showErrorToast(
+      `Could not clean up “${target.scheduleName}”`,
+      ipcErrorMessage(error, 'The cleanup could not finish'),
+    )
+  }
+}
+
 /**
  * One schedule's shared right-click actions, rendered on the sidebar's
  * schedule headings. "Run now" is the editor's Run-now button, reached
@@ -292,6 +349,7 @@ function automationMenuEntries(
   api: ApiClient,
   target: AutomationMenuTarget,
   openSetup: () => void,
+  cleanUp?: () => void,
 ): ContextMenuEntry[] {
   return [
     { heading: target.scheduleName },
@@ -301,6 +359,7 @@ function automationMenuEntries(
         startRunNow(api, target)
       },
     },
+    ...(cleanUp ? [{ label: 'Clean up finished runs…', onSelect: cleanUp }] : []),
     {
       label: 'Automation setup…',
       onSelect: openSetup,
@@ -1569,6 +1628,20 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                     })
                   },
                 },
+                ...(heldAutomationRuns([thread]).length > 0
+                  ? [
+                      {
+                        label: 'Clean up finished runs…',
+                        onSelect: (): void => {
+                          void cleanUpScheduleRuns(store, api, {
+                            project,
+                            scheduleName: thread.automation?.scheduleName ?? thread.title,
+                            scheduleId,
+                          })
+                        },
+                      },
+                    ]
+                  : []),
                 {
                   label: 'Automation setup…',
                   onSelect: (): void => {
@@ -1833,6 +1906,21 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             projectSuffix,
             el('span', { class: 'automation-schedule-count' }, `${String(runs.length)} runs`),
           )
+          const heldRuns = heldAutomationRuns(runs)
+          if (heldRuns.length > 0) {
+            scheduleToggle.querySelector('.automation-schedule-count')?.before(
+              el(
+                'span',
+                {
+                  class: 'automation-schedule-held',
+                  role: 'img',
+                  'aria-label': heldRunsTooltip(heldRuns.length),
+                  title: heldRunsTooltip(heldRuns.length),
+                },
+                heldRunsLabel(heldRuns.length),
+              ),
+            )
+          }
           if (runs.some((thread) => thread.status === 'running')) {
             const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
             status.setAttribute('role', 'img')
@@ -1874,6 +1962,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 () => {
                   openAutomationDialog(store, api, { projectId: project.id, scheduleId })
                 },
+                heldRuns.length > 0
+                  ? (): void => {
+                      void cleanUpScheduleRuns(store, api, { project, scheduleName, scheduleId })
+                    }
+                  : undefined,
               ),
             )
           })

@@ -5,6 +5,7 @@ import type {
   AutomationSchedulerHealth,
   AutomationPermission,
   AutomationProblem,
+  AutomationCleanupResult,
   AutomationPermissionOption,
   AutomationRetainedWorktree,
   AutomationSchedule,
@@ -241,6 +242,11 @@ export interface AutomationService {
   remove(projectId: string, scheduleId: string): Promise<void>
   runNow(projectId: string, scheduleId: string): Promise<AutomationTriggerEvent>
   /**
+   * Release every finished run's checkout that is safe to remove, through the
+   * same path the scheduler uses, and report the runs that must stay.
+   */
+  cleanupRuns(projectId: string, scheduleId: string): Promise<AutomationCleanupResult>
+  /**
    * Record why a run this schedule created could not start. Only the schedule's latest
    * run may report; any other thread id changes nothing and returns false.
    */
@@ -368,6 +374,35 @@ export function createAutomationService(
     })
   }
 
+  async function clearWorktreeLimit(projectId: string, scheduleId: string): Promise<void> {
+    await updateSchedules((schedules) => {
+      return schedules.map((schedule) => {
+        if (schedule.projectId !== projectId || schedule.id !== scheduleId) return schedule
+        const updated = { ...schedule }
+        delete updated.lastWorktreeLimitAt
+        delete updated.lastWorktreeLimitBlockedBy
+        return updated
+      })
+    })
+  }
+
+  /** Keep a recorded skip's blocker list honest after some of its runs were released. */
+  async function refreshWorktreeLimitBlockers(
+    projectId: string,
+    scheduleId: string,
+    blockedBy: AutomationRetainedWorktree[],
+  ): Promise<void> {
+    await updateSchedules((schedules) => {
+      return schedules.map((schedule) =>
+        schedule.projectId === projectId &&
+        schedule.id === scheduleId &&
+        schedule.lastWorktreeLimitAt !== undefined
+          ? { ...schedule, lastWorktreeLimitBlockedBy: blockedBy }
+          : schedule,
+      )
+    })
+  }
+
   async function recordScheduleRun(
     projectId: string,
     scheduleId: string,
@@ -482,6 +517,35 @@ export function createAutomationService(
     })
     schedulerSync = next.catch((): void => {})
     return next
+  }
+
+  /** Release each finished run's checkout that is safe to remove; report what must stay. */
+  async function releaseFinishedRuns(
+    projectId: string,
+    threads: Thread[],
+  ): Promise<AutomationCleanupResult> {
+    const released: string[] = []
+    const retained: AutomationRetainedWorktree[] = []
+    for (const thread of threads) {
+      if (!thread.worktree || thread.worktree.retiredAt !== undefined) continue
+      const release = await dependencies
+        .releasePreviousRun(projectId, thread.id)
+        .catch((error: unknown): AutomationWorktreeRelease => {
+          console.warn(`[automations] Could not release the worktree of ${thread.id}:`, error)
+          return { released: false, reason: 'in-use' }
+        })
+      if (release.released) {
+        released.push(thread.id)
+        continue
+      }
+      retained.push({
+        threadId: thread.id,
+        title: thread.title,
+        reason: release.reason,
+        ...(release.paths?.length ? { paths: release.paths } : {}),
+      })
+    }
+    return { released, retained }
   }
 
   async function trigger(
@@ -752,6 +816,30 @@ export function createAutomationService(
       const schedule = service.list(projectId).find((candidate) => candidate.id === scheduleId)
       if (!schedule) throw new Error('Automation schedule not found in this project')
       return trigger(schedule, dependencies.now(), 'manual')
+    },
+    async cleanupRuns(projectId, scheduleId) {
+      if (!dependencies.isPluginEnabled()) throw new Error('Enable the automations plugin first')
+      const schedule = service.list(projectId).find((candidate) => candidate.id === scheduleId)
+      if (!schedule) throw new Error('Automation schedule not found in this project')
+      // Serialise with a trigger of the same schedule: both remove checkouts.
+      if (inFlight.has(schedule.id)) throw new Error('This automation is already creating a task')
+      inFlight.add(schedule.id)
+      try {
+        const threads = (await dependencies.loadProjectThreads(projectId)).filter(
+          (thread) => thread.automation?.scheduleId === schedule.id,
+        )
+        // A pending or running run owns its checkout; leave it alone.
+        const idle = threads.filter((thread) => automationRunBlock(thread) === null)
+        const result = await releaseFinishedRuns(projectId, idle)
+        if (result.retained.length < (schedule.maxLiveWorktrees ?? 1)) {
+          await clearWorktreeLimit(projectId, scheduleId)
+        } else {
+          await refreshWorktreeLimitBlockers(projectId, scheduleId, result.retained)
+        }
+        return result
+      } finally {
+        inFlight.delete(schedule.id)
+      }
     },
     start(sender) {
       notify = sender

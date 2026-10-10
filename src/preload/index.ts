@@ -1442,6 +1442,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('automations:remove', projectId, scheduleId),
     runNow: (projectId: string, scheduleId: string) =>
       ipcRenderer.invoke('automations:run-now', projectId, scheduleId),
+    cleanupRuns: (projectId: string, scheduleId: string) =>
+      ipcRenderer.invoke('automations:cleanup-runs', projectId, scheduleId),
     listBranchCi: (projectId: string) =>
       ipcRenderer.invoke('automations:list-branch-ci', projectId),
     upsertBranchCi: (projectId: string, input: unknown) =>

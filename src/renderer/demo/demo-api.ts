@@ -1442,6 +1442,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      cleanupRuns: unsupported,
       listBranchCi: emptyArray,
       upsertBranchCi: unsupported,
       removeBranchCi: unsupported,

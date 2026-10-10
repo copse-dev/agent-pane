@@ -7,12 +7,16 @@ const REASON_LABEL: Record<AutomationRetainedReason, string> = {
   'in-use': 'still has a terminal or background process open',
 }
 
-/** One short clause per blocking run, e.g. “Main check” has uncommitted changes (a.ts, b.ts). */
+/** One short clause for a blocking run, e.g. “Main check” has uncommitted changes (a.ts, b.ts). */
+export function describeRetainedWorktree(
+  run: AutomationRetainedWorktree,
+  name: string = run.title,
+): string {
+  const paths = run.paths?.length ? ` (${run.paths.join(', ')})` : ''
+  return `“${name}” ${REASON_LABEL[run.reason]}${paths}`
+}
+
+/** One short clause per blocking run, joined for a single status line. */
 export function describeRetainedWorktrees(retained: readonly AutomationRetainedWorktree[]): string {
-  return retained
-    .map((run) => {
-      const paths = run.paths?.length ? ` (${run.paths.join(', ')})` : ''
-      return `“${run.title}” ${REASON_LABEL[run.reason]}${paths}`
-    })
-    .join('; ')
+  return retained.map((run) => describeRetainedWorktree(run)).join('; ')
 }

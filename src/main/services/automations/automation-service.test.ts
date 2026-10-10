@@ -887,6 +887,134 @@ describe('AutomationService', () => {
     assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, undefined)
     service.stop()
   })
+  it('cleans up finished runs through the scheduler release path and reports what must stay', async () => {
+    const now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+    const threads = new Map<string, Thread>()
+    const released: string[] = []
+    const service = createAutomationService({
+      now: () => now,
+      isPluginEnabled: () => true,
+      createProjectThread: (_projectId, thread) => {
+        threads.set(thread.id, thread)
+        return Promise.resolve()
+      },
+      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      releasePreviousRun: (_projectId, threadId) => {
+        if (threadId === 'dirty') {
+          return Promise.resolve({
+            released: false,
+            reason: 'uncommitted-changes',
+            paths: ['notes.md'],
+          })
+        }
+        released.push(threadId)
+        return Promise.resolve({ released: true })
+      },
+    })
+    const schedule = await service.upsert('project-a', {
+      name: 'Project health',
+      cron: '* * * * *',
+      prompt: 'Check project health.',
+      model: 'gpt-5.4',
+      enabled: true,
+    })
+    const worktreeFor = (id: string, retiredAt?: number): NonNullable<Thread['worktree']> => ({
+      path: `/worktrees/${id}`,
+      branch: `codex/${id}`,
+      baseBranch: 'main',
+      baseCommit: 'a'.repeat(40),
+      createdAt: now,
+      seededFromDirtyProject: false,
+      ...(retiredAt !== undefined ? { retiredAt } : {}),
+    })
+    const held = (id: string, status: Thread['status'], retiredAt?: number): Thread => ({
+      id,
+      title: 'Project health',
+      status,
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      automation: { scheduleId: schedule.id, scheduleName: schedule.name, triggeredAt: now },
+      worktree: worktreeFor(id, retiredAt),
+      createdAt: now,
+      updatedAt: now,
+    })
+    threads.set('clean', held('clean', 'idle'))
+    threads.set('dirty', held('dirty', 'idle'))
+    threads.set('running', held('running', 'running'))
+    threads.set('retired', held('retired', 'idle', now))
+
+    const result = await service.cleanupRuns('project-a', schedule.id)
+
+    assert.deepEqual(released, ['clean'])
+    assert.deepEqual(result.released, ['clean'])
+    assert.deepEqual(result.retained, [
+      {
+        threadId: 'dirty',
+        title: 'Project health',
+        reason: 'uncommitted-changes',
+        paths: ['notes.md'],
+      },
+    ])
+  })
+
+  it('clears a recorded worktree-limit skip once cleanup leaves room, and keeps it otherwise', async () => {
+    let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+    const threads = new Map<string, Thread>()
+    let cleanReleased = false
+    const service = createAutomationService({
+      now: () => now,
+      isPluginEnabled: () => true,
+      createProjectThread: (_projectId, thread) => {
+        threads.set(thread.id, thread)
+        return Promise.resolve()
+      },
+      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      releasePreviousRun: () =>
+        Promise.resolve(
+          cleanReleased
+            ? { released: true }
+            : { released: false, reason: 'unmerged-commits' as const },
+        ),
+    })
+    const schedule = await service.upsert('project-a', {
+      name: 'Project health',
+      cron: '* * * * *',
+      prompt: 'Check project health.',
+      model: 'gpt-5.4',
+      enabled: true,
+    })
+    const first = await service.runNow('project-a', schedule.id)
+    const pending = threads.get(first.threadId)
+    assert.ok(pending)
+    threads.set(first.threadId, {
+      ...pending,
+      status: 'idle',
+      draftPrompt: '',
+      worktree: {
+        path: '/worktrees/first',
+        branch: 'codex/first',
+        baseBranch: 'main',
+        baseCommit: 'a'.repeat(40),
+        createdAt: now,
+        seededFromDirtyProject: false,
+      },
+    })
+    now += 60_000
+    await service.tick()
+    assert.ok(service.list('project-a')[0]?.lastWorktreeLimitAt)
+
+    const stillHeld = await service.cleanupRuns('project-a', schedule.id)
+    assert.equal(stillHeld.retained.length, 1)
+    assert.ok(service.list('project-a')[0]?.lastWorktreeLimitAt)
+    assert.equal(service.list('project-a')[0]?.lastWorktreeLimitBlockedBy?.length, 1)
+
+    cleanReleased = true
+    const freed = await service.cleanupRuns('project-a', schedule.id)
+    assert.deepEqual(freed.released, [first.threadId])
+    assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, undefined)
+    assert.equal(service.list('project-a')[0]?.lastWorktreeLimitBlockedBy, undefined)
+  })
+
   it('adopts the durable scheduler task instead of enqueuing one per launch', async () => {
     const scheduleId = 'schedule-1'
     storageSet(STORAGE_KEY, [

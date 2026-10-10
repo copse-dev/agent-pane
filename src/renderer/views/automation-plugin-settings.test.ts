@@ -74,6 +74,9 @@ function stubApi(
       remove(): Promise<void> {
         return Promise.resolve()
       },
+      cleanupRuns(): Promise<{ released: string[]; retained: [] }> {
+        return Promise.resolve({ released: [], retained: [] })
+      },
       runNow(): Promise<{
         projectId: string
         scheduleId: string

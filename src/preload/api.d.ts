@@ -46,6 +46,7 @@ import type {
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
+  AutomationCleanupResult,
   AutomationSchedulerHealth,
   AutomationTriggerEvent,
   BranchCiAutomation,
@@ -1240,6 +1241,8 @@ export interface ApiClient {
     upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
+    /** Remove every finished run's checkout that is safe to remove; report the runs that must stay. */
+    cleanupRuns: (projectId: string, scheduleId: string) => Promise<AutomationCleanupResult>
     listBranchCi: (projectId: string) => Promise<BranchCiAutomation[]>
     upsertBranchCi: (
       projectId: string,
