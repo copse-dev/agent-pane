@@ -39,9 +39,9 @@ function apiWithSummaries(summaries: Record<string, ThreadChangeSummary | null>)
   } satisfies ApiClient
 }
 
-function mount(threads: Thread[], api: ApiClient): void {
+function mount(threads: Thread[], api: ApiClient, sshHost?: string): void {
   const store = createStore({
-    projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
+    projects: [{ id: 'p1', path: '/proj', name: 'Proj', ...(sshHost ? { sshHost } : {}) }],
     activeProjectId: 'p1',
     expandedProjectId: 'p1',
     workspaceRoot: '/proj',
@@ -218,6 +218,64 @@ describe('projects pane needs-cleanup filter (component)', () => {
       assert.deepEqual(titles().sort(), ['dirty', 'unpushed'])
     })
   }
+
+  it('keeps SSH open PRs and pending PR lookups without requesting local git state', async () => {
+    const base = createFakeApi()
+    let resolvePr: ((value: GhPrDetails) => void) | undefined
+    let gitCalls = 0
+    const api: ApiClient = {
+      ...base,
+      threads: { ...base.threads, listOrphans: async (): Promise<never[]> => [] },
+      git: {
+        ...base.git,
+        threadChangeSummary: async () => {
+          gitCalls += 1
+          return []
+        },
+      },
+      gh: {
+        ...base.gh,
+        prDetails: () =>
+          new Promise((resolve) => {
+            resolvePr = resolve
+          }),
+      },
+    }
+    mount(
+      [
+        thread('open', 'Remote PR', {
+          prRefs: [
+            {
+              owner: 'acme',
+              repo: 'widgets',
+              number: 7,
+              url: 'https://github.com/acme/widgets/pull/7',
+            },
+          ],
+        }),
+        thread('none', 'No remote PR'),
+      ],
+      api,
+      'build-host',
+    )
+    await settle()
+    toggleNeedsCleanup()
+    assert.deepEqual(titles(), ['Remote PR'], 'keep a pending PR lookup visible')
+    assert.ok(resolvePr)
+    resolvePr({
+      owner: 'acme',
+      repo: 'widgets',
+      number: 7,
+      title: 'Remote change',
+      url: 'https://github.com/acme/widgets/pull/7',
+      state: 'OPEN',
+      body: '',
+      files: [],
+    })
+    await settle()
+    assert.deepEqual(titles(), ['Remote PR'], 'keep the confirmed open SSH PR visible')
+    assert.equal(gitCalls, 0, 'SSH rows must not request local git summaries')
+  })
 
   it('shows a dedicated empty state and marks the Show button as filtering', async () => {
     mount([thread('a', 'Clean')], apiWithSummaries({ a: { dirty: false } }))

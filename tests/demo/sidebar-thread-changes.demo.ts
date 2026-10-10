@@ -83,4 +83,20 @@ describe('sidebar thread changes glyph', () => {
     await expect($('.projects-filter-btn')).toHaveElementClass('is-filtering')
     await saveAppScreenshot('sidebar-cleanup-after-pr.png')
   })
+  it('keeps an SSH thread with an open PR in the cleanup filter', async () => {
+    await browser.url('/?scenario=sidebar-cleanup-ssh')
+    await $('.chat-pr-status').waitForExist({ timeout: 30_000 })
+    await $('.projects-filter-btn').click()
+    await $('.context-menu-item*=Needs cleanup only').click()
+    await browser.keys('Escape')
+    await browser.waitUntil(
+      async () => {
+        const titles = await $$('.chats-list .chat-title').map((row) => row.getText())
+        return titles.join(',') === 'Remote PR still open'
+      },
+      { timeout: 5_000, timeoutMsg: 'the open remote PR must remain visible' },
+    )
+    await expect($('.chat-pr-status')).toBeDisplayed()
+    await saveAppScreenshot('sidebar-cleanup-ssh.png')
+  })
 })
