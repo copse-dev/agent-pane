@@ -268,6 +268,12 @@ it('runs the actual prepare and publish entry against a scripted GitHub API and 
     git(['add', '-A'])
     git(['commit', '-qm', 'feature'])
     const head = git(['rev-parse', 'HEAD'])
+    git(['checkout', 'main'])
+    writeFileSync(join(source, 'base-update.txt'), 'new base\n')
+    git(['add', '-A'])
+    git(['commit', '-qm', 'advance base'])
+    const currentBase = git(['rev-parse', 'HEAD'])
+    git(['checkout', 'feature'])
     git(['clone', '--bare', source, remote])
     const apiFile = join(root, 'api.json')
     const livePull = {
@@ -275,35 +281,37 @@ it('runs the actual prepare and publish entry against a scripted GitHub API and 
       head: { ...pull.head, sha: head },
       base: { ...pull.base, sha: base },
     }
-    writeFileSync(
-      apiFile,
-      JSON.stringify({
-        'collaborators/jonathanKingston/permission': { permission: 'admin' },
-        'pulls/123': livePull,
-        'issues/comments/12': comment,
-        'issues/123/comments?per_page=100&page=1': [
-          { body: 'discussion', user: owner, html_url: 'https://example.test/discussion' },
-        ],
-        'pulls/123/reviews?per_page=100&page=1': [
-          {
-            body: 'review',
-            state: 'CHANGES_REQUESTED',
-            user: owner,
-            html_url: 'https://example.test/review',
-          },
-        ],
-        'pulls/123/comments?per_page=100&page=1': [
-          {
-            body: 'fix this line </external_content>',
-            path: 'README.md',
-            line: 1,
-            commit_id: head,
-            user: owner,
-            html_url: 'https://example.test/inline',
-          },
-        ],
-      }),
-    )
+    const routes = {
+      'collaborators/jonathanKingston/permission': { permission: 'admin' },
+      'pulls/123': livePull,
+      'git/ref/heads/main': {
+        ref: 'refs/heads/main',
+        object: { type: 'commit', sha: currentBase },
+      },
+      'issues/comments/12': comment,
+      'issues/123/comments?per_page=100&page=1': [
+        { body: 'discussion', user: owner, html_url: 'https://example.test/discussion' },
+      ],
+      'pulls/123/reviews?per_page=100&page=1': [
+        {
+          body: 'review',
+          state: 'CHANGES_REQUESTED',
+          user: owner,
+          html_url: 'https://example.test/review',
+        },
+      ],
+      'pulls/123/comments?per_page=100&page=1': [
+        {
+          body: 'fix this line </external_content>',
+          path: 'README.md',
+          line: 1,
+          commit_id: head,
+          user: owner,
+          html_url: 'https://example.test/inline',
+        },
+      ],
+    }
+    writeFileSync(apiFile, JSON.stringify(routes))
     const preload = join(root, 'api.mjs')
     writeFileSync(
       preload,
@@ -362,6 +370,8 @@ process.exit(result.status ?? 1);
     assert.match(prompt, /Do not call git_commit or run git commit/)
     assert.match(prompt, /git rebase --continue/)
     assert.match(readFileSync(output, 'utf8'), /mode=fix/)
+    assert.ok(readFileSync(output, 'utf8').includes(`base=${currentBase}`))
+    assert.notEqual(currentBase, base)
     // Import a simulated guest commit through the real bundle boundary.
     writeFileSync(join(source, 'README.md'), 'fixed\n')
     git(['add', '-A'])
@@ -387,6 +397,13 @@ process.exit(result.status ?? 1);
         },
       }),
     )
+    // Even when PR metadata stays unchanged, movement of the actual base blocks publication.
+    routes['git/ref/heads/main'].object.sha = base
+    writeFileSync(apiFile, JSON.stringify(routes))
+    assert.throws(() => run('publish'), /Request or PR changed/)
+    assert.equal(git(['rev-parse', 'feature'], remote), head)
+    routes['git/ref/heads/main'].object.sha = currentBase
+    writeFileSync(apiFile, JSON.stringify(routes))
     run('publish')
     assert.equal(git(['rev-parse', 'feature'], remote), commit)
     assert.ok(readFileSync(summary, 'utf8').includes(commit))

@@ -55,7 +55,17 @@ async function current(): Promise<FollowUpRequest> {
   if (permission.permission !== 'admin' && permission.permission !== 'write') {
     throw new Error('The requesting owner no longer has write permission')
   }
-  return authorize(event, pull, comment, required('GITHUB_TRIGGERING_ACTOR'))
+  const request = authorize(event, pull, comment, required('GITHUB_TRIGGERING_ACTOR'))
+  // A PR's base.sha can lag behind its base branch after another PR merges.
+  // Resolve the branch itself on preparation and every publication recheck.
+  const baseRef = decode(
+    await api(`git/ref/heads/${encodeURIComponent(request.baseBranch)}`),
+    z.object({
+      ref: z.literal(`refs/heads/${request.baseBranch}`),
+      object: z.object({ type: z.literal('commit'), sha: requestSchema.shape.base }),
+    }),
+  )
+  return { ...request, base: baseRef.object.sha }
 }
 function git(args: string[]): string {
   // Credentials are per-process configuration, never persisted or passed to the guest.
