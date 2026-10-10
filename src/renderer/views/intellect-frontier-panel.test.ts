@@ -6,6 +6,7 @@ import {
   createIntellectFrontierPanel,
   createTooltipLayer,
   extraProviderFrontierCandidates,
+  isSeverelyDominated,
   localFrontierCandidates,
   pointTooltipContent,
   positionFrontierTooltip,
@@ -311,6 +312,88 @@ describe('extraProviderFrontierCandidates', () => {
 })
 
 describe('createIntellectFrontierPanel', () => {
+  it('only hides a dominated point when a priced peer is at least four times cheaper', () => {
+    const frontier: FrontierPoint = {
+      id: 'frontier',
+      intellect: 50,
+      costPerMTok: 4,
+      onFrontier: true,
+    }
+    const outlier: FrontierPoint = {
+      id: 'outlier',
+      intellect: 30,
+      costPerMTok: 36,
+      onFrontier: false,
+    }
+    const nearby: FrontierPoint = {
+      id: 'nearby',
+      intellect: 30,
+      costPerMTok: 12,
+      onFrontier: false,
+    }
+    const plan: FrontierPoint = {
+      id: 'plan',
+      intellect: 60,
+      costPerMTok: 0,
+      onFrontier: true,
+    }
+    const points = [frontier, outlier, nearby, plan]
+    assert.equal(isSeverelyDominated(outlier, points), true)
+    assert.equal(isSeverelyDominated(nearby, points), false)
+    assert.equal(
+      isSeverelyDominated(outlier, [outlier, plan]),
+      false,
+      'a free plan route alone must not hide paid routes',
+    )
+    assert.equal(isSeverelyDominated(frontier, points), false)
+  })
+
+  it('keeps a severely dominated routed model in the disclosure and off the axis', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      async () => [
+        testExtraProvider([{ id: 'o1-pro', inputPricePerMTok: 150, outputPricePerMTok: 600 }]),
+      ],
+    )
+    await panel.refresh()
+
+    const svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.equal(svg.querySelector('[data-model-id="huggingface:o1-pro"]'), null)
+    const hidden = panel.root.querySelector('details.frontier-severely-dominated')
+    assert.ok(hidden)
+    assert.match(hidden.textContent, /o1-pro/)
+    assert.doesNotMatch(svg.textContent, /\$240/)
+  })
+
+  it('shows domination with only the configured paid routes available', async () => {
+    const provider = {
+      ...testExtraProvider([
+        { id: 'o1-pro', inputPricePerMTok: 150, outputPricePerMTok: 600 },
+        { id: 'gpt-6-sol', inputPricePerMTok: 3, outputPricePerMTok: 12 },
+      ]),
+      id: 'legacy',
+      prefix: 'legacy:',
+      local: true,
+      baseUrl: 'http://127.0.0.1:9/v1',
+    }
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      async () => [provider],
+      undefined,
+      undefined,
+      undefined,
+      async () => ['legacy:o1-pro', 'legacy:gpt-6-sol'],
+    )
+    await panel.refresh()
+    assert.ok(panel.root.querySelector('circle[data-model-id="legacy:gpt-6-sol"]'))
+    assert.equal(panel.root.querySelector('circle[data-model-id="legacy:o1-pro"]'), null)
+    assert.match(
+      panel.root.querySelector('details.frontier-severely-dominated')?.textContent ?? '',
+      /o1-pro/,
+    )
+  })
+
   it('renders the main chart after refresh, plotting scored local models', async () => {
     const panel = createIntellectFrontierPanel(async () => ['qwen/qwen2.5-coder-32b'])
     assert.equal(panel.root.querySelector('svg'), null)
