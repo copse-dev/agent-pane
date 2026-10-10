@@ -44,7 +44,7 @@ export function createVncSshHostForm(
   const importButton = el(
     'button',
     { type: 'button', class: 'ui-btn ui-btn-ghost' },
-    'Import from ~/.ssh/config',
+    'Import SSH config',
   )
   const root = el(
     'form',
