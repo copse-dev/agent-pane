@@ -105,6 +105,24 @@ test('renders the context line, safe messages, tool names, a thinking marker and
   assert.deepEqual(archived, [])
 })
 
+test('the context line reads a markdown anchor as plain text', () => {
+  const parent = thread('main', {
+    messages: [
+      message(
+        'm1',
+        'assistant',
+        '[PR #3595](https://github.com/copse-dev/agent-pane/pull/3595) is loaded at commit abc',
+      ),
+    ],
+  })
+  const side = thread('s', { sideChat: link })
+  const view = renderSideChat({ side, parent, onSuggestion: () => {}, onArchive: () => {} })
+  assert.match(
+    view.header.querySelector('[data-side-chat-context]')?.textContent ?? '',
+    /Reads the main thread up to “PR #3595 is loaded at commit abc”\. Read-only\./,
+  )
+})
+
 test('an empty side chat offers the prototype suggestions, and an archived one offers restore', () => {
   const asked: string[] = []
   const live = renderSideChat({
