@@ -77,7 +77,7 @@ jobs:
             --prompt-file "$FOLLOW_UP_DIR/prompt.txt" \
             --report "$FOLLOW_UP_DIR/report.json" \
             --api-key-env COPSE_FOLLOW_UP_API_KEY \
-            --ttl 35 --tokens 500000 --max-steps 100 \
+            --ttl 35 --tokens 500000 --max-output-tokens 16384 --max-steps 100 \
             --install-dependencies \
             --allow registry.npmjs.org:443 --allow github.com:443 \
             --allow codeload.github.com:443 --allow release-assets.githubusercontent.com:443 \

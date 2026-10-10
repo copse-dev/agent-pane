@@ -29,6 +29,7 @@
  *                           broker dials localhost on loopback itself, never through the resolver
  *   --ttl <minutes>         wall-clock budget (default 120)
  *   --tokens <n>            token ceiling (default 2,000,000)
+ *   --max-output-tokens <n> per-response output limit (default 16,384)
  *   --max-steps <n>         cap on agent steps (default: product default)
  *   --image <ref>           worker image (default copse-worker:local)
  *   --base-image <ref>      base image for --build (default: node:24-trixie-slim, pinned by digest)
@@ -52,8 +53,7 @@ import {
   WORKER_IMAGE,
 } from './thread-container.ts'
 import { createResolvedProviderFetch } from './resolved-provider-fetch.ts'
-import { buildGuestProvider } from './guest-provider.ts'
-import { withCredentialOutputRedaction } from '@copse/llm/credential-output-provider.ts'
+import { buildCliProvider, parseOutputLimit } from './cli-provider.ts'
 import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { takeProviderKeyFromEnv } from './cli-provider-key.ts'
@@ -98,6 +98,7 @@ async function main(): Promise<void> {
   // Docker subprocess inherits.
   const apiKeyEnv = cli.one('api-key-env')
   const apiKey = takeProviderKeyFromEnv(apiKeyEnv)
+  const outputLimit = parseOutputLimit(cli.one('max-output-tokens'))
   // One engine for the whole invocation; COPSE_CONTAINER_ENGINE picks it.
   const engine = await assertThreadContainerEngine()
   if (cli.has('list')) {
@@ -171,25 +172,14 @@ async function main(): Promise<void> {
     // CLI provider inference and its selected key stay on this host (A1″).
     hostInference: (maxOutputTokens): Promise<LLMProvider> =>
       Promise.resolve(
-        withCredentialOutputRedaction(
-          buildGuestProvider(
-            {
-              kind: 'openai-compatible',
-              model,
-              apiKeySlug: 'cli',
-              url: providerUrl,
-              label: 'the --provider-url endpoint',
-              local: true,
-              includeUsage: true,
-              apiStyle: null,
-              extraBody: null,
-              params: { maxOutputTokens },
-            },
-            apiKey ?? null,
-            transport.fetch,
-          ),
-          apiKey ? [apiKey] : [],
-        ),
+        buildCliProvider({
+          model,
+          url: providerUrl,
+          apiKey,
+          remainingTokens: maxOutputTokens,
+          outputLimit,
+          fetch: transport.fetch,
+        }),
       ),
     budgets: {
       wallClockMs: Number(cli.one('ttl') ?? '120') * 60_000,
