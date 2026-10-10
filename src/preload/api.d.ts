@@ -181,6 +181,7 @@ export interface ApiClient {
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
     manage: () => Promise<void>
+    status: () => Promise<import('@shared/types/mobile-companion.ts').MobileCompanionStatus>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void

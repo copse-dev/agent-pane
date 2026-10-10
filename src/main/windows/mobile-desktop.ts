@@ -1,4 +1,6 @@
 import { dialog, type BrowserWindow } from 'electron'
+import QRCode from 'qrcode'
+import type { MobileCompanionStatus } from '../../shared/types/mobile-companion.ts'
 import { MobileDevices } from '../services/mobile/mobile-devices.ts'
 import { MobilePreference } from '../services/mobile/mobile-preference.ts'
 import {
@@ -141,6 +143,14 @@ function launch(address: string, devices: MobileDevices): Promise<MobileServer> 
       starting = null
     })
   return starting
+}
+
+/** Current pairing state for Settings to render, including a scannable QR of the URL. */
+export async function getMobileCompanionStatus(): Promise<MobileCompanionStatus> {
+  const enabled = savedPreference().current().enabled
+  const url = active?.isRunning() ? active.url : null
+  const qrSvg = url ? await QRCode.toString(url, { type: 'svg', margin: 1 }) : null
+  return { enabled, url, qrSvg }
 }
 
 /** Resume the user's enabled choice after every app start. */

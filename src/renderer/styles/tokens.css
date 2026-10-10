@@ -23,6 +23,8 @@
 }
 
 :root {
+  /* QR codes retain a white quiet zone in every theme. */
+  --qr-background: #ffffff;
   /* ---- Whole-app tint --------------------------------------------------
      Every neutral surface is mixed from a base grey plus `--tint-amount` of
      `--tint-hue`. These values match the first-run Appearance defaults so the
