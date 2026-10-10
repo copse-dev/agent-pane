@@ -994,10 +994,28 @@ async function runAgentWithInlineCanvas(
         threadId,
         promptRoutingContext(outboundPrompt, priorMessages),
       )
+      const { estimateContextBreakdown } = await import('./context-estimate.ts')
+      const draftText = promptTextForSubmit(outboundPrompt)
+      const estimate = await estimateContextBreakdown(registry, {
+        ...(runContext ? { projectId: runContext.projectId } : {}),
+        draftText,
+        invokedSkills: options?.invokedSkills ?? [],
+        imageCount:
+          typeof outboundPrompt === 'string'
+            ? 0
+            : outboundPrompt.filter((block) => block.type === 'image').length,
+        priorMessages,
+        model,
+      })
+      // Leave room for the reply and token-estimation error. LM Studio's loaded
+      // context length is checked against this before the model is triggered.
+      const requiredTokens =
+        estimate.totalTokens + Math.max(1024, Math.ceil(estimate.totalTokens * 0.1))
       model = await resolvePromptModel(
         promptTextForSubmit(context.content),
         model,
         routingController.signal,
+        requiredTokens,
       )
       recordThreadModel(threadId, model)
       setActiveRunModel(model)
