@@ -10,7 +10,9 @@ import {
 /**
  * Submodules in thread worktrees.
  *
- * A linked checkout starts with every submodule directory empty. Populating
+ * A linked checkout starts with every submodule directory empty, and stays that
+ * way until the agent asks (`init_submodules`): checking out all of them is the
+ * slow part of a big repository, and most threads touch one or none. Populating
  * one the way `git submodule update` does would fetch from the network and run
  * the repository's configured update strategy, so instead each submodule the
  * project checkout has itself initialised is cloned from the project's own
@@ -177,15 +179,32 @@ interface PopulateLevel {
   /** The project's repository for the same level, whose `modules/` is the clone source. */
   sourceModuleDir: string
   treeish: string
+  /** Top-level submodule paths to populate; absent means every initialised one. */
+  only?: ReadonlySet<string>
 }
 
-async function populateLevel(level: PopulateLevel, depth: number): Promise<void> {
+/** What a population request did, by submodule path within the thread checkout. */
+export interface SubmodulePopulation {
+  populated: string[]
+  /** Declared but never initialised in the project checkout, so there is nothing to copy offline. */
+  notInitialised: string[]
+  failed: string[]
+  /** Already checked out, or a directory that is not empty. */
+  skipped: string[]
+}
+
+async function populateLevel(
+  level: PopulateLevel,
+  depth: number,
+  report: SubmodulePopulation,
+): Promise<void> {
   if (depth > MAX_DEPTH) return
   const declared = await declaredSubmodules(level.checkout, level.workTree)
   const gitlinks = await recordedGitlinks(level.checkout, level.workTree, level.treeish, [
     ...declared.keys(),
   ])
   for (const [path, commit] of gitlinks) {
+    if (level.only && !level.only.has(path)) continue
     const name = declared.get(path)
     const label = level.label ? `${level.label}/${path}` : path
     if (name === undefined || !isSafeModuleName(name)) {
@@ -195,12 +214,18 @@ async function populateLevel(level: PopulateLevel, depth: number): Promise<void>
     const source = join(level.sourceModuleDir, 'modules', name)
     // A submodule the project checkout never initialised stays uninitialised:
     // fetching it is a network operation the user has not asked for.
-    if (!(await isRepositoryDir(source))) continue
+    if (!(await isRepositoryDir(source))) {
+      report.notInitialised.push(label)
+      continue
+    }
     const target = join(level.workTree, path)
     const gitDir = join(level.moduleDir, 'modules', name)
     // Only an empty, unpopulated directory is populated, so the cleanup below
     // can never delete anything population did not itself create.
-    if (!(await isEmptyDirectory(target)) || (await lstatOrNull(gitDir))) continue
+    if (!(await isEmptyDirectory(target)) || (await lstatOrNull(gitDir))) {
+      report.skipped.push(label)
+      continue
+    }
     try {
       await mkdir(dirname(gitDir), { recursive: true })
       const steps: [string, string[]][] = [
@@ -247,8 +272,10 @@ async function populateLevel(level: PopulateLevel, depth: number): Promise<void>
       await rm(gitDir, { recursive: true, force: true }).catch(() => undefined)
       await rm(target, { recursive: true, force: true }).catch(() => undefined)
       await mkdir(target, { recursive: true }).catch(() => undefined)
+      report.failed.push(label)
       continue
     }
+    report.populated.push(label)
     await populateLevel(
       {
         checkout: level.checkout,
@@ -259,22 +286,28 @@ async function populateLevel(level: PopulateLevel, depth: number): Promise<void>
         treeish: 'HEAD',
       },
       depth + 1,
+      report,
     )
   }
 }
 
 /**
- * Check out, in a new thread checkout, every submodule the project checkout
- * has initialised, at the commit `treeish` records (the seeded snapshot, so a
- * dirty project's moved submodule pointer carries over). Best effort: it never
- * throws, and a submodule that cannot be populated is left uninitialised for
- * the agent to set up itself. Uncommitted changes inside the project's own
- * submodules are not carried.
+ * Check out, in a thread checkout, the submodules the project checkout has
+ * initialised (all of them, or just `only`, by top-level path), at the commit
+ * `treeish` records. Best effort: it never throws, and a submodule that cannot
+ * be populated is left uninitialised. Uncommitted changes inside the project's
+ * own submodules are not carried.
  */
 export async function populateWorktreeSubmodules(
   checkout: string,
-  treeish = 'HEAD',
-): Promise<void> {
+  options: { treeish?: string; only?: readonly string[] } = {},
+): Promise<SubmodulePopulation> {
+  const report: SubmodulePopulation = {
+    populated: [],
+    notInitialised: [],
+    failed: [],
+    skipped: [],
+  }
   try {
     const { gitDir, commonGitDir } = await worktreeGitDirs(checkout)
     await populateLevel(
@@ -284,13 +317,16 @@ export async function populateWorktreeSubmodules(
         label: '',
         moduleDir: gitDir,
         sourceModuleDir: commonGitDir,
-        treeish,
+        treeish: options.treeish ?? 'HEAD',
+        ...(options.only ? { only: new Set(options.only) } : {}),
       },
       0,
+      report,
     )
   } catch (error) {
     console.warn(`[worktree] Could not populate submodules: ${String(error)}`)
   }
+  return report
 }
 
 /** Module repositories under `dir/modules`, keyed by their path below it. */

@@ -15,6 +15,7 @@ import {
   retireThreadWorktree,
   type ValidateWorktreeInput,
 } from './worktree-manager.ts'
+import { populateWorktreeSubmodules } from './worktree-submodules.ts'
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', ['-c', 'protocol.file.allow=always', ...args], {
@@ -108,7 +109,14 @@ describe('thread worktree submodules', () => {
     return { temp, repo, libUpstream: lib }
   }
 
+  /** Allocation leaves submodules empty; most cases want them checked out, as `init_submodules` does. */
   async function allocate(repo: string, threadId = 'thread-1'): Promise<ThreadWorktree> {
+    const worktree = await allocateEmpty(repo, threadId)
+    await populateWorktreeSubmodules(worktree.path)
+    return worktree
+  }
+
+  async function allocateEmpty(repo: string, threadId = 'thread-1'): Promise<ThreadWorktree> {
     return allocateThreadWorktree({
       projectId: 'project-1',
       threadId,
@@ -209,18 +217,24 @@ describe('thread worktree submodules', () => {
     )
   })
 
-  it('seeds a submodule the project has moved at the project commit', async () => {
+  it('leaves submodules empty at allocation and fills only the requested one on demand', async () => {
     const { repo } = await setup()
-    const projectLib = join(repo, 'vendor', 'lib')
-    await commitFiles(projectLib, { 'lib.txt': 'moved\n' }, 'moved in the project')
-    const moved = git(projectLib, ['rev-parse', 'HEAD'])
-
-    const worktree = await allocate(repo)
+    const worktree = await allocateEmpty(repo)
     const lib = join(worktree.path, 'vendor', 'lib')
-    assert.equal(worktree.seededFromDirtyProject, true)
-    assert.equal(git(lib, ['rev-parse', 'HEAD']), moved)
-    assert.equal(await readFile(join(lib, 'lib.txt'), 'utf8'), 'moved\n')
-    assert.equal(git(worktree.path, ['status', '--porcelain']), 'M vendor/lib')
+    assert.deepEqual(await readdir(lib), [])
+
+    const none = await populateWorktreeSubmodules(worktree.path, { only: ['vendor/other'] })
+    assert.deepEqual(none.populated, [])
+    assert.deepEqual(await readdir(lib), [])
+
+    const result = await populateWorktreeSubmodules(worktree.path, { only: ['vendor/lib'] })
+    assert.deepEqual(result.populated, ['vendor/lib', 'vendor/lib/deps/nested'])
+    assert.equal(await readFile(join(lib, 'lib.txt'), 'utf8'), 'lib\n')
+
+    const again = await populateWorktreeSubmodules(worktree.path)
+    assert.deepEqual(again.populated, [])
+    assert.deepEqual(again.skipped, ['vendor/lib'])
+    assert.deepEqual(again.notInitialised, ['vendor/optional'])
   })
 
   it('removes a clean checkout only after git’s own clean check, then forces past submodules', async () => {

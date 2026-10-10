@@ -101,7 +101,7 @@ describe('thread worktree with submodules', () => {
       rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
 
-  it('previews and allocates an isolated worktree with the submodule checked out', async function () {
+  it('previews and allocates an isolated worktree with the submodule checked out on demand', async function () {
     this.timeout(120_000)
     // The automatic policy is previewed before the first send. A repository
     // with submodules previously previewed (and got) the shared checkout.
@@ -110,8 +110,8 @@ describe('thread worktree with submodules', () => {
 
     const reply = 'The vendored library is checked out in this thread.'
     const scenario = await prepareMockToolTurn(
-      'Read the vendored library.',
-      { name: 'read_file', args: { path: 'vendor/lib/lib.txt' } },
+      'Check out the vendored library.',
+      { name: 'init_submodules', args: {} },
       reply,
     )
     await $('.submit-btn').click()

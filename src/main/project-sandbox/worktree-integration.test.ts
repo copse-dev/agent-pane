@@ -19,6 +19,7 @@ import {
 } from '../services/workspace.ts'
 import { createWorktreeBackup, getGitStatus } from '../services/github/git-service.ts'
 import { setGitAvailableForTest } from '../services/tool-availability.ts'
+import { populateWorktreeSubmodules } from '../services/worktree-submodules.ts'
 import {
   allocateThreadWorktree,
   inspectThreadWorktreeAttachment,
@@ -612,6 +613,8 @@ describe('linked-worktree sandbox integration', () => {
       baseBranch: 'main',
     })
     const lib = join(worktree.path, 'vendor', 'lib')
+    // Allocation leaves submodules empty; `init_submodules` fills them.
+    await populateWorktreeSubmodules(worktree.path)
     assert.equal(await readFile(join(lib, 'lib.txt'), 'utf8'), 'lib\n')
     const base = git(lib, ['rev-parse', 'HEAD']).trim()
 
