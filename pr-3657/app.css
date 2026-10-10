@@ -83,6 +83,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   font-display: swap;
 }
 :root {
+  --qr-background: #ffffff;
   --tint-hue: #244c25;
   --tint-amount: 4%;
   --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #1e1e1e);
@@ -8768,7 +8769,7 @@ dialog.settings-overlay::backdrop {
   width: 96px;
   height: 96px;
   padding: var(--spacing-sm);
-  background: #ffffff;
+  background: var(--qr-background);
   border-radius: var(--radius-sm);
 }
 .mobile-companion-qr-image svg {

@@ -69136,10 +69136,9 @@ async function loadSimpleFields(form, api2) {
 }
 async function mountMobileCompanionQr(overlay, api2) {
   const status = await api2.mobile.status();
-  if (!status.url || !status.qrSvg) return;
-  qsRequired(overlay, "#mobile-companion-qr-image").innerHTML = status.qrSvg;
-  qsRequired(overlay, "#mobile-companion-qr-url").textContent = status.url;
-  qsRequired(overlay, "#mobile-companion-qr").hidden = false;
+  qsRequired(overlay, "#mobile-companion-qr-image").innerHTML = status.qrSvg ?? "";
+  qsRequired(overlay, "#mobile-companion-qr-url").textContent = status.url ?? "";
+  qsRequired(overlay, "#mobile-companion-qr").hidden = !status.url || !status.qrSvg;
 }
 function parseNonNegativeInt(value, fallback) {
   const n2 = Number.parseInt(value, 10);
@@ -70545,7 +70544,6 @@ function mountSettingsDialog(store2, api2) {
       void api2.mobile.manage();
     }
   );
-  void mountMobileCompanionQr(overlay, api2);
   const navBtns = overlay.querySelectorAll(".settings-nav-btn");
   const sections = overlay.querySelectorAll(".settings-section");
   const contentEl = qsRequired(overlay, ".settings-content");
@@ -72695,6 +72693,10 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     });
   }
   overlay.addEventListener("settings-open", () => {
+    void mountMobileCompanionQr(overlay, api2).catch((error62) => {
+      qsRequired(overlay, "#mobile-companion-qr").hidden = true;
+      console.error("[settings] Could not load Mobile Companion status:", error62);
+    });
     appearanceBaseline = currentAppearance();
     appearanceCommitted = false;
     resetDirtyState();
