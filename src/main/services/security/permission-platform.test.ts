@@ -29,6 +29,21 @@ const EXTERNAL = 'curl https://example.com' // network access
 const OUTSIDE_FS = 'ls ~/.ssh'
 const AMBIGUOUS = 'gh pr create' // writes to GitHub, but auto-runs inside seatbelt (read-only gh is sandbox-safe, #500)
 
+describe('local pnpm exec containment', () => {
+  it('requires containment and auto-run, and cannot request an unverified escape', () => {
+    const command = 'pnpm exec tsc --noEmit'
+    const opts = { workspaceRoot: root, sandboxEnabled: true, autoRun: true, classification: null }
+    assert.equal(decideShellPermission(command, opts).action, 'allow')
+    assert.equal(shellRequiresOutsideSandbox(command, root, true), false)
+    assert.equal(shellExpectedBlockEscalation(command, root, true).eligible, false)
+    assert.equal(
+      decideShellPermission(command, { ...opts, sandboxEnabled: false }).action,
+      'prompt',
+    )
+    assert.equal(decideShellPermission(command, { ...opts, autoRun: false }).action, 'prompt')
+  })
+})
+
 describe('heredoc followed by a newline-separated file read', () => {
   const command = "python3 - <<'PY'\nopen('a.txt', 'w').write('x')\nPY\nwc -l src/a.ts"
 
