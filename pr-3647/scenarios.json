@@ -140,6 +140,10 @@
     "label": "Sidebar thread sort"
   },
   {
+    "id": "sidebar-cleanup-ssh",
+    "label": "Cleanup for SSH pull requests"
+  },
+  {
     "id": "sidebar-cleanup-after-pr",
     "label": "Cleanup after merged or closed PRs"
   },
@@ -174,6 +178,18 @@
   {
     "id": "pr-relations",
     "label": "PR producing and related threads"
+  },
+  {
+    "id": "side-chats",
+    "label": "Side chats beside the main thread"
+  },
+  {
+    "id": "thread-context",
+    "label": "The thread Context panel"
+  },
+  {
+    "id": "side-chat-approval",
+    "label": "A side chat asks for approval over its parent thread"
   },
   {
     "id": "chat-layout-styling",
