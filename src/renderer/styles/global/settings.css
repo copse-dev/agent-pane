@@ -358,7 +358,7 @@ dialog.settings-overlay::backdrop {
   width: 96px;
   height: 96px;
   padding: var(--spacing-sm);
-  background: #ffffff;
+  background: var(--qr-background);
   border-radius: var(--radius-sm);
 }
 .mobile-companion-qr-image svg {

@@ -374,10 +374,9 @@ async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<
  */
 async function mountMobileCompanionQr(overlay: HTMLElement, api: ApiClient): Promise<void> {
   const status = await api.mobile.status()
-  if (!status.url || !status.qrSvg) return
-  qsRequired(overlay, '#mobile-companion-qr-image').innerHTML = status.qrSvg
-  qsRequired(overlay, '#mobile-companion-qr-url').textContent = status.url
-  qsRequired(overlay, '#mobile-companion-qr').hidden = false
+  qsRequired(overlay, '#mobile-companion-qr-image').innerHTML = status.qrSvg ?? ''
+  qsRequired(overlay, '#mobile-companion-qr-url').textContent = status.url ?? ''
+  qsRequired(overlay, '#mobile-companion-qr').hidden = !status.url || !status.qrSvg
 }
 
 /** Parse a `number`-kind field's form value, clamping to a non-negative integer. */
@@ -1903,7 +1902,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       void api.mobile.manage()
     },
   )
-  void mountMobileCompanionQr(overlay, api)
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
@@ -4741,6 +4739,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   overlay.addEventListener('settings-open', () => {
+    void mountMobileCompanionQr(overlay, api).catch((error: unknown) => {
+      qsRequired(overlay, '#mobile-companion-qr').hidden = true
+      console.error('[settings] Could not load Mobile Companion status:', error)
+    })
     appearanceBaseline = currentAppearance()
     appearanceCommitted = false
     resetDirtyState()
