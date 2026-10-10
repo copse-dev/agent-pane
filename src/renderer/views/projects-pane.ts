@@ -399,6 +399,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   let compactRows = false
   // Which project the list shows. Session-only: a fresh launch shows them all.
   let projectFilterId: string | null = null
+  // Narrow to threads with unlanded work (an open PR, or uncommitted/unpushed
+  // changes). Session-only, like the project filter; a thread whose PR/change
+  // state hasn't been fetched yet counts as matching so it isn't hidden before
+  // its data has loaded (see `threadNeedsCleanup`).
+  let needsCleanupOnly = false
   const filterLabel = el('span', { class: 'projects-filter-label' }, 'All projects')
   const projectFilterBtn = el(
     'button',
@@ -482,9 +487,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const chosen = projects.find((project) => project.id === projectFilterId)
     if (!chosen) projectFilterId = null
     const projectName = chosen ? projectDisplayName(chosen) : 'All projects'
-    filterLabel.textContent = projectName
-    projectFilterBtn.classList.toggle('is-filtering', chosen !== undefined)
-    projectFilterBtn.setAttribute('aria-label', `Show: ${projectName}`)
+    filterLabel.textContent = needsCleanupOnly ? `${projectName} · Needs cleanup` : projectName
+    projectFilterBtn.classList.toggle('is-filtering', chosen !== undefined || needsCleanupOnly)
+    projectFilterBtn.setAttribute(
+      'aria-label',
+      needsCleanupOnly ? `Show: ${projectName}, needs cleanup only` : `Show: ${projectName}`,
+    )
     sortLabel.textContent = SORT_LABELS[sidebarThreadSort]
     // The arrow points the way the list runs: newest, or A first, is down.
     sortDir.textContent = sidebarThreadSortReverse ? '↑' : '↓'
@@ -517,6 +525,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           render()
         },
       })),
+      { separator: true },
+      {
+        label: 'Needs cleanup only',
+        toggle: true,
+        checked: needsCleanupOnly,
+        onSelect: (): void => {
+          needsCleanupOnly = !needsCleanupOnly
+          render()
+        },
+      },
     ])
   })
   sortBtn.addEventListener('click', () => {
@@ -668,9 +686,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         const key = threadChangeKey(ref.projectId, ref.threadId)
         threadChangeInFlight.delete(key)
         const summary = results[i] ?? null
-        if (!sameThreadChangeSummary(threadChangeCache.get(key)?.summary ?? null, summary)) {
+        const previous = threadChangeCache.get(key)
+        if (!sameThreadChangeSummary(previous?.summary ?? null, summary)) {
           changed = true
         }
+        // The cleanup filter treats a never-checked thread as a match; once its
+        // first summary lands the filter must re-evaluate it even when the
+        // visible label (null -> null) stayed the same.
+        if (needsCleanupOnly && !previous) changed = true
         threadChangeCache.set(key, { summary, at: Date.now() })
       }
       // Only an unmounted pane must not redraw from a late answer.
@@ -939,6 +962,33 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     ensurePrLifecycles(refs)
     const states = refs.map((ref) => cachedPrLifecycle(githubPrKey(ref)) ?? 'unknown')
     return summarizeThreadPrStatus(states, refs)
+  }
+
+  /**
+   * Unlanded work: an open PR, or uncommitted/unpushed changes. Mirrors the
+   * row's own "has-changes-status"/"has-pr-status" badges so the filter agrees
+   * with what's on screen. A thread whose PR or change state hasn't been
+   * fetched yet counts as matching, not excluded — otherwise toggling the
+   * filter on would hide everything until each row happened to scroll into
+   * view and backfill (see the IntersectionObserver-gated fetches below).
+   */
+  function threadNeedsCleanup(project: Project, thread: SidebarThread): boolean {
+    // Filtering runs before pagination. Only rendered rows may start lookups.
+    if (
+      sidebarPrRefs(thread).some((ref) => {
+        const state = cachedPrLifecycle(githubPrKey(ref)) ?? 'unknown'
+        return state === 'open' || state === 'unknown'
+      })
+    )
+      return true
+    // An open PR still needs attention while its thread runs. Only local
+    // working-tree cleanup waits for the run to finish.
+    if (thread.status === 'running') return false
+    // PR lifecycle is available for SSH projects; local git summaries are not.
+    if (project.sshHost) return false
+    const cached = threadChangeCache.get(threadChangeKey(project.id, thread.id))
+    if (!cached) return true
+    return describeThreadChanges(cached.summary) !== null
   }
 
   // The quarantine notice shown when a project's folder could not be opened
@@ -1640,13 +1690,19 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             prRollup.kind === 'open' && conflictsForThread(thread),
           ),
         )
-      } else if (thread.status !== 'running' && thread.prRefs !== undefined && !project.sshHost) {
+      }
+      if (
+        (!prRollup || (needsCleanupOnly && prRollup.kind !== 'open')) &&
+        thread.status !== 'running' &&
+        thread.prRefs !== undefined &&
+        !project.sshHost
+      ) {
         const key = threadChangeKey(project.id, thread.id)
         threadChangeSeen.push({ projectId: project.id, threadId: thread.id })
         threadChangeSeenKeys.add(key)
         const cached = threadChangeCache.get(key)
         const changesLabel = describeThreadChanges(cached?.summary ?? null)
-        if (changesLabel) {
+        if (changesLabel && !prRollup) {
           chatRow.classList.add('has-changes-status')
           chatRow.append(chatChangesStatus(changesLabel))
         }
@@ -2151,7 +2207,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       // Automation runs are collated in the workspace-level Automations section
       // (#2511) instead of rendering inside their project by default.
       const conversationThreads = orderSidebarThreads(
-        matchingThreads.filter((thread) => thread.automation === undefined),
+        matchingThreads.filter(
+          (thread) =>
+            thread.automation === undefined &&
+            (!needsCleanupOnly || threadNeedsCleanup(project, thread)),
+        ),
         // A filter's matches stay newest first; the chosen order is for the browse list.
         isFiltering ? 'activity' : store.getState().sidebarThreadSort,
         !isFiltering && store.getState().sidebarThreadSortReverse,
@@ -2210,8 +2270,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         )
       } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads'))
+      } else if (isFiltering && !contentFilter.waiting && conversationThreads.length === 0) {
+        chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads need cleanup'))
       } else if (!isFiltering && visibleThreads.length === 0) {
-        chats.append(el('div', { class: 'sidebar-empty' }, 'No threads yet'))
+        chats.append(
+          el(
+            'div',
+            { class: 'sidebar-empty' },
+            needsCleanupOnly ? 'Nothing needs cleanup' : 'No threads yet',
+          ),
+        )
       }
 
       for (const thread of visibleThreads) {
@@ -2268,7 +2336,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (project.missing) continue
         owners.set(project.id, project)
         for (const thread of getSidebarThreads(store, project.id)) {
-          if (thread.automation === undefined) rows.push({ projectId: project.id, thread })
+          if (
+            thread.automation === undefined &&
+            (!needsCleanupOnly || threadNeedsCleanup(project, thread))
+          ) {
+            rows.push({ projectId: project.id, thread })
+          }
         }
       }
       const { sidebarThreadSort, sidebarThreadSortReverse } = store.getState()
@@ -2279,27 +2352,38 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           : [{ id: 'all', label: '', rows: ordered }]
       // The tree is gone in this layout, so a project with no threads would vanish
       // with it, taking its name and its "+" along. Keep one compact row for each,
-      // whether or not other projects have threads.
+      // whether or not other projects have threads. Skipped under the cleanup
+      // filter: there every project with nothing unlanded is meant to drop out,
+      // not reappear as an empty placeholder.
       const withThreads = new Set(ordered.map((row) => row.projectId))
-      const emptyProjectRows = Array.from(owners.values())
-        .filter((project) => !withThreads.has(project.id))
-        .map((project) => {
-          const nameRow = el(
-            'button',
-            { class: 'project-row', title: project.path },
-            el('span', { class: 'project-name' }, projectDisplayName(project)),
-          )
-          nameRow.addEventListener('click', () => {
-            switchProject(store, api, project.id)
-          })
-          return el(
-            'div',
-            { class: 'project-entry', 'data-project-id': project.id },
-            el('div', { class: 'project-line' }, nameRow, renderNewThreadButton(project)),
-          )
-        })
+      const emptyProjectRows = needsCleanupOnly
+        ? []
+        : Array.from(owners.values())
+            .filter((project) => !withThreads.has(project.id))
+            .map((project) => {
+              const nameRow = el(
+                'button',
+                { class: 'project-row', title: project.path },
+                el('span', { class: 'project-name' }, projectDisplayName(project)),
+              )
+              nameRow.addEventListener('click', () => {
+                switchProject(store, api, project.id)
+              })
+              return el(
+                'div',
+                { class: 'project-entry', 'data-project-id': project.id },
+                el('div', { class: 'project-line' }, nameRow, renderNewThreadButton(project)),
+              )
+            })
       if (ordered.length === 0) {
-        return [el('div', { class: 'sidebar-empty' }, 'No threads yet'), ...emptyProjectRows]
+        return [
+          el(
+            'div',
+            { class: 'sidebar-empty' },
+            needsCleanupOnly ? 'Nothing needs cleanup' : 'No threads yet',
+          ),
+          ...emptyProjectRows,
+        ]
       }
       return sections
         .map((section) => {

@@ -248,6 +248,12 @@ describe('agent tasks in terminal tab', () => {
     expect(panelText.trimEnd().endsWith('[output truncated]')).toBe(true)
     expect(panelText).not.toContain('\n30000')
 
+    // The cutoff above is deliberately chunk-dependent. Capture the stable
+    // beginning of the real output, retaining all truncation assertions.
+    await panel.execute((element) => {
+      element.scrollTop = 0
+    })
+    await expect(panel.$('.agent-task-command')).toBeDisplayedInViewport()
     await saveAppScreenshot('agent-tasks-over-cap-output.png')
     await scenario.assertComplete()
   })
