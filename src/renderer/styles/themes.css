@@ -134,6 +134,7 @@
   --accent-color: #f3bd4d !important;
   --text-on-accent: #2d2208 !important;
   --warning: #e4aa20;
+  --text-on-warning: #2d2208;
   --highlight-current-bg: #f3bd4d;
   --highlight-current-text: #2d2208;
 }
