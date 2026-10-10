@@ -61,6 +61,21 @@ For PR screenshot review and baseline acceptance, use
 [`pr-screenshot-review`](.agents/skills/pr-screenshot-review/SKILL.md) to distinguish intended
 updates, unrelated drift, and breakage before accepting all or committing selected candidates.
 
+For a small, related PR stack intended to land together, prefer one combined screenshot review
+at the tip using
+[`Reviewing a small PR stack once`](docs/testing-strategy.md#reviewing-a-small-pr-stack-once).
+Put the same `copse-screenshot-stack` declaration in every member's PR body, pinning the lower
+head SHAs in order; set lower declarations first and the tip last. Every visible change still
+needs its focused spec and visual evidence, and every PR must pass its other required checks.
+Intermediate screenshot drift is accepted through the stack gate; do not individually decline
+unreviewed lower candidates to simulate a deferral.
+
+Review the tip's cumulative image changes, including reference PNGs committed in lower layers.
+The tip needs combined CI coverage and an explicit screenshot decision even when there are no
+new candidates. Freeze the stack after approval and land lower PRs in order through the merge
+queue, then the tip. If code, pinned heads or membership changes, update every declaration and
+rerun tip verification. Ordinary PRs continue to use individual screenshot review.
+
 ### Tests must not create product backdoors
 
 An option, field, or flag written only by tests is not configuration; it is unsupported product API.

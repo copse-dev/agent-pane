@@ -145,6 +145,20 @@ jobs:
               return;
             }
 
+            if (pr.body?.includes('<!-- copse-screenshot-stack:') && pr.body.includes(`tip=#${number} -->`)) {
+              const declarations = [...pr.body.matchAll(/<!-- copse-screenshot-stack: [^\n]+ -->/g)];
+              const { createHash } = require('node:crypto');
+              const digest = declarations.length === 1
+                ? createHash('sha256').update(declarations[0][0]).digest('hex') : '';
+              const coverage = statuses.find((status) => status.context === 'Screenshot stack coverage');
+              if (coverage?.state !== 'success' || coverage.creator?.id !== 41898282 || !digest ||
+                  coverage.description !== `Stack coverage ${digest}`) {
+                refuse('the stack tip has not published combined screenshot coverage yet.');
+                return;
+              }
+              core.setOutput('stack-digest', digest);
+            }
+
             const branch = `screenshot-compare/pr-${number}/${sha12}`;
             let compareCommit;
             try {
@@ -289,6 +303,7 @@ jobs:
           HEAD_SHA: ${{ steps.validate.outputs.head-sha }}
           SELECTED: ${{ steps.validate.outputs.selected }}
           CANDIDATES: ${{ steps.validate.outputs.candidates }}
+          STACK_DIGEST: ${{ steps.validate.outputs.stack-digest }}
           TOKEN_MINTED: ${{ steps.app-token.outputs.token != '' }}
           PUSHED: ${{ steps.commit.outputs.pushed }}
           COMMIT: ${{ steps.commit.outputs.commit }}
@@ -329,10 +344,27 @@ jobs:
                 description: `Accepted by @${actor}; committed ${count} of ${total} screenshots as ${commit12}`,
                 target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
               });
+              const bindDecision = async (head) => {
+                if (/^[0-9a-f]{64}$/.test(process.env.STACK_DIGEST || '')) await github.rest.repos.createCommitStatus({
+                  owner, repo, sha: head, state: 'success', context: 'Screenshot stack decision',
+                  description: `Stack decision ${process.env.STACK_DIGEST}`,
+                  target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
+                });
+              };
+              await bindDecision(sha);
               // Do not clear the reminder if another push already superseded
               // the screenshot commit this selection made.
               const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
               if (parent.state === 'open' && parent.head.sha === process.env.COMMIT && parent.head.repo?.full_name === `${owner}/${repo}`) {
+                if (parent.body?.includes('<!-- copse-screenshot-stack:') &&
+                    parent.body.includes(`tip=#${number} -->`)) {
+                  await github.rest.repos.createCommitStatus({
+                    owner, repo, sha: process.env.COMMIT, state: 'success', context: 'Screenshot review',
+                    description: `Accepted by @${actor}; screenshot-only follow-up of ${sha12}`,
+                    target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
+                  });
+                  await bindDecision(process.env.COMMIT);
+                }
                 try {
                   await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'screenshots-need-review' });
                 } catch (error) {
@@ -343,7 +375,7 @@ jobs:
                 `**Reviewed:** accepted by @${actor}. The PR branch was advanced from \`${sha12}\` to ` +
                 `\`${commit12}\`, committing ${count} of ${total} changed screenshot${total === 1 ? '' : 's'}: ` +
                 `${selected.map((item) => `\`${item.name}\``).join(', ')}. ` +
-                'The others were not committed; CI re-runs on the new head without e2e.';
+                'The others were not committed; CI re-runs; declared stack tips repeat combined e2e, other PNG-only heads skip it.';
               const start = current.indexOf(stateStart);
               const end = current.indexOf(stateEnd, start);
               const block = `${stateStart}\n${decision}\n${stateEnd}`;

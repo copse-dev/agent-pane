@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
@@ -84,8 +85,8 @@ function trees(
 
 interface Scenario {
   label?: string
-  pr?: { state?: string; repo?: string; sha?: string }
-  statuses?: { context: string; state: string; description: string }[]
+  pr?: { state?: string; repo?: string; sha?: string; body?: string }
+  statuses?: { context: string; state: string; description: string; creator?: { id: number } }[]
   compareRef?: string | null
   parents?: string[]
   trees?: Map<string, Entry[]>
@@ -96,6 +97,10 @@ async function validate(scenario: Scenario = {}): Promise<Map<string, string>> {
   const layout = scenario.trees ?? trees()
   await execute('Validate the decision against the live head', {
     context,
+    require: (name: string): { createHash: typeof createHash } => {
+      assert.equal(name, 'node:crypto')
+      return { createHash }
+    },
     process: { env: { LABEL: scenario.label ?? 'accept-screenshots', PR_NUMBER: '123' } },
     core: {
       notice: () => {},
@@ -107,6 +112,7 @@ async function validate(scenario: Scenario = {}): Promise<Map<string, string>> {
           get: async () => ({
             data: {
               state: scenario.pr?.state ?? 'open',
+              body: scenario.pr?.body,
               head: {
                 ref: 'claude/feature',
                 sha: scenario.pr?.sha ?? HEAD,
@@ -152,6 +158,37 @@ async function validate(scenario: Scenario = {}): Promise<Map<string, string>> {
 }
 
 describe('screenshot review label validation', () => {
+  it('binds stack decisions to current combined coverage and refuses missing or stale coverage', async () => {
+    const body = `<!-- copse-screenshot-stack: #122@${HEAD} tip=#123 -->`
+    const digest = createHash('sha256').update(body).digest('hex')
+    const review = {
+      context: 'Screenshot review',
+      state: 'pending',
+      description: 'combined review',
+    }
+    const coverage = {
+      context: 'Screenshot stack coverage',
+      state: 'success',
+      description: `Stack coverage ${digest}`,
+      creator: { id: 41898282 },
+    }
+    const accepted = await validate({
+      label: 'decline-screenshots',
+      pr: { body },
+      statuses: [review, coverage],
+    })
+    assert.equal(accepted.get('outcome'), 'decline')
+    assert.equal(accepted.get('stack-digest'), digest)
+    for (const statuses of [
+      [review],
+      [review, { ...coverage, description: `Stack coverage ${'f'.repeat(64)}` }],
+      [review, { ...coverage, creator: { id: 123 } }],
+    ]) {
+      const refused = await validate({ label: 'decline-screenshots', pr: { body }, statuses })
+      assert.equal(refused.get('outcome'), 'refuse')
+      assert.match(refused.get('reason') ?? '', /combined screenshot coverage/)
+    }
+  })
   it('accepts a single compare commit on the live head that only adds or updates PNGs', async () => {
     const outputs = await validate()
     assert.equal(outputs.get('outcome'), 'accept')
@@ -272,6 +309,7 @@ async function record(
   comments = [{ id: 7, user: { type: 'Bot' }, body: EVIDENCE }],
   liveHead = env['COMPARE_COMMIT'] ?? HEAD,
   missingLabel = false,
+  body = '',
 ): Promise<Recorded> {
   const result: Recorded = { statuses: [], removed: [], created: [], updated: [] }
   const listComments = (): void => {}
@@ -294,6 +332,7 @@ async function record(
           get: async () => ({
             data: {
               state: 'open',
+              body,
               head: { sha: liveHead, repo: { full_name: 'copse-dev/agent-pane' } },
             },
           }),
@@ -372,6 +411,30 @@ describe('recording a screenshot review decision', () => {
     )
   })
 
+  it('preserves explicit stack-tip approval on the validated PNG-only follow-up', async () => {
+    const result = await record(
+      {
+        LABEL: 'accept-screenshots',
+        OUTCOME: 'accept',
+        PUSHED: 'true',
+        COMPARE_COMMIT: COMPARE,
+        TOKEN_MINTED: 'true',
+        STACK_DIGEST: 'd'.repeat(64),
+      },
+      undefined,
+      COMPARE,
+      false,
+      `<!-- copse-screenshot-stack: #122@${HEAD} tip=#123 -->`,
+    )
+    assert.deepEqual(
+      result.statuses.map((status) => status.sha),
+      [HEAD, HEAD, COMPARE, COMPARE],
+    )
+    assert.match(
+      result.statuses[2]?.description ?? '',
+      /Accepted by @reviewer; screenshot-only follow-up/,
+    )
+  })
   it('keeps a newer pushed head’s reminder when recording an older decision', async () => {
     for (const env of [
       { OUTCOME: 'decline' },
