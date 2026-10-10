@@ -984,7 +984,6 @@ export interface ApiClient {
   }
   appIcon: {
     apply: () => Promise<void>
-    setAutomationMode: (active: boolean) => Promise<void>
   }
   about: {
     /** The app version and the third-party licence report the build shipped. */
