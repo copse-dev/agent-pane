@@ -3,10 +3,6 @@
   flex-direction: column;
   background: var(--bg-elevated);
 }
-.is-context-panel .right-sidebar {
-  width: 100%;
-  flex: none;
-}
 .is-context-panel .context-host {
   flex: none;
 }
@@ -22,7 +18,6 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
   align-content: start;
-  line-height: 18px;
 }
 .thread-context-section {
   padding: 10px 16px;

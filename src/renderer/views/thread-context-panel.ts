@@ -454,31 +454,32 @@ export function mountThreadContextPane(
     archive.addEventListener('click', () => {
       if (project) store.emit('thread_archive_requested', project.id, thread.id)
     })
-    content.querySelector('[data-context-section="repos"]')?.after(
-      el(
-        'section',
-        { class: 'thread-context-section', 'data-context-section': 'storage' },
-        el('h5', {}, 'Storage'),
+    content
+      .querySelector('[data-context-section="repos"]')
+      ?.after(
         el(
-          'div',
-          { class: 'thread-context-row' },
-          el('span', { class: 'thread-context-main' }, 'Retained on disk'),
+          'section',
+          { class: 'thread-context-section', 'data-context-section': 'storage' },
+          el('h5', {}, 'Storage'),
           el(
-            'span',
-            { 'data-context-storage-size': '' },
-            storageKey === activeStorageKey() ? storageText : 'Calculating…',
+            'div',
+            { class: 'thread-context-row' },
+            el('span', { class: 'thread-context-main' }, 'Retained on disk'),
+            el(
+              'span',
+              { 'data-context-storage-size': '' },
+              storageKey === activeStorageKey() ? storageText : 'Calculating…',
+            ),
           ),
+          el(
+            'p',
+            { class: 'thread-context-empty' },
+            'Saved thread files and its dedicated worktree. Shared project files are excluded.',
+          ),
+          el('div', { class: 'thread-context-section-actions' }, archive),
         ),
-        el(
-          'p',
-          { class: 'thread-context-empty' },
-          'Saved thread files and its dedicated worktree. Shared project files are excluded.',
-        ),
-        el('div', { class: 'thread-context-section-actions' }, archive),
-      ),
-    )
+      )
     viewerRoot.append(content)
-
   }
 
   /** Backlinks come from the index; ignore an answer for a thread since closed. */
