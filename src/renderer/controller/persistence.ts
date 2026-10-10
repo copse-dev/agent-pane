@@ -170,15 +170,43 @@ export function markNavigationRestored(restored: MainWindowNavigation): void {
   lastNavigation = restored
 }
 
+/**
+ * The project a dispatched switch has already persisted as selected, while that
+ * switch is still applying; `null` when no switch is in flight.
+ *
+ * Until the switch applies, the store still names the *outgoing* project, and
+ * every writer that persists navigation from the store — the autosave flush, a
+ * sidebar reorder, removing some other project — would put that project back.
+ * Main mirrors navigation into the legacy `activeProjectId` key, which
+ * project-scoped reads (`roadmap:list` and the rest of the project store) resolve
+ * their directory from, and the switch repaints without awaiting its final
+ * navigation write. So the outgoing project, written mid-switch, was what those
+ * reads saw on `workspace_changed`: the roadmap listed the previous project's
+ * notes. While held, a write naming any other project is dropped, which keeps
+ * the persisted selection on the target from dispatch onwards.
+ */
+let navigationHeldFor: string | null = null
+
+/**
+ * Called by a project switch as it persists its target (`projectId`), and with
+ * `null` once that switch is applied, superseded or abandoned — before any write
+ * that puts the outgoing project back.
+ */
+export function holdNavigation(projectId: string | null): void {
+  navigationHeldFor = projectId
+}
+
 function serializedNavigation(api: ApiClient, navigation: MainWindowNavigation): Promise<void> {
   if (!ownsNavigation || !navigationRestored) return Promise.resolve()
   if (
-    lastNavigation !== null &&
-    lastNavigation.activeProjectId === navigation.activeProjectId &&
-    lastNavigation.activeThreadId === navigation.activeThreadId
+    (navigationHeldFor !== null && navigation.activeProjectId !== navigationHeldFor) ||
+    (lastNavigation !== null &&
+      lastNavigation.activeProjectId === navigation.activeProjectId &&
+      lastNavigation.activeThreadId === navigation.activeThreadId)
   ) {
-    // The value is recorded before IPC finishes. Callers that await navigation
-    // before reading project-scoped stores must also await that pending write.
+    // Held for another project, or unchanged. An unchanged value is recorded
+    // before IPC finishes, so callers that await navigation before reading
+    // project-scoped stores must also await that pending write.
     return (writeChains.get('mainWindow:navigation') ?? Promise.resolve()).then(() => undefined)
   }
   lastNavigation = navigation
@@ -291,6 +319,7 @@ export function __resetPersistenceForTest(): void {
   ownsNavigation = true
   navigationRestored = true
   lastNavigation = null
+  navigationHeldFor = null
 }
 
 export async function loadProjects(api: ApiClient): Promise<{
