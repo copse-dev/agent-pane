@@ -8,7 +8,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
-import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
+import { E2E_SETTINGS_BASELINE, resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 
 const USER_DATA = copseUserDataDir()
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
@@ -55,6 +55,7 @@ export function seedSyntaxContrastFixture(workspaceRoot: string, theme: 'light' 
   writeFileSync(
     SETTINGS_PATH,
     JSON.stringify({
+      ...E2E_SETTINGS_BASELINE,
       onboardingCompleted: true,
       theme,
       uiTintStrength: 'off',

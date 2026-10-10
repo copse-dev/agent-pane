@@ -16,6 +16,15 @@ export interface ProductAnnouncement {
  * Currently relevant, shipped announcements, in presentation order. Add an
  * entry with the change it announces; remove retired entries so new installs
  * are not greeted by years of history. Never reuse an ID for a different change.
- * Empty until a real change graduates — Compact is still experimental.
  */
-export const PRODUCT_ANNOUNCEMENTS: readonly ProductAnnouncement[] = []
+export const PRODUCT_ANNOUNCEMENTS: readonly ProductAnnouncement[] = [
+  {
+    id: 'concise-threads-default-v1',
+    title: 'Concise threads are now on',
+    message:
+      'For highly capable models, threads now show results and the closing summary. Tool calls and reasoning are hidden while a turn runs and once it finishes.',
+    detail:
+      'Use Show steps under any turn to see everything, or turn this off in Settings → Appearance.',
+    settingsAction: { label: 'Appearance settings', section: 'appearance' },
+  },
+]

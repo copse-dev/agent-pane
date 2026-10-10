@@ -10,9 +10,11 @@
 // composite scale is a different ruler (see `intellect-lookup.ts`) and never
 // qualifies; an unsourced model keeps the full view.
 //
-// Experimental and off by default: Settings → Experimental → Concise threads
+// On by default: Settings → Appearance → Concise threads
 // (`conciseThreadsEnabled`, held in app state so rendering reads it
-// synchronously). With it off, every transcript renders in full.
+// synchronously). With it off, every transcript renders in full. With it on, a
+// finished turn opens in full from its Show steps footer, and the running turn
+// from the activity row.
 //
 // A turn that *failed* is exempt: the model never saw that error, so it cannot
 // have handled it, and hiding it would leave a stopped spinner and nothing else.
@@ -21,7 +23,10 @@ import { resolveModelIntellect } from '@copse/llm/intellect-lookup.ts'
 import type { Message, Thread, ToolCall } from '@shared/types'
 import { formatTodoProgress } from '@shared/todos/todo-logic.ts'
 import { getToolCallLabel, shellCommandLabel } from '@shared/tools/tool-display.ts'
+import { THREAD_PROPOSAL_TOOL } from '@shared/threads/thread-proposal.ts'
+import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { interruptionCause, type InterruptionCause } from './turn-interruption.ts'
 
 /** Canonical intellect a model must exceed for its turns to render concisely. */
 export const CONCISE_THREAD_MIN_INTELLECT = 50
@@ -90,6 +95,126 @@ export function turnStartId(
     if (msg?.role === 'user') return msg.id
   }
   return null
+}
+
+/**
+ * Whether another assistant bubble follows message `index` in the same turn: the
+ * next user prompt ends the search, so a finished turn's last bubble is not made
+ * intermediate by the turns after it.
+ */
+export function hasLaterAssistantInTurn(messages: readonly Message[], index: number): boolean {
+  for (let i = index + 1; i < messages.length; i++) {
+    const role = messages[i]?.role
+    if (role === 'user') return false
+    if (role === 'assistant') return true
+  }
+  return false
+}
+
+/** Offers to the user stay painted in the concise view, so they are not hidden work. */
+function isOfferCall(toolCall: ToolCall): boolean {
+  return toolCall.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(toolCall)
+}
+
+/**
+ * Whether the concise view collapses message `index` to nothing: process-only,
+ * with no text, screenshots or other produced output to show. Mirrors the
+ * stylesheet's rule, from data, so chrome that belongs to a bubble (the model
+ * label, the agent marker) can move to the next bubble that is actually painted.
+ */
+export function isConciseCollapsedMessage(
+  messages: readonly Message[],
+  index: number,
+  enabled: boolean,
+): boolean {
+  const msg = messages[index]
+  if (!enabled || !msg || !isConciseMessage(msg)) return false
+  const process =
+    isConciseWorkingMessage(msg) ||
+    (isConciseStepsMessage(msg) && hasLaterAssistantInTurn(messages, index))
+  if (!process) return false
+  const producesOutput =
+    (msg.visualEvidence?.length ?? 0) > 0 ||
+    (msg.canvasArtefacts?.length ?? 0) > 0 ||
+    msg.toolCalls.some((toolCall) => (toolCall.images?.length ?? 0) > 0 || isOfferCall(toolCall))
+  return !producesOutput
+}
+
+/** What a finished concise turn hides, for its Show steps footer. */
+export interface ConciseTurnSummary {
+  /** The prompt that started the turn; the key its expansion is stored under. */
+  startId: string
+  /** Every message of the turn, prompt first, so the footer can sit after the last one rendered. */
+  messageIds: string[]
+  /** Tool calls the concise view hides, across the whole turn. */
+  toolCallCount: number
+  /** Lines the turn's edits added and removed, or null when none of its tool calls edited a file. */
+  edits: { additions: number; deletions: number } | null
+  /** Whether the view hides anything to open: tool calls or reasoning. */
+  hasHiddenSteps: boolean
+  /** Set when the user cut the turn short; the hidden tool card carried the only note. */
+  interruption: InterruptionCause | null
+}
+
+function hasReasoning(msg: Pick<Message, 'reasoning' | 'reasoningBlocks'>): boolean {
+  return Boolean(msg.reasoning?.trim()) || (msg.reasoningBlocks?.length ?? 0) > 0
+}
+
+/**
+ * The turns of a thread that the concise view abridges, in order. A turn is
+ * listed when one of its assistant bubbles is concise and either hides something
+ * (tool calls, reasoning) or ended by the user's Stop — in a stopped turn the
+ * interruption note lives on a tool card the view hides, so the footer repeats it.
+ * Turns from models below the gate are never listed: they render in full.
+ */
+export function conciseTurnSummaries(messages: readonly Message[]): ConciseTurnSummary[] {
+  const summaries: ConciseTurnSummary[] = []
+  let start = -1
+  const close = (end: number): void => {
+    const first = messages[start]
+    if (!first) return
+    const turn = messages.slice(start, end)
+    const assistants = turn.filter((msg) => msg.role === 'assistant')
+    if (!assistants.some(isConciseMessage)) return
+    // Only concise bubbles hide their tool cards, and offer cards stay visible
+    // even there: what the footer counts is what the view actually hides.
+    const hiddenCalls = assistants
+      .filter(isConciseMessage)
+      .flatMap((msg) => msg.toolCalls)
+      .filter((toolCall) => !isOfferCall(toolCall))
+    const toolCallCount = hiddenCalls.length
+    const last = assistants.at(-1)
+    const outcome = last?.turnOutcome
+    const interruption =
+      outcome?.status === 'cancelled' && outcome.source === 'user'
+        ? interruptionCause(outcome, messages[end])
+        : null
+    const edits = hiddenCalls.reduce<ConciseTurnSummary['edits']>((total, toolCall) => {
+      if (!toolCall.editStats) return total
+      return {
+        additions: (total?.additions ?? 0) + toolCall.editStats.additions,
+        deletions: (total?.deletions ?? 0) + toolCall.editStats.deletions,
+      }
+    }, null)
+    const hasHiddenSteps =
+      toolCallCount > 0 || assistants.filter(isConciseMessage).some(hasReasoning)
+    if (!hasHiddenSteps && interruption === null) return
+    summaries.push({
+      startId: first.id,
+      messageIds: turn.map((msg) => msg.id),
+      toolCallCount,
+      edits,
+      hasHiddenSteps,
+      interruption,
+    })
+  }
+  for (const [index, msg] of messages.entries()) {
+    if (msg.role !== 'user') continue
+    if (start >= 0) close(index)
+    start = index
+  }
+  if (start >= 0) close(messages.length)
+  return summaries
 }
 
 /** The id of the newest user prompt: the turn that is live when a thread is running. */

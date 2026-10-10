@@ -4,6 +4,9 @@ import assert from 'node:assert/strict'
 import type { Message, Thread, ToolCall, TurnOutcome } from '@shared/types'
 import {
   conciseActivityLabel,
+  conciseTurnSummaries,
+  hasLaterAssistantInTurn,
+  isConciseCollapsedMessage,
   isConciseMessage,
   isConciseThread,
   isConciseThreadModel,
@@ -205,5 +208,184 @@ describe('turn identity', () => {
   it('finds the live turn from the newest prompt', () => {
     assert.equal(liveTurnStartId(messages), 'u2')
     assert.equal(liveTurnStartId([]), null)
+  })
+})
+
+describe('concise turn summaries', () => {
+  const prompt = (id: string, overrides: Partial<Message> = {}): Message =>
+    message({ id, role: 'user', content: 'Do it', ...overrides })
+  const reply = (id: string, overrides: Partial<Message> = {}): Message =>
+    message({ id, model: CAPABLE, ...overrides })
+  const stopped = (overrides: Partial<TurnOutcome> = {}): TurnOutcome => ({
+    ...failedOutcome(),
+    status: 'cancelled',
+    source: 'user',
+    ...overrides,
+  })
+
+  it('counts only what the view hides: not below-gate bubbles, not offer cards', () => {
+    const edit = { additions: 7, deletions: 3 }
+    const [summary] = conciseTurnSummaries([
+      prompt('u1'),
+      reply('a1', { toolCalls: [tool({ id: 't1', editStats: edit })] }),
+      reply('a2', { model: MODEST, toolCalls: [tool({ id: 't2', editStats: edit })] }),
+      reply('a3', {
+        toolCalls: [tool({ id: 't3', name: 'propose_thread', editStats: edit })],
+      }),
+    ])
+    assert.equal(summary?.toolCallCount, 1)
+    assert.deepEqual(summary.edits, edit)
+  })
+
+  it('lists a concise turn that hid tool calls, with the whole turn’s calls', () => {
+    const summaries = conciseTurnSummaries([
+      prompt('u1'),
+      reply('a1', { toolCalls: [tool({ id: 't1' }), tool({ id: 't2' })] }),
+      reply('a2', { toolCalls: [tool({ id: 't3' })] }),
+    ])
+    assert.deepEqual(summaries, [
+      {
+        startId: 'u1',
+        messageIds: ['u1', 'a1', 'a2'],
+        toolCallCount: 3,
+        edits: null,
+        hasHiddenSteps: true,
+        interruption: null,
+      },
+    ])
+  })
+
+  it('skips turns that hide nothing, from models below the gate, or before any prompt', () => {
+    assert.deepEqual(
+      conciseTurnSummaries([
+        message({ id: 'a0', model: CAPABLE, toolCalls: [tool()] }),
+        prompt('u1'),
+        reply('a1'),
+        prompt('u2'),
+        message({ id: 'a2', model: MODEST, toolCalls: [tool()] }),
+      ]),
+      [],
+    )
+  })
+
+  it('totals the lines the turn’s edits changed, across its bubbles', () => {
+    const [summary] = conciseTurnSummaries([
+      prompt('u1'),
+      reply('a1', {
+        toolCalls: [tool({ editStats: { additions: 4, deletions: 2 } }), tool({ id: 't2' })],
+      }),
+      reply('a2', { toolCalls: [tool({ id: 't3', editStats: { additions: 1, deletions: 0 } })] }),
+    ])
+    assert.deepEqual(summary?.edits, { additions: 5, deletions: 2 })
+  })
+
+  it('counts reasoning as a hidden step', () => {
+    const [summary] = conciseTurnSummaries([prompt('u1'), reply('a1', { reasoning: 'Hmm.' })])
+    assert.equal(summary?.hasHiddenSteps, true)
+    assert.equal(summary.toolCallCount, 0)
+  })
+
+  it('keys each turn by its own prompt and judges the model per message', () => {
+    const summaries = conciseTurnSummaries([
+      prompt('u1'),
+      message({ id: 'a1', model: MODEST, toolCalls: [tool()] }),
+      prompt('u2'),
+      reply('a2', { toolCalls: [tool()] }),
+    ])
+    assert.deepEqual(
+      summaries.map((turn) => turn.startId),
+      ['u2'],
+    )
+  })
+
+  it('lists a stopped turn even when it did no work, naming who stopped it', () => {
+    assert.deepEqual(
+      conciseTurnSummaries([prompt('u1'), reply('a1', { turnOutcome: stopped() })]),
+      [
+        {
+          startId: 'u1',
+          messageIds: ['u1', 'a1'],
+          toolCallCount: 0,
+          edits: null,
+          hasHiddenSteps: false,
+          interruption: 'user',
+        },
+      ],
+    )
+    const [sentNew] = conciseTurnSummaries([
+      prompt('u1'),
+      reply('a1', { toolCalls: [tool()], turnOutcome: stopped({ userAbort: 'send_now' }) }),
+      prompt('u2'),
+    ])
+    assert.equal(sentNew?.interruption, 'message')
+  })
+
+  it('does not call a failed or host-cancelled turn a user interruption', () => {
+    const [failed] = conciseTurnSummaries([
+      prompt('u1'),
+      reply('a1', { toolCalls: [tool()], turnOutcome: failedOutcome() }),
+    ])
+    assert.equal(failed?.interruption, null)
+    const [host] = conciseTurnSummaries([
+      prompt('u1'),
+      reply('a1', { toolCalls: [tool()], turnOutcome: stopped({ source: 'host' }) }),
+    ])
+    assert.equal(host?.interruption, null)
+  })
+})
+
+describe('collapsed concise bubbles', () => {
+  const steps = message({ id: 'a1', model: CAPABLE, toolCalls: [tool()] })
+  const summary = message({ id: 'a2', model: CAPABLE })
+
+  it('collapses a process-only bubble once a later assistant bubble exists', () => {
+    assert.equal(isConciseCollapsedMessage([steps, summary], 0, true), true)
+    assert.equal(isConciseCollapsedMessage([steps, summary], 1, true), false)
+  })
+
+  it('keeps a bubble that carries a thread proposal or reviewer-input card', () => {
+    for (const name of ['propose_thread', 'request_review_input']) {
+      const offer = message({ id: 'a1', model: CAPABLE, toolCalls: [tool({ name })] })
+      assert.equal(isConciseCollapsedMessage([offer, summary], 0, true), false, name)
+    }
+  })
+
+  it('stops looking for a later bubble at the next user prompt', () => {
+    const earlier = message({ id: 'a1', model: CAPABLE, toolCalls: [tool()] })
+    const nextPrompt = message({ id: 'u2', role: 'user', content: 'Again' })
+    const nextReply = message({ id: 'a2', model: CAPABLE })
+    const thread = [earlier, nextPrompt, nextReply]
+    assert.equal(hasLaterAssistantInTurn(thread, 0), false)
+    assert.equal(isConciseCollapsedMessage(thread, 0, true), false)
+    assert.equal(hasLaterAssistantInTurn([earlier, nextReply], 0), true)
+  })
+
+  it('keeps the turn’s last bubble even when it has tool calls, until a later one arrives', () => {
+    assert.equal(isConciseCollapsedMessage([steps], 0, true), false)
+  })
+
+  it('collapses a bubble with a tool running, since its text is narration', () => {
+    const running = message({ model: CAPABLE, toolCalls: [tool({ status: 'running' })] })
+    assert.equal(isConciseCollapsedMessage([running], 0, true), true)
+  })
+
+  it('keeps a bubble that produced a screenshot, and a failed turn’s text', () => {
+    const shot = message({
+      model: CAPABLE,
+      toolCalls: [
+        tool({
+          images: [{ dataUrl: 'data:image/png;base64,AA', name: 's.png', kind: 'screenshot' }],
+        }),
+      ],
+    })
+    assert.equal(isConciseCollapsedMessage([shot, summary], 0, true), false)
+    const failed = message({ model: CAPABLE, toolCalls: [tool()], turnOutcome: failedOutcome() })
+    assert.equal(isConciseCollapsedMessage([failed, summary], 0, true), false)
+  })
+
+  it('collapses nothing with the view off or for a model below the gate', () => {
+    assert.equal(isConciseCollapsedMessage([steps, summary], 0, false), false)
+    const modest = message({ model: MODEST, toolCalls: [tool()] })
+    assert.equal(isConciseCollapsedMessage([modest, summary], 0, true), false)
   })
 })

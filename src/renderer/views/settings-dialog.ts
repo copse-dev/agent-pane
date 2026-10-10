@@ -313,6 +313,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // external links to the system browser and marks them with an external icon.
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
   { name: 'animateAgentAvatars', kind: 'checkbox', default: true, save: true },
+  { name: 'conciseThreadsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'alertOnInteraction', kind: 'checkbox', default: true, save: true },
   { name: 'alertOnThreadFinished', kind: 'checkbox', default: true, save: true },
   { name: 'alertSystemNotification', kind: 'checkbox', default: true, save: true },
@@ -326,7 +327,6 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'conciseThreadsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
@@ -1376,6 +1376,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </p>
             </fieldset>
 
+            <fieldset data-testid="settings-concise-threads">
+              <legend>Concise threads</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="conciseThreadsEnabled" aria-describedby="concise-threads-hint" />
+                Show only the results of turns from highly capable models
+              </label>
+              <p class="field-hint" id="concise-threads-hint">
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
+                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                tool errors the model recovers from stay hidden, and every finished turn has a
+                Show steps button to open it in full; while a model works, you see what it is
+                doing now. Turn off to always show the full thread. Other models always show the
+                full thread.
+              </p>
+            </fieldset>
+
             <fieldset>
               <legend>Display</legend>
               <label>
@@ -1580,20 +1596,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 When a turn ends with one clearly valuable next move, it appears as placeholder
                 text in the message box — press Tab to accept it, or just type to ignore it.
                 Uses the small-tasks model; most turns show nothing.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>Concise threads</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="conciseThreadsEnabled" />
-                Show only the results of turns from highly capable models
-              </label>
-              <p class="field-hint">
-                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
-                tool errors the model recovers from stay hidden; while it works, you see what it
-                is doing now. Other models always show the full thread.
               </p>
             </fieldset>
 

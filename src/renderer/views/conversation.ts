@@ -138,7 +138,17 @@ import {
   turnStartId,
   isConciseThread,
   syncConciseMessageClasses,
+  conciseTurnSummaries,
+  hasLaterAssistantInTurn,
+  isConciseCollapsedMessage,
+  isConciseStepsMessage,
+  type ConciseTurnSummary,
 } from './concise-thread.ts'
+import {
+  CONCISE_TURN_FOOTER_CLASS,
+  createConciseTurnFooter,
+  updateConciseTurnFooter,
+} from './concise-turn-footer.ts'
 import { createReviewFindingsCardEl } from './review-findings-card.ts'
 import {
   dismissComparison,
@@ -185,10 +195,10 @@ import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { trimSelectionText } from '../dom/markdown-quote.ts'
 import { bindSelectionQuote } from '../dom/selection-quote.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
-import type { QueuedUserMessage, TurnOutcome } from '@shared/types'
+import type { QueuedUserMessage } from '@shared/types'
+import { interruptionCause, interruptionNote, type InterruptionCause } from './turn-interruption.ts'
 
 type ToolCardStatus = ToolCall['status'] | 'interrupted'
-type InterruptionCause = 'message' | 'user'
 
 // The host records cancelled ACP calls as errors so the next model does not
 // assume they completed. Their transcript presentation can still distinguish a
@@ -202,16 +212,6 @@ const userInterruptedCalls = new WeakMap<ToolCall, InterruptionCause>()
 // after a change that can move an interruption. `renderToolCards` runs once per
 // message; walking the whole thread on every call was quadratic per rebuild.
 const markedTranscripts = new WeakSet<readonly Message[]>()
-
-function interruptionCause(outcome: TurnOutcome, next: Message | undefined): InterruptionCause {
-  if (next?.role !== 'user' || next.origin !== undefined) return 'user'
-  // The renderer that aborted the run recorded how: a prompt queued mid-run and
-  // drained after an explicit Stop is adjacent too, and must not be blamed.
-  if (outcome.userAbort !== undefined) return outcome.userAbort === 'send_now' ? 'message' : 'user'
-  // Turns recorded before `userAbort`: send-now queues the human bubble before
-  // the abort settles, while a prompt sent after a Stop has a later timestamp.
-  return next.createdAt <= outcome.endedAt ? 'message' : 'user'
-}
 
 function markUserInterruptedCalls(thread: Thread | undefined): void {
   if (!thread || markedTranscripts.has(thread.messages)) return
@@ -249,9 +249,7 @@ function cardStatus(toolCalls: readonly ToolCall[]): ToolCardStatus {
 }
 
 function interruptionLabel(call: ToolCall): string {
-  return userInterruption(call) === 'message'
-    ? 'Interrupted when you sent a new message.'
-    : 'Interrupted by you.'
+  return interruptionNote(userInterruption(call) ?? 'user')
 }
 
 function syncRollupInterruptionNote(body: HTMLElement, calls: readonly ToolCall[]): void {
@@ -2659,14 +2657,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottomBtn,
   )
 
-  // The concise turn the user opened to debug, by its prompt's id. UI-only: it is
-  // never persisted, and only that turn renders in full (as with the setting off).
-  let expandedConciseTurnId: string | null = null
-  /** The experimental setting as it applies to one message: off inside the expanded turn. */
+  // The concise turns the user opened to debug, by their prompts' ids. UI-only:
+  // never persisted, and only those turns render in full (as with the setting
+  // off). A turn stays open after it finishes, until its footer closes it.
+  const expandedConciseTurns = new Set<string>()
+  let conciseFooterSyncQueued = false
+  /** The concise setting as it applies to one message: off inside an expanded turn. */
   function conciseEnabledFor(thread: Thread | undefined, messageId: string): boolean {
     const enabled = store.getState().conciseThreadsEnabled
-    if (!enabled || expandedConciseTurnId === null || !thread) return enabled
-    return turnStartId(thread.messages, messageId) !== expandedConciseTurnId
+    if (!enabled || expandedConciseTurns.size === 0 || !thread) return enabled
+    const turn = turnStartId(thread.messages, messageId)
+    return turn === null || !expandedConciseTurns.has(turn)
   }
 
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
@@ -2686,7 +2687,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (!thread || !isConciseTurnExpandable(thread)) return false
     const turn = liveTurnStartId(thread.messages)
     if (turn === null) return false
-    expandedConciseTurnId = expandedConciseTurnId === null ? turn : null
+    if (!expandedConciseTurns.delete(turn)) expandedConciseTurns.add(turn)
     syncConciseThreadClasses()
     scrollToBottom()
     return true
@@ -3354,6 +3355,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const listResizeObserver =
     typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncStickyImagePreview)
   listResizeObserver?.observe(list)
+  // Messages arrive one at a time and in older-history batches; every one may
+  // end a turn, so the footers follow the list's own children.
+  const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync)
+  conciseFooterObserver.observe(list, { childList: true })
   // A wheel-up that a nested scroller (a long code block, tool output) takes
   // for itself leaves the transcript where it is; unpinning on it would stop
   // autoscroll with the view still at the bottom and no jump button to resume.
@@ -3426,7 +3431,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const label = conciseLabel ?? requested
     // While a concise turn runs, the row opens that turn's steps.
     const expandable = thread !== undefined && isConciseTurnExpandable(thread)
-    const expanded = expandable && expandedConciseTurnId !== null
+    const liveTurn = thread ? liveTurnStartId(thread.messages) : null
+    const expanded = expandable && liveTurn !== null && expandedConciseTurns.has(liveTurn)
     activityBar.setAttribute('role', expandable ? 'button' : 'status')
     activityBar.classList.toggle('agent-activity-expandable', expandable)
     activityBar.classList.toggle('agent-activity-expanded', expanded)
@@ -4406,7 +4412,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     })
     let prevLabel: string | undefined
     let prevAgentKey: string | undefined
-    for (const msg of thread.messages) {
+    for (const [index, msg] of thread.messages.entries()) {
       // A user turn ends an agent's stretch: its next reply gets its own marker,
       // so the one that animates sits beside the latest reply rather than at the
       // agent's first reply far up the transcript (and offscreen, hence static).
@@ -4414,6 +4420,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (msg.role !== 'assistant') continue
       const msgEl = rendered.get(msg.id)
       if (!msgEl) continue
+      // The concise view paints nothing for a process-only bubble, so its model
+      // label and agent marker would never be seen: leave them to the next
+      // bubble that is painted, which then starts the segment.
+      if (isConciseCollapsedMessage(thread.messages, index, conciseEnabledFor(thread, msg.id))) {
+        msgEl.querySelector('.message-model, .message-agent')?.remove()
+        continue
+      }
       const existing = msgEl.querySelector<HTMLElement>('.message-model')
       const model = msg.model
       const text = model ? formatPrimaryChatModelLabel(model, msg.parameters) : undefined
@@ -4459,19 +4472,135 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   /**
-   * Re-apply the concise view to every rendered message, for when the
-   * experimental setting flips; the activity row picks it up on its next label.
+   * Re-apply the concise view to every rendered message, for when the setting
+   * flips or a turn opens; the activity row picks it up on its next label.
    */
-  function syncConciseThreadClasses(): void {
+  function syncConciseThreadClasses(holdPlace = true): void {
     const thread = getActiveThread(store)
     if (!thread) return
+    // Heights change as tool cards appear and vanish, so hold the reader's place
+    // by the first visible item rather than by the numeric scroll offset.
+    const wasPinned = pinnedToBottom
+    const prevScrollTop = list.scrollTop
+    const readingAnchor = holdPlace && !wasPinned ? captureReadingAnchor() : null
     const byId = new Map(thread.messages.map((msg) => [msg.id, msg]))
     list.querySelectorAll<HTMLElement>('[data-message-id]').forEach((msgEl) => {
       const id = msgEl.dataset['messageId'] ?? ''
       const msg = byId.get(id)
       if (msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, id))
     })
+    scheduleConciseTurnFooterSync()
+    // Which bubbles paint decides where each model segment's label sits.
+    syncModelLabels()
     syncFromStore()
+    if (!holdPlace) return
+    if (wasPinned) scrollToBottom()
+    else restoreReadingAnchor(readingAnchor, prevScrollTop)
+  }
+
+  /**
+   * Reconcile the Show steps footers with the thread: one under each finished
+   * concise turn, after its last rendered message and any cards trailing it.
+   * Idempotent and in place, so a focused toggle keeps focus and a pass that
+   * changes nothing mutates nothing (the list observer below would re-fire).
+   */
+  function syncConciseTurnFooters(): void {
+    conciseFooterSyncQueued = false
+    if (disposed) return
+    const thread = getActiveThread(store)
+    const enabled = store.getState().conciseThreadsEnabled
+    const liveTurn = thread?.status === 'running' ? liveTurnStartId(thread.messages) : null
+    // A steps bubble followed by another in its own turn is narration; the
+    // stylesheet can't stop a sibling search at the next prompt, so say it here.
+    if (thread) {
+      for (const [index, msg] of thread.messages.entries()) {
+        const msgEl = list.querySelector<HTMLElement>(`:scope > [data-message-id="${msg.id}"]`)
+        msgEl?.classList.toggle(
+          'msg-concise-mid',
+          conciseEnabledFor(thread, msg.id) &&
+            isConciseStepsMessage(msg) &&
+            hasLaterAssistantInTurn(thread.messages, index),
+        )
+      }
+    }
+    const wanted = new Map<string, { summary: ConciseTurnSummary; anchor: HTMLElement }>()
+    if (thread && enabled) {
+      for (const summary of conciseTurnSummaries(thread.messages)) {
+        // The running turn is opened from the activity row instead.
+        if (summary.startId === liveTurn) continue
+        const anchor = lastRenderedMessageEl(summary.messageIds)
+        if (anchor) wanted.set(summary.startId, { summary, anchor })
+      }
+    }
+    const existing = new Map<string, HTMLElement>()
+    list.querySelectorAll<HTMLElement>(`:scope > .${CONCISE_TURN_FOOTER_CLASS}`).forEach((node) => {
+      const key = node.dataset['conciseTurnFor'] ?? ''
+      if (wanted.has(key) && !existing.has(key)) existing.set(key, node)
+      else node.remove()
+    })
+    for (const [startId, { summary, anchor }] of wanted) {
+      const expanded = expandedConciseTurns.has(startId)
+      let footer = existing.get(startId)
+      if (footer) updateConciseTurnFooter(footer, summary, expanded)
+      else {
+        footer = createConciseTurnFooter(summary, expanded, () => {
+          toggleConciseTurnFromFooter(startId)
+        })
+      }
+      // Cards that belong to the turn's last message (recovery, review, hooks)
+      // stay between it and the footer. The activity row and trailing thread
+      // cards stay after it: new messages are inserted ahead of the row.
+      let after: Element = anchor
+      while (
+        after.nextElementSibling &&
+        !after.nextElementSibling.matches(
+          `[data-message-id], .agent-activity, .${CONCISE_TURN_FOOTER_CLASS}, [data-review-report-card]:not([data-review-report-for]), [data-comparison-card]`,
+        )
+      ) {
+        after = after.nextElementSibling
+      }
+      if (footer.previousElementSibling !== after) after.after(footer)
+    }
+  }
+
+  /** Coalesce the several store events one turn raises into a single footer pass. */
+  function scheduleConciseTurnFooterSync(): void {
+    if (conciseFooterSyncQueued || disposed) return
+    conciseFooterSyncQueued = true
+    queueMicrotask(syncConciseTurnFooters)
+  }
+
+  function lastRenderedMessageEl(messageIds: readonly string[]): HTMLElement | null {
+    for (let i = messageIds.length - 1; i >= 0; i--) {
+      const node = list.querySelector<HTMLElement>(
+        `:scope > [data-message-id="${messageIds[i] ?? ''}"]`,
+      )
+      if (node) return node
+    }
+    return null
+  }
+
+  /**
+   * Open or close one finished turn from its footer. The reader's place is
+   * held: opening keeps the turn's prompt where it is so the steps unfold
+   * beneath it; closing keeps the footer under the pointer.
+   */
+  function toggleConciseTurnFromFooter(startId: string): void {
+    const footer = list.querySelector<HTMLElement>(
+      `:scope > .${CONCISE_TURN_FOOTER_CLASS}[data-concise-turn-for="${startId}"]`,
+    )
+    const opening = !expandedConciseTurns.has(startId)
+    const prompt = list.querySelector<HTMLElement>(`:scope > [data-message-id="${startId}"]`)
+    const anchor = opening ? (prompt ?? footer) : footer
+    const before = anchor?.getBoundingClientRect().top ?? 0
+    if (opening) expandedConciseTurns.add(startId)
+    else expandedConciseTurns.delete(startId)
+    syncConciseThreadClasses(false)
+    syncConciseTurnFooters()
+    if (anchor?.isConnected) {
+      const delta = anchor.getBoundingClientRect().top - before
+      if (Math.abs(delta) > 0.5) setScrollTopProgrammatically(list.scrollTop + delta)
+    }
   }
 
   function syncAvatarMotion(): void {
@@ -4612,6 +4741,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // after the bubble was built, and this runs whenever it may have changed.
     const msg = thread?.messages.find((candidate) => candidate.id === messageId)
     if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, messageId))
+    scheduleConciseTurnFooterSync()
     const recovery = turnRecoveryForMessage(thread, messageId)
     if (!projectId || !msgEl || !recovery) return
 
@@ -5074,6 +5204,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       rebuildForThread()
       syncFromStore()
       reviewerInput.sync()
+      scheduleConciseTurnFooterSync()
       syncSideChatChips()
     }),
     store.on('todos_changed', () => {
@@ -5122,11 +5253,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           card.remove()
         })
       } else {
-        // The turn is over: its summary is the answer, so it returns to the concise view.
-        if (expandedConciseTurnId !== null) {
-          expandedConciseTurnId = null
-          syncConciseThreadClasses()
-        }
+        // The turn is over. A turn the user opened stays open, so the view does
+        // not collapse under them; its footer closes it.
+        scheduleConciseTurnFooterSync()
+        // The turn's last bubble may have just become the one that paints.
+        syncModelLabels()
         setActivity(null)
         list.querySelectorAll<HTMLDetailsElement>('.message-reasoning-live').forEach((details) => {
           setReasoningDisclosureTitle(details, false)
@@ -5163,6 +5294,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // requestAnimationFrame so it no-ops instead of touching a torn-down list.
     backfillGeneration++
     listResizeObserver?.disconnect()
+    conciseFooterObserver.disconnect()
     showAcpTransportNoiseDisclosure = (): boolean => false
     revealTimers.forEach((timer) => {
       clearTimeout(timer)
