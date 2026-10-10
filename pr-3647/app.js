@@ -87748,11 +87748,10 @@ function mountProjectsPane(root, store2, api2) {
   }
   function threadNeedsCleanup(project2, thread) {
     if (thread.status === "running") return false;
-    const rollup = rollupForThread(thread);
-    if (rollup?.kind === "open") return true;
-    if (sidebarPrRefs(thread).some(
-      (ref) => (cachedPrLifecycle(githubPrKey(ref)) ?? "unknown") === "unknown"
-    ))
+    if (sidebarPrRefs(thread).some((ref) => {
+      const state = cachedPrLifecycle(githubPrKey(ref)) ?? "unknown";
+      return state === "open" || state === "unknown";
+    }))
       return true;
     if (project2.sshHost) return false;
     const cached2 = threadChangeCache.get(threadChangeKey(project2.id, thread.id));
