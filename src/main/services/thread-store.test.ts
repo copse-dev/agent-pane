@@ -1,6 +1,14 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  symlinkSync,
+} from 'node:fs'
 // The same `promises` binding the thread store imports, so the spies below
 // patch the exact object it calls.
 import { promises as fsPromises } from 'node:fs'
@@ -9,6 +17,7 @@ import { join } from 'node:path'
 import type { LLMMessage, Message, Thread } from '@shared/types'
 import { toResponsesInput } from '@copse/llm/responses-provider.ts'
 import {
+  measureThreadStorage,
   loadProjectThreads,
   loadAllProjectThreads,
   saveProjectThread,
@@ -109,6 +118,18 @@ describe('thread-store', () => {
     if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
     else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
     rmSync(root, { recursive: true, force: true })
+  })
+
+  it('measures retained thread files without following symlinks or counting other threads', async () => {
+    const dir = join(root, 'p', 't')
+    mkdirSync(join(dir, 'attachments'), { recursive: true })
+    writeFileSync(join(dir, 'meta.json'), '1234')
+    writeFileSync(join(dir, 'attachments', 'image.png'), '123456')
+    writeFileSync(join(root, 'outside'), 'not part of this thread')
+    symlinkSync(join(root, 'outside'), join(dir, 'linked'))
+    assert.deepEqual(await measureThreadStorage('p', 't'), { bytes: 10, truncated: false })
+    assert.deepEqual(await measureThreadStorage('p', 'missing'), { bytes: 0, truncated: false })
+    await assert.rejects(measureThreadStorage('p', '../outside'))
   })
 
   it('lists orphaned thread stores, excluding known project ids (#997)', async () => {

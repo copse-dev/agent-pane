@@ -1734,6 +1734,33 @@ async function readProjectThreadMetasCached(
   return threads
 }
 
+/** Logical bytes retained in this thread's store; never follow links outside it. */
+export async function measureThreadStorage(
+  projectId: string,
+  threadId: string,
+): Promise<{ bytes: number; truncated: boolean }> {
+  const root = threadDir(projectId, threadId)
+  const pending = [root]
+  let bytes = 0
+  let visited = 0
+  while (pending.length > 0) {
+    const path = pending.pop()
+    if (path === undefined) break
+    if (++visited > 100_000) return { bytes, truncated: true }
+    try {
+      const stat = await fsPromises.lstat(path)
+      if (stat.isSymbolicLink()) continue
+      if (stat.isFile()) bytes += stat.size
+      else if (stat.isDirectory()) {
+        for (const name of await fsPromises.readdir(path)) pending.push(join(path, name))
+      }
+    } catch (error) {
+      if (!(isRecord(error) && error['code'] === 'ENOENT')) throw error
+    }
+  }
+  return { bytes, truncated: false }
+}
+
 /** A thread's on-disk metadata (`meta.json`), or null if missing/malformed. */
 export function getThreadMeta(projectId: string, threadId: string): Promise<ThreadMeta | null> {
   return runSerialized(queueKey(projectId), () => readMeta(threadDir(projectId, threadId)))
