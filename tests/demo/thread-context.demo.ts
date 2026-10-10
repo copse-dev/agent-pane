@@ -66,6 +66,8 @@ describe('The thread Context panel', () => {
     })
     expect(layout).toEqual({ aligned: true, stacked: true, border: '0px' })
     await expect($('#resizer-tree')).not.toBeDisplayed()
+    await expect($('#right-sidebar')).not.toBeDisplayed()
+    await expect($$('.thread-context-index-row')).toBeElementsArrayOfSize(0)
     await expect($('.thread-context-thread-title')).toHaveText(MAIN)
     const paneHeight = await browser.execute(() => {
       const first = document.querySelector('[data-context-section="subagents"]')
@@ -103,6 +105,7 @@ describe('The thread Context panel', () => {
     await $('.side-chat-body-host').waitForDisplayed({ timeout: 10_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('.side-chat-row.is-selected')).toHaveAttribute('data-side-chat-id', 'sc-side-2')
+    await expect($('#right-sidebar')).toBeDisplayed()
   })
   it('archives the current thread from Context', async () => {
     await openContext()
