@@ -78974,7 +78974,7 @@ var init_demo_scenarios = __esm({
         threads: ["open", "closed"].map((state, index) => ({
           id: `ssh-cleanup-${state}`,
           title: state === "open" ? "Remote PR still open" : "Remote PR completed",
-          status: "idle",
+          status: state === "open" ? "running" : "idle",
           messages: [],
           messagesLoaded: false,
           prRefs: [
@@ -87747,12 +87747,12 @@ function mountProjectsPane(root, store2, api2) {
     return summarizeThreadPrStatus(states, refs);
   }
   function threadNeedsCleanup(project2, thread) {
-    if (thread.status === "running") return false;
     if (sidebarPrRefs(thread).some((ref) => {
       const state = cachedPrLifecycle(githubPrKey(ref)) ?? "unknown";
       return state === "open" || state === "unknown";
     }))
       return true;
+    if (thread.status === "running") return false;
     if (project2.sshHost) return false;
     const cached2 = threadChangeCache.get(threadChangeKey(project2.id, thread.id));
     if (!cached2) return true;
