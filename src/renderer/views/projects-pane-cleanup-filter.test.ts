@@ -166,50 +166,53 @@ describe('projects pane needs-cleanup filter (component)', () => {
     assert.deepEqual(titles(), [], 'resolved clean, so now filtered out')
   })
 
-  it('counts an open linked PR as needing cleanup', async () => {
-    const base = createFakeApi()
-    const api: ApiClient = {
-      ...base,
-      threads: { ...base['threads'], listOrphans: async (): Promise<never[]> => [] },
-      git: { ...base['git'], threadChangeSummary: apiWithSummaries({}).git.threadChangeSummary },
-      gh: {
-        ...base['gh'],
-        prDetails: (): Promise<GhPrDetails> =>
-          Promise.resolve({
-            owner: 'copse-dev',
-            repo: 'copse-panel',
-            number: 7,
-            title: 'PR 7',
-            url: 'https://github.com/copse-dev/copse-panel/pull/7',
-            state: 'OPEN',
-            body: '',
-            files: [],
+  for (const status of ['idle', 'running'] as const) {
+    it(`counts an open linked PR on a ${status} thread as needing cleanup`, async () => {
+      const base = createFakeApi()
+      const api: ApiClient = {
+        ...base,
+        threads: { ...base['threads'], listOrphans: async (): Promise<never[]> => [] },
+        git: { ...base['git'], threadChangeSummary: apiWithSummaries({}).git.threadChangeSummary },
+        gh: {
+          ...base['gh'],
+          prDetails: (): Promise<GhPrDetails> =>
+            Promise.resolve({
+              owner: 'copse-dev',
+              repo: 'copse-panel',
+              number: 7,
+              title: 'PR 7',
+              url: 'https://github.com/copse-dev/copse-panel/pull/7',
+              state: 'OPEN',
+              body: '',
+              files: [],
+            }),
+        },
+      }
+      mount(
+        [
+          thread('a', 'Open PR', {
+            status,
+            messages: [
+              {
+                id: 'm',
+                role: 'assistant',
+                content: 'https://github.com/copse-dev/copse-panel/pull/7',
+                toolCalls: [],
+                createdAt: 1,
+              },
+            ],
           }),
-      },
-    }
-    mount(
-      [
-        thread('a', 'Open PR', {
-          messages: [
-            {
-              id: 'm',
-              role: 'assistant',
-              content: 'https://github.com/copse-dev/copse-panel/pull/7',
-              toolCalls: [],
-              createdAt: 1,
-            },
-          ],
-        }),
-        thread('b', 'No PR, clean'),
-      ],
-      api,
-    )
-    await settle()
+          thread('b', 'No PR, clean'),
+        ],
+        api,
+      )
+      await settle()
 
-    toggleNeedsCleanup()
-    await settle()
-    assert.deepEqual(titles(), ['Open PR'])
-  })
+      toggleNeedsCleanup()
+      await settle()
+      assert.deepEqual(titles(), ['Open PR'])
+    })
+  }
 
   for (const state of ['MERGED', 'CLOSED'] as const) {
     it(`keeps dirty and unpushed work after a ${state} PR, but removes clean threads`, async () => {
@@ -281,6 +284,7 @@ describe('projects pane needs-cleanup filter (component)', () => {
     mount(
       [
         thread('open', 'Remote PR', {
+          status: 'running',
           prRefs: [
             {
               owner: 'acme',

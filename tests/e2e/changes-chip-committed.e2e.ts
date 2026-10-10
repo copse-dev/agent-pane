@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { prepareE2eScreenshot, savePreparedAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
@@ -106,6 +106,8 @@ describe('Changes chip includes committed branch work', () => {
     await expect($('.git-change-row-committed .git-change-path')).toHaveText('example.txt')
     await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+3')
     await expect($('.follow-up-bubble-changes .follow-up-stat-del')).toHaveText('-1')
+    // Set the capture viewport before waiting: resizing can refresh the pane.
+    await prepareE2eScreenshot()
     await browser.waitUntil(
       async () => !(await $('.git-changes-list').getText()).includes('Checking committed changes'),
       {
@@ -113,6 +115,6 @@ describe('Changes chip includes committed branch work', () => {
         timeoutMsg: 'expected committed changes to finish loading before capture',
       },
     )
-    await saveAppScreenshot('changes-chip-committed.png')
+    await savePreparedAppScreenshot('changes-chip-committed.png')
   })
 })

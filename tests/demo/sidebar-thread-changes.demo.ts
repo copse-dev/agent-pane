@@ -83,7 +83,7 @@ describe('sidebar thread changes glyph', () => {
     await expect($('.projects-filter-btn')).toHaveElementClass('is-filtering')
     await saveAppScreenshot('sidebar-cleanup-after-pr.png')
   })
-  it('keeps an SSH thread with an open PR in the cleanup filter', async () => {
+  it('keeps a running SSH thread with an open PR in the cleanup filter', async () => {
     await browser.url('/?scenario=sidebar-cleanup-ssh')
     await $('.chat-pr-status').waitForExist({ timeout: 30_000 })
     await $('.projects-filter-btn').click()

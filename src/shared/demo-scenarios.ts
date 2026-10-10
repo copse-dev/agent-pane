@@ -2407,7 +2407,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     threads: ['open', 'closed'].map((state, index) => ({
       id: `ssh-cleanup-${state}`,
       title: state === 'open' ? 'Remote PR still open' : 'Remote PR completed',
-      status: 'idle',
+      status: state === 'open' ? 'running' : 'idle',
       messages: [],
       messagesLoaded: false,
       prRefs: [
