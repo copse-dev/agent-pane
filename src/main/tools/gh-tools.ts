@@ -12,7 +12,7 @@ export const ghPrListTool = defineTool({
   name: 'gh_pr_list',
   provenance: 'external',
   description:
-    'List pull requests for the current repository via GitHub CLI (read-only). Prefer over run_shell + gh.',
+    'List pull requests via the host GitHub CLI without a shell approval. Use details: true for branch, review, merge, label, SHA, author, and update status; supports up to 200 PRs. Prefer over run_shell + gh.',
   parameters: z.object({
     state: z
       .enum(['open', 'closed', 'merged', 'all'])
@@ -23,7 +23,7 @@ export const ghPrListTool = defineTool({
       .number()
       .int()
       .min(1)
-      .max(30)
+      .max(200)
       .optional()
       .default(20)
       .describe('Maximum number of PRs to return.'),
@@ -31,8 +31,11 @@ export const ghPrListTool = defineTool({
       .string()
       .optional()
       .describe('Filter to PRs whose head branch matches this name (e.g. current feature branch).'),
+    repo: z.string().optional().describe('Repository as owner/name. Defaults to the current repo.'),
+    details: z.boolean().optional().default(false).describe('Include PR review and merge details.'),
   }),
-  execute: async ({ state, limit, head }) => getGhPrListText({ state, limit, head }),
+  execute: async ({ state, limit, head, repo, details }) =>
+    getGhPrListText({ state, limit, head, repo, details }),
 })
 
 export const ghPrViewTool = defineTool({
