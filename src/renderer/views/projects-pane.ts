@@ -973,7 +973,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
    * view and backfill (see the IntersectionObserver-gated fetches below).
    */
   function threadNeedsCleanup(project: Project, thread: SidebarThread): boolean {
-    if (project.sshHost || thread.status === 'running') return false
+    if (thread.status === 'running') return false
     const rollup = rollupForThread(thread)
     if (rollup?.kind === 'open') return true
     if (
@@ -982,6 +982,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       )
     )
       return true
+    // PR lifecycle is available for SSH projects; local git summaries are not.
+    if (project.sshHost) return false
     const cached = threadChangeCache.get(threadChangeKey(project.id, thread.id))
     if (!cached) return true
     return describeThreadChanges(cached.summary) !== null
