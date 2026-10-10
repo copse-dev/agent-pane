@@ -534,7 +534,7 @@ function conciseMultiTurnMessages(model: string): Thread['messages'] {
               id: `concise-multi-steps-${String(n)}`,
               role: 'assistant' as const,
               model,
-              content: 'Checking the code.',
+              content: '',
               toolCalls: [
                 {
                   id: `concise-multi-read-${String(n)}`,
@@ -588,7 +588,15 @@ function conciseMultiTurnMessages(model: string): Thread['messages'] {
         role: 'assistant' as const,
         model,
         content,
-        toolCalls: [],
+        toolCalls: [
+          {
+            id: `concise-multi-audit-${String(n)}-${String(i)}`,
+            name: 'sandbox_network_audit',
+            args: {},
+            status: 'done' as const,
+            result: 'Audit complete.',
+          },
+        ],
         createdAt: at + 3 + i,
       })),
     ]
