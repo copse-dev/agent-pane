@@ -94,6 +94,10 @@ import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/
 import { openActivityPanel } from './activity-panel.ts'
 import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { foldAutomationRuns } from '../controller/automation-fold.ts'
+import {
+  getCachedAutomationSchedules,
+  getCachedEventAutomations,
+} from '../controller/automations.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
 import { flushProjectThreads } from '../controller/persistence.ts'
@@ -293,14 +297,22 @@ function automationMenuEntries(
   target: AutomationMenuTarget,
   openSetup: () => void,
 ): ContextMenuEntry[] {
+  const eventAutomation = getCachedEventAutomations(target.project.id).some(
+    (definition) => definition.id === target.scheduleId,
+  )
+  const runEntries: ContextMenuEntry[] = eventAutomation
+    ? []
+    : [
+        {
+          label: 'Run now',
+          onSelect: (): void => {
+            startRunNow(api, target)
+          },
+        },
+      ]
   return [
     { heading: target.scheduleName },
-    {
-      label: 'Run now',
-      onSelect: (): void => {
-        startRunNow(api, target)
-      },
-    },
+    ...runEntries,
     {
       label: 'Automation setup…',
       onSelect: openSetup,
@@ -1691,26 +1703,50 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
      * muted suffix so same-named schedules in different projects stay
      * distinguishable.
      *
-     * Automation data is strictly project-owned (`AutomationSchedule.projectId`,
+     * Automation data is project-owned (`AutomationSchedule.projectId`,
      * `SidebarThread.automation`); there is no workspace-level store to read
      * instead. `getSidebarThreads` has data for the active project plus every
      * project switched to or read in the background after startup (see
      * `preloadSidebarThreads` in controller/projects.ts), so a project whose
      * background read has not finished yet contributes nothing until it does.
+     *
+     * A brand-new schedule has no run yet, so it would otherwise have no row
+     * here at all until it fires once — `getCachedAutomationSchedules` /
+     * `getCachedEventAutomations` (controller/automations.ts) seed one entry
+     * per known schedule up front, and the thread scan below only adds runs
+     * on top of it.
      */
     function renderAutomationsSection(): HTMLElement | null {
       const scheduleOwners = new Map<
         string,
-        { project: Project; scheduleId: string; runs: SidebarThread[] }
+        { project: Project; scheduleId: string; scheduleName: string; runs: SidebarThread[] }
       >()
       for (const project of projects) {
+        for (const schedule of getCachedAutomationSchedules(project.id)) {
+          scheduleOwners.set(`${project.id}\0${schedule.id}`, {
+            project,
+            scheduleId: schedule.id,
+            scheduleName: schedule.name,
+            runs: [],
+          })
+        }
+        for (const eventAutomation of getCachedEventAutomations(project.id)) {
+          scheduleOwners.set(`${project.id}\0${eventAutomation.id}`, {
+            project,
+            scheduleId: eventAutomation.id,
+            scheduleName: eventAutomation.name,
+            runs: [],
+          })
+        }
         for (const thread of getSidebarThreads(store, project.id)) {
           const scheduleId = thread.automation?.scheduleId
           if (!scheduleId) continue
           const scheduleKey = `${project.id}\0${scheduleId}`
           const owner = scheduleOwners.get(scheduleKey)
+          const scheduleName = thread.automation?.scheduleName ?? thread.title
           if (owner) owner.runs.push(thread)
-          else scheduleOwners.set(scheduleKey, { project, scheduleId, runs: [thread] })
+          else
+            scheduleOwners.set(scheduleKey, { project, scheduleId, scheduleName, runs: [thread] })
         }
       }
       if (scheduleOwners.size === 0) return null
@@ -1780,18 +1816,51 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
       if (sectionExpanded) {
         const rows = el('div', { class: 'automation-thread-rows' })
-        for (const { project, scheduleId, runs } of scheduleOwners.values()) {
-          const firstRun = runs[0]
-          if (!firstRun) continue
+        for (const { project, scheduleId, scheduleName, runs } of scheduleOwners.values()) {
           const projectSuffix = el(
             'span',
             { class: 'chat-thread-owner' },
             `· ${projectDisplayName(project)}`,
           )
+          if (runs.length === 0) {
+            // A schedule just created has not produced a run (and so no thread)
+            // yet — show it from its own definition instead of waiting for one.
+            const row = el(
+              'div',
+              { class: 'chat-row is-automation is-automation-unrun' },
+              el('span', { class: 'chat-title' }, scheduleName),
+            )
+            row.append(
+              projectSuffix,
+              el('span', { class: 'automation-row-unrun-badge' }, 'Never run'),
+            )
+            const setupBtn = automationSetupBtn(`${scheduleName} setup`, () => {
+              openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+            })
+            row.append(setupBtn)
+            row.addEventListener('click', () => {
+              openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+            })
+            row.addEventListener('contextmenu', (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              showContextMenu(
+                e.clientX,
+                e.clientY,
+                automationMenuEntries(api, { project, scheduleName, scheduleId }, () => {
+                  openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+                }),
+              )
+            })
+            rows.append(row)
+            continue
+          }
+
+          const firstRun = runs[0]
+          if (!firstRun) continue
           if (runs.length === 1) {
             const row = renderThreadRow(project, firstRun)
             row.querySelector('.chat-title')?.after(projectSuffix)
-            const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title
             const setupBtn = automationSetupBtn(`${scheduleName} setup`, () => {
               openAutomationDialog(store, api, { projectId: project.id, scheduleId })
             })
@@ -1812,7 +1881,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           // the finished ones into its heading's run count (see `foldAutomationRuns`).
           const foldEntries = foldAutomationRuns(runs, isThreadAwaitingAttention)
           const scheduleRevealed = showingAllRuns || foldEntries.length > 0
-          const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title
           const scheduleGroup = el('div', {
             class: 'automation-schedule-group',
             'data-schedule-id': scheduleId,
@@ -2459,6 +2527,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // requests are matched in render(), so new prompts still appear immediately.
     store.on('threads_changed', render),
     store.on('sidebar_threads_loaded', render),
+    store.on('automation_schedules_loaded', render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store.on('thread_status_changed', () => {

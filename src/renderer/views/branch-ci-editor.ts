@@ -48,6 +48,7 @@ export function mountBranchCiEditor(options: {
   showStatus: (message: string, error?: boolean) => void
   hideStatus: () => void
   onScheduleSelected: (draft: AutomationCreationDraft) => void
+  onChanged?: () => Promise<void>
   /** Open the task a failed or stalled run created. Absent where there is nowhere to navigate. */
   onOpenRun?: (threadId: string) => void
 }): BranchCiEditor {
@@ -247,6 +248,7 @@ export function mountBranchCiEditor(options: {
 
   function updateSummary(): void {
     const kind = currentKind()
+    branch.required = kind === 'github-ci-failed' && pullRequest.value.trim() === ''
     for (const item of fields) item.node.hidden = item.kind !== kind
     if (kind === 'github-pr-changed') {
       const base = baseBranch.value.trim() || 'the base branch'
@@ -524,6 +526,7 @@ export function mountBranchCiEditor(options: {
             if (!confirmed) return
             await api.automations.removeBranchCi(projectId, definition.id)
             await refresh()
+            await options.onChanged?.()
           })
           .catch((error: unknown) => {
             showStatus(ipcErrorMessage(error, 'Could not delete the automation.'), true)
@@ -599,6 +602,7 @@ export function mountBranchCiEditor(options: {
         async () => {
           close()
           await refresh()
+          await options.onChanged?.()
         },
         (error: unknown) => {
           showStatus(ipcErrorMessage(error, 'Could not save the automation.'), true)

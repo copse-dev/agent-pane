@@ -71,6 +71,8 @@ function controllerApi(loaded: Thread[]): {
       },
     },
     automations: {
+      list: () => Promise.resolve([]),
+      listBranchCi: () => Promise.resolve([]),
       canStart: () => Promise.resolve({ allowed: true }),
       reportStartFailure: () => Promise.resolve(true),
       onTriggered(handler) {
@@ -242,6 +244,8 @@ test('a checkout failure preserves the scheduled prompt as a draft', async (cont
       },
     },
     automations: {
+      list: () => Promise.resolve([]),
+      listBranchCi: () => Promise.resolve([]),
       onTriggered: () => () => {},
       canStart: () => Promise.resolve({ allowed: true }),
       reportStartFailure: () => Promise.resolve(true),
@@ -298,6 +302,8 @@ test('the IPC wrapper is stripped from the failure note', async (context) => {
       run: () => Promise.resolve(),
     },
     automations: {
+      list: () => Promise.resolve([]),
+      listBranchCi: () => Promise.resolve([]),
       onTriggered: () => () => {},
       canStart: () => Promise.resolve({ allowed: true }),
       reportStartFailure: () => Promise.resolve(true),
@@ -331,6 +337,8 @@ test('a checkout failure is recorded on the run and reported to main as a worktr
       run: () => Promise.resolve(),
     },
     automations: {
+      list: () => Promise.resolve([]),
+      listBranchCi: () => Promise.resolve([]),
       onTriggered: () => () => {},
       canStart: () => Promise.resolve({ allowed: true }),
       reportStartFailure: (projectId, threadId, failure) => {
@@ -407,6 +415,8 @@ test('a run whose start failed is not started again when the workspace reloads',
       run: () => Promise.resolve(),
     },
     automations: {
+      list: () => Promise.resolve([]),
+      listBranchCi: () => Promise.resolve([]),
       onTriggered: () => () => {},
       canStart: () => Promise.resolve({ allowed: true }),
       reportStartFailure: () => Promise.resolve(true),

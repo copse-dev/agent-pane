@@ -2,11 +2,15 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { AutomationSchedule, Thread } from '@shared/types'
+import type { AutomationSchedule, BranchCiAutomation, Thread } from '@shared/types'
 import type { PluginSummary } from '@shared/types/plugins.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { createFakeApi, createPendingApi } from '../fake-api.test-support.ts'
 import { resetProjectSwitchStateForTest, setThreadCacheForTest } from '../controller/projects.ts'
+import {
+  resetAutomationScheduleCacheForTest,
+  setAutomationScheduleCacheForTest,
+} from '../controller/automations.ts'
 import { resetAttention, setAttentionThreads } from '../controller/attention.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import { dismissContextMenu } from '../dom/context-menu.ts'
@@ -131,6 +135,7 @@ afterEach(() => {
   document.querySelector<HTMLDialogElement>('#automation-dialog')?.close()
   document.body.replaceChildren()
   resetProjectSwitchStateForTest()
+  resetAutomationScheduleCacheForTest()
   resetAttention()
 })
 
@@ -982,5 +987,112 @@ describe('project row automation menu', () => {
     assert.ok(labels.includes('Remove from sidebar'))
     assert.ok(!labels.includes('Automations'))
     assert.ok(!labels.includes('New automation…'))
+  })
+})
+
+describe('a schedule with no run yet', () => {
+  it('shows a freshly created schedule before it has ever run', () => {
+    setAutomationScheduleCacheForTest('a', [schedule])
+    const host = mount([thread('chat', 'Regular conversation')], 'chat')
+
+    const toggle = host.querySelector<HTMLButtonElement>('.automation-threads-toggle')
+    assert.ok(toggle)
+    assert.equal(toggle.querySelector('.automation-threads-count')?.textContent, '1')
+
+    toggle.click()
+    const row = host.querySelector('.chat-row.is-automation-unrun')
+    assert.ok(row)
+    assert.equal(row.querySelector('.chat-title')?.textContent, 'Docs freshness')
+    assert.equal(row.querySelector('.chat-thread-owner')?.textContent, '· Alpha')
+    assert.equal(row.querySelector('.automation-row-unrun-badge')?.textContent, 'Never run')
+    assert.equal(
+      row.querySelector<HTMLButtonElement>('.automation-setup-btn')?.getAttribute('aria-label'),
+      'Docs freshness setup',
+    )
+  })
+
+  it('shows an event automation with no run yet alongside cron schedules', () => {
+    const eventAutomation: BranchCiAutomation = {
+      v: 1,
+      id: 'event-ci',
+      projectId: 'a',
+      name: 'Fix red CI',
+      trigger: { kind: 'github-ci-failed', repository: 'acme/widgets', branch: 'main' },
+      prompt: 'Fix the failing build.',
+      model: 'gpt-5.4',
+      enabled: true,
+      maxLiveWorktrees: 1,
+      revision: 'r1',
+      createdAt: 1,
+      updatedAt: 1,
+      seenDeliveries: [],
+    }
+    setAutomationScheduleCacheForTest('a', [], [eventAutomation])
+    const host = mount([], '')
+
+    const toggle = host.querySelector<HTMLButtonElement>('.automation-threads-toggle')
+    assert.ok(toggle)
+    assert.equal(toggle.querySelector('.automation-threads-count')?.textContent, '1')
+    toggle.click()
+    assert.equal(
+      host.querySelector('.chat-row.is-automation-unrun .chat-title')?.textContent,
+      'Fix red CI',
+    )
+    host
+      .querySelector('.chat-row.is-automation-unrun')
+      ?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    assert.deepEqual(
+      Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
+      ['Automation setup…'],
+    )
+  })
+
+  it('opens the schedule’s own setup from its never-run row', async () => {
+    setAutomationScheduleCacheForTest('a', [schedule])
+    const host = mountWithSettings([], '')
+    host.querySelector<HTMLButtonElement>('.automation-threads-toggle')?.click()
+
+    const row = host.querySelector('.chat-row.is-automation-unrun')
+    assert.ok(row)
+    row.querySelector<HTMLButtonElement>('.automation-setup-btn')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const dialog = document.querySelector<HTMLDialogElement>('#automation-dialog')
+    assert.ok(dialog?.open)
+    assert.equal(
+      dialog.querySelector<HTMLInputElement>('.automation-name-input')?.value,
+      schedule.name,
+    )
+  })
+
+  it('offers Run now and setup from the never-run row’s context menu', () => {
+    setAutomationScheduleCacheForTest('a', [schedule])
+    const host = mount([], '')
+    host.querySelector<HTMLButtonElement>('.automation-threads-toggle')?.click()
+
+    const row = host.querySelector('.chat-row.is-automation-unrun')
+    assert.ok(row)
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    const labels = Array.from(document.querySelectorAll('.context-menu-item')).map(
+      (item) => item.textContent,
+    )
+    assert.deepEqual(labels, ['Run now', 'Automation setup…'])
+  })
+
+  it('folds the never-run placeholder away once the schedule gets its first run', () => {
+    setAutomationScheduleCacheForTest('a', [schedule])
+    const host = mount(
+      [thread('chat', 'Regular conversation'), thread('docs', 'Docs freshness', 'schedule-docs')],
+      'chat',
+    )
+
+    const toggle = host.querySelector<HTMLButtonElement>('.automation-threads-toggle')
+    assert.ok(toggle)
+    // One schedule, one row — the cached definition and the thread it produced
+    // resolve to the same schedule key rather than showing up twice.
+    assert.equal(toggle.querySelector('.automation-threads-count')?.textContent, '1')
+    toggle.click()
+    assert.equal(host.querySelectorAll('.chat-row.is-automation').length, 1)
+    assert.equal(host.querySelector('.chat-row.is-automation-unrun'), null)
   })
 })
