@@ -16706,6 +16706,11 @@ dialog.activity-panel-overlay {
   flex-wrap: wrap;
   gap: var(--spacing-xs);
 }
+.vnc-ssh-host-actions > button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .vnc-devices-heading {
   display: flex;
   align-items: center;
