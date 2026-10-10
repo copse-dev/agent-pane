@@ -104,6 +104,43 @@ describe('projects pane needs-cleanup filter (component)', () => {
     )
   })
 
+  it('does not request PR details beyond rendered rows when cleanup filtering is enabled', async () => {
+    const base = apiWithSummaries({})
+    const requested: number[] = []
+    const api: ApiClient = {
+      ...base,
+      gh: {
+        ...base.gh,
+        prDetails: (_owner, _repo, number): Promise<GhPrDetails> => {
+          requested.push(number)
+          return new Promise(() => {})
+        },
+      },
+    }
+    mount(
+      Array.from({ length: 100 }, (_, index) =>
+        thread(`thread-${String(index)}`, `Thread ${String(index)}`, {
+          prRefs: [
+            {
+              owner: 'acme',
+              repo: 'widgets',
+              number: index + 1,
+              url: `https://github.com/acme/widgets/pull/${String(index + 1)}`,
+            },
+          ],
+        }),
+      ),
+      api,
+    )
+    await settle()
+    const initiallyRequested = [...requested]
+    assert.ok(initiallyRequested.length > 0 && initiallyRequested.length < 100)
+    toggleNeedsCleanup()
+    await settle()
+    assert.deepEqual(requested, initiallyRequested)
+    assert.equal(titles().length, initiallyRequested.length)
+  })
+
   it('keeps an unclassified thread visible until its change summary resolves', async () => {
     let resolveSummary: ((value: Array<ThreadChangeSummary | null>) => void) | undefined
     const base = createFakeApi()

@@ -974,12 +974,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
    */
   function threadNeedsCleanup(project: Project, thread: SidebarThread): boolean {
     if (thread.status === 'running') return false
-    const rollup = rollupForThread(thread)
-    if (rollup?.kind === 'open') return true
+    // Filtering runs before pagination. Only rendered rows may start lookups.
     if (
-      sidebarPrRefs(thread).some(
-        (ref) => (cachedPrLifecycle(githubPrKey(ref)) ?? 'unknown') === 'unknown',
-      )
+      sidebarPrRefs(thread).some((ref) => {
+        const state = cachedPrLifecycle(githubPrKey(ref)) ?? 'unknown'
+        return state === 'open' || state === 'unknown'
+      })
     )
       return true
     // PR lifecycle is available for SSH projects; local git summaries are not.
