@@ -130,4 +130,7 @@ export interface StoreEvents {
   // A project other than the active one had its thread titles read in the
   // background, so the sidebar and Activity can list them.
   sidebar_threads_loaded: []
+  // A project's automation schedules (and event automations) were (re)loaded,
+  // so the sidebar's Automations section can show one that has never run yet.
+  automation_schedules_loaded: []
 }

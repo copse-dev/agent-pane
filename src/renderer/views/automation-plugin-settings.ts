@@ -26,6 +26,7 @@ import { mountBranchCiEditor, type AutomationCreationDraft } from './branch-ci-e
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { describeRetainedWorktrees } from './automation-retained-worktrees.ts'
 import { describeAutomationFailure } from '@shared/automation-failure.ts'
+import { refreshAutomationSchedules } from '../controller/automations.ts'
 
 function cleanIpcError(error: unknown): string {
   return ipcErrorMessage(error, 'Automation request failed.')
@@ -930,6 +931,7 @@ export function createAutomationPluginSettings(
         api.automations.list(projectId),
         api.automations.permissionOptions(projectId),
         ciEditor.refresh(),
+        refreshAutomationSchedules(store, api, projectId),
       ])
       schedules = loadedSchedules
       availablePermissions = loadedPermissions

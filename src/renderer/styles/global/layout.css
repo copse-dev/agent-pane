@@ -580,6 +580,16 @@
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
 }
+/* "Never run" marker on a schedule with no thread of its own yet. Fixed width
+   (not flexing like `.chat-thread-owner`) since it is short and always present
+   on this row — nothing else needs the space back. */
+.automation-row-unrun-badge {
+  flex: 0 0 auto;
+  margin-left: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
 /* On a thread row the project label is the part that tells rows apart, so the
    title gives way first: the label keeps its natural width up to a cap and only
    a very long project name ellipsizes. */
