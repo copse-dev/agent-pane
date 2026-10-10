@@ -16686,8 +16686,8 @@ dialog.activity-panel-overlay {
   gap: var(--spacing-sm);
   padding: var(--spacing-md);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
 }
 .vnc-ssh-host-form[hidden] {
   display: none;
