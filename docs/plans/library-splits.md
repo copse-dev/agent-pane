@@ -298,34 +298,20 @@ integration surfaces, and they map onto those three options with very different 
 
 ### Route 1 in concrete terms
 
-A first-cut entry, placed after `gemini` in `src/shared/acp-known-agents.ts`. Auth env
-names and the sandbox domain list are marked to verify: Qwen Code supports Qwen OAuth and
-OpenAI-compatible keys, and the exact hosts should come from a wire trace with
-`COPSE_DEBUG_ACP_UPDATES` rather than from memory. The `gemini` entry also sets `reauth`
-(the command to re-run once a stored token lapses); the snippet leaves it out on purpose,
-and whether Qwen needs one distinct from `setup` is a decision for when
-[#2304](https://github.com/copse-dev/agent-pane/issues/2304) starts. Until then the
-catalog falls back to `setup` for re-authentication.
+The catalog now includes registry id `qwen-code`, `qwen --acp`, and the npm install
+package. [The reference probe findings](../acp-qwen-findings.md) verify
+`OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` against upstream docs and
+record both unauthenticated attempts and actual CLI runs against a local
+OpenAI-compatible fixture. The fixture demonstrates session modes and
+`fs/write_text_file` routing; it does not verify hosted-provider inference.
 
-```ts
-{
-  id: 'qwen-code', // match the ACP registry id before shipping
-  title: 'Qwen Code',
-  command: 'qwen',
-  args: ['--acp'],
-  envHints: ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL'], // verify
-  install: 'npm install -g @qwen-code/qwen-code',
-  installPackage: '@qwen-code/qwen-code',
-  autoInstall: true,
-  sandbox: {
-    allowedDomains: [/* from a network probe: qwen.ai and dashscope hosts */],
-    homeDirs: ['.qwen'],
-  },
-  setup: 'qwen', // first run walks through Qwen OAuth or reads the env key
-  docsUrl: 'https://qwenlm.github.io/qwen-code-docs/',
-  note: 'Sign in by running `qwen` once, or set OPENAI_API_KEY and OPENAI_BASE_URL.',
-}
-```
+Qwen OAuth's free tier was discontinued on 2026-04-15. First-run and re-authentication
+guidance therefore runs `qwen` and uses `/auth` to configure a current provider.
+No external provider domains were observed in the reference trace, so the catalog
+permits no external domains; loopback remains available through the existing ACP
+sandbox profile. A hosted endpoint needs an observed per-agent domain override.
+Authenticated hosted probes and their domain evidence remain required before
+closing [#2304](https://github.com/copse-dev/agent-pane/issues/2304).
 
 Two things to check during the probe run. Upstream issue
 [QwenLM/qwen-code#2015](https://github.com/QwenLM/qwen-code/issues/2015) reported that

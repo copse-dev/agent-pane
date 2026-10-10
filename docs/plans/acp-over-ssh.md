@@ -129,8 +129,12 @@ a curated catalog preset with `autoInstall`, Copse asks — naming the host, the
 Node prefix and the exact `package@version` — and on approval runs
 `npm install -g --ignore-scripts <package>@<version>` on the host. The version
 is the pin the unattended-container worker image bakes
-(`src/shared/container-acp-agents.ts`); a catalog agent without such a pin is
-not auto-installed. The approval states that Socket Firewall does **not** cover
+(`src/shared/container-acp-agents.ts`), or an explicitly reviewed remote-only
+pin in `acp-ssh-transport.ts` when the agent's unattended-container provider
+configuration has not been verified. Qwen Code uses the latter at 0.24.7;
+this does not add it to the worker image or advertise a container credential
+route. A catalog agent without either pin is not auto-installed.
+The approval states that Socket Firewall does **not** cover
 this install (it runs on the desktop); `--ignore-scripts` and the pin are the
 remaining supply-chain controls. The install fails closed where no approver is
 wired (inside ACP workers). Other agents fail with the catalog's own install

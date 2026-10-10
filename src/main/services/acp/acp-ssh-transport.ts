@@ -242,21 +242,29 @@ export function remoteNpmInstallScript(pkg: string, npmBinDir: string | null): s
   return npmBinDir ? `env PATH=${posixQuote(npmBinDir)}:"$PATH" ${install}` : install
 }
 
+// These agents have a reviewed remote-install version but no unattended
+// container credential/endpoint contract. Pinning an SSH install must not
+// make the worker image claim it can run them with an unrelated vendor key.
+const REMOTE_ONLY_ACP_INSTALL_PINS = [
+  { id: 'qwen-code', npmPackage: '@qwen-code/qwen-code', version: '0.24.7' },
+] as const
+
 /**
  * The exact `package@version` a remote install may fetch for a catalog agent,
- * or `null` when Copse has no vetted pin for it. The pin is the one the
- * unattended-container worker image bakes (`CONTAINER_ACP_AGENTS`), so every
- * place Copse installs an adapter somewhere it cannot put Socket Firewall in
- * front of npm installs the same reviewed version. Local installs float
- * because Socket Firewall screens them; a remote install has no such screen,
- * so it never takes whatever `latest` happens to be — no pin, no install.
+ * or `null` when Copse has no reviewed pin for it. Container-capable agents
+ * share the worker image's pin; the explicit remote-only table covers agents
+ * whose provider configuration has not been verified for the worker image.
+ * Local installs float because Socket Firewall screens them; a remote install
+ * has no such screen, so it never takes `latest` — no pin, no install.
  */
 export function remoteAcpInstallSpec(known: {
   id: string
   installPackage?: string | undefined
 }): string | null {
   if (!known.installPackage) return null
-  const pinned = containerAcpAgent(known.id)
+  const pinned =
+    containerAcpAgent(known.id) ??
+    REMOTE_ONLY_ACP_INSTALL_PINS.find((agent) => agent.id === known.id)
   if (pinned?.npmPackage !== known.installPackage) return null
   return `${pinned.npmPackage}@${pinned.version}`
 }
