@@ -19,6 +19,7 @@ const PROJECT_ID = 'e2e-browser-session-project'
 const ACTIVE_THREAD_ID = 'e2e-browser-session-thread'
 const HISTORY_THREAD_ID = 'e2e-browser-session-history'
 const CANVAS_TOOL = 'mcp__copse-canvas__render_html_artefact'
+let temporaryRoot = ''
 let projectRoot = ''
 
 /** The label of every tab in the Browser pane, in order. */
@@ -43,7 +44,9 @@ describe('browser session restore', function () {
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    projectRoot = mkdtempSync(join(tmpdir(), 'copse-browser-session-'))
+    temporaryRoot = mkdtempSync(join(tmpdir(), 'copse-browser-session-'))
+    projectRoot = join(temporaryRoot, 'browser-session')
+    mkdirSync(projectRoot)
     process.env.COPSE_PANEL_MOCK_LLM = '1'
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
@@ -55,7 +58,7 @@ describe('browser session restore', function () {
 
   after(() => {
     resetUserData()
-    if (projectRoot) rmSync(projectRoot, { recursive: true })
+    if (temporaryRoot) rmSync(temporaryRoot, { recursive: true })
   })
 
   it('renders a prototype into the Browser pane', async () => {

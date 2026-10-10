@@ -28,7 +28,9 @@ const AUTH_COMMAND = "printf 'auth-check-passed\\n'"
 const AUTH_REPLY = 'The auth verification script passed.'
 const AUDIT_PROMPT = 'Audit the dependency tree.'
 const AUDIT_REPLY = 'The dependency audit found nothing to update.'
-const SEEDED_AT = 1_786_000_000_000
+// Keep the displayed age stable across CI dates, with an hour of margin before
+// the next day boundary. A fixed calendar timestamp ages the screenshot daily.
+const SEEDED_AT = Date.now() - (60 * 24 + 1) * 60 * 60 * 1_000
 
 function seededThread(id: string, title: string, request: string, answer: string) {
   return {
