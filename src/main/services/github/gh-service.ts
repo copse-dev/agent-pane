@@ -14,6 +14,13 @@ const ghPrListEntrySchema = z.object({
   url: z.string(),
   state: z.string(),
   headRefName: optionalString,
+  headRefOid: optionalString,
+  baseRefName: optionalString,
+  isDraft: z.boolean().optional(),
+  mergeStateStatus: optionalString,
+  mergeable: optionalString,
+  reviewDecision: optionalString,
+  labels: z.array(z.object({ name: z.string() })).optional(),
   author: optionalAuthorSchema,
   createdAt: optionalString,
   updatedAt: optionalString,
@@ -233,13 +240,20 @@ function formatGhError(stderr: string, code: number): string {
   return `gh exited with code ${String(code)}`
 }
 
-export function formatGhPrList(entries: GhPrListEntry[]): string {
+export function formatGhPrList(entries: GhPrListEntry[], details = false): string {
   if (entries.length === 0) return '(no pull requests)'
   return entries
     .map((pr) => {
       const head = pr.headRefName ? ` (${pr.headRefName})` : ''
       const author = pr.author?.login ? ` by ${pr.author.login}` : ''
-      return `#${String(pr.number)} ${pr.title} — ${pr.state}${head}${author}\n  ${pr.url}`
+      const summary = `#${String(pr.number)} ${pr.title} — ${pr.state}${head}${author}\n  ${pr.url}`
+      if (!details) return summary
+      return [
+        summary,
+        `  Draft: ${pr.isDraft ? 'yes' : 'no'}; Base: ${pr.baseRefName ?? '?'}; Head SHA: ${pr.headRefOid?.slice(0, 9) ?? '?'}`,
+        `  Merge state: ${pr.mergeStateStatus ?? '?'}; Mergeable: ${pr.mergeable ?? '?'}; Review: ${pr.reviewDecision ?? '?'}`,
+        `  Labels: ${pr.labels?.length ? pr.labels.map((label) => label.name).join(', ') : '(none)'}; Updated: ${pr.updatedAt ?? '?'}`,
+      ].join('\n')
     })
     .join('\n')
 }
@@ -286,6 +300,8 @@ export async function getGhPrListText(opts: {
   state: 'open' | 'closed' | 'merged' | 'all'
   limit: number
   head?: string | undefined
+  repo?: string | undefined
+  details?: boolean | undefined
 }): Promise<string> {
   if (!isGhAvailable()) return 'gh is not available on this system.'
   const args = [
@@ -296,14 +312,17 @@ export async function getGhPrListText(opts: {
     '--limit',
     String(opts.limit),
     '--json',
-    'number,title,url,state,headRefName,author,createdAt,updatedAt',
+    opts.details
+      ? 'number,title,url,state,headRefName,headRefOid,baseRefName,isDraft,mergeStateStatus,mergeable,reviewDecision,labels,author,updatedAt'
+      : 'number,title,url,state,headRefName,author,createdAt,updatedAt',
   ]
   if (opts.head) args.push('--head', opts.head)
+  if (opts.repo) args.push('--repo', opts.repo)
   const { stdout, stderr, code } = await runGh(args)
   if (code !== 0) return formatGhError(stderr, code)
   const list = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrListSchema))
   if (!Array.isArray(list)) return stdout.trim() || '(no output)'
-  return formatGhPrList(list)
+  return formatGhPrList(list, opts.details)
 }
 
 async function currentGitBranch(): Promise<string | null> {
