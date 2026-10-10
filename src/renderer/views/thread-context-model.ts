@@ -51,6 +51,7 @@ export interface ContextSideOf {
 
 export interface ThreadContextModel {
   threadId: string
+  title?: string
   sideOf?: ContextSideOf
   repos: ContextRepo[]
   links: ContextLink[]
@@ -174,6 +175,7 @@ export function deriveThreadContext(input: ThreadContextInput): ThreadContextMod
 
   return {
     threadId: thread.id,
+    title: thread.title,
     ...(sideOf ? { sideOf } : {}),
     repos,
     links,

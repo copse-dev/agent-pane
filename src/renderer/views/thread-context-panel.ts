@@ -1,6 +1,12 @@
 import { formatByteSize } from '@shared/file-bytes.ts'
 import { el, clear } from '../dom/helpers.ts'
-import { gitBranchIcon, gitPullRequestIcon, externalLinkIcon, plusIcon } from '../dom/icons.ts'
+import {
+  gitBranchIcon,
+  gitPullRequestIcon,
+  externalLinkIcon,
+  plusIcon,
+  closeIcon,
+} from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
@@ -10,17 +16,13 @@ import {
   restoreThread,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
-import { openBrowserUrl, openPullRequest } from '../controller/panels.ts'
+import { openBrowserUrl, openPullRequest, toggleFilesPane } from '../controller/panels.ts'
 import { startSideChat } from '../controller/side-chat.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { deriveThreadContext, type ThreadContextModel } from './thread-context-model.ts'
 
-/**
- * The per-thread Context panel (prototype #3538): repos, side chats, links and
- * references, and subagents for the open thread. The list column is a section
- * index with counts; the viewer column holds the content.
- */
+/** A compact, single-column overview of the active thread. */
 
 export interface ThreadContextHandlers {
   openThread: (threadId: string) => void
@@ -33,27 +35,14 @@ export interface ThreadContextHandlers {
   restoreSideChat: (threadId: string) => void
 }
 
-export const CONTEXT_SECTIONS = ['repos', 'side-chats', 'links', 'subagents'] as const
-type ContextSection = (typeof CONTEXT_SECTIONS)[number]
+type ContextSection = 'repos' | 'side-chats' | 'links' | 'subagents' | 'sources'
 
 const SECTION_TITLES: Record<ContextSection, string> = {
-  repos: 'Repos',
+  repos: 'Access',
   'side-chats': 'Side chats',
-  links: 'Links and references',
+  links: 'Links & references',
   subagents: 'Subagents',
-}
-
-function sectionCount(model: ThreadContextModel, section: ContextSection): number {
-  switch (section) {
-    case 'repos':
-      return model.repos.length
-    case 'side-chats':
-      return model.sideChats.filter((row) => !row.archived).length
-    case 'links':
-      return model.links.length + model.mentionedIn.length
-    case 'subagents':
-      return model.subagents.length
-  }
+  sources: 'Sources',
 }
 
 function section(kind: ContextSection, ...children: Array<Node | string>): HTMLElement {
@@ -80,24 +69,22 @@ function reposSection(model: ThreadContextModel): HTMLElement {
   if (model.repos.length === 0) return section('repos', emptyNote('No repository for this thread.'))
   return section(
     'repos',
+    el('div', { class: 'thread-context-label' }, 'Folders'),
     ...model.repos.map((repo) =>
       el(
         'div',
-        { class: 'thread-context-row thread-context-repo', 'data-repo-path': repo.path },
+        {
+          class: 'thread-context-row thread-context-repo',
+          'data-repo-path': repo.path,
+          title: [repo.path, repo.branch].filter(Boolean).join(' · '),
+        },
         gitBranchIcon('ui-icon ui-icon-sm'),
         el(
           'span',
           { class: 'thread-context-main' },
           el('span', { class: 'thread-context-title' }, repo.name),
-          el('span', { class: 'thread-context-sub' }, repo.path),
         ),
-        repo.branch !== undefined
-          ? el(
-              'span',
-              { class: 'thread-context-chip', 'data-checkout': repo.checkout },
-              repo.branch,
-            )
-          : '',
+        el('span', { class: 'thread-context-meta' }, 'Primary'),
       ),
     ),
   )
@@ -178,20 +165,15 @@ function sideChatsSection(model: ThreadContextModel, handlers: ThreadContextHand
 }
 
 function linksSection(model: ThreadContextModel, handlers: ThreadContextHandlers): HTMLElement {
-  const groups: Array<{ label: string; kind: 'pr' | 'thread' | 'url' }> = [
-    { label: 'Pull requests', kind: 'pr' },
-    { label: 'Threads', kind: 'thread' },
-    { label: 'Web', kind: 'url' },
-  ]
+  const groups: Array<'pr' | 'thread'> = ['pr', 'thread']
   const children: HTMLElement[] = []
   for (const group of groups) {
-    const rows = model.links.filter((link) => link.kind === group.kind)
+    const rows = model.links.filter((link) => link.kind === group)
     if (rows.length === 0) continue
     children.push(
       el(
         'div',
-        { class: 'thread-context-group', 'data-link-group': group.kind },
-        el('h6', {}, group.label),
+        { class: 'thread-context-group', 'data-link-group': group },
         ...rows.map((link) => {
           const button = rowButton(
             {
@@ -203,7 +185,8 @@ function linksSection(model: ThreadContextModel, handlers: ThreadContextHandlers
               : link.kind === 'url'
                 ? externalLinkIcon('ui-icon ui-icon-sm')
                 : '',
-            el('span', { class: 'thread-context-title' }, link.label),
+            el('span', { class: 'thread-context-title', title: link.label }, link.label),
+            el('span', { class: 'thread-context-chip' }, link.kind === 'pr' ? 'PR' : 'Thread'),
           )
           button.addEventListener('click', () => {
             if (link.kind === 'pr' && link.pr) handlers.openPr(link.pr)
@@ -243,34 +226,64 @@ function linksSection(model: ThreadContextModel, handlers: ThreadContextHandlers
 
 function subagentsSection(model: ThreadContextModel): HTMLElement {
   if (model.subagents.length === 0) return section('subagents', emptyNote('No subagents.'))
-  return section(
+  const result = section(
     'subagents',
     ...model.subagents.map((agent) =>
       el(
         'div',
         { class: 'thread-context-row', 'data-subagent-id': agent.id, 'data-status': agent.status },
+        el('span', { class: 'thread-context-status-dot', 'aria-hidden': 'true' }),
         el(
           'span',
           { class: 'thread-context-main' },
-          el('span', { class: 'thread-context-title' }, agent.prompt || agent.kind),
-          el(
-            'span',
-            { class: 'thread-context-sub' },
-            [agent.kind, agent.model].filter(Boolean).join(' · '),
-          ),
+          el('span', { class: 'thread-context-title' }, agent.kind),
+          el('span', { class: 'thread-context-sub' }, agent.prompt),
         ),
-        el('span', { class: 'thread-context-chip', 'data-status': agent.status }, agent.status),
+        el(
+          'span',
+          { class: 'thread-context-meta', title: agent.model ?? agent.status },
+          [agent.status, agent.model].filter(Boolean).join(' · '),
+        ),
       ),
     ),
   )
+  const summary = ['running', 'done', 'error']
+    .flatMap((status) => {
+      const count = model.subagents.filter((agent) => agent.status === status).length
+      return count ? [`${String(count)} ${status}`] : []
+    })
+    .join(' · ')
+  result.querySelector('h5')?.append(el('span', { class: 'thread-context-count' }, summary))
+  return result
 }
 
-/** Pure render: the whole viewer column for one thread's context. */
+function sourcesSection(model: ThreadContextModel, handlers: ThreadContextHandlers): HTMLElement {
+  const sources = model.links.filter((link) => link.kind === 'url')
+  return section(
+    'sources',
+    ...(sources.length
+      ? sources.map((link) => {
+          const row = rowButton(
+            { 'data-link-key': link.key, title: link.target },
+            externalLinkIcon('ui-icon ui-icon-sm'),
+            el('span', { class: 'thread-context-title' }, link.label),
+          )
+          row.addEventListener('click', () => {
+            handlers.openUrl(link.target)
+          })
+          return row
+        })
+      : [emptyNote('No sources yet.')]),
+  )
+}
+
+/** Pure render of one thread's context. */
 export function renderThreadContext(
   model: ThreadContextModel,
   handlers: ThreadContextHandlers,
 ): HTMLElement {
   const host = el('div', { class: 'thread-context', 'aria-label': 'Thread context' })
+  if (model.title) host.append(el('div', { class: 'thread-context-thread-title' }, model.title))
   if (model.sideOf) {
     const back = el(
       'button',
@@ -298,10 +311,11 @@ export function renderThreadContext(
     )
   }
   host.append(
-    reposSection(model),
-    sideChatsSection(model, handlers),
-    linksSection(model, handlers),
     subagentsSection(model),
+    reposSection(model),
+    linksSection(model, handlers),
+    sourcesSection(model, handlers),
+    sideChatsSection(model, handlers),
   )
   return host
 }
@@ -311,13 +325,21 @@ function contextModeActive(store: AppStore): boolean {
   return filesPaneOpen && rightPanelMode === 'context'
 }
 
-/** Mount the Context pane: list column = section index, viewer column = content. */
+/** Mount the fixed header and scrolling content in one pane. */
 export function mountThreadContextPane(
   listRoot: HTMLElement,
   viewerRoot: HTMLElement,
   store: AppStore,
   api: ApiClient,
 ): () => void {
+  const close = el(
+    'button',
+    { type: 'button', class: 'thread-context-close', 'aria-label': 'Close context' },
+    closeIcon('ui-icon ui-icon-sm'),
+  )
+  close.addEventListener('click', () => {
+    toggleFilesPane(store)
+  })
   listRoot.append(
     el(
       'div',
@@ -325,10 +347,9 @@ export function mountThreadContextPane(
       el('span', { class: 'pane-header-title' }, 'Context'),
       panePopoutButton(store, api, 'context', 'context'),
       paneMaximizeButton(store, 'context'),
+      close,
     ),
   )
-  const index = el('div', { class: 'git-changes-list thread-context-index' })
-  listRoot.append(index)
 
   let mentionedIn: ThreadContextModel['mentionedIn'] = []
   let mentionedFor: string | null = null
@@ -408,7 +429,6 @@ export function mountThreadContextPane(
     const state = store.getState()
     const thread = getActiveThread(store)
     clear(viewerRoot)
-    clear(index)
     if (!thread) {
       viewerRoot.append(emptyNote('Open a thread to see its context.'))
       return
@@ -434,7 +454,7 @@ export function mountThreadContextPane(
     archive.addEventListener('click', () => {
       if (project) store.emit('thread_archive_requested', project.id, thread.id)
     })
-    content.prepend(
+    content.querySelector('[data-context-section="repos"]')?.after(
       el(
         'section',
         { class: 'thread-context-section', 'data-context-section': 'storage' },
@@ -458,20 +478,7 @@ export function mountThreadContextPane(
       ),
     )
     viewerRoot.append(content)
-    for (const kind of CONTEXT_SECTIONS) {
-      const jump = el(
-        'button',
-        { type: 'button', class: 'git-change-row thread-context-index-row', 'data-index': kind },
-        el('span', { class: 'thread-context-title' }, SECTION_TITLES[kind]),
-        el('span', { class: 'thread-context-count' }, String(sectionCount(model, kind))),
-      )
-      jump.addEventListener('click', () => {
-        viewerRoot
-          .querySelector(`[data-context-section="${kind}"]`)
-          ?.scrollIntoView({ block: 'start' })
-      })
-      index.append(jump)
-    }
+
   }
 
   /** Backlinks come from the index; ignore an answer for a thread since closed. */
