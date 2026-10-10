@@ -13,6 +13,7 @@ import { terminateProcessTree } from './subprocess-kill.ts'
 import { leaseGitSshEnv } from '../ssh-workspace/git-ssh-env.ts'
 import {
   internalGitEnv,
+  internalGitTransport,
   withGitInvocationArgs,
   type GitConfigPolicy,
   type GitSigningBridge,
@@ -97,7 +98,7 @@ function prepareGitInvocation(
   signing?: GitSigningBridge,
 ): { args: string[]; env: NodeJS.ProcessEnv; releaseGitSsh?: () => void } {
   const preparedArgs = withGitInvocationArgs(args, policy, signing)
-  const transport = policy === 'internal' && ['fetch', 'push'].includes(args[0] ?? '')
+  const transport = internalGitTransport(args[0])
   // Remove ambient Git/SSH executable injection before installing Copse's own
   // askpass and host-key policy. Scrubbing after the lease would also delete
   // those trusted bridge variables and break authenticated fetch/push.

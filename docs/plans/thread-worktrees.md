@@ -277,7 +277,7 @@ table-driven tests.
 | Dirty default-branch checkout                      | Worktree, starting clean (dirty seeding disabled 2026-10, see below)       |
 | Not a git repository                               | Shared, with reason                                                        |
 | Default branch unresolved or HEAD detached         | Shared, with reason                                                        |
-| Repository uses submodules                         | Shared in v1, with reason                                                  |
+| Repository uses submodules                         | Worktree; see [Submodules](#submodules)                                    |
 | SSH project or cloud/remote agent execution        | Shared in v1; local worktrees are not silently mixed with remote execution |
 | Explicit shared choice                             | Shared                                                                     |
 | Explicit worktree choice in a supported local repo | Worktree                                                                   |
@@ -385,6 +385,40 @@ for status, diff, add, and commit plus negative tests for hooks/config writes.
 
 The OS sandbox remains macOS-only. Linux and Windows continue through the documented
 permission policy; the classifier is not an authorization boundary.
+
+### Submodules
+
+A new linked checkout has every submodule directory empty, and it stays that way until
+the agent calls `init_submodules` (optionally with `paths`). Checking them all out at
+allocation was the slow part of a big repository, and most threads touch none. The tool
+checks out the submodules the project checkout has itself initialised, at the commit the
+thread's HEAD records. It runs without approval: it never uses the network and writes
+only inside the thread's own administration directory. A moved submodule pointer or
+edits inside the project's own submodules do not carry over.
+`src/main/services/worktree-submodules.ts` owns this.
+
+- **Offline, from the project's module repository.** Each submodule is cloned from
+  `<common>/modules/<name>` with `clone --no-checkout --template=` (hardlinked objects,
+  no hooks, `file` transport only) into the thread's own
+  `<common>/worktrees/<id>/modules/<name>`, the layout `git submodule update` produces.
+  Nested submodules repeat this one level down. A submodule the project never
+  initialised stays empty: fetching it is a network operation nobody asked for, and the
+  agent can run `git submodule update` behind the usual approval. Population is best
+  effort; a failure is reported by the tool, never raised.
+- **No new grants.** The agent sandbox already owns the per-worktree administration
+  directory, so committing inside a submodule works without widening it, and the user's
+  own module repositories are only read. Manager commands run inside a submodule use the
+  enclosing thread checkout's overlay.
+- **Removal keeps the agent's submodule work.** Removing the checkout deletes its private
+  module repositories. Retire, park, orphan pruning, Settings removal and archival
+  therefore also treat as material: changed and untracked files inside each populated
+  submodule (and ignored ones wherever the superproject's own check counts them; archival
+  and fresh-per-run automations treat them as regenerable), and any module repository whose HEAD or
+  branch tip is not contained by the commit population checked out
+  (`refs/copse/submodule-base`) or a remote-tracking ref. Superproject status runs with
+  `--ignore-submodules=none`, so a `.gitmodules` `ignore` setting cannot hide changes.
+  Git refuses to remove a checkout holding submodule repositories without `--force`; the
+  manager re-runs Git's own clean check first and forces only past that refusal.
 
 ## Concurrency foundation
 
@@ -653,7 +687,7 @@ Scope:
 - add setup command/copy-glob settings and visible failure/retry flow;
 - collect allocation timing/failure telemetry without paths or prompt content;
 - switch new projects to `from-default-branch` only after all prior gates pass;
-- document semantic-index staleness and unsupported remote/submodule cases.
+- document semantic-index staleness and unsupported remote cases.
 
 Exit gate: default isolation meets the product invariants and has a reversible project
 setting.

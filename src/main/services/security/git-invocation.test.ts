@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { internalGitEnv, withGitInvocationArgs } from './git-invocation.ts'
+import { internalGitEnv, internalGitTransport, withGitInvocationArgs } from './git-invocation.ts'
 import { runCommand } from '../exec/command-runner.ts'
 import {
   initProjectSandbox,
@@ -72,6 +72,38 @@ describe('internal Git policy', () => {
     ]) {
       assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git command/)
     }
+  })
+
+  it('admits clone only as a local, checkout-free, template-free submodule copy', () => {
+    const exact = [
+      'clone',
+      '--no-checkout',
+      '--template=',
+      '--separate-git-dir',
+      '/repo/.git/worktrees/t/modules/lib',
+      '--',
+      '/repo/.git/modules/lib',
+      '/thread/lib',
+    ]
+    assert.deepEqual(withGitInvocationArgs(exact).slice(-exact.length), exact)
+    for (const args of [
+      ['clone', '/repo/.git/modules/lib', '/thread/lib'],
+      ['clone', '--upload-pack=/payload', ...exact.slice(1)],
+      ['clone', '--config', 'core.fsmonitor=/payload', ...exact.slice(1)],
+      ['clone', '--recurse-submodules', ...exact.slice(1)],
+      [...exact.slice(0, 2), '--template=/payload/hooks', ...exact.slice(3)],
+      [...exact, 'extra'],
+    ]) {
+      assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git clone/)
+    }
+    // A local clone may use the file transport and nothing else; fetch and
+    // push keep their remote transports; every other command gets none.
+    assert.equal(internalGitTransport('clone'), 'local')
+    assert.equal(internalGitEnv({}, internalGitTransport('clone'))['GIT_ALLOW_PROTOCOL'], 'file')
+    assert.equal(internalGitTransport('fetch'), 'remote')
+    assert.equal(internalGitTransport('push'), 'remote')
+    assert.equal(internalGitTransport('status'), 'none')
+    assert.equal(internalGitTransport('-c'), 'none')
   })
 
   it('strips config/executable injection while retaining backup index and identity', () => {

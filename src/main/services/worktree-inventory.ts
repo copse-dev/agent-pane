@@ -28,8 +28,8 @@ import { getDefaultBranch } from './github/git-service.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { clearThreadWorktree, getThreadMeta } from './thread-store.ts'
 import {
-  changedPaths,
   expectedThreadWorktreePath,
+  inspectRemovalBlockers,
   listProjectWorktrees,
   managedThreadIdForPath,
   releaseWorktreeRoot,
@@ -138,17 +138,15 @@ async function lastGitActivity(worktreePath: string): Promise<number | null> {
   return index ?? (await mtimeOf(dir))
 }
 
-/** Uncommitted work in a checkout, ignored files included (`git worktree remove` deletes those). */
+/**
+ * Uncommitted work in a checkout, ignored files included (`git worktree remove`
+ * deletes those), and work inside its submodules.
+ */
 async function inspectChanges(worktreePath: string): Promise<string[] | null> {
-  const status = await runWorktreeGit(worktreePath, [
-    'status',
-    '--porcelain=v1',
-    '-z',
-    '--ignored=matching',
-  ]).catch(() => null)
-  if (!status) return null
-  if (status.code !== 0) return null
-  return changedPaths(status.stdout)
+  const blockers = await inspectRemovalBlockers(worktreePath, { includeIgnored: true }).catch(
+    () => null,
+  )
+  return blockers?.paths ?? null
 }
 
 async function isMerged(
