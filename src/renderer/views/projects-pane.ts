@@ -973,7 +973,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
    * view and backfill (see the IntersectionObserver-gated fetches below).
    */
   function threadNeedsCleanup(project: Project, thread: SidebarThread): boolean {
-    if (thread.status === 'running') return false
     // Filtering runs before pagination. Only rendered rows may start lookups.
     if (
       sidebarPrRefs(thread).some((ref) => {
@@ -982,6 +981,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       })
     )
       return true
+    // An open PR still needs attention while its thread runs. Only local
+    // working-tree cleanup waits for the run to finish.
+    if (thread.status === 'running') return false
     // PR lifecycle is available for SSH projects; local git summaries are not.
     if (project.sshHost) return false
     const cached = threadChangeCache.get(threadChangeKey(project.id, thread.id))
