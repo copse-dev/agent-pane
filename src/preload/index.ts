@@ -766,6 +766,8 @@ const api: ApiClient = {
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
   },
   threads: {
+    storageSize: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:storage-size', projectId, threadId),
     archive: (
       projectId: string,
       threadId: string,
