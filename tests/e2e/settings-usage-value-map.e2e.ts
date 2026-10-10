@@ -146,6 +146,14 @@ describe('settings usage model value map cost axis', () => {
     await prepareE2eScreenshot()
     await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-task.png')
 
+    // The seeded provider supplies token prices, not AA task-cost measurements.
+    // Exercise discovery and its routed outlier on the priced, blended axis.
+    await blendedBtn.click()
+    await browser.waitUntil(
+      async () => (await chart.getAttribute('data-cost-axis')) === 'blended',
+      { timeout: 5000, timeoutMsg: 'value map did not return to token prices' },
+    )
+
     const discoverBtn = fieldset.$('button.frontier-discover')
     await expect(discoverBtn).toBeDisplayed()
     const discoverLabels = await discoverBtn.$$('.frontier-discover-label')
@@ -181,8 +189,8 @@ describe('settings usage model value map cost axis', () => {
       ['true', 'false'],
       'only the active action label should be exposed after selection',
     )
-    // The AA fixture includes a curated, unroutable $240/MTok legacy model.
-    // It belongs in the dominated disclosure and must not stretch the plot.
+    // Discoveries have their own disclosure; the configured legacy route
+    // stays in the severely dominated list rather than becoming a discovery.
     assert.equal(
       await fieldset.$('circle.frontier-point[data-model-id="o1-pro"]').isExisting(),
       false,
@@ -191,7 +199,14 @@ describe('settings usage model value map cost axis', () => {
     const dominatedText = await browser.execute(
       () => document.querySelector('details.frontier-dominated-live')?.textContent ?? '',
     )
-    assert.match(dominatedText, /o1-pro/)
+    assert.match(dominatedText, /Claude Fable 5/)
+    assert.doesNotMatch(dominatedText, /o1-pro/)
+    assert.match(
+      await browser.execute(
+        () => document.querySelector('details.frontier-severely-dominated')?.textContent ?? '',
+      ),
+      /o1-pro/,
+    )
     const plottedCount = await fieldset.$$('circle.frontier-point').length
     assert.ok(
       plottedCount < 20,
