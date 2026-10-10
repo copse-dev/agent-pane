@@ -38298,10 +38298,15 @@ function createDemoApi(scenario, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api2 = {
-    mobile: { manage: async () => {
-    }, onChat: () => () => {
-    }, reply: async () => {
-    } },
+    mobile: {
+      manage: async () => {
+      },
+      status: () => resolved(MOBILE_COMPANION_DEMO_STATUS),
+      onChat: () => () => {
+      },
+      reply: async () => {
+      }
+    },
     windowState: {
       getNavigation: () => resolved(structuredClone(navigation)),
       setNavigation: (next) => {
@@ -39158,7 +39163,7 @@ function createDemoApi(scenario, options = {}) {
   };
   return api2;
 }
-var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
+var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray, MOBILE_COMPANION_DEMO_QR_SVG, MOBILE_COMPANION_DEMO_STATUS;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
     init_automations_plugin();
@@ -39434,6 +39439,12 @@ var init_demo_api = __esm({
       }
     ];
     emptyArray = () => Promise.resolve([]);
+    MOBILE_COMPANION_DEMO_QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27 27" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h27v27H0z"/><path stroke="#000000" d="M1 1.5h7m3 0h3m1 0h1m3 0h7M1 2.5h1m5 0h1m3 0h1m1 0h1m2 0h1m2 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m1 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h2m2 0h2m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m1 0h1m5 0h2m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m1 0h2m2 0h3m1 0h1m1 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h3m4 0h1M1 9.5h1m1 0h5m2 0h2m1 0h2m2 0h1m1 0h5M2 10.5h2m1 0h1m2 0h1m1 0h1m1 0h3m1 0h2m1 0h1m4 0h1M1 11.5h2m3 0h2m1 0h1m1 0h2m4 0h3m1 0h2m1 0h2M3 12.5h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m7 0h1M3 13.5h1m2 0h5m1 0h1m2 0h2m1 0h4m1 0h3M1 14.5h2m1 0h2m3 0h2m2 0h1m2 0h7m1 0h1M1 15.5h1m1 0h1m1 0h5m1 0h1m6 0h1m1 0h3m1 0h2M1 16.5h1m2 0h2m4 0h2m1 0h3m1 0h2m1 0h1m4 0h1M1 17.5h1m1 0h2m2 0h2m1 0h2m1 0h1m3 0h5m1 0h1M9 18.5h1m1 0h1m4 0h2m3 0h2M1 19.5h7m3 0h3m3 0h1m1 0h1m1 0h1m1 0h3M1 20.5h1m5 0h1m1 0h1m2 0h1m4 0h1m3 0h2m1 0h2M1 21.5h1m1 0h3m1 0h1m1 0h4m3 0h10M1 22.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m6 0h2m2 0h1M1 23.5h1m1 0h3m1 0h1m1 0h1m4 0h3m1 0h1m1 0h3m2 0h1M1 24.5h1m5 0h1m5 0h2m4 0h5m1 0h1M1 25.5h7m1 0h1m1 0h1m1 0h1m1 0h11"/></svg>';
+    MOBILE_COMPANION_DEMO_STATUS = {
+      enabled: true,
+      url: "https://192.168.1.42:42773",
+      qrSvg: MOBILE_COMPANION_DEMO_QR_SVG
+    };
   }
 });
 
@@ -64441,6 +64452,13 @@ async function loadSimpleFields(form, api2) {
     }
   }
 }
+async function mountMobileCompanionQr(overlay, api2) {
+  const status = await api2.mobile.status();
+  if (!status.url || !status.qrSvg) return;
+  qsRequired(overlay, "#mobile-companion-qr-image").innerHTML = status.qrSvg;
+  qsRequired(overlay, "#mobile-companion-qr-url").textContent = status.url;
+  qsRequired(overlay, "#mobile-companion-qr").hidden = false;
+}
 function parseNonNegativeInt(value, fallback) {
   const n2 = Number.parseInt(value, 10);
   return Number.isFinite(n2) && n2 >= 0 ? n2 : fallback;
@@ -65472,6 +65490,13 @@ function mountSettingsDialog(store2, api2) {
                   Set up or manage\u2026
                 </button>
               </div>
+              <div id="mobile-companion-qr" class="mobile-companion-qr" hidden>
+                <div id="mobile-companion-qr-image" class="mobile-companion-qr-image" aria-hidden="true"></div>
+                <div class="mobile-companion-qr-text">
+                  <p class="field-hint">Scan with your phone's camera to open Copse.</p>
+                  <code id="mobile-companion-qr-url" class="mobile-companion-qr-url"></code>
+                </div>
+              </div>
             </fieldset>
 
             <fieldset>
@@ -65733,6 +65758,7 @@ function mountSettingsDialog(store2, api2) {
       void api2.mobile.manage();
     }
   );
+  void mountMobileCompanionQr(overlay, api2);
   const navBtns = overlay.querySelectorAll(".settings-nav-btn");
   const sections = overlay.querySelectorAll(".settings-section");
   const contentEl = qsRequired(overlay, ".settings-content");
