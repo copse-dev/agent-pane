@@ -128980,12 +128980,12 @@ ${output2}` : "Terminal output: (none)"
     } catch {
     }
   }
-  function focusTab(tab) {
+  function focusTab(tab, opts) {
     openTerminalSurface(tab);
     fitTab(tab);
-    tab.term.focus();
+    if (opts?.grabFocus ?? true) tab.term.focus();
   }
-  function setActiveTab(tabId) {
+  function setActiveTab(tabId, opts) {
     if (activeTabId === tabId) return;
     activeTabId = tabId;
     for (const tab2 of tabs.values()) {
@@ -128999,7 +128999,7 @@ ${output2}` : "Terminal output: (none)"
       void ensureSession(tab);
       requestAnimationFrame(() => {
         fitTab(tab);
-        focusTab(tab);
+        focusTab(tab, { grabFocus: opts?.focus ?? true });
       });
     }
   }
@@ -129150,7 +129150,7 @@ ${output2}` : "Terminal output: (none)"
     body.append(panel);
     const visible = scopeId === currentThreadId();
     setTabVisible(tab, visible);
-    if (visible && (options?.activate !== false || !activeTabId)) setActiveTab(id);
+    if (visible && (options?.activate !== false || !activeTabId)) setActiveTab(id, options);
     if (visible && terminalModeActive(store2)) void ensureSession(tab);
     return id;
   }
@@ -129181,10 +129181,10 @@ ${output2}` : "Terminal output: (none)"
     for (const tab2 of visible) setTabVisible(tab2, true);
     if (activeTabId && !visible.some((t2) => t2.id === activeTabId)) activeTabId = null;
     if (needsNew) {
-      if (terminalModeActive(store2)) addTab();
+      if (terminalModeActive(store2)) addTab({ focus: false });
       return;
     }
-    if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id);
+    if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id, { focus: false });
     const tab = activeTabId ? tabs.get(activeTabId) : null;
     if (tab && terminalModeActive(store2)) {
       resizeObserver.observe(tab.container);
@@ -129192,7 +129192,6 @@ ${output2}` : "Terminal output: (none)"
       void ensureSession(tab);
       requestAnimationFrame(() => {
         fitTab(tab);
-        focusTab(tab);
       });
     }
   }
