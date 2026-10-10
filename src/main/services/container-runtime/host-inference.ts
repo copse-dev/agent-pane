@@ -1,0 +1,177 @@
+/** Host-owned authentication: the guest can ask only the provider pinned to this run. */
+import type { Duplex } from 'node:stream'
+import type { LLMProvider } from '@copse/llm/wire-types.ts'
+import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
+import { INFERENCE_MESSAGE_LIMIT, inferenceRequestSchema } from './host-inference-wire.ts'
+
+interface HostInferenceOptions {
+  provider: (maxOutputTokens: number) => Promise<LLMProvider>
+  tokenCeiling: number
+  wallClockMs: number
+  signal?: AbortSignal
+}
+
+/**
+ * How long a new request waits for a cancelled predecessor to let go of the single inference
+ * slot. The guest cancels a reasoning-runaway stream and asks for the recovery stream at once,
+ * but the provider may take a while to stop generating; refusing the new request would end the
+ * whole run on a race the guest cannot see. A predecessor that is still live is never waited for.
+ */
+const CANCELLED_SLOT_RELEASE_MS = 60_000
+
+interface InferenceSlot {
+  /** Aborts when the guest disconnects or the run stops. */
+  readonly signal: AbortSignal
+  readonly released: Promise<void>
+  readonly release: () => void
+}
+
+export class HostInference {
+  private readonly controller = new AbortController()
+  private readonly timer: NodeJS.Timeout
+  private readonly options: HostInferenceOptions
+  private active: InferenceSlot | null = null
+  private used = 0
+  private readonly stopRequested = (): void => {
+    this.stop()
+  }
+
+  constructor(options: HostInferenceOptions) {
+    this.options = options
+    this.timer = setTimeout(() => {
+      this.stop()
+    }, options.wallClockMs)
+    this.timer.unref()
+    options.signal?.addEventListener('abort', this.stopRequested, { once: true })
+    if (options.signal?.aborted) this.stop()
+  }
+
+  stop(): void {
+    clearTimeout(this.timer)
+    this.options.signal?.removeEventListener('abort', this.stopRequested)
+    this.controller.abort(new Error('Host inference stopped'))
+  }
+
+  async serve(stream: Duplex): Promise<void> {
+    const controller = new AbortController()
+    const disconnected = (): void => {
+      controller.abort(new Error('Inference channel disconnected'))
+    }
+    stream.on('close', disconnected)
+    stream.on('error', disconnected)
+    const signal = AbortSignal.any([controller.signal, this.controller.signal])
+    const abortStream = (): void => {
+      stream.destroy()
+    }
+    signal.addEventListener('abort', abortStream, { once: true })
+    let slot: InferenceSlot | null = null
+    const send = (value: unknown): Promise<void> =>
+      new Promise((resolve, reject) => {
+        const line = JSON.stringify(value) + '\n'
+        if (Buffer.byteLength(line) > INFERENCE_MESSAGE_LIMIT) {
+          reject(new Error('Inference response exceeds the message limit'))
+          return
+        }
+        stream.write(line, (error) => {
+          if (error) reject(error)
+          else resolve()
+        })
+      })
+    try {
+      signal.throwIfAborted()
+      const previous = this.active
+      if (previous !== null) {
+        if (!previous.signal.aborted)
+          throw new Error('Only one inference request may run at a time')
+        await this.waitForRelease(previous, signal)
+        signal.throwIfAborted()
+        if (this.active !== null) throw new Error('Only one inference request may run at a time')
+      }
+      let release: () => void = () => {}
+      const released = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      slot = { signal, released, release }
+      this.active = slot
+      const parts: Buffer[] = []
+      let bytes = 0
+      for await (const part of stream) {
+        const buffer = Buffer.isBuffer(part) ? part : Buffer.from(String(part))
+        bytes += buffer.length
+        if (bytes > INFERENCE_MESSAGE_LIMIT)
+          throw new Error('Inference request exceeds the message limit')
+        parts.push(buffer)
+      }
+      const text = Buffer.concat(parts).toString('utf8')
+      const request = safeJsonParse(text, decodeWithSchema(inferenceRequestSchema))
+      if (!request) throw new Error('Invalid host inference request')
+      // Reserve estimated input tokens before making a paid request. Actual usage replaces
+      // this estimate; a failure with no usage keeps the reservation.
+      const reservation = Math.ceil(bytes / 4)
+      if (this.used + reservation >= this.options.tokenCeiling)
+        throw new Error('Host inference token budget reached')
+      this.used += reservation
+      const provider = await this.options.provider(this.options.tokenCeiling - this.used)
+      signal.throwIfAborted()
+      let reported = false
+      for await (const chunk of provider.stream(
+        request.messages,
+        request.tools,
+        signal,
+        request.options,
+      )) {
+        signal.throwIfAborted()
+        if (chunk.type === 'usage') {
+          if (!reported) {
+            this.used -= reservation
+            reported = true
+          }
+          this.used += chunk.inputTokens + chunk.outputTokens
+        }
+        await send({ chunk })
+        if (this.used >= this.options.tokenCeiling)
+          throw new Error('Host inference token budget reached')
+      }
+      await send({ end: true })
+      stream.end()
+    } catch (error) {
+      if (!stream.destroyed) {
+        const message = error instanceof Error ? error.message : 'Host inference failed'
+        await send({ error: message.slice(0, 4096) }).catch(() => {})
+        stream.end()
+      }
+    } finally {
+      if (slot !== null) {
+        this.active = null
+        slot.release()
+      }
+      signal.removeEventListener('abort', abortStream)
+      stream.removeListener('close', disconnected)
+      stream.removeListener('error', disconnected)
+    }
+  }
+
+  private async waitForRelease(previous: InferenceSlot, signal: AbortSignal): Promise<void> {
+    let timer: NodeJS.Timeout | undefined
+    let stopWaiting: (() => void) | undefined
+    const expired = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, CANCELLED_SLOT_RELEASE_MS)
+    })
+    // The waiter's own cancellation (guest disconnect or run stop) ends the wait at once,
+    // rather than holding this request and its timer until the predecessor lets go.
+    const aborted = new Promise<void>((resolve) => {
+      stopWaiting = (): void => {
+        resolve()
+      }
+      if (signal.aborted) resolve()
+      else signal.addEventListener('abort', stopWaiting, { once: true })
+    })
+    try {
+      await Promise.race([previous.released, expired, aborted])
+    } finally {
+      clearTimeout(timer)
+      if (stopWaiting) signal.removeEventListener('abort', stopWaiting)
+    }
+    signal.throwIfAborted()
+  }
+}

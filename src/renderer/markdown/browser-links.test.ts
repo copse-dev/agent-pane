@@ -186,6 +186,63 @@ describe('markdown browser links', () => {
     ])
   })
 
+  it('treats an artifact-shaped link on another host as an ordinary link', async () => {
+    const href =
+      'https://lookalike.example/v1/agents/bc-00000000-0000-0000-0000-000000000001/artifacts/download?path=artifacts%2Fscreenshot.png'
+    const root = document.createElement('div')
+    root.innerHTML = `<a href="${href}">Open</a>`
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const requested: string[] = []
+    store.on('browser_url_requested', (url) => requested.push(url))
+    let downloads = 0
+    const unbind = bindBrowserLinkClicks(root, store, {
+      remoteAgent: {
+        downloadArtifact: async () => {
+          downloads++
+          return 'https://cloud-agent-artifacts.s3.us-east-1.amazonaws.com/screenshot.png'
+        },
+      },
+    })
+
+    qsRequired(root, 'a').dispatchEvent(
+      new window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    unbind()
+    assert.equal(downloads, 0)
+    assert.deepEqual(requested, [href])
+  })
+
+  it('downloads artifacts from a configured remote agent base URL', async () => {
+    const href =
+      'https://agents.internal.example/v1/agents/bc-1/artifacts/download?path=artifacts%2Fa.png'
+    const root = document.createElement('div')
+    root.innerHTML = `<a href="${href}">Open</a>`
+    const store = createStore({ filesPaneOpen: false })
+    let downloads = 0
+    const unbind = bindBrowserLinkClicks(root, store, {
+      remoteAgent: {
+        downloadArtifact: async () => {
+          downloads++
+          return ''
+        },
+      },
+      settings: {
+        get: async (key) =>
+          key === 'remoteAgentBaseUrl' ? 'https://agents.internal.example/' : undefined,
+      },
+    })
+
+    qsRequired(root, 'a').dispatchEvent(
+      new window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    unbind()
+    assert.equal(downloads, 1)
+  })
+
   it('opens GitHub PR links in the PR panel when gh is ready', async () => {
     const href = 'https://github.com/org/repo/pull/42'
     const root = document.createElement('div')

@@ -12,10 +12,12 @@
  *   --workspace <dir>       git checkout to carry in (default: cwd)
  *   --prompt <text>         the task
  *   --model <id>            model id the provider serves (default: $COPSE_MODEL)
- *   --provider-url <url>    OpenAI-compatible base URL the guest calls; its host:port
- *                           must be allowlisted (default: $COPSE_PROVIDER_URL)
- *   --api-key-env <NAME>    host env var holding the provider key (value passed, name kept)
- *   --allow <host:port>     egress origin the broker forwards to (repeatable)
+ *   --provider-url <url>    OpenAI-compatible base URL this host calls for the guest's
+ *                           inference; the guest never dials it, so it needs no --allow
+ *                           entry (default: $COPSE_PROVIDER_URL)
+ *   --api-key-env <NAME>    host env var holding the provider key (stays on this host)
+ *   --allow <host:port>     guest egress origin the broker forwards to (repeatable);
+ *                           governs the guest only, never the host's provider calls
  *   --resolve <host=addr>   dial <addr> on the host for an allowed origin whose name only
  *                           the guest resolves (repeatable; e.g. a local model server).
  *                           model.copse.internal, if allowed, must map to 127.0.0.1, ::1
@@ -44,6 +46,11 @@ import {
   teardownRuntime,
   WORKER_IMAGE,
 } from './thread-container.ts'
+import { createResolvedProviderFetch } from './resolved-provider-fetch.ts'
+import { buildGuestProvider } from './guest-provider.ts'
+import { withCredentialOutputRedaction } from '@copse/llm/credential-output-provider.ts'
+import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
+import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { takeProviderKeyFromEnv } from './cli-provider-key.ts'
 
 interface Cli {
@@ -143,36 +150,44 @@ async function main(): Promise<void> {
   if (apiKeyEnv && !apiKey) throw new Error(`Provider key variable ${apiKeyEnv} is not set`)
   const maxSteps = cli.one('max-steps')
   const model = required(cli.one('model') ?? process.env['COPSE_MODEL'], '--model')
+  const transport = createResolvedProviderFetch(egressResolve)
   const record = await runThreadInContainer({
     engine,
     workspace: cli.one('workspace') ?? process.cwd(),
     prompt: required(cli.one('prompt'), '--prompt'),
     model,
-    // The CLI names an OpenAI-compatible endpoint directly; a key, when
-    // given, is read here and crosses the stdio link as it does for the
-    // app's runs (decision A17).
-    provider: {
-      kind: 'openai-compatible',
-      model,
-      apiKeySlug: 'cli',
-      url: providerUrl,
-      label: 'the --provider-url endpoint',
-      local: true,
-      includeUsage: true,
-      apiStyle: null,
-      extraBody: null,
-      params: {},
-    },
-    ...(apiKey ? { apiKey } : {}),
+    // CLI provider inference and its selected key stay on this host (A1″).
+    hostInference: (maxOutputTokens): Promise<LLMProvider> =>
+      Promise.resolve(
+        withCredentialOutputRedaction(
+          buildGuestProvider(
+            {
+              kind: 'openai-compatible',
+              model,
+              apiKeySlug: 'cli',
+              url: providerUrl,
+              label: 'the --provider-url endpoint',
+              local: true,
+              includeUsage: true,
+              apiStyle: null,
+              extraBody: null,
+              params: { maxOutputTokens },
+            },
+            apiKey ?? null,
+            transport.fetch,
+          ),
+          apiKey ? [apiKey] : [],
+        ),
+      ),
     budgets: {
       wallClockMs: Number(cli.one('ttl') ?? '120') * 60_000,
       tokenCeiling: Number(cli.one('tokens') ?? '2000000'),
     },
-    egressAllowlist: allow,
+    egressAllowlist: [...new Set([HOST_INFERENCE_TARGET, ...allow])],
     egressResolve,
     image,
     ...(maxSteps !== undefined ? { maxSteps: Number(maxSteps) } : {}),
-  })
+  }).finally(() => transport.close())
   const result = record.result
   console.log('')
   console.log(`run ${record.runtimeId}: ${result?.stopReason ?? 'no result written'}`)

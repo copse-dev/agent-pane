@@ -166,6 +166,54 @@ describe('context wheel breakdown (component)', () => {
     assert.match(popover.textContent, /Context · 54\.0k \/ 180\.0k \(30%\)/)
   })
 
+  it('keeps hover details open and current across running snapshot updates', () => {
+    const wheel = createContextWheel()
+    document.body.append(wheel.root)
+    const snapshot = {
+      contextWindow: 262_144,
+      conversationBudget: 243_009.5,
+      conversationTokens: 54_379,
+      fillRatio: 54_379 / 243_009.5,
+      updatedAt: Date.now(),
+    }
+    wheel.update(snapshot, true)
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
+    wheel.root.dispatchEvent(new Event('mouseenter'))
+    wheel.update({ ...snapshot, conversationTokens: 60_000, fillRatio: 60_000 / 243_009.5 }, true)
+    assert.equal(popover.hidden, false)
+    assert.match(popover.textContent, /60\.0k \/ 243\.0k \(25%\)/)
+    wheel.root.dispatchEvent(new Event('mouseleave'))
+    assert.equal(popover.hidden, true)
+    wheel.update(snapshot, true)
+    assert.equal(popover.hidden, true)
+  })
+
+  it('keeps focus details open across updates until both focus and hover leave', () => {
+    const wheel = createContextWheel()
+    document.body.append(wheel.root)
+    const breakdown = composeContextBreakdown({ system: 1800, history: 5000 }, 200_000)
+    wheel.update(null, false, { breakdown, breakdownRing: true })
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
+    wheel.root.dispatchEvent(new Event('focusin'))
+    wheel.root.dispatchEvent(new Event('mouseenter'))
+    wheel.root.dispatchEvent(new Event('mouseleave'))
+    wheel.update(
+      {
+        contextWindow: 200_000,
+        conversationBudget: 180_000,
+        conversationTokens: 54_000,
+        fillRatio: 0.3,
+        updatedAt: Date.now(),
+      },
+      true,
+    )
+    assert.equal(popover.hidden, false)
+    wheel.root.dispatchEvent(new Event('focusout'))
+    assert.equal(popover.hidden, true)
+  })
+
   it('drops the popover again when the snapshot goes away', () => {
     const wheel = createContextWheel()
     document.body.append(wheel.root)

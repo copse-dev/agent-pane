@@ -1,3 +1,4 @@
+import type { z } from 'zod'
 import { getSecretCipher, isSecretEncryptionAvailable, type SecretCipher } from './secret-cipher.ts'
 import { clearKeyReadability, resolveKeyReadability } from './api-key-readability.ts'
 import { registerSecretSweep, requestSecretSweep } from './secret-migration.ts'
@@ -310,6 +311,19 @@ export function getRegisteredSetting(key: string): unknown {
   const raw = scoped ? scoped.values[key] : cached.get(key)
   const parsed = schema.safeParse(raw)
   return parsed.success ? parsed.data : undefined
+}
+
+/**
+ * Read a key with no registered schema (one of a dynamic family such as
+ * `mcpOAuth.<digest>`) through the caller's decoder. `getSetting` can only
+ * check such a value against its fallback's runtime type, and a `null` fallback
+ * matches nothing but `null`. Returns `null` when absent or invalid.
+ */
+export function getDecodedSetting<T>(key: string, schema: z.ZodType<T>): T | null {
+  const scoped = getExplicitSettingsProfile()
+  const raw = scoped ? scoped.values[key] : cached.get(key)
+  const parsed = schema.safeParse(raw)
+  return parsed.success ? parsed.data : null
 }
 
 export function getSetting<T>(key: string, fallback: T): T {

@@ -10,6 +10,8 @@ import {
   portListening,
   prepareClassifierCache,
   programAvailable,
+  freeDiskBytes,
+  removeClassifierInstall,
 } from './local-server.mts'
 
 let manager: LocalClassifierManager | undefined
@@ -21,6 +23,8 @@ export function localClassifiers(): LocalClassifierManager {
     isInstalled: isClassifierInstalled,
     portListening,
     programAvailable,
+    freeBytes: freeDiskBytes,
+    uninstall: removeClassifierInstall,
     spawnServer: spawnLocalServer,
     listProfiles: (): ClassifierProfile[] => listClassifierProfiles().map((item) => item.profile),
     saveProfile: saveClassifierProfile,

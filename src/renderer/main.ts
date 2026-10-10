@@ -30,6 +30,8 @@ import { mountSupervisedTasks } from './views/supervised-tasks.ts'
 import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
 import { mountMemoriesPane } from './views/memories-pane.ts'
+import { mountThreadContextPane } from './views/thread-context-panel.ts'
+import { mountSideChatPane } from './views/side-chat-panel.ts'
 import { mountPortsSection } from './views/ports-section.ts'
 import { mountTerminalRailResizers } from './views/terminal-rail-resizer.ts'
 import { mountRoadmapPane } from './views/roadmap-pane.ts'
@@ -194,6 +196,8 @@ const api = window.api
 // and titlebar so the detached window shows only that pane.
 const POPOUT_MODES = [
   'explorer',
+  'context',
+  'side-chat',
   'terminal',
   'changes',
   'prs',
@@ -247,7 +251,8 @@ window.addEventListener('unhandledrejection', (event) => {
 
 let layoutMounted = false
 let unmountPopoutTitlebar: (() => void) | null = null
-let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
+let handleStopShortcut: ((key: 'Escape' | 'Enter', target: EventTarget | null) => boolean) | null =
+  null
 let openProcessManager: (() => void) | null = null
 // The two request queues the Activity views read; set once the dialogs are mounted.
 let activitySources: ActivitySources | null = null
@@ -685,6 +690,18 @@ function mountFullLayout(): void {
     api,
   )
   mountVncPane(requireElement('vnc-controls-host'), requireElement('vnc-viewer-host'), store, api)
+  mountThreadContextPane(
+    requireElement('context-host'),
+    requireElement('context-viewer-host'),
+    store,
+    api,
+  )
+  mountSideChatPane(
+    requireElement('side-chat-host'),
+    requireElement('side-chat-viewer-host'),
+    store,
+    api,
+  )
   mountMemoriesPane(
     requireElement('memories-host'),
     requireElement('memories-viewer-host'),
@@ -821,9 +838,9 @@ function registerKeyboardShortcuts(): void {
         closeSettingsDialog()
         return
       }
-      if (handleStopShortcut?.('Escape')) e.preventDefault()
+      if (handleStopShortcut?.('Escape', e.target)) e.preventDefault()
     }
-    if (e.key === 'Enter' && handleStopShortcut?.('Enter')) {
+    if (e.key === 'Enter' && handleStopShortcut?.('Enter', e.target)) {
       e.preventDefault()
     }
     // Ctrl+Tab / Ctrl+Shift+Tab cycle threads, matching browser and other

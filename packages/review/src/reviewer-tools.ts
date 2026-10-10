@@ -11,6 +11,7 @@ import type { LLMTool, ToolResultImage } from '@copse/llm/wire-types.ts'
 import type { HeadlessPermissionDecision } from '@copse/agent/headless-contract.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { errorMessage } from '@copse/std/errors.ts'
+import { matchingIndexesWithin } from '@copse/std/bounded-regex.ts'
 import { readFileDiff, type ReviewContext } from './context.ts'
 import { jailPath, readCheckoutBytes, readCheckoutFile } from './checkout-fs.ts'
 import { readCommittedBlob } from './checkouts.ts'
@@ -43,6 +44,11 @@ export type ReviewerToolName = (typeof REVIEWER_TOOL_NAMES)[number]
 export const MAX_TOOL_OUTPUT_CHARS = 16_000
 const MAX_SEARCH_HITS = 60
 const MAX_SEARCH_FILE_BYTES = 512 * 1024
+/**
+ * Wall-clock budget for running the model's `search_code` regex across a search.
+ * A catastrophically backtracking pattern would otherwise hang the review.
+ */
+const SEARCH_REGEX_BUDGET_MS = 5_000
 const RUN_COMMAND_MAX_TIMEOUT_MS = 5 * 60 * 1000
 const RUN_COMMAND_DEFAULT_TIMEOUT_MS = 2 * 60 * 1000
 /** Images one role may look at; each is resent with every later model call. */
@@ -680,6 +686,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         const info = await lstat(start).catch(() => null)
         if (info === null) throw new ToolInputError(`No such path: ${input.path ?? '.'}`)
         const hits: string[] = []
+        let regexBudgetMs = SEARCH_REGEX_BUDGET_MS
         const files: AsyncIterable<string> | Iterable<string> = info.isDirectory()
           ? walkFiles(start)
           : [start]
@@ -688,11 +695,22 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
           if (text === null || text.includes('\u0000')) continue
           const relPath = relative(root, file).replace(/\\/g, '/')
           const lines = text.split(/\r?\n/)
-          for (let index = 0; index < lines.length; index++) {
+          const started = Date.now()
+          const matches = matchingIndexesWithin(regex, lines, {
+            timeoutMs: regexBudgetMs,
+            limit: MAX_SEARCH_HITS - hits.length,
+          })
+          regexBudgetMs -= Date.now() - started
+          if (matches === 'timeout' || regexBudgetMs <= 0) {
+            throw new ToolInputError(
+              `search_code pattern ${JSON.stringify(input.pattern)} ran past its ` +
+                `${String(SEARCH_REGEX_BUDGET_MS / 1000)}s budget (likely catastrophic ` +
+                'backtracking); use a simpler pattern or narrow path',
+            )
+          }
+          for (const index of matches) {
             const line = lines[index] ?? ''
-            if (regex.test(line))
-              hits.push(`${relPath}:${String(index + 1)}: ${line.trim().slice(0, 300)}`)
-            if (hits.length >= MAX_SEARCH_HITS) break
+            hits.push(`${relPath}:${String(index + 1)}: ${line.trim().slice(0, 300)}`)
           }
           if (hits.length >= MAX_SEARCH_HITS) break
         }

@@ -124,7 +124,7 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
   the existing assertion requiring a changed regular card to be rebuilt with an
   assertion that its content updates while its disclosure shell survives.
 - A focused WebdriverIO Electron visual eval follows
-  `.cursor/skills/screenshot-validate/SKILL.md`. Reuse the mock/seed infrastructure,
+  `.agents/skills/screenshot-validate/SKILL.md`. Reuse the mock/seed infrastructure,
   capture representative frames and a timestamped transition/geometry trace, and
   inspect the screenshots. Extend `scroll-to-bottom.e2e.ts` where appropriate.
 - A burst of fast operations causes **zero automatic detail expansions** when each

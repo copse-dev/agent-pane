@@ -1,4 +1,6 @@
 import { openAppRunDialog } from './app-run-dialog.ts'
+import { withoutSideChats } from '@shared/threads/side-chat.ts'
+import type { ThreadLiveResources } from '@shared/threads/archive-thread.ts'
 import { el, clear } from '../dom/helpers.ts'
 import {
   contextMenuClosedByPressOn,
@@ -33,6 +35,7 @@ import {
 import {
   archiveThread,
   deleteThread,
+  isThreadArchived,
   openNewThread,
   setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
@@ -50,6 +53,7 @@ import {
   addRemoteProject,
   createNewProject,
   getSidebarThreads,
+  getSideChatUnreadParents,
   isProjectSwitchInFlight,
   dismissOrphanProject,
   listOrphanProjects,
@@ -128,6 +132,14 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
  * approval or an `ask_user` question. Draws the eye to work that would
  * otherwise be silently blocked in another project/thread.
  */
+export function describeLiveResources(running: ThreadLiveResources): string[] {
+  return [
+    ...(running.agent ? ['• the chat’s running agent'] : []),
+    ...(running.terminals ? ['• its open terminals'] : []),
+    ...(running.backgroundProcesses ? ['• its background processes'] : []),
+  ]
+}
+
 function attentionBell(label: string): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, 'svg')
   svg.setAttribute('class', 'chat-attention-bell')
@@ -755,11 +767,42 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // Only the active project's in-memory thread list is mutable here; other
     // projects' rows are cache-backed until switched.
     if (projectId !== store.getState().activeProjectId || archivingThreads.has(threadId)) return
+    // Archiving takes a thread's side chats with it, and would hide a running one
+    // without stopping its run.
+    const runningSideChat = store
+      .getState()
+      .threads.some(
+        (t) =>
+          t.sideChat?.parentThreadId === threadId && !isThreadArchived(t) && t.status === 'running',
+      )
+    if (runningSideChat) {
+      showToast('Wait for this chat’s side chat to finish before archiving it.', {
+        variant: 'error',
+      })
+      return
+    }
     archivingThreads.add(threadId)
     try {
       await flushProjectThreads(api, projectId, store.getState().threads)
       if (projectId !== store.getState().activeProjectId) return
-      let result = await api.threads.archive(projectId, threadId, null)
+      let stopProcesses = false
+      let result = await api.threads.archive(projectId, threadId, null, stopProcesses)
+      if (result.status === 'blocked-running') {
+        const title = store.getState().threads.find((t) => t.id === threadId)?.title ?? 'this chat'
+        const confirmed = await showConfirmDialog({
+          message: `Stop running work and archive “${title}”?`,
+          detail: [
+            'Archiving will stop:',
+            ...describeLiveResources(result.running),
+            'Anything still running in the chat’s worktree is ended before it is removed.',
+          ].join('\n'),
+          confirmLabel: 'Stop and archive',
+          danger: true,
+        })
+        if (!confirmed || projectId !== store.getState().activeProjectId) return
+        stopProcesses = true
+        result = await api.threads.archive(projectId, threadId, null, stopProcesses)
+      }
       let refreshed = false
       while (result.status === 'blocked-dirty') {
         const title = store.getState().threads.find((t) => t.id === threadId)?.title ?? 'this chat'
@@ -780,11 +823,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           danger: true,
         })
         if (!confirmed || projectId !== store.getState().activeProjectId) return
-        result = await api.threads.archive(projectId, threadId, result.fingerprint)
+        result = await api.threads.archive(projectId, threadId, result.fingerprint, stopProcesses)
         refreshed = true
       }
       if (result.status === 'blocked-running') {
-        showToast('Stop the chat’s agent, terminals and background processes before archiving.', {
+        showToast('Something started in the chat while archiving. Try again.', {
           variant: 'error',
         })
         return
@@ -1563,13 +1606,20 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (thread.status === 'running') {
         chatRow.classList.add('is-running')
         chatRow.insertBefore(runningStatus('Agent is working'), title)
-      } else if (thread.unreadAt !== undefined && thread.id !== activeId) {
+      } else if (
+        (thread.unreadAt !== undefined ||
+          getSideChatUnreadParents(store, project.id).has(thread.id)) &&
+        thread.id !== activeId
+      ) {
         chatRow.classList.add('is-unread')
         chatRow.insertBefore(
           el('span', {
             class: 'chat-unread-dot',
             role: 'img',
-            'aria-label': 'Unread agent completion',
+            'aria-label':
+              thread.unreadAt !== undefined
+                ? 'Unread agent completion'
+                : 'Unread reply in a side chat',
           }),
           title,
         )
@@ -2084,7 +2134,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
       const isFiltering = threadFilter.length > 0 && project.id === activeProjectId
       const sidebarThreads = isFiltering
-        ? sortThreadsNewestFirst(store.getState().threads).filter(
+        ? withoutSideChats(sortThreadsNewestFirst(store.getState().threads)).filter(
             (thread) => thread.archivedAt == null,
           )
         : getSidebarThreads(store, project.id)

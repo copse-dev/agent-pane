@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, Thread } from '@shared/types'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import { unreadSideChatParents, withoutSideChats } from '@shared/threads/side-chat.ts'
 import {
   createThread,
   markThreadRead,
@@ -178,7 +179,42 @@ export function getSidebarThreads(store: AppStore, projectId: string): SidebarTh
   const { activeProjectId, threads } = store.getState()
   const list = projectId === activeProjectId ? threads : (threadCache.get(projectId) ?? [])
   // Archived threads stay in the project store / on disk but leave the sidebar.
-  return list.filter((t) => t.archivedAt == null)
+  // Side chats are hidden by default too: they are listed beside their parent in
+  // the Side chat panel, and an unread one rolls up to the parent's row dot.
+  return withoutSideChats(list).filter((t) => t.archivedAt == null)
+}
+
+const sideChatUnreadCache = new WeakMap<object, Set<string>>()
+
+/**
+ * Threads of the active project with an unread side chat. Other projects' lists
+ * are compacted sidebar rows, which carry the link but are not scanned here.
+ */
+export function getSideChatUnreadParents(store: AppStore, projectId: string): Set<string> {
+  const { activeProjectId, threads } = store.getState()
+  if (projectId !== activeProjectId) return new Set()
+  const cached = sideChatUnreadCache.get(threads)
+  if (cached) return cached
+  const parents = unreadSideChatParents(threads)
+  sideChatUnreadCache.set(threads, parents)
+  return parents
+}
+
+/**
+ * The thread that answers for `threadId` when it needs the user: a side chat's
+ * parent, because the side chat itself is hidden from the sidebar and is never
+ * the active thread. An ordinary thread, and a side chat whose parent is not in
+ * the same project list (so it is listed itself), answer for themselves.
+ * Background projects are resolved from their cached sidebar rows.
+ */
+export function attentionThreadId(store: AppStore, threadId: string): string {
+  for (const list of [store.getState().threads, ...threadCache.values()]) {
+    const thread = list.find((t) => t.id === threadId)
+    if (!thread) continue
+    const parentId = thread.sideChat?.parentThreadId
+    return parentId !== undefined && list.some((t) => t.id === parentId) ? parentId : threadId
+  }
+  return threadId
 }
 
 /** An archive completed after the user switched to another project. */
@@ -223,6 +259,10 @@ export function isProjectSwitchInFlight(store: AppStore, projectId: string): boo
   // that window as in-flight too, so the sidebar shows "Loading…" instead of
   // an empty thread list while a large project's threads load in the background.
   return activeProjectId === projectId && !workspaceRoot
+}
+
+function isListedProject(store: AppStore, projectId: string): boolean {
+  return store.getState().projects.some((project) => project.id === projectId)
 }
 
 function cacheThreads(projectId: string, threads: Thread[]): void {
@@ -273,7 +313,9 @@ export async function preloadSidebarThreads(store: AppStore, api: ApiClient): Pr
 export function attachProjectThreadCache(store: AppStore): () => void {
   return store.on('threads_changed', () => {
     const { activeProjectId, threads } = store.getState()
-    if (activeProjectId) cacheThreads(activeProjectId, threads)
+    if (activeProjectId && isListedProject(store, activeProjectId)) {
+      cacheThreads(activeProjectId, threads)
+    }
   })
 }
 
@@ -681,7 +723,9 @@ function activate(
   pendingSwitch = { gen, projectId: id, dispatched: false }
   const outgoingId = activeProjectId
   const outgoingThreads = threads
-  if (outgoingId) {
+  // An outgoing project that was just removed (removeProject switching away
+  // from it) must not be cached back in or have its view state recorded.
+  if (outgoingId && isListedProject(store, outgoingId)) {
     cacheThreads(outgoingId, outgoingThreads)
     // Snapshot the outgoing project's panel visibility so switching back restores it.
     recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store.getState()))

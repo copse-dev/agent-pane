@@ -30,6 +30,8 @@ const SHARED = resolve(ROOT, 'src/shared')
 const ALLOWED_UNLINKED: Record<string, string> = {
   'src/main/services/container-runtime/cli.ts':
     'esbuild entry that scripts/run-thread-container.mts bundles by path (pnpm run thread:container)',
+  'src/main/services/container-runtime/worker-entry-harbor.ts':
+    'benchmark-only esbuild entry that scripts/build-harbor-container.mts bundles by path into dist-test/ (never dist/)',
 }
 
 // Product modules intentionally exercised only by tests/scripts. Prefer wiring
@@ -48,6 +50,8 @@ const ALLOWED_SUPPORT_ONLY: Record<string, string> = {
   'src/main/services/acp/acp-protocol-negotiate.ts': 'ACP v2 readiness prototype',
   'src/main/services/acp/acp-support-matrix.ts': 'manual ACP capability report formatter',
   'src/main/services/acp/acp-v2-session-adapter.ts': 'ACP v2 readiness prototype',
+  'src/main/services/container-runtime/resolved-provider-fetch.ts':
+    'per-run transport of the thread:container CLI entry (cli.ts), bundled by scripts/run-thread-container.mts',
   'src/main/services/container-runtime/cli-provider-key.ts':
     'helper of the thread:container CLI entry (cli.ts), split out so it can be unit tested',
   'src/main/services/container-runtime/scripted-acp-agent.ts': 'container integration-test fixture',

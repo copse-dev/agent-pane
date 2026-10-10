@@ -1,7 +1,7 @@
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
-import type { ApiClient } from './api.d.ts'
+import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
@@ -338,6 +338,7 @@ const api: ApiClient = {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
@@ -358,6 +359,7 @@ const api: ApiClient = {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          approveLabel?: string
           collapseDetails?: boolean
           approveOnceLabel?: string
           allowTurnTreeLease?: boolean
@@ -764,8 +766,12 @@ const api: ApiClient = {
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
   },
   threads: {
-    archive: (projectId: string, threadId: string, confirmation: string | null) =>
-      ipcRenderer.invoke('threads:archive', projectId, threadId, confirmation),
+    archive: (
+      projectId: string,
+      threadId: string,
+      confirmation: string | null,
+      stopProcesses: boolean,
+    ) => ipcRenderer.invoke('threads:archive', projectId, threadId, confirmation, stopProcesses),
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
     backfillPrRefs: (projectId: string, threadIds: string[]) =>
       ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
@@ -851,6 +857,8 @@ const api: ApiClient = {
         targetThreadId,
         throughMessageId,
       ),
+    backlinks: (projectId: string, kind: 'url' | 'thread', target: string) =>
+      ipcRenderer.invoke('threads:backlinks', projectId, kind, target),
     historySnapshot: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:history-snapshot', projectId, threadId),
     editHistory: (
@@ -1071,6 +1079,7 @@ const api: ApiClient = {
     install: (id: string) => ipcRenderer.invoke('local-classifiers:install', id),
     start: (id: string) => ipcRenderer.invoke('local-classifiers:start', id),
     stop: (id: string) => ipcRenderer.invoke('local-classifiers:stop', id),
+    uninstall: (id: string) => ipcRenderer.invoke('local-classifiers:uninstall', id),
     connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
   },
   settings: {
@@ -1439,8 +1448,27 @@ const api: ApiClient = {
       ipcRenderer.invoke('automations:upsert-branch-ci', projectId, input),
     removeBranchCi: (projectId: string, id: string) =>
       ipcRenderer.invoke('automations:remove-branch-ci', projectId, id),
-    testBranchCi: (projectId: string, branch: string) =>
-      ipcRenderer.invoke('automations:test-branch-ci', projectId, branch),
+    testBranchCi: (projectId: string, trigger) =>
+      ipcRenderer.invoke('automations:test-branch-ci', projectId, trigger),
+    eventHistory: (projectId: string, id: string) =>
+      ipcRenderer.invoke('automations:event-history', projectId, id),
+    reportStartFailure: (projectId: string, threadId: string, failure) =>
+      ipcRenderer.invoke('automations:report-start-failure', projectId, threadId, failure),
+    schedulerHealth: () => ipcRenderer.invoke('automations:scheduler-health'),
+    onSchedulerHealth: (
+      handler: (health: import('@shared/types').AutomationSchedulerHealth) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: import('@shared/types').AutomationSchedulerHealth,
+      ): void => {
+        handler(payload)
+      }
+      ipcRenderer.on('automations:scheduler-health', listener)
+      return (): void => {
+        ipcRenderer.off('automations:scheduler-health', listener)
+      }
+    },
     canStart: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('automations:can-start', projectId, threadId),
     onTriggered: (handler: (event: import('@shared/types').AutomationTriggerEvent) => void) => {
@@ -1669,6 +1697,12 @@ const api: ApiClient = {
   },
 }
 contextBridge.exposeInMainWorld('api', api)
+
+// `File.path` was removed in Electron 32; the renderer asks the preload instead.
+const filePathBridge: FilePathBridge = {
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
+}
+contextBridge.exposeInMainWorld('copseFiles', filePathBridge)
 
 if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
   const errorToasts: string[] = []

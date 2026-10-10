@@ -1,17 +1,6 @@
-import {
-  lstat,
-  mkdir,
-  mkdtemp,
-  open,
-  readFile,
-  readdir,
-  readlink,
-  realpath,
-  rm,
-  rmdir,
-} from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, rmdir } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { constants, realpathSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
@@ -1552,107 +1541,6 @@ export async function listProjectWorktrees(projectRoot: string): Promise<Worktre
   return listRecords((await repositoryLocation(projectRoot)).repositoryRoot)
 }
 
-/** Bounded, content-bound confirmation. Links are fingerprinted, never followed.
- * External editors are not locked: repeat this snapshot immediately before Git
- * removal and fail closed on observed mutation; this is not an atomic FS snapshot.
- */
-async function archiveContentIdentity(root: string, paths: string[]): Promise<string> {
-  const hash = createHash('sha256')
-  let entries = 0
-  let bytes = 0
-  const limit = 64 * 1024 * 1024
-  const checkAncestors = async (path: string): Promise<void> => {
-    const rel = relative(root, path)
-    if (rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel))
-      throw new Error('Archive file escaped its worktree.')
-    let parent = dirname(path)
-    while (parent !== root) {
-      if (parent === dirname(parent)) throw new Error('Invalid archive file path.')
-      if ((await lstat(parent)).isSymbolicLink())
-        throw new Error('Archive file parent is a symlink.')
-      parent = dirname(parent)
-    }
-  }
-  const visit = async (path: string): Promise<void> => {
-    if (++entries > 10_000) throw new Error('Too many files to safely confirm archival.')
-    await checkAncestors(path)
-    const name = relative(root, path)
-    const stat = await lstat(path).catch((error: unknown) => {
-      if (ownErrorCode(error) === 'ENOENT') return null
-      throw error
-    })
-    if (!stat) {
-      hash.update(JSON.stringify([name, 'missing']))
-      return
-    }
-    if (stat.isSymbolicLink()) {
-      hash.update(JSON.stringify([name, 'link', await readlink(path)]))
-      return
-    }
-    if (stat.isDirectory()) {
-      hash.update(JSON.stringify([name, 'directory']))
-      for (const child of (await readdir(path)).sort()) await visit(join(path, child))
-      const after = await lstat(path)
-      await checkAncestors(path)
-      if (
-        !after.isDirectory() ||
-        after.ino !== stat.ino ||
-        after.dev !== stat.dev ||
-        after.ctimeMs !== stat.ctimeMs
-      )
-        throw new Error('Archive directory changed during inspection.')
-      return
-    }
-    if (!stat.isFile()) throw new Error('Cannot safely confirm a special archive file.')
-    if (stat.size > limit - bytes)
-      throw new Error('Too much file content to safely confirm archival.')
-    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
-    try {
-      const before = await handle.stat()
-      if (
-        !before.isFile() ||
-        before.ino !== stat.ino ||
-        before.dev !== stat.dev ||
-        before.size !== stat.size
-      )
-        throw new Error('Archive file changed during inspection.')
-      const contentHash = createHash('sha256')
-      const buffer = Buffer.alloc(Math.min(64 * 1024, limit - bytes + 1))
-      let size = 0
-      while (bytes <= limit) {
-        const result = await handle.read(
-          buffer,
-          0,
-          Math.min(buffer.length, limit - bytes + 1),
-          null,
-        )
-        if (result.bytesRead === 0) break
-        bytes += result.bytesRead
-        size += result.bytesRead
-        if (bytes > limit) throw new Error('Too much file content to safely confirm archival.')
-        contentHash.update(buffer.subarray(0, result.bytesRead))
-      }
-      const after = await handle.stat()
-      const current = await lstat(path)
-      await checkAncestors(path)
-      if (
-        !current.isFile() ||
-        current.ino !== before.ino ||
-        current.dev !== before.dev ||
-        size !== stat.size ||
-        after.mtimeMs !== before.mtimeMs ||
-        after.ctimeMs !== before.ctimeMs
-      )
-        throw new Error('Archive file changed during inspection.')
-      hash.update(JSON.stringify([name, 'file', stat.mode, size, contentHash.digest('hex')]))
-    } finally {
-      await handle.close()
-    }
-  }
-  for (const path of [...new Set(paths)].sort()) await visit(resolve(root, path))
-  return hash.digest('hex')
-}
-
 export type ArchiveWorktreeResult =
   | { status: 'removed'; worktree: ThreadWorktree }
   | { status: 'blocked-dirty'; paths: string[]; fingerprint: string }
@@ -1690,6 +1578,11 @@ export async function archiveThreadWorktree(
     }
     const validated = await validateThreadWorktree(input)
     const { root, gitDir: _gitDir, commonGitDir: _commonGitDir, ...worktree } = validated
+    // Git's own view of the checkout: tracked edits, staged changes and
+    // untracked files. Ignored files (build output, caches) are regenerable and
+    // are not listed or fingerprinted. Callers stop every process they own
+    // before archiving, so this only has to notice a change between the user's
+    // confirmation and removal, not catch a live writer.
     const snapshot = async (): Promise<{
       paths: string[]
       fingerprint: string
@@ -1700,10 +1593,7 @@ export async function archiveThreadWorktree(
         '--porcelain=v1',
         '-z',
         '--untracked-files=all',
-        '--ignored=matching',
       ])
-      if (status.code !== 0 || status.stdoutTruncated)
-        throw new Error('Cannot completely inspect thread worktree status.')
       const head = await inspectGit(validated.path, ['rev-parse', 'HEAD'])
       const branch = await inspectGit(validated.path, [
         'symbolic-ref',
@@ -1711,48 +1601,16 @@ export async function archiveThreadWorktree(
         '--short',
         'HEAD',
       ])
-      const index = await inspectGit(validated.path, ['ls-files', '--stage', '-z'])
       if (
+        status.code !== 0 ||
         head.code !== 0 ||
         branch.code !== 0 ||
-        index.code !== 0 ||
+        status.stdoutTruncated ||
         head.stdoutTruncated ||
-        branch.stdoutTruncated ||
-        index.stdoutTruncated
+        branch.stdoutTruncated
       )
-        throw new Error('Cannot identify archive snapshot.')
-      const paths = changedPaths(status.stdout)
-      const content = await archiveContentIdentity(validated.path, paths)
-      const verifyStatus = await inspectGit(validated.path, [
-        'status',
-        '--porcelain=v1',
-        '-z',
-        '--untracked-files=all',
-        '--ignored=matching',
-      ])
-      const verifyHead = await inspectGit(validated.path, ['rev-parse', 'HEAD'])
-      const verifyBranch = await inspectGit(validated.path, [
-        'symbolic-ref',
-        '--quiet',
-        '--short',
-        'HEAD',
-      ])
-      const verifyIndex = await inspectGit(validated.path, ['ls-files', '--stage', '-z'])
-      if (
-        branch.stdout.trim() !== validated.branch ||
-        verifyStatus.code !== 0 ||
-        verifyStatus.stdoutTruncated ||
-        verifyHead.stdoutTruncated ||
-        verifyBranch.stdoutTruncated ||
-        verifyIndex.stdoutTruncated ||
-        verifyHead.code !== 0 ||
-        verifyBranch.code !== 0 ||
-        verifyIndex.code !== 0 ||
-        verifyStatus.stdout !== status.stdout ||
-        verifyHead.stdout !== head.stdout ||
-        verifyBranch.stdout !== branch.stdout ||
-        verifyIndex.stdout !== index.stdout
-      )
+        throw new Error('Cannot completely inspect thread worktree status.')
+      if (branch.stdout.trim() !== validated.branch)
         throw new Error('Archive checkout changed during inspection; try again.')
       const fingerprint = createHash('sha256')
         .update(
@@ -1763,12 +1621,10 @@ export async function archiveThreadWorktree(
             branch.stdout,
             head.stdout,
             status.stdout,
-            index.stdout,
-            content,
           ]),
         )
         .digest('hex')
-      return { paths, fingerprint, dirty: status.stdout.length > 0 }
+      return { paths: changedPaths(status.stdout), fingerprint, dirty: status.stdout.length > 0 }
     }
     const initial = await snapshot()
     if (initial.dirty && confirmation !== initial.fingerprint)
@@ -1869,6 +1725,237 @@ export async function retireThreadWorktree(
   if (remove.code !== 0) throw commandFailure('Cannot retire thread worktree', remove)
   releaseWorktreeRoot(validated.root)
   return { status: 'removed', branch: validated.branch }
+}
+
+export interface AdoptThreadWorktreeInput {
+  projectId: string
+  projectRoot: string
+  /** Thread whose finished checkout is being handed on. */
+  fromThreadId: string
+  /** Thread that will own the checkout; its path is derived from this id. */
+  toThreadId: string
+  from: ThreadWorktree
+  /** Base the new thread asked for; must be the base the old checkout was cut from. */
+  baseBranch: string
+}
+
+export type AdoptableWorktreeVerdict =
+  | { ok: true; validated: ValidatedThreadWorktree }
+  | {
+      ok: false
+      reason: 'dirty' | 'unmerged' | 'base-changed' | 'detached' | 'unavailable' | 'in-progress'
+    }
+
+export type AdoptThreadWorktreeResult =
+  | { status: 'adopted'; worktree: ThreadWorktree; previousHead: string }
+  | { status: 'ineligible'; reason: Exclude<AdoptableWorktreeVerdict, { ok: true }>['reason'] }
+
+/**
+ * Whether a finished checkout can be handed to the next run of the same automation without
+ * carrying anything over. Read-only. All of these must hold: the checkout is registered and on
+ * its branch; no merge/rebase is in flight; nothing is modified, staged or untracked; and the
+ * branch holds no commit beyond the base it was cut from, so nothing can be lost by moving it.
+ * Ignored files do not block adoption — they are wiped and re-cloned from the project, exactly
+ * as a fresh allocation would — which is what lets a checkout that holds only `node_modules`
+ * and build output be reused rather than retained forever.
+ */
+async function inspectAdoptableWorktree(
+  input: Pick<AdoptThreadWorktreeInput, 'projectId' | 'projectRoot' | 'fromThreadId' | 'from'> & {
+    baseBranch: string
+  },
+): Promise<AdoptableWorktreeVerdict> {
+  if (input.from.retiredAt !== undefined || input.from.pullRequestUrl) {
+    return { ok: false, reason: 'unavailable' }
+  }
+  if (input.from.baseBranch !== input.baseBranch) return { ok: false, reason: 'base-changed' }
+  let validated: ValidatedThreadWorktree
+  try {
+    validated = await validateThreadWorktree({
+      projectId: input.projectId,
+      threadId: input.fromThreadId,
+      projectRoot: input.projectRoot,
+      worktree: input.from,
+    })
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof ThreadWorktreeDetachedError ? 'detached' : 'unavailable',
+    }
+  }
+  if ((await activeGitRecovery(validated.gitDir)) !== null) {
+    return { ok: false, reason: 'in-progress' }
+  }
+  const status = await git(validated.path, [
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
+  ])
+  if (status.code !== 0) return { ok: false, reason: 'unavailable' }
+  if (status.stdout) return { ok: false, reason: 'dirty' }
+  const contained = await git(input.projectRoot, [
+    'merge-base',
+    '--is-ancestor',
+    branchRef(validated.branch),
+    input.from.baseCommit,
+  ])
+  if (contained.code === 1) return { ok: false, reason: 'unmerged' }
+  if (contained.code !== 0) return { ok: false, reason: 'unavailable' }
+  return { ok: true, validated }
+}
+
+/**
+ * Delete every git-ignored, untracked entry in a checkout. Done in Node, not with `git clean`,
+ * because `clean` is not on the internal-Git allow-list. Each entry is confined to the
+ * checkout's real path first, so a symlinked parent can never turn this into a delete elsewhere.
+ */
+async function removeIgnoredEntries(worktreePath: string): Promise<void> {
+  const root = await realpath(worktreePath)
+  const listing = await git(root, [
+    'ls-files',
+    '--others',
+    '--ignored',
+    '--exclude-standard',
+    '--directory',
+    '-z',
+  ])
+  if (listing.code !== 0 || listing.stdoutTruncated) {
+    throw commandFailure('Cannot list ignored files in the worktree', listing)
+  }
+  for (const entry of listing.stdout.split('\0')) {
+    const relativeEntry = entry.replace(/\/+$/, '')
+    if (!relativeEntry) continue
+    const segments = relativeEntry.split('/')
+    if (isAbsolute(relativeEntry) || segments.includes('..') || segments[0] === '.git') {
+      throw new Error(`Refusing to remove unexpected ignored entry: ${relativeEntry}`)
+    }
+    const absolute = join(root, ...segments)
+    const parent = await realpath(dirname(absolute)).catch(() => null)
+    // A parent that vanished took its children with it.
+    if (parent === null) continue
+    if (parent !== root && !parent.startsWith(`${root}${sep}`)) {
+      throw new Error(`Refusing to remove an entry outside the worktree: ${relativeEntry}`)
+    }
+    await rm(absolute, { recursive: true, force: true })
+  }
+}
+
+/** Read-only form of {@link adoptThreadWorktree}: would adoption be accepted right now? */
+export async function canAdoptThreadWorktree(
+  input: Omit<AdoptThreadWorktreeInput, 'toThreadId'>,
+): Promise<boolean> {
+  assertOwnerId('project id', input.projectId)
+  assertOwnerId('thread id', input.fromThreadId)
+  assertWorktreeMetadata(input.from)
+  const location = await repositoryLocation(input.projectRoot)
+  if (await repositoryIsDirty(location.repositoryRoot)) return false
+  const verdict = await inspectAdoptableWorktree({
+    ...input,
+    projectRoot: location.repositoryRoot,
+  })
+  return verdict.ok
+}
+
+/**
+ * Hand a finished automation checkout to the schedule's next run instead of removing it and
+ * allocating another. The result is indistinguishable from a fresh allocation: ignored files
+ * are wiped and re-cloned from the project, and HEAD is reset to the current base tip.
+ *
+ * Eligibility is re-proved under the repository lock (see {@link inspectAdoptableWorktree}),
+ * and the project checkout must be clean so a fresh allocation would not have seeded anything
+ * this one lacks. An ineligible checkout returns `ineligible` before anything is touched.
+ * After that point errors are thrown: the checkout may already sit at the new thread's path,
+ * where `recoverUnpersistedWorktree` reclaims it on retry, so it is never an orphan.
+ *
+ * The branch keeps the name it was created with; the old thread's title-based rename does not
+ * apply to the new thread, which is harmless.
+ */
+export async function adoptThreadWorktree(
+  input: AdoptThreadWorktreeInput,
+): Promise<AdoptThreadWorktreeResult> {
+  assertOwnerId('project id', input.projectId)
+  assertOwnerId('thread id', input.fromThreadId)
+  assertOwnerId('thread id', input.toThreadId)
+  assertWorktreeMetadata(input.from)
+  if (input.fromThreadId === input.toThreadId) {
+    throw new Error('A thread cannot adopt its own worktree')
+  }
+  const location = await repositoryLocation(input.projectRoot)
+  const projectRoot = location.repositoryRoot
+
+  return runSerialized(`worktree-manager:${projectRoot}`, async () => {
+    if (await repositoryIsDirty(projectRoot)) return { status: 'ineligible', reason: 'dirty' }
+    const verdict = await inspectAdoptableWorktree({ ...input, projectRoot })
+    if (!verdict.ok) return { status: 'ineligible', reason: verdict.reason }
+    const { validated } = verdict
+
+    const target = expectedThreadWorktreePath(input.projectId, input.toThreadId)
+    await mkdir(dirname(target), { recursive: true })
+    if (
+      await lstat(target).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      return { status: 'ineligible', reason: 'unavailable' }
+    }
+    await assertManagedWorktreePath(input.projectId, target)
+
+    // Resolve the base exactly as a fresh allocation would.
+    const [defaultBranch, hasOrigin] = await Promise.all([
+      getDefaultBranch(projectRoot),
+      hasOriginRemote(projectRoot),
+    ])
+    const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch
+    if (isDefaultBranch && hasOrigin) await fetchDefaultBranch(projectRoot, input.baseBranch)
+    const remoteCommit =
+      isDefaultBranch && hasOrigin
+        ? await resolveCommit(projectRoot, `refs/remotes/origin/${input.baseBranch}`)
+        : null
+    const baseCommit =
+      remoteCommit ?? (await resolveCommit(projectRoot, branchRef(input.baseBranch)))
+    if (!baseCommit) return { status: 'ineligible', reason: 'base-changed' }
+
+    const previousHead = await requireGitValue(
+      validated.path,
+      ['rev-parse', '--verify', 'HEAD'],
+      'Cannot read thread worktree HEAD',
+    )
+    // Nothing below can lose work: the tree is clean and the branch has no commit of its own.
+    // Wipe ignored files first so no earlier run's output survives into this one, and so none
+    // can collide with a file the new base tracks.
+    await removeIgnoredEntries(validated.path)
+    // `switch -C` re-points the checked-out branch at the new base and updates the (clean) tree
+    // in one step, using only a command already on the internal-Git allow-list.
+    const reset = await git(validated.path, ['switch', '-C', validated.branch, baseCommit])
+    if (reset.code !== 0)
+      throw commandFailure('Cannot move the worktree to the current base', reset)
+
+    const move = await git(projectRoot, ['worktree', 'move', validated.path, target], undefined, [
+      validated.path,
+      target,
+    ])
+    if (move.code !== 0) throw commandFailure('Cannot move the worktree to its new thread', move)
+    releaseWorktreeRoot(validated.root)
+
+    const metadata: ThreadWorktreeRecoveryMetadata = {
+      baseBranch: input.baseBranch,
+      baseCommit,
+      createdAt: Date.now(),
+      seededFromDirtyProject: false,
+    }
+    await writeThreadWorktreeRecoveryMetadata(projectRoot, validated.branch, metadata)
+    const canonicalPath = await realpath(target)
+    const executionRoot = resolve(canonicalPath, location.projectRelativePath)
+    await mkdir(executionRoot, { recursive: true })
+    await registerInternalWorkspaceRoot(canonicalPath, executionRoot)
+    await cloneIgnoredProjectFiles(projectRoot, canonicalPath)
+    return {
+      status: 'adopted',
+      worktree: { path: canonicalPath, branch: validated.branch, ...metadata },
+      previousHead,
+    }
+  })
 }
 
 export type DeletedThreadWorktreeResult =

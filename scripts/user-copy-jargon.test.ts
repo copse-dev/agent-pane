@@ -157,19 +157,19 @@ const ALLOWED: readonly Allowance[] = [
     reason: REASON.identifier,
   },
   {
-    file: 'src/main/services/container-runtime/worker-entry.ts',
+    file: 'src/main/services/container-runtime/worker-main.ts',
     term: 'ACP',
     count: 1,
     reason: REASON.containerWorker,
   },
   {
-    file: 'src/main/services/container-runtime/worker-entry.ts',
+    file: 'src/main/services/container-runtime/worker-main.ts',
     term: 'harness',
     count: 1,
     reason: REASON.containerWorker,
   },
   {
-    file: 'src/main/services/container-runtime/worker-entry.ts',
+    file: 'src/main/services/container-runtime/worker-main.ts',
     term: 'stdio',
     count: 4,
     reason: REASON.containerWorker,
