@@ -61,7 +61,8 @@ import { initSkillPicker } from './skill-picker.ts'
 import { mountFooterIndexStatus } from './footer-index-status.ts'
 import { mergeInvocables, resolveInvocation } from '@shared/invocation/parse-invocation.ts'
 import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
-import type { ContextBreakdown, TranscriptAttachment, UserContent } from '@shared/types'
+import type { ContextBreakdown, Thread, TranscriptAttachment, UserContent } from '@shared/types'
+import type { ThreadClassifierUse } from '@shared/usage/classifier-use.ts'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import type { AgentSummary } from '@shared/types/agents.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
@@ -1534,6 +1535,67 @@ export function mountInputBar(
     contextFitWarning.hidden = false
   }
 
+  // What the classifiers did for the active thread. It lives in the thread's
+  // decision log in main, so it is fetched over IPC — only when something that
+  // can add a classifier call has moved (the thread, its status, a new message,
+  // or a new tool call on the last one), never per streamed chunk. Some calls
+  // land with no such event: the shell-tier shadow check is fire-and-forget and
+  // records after its answer arrives, so the hover also re-reads when it opens.
+  let classifierUse: ThreadClassifierUse | null = null
+  let classifierUseKey = ''
+  // Which project's thread the figures belong to; thread ids alone are not unique across projects.
+  let classifierUseOwner: string | null = null
+  let classifierUseSeq = 0
+  let classifierUseInFlight = false
+
+  function refreshClassifierUse(thread: Thread | undefined, force = false): void {
+    const projectId = store.getState().activeProjectId
+    if (!thread || projectId === null) {
+      classifierUse = null
+      classifierUseKey = ''
+      classifierUseOwner = null
+      classifierUseSeq++
+      // Whatever was pending is superseded and will not clear the flag itself.
+      classifierUseInFlight = false
+      return
+    }
+    const last = thread.messages.at(-1)
+    const key = `${projectId}:${thread.id}:${thread.status}:${String(thread.messages.length)}:${String(last?.toolCalls.length ?? 0)}`
+    if (force ? classifierUseInFlight : key === classifierUseKey) return
+    // Another thread's figures must not show while this one's are in flight.
+    const owner = `${projectId}:${thread.id}`
+    if (owner !== classifierUseOwner) classifierUse = null
+    classifierUseOwner = owner
+    classifierUseKey = key
+    const seq = ++classifierUseSeq
+    classifierUseInFlight = true
+    api.usage.getThreadClassifierUse(projectId, thread.id).then(
+      (use) => {
+        // A newer fetch (or a thread switch) has superseded this answer, and the
+        // flag now belongs to that newer fetch.
+        if (seq !== classifierUseSeq) return
+        classifierUseInFlight = false
+        // A re-read that finds the same figures must not repaint: a repaint drops
+        // the wheel's tabindex, which blurs it and closes a keyboard-opened hover.
+        // A thread that asked no classifier shows nothing, the same as before the
+        // answer arrived, so that answer needs no repaint either.
+        const next = use.calls > 0 ? use : null
+        if (JSON.stringify(next) === JSON.stringify(classifierUse)) return
+        classifierUse = next
+        updateFooter()
+      },
+      () => {
+        if (seq === classifierUseSeq) classifierUseInFlight = false
+      },
+    )
+  }
+
+  const rereadClassifierUse = (): void => {
+    refreshClassifierUse(getActiveThread(store), true)
+  }
+  contextWheel.root.addEventListener('mouseenter', rereadClassifierUse)
+  contextWheel.root.addEventListener('focusin', rereadClassifierUse)
+
   function updateFooter(): void {
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
@@ -1543,6 +1605,7 @@ export function mountInputBar(
     // dynamic-default resolver): refresh it, which for ACP drops it instead.
     if (lastBreakdown && !breakdown) scheduleContextEstimate(0)
     const usage = usageViews()
+    refreshClassifierUse(thread)
     const snapshot = thread?.contextSnapshot
     const snapshotUsable =
       !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01
@@ -1571,6 +1634,7 @@ export function mountInputBar(
     contextWheel.update(snapshot, running, {
       usageLine: usage?.detail ?? null,
       usage: usage?.tooltip ?? null,
+      classifierUse,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource:

@@ -71,6 +71,8 @@ export function classifyTerminalSnapshot(
   return screenWithSafetyModel({
     systemPrompt: SYSTEM_PROMPT,
     content: text,
+    subject: 'terminal-read',
+    verdictLabel: (verdict) => (verdict.risky ? 'risky' : 'safe'),
     parse: parseTerminalReadVerdict,
     withClassifier: (id, classifierSignal) =>
       classifyTerminalSnapshotWithClassifier(id, text, classifierSignal),

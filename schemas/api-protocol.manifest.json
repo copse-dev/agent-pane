@@ -2292,6 +2292,13 @@
           0
         ]
       },
+      "usage:get-thread-classifier-use": {
+        "api": "usage.getThreadClassifierUse",
+        "args": [
+          2,
+          2
+        ]
+      },
       "usage:set-claude-plan-monthly-fee": {
         "api": "usage.setClaudePlanMonthlyFee",
         "args": [
