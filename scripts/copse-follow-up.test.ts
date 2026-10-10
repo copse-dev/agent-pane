@@ -233,7 +233,12 @@ it('loads only trusted workflow source, keeps keys out of preparation and mints 
   assert.equal(job.steps[0].with['persist-credentials'], false)
   const run = job.steps.findIndex((s) => s.name === 'Edit in the hardened container')
   const publish = job.steps.findIndex((s) => s.name === 'Mint the publishing token')
-  assert.ok(run > 0 && publish > run)
+  const validated = job.steps.findIndex(
+    (s) => s.name === 'Validate completion before minting credentials',
+  )
+  assert.ok(run > 0 && validated > run && publish > validated)
+  assert.match(job.steps[validated]?.run ?? '', /publicationRef/)
+  assert.equal(job.steps[validated]?.env?.['GH_TOKEN'], undefined)
   assert.equal(job.steps[run]?.env?.['GH_TOKEN'], undefined)
   assert.match(job.steps[run]?.run ?? '', /--report/)
   assert.match(job.steps[run]?.run ?? '', /--rebase-onto/)

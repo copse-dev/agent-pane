@@ -82,6 +82,16 @@ jobs:
             --allow registry.npmjs.org:443 --allow github.com:443 \
             --allow codeload.github.com:443 --allow release-assets.githubusercontent.com:443 \
             "${args[@]}"
+      - name: Validate completion before minting credentials
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { decode, requestSchema, publicationRef } from './scripts/lib/copse-follow-up.mts';
+          const root = process.env.FOLLOW_UP_DIR;
+          const request = decode(readFileSync(join(root, 'request.json'), 'utf8'), requestSchema);
+          publicationRef(readFileSync(join(root, 'report.json'), 'utf8'), request);
+          JS
       # Mint only after the guest has stopped. App pushes start ordinary PR CI;
       # GITHUB_TOKEN pushes would suppress it. Scope the token to this repository.
       - name: Mint the publishing token
