@@ -81,6 +81,8 @@ export interface StoreEvents {
   // <webview> holds focus — see app-menu.ts.
   browser_url_bar_focus_requested: []
   pr_open_requested: [owner: string, repo: string, number: number]
+  // Use the sidebar’s guarded archive flow from other thread surfaces.
+  thread_archive_requested: [projectId: string, threadId: string]
   // Show this side chat beside the main thread (Side chat panel).
   side_chat_open_requested: [threadId: string]
   // An MCP-UI artefact should be rendered in the canvas (Browser pane).

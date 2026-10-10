@@ -248,7 +248,8 @@ describe('projects pane thread rename + archive (component)', () => {
       item.click()
       await new Promise<void>((resolve) => setTimeout(resolve, 0))
     }
-    await openArchive()
+    store.emit('thread_archive_requested', 'a', 't2')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
     const dialog = document.querySelector('#confirm-dialog')
     assert.ok(dialog)
     assert.match(dialog.textContent, /README.md/)

@@ -2229,6 +2229,13 @@
           5
         ]
       },
+      "threads:storage-size": {
+        "api": "threads.storageSize",
+        "args": [
+          2,
+          2
+        ]
+      },
       "threads:undo-history-edit": {
         "api": "threads.undoHistoryEdit",
         "args": [

@@ -21,6 +21,8 @@ describe('The thread Context panel', () => {
   })
 
   it('lists repos, side chats, links, mentions and subagents for the open thread', async () => {
+    await expect($('[data-context-storage-size]')).toHaveText('24 KB')
+    await expect($('[data-action="archive-thread"]')).toBeEnabled()
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('[data-context-section="repos"] .thread-context-repo')).toHaveText(
       expect.stringContaining('fix/mermaid-wait'),
@@ -73,5 +75,11 @@ describe('The thread Context panel', () => {
     await $('.side-chat-body-host').waitForDisplayed({ timeout: 10_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('.side-chat-row.is-selected')).toHaveAttribute('data-side-chat-id', 'sc-side-2')
+  })
+  it('archives the current thread from Context', async () => {
+    await openContext()
+    await $('[data-action="archive-thread"]').click()
+    await expect($('.chat-row.selected .chat-title')).not.toHaveText(MAIN)
+    await saveElementScreenshot('#pane-files', 'thread-context-after-archive.png')
   })
 })

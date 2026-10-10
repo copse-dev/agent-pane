@@ -175,6 +175,7 @@ import {
 } from '../windows/create-main-window.ts'
 import { browserPaneSessionSchema, decodeBrowserPaneSession } from '../windows/main-window-state.ts'
 import {
+  measureThreadStorage,
   backfillThreadPrRefs,
   loadProjectThreadMetas,
   loadThreadMessages,
@@ -1948,6 +1949,11 @@ export function registerAllHandlers(
       return getContainerRunService().adopt(pid, tid, rid)
     },
   )
+  ipcMain.handle('threads:storage-size', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return measureThreadStorage(pid, tid)
+  })
   ipcMain.handle('threads:load-project', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
