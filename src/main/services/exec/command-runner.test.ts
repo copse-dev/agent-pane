@@ -1,7 +1,8 @@
 import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { ChildProcess } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { networkActivity } from '../diagnostics/network-activity.ts'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
@@ -413,4 +414,45 @@ describe('runCommand sandbox lease', () => {
       mock.restoreAll()
     }
   })
+})
+
+describe('network command activity', () => {
+  it(
+    'shows a command while running, then records its exit without retaining output',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'network-command-'))
+      try {
+        await writeFile(join(root, 'gh'), '#!/bin/sh\nsleep 0.2\necho private-output\nexit 7\n', {
+          mode: 0o755,
+        })
+        const pending = runCommand('gh', ['api', 'private-argument'], {
+          cwd: root,
+          unsandboxed: true,
+          env: { PATH: `${root}:/usr/bin:/bin` },
+        })
+        const live = networkActivity.snapshot().rows[0]
+        assert.equal(live?.label, 'gh api')
+        assert.equal(live.status, 'running')
+        const result = await pending
+        assert.equal(result.code, 7)
+        const done = networkActivity.snapshot().rows.find((row) => row.id === live.id)
+        assert.equal(done?.status, 'failed')
+        assert.equal(done.exitCode, 7)
+        assert.equal(JSON.stringify(done).includes('private-'), false)
+        await assert.rejects(
+          runCommand('gh', ['api'], {
+            cwd: root,
+            unsandboxed: true,
+            env: { PATH: `${root}:/usr/bin:/bin` },
+            timeout_ms: 20,
+          }),
+          /timed out/,
+        )
+        assert.equal(networkActivity.snapshot().rows[0]?.status, 'timed-out')
+      } finally {
+        await rm(root, { recursive: true, force: true })
+      }
+    },
+  )
 })

@@ -1,3 +1,4 @@
+import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { containedSandboxNetworkConfig } from './config.ts'
@@ -115,6 +116,13 @@ const recordedDenials: NetworkDenial[] = []
 let denialSeq = 0
 
 export function recordNetworkDenial(host: string, port?: number): void {
+  networkActivity
+    .start({
+      source: 'sandbox',
+      label: 'Sandbox connection',
+      target: `${host.slice(0, 253)}${port === undefined ? '' : `:${String(port)}`}`,
+    })
+    .finish('blocked')
   denialSeq++
   recordedDenials.push({ seq: denialSeq, host, ...(port !== undefined ? { port } : {}) })
   if (recordedDenials.length > MAX_RECORDED_DENIALS) recordedDenials.shift()

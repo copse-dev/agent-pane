@@ -159,7 +159,7 @@ describe('Process manager', function () {
     const groups = await browser.execute(() => {
       const byGroup: { key: string; expanded: string | null; memory: number[] }[] = []
       for (const row of document.querySelectorAll<HTMLTableRowElement>(
-        '#process-manager-dialog tbody tr',
+        '#process-manager-dialog .process-manager-rows tr',
       )) {
         if (row.classList.contains('process-manager-group')) {
           byGroup.push({
