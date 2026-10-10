@@ -13,6 +13,7 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const mode = store.getState().rightPanelMode
     const isExplorer = mode === 'explorer'
     const isContext = mode === 'context'
+    document.getElementById('pane-files')?.classList.toggle('is-context-panel', isContext)
     const isSideChat = mode === 'side-chat'
     const isTerminal = mode === 'terminal'
     const isChanges = mode === 'changes'
@@ -64,7 +65,7 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     if (roadmapViewer) roadmapViewer.hidden = !isRoadmap
     if (browserViewer) browserViewer.hidden = !isBrowser
     if (vncViewer) vncViewer.hidden = !isVnc
-    if (treeResizer) treeResizer.hidden = !store.getState().filesPaneOpen
+    if (treeResizer) treeResizer.hidden = isContext || !store.getState().filesPaneOpen
   }
 
   /**
