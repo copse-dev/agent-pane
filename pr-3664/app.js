@@ -59288,6 +59288,7 @@ async function refreshAutomationSchedules(store2, api2, projectId) {
   scheduleCache.set(projectId, schedules);
   eventAutomationCache.set(projectId, eventAutomations);
   store2.emit("automation_schedules_loaded");
+  return schedules;
 }
 function startFailureDetail(error62) {
   return ipcErrorMessage(error62, "the checkout could not be prepared");
@@ -60200,10 +60201,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     if (!projectId) return;
     try {
       const [loadedSchedules, loadedPermissions] = await Promise.all([
-        api2.automations.list(projectId),
+        refreshAutomationSchedules(store2, api2, projectId),
         api2.automations.permissionOptions(projectId),
-        ciEditor.refresh(),
-        refreshAutomationSchedules(store2, api2, projectId)
+        ciEditor.refresh()
       ]);
       schedules = loadedSchedules;
       availablePermissions = loadedPermissions;
