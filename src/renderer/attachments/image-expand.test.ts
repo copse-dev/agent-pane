@@ -111,6 +111,7 @@ describe('image expand lightbox', () => {
     const annotate = qsRequired<HTMLButtonElement>(dialog, '.image-expand-annotate')
     annotate.click()
     assert.equal(annotate.getAttribute('aria-pressed'), 'true')
+    assert.equal(qsRequired(dialog, '.annotation-send').textContent, 'Send to agent')
     assert.ok(qs(dialog, '.annotation-layer-svg'))
     dialog.close()
   })

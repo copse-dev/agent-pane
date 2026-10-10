@@ -2424,7 +2424,14 @@ export function mountInputBar(
     thumb.width = 40
     thumb.height = 40
     // Same shared lightbox as transcript/roadmap thumbs — openable before send.
-    attachImageExpand(thumb, 'Attached image')
+    attachImageExpand(thumb, 'Attached image', undefined, undefined, (png) => {
+      if (!attachedImages.includes(entry)) return false
+      entry.dataUrl = png
+      entry.mimeType = 'image/png'
+      thumb.src = png
+      scheduleContextEstimate()
+      return true
+    })
     const remove = document.createElement('button')
     remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {

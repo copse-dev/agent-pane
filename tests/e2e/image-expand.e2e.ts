@@ -19,6 +19,8 @@ const THREAD_DISMISSED_SHOT = 'image-expand-thread-dismissed.png'
 const TEXT_SHOT = 'attachment-preview-text.png'
 const ROADMAP_SHOT = 'image-expand-roadmap.png'
 const COMPOSER_SHOT = 'image-expand-composer-new-thread.png'
+const COMPOSER_ANNOTATION_SHOT = 'image-expand-composer-annotation-update.png'
+const COMPOSER_UPDATED_SHOT = 'image-expand-composer-updated-chip.png'
 const IMAGE_COPY_MENU_SHOT = 'image-expand-copy-menu.png'
 const THREAD_COPY_MENU_SHOT = 'image-expand-thread-copy-menu.png'
 const TEXT_COPY_MENU_SHOT = 'attachment-preview-text-copy-menu.png'
@@ -486,7 +488,12 @@ describe('Screenshot click-to-expand', () => {
     )
     await assertDialogChrome()
     await saveAppScreenshot(COMPOSER_SHOT)
-    await $('.attachment-preview-close').click()
+    await $('.image-expand-annotate').click()
+    await expect($('.annotation-send')).toHaveText('Update')
+    await drawGalleryAnnotation()
+    await expect($('.annotation-send')).toBeEnabled()
+    await saveAppScreenshot(COMPOSER_ANNOTATION_SHOT)
+    await $('.annotation-send').click()
     await browser.waitUntil(
       async () => {
         const closed = $('dialog.attachment-preview-dialog')
@@ -495,6 +502,9 @@ describe('Screenshot click-to-expand', () => {
       },
       { timeout: 5_000, timeoutMsg: 'expected composer image preview to close' },
     )
+    await expect($$('.attachment-chips .image-chip')).toBeElementsArrayOfSize(1)
+    await expect(thumb).not.toHaveAttribute('src', expandedSrc)
+    await saveElementScreenshot('.attachment-chips', COMPOSER_UPDATED_SHOT)
   })
 
   it('expands a roadmap plan attachment thumb in the same modal', async () => {

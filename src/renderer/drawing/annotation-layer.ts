@@ -99,6 +99,8 @@ export interface AnnotationLayerOptions {
    * caller could not attach them, or true to consume the annotation.
    */
   onSend: (payload: AnnotationExport) => boolean | Promise<boolean>
+  /** Label for the primary annotation action; defaults to Send to agent. */
+  actionLabel?: string
   /** The user left annotation mode (Done, Escape, or `deactivate()`). */
   onDeactivate?: () => void
 }
@@ -318,7 +320,7 @@ export function mountAnnotationLayer(
     sendBtn = el(
       'button',
       { type: 'button', class: 'ui-btn ui-btn-primary annotation-send', disabled: true },
-      'Send to agent',
+      options.actionLabel ?? 'Send to agent',
     )
     sendBtn.addEventListener('click', () => {
       if (sending) return
