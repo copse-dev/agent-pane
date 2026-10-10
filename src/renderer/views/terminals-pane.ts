@@ -421,6 +421,31 @@ export function mountTerminalsPane(
     tab.container.addEventListener('mousedown', () => {
       if (activeTabId === tab.id) focusTab(tab)
     })
+    tab.container.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(e.clientX, e.clientY, [
+        {
+          label: 'Copy',
+          disabled: !tab.term.hasSelection(),
+          onSelect: (): void => {
+            void navigator.clipboard.writeText(tab.term.getSelection())
+          },
+        },
+        {
+          label: 'Paste',
+          disabled: !tab.sessionId,
+          onSelect: (): void => {
+            void navigator.clipboard.readText().then((text) => {
+              if (text && tab.sessionId) {
+                tab.term.paste(text)
+                focusTab(tab)
+              }
+            })
+          },
+        },
+      ])
+    })
   }
 
   function currentThreadId(): string | null {

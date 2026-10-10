@@ -298,6 +298,13 @@
 .context-menu-item:hover {
   background: var(--bg-hover);
 }
+.context-menu-item:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+.context-menu-item:disabled:hover {
+  background: transparent;
+}
 .context-menu-item-label {
   flex: 1 1 auto;
 }
