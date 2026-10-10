@@ -2337,6 +2337,13 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       theme: 'dark',
       uiTintStrength: 'off',
     },
+    // Two rows carry a trailing changes glyph, with very different title lengths,
+    // so a grouped view's "· demo" owner labels can't hide a glyph that isn't
+    // pinned to the row's trailing edge.
+    threadChanges: {
+      'demo-sidebar-sort-b': { dirty: false, unpushed: 2 },
+      'demo-sidebar-sort-c': { dirty: true },
+    },
     // Newest-prompted first, as the store keeps them: neither creation nor title order.
     threads: [
       {
