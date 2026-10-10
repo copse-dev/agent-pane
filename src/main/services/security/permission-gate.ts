@@ -1718,7 +1718,7 @@ async function checkBackgroundProcessPermission(
     )
   }
 
-  const root = getAgentExecutionRoot()
+  const root = getAgentProjectRoot()
   if (!root) throw new Error('No workspace open.')
 
   const allowed = getSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [])

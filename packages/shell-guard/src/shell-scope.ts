@@ -522,7 +522,13 @@ function collectExternalReasons(command: string): { reasons: ScopeReason[]; hasH
   const reasons: ScopeReason[] = []
   let hasHard = false
   const shellCommand = maskInterpreterHeredocBodies(command)
-  const variants = [shellCommand, normalizeShellCommandForAnalysis(shellCommand)]
+  // `pnpm exec` runs an installed command, like `pnpm run`; it neither installs
+  // packages nor invokes the shell's `exec` builtin. Mask only this command head,
+  // leaving the entire child command visible to every existing scope check.
+  const localPnpmExec = new RegExp(`(${CMD_POS})pnpm[ \\t]+exec(?=[ \\t]|$)`, 'g')
+  const variants = [shellCommand, normalizeShellCommandForAnalysis(shellCommand)].map((text) =>
+    text.replace(localPnpmExec, '$1pnpm run'),
+  )
   for (const text of variants) {
     for (const { re, reason, ambiguous } of EXTERNAL_PATTERNS) {
       if (re.test(text) && !reasons.includes(reason)) {
