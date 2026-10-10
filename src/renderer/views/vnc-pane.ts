@@ -1,6 +1,8 @@
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { attachAnnotation } from '../drawing/attach-annotation.ts'
+import { mountAnnotationLayer, type AnnotationLayer } from '../drawing/annotation-layer.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { el } from '../dom/helpers.ts'
 import { closeIcon, monitorIcon, plusIcon, refreshIcon } from '../dom/icons.ts'
@@ -211,6 +213,17 @@ function mountVncSession(
     },
     'Control desktop',
   )
+  const shareButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn vnc-share-btn', hidden: true },
+    'Share screenshot',
+  )
+  const annotateButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn vnc-annotate-btn', 'aria-pressed': 'false', hidden: true },
+    'Annotate',
+  )
+  const captureActions = el('div', { class: 'vnc-capture-actions' }, shareButton, annotateButton)
   const homeButton = el(
     'button',
     { type: 'button', class: 'ui-btn vnc-home-btn', hidden: true },
@@ -434,6 +447,7 @@ function mountVncSession(
     status,
     forgetLoginButton,
     controlButton,
+    captureActions,
     deviceNavigation,
     disconnectButton,
     note,
@@ -445,6 +459,7 @@ function mountVncSession(
   viewerRoot.append(screen, empty)
 
   let rfb: RFB | null = null
+  let annotation: AnnotationLayer | null = null
   let channel: VncIpcChannel | null = null
   let connectGeneration = 0
   let discoveryGeneration = 0
@@ -586,6 +601,8 @@ function mountVncSession(
     connectButton.hidden = active
     disconnectButton.hidden = !active
     controlButton.hidden = !connected
+    shareButton.hidden = !connected
+    annotateButton.hidden = !connected
     homeButton.hidden = !connected || simulatorSessionId === null
     const android = selectedSimulator()?.platform === 'android'
     backButton.hidden = !connected || !android
@@ -667,6 +684,7 @@ function mountVncSession(
 
   function setControlEnabled(enabled: boolean): void {
     if ((!rfb && !simulatorView) || !connectedAtLeastOnce) return
+    if (enabled) annotation?.deactivate()
     controlEnabled = enabled
     if (rfb) rfb.viewOnly = !enabled
     simulatorView?.setControlEnabled(enabled)
@@ -697,6 +715,9 @@ function mountVncSession(
   }
 
   function clearViewer(title: string, kind: VncStatusKind = 'idle', detail = ''): void {
+    annotation?.dispose()
+    annotation = null
+    annotateButton.setAttribute('aria-pressed', 'false')
     rfb = null
     channel = null
     activeTarget = null
@@ -1585,6 +1606,41 @@ function mountVncSession(
     }
   }
 
+  function captureScreenForAnnotation(): string | null {
+    const canvas = screen.querySelector<HTMLCanvasElement>('canvas')
+    if (!connectedAtLeastOnce || !canvas || canvas.width === 0 || canvas.height === 0) return null
+    const host = screen.getBoundingClientRect()
+    const frame = canvas.getBoundingClientRect()
+    const capture = document.createElement('canvas')
+    capture.width = Math.max(1, Math.round(host.width))
+    capture.height = Math.max(1, Math.round(host.height))
+    const context = capture.getContext('2d')
+    if (!context) return null
+    context.drawImage(
+      canvas,
+      frame.left - host.left,
+      frame.top - host.top,
+      frame.width,
+      frame.height,
+    )
+    return capture.toDataURL('image/png')
+  }
+
+  shareButton.addEventListener('click', shareCurrentScreen)
+  annotateButton.addEventListener('click', () => {
+    if (!connectedAtLeastOnce) return
+    if (controlEnabled) setControlEnabled(false)
+    annotation ??= mountAnnotationLayer(screen, {
+      label: connectedMachineName ?? 'desktop',
+      captureBase: () => Promise.resolve(captureScreenForAnnotation()),
+      onSend: (payload) => attachAnnotation(payload, connectedMachineName ?? 'desktop'),
+      onDeactivate: () => {
+        annotateButton.setAttribute('aria-pressed', 'false')
+      },
+    })
+    annotateButton.setAttribute('aria-pressed', String(annotation.toggle()))
+  })
+
   const onScreenContextMenu = (event: MouseEvent): void => {
     const canvas = screen.querySelector<HTMLCanvasElement>('canvas')
     if (!connectedAtLeastOnce || !canvas) return
@@ -1767,6 +1823,8 @@ function mountVncSession(
       void showSimulatorFromAgent(udid, presentation)
     },
     cleanup: (): void => {
+      annotation?.dispose()
+      annotation = null
       connectGeneration++
       discoveryGeneration++
       nearbyGeneration++
