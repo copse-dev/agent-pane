@@ -1,0 +1,108 @@
+name: Copse follow-up
+
+# issue_comment always loads the default-branch workflow. PR code only runs in
+# the hardened thread container, without a GitHub token or provider key.
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+concurrency:
+  group: copse-follow-up-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  follow-up:
+    if: >-
+      github.repository_id == '1274237362' && github.actor_id == '338988' &&
+      github.triggering_actor == 'jonathanKingston' &&
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '@copse-review ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: copse-review-models
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Install trusted host dependencies
+        run: |
+          corepack enable
+          corepack prepare --activate
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Select isolated run directories
+        run: |
+          echo "FOLLOW_UP_DIR=$RUNNER_TEMP/copse-follow-up" >> "$GITHUB_ENV"
+          echo "COPSE_DIR=$RUNNER_TEMP/copse-follow-up-profile" >> "$GITHUB_ENV"
+      - name: Authorize the comment and prepare the exact PR head
+        id: request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/copse-follow-up.mts prepare
+      - name: Edit in the hardened container
+        env:
+          COPSE_FOLLOW_UP_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
+          COPSE_MODEL: ${{ vars.COPSE_REVIEW_MODEL || 'qwen3.8-27b' }}
+          COPSE_PROVIDER_URL: ${{ vars.COPSE_REVIEW_BASE_URL || vars.SCW_GENERATIVE_API_URL || 'https://api.scaleway.ai/v1' }}
+          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+          REQUEST_MODE: ${{ steps.request.outputs.mode }}
+          REQUEST_BASE: ${{ steps.request.outputs.base }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          COPSE_PROVIDER_URL="${COPSE_PROVIDER_URL%/}"
+          if [ "$COPSE_PROVIDER_URL" = https://api.scaleway.ai/v1 ]; then
+            if [[ ! "$SCW_DEFAULT_PROJECT_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+              echo '::error::SCW_DEFAULT_PROJECT_ID must be a lowercase UUID for explicit billing attribution'
+              exit 1
+            fi
+            export COPSE_PROVIDER_URL="https://api.scaleway.ai/${SCW_DEFAULT_PROJECT_ID}/v1"
+          fi
+          unset SCW_DEFAULT_PROJECT_ID
+          args=()
+          if [ "$REQUEST_MODE" = rebase ]; then
+            args+=(--rebase-onto "$REQUEST_BASE")
+          fi
+          node scripts/run-thread-container.mts --build \
+            --workspace "$FOLLOW_UP_DIR/workspace" \
+            --prompt-file "$FOLLOW_UP_DIR/prompt.txt" \
+            --report "$FOLLOW_UP_DIR/report.json" \
+            --api-key-env COPSE_FOLLOW_UP_API_KEY \
+            --ttl 35 --tokens 500000 --max-steps 100 \
+            --install-dependencies \
+            --allow registry.npmjs.org:443 --allow github.com:443 \
+            --allow codeload.github.com:443 --allow release-assets.githubusercontent.com:443 \
+            "${args[@]}"
+      - name: Validate completion before minting credentials
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { decode, requestSchema, publicationRef } from './scripts/lib/copse-follow-up.mts';
+          const root = process.env.FOLLOW_UP_DIR;
+          const request = decode(readFileSync(join(root, 'request.json'), 'utf8'), requestSchema);
+          publicationRef(readFileSync(join(root, 'report.json'), 'utf8'), request);
+          JS
+      # Mint only after the guest has stopped. App pushes start ordinary PR CI;
+      # GITHUB_TOKEN pushes would suppress it. Scope the token to this repository.
+      - name: Mint the publishing token
+        id: publisher
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: read
+      - name: Recheck authorization and publish with an exact head lease
+        env:
+          GH_TOKEN: ${{ steps.publisher.outputs.token }}
+        run: node scripts/copse-follow-up.mts publish

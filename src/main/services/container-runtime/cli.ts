@@ -11,6 +11,10 @@
  *
  *   --workspace <dir>       git checkout to carry in (default: cwd)
  *   --prompt <text>         the task
+ *   --prompt-file <path>   read the task from a UTF-8 file instead of --prompt
+ *   --report <path>        write the host run record as JSON for automation
+ *   --rebase-onto <sha>    include this exact commit as refs/copse/rebase-base
+ *   --install-dependencies install dependencies inside the guest
  *   --model <id>            model id the provider serves (default: $COPSE_MODEL)
  *   --provider-url <url>    OpenAI-compatible base URL this host calls for the guest's
  *                           inference; the guest never dials it, so it needs no --allow
@@ -36,6 +40,7 @@
  *   --sweep                 remove every managed container and volume that is not running
  *   --forget-store          remove the shared pnpm store volume; the next install refills it
  */
+import { readFile, writeFile } from 'node:fs/promises'
 import {
   assertThreadContainerEngine,
   buildWorkerImage,
@@ -66,7 +71,9 @@ function parseCli(argv: readonly string[]): Cli {
     if (!token.startsWith('--')) throw new Error(`Unexpected argument: ${token}`)
     const name = token.slice(2)
     const next = argv[index + 1]
-    const boolean = ['build', 'list', 'sweep', 'forget-store'].includes(name)
+    const boolean = ['build', 'list', 'sweep', 'forget-store', 'install-dependencies'].includes(
+      name,
+    )
     const value = boolean || next === undefined || next.startsWith('--') ? '' : next
     if (value !== '') index++
     const list = flags.get(name) ?? []
@@ -149,12 +156,17 @@ async function main(): Promise<void> {
   }
   if (apiKeyEnv && !apiKey) throw new Error(`Provider key variable ${apiKeyEnv} is not set`)
   const maxSteps = cli.one('max-steps')
+  const rebaseOnto = cli.one('rebase-onto')
   const model = required(cli.one('model') ?? process.env['COPSE_MODEL'], '--model')
   const transport = createResolvedProviderFetch(egressResolve)
   const record = await runThreadInContainer({
     engine,
     workspace: cli.one('workspace') ?? process.cwd(),
-    prompt: required(cli.one('prompt'), '--prompt'),
+    prompt: cli.one('prompt-file')
+      ? await readFile(required(cli.one('prompt-file'), '--prompt-file'), 'utf8')
+      : required(cli.one('prompt'), '--prompt'),
+    installDependencies: cli.has('install-dependencies'),
+    ...(rebaseOnto ? { rebaseOnto } : {}),
     model,
     // CLI provider inference and its selected key stay on this host (A1″).
     hostInference: (maxOutputTokens): Promise<LLMProvider> =>
@@ -188,6 +200,8 @@ async function main(): Promise<void> {
     image,
     ...(maxSteps !== undefined ? { maxSteps: Number(maxSteps) } : {}),
   }).finally(() => transport.close())
+  const reportPath = cli.one('report')
+  if (reportPath) await writeFile(reportPath, JSON.stringify(record), { mode: 0o600 })
   const result = record.result
   console.log('')
   console.log(`run ${record.runtimeId}: ${result?.stopReason ?? 'no result written'}`)

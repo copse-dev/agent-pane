@@ -1146,3 +1146,22 @@ run: `maxAttempts: 1` and explicit user continuation remain the contract. The
 supervisor records the wall-clock limit; the runner still enforces it and the guest
 still enforces its token limit. Adoption of an external task does not impose the
 supervisor's queued-handler concurrency limits.
+
+### A23 — explicit GitHub comment follow-ups (October 10)
+
+`copse-follow-up.yml` reuses the unattended runtime for owner-requested PR edits and rebases.
+The CLI accepts file-based prompts and a JSON host-record output, dependency installation, and
+an optional exact `--rebase-onto` SHA. That additional commit travels in the carry-in bundle under
+a run-scoped ref and becomes `refs/copse/rebase-base` inside the guest. The guest validates the
+base SHA before running. Ordinary runs without the option retain their existing carry-in shape.
+Carry-out refuses unfinished rebases, merges, cherry-picks and reverts, and can export a completed
+rewritten history against its original carry-in prerequisite. Image inputs and secret-free run inputs
+have explicit guest-readable permissions, including with a host umask of 077; the host runtimes
+parent remains private (0700). The Docker follow-up integration test exercises that restrictive
+umask and an initially owner-readable-only worker bundle.
+
+The runtime still never pushes and the guest still receives no GitHub credentials. A separate
+trusted Actions host publisher validates the record and current request, then uses a repository
+App token and exact-head lease. The comment authorizes that one PR update, not arbitrary external
+writes. See the comment-follow-up section in [Copse Reviewer](copse-reviewer.md) for deployment,
+command syntax, authorization, publication restrictions and validation requirements.
