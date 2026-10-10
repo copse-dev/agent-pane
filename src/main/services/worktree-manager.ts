@@ -36,7 +36,6 @@ import { changedPaths } from './git-status-paths.ts'
 import {
   holdsOnlyAbsorbedSubmodules,
   inspectSubmoduleRetention,
-  populateWorktreeSubmodules,
   submoduleRetentionPaths,
 } from './worktree-submodules.ts'
 
@@ -1079,12 +1078,7 @@ export async function allocateThreadWorktree(
       await registerInternalWorkspaceRoot(canonicalPath, executionRoot)
       if (snapshotRef) {
         await seedFromSnapshot(canonicalPath, snapshotRef)
-        // From the snapshot, so a submodule the project has moved is checked
-        // out at the commit the project actually has.
-        await populateWorktreeSubmodules(canonicalPath, snapshotRef)
         await deleteRef(projectRoot, snapshotRef)
-      } else {
-        await populateWorktreeSubmodules(canonicalPath)
       }
       await cloneIgnoredProjectFiles(projectRoot, canonicalPath)
       return worktree
@@ -1193,7 +1187,6 @@ export async function restoreRetiredThreadWorktree(
         // knowing which checkout to free.
         throw commandFailure('Cannot restore retired thread worktree', add, input.worktree.branch)
       }
-      await populateWorktreeSubmodules(target)
     }
     const canonicalPath = await realpath(target)
     return activeWorktreeMetadata(input.worktree, canonicalPath)

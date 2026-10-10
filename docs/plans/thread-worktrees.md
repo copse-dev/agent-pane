@@ -388,11 +388,13 @@ permission policy; the classifier is not an authorization boundary.
 
 ### Submodules
 
-A new linked checkout has every submodule directory empty. The allocator (and the
-restore of a retired checkout) then checks out each submodule the project checkout has
-itself initialised, at the commit the base records. With dirty seeding disabled, neither
-a moved submodule pointer nor edits inside the project's own submodules carry over; if
-seeding returns, the manager populates from the snapshot, so the pointer would.
+A new linked checkout has every submodule directory empty, and it stays that way until
+the agent calls `init_submodules` (optionally with `paths`). Checking them all out at
+allocation was the slow part of a big repository, and most threads touch none. The tool
+checks out the submodules the project checkout has itself initialised, at the commit the
+thread's HEAD records. It runs without approval: it never uses the network and writes
+only inside the thread's own administration directory. A moved submodule pointer or
+edits inside the project's own submodules do not carry over.
 `src/main/services/worktree-submodules.ts` owns this.
 
 - **Offline, from the project's module repository.** Each submodule is cloned from
@@ -402,7 +404,7 @@ seeding returns, the manager populates from the snapshot, so the pointer would.
   Nested submodules repeat this one level down. A submodule the project never
   initialised stays empty: fetching it is a network operation nobody asked for, and the
   agent can run `git submodule update` behind the usual approval. Population is best
-  effort and never fails the allocation.
+  effort; a failure is reported by the tool, never raised.
 - **No new grants.** The agent sandbox already owns the per-worktree administration
   directory, so committing inside a submodule works without widening it, and the user's
   own module repositories are only read. Manager commands run inside a submodule use the
