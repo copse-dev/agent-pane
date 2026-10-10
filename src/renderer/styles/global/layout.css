@@ -949,21 +949,18 @@
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
-  /* The docked card's real border would stack under the hairline ring. */
   border: none;
-  border-radius: var(--radius-lg);
-  box-shadow:
-    0 0 0 1px var(--border),
-    var(--shadow-lg);
+  border-radius: var(--composer-radius);
+  box-shadow: var(--composer-shadow);
   /* Centred on both axes, so a long draft is capped to the pane. */
   max-height: calc(100% - 2 * var(--spacing-xl));
 }
 .pane-chat.is-activity-idle .prompt-input {
   border-top: none;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-radius: var(--composer-radius) var(--composer-radius) 0 0;
 }
 .pane-chat.is-activity-idle .input-footer {
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border-radius: 0 0 var(--composer-radius) var(--composer-radius);
 }
 .pane-chat.is-activity-home .conversation {
   /* The empty thread has nothing to show; the Activity home (views/activity-home.ts)

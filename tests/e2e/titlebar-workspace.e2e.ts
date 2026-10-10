@@ -65,7 +65,8 @@ describe('titlebar workspace name', () => {
     await expect(idle.borderRight).toBe('0px')
     await expect(idle.borderBottom).toBe('0px')
     await expect(idle.borderLeft).toBe('0px')
-    await expect(idle.boxShadow).toMatch(/0px 0px 0px 1px/)
+    await expect(idle.boxShadow).not.toBe('none')
+    await expect(idle.boxShadow).not.toMatch(/0px 0px 0px 1px/)
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-activity-home.png'))
 
     await newThreadBtn.click()

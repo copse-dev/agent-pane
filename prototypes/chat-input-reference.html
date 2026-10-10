@@ -1,0 +1,1162 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Copse composer concept</title>
+    <style>
+      :root {
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        font-synthesis: none;
+        color-scheme: dark;
+        --bg: #171a18;
+        --pane: #1c201d;
+        --card: #303832;
+        --card2: #242925;
+        --line: #404941;
+        --line2: #343b35;
+        --text: #e3e9e3;
+        --muted: #aab4aa;
+        --faint: #829083;
+        --pink: #f68cca;
+        --pinktext: #352335;
+        --hover: #353d36;
+        --shadow: 0 16px 36px #0009, 0 4px 12px #0004;
+        --send-bg: #496851;
+        --send-text: #f0f7ef;
+      }
+      html[data-theme='light'] {
+        color-scheme: light;
+        --bg: #f0f3ef;
+        --pane: #f8faf7;
+        --card: #ffffff;
+        --card2: #f4f6f3;
+        --line: #cbd5ca;
+        --line2: #e2e8e1;
+        --text: #263229;
+        --muted: #59695d;
+        --faint: #879388;
+        --pink: #d85c9f;
+        --pinktext: #fff;
+        --hover: #edf1ec;
+        --shadow: 0 16px 36px #34473730, 0 3px 10px #34473716;
+        --send-bg: #dcebdd;
+        --send-text: #2e5438;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+      }
+      button,
+      textarea {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid var(--pink);
+        outline-offset: 2px;
+      }
+      .app {
+        min-height: 100dvh;
+        display: grid;
+        grid-template-columns: 250px minmax(0, 1fr);
+      }
+      .rail {
+        border-right: 1px solid var(--line2);
+        padding: 22px 14px;
+        background: var(--bg);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 10px 25px;
+        font-weight: 750;
+        letter-spacing: 0.01em;
+      }
+      .mark {
+        width: 27px;
+        height: 27px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #a9dcb0, #4f8b66);
+        display: grid;
+        place-items: center;
+        color: #18351f;
+        font-size: 19px;
+      }
+      .rail-label {
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--faint);
+        padding: 16px 10px 7px;
+      }
+      .rail-item {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        text-align: left;
+        border-radius: 9px;
+        padding: 10px;
+        display: flex;
+        gap: 11px;
+        align-items: center;
+      }
+      .rail-item.active {
+        background: var(--card2);
+        color: var(--text);
+      }
+      .rail-item:hover {
+        background: var(--hover);
+      }
+      .main {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 100dvh;
+        background: var(--pane);
+      }
+      .top {
+        height: 58px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 27px;
+        border-bottom: 1px solid var(--line2);
+        gap: 12px;
+      }
+      .top strong {
+        font-size: 13px;
+        font-weight: 620;
+      }
+      .top small {
+        color: var(--faint);
+        font-size: 12px;
+      }
+      .top-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .top button,
+      .icon-btn {
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        border-radius: 9px;
+        padding: 7px 10px;
+      }
+      .top button:hover,
+      .icon-btn:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .conversation {
+        flex: 1;
+        width: min(100%, 960px);
+        margin: auto;
+        padding: 34px 50px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+      }
+      .message {
+        max-width: 690px;
+        font-size: 14px;
+        line-height: 1.65;
+      }
+      .message .who {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--faint);
+        margin-bottom: 7px;
+      }
+      .message p {
+        margin: 0 0 11px;
+      }
+      .message.user {
+        align-self: flex-end;
+        background: var(--card2);
+        border: 1px solid var(--line2);
+        border-radius: 16px;
+        padding: 14px 17px;
+        max-width: 560px;
+      }
+      .message.user .who {
+        color: var(--pink);
+      }
+      .code {
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-size: 12px;
+        color: var(--muted);
+        border: 1px solid var(--line2);
+        background: var(--bg);
+        border-radius: 10px;
+        padding: 13px 15px;
+      }
+      .composer-wrap {
+        width: min(100%, 960px);
+        margin: 0 auto;
+        padding: 0 50px 23px;
+      }
+      .composer {
+        position: relative;
+        border: 0;
+        border-radius: 27px;
+        background: var(--card);
+        box-shadow: var(--shadow);
+        padding: 23px 27px 20px;
+        transition: box-shadow 0.2s;
+      }
+      .composer:focus-within {
+        box-shadow:
+          var(--shadow),
+          0 0 0 2px #7ab78b30;
+      }
+      .draft {
+        width: 100%;
+        display: block;
+        border: 0;
+        outline: 0;
+        resize: none;
+        background: transparent;
+        color: var(--text);
+        min-height: 68px;
+        max-height: 34vh;
+        line-height: 1.45;
+        font-size: 22px;
+        padding: 0;
+        overflow: auto;
+      }
+      .draft::placeholder {
+        color: var(--faint);
+      }
+      .attachments {
+        display: none;
+        gap: 7px;
+        flex-wrap: wrap;
+        margin: 0 0 15px;
+      }
+      .attachments.show {
+        display: flex;
+      }
+      .attachment {
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--card2);
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 9px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .attachment button {
+        border: 0;
+        background: none;
+        color: var(--faint);
+        font-size: 16px;
+        line-height: 1;
+        padding: 0;
+      }
+      .footer {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 52px;
+      }
+      .left-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        min-width: 0;
+      }
+      .control {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: transparent;
+        color: var(--muted);
+        font-weight: 580;
+        font-size: 15px;
+        padding: 9px 12px;
+        white-space: nowrap;
+        line-height: 1.1;
+      }
+      .control:hover,
+      .control[aria-expanded='true'] {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .plain-control {
+        border-color: transparent;
+        padding-left: 8px;
+        padding-right: 8px;
+      }
+      .send {
+        margin-left: auto;
+        width: 52px;
+        height: 52px;
+        border: 0;
+        border-radius: 13px;
+        background: var(--send-bg);
+        color: var(--send-text);
+        display: grid;
+        place-items: center;
+        flex: none;
+        transition:
+          transform 0.15s,
+          filter 0.15s;
+      }
+      .send:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.07);
+      }
+      .send:disabled {
+        opacity: 0.65;
+        cursor: default;
+        transform: none;
+      }
+      .send svg {
+        width: 22px;
+        height: 22px;
+        stroke: currentColor;
+        stroke-width: 2.6;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .extra {
+        margin-top: 13px;
+        padding-top: 13px;
+        border-top: 1px solid var(--line2);
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        flex-wrap: wrap;
+        color: var(--faint);
+        font-size: 12px;
+      }
+      .extra button {
+        border: 0;
+        background: none;
+        color: var(--faint);
+        padding: 4px 0;
+      }
+      .extra button:hover {
+        color: var(--text);
+      }
+      .extra .spacer {
+        flex: 1;
+      }
+      .hint {
+        font-size: 11px;
+        color: var(--faint);
+        text-align: center;
+        margin-top: 10px;
+      }
+      .menu {
+        position: absolute;
+        bottom: 82px;
+        left: 27px;
+        width: min(290px, calc(100% - 54px));
+        padding: 7px;
+        background: var(--card2);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: 0 18px 40px #0006;
+        z-index: 5;
+      }
+      .menu[hidden] {
+        display: none;
+      }
+      .menu-title {
+        font-size: 11px;
+        color: var(--faint);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        padding: 8px 10px;
+      }
+      .option {
+        width: 100%;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: var(--text);
+        text-align: left;
+        padding: 9px 10px;
+        display: flex;
+        justify-content: space-between;
+        gap: 15px;
+        align-items: center;
+        font-size: 13px;
+      }
+      .option:hover,
+      .option[aria-selected='true'] {
+        background: var(--hover);
+      }
+      .option small {
+        display: block;
+        color: var(--faint);
+        font-size: 11px;
+        margin-top: 3px;
+      }
+      .check {
+        color: var(--pink);
+        font-weight: 700;
+      }
+      .toast {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--text);
+        color: var(--bg);
+        border-radius: 9px;
+        padding: 9px 14px;
+        font-size: 12px;
+        box-shadow: var(--shadow);
+        z-index: 20;
+      }
+      .toast[hidden] {
+        display: none;
+      }
+      .status {
+        color: var(--faint);
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #8bc899;
+      }
+      .mobile-head {
+        display: none;
+      }
+      @media (max-width: 850px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .rail {
+          display: none;
+        }
+        .conversation,
+        .composer-wrap {
+          padding-left: 22px;
+          padding-right: 22px;
+        }
+        .top {
+          padding: 0 22px;
+        }
+        .mobile-head {
+          display: inline;
+        }
+        .draft {
+          font-size: 19px;
+        }
+        .composer {
+          padding: 20px;
+        }
+        .menu {
+          left: 20px;
+        }
+      }
+      @media (max-width: 530px) {
+        .conversation {
+          padding-top: 22px;
+        }
+        .top small,
+        .top .hide-small,
+        .message .code {
+          display: none;
+        }
+        .composer-wrap {
+          padding: 0 12px 12px;
+        }
+        .composer {
+          border-radius: 22px;
+          padding: 18px;
+        }
+        .draft {
+          min-height: 82px;
+          font-size: 18px;
+        }
+        .control {
+          font-size: 13px;
+          padding: 8px 9px;
+        }
+        .plain-control {
+          padding-left: 3px;
+          padding-right: 3px;
+        }
+        .footer {
+          align-items: flex-end;
+        }
+        .left-controls {
+          gap: 4px;
+        }
+        .send {
+          width: 45px;
+          height: 45px;
+        }
+        .extra {
+          gap: 9px;
+        }
+        .hint {
+          display: none;
+        }
+      }
+    </style>
+    <style>
+      /* Current Copse layout with a softer, contrasting composer surface. */
+      :root {
+        --card: #292d2a;
+        --pane: #1c1e1c;
+        --shadow: 0 16px 42px #0008, 0 3px 10px #0003;
+        --send-bg: #dc9bbf;
+        --send-text: #352837;
+      }
+      html[data-theme='light'] {
+        --card: #ffffff;
+        --pane: #f1f3f0;
+        --shadow: 0 16px 42px #3a493026, 0 3px 10px #3a493014;
+        --send-bg: #c377a4;
+        --send-text: #ffffff;
+      }
+      .composer {
+        border: 0;
+        border-radius: 18px;
+        padding: 0;
+        background: var(--card);
+        box-shadow: var(--shadow);
+        overflow: visible;
+      }
+      .composer:focus-within {
+        box-shadow: var(--shadow);
+      }
+      .draft:focus-visible {
+        outline: none;
+      }
+      .change-actions {
+        display: flex;
+        gap: 8px;
+        padding: 17px 23px 4px;
+        flex-wrap: wrap;
+      }
+      .change-chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+        padding: 8px 13px;
+        line-height: 1.1;
+      }
+      .change-chip:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .change-chip b {
+        font-weight: 750;
+        margin-left: 3px;
+      }
+      .added {
+        color: #60c6a6;
+      }
+      .removed {
+        color: #e98179;
+      }
+      .input-area {
+        padding: 18px 26px 15px;
+      }
+      .draft {
+        min-height: 48px;
+        max-height: 32vh;
+        font-size: 20px;
+        font-weight: 600;
+        line-height: 1.4;
+        padding-left: 48px;
+      }
+      .draft::placeholder {
+        color: #909991;
+      }
+      .input-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: -2px;
+      }
+      .attach-icon {
+        background: none;
+        border: 0;
+        color: var(--muted);
+        padding: 6px;
+        display: grid;
+        place-items: center;
+      }
+      .attach-icon:hover {
+        color: var(--text);
+      }
+      .attach-icon svg {
+        width: 23px;
+        height: 23px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .send {
+        width: auto;
+        height: 47px;
+        border-radius: 999px;
+        padding: 0 19px;
+        font-size: 16px;
+        font-weight: 700;
+        background: var(--send-bg);
+        color: var(--send-text);
+      }
+      .attachments {
+        padding: 8px 26px 0;
+        margin: 0;
+      }
+      .extra {
+        margin: 0;
+        border-top: 1px solid var(--line2);
+        padding: 12px 23px;
+        min-height: 51px;
+        gap: 12px;
+        flex-wrap: nowrap;
+      }
+      .extra button {
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .extra .footer-choice {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 290px;
+        text-align: left;
+      }
+      #model {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+      #model::after {
+        content: '';
+        width: 6px;
+        height: 6px;
+        border-right: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        transform: rotate(45deg) translateY(-2px);
+        flex: none;
+      }
+      .extra .branch-choice {
+        max-width: 260px;
+      }
+      .extra .subtle-choice {
+        color: var(--faint);
+      }
+      .extra #more {
+        font-size: 17px;
+        letter-spacing: 2px;
+        padding: 0 4px;
+      }
+      .extra #usage {
+        font-size: 21px;
+        line-height: 1;
+        color: var(--faint);
+      }
+      .menu {
+        bottom: 58px;
+        left: 22px;
+      }
+      .hint {
+        margin-top: 9px;
+      }
+      .input-area {
+        height: 94px;
+        position: relative;
+        padding: 17px 26px;
+      }
+      .draft {
+        width: calc(100% - 140px);
+        height: 52px;
+        min-height: 52px;
+        max-height: 52px;
+        padding-left: 48px;
+        font-size: 16px;
+        font-weight: 550;
+      }
+      .input-actions {
+        position: absolute;
+        inset: 0;
+        display: block;
+        margin: 0;
+        pointer-events: none;
+      }
+      .input-actions button {
+        pointer-events: auto;
+      }
+      .attach-icon {
+        position: absolute;
+        left: 26px;
+        top: 12px;
+      }
+      .send {
+        position: absolute;
+        right: 26px;
+        top: 23px;
+      }
+      .extra {
+        min-height: 39px;
+        padding: 8px 23px;
+      }
+      .hint {
+        display: none;
+      }
+      @media (max-width: 1050px) {
+        .extra .subtle-choice {
+          display: none;
+        }
+      }
+      @media (max-width: 650px) {
+        .change-actions {
+          padding: 14px 17px 3px;
+        }
+        .change-chip {
+          font-size: 11px;
+          padding: 7px 9px;
+        }
+        .input-area {
+          height: 75px;
+          padding: 13px 18px;
+          position: relative;
+        }
+        .draft {
+          width: calc(100% - 125px);
+          height: 42px;
+          min-height: 42px;
+          max-height: 42px;
+          padding-left: 36px;
+          font-size: 15px;
+        }
+        .input-actions {
+          position: absolute;
+          inset: 0;
+          display: block;
+          margin: 0;
+          pointer-events: none;
+        }
+        .input-actions button {
+          pointer-events: auto;
+        }
+        .attach-icon {
+          position: absolute;
+          left: 18px;
+          top: 8px;
+        }
+        .send {
+          position: absolute;
+          right: 18px;
+          top: 14px;
+          height: 42px;
+          font-size: 14px;
+        }
+        .extra {
+          min-height: 31px;
+          padding: 5px 16px;
+          gap: 8px;
+        }
+        .extra .footer-choice {
+          max-width: 150px;
+          font-size: 11px;
+        }
+        .extra .branch-choice {
+          max-width: 120px;
+        }
+        .menu {
+          left: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="rail">
+        <div class="brand"><span class="mark">♠</span> Copse</div>
+        <div class="rail-label">Workspace</div>
+        <button class="rail-item active">⌘ &nbsp; editor-research</button>
+        <div class="rail-label">Threads</div>
+        <button class="rail-item active">◉ &nbsp; Chat composer refresh</button
+        ><button class="rail-item">◯ &nbsp; Investigate editor sizing</button
+        ><button class="rail-item">◯ &nbsp; Terminal rendering</button>
+      </aside>
+      <main class="main">
+        <header class="top">
+          <div>
+            <strong><span class="mobile-head">Copse · </span>Chat composer refresh</strong
+            ><br /><small>editor-research / agent-pane</small>
+          </div>
+          <div class="top-actions">
+            <span class="status hide-small"><i class="dot"></i> In workspace</span
+            ><button id="theme" type="button" aria-label="Toggle color theme">☀ Light</button>
+          </div>
+        </header>
+        <section class="conversation" id="conversation" aria-label="Conversation">
+          <article class="message user">
+            <div class="who">You</div>
+            <p>
+              Can you build a prototype of how we make the chat input look more like this? Use the
+              full chat input controls and make an interactive demo.
+            </p>
+          </article>
+          <article class="message">
+            <div class="who">Copse</div>
+            <p>
+              Here’s a composer concept that uses the reference’s generous text area, dark rounded
+              shell, and compact controls. Try changing the model or mode, adding an attachment, and
+              sending a follow-up.
+            </p>
+            <div class="code">The controls below are interactive in this standalone demo.</div>
+          </article>
+        </section>
+        <div class="composer-wrap">
+          <div class="composer" id="composer">
+            <div class="change-actions">
+              <button class="change-chip" id="changes" type="button">
+                Changes <b class="added">+37</b> <b class="removed">-0</b></button
+              ><button class="change-chip" id="review" type="button">Review changes</button>
+            </div>
+            <div class="attachments" id="attachments"></div>
+            <div class="input-area">
+              <textarea
+                class="draft"
+                id="draft"
+                rows="1"
+                placeholder="Send follow-up"
+                aria-label="Message"
+              ></textarea>
+              <div class="input-actions">
+                <button
+                  id="attach"
+                  class="attach-icon"
+                  type="button"
+                  aria-label="Attach file"
+                  title="Attach file"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M8 12.5 14.6 5.9a3.3 3.3 0 0 1 4.7 4.7l-9 9a5 5 0 0 1-7.1-7.1l9.2-9.2"
+                    />
+                    <path d="m8.7 15.6 8-8" />
+                  </svg></button
+                ><button
+                  class="send"
+                  id="send"
+                  type="button"
+                  aria-label="Send message"
+                  title="Send (Enter)"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+            <div class="extra">
+              <button
+                class="footer-choice"
+                id="model"
+                data-menu="model-menu"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded="false"
+              >
+                6 Sol — intellect ~58.7</button
+              ><button
+                class="footer-choice branch-choice"
+                id="branch"
+                data-menu="branch-menu"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded="false"
+              >
+                copse/chat-input-reference-prototy…</button
+              ><button
+                class="footer-choice subtle-choice"
+                id="mode"
+                data-menu="mode-menu"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded="false"
+              >
+                Agent</button
+              ><button
+                class="footer-choice subtle-choice"
+                id="target"
+                data-menu="target-menu"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded="false"
+              >
+                Copse managed</button
+              ><button
+                id="more"
+                data-menu="more-menu"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-label="More controls"
+                title="More controls"
+              >
+                ···</button
+              ><span class="spacer"></span
+              ><button id="usage" type="button" title="Context usage">◌</button>
+            </div>
+            <div class="menu" id="model-menu" role="menu" hidden>
+              <div class="menu-title">Choose model</div>
+              <button class="option" data-value="Codex" type="button">
+                <span>Codex<small>OpenAI coding agent</small></span
+                ><span class="check">✓</span></button
+              ><button class="option" data-value="Claude Sonnet" type="button">
+                <span>Claude Sonnet<small>Balanced reasoning</small></span
+                ><span class="check"></span></button
+              ><button class="option" data-value="Claude Opus" type="button">
+                <span>Claude Opus<small>Deep work</small></span
+                ><span class="check"></span></button
+              ><button class="option" data-value="GPT-5" type="button">
+                <span>GPT-5<small>General purpose</small></span
+                ><span class="check"></span>
+              </button>
+            </div>
+            <div class="menu" id="mode-menu" role="menu" hidden>
+              <div class="menu-title">Conversation mode</div>
+              <button class="option" data-value="Agent" type="button">
+                <span>Agent<small>Can inspect and edit files</small></span
+                ><span class="check">✓</span></button
+              ><button class="option" data-value="Plan" type="button">
+                <span>Plan<small>Explore and propose changes</small></span
+                ><span class="check"></span></button
+              ><button class="option" data-value="Ask" type="button">
+                <span>Ask<small>Discuss without editing</small></span
+                ><span class="check"></span>
+              </button>
+            </div>
+            <div class="menu" id="target-menu" role="menu" hidden>
+              <div class="menu-title">Run target</div>
+              <button class="option" data-value="Copse managed" type="button">
+                <span>Copse managed<small>Managed workspace and permissions</small></span
+                ><span class="check">✓</span></button
+              ><button class="option" data-value="Local" type="button">
+                <span>Local<small>Run in this checkout</small></span
+                ><span class="check"></span></button
+              ><button class="option" data-value="Container" type="button">
+                <span>Container<small>Isolated environment</small></span
+                ><span class="check"></span>
+              </button>
+            </div>
+            <div class="menu" id="branch-menu" role="menu" hidden>
+              <div class="menu-title">Checkout</div>
+              <button class="option" data-value="⑂ main" type="button">
+                <span>main<small>Shared checkout</small></span
+                ><span class="check">✓</span></button
+              ><button class="option" data-value="⑂ Worktree" type="button">
+                <span>New worktree<small>Isolated branch for this thread</small></span
+                ><span class="check"></span>
+              </button>
+            </div>
+            <div class="menu" id="more-menu" role="menu" hidden>
+              <div class="menu-title">More controls</div>
+              <button
+                class="option"
+                data-menu="mode-menu"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded="false"
+              >
+                <span>Conversation mode<small>Agent, Plan, or Ask</small></span></button
+              ><button
+                class="option"
+                data-menu="target-menu"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded="false"
+              >
+                <span>Run target<small>Copse managed, local, or container</small></span></button
+              ><button class="option" data-action="guard" type="button">
+                <span
+                  >Guarded auto-run<small id="guard-label"
+                    >Off · ask before shell commands</small
+                  ></span
+                ></button
+              ><button class="option" data-action="reason" type="button">
+                <span>Reasoning effort<small id="reason-label">Medium</small></span></button
+              ><button class="option" data-action="context" type="button">
+                <span>Context details<small>View current usage</small></span>
+              </button>
+            </div>
+          </div>
+          <div class="hint">Enter to send · Shift + Enter for a new line · Esc closes menus</div>
+        </div>
+      </main>
+    </div>
+    <input type="file" id="file" multiple hidden />
+    <div class="toast" id="toast" role="status" hidden></div>
+    <script>
+      ;(() => {
+        const $ = (s) => document.querySelector(s),
+          $$ = (s) => [...document.querySelectorAll(s)]
+        const draft = $('#draft'),
+          toast = $('#toast')
+        let guard = false,
+          reason = 1,
+          timer
+        const reasons = ['Low', 'Medium', 'High']
+        function notify(text) {
+          toast.textContent = text
+          toast.hidden = false
+          clearTimeout(timer)
+          timer = setTimeout(() => (toast.hidden = true), 2600)
+        }
+        function closeMenus() {
+          $$('.menu').forEach((m) => (m.hidden = true))
+          $$('[data-menu]').forEach((b) => b.setAttribute('aria-expanded', 'false'))
+        }
+        $$('[data-menu]').forEach((button) =>
+          button.addEventListener('click', (e) => {
+            e.stopPropagation()
+            const menu = $('#' + button.dataset.menu),
+              willOpen = menu.hidden
+            closeMenus()
+            menu.hidden = !willOpen
+            button.setAttribute('aria-expanded', String(willOpen))
+          }),
+        )
+        $$('.menu .option[data-value]').forEach((option) =>
+          option.addEventListener('click', () => {
+            const menu = option.closest('.menu'),
+              trigger = $('[data-menu="' + menu.id + '"]')
+            trigger.textContent = option.dataset.value
+            menu.querySelectorAll('.check').forEach((c) => (c.textContent = ''))
+            option.querySelector('.check').textContent = '✓'
+            closeMenus()
+            draft.focus()
+          }),
+        )
+        $$('[data-action]').forEach((button) =>
+          button.addEventListener('click', () => {
+            const a = button.dataset.action
+            if (a === 'guard') {
+              guard = !guard
+              $('#guard-label').textContent = guard
+                ? 'On · contained shell commands auto-run'
+                : 'Off · ask before shell commands'
+              notify('Guarded auto-run ' + (guard ? 'on' : 'off'))
+            }
+            if (a === 'reason') {
+              reason = (reason + 1) % 3
+              $('#reason-label').textContent = reasons[reason]
+              notify('Reasoning effort: ' + reasons[reason])
+            }
+            if (a === 'context') notify($('#usage').title + ' · estimated from this draft')
+            closeMenus()
+          }),
+        )
+        document.addEventListener('click', (e) => {
+          if (!e.target.closest('.menu') && !e.target.closest('[data-menu]')) closeMenus()
+        })
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') closeMenus()
+        })
+        $('#changes').addEventListener('click', () =>
+          notify('37 additions · 0 deletions in this thread'),
+        )
+        $('#review').addEventListener('click', () =>
+          notify('Review changes opens the diff in the full app'),
+        )
+        $('#usage').addEventListener('click', () => notify($('#usage').title))
+        $('#attach').addEventListener('click', () => $('#file').click())
+        $('#file').addEventListener('change', (e) => {
+          for (const file of e.target.files) {
+            const chip = document.createElement('span')
+            chip.className = 'attachment'
+            const name = document.createElement('span')
+            name.textContent = '▧ ' + file.name
+            const remove = document.createElement('button')
+            remove.type = 'button'
+            remove.textContent = '×'
+            remove.setAttribute('aria-label', 'Remove ' + file.name)
+            remove.addEventListener('click', () => {
+              chip.remove()
+              if (!$('#attachments').children.length) $('#attachments').classList.remove('show')
+            })
+            chip.append(name, remove)
+            $('#attachments').append(chip)
+          }
+          $('#attachments').classList.add('show')
+          e.target.value = ''
+        })
+        draft.addEventListener('input', () => {
+          $('#usage').title = Math.ceil(draft.value.length / 4).toLocaleString() + ' / 128k context'
+        })
+        function send() {
+          const value = draft.value.trim()
+          if (!value && !$('#attachments').children.length) {
+            draft.focus()
+            return
+          }
+          const article = document.createElement('article')
+          article.className = 'message user'
+          const who = document.createElement('div')
+          who.className = 'who'
+          who.textContent = 'You'
+          const p = document.createElement('p')
+          p.textContent = value || 'Shared an attachment'
+          article.append(who, p)
+          $('#conversation').append(article)
+          draft.value = ''
+          $('#attachments').replaceChildren()
+          $('#attachments').classList.remove('show')
+          $('#usage').title = '0 / 128k context'
+          article.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          notify('Demo message added to conversation')
+          draft.focus()
+        }
+        $('#send').addEventListener('click', send)
+        draft.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            send()
+          }
+        })
+        $('#theme').addEventListener('click', () => {
+          const light = document.documentElement.dataset.theme !== 'light'
+          document.documentElement.dataset.theme = light ? 'light' : 'dark'
+          $('#theme').textContent = light ? '☾ Dark' : '☀ Light'
+        })
+      })()
+    </script>
+  </body>
+</html>
