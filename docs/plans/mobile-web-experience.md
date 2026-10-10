@@ -732,3 +732,9 @@ by hand, on a device the app cannot reach.
   submission does not roll back a started checkout or a queued message.
 - Saved text still appears after desktop persistence. This slice does not claim
   token streaming, attachment composition, or model selection from the phone.
+- Settings > Experimental shows a QR encoding the running server's URL next to the
+  native pairing dialog, generated server-side (`qrcode`) from the same string
+  already shown as text. This is the convenience case the Alternatives section's
+  governing theorem leaves open, not the rejected one: it carries no claim the page
+  or bundle is unmodified, so it adds nothing for a reviewer to re-litigate under
+  "what the user is told, and what is actually true" above.

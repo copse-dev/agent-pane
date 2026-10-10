@@ -366,6 +366,20 @@ async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<
   }
 }
 
+/**
+ * Show a scannable QR for Mobile Companion's current URL inline in Settings,
+ * next to the native "Set up or manage…" flow. The server generates the QR
+ * (via `qrcode`) from the same URL already shown as text, so this adds no new
+ * trust claim — it only saves typing the address into the phone's browser.
+ */
+async function mountMobileCompanionQr(overlay: HTMLElement, api: ApiClient): Promise<void> {
+  const status = await api.mobile.status()
+  if (!status.url || !status.qrSvg) return
+  qsRequired(overlay, '#mobile-companion-qr-image').innerHTML = status.qrSvg
+  qsRequired(overlay, '#mobile-companion-qr-url').textContent = status.url
+  qsRequired(overlay, '#mobile-companion-qr').hidden = false
+}
+
 /** Parse a `number`-kind field's form value, clamping to a non-negative integer. */
 function parseNonNegativeInt(value: string, fallback: number): number {
   const n = Number.parseInt(value, 10)
@@ -1554,6 +1568,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   Set up or manage…
                 </button>
               </div>
+              <div id="mobile-companion-qr" class="mobile-companion-qr" hidden>
+                <div id="mobile-companion-qr-image" class="mobile-companion-qr-image" aria-hidden="true"></div>
+                <div class="mobile-companion-qr-text">
+                  <p class="field-hint">Scan with your phone's camera to open Copse.</p>
+                  <code id="mobile-companion-qr-url" class="mobile-companion-qr-url"></code>
+                </div>
+              </div>
             </fieldset>
 
             <fieldset>
@@ -1882,6 +1903,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       void api.mobile.manage()
     },
   )
+  void mountMobileCompanionQr(overlay, api)
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
