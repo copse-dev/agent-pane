@@ -29,12 +29,15 @@ import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveAppScreenshot } from './help
 describe('roadmap AI-generated short names', () => {
   describe('persisted rows', () => {
     let workspaceRoot: string
+    let workspaceParent: string
     let knowledgeDir: string
 
     before(async () => {
       mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
       resetUserData()
-      workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-short-name-'))
+      workspaceParent = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-short-name-'))
+      workspaceRoot = join(workspaceParent, 'roadmap-short-names')
+      mkdirSync(workspaceRoot)
       knowledgeDir = seedRoadmapNotes('e2e-roadmap-short-names', [
         {
           // Stamp already landed: the note's title is the short AI-generated
@@ -67,7 +70,7 @@ describe('roadmap AI-generated short names', () => {
 
     after(() => {
       resetUserData()
-      rmSync(workspaceRoot, { recursive: true, force: true })
+      rmSync(workspaceParent, { recursive: true, force: true })
       rmSync(knowledgeDir, { recursive: true, force: true })
     })
 
@@ -100,6 +103,7 @@ describe('roadmap AI-generated short names', () => {
 
   describe('generated on create', () => {
     let workspaceRoot: string
+    let workspaceParent: string
     let server: ConversationServer
 
     before(async () => {
@@ -107,7 +111,9 @@ describe('roadmap AI-generated short names', () => {
       server = await startConversationServer({ title: 'Split Settings Into Panels' })
       server.configureEnvironment()
       resetUserData()
-      workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-short-name-gen-'))
+      workspaceParent = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-short-name-gen-'))
+      workspaceRoot = join(workspaceParent, 'roadmap-short-names')
+      mkdirSync(workspaceRoot)
       seedEmptyProject(workspaceRoot, 'e2e-roadmap-short-name-gen', {
         roadmapPlansEnabled: true,
       })
@@ -117,7 +123,7 @@ describe('roadmap AI-generated short names', () => {
 
     after(async () => {
       resetUserData()
-      rmSync(workspaceRoot, { recursive: true, force: true })
+      rmSync(workspaceParent, { recursive: true, force: true })
       await server.close()
     })
 

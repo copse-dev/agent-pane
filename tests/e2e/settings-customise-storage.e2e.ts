@@ -4,10 +4,12 @@ import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import {
   AGENT_PLUGIN_SCHEMA,
+  E2E_WORKSPACE_ROOT,
   resetAgentPlugins,
   resetUserData,
   seedAgentPlugin,
   seedEmptyProject,
+  seedStableWorkspace,
 } from './helpers/seed-config.ts'
 
 // Settings information architecture: Customise, MCP servers, Storage.
@@ -60,7 +62,12 @@ describe('settings → Customise / MCP / Storage', function () {
       },
     )
 
-    seedEmptyProject(process.cwd(), 'e2e-customise-storage')
+    // Discovery must read a fixed instruction file, not this checkout's
+    // ever-changing AGENTS.md size and contents.
+    const workspace = seedStableWorkspace({
+      files: { 'AGENTS.md': '# Workspace instructions\n\nKeep changes focused.\n' },
+    })
+    seedEmptyProject(workspace, 'e2e-customise-storage')
     await browser.reloadSession()
   })
 
@@ -121,7 +128,7 @@ describe('settings → Customise / MCP / Storage', function () {
     const project = storage.$('#storage-project-select')
     await expect(project).toBeDisplayed()
     assert.equal(await project.getValue(), 'e2e-customise-storage')
-    await expect(storage.$('#storage-project-path')).toHaveText(process.cwd())
+    await expect(storage.$('#storage-project-path')).toHaveText(E2E_WORKSPACE_ROOT)
     await expect(storage.$('legend=Worktrees')).toBeDisplayed()
     const list = storage.$('#sources-worktrees-list')
     await list.waitForExist({ timeout: 15_000 })

@@ -996,7 +996,7 @@ export interface ApiClient {
   }
   usage: {
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
-    getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
+    getPlanUsage: (force?: boolean) => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
     getPlanWorthIt: () => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
     setClaudePlanMonthlyFee: (
       fee: number | null,

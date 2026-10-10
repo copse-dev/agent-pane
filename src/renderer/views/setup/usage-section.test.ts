@@ -2,11 +2,13 @@ import '../../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
-import type { ProviderPlanResult } from '@copse/plan-usage'
+import { createFakeApi } from '../../fake-api.test-support.ts'
+import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
 import type { PlanWorthItPayload } from '@shared/usage/plan-worth-it.ts'
 import type { ModelUsageBreakdown } from '@shared/usage/aggregate-usage.ts'
 import {
   claudeReasonNeedsLogin,
+  createUsageSection,
   createPlanSignInHandler,
   renderClassifierTable,
   renderModelTable,
@@ -278,6 +280,56 @@ describe('createPlanSignInHandler', () => {
 
   it('returns null without a store to route through', () => {
     assert.equal(createPlanSignInHandler(undefined, 'claude'), null)
+  })
+})
+
+describe('usage refresh after sign-in', () => {
+  it('forces a fresh plan read on return until Claude becomes available', async () => {
+    const base = createFakeApi()
+    const store = createStore()
+    const forced: boolean[] = []
+    let claude: ProviderPlanResult = claudeUnavailable('Claude’s access token has expired.')
+    const api = {
+      ...base,
+      usage: {
+        ...base.usage,
+        getPlanUsage: async (force?: boolean): Promise<PlanUsageSnapshot> => {
+          forced.push(force === true)
+          return { checkedAt: new Date().toISOString(), providers: [claude] }
+        },
+      },
+    }
+    const section = createUsageSection(api, store)
+    await section.refresh()
+    const signIn = section.root.querySelector<HTMLButtonElement>('.usage-plan-signin-btn')
+    assert.ok(signIn)
+    signIn.click()
+
+    forced.length = 0
+    await section.refresh()
+    assert.ok(forced.includes(true), 'returning after sign-in must bypass the plan cache')
+    assert.equal(
+      section.root.querySelector('.usage-plan-provider')?.getAttribute('data-status'),
+      'unavailable',
+    )
+
+    claude = {
+      status: 'ok',
+      provider: 'claude',
+      usage: { provider: 'claude', plan: 'Pro', windows: [], checkedAt: new Date().toISOString() },
+    }
+    forced.length = 0
+    await section.refresh()
+    assert.ok(forced.includes(true), 'keep checking until the login succeeds')
+    assert.equal(
+      section.root.querySelector('.usage-plan-provider')?.getAttribute('data-status'),
+      'ok',
+    )
+
+    forced.length = 0
+    await section.refresh()
+    assert.equal(forced.includes(true), false, 'ordinary reads remain cached after recovery')
+    section.detach()
   })
 })
 

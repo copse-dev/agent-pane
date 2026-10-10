@@ -1149,7 +1149,7 @@ const api: ApiClient = {
   },
   usage: {
     getSummary: () => ipcRenderer.invoke('usage:get-summary'),
-    getPlanUsage: () => ipcRenderer.invoke('usage:get-plan-usage'),
+    getPlanUsage: (force?: boolean) => ipcRenderer.invoke('usage:get-plan-usage', force),
     getPlanWorthIt: () => ipcRenderer.invoke('usage:get-plan-worth-it'),
     setClaudePlanMonthlyFee: (fee: number | null) =>
       ipcRenderer.invoke('usage:set-claude-plan-monthly-fee', fee),
