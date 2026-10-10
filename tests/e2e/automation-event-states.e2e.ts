@@ -21,6 +21,8 @@ import {
 const PROJECT_ID = 'e2e-automation-event-states'
 const PROJECT_MENU = `.project-entry[data-project-id="${PROJECT_ID}"] .project-menu-btn`
 const SEEDED_AT = 1_786_000_000_000
+// Thread ages are relative; definition error timestamps below remain absolute and fixed.
+const RUN_AT = Date.now() - 62.5 * 24 * 60 * 60 * 1_000
 const PR_ID = '11111111-1111-4111-8111-111111111111'
 const ISSUE_ID = '33333333-3333-4333-8333-333333333333'
 const CI_ID = '44444444-4444-4444-8444-444444444444'
@@ -74,8 +76,8 @@ describe('event automation states', function () {
           status: 'idle',
           messages: [],
           usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: SEEDED_AT - 10,
-          updatedAt: SEEDED_AT - 10,
+          createdAt: RUN_AT - 10,
+          updatedAt: RUN_AT - 10,
         },
         {
           id: FAILED_RUN,
@@ -87,16 +89,16 @@ describe('event automation states', function () {
           automation: {
             scheduleId: PR_ID,
             scheduleName: 'Review pull requests',
-            triggeredAt: SEEDED_AT,
+            triggeredAt: RUN_AT,
             failure: {
               code: 'auth-expired',
               message: '401 Unauthorized: the API key was rejected.',
-              at: SEEDED_AT + 5_000,
+              at: RUN_AT + 5_000,
             },
           },
-          createdAt: SEEDED_AT,
-          updatedAt: SEEDED_AT + 5_000,
-          unreadAt: SEEDED_AT + 5_000,
+          createdAt: RUN_AT,
+          updatedAt: RUN_AT + 5_000,
+          unreadAt: RUN_AT + 5_000,
         },
       ],
       pluginDisabled: [],
@@ -244,6 +246,43 @@ describe('event automation states', function () {
       expect.stringContaining('pull request #42 (only CI, Lint)'),
     )
     await saveAppScreenshot('automation-event-editor-ci-filters.png')
+  })
+
+  it('keeps event automation sidebar rows current after editing and deleting', async () => {
+    const dialog = await openManager()
+    await dialog.$(`[data-ci-automation-id="${ISSUE_ID}"]`).$('.automation-row-btn=Edit').click()
+    await dialog.$('.automation-ci-name').setValue('Triage updated issues')
+    await dialog.$('.automation-ci-form button[type="submit"]').click()
+    await browser.waitUntil(
+      async () => {
+        const status = await dialog.$('.automation-status').getText()
+        if (status) throw new Error(status)
+        return !(await dialog.$('.automation-ci-form').isDisplayed())
+      },
+      { timeout: 10_000 },
+    )
+    await dialog.$('[aria-label="Close automations"]').click()
+    const toggle = $('.automation-threads-toggle')
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+    const row = $(
+      '//*[contains(@class, "is-automation-unrun") and contains(., "Triage updated issues")]',
+    )
+    await expect(row).toBeDisplayed()
+    await row.click({ button: 'right' })
+    await expect($('.context-menu-item=Automation setup…')).toBeDisplayed()
+    await expect($('.context-menu-item=Run now')).not.toExist()
+    await saveAppScreenshot('automation-event-unrun-menu.png')
+    await browser.keys('Escape')
+    await row.click()
+    await dialog.$('.automation-ci-cancel').click()
+    await dialog.$(`[data-ci-automation-id="${ISSUE_ID}"]`).$('.automation-row-btn=Delete').click()
+    await $('#confirm-dialog .confirm-dialog-confirm').click()
+    await dialog.$(`[data-ci-automation-id="${ISSUE_ID}"]`).waitForExist({ reverse: true })
+    await dialog.$('[aria-label="Close automations"]').click()
+    await expect(
+      $('//*[contains(@class, "is-automation-unrun") and contains(., "Triage updated issues")]'),
+    ).not.toExist()
+    await saveAppScreenshot('automation-event-unrun-deleted.png')
   })
 
   it('shows a failed unattended run in Activity with its cause and remedy', async () => {

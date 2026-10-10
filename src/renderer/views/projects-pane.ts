@@ -297,14 +297,22 @@ function automationMenuEntries(
   target: AutomationMenuTarget,
   openSetup: () => void,
 ): ContextMenuEntry[] {
+  const eventAutomation = getCachedEventAutomations(target.project.id).some(
+    (definition) => definition.id === target.scheduleId,
+  )
+  const runEntries: ContextMenuEntry[] = eventAutomation
+    ? []
+    : [
+        {
+          label: 'Run now',
+          onSelect: (): void => {
+            startRunNow(api, target)
+          },
+        },
+      ]
   return [
     { heading: target.scheduleName },
-    {
-      label: 'Run now',
-      onSelect: (): void => {
-        startRunNow(api, target)
-      },
-    },
+    ...runEntries,
     {
       label: 'Automation setup…',
       onSelect: openSetup,
