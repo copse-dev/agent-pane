@@ -37,6 +37,7 @@ describe('browser-hosted grouped shell approval', () => {
       "Runs a script file from the project, so Copse can't tell what it does",
       'Reaches outside the project with a ../ path',
     ])
+    assert.equal(advice.text.match(/This runs with your user account’s access/g)?.length, 1)
     assert.doesNotMatch(advice.text, /\u2022/, 'no hand-drawn bullet characters remain')
     const commands = await dialog.$$('.approval-body').map((body) => body.getText())
     assert.deepEqual(commands, [

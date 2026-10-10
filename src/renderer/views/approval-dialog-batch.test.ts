@@ -308,6 +308,45 @@ describe('approval dialog coalescing', () => {
     assert.equal(approve().textContent, 'Approve all (3)')
   })
 
+  it('shows a shared sandbox warning once across different reason lists', () => {
+    const warning =
+      'This runs with your user account’s access to files and the network, beyond the project sandbox.'
+    emit({
+      id: 'install',
+      title: 'Run outside sandbox?',
+      body: 'pnpm install',
+      bodyAdvice:
+        'The project sandbox would block this command:\n' +
+        '• Installs or updates packages\n' +
+        '• Runs code written inside the command itself\n\n' +
+        warning,
+      bodyFooter: 'Allow running it once outside the sandbox?',
+    })
+    emit({
+      id: 'script',
+      title: 'Run outside sandbox?',
+      body: 'node scripts/check.mjs',
+      bodyAdvice:
+        'The project sandbox would block this command:\n' +
+        '• Runs a script file from the project\n\n' +
+        warning,
+      bodyFooter: 'Allow running it once outside the sandbox?',
+    })
+    fireWindow()
+
+    const advice = qsRequired(dialog, '.approval-advice')
+    assert.deepEqual(
+      [...advice.querySelectorAll('.approval-reasons li')].map((item) => item.textContent),
+      [
+        'Installs or updates packages',
+        'Runs code written inside the command itself',
+        'Runs a script file from the project',
+      ],
+    )
+    assert.equal(advice.textContent.split(warning).length, 2)
+    assert.deepEqual(bodies(), ['pnpm install', 'node scripts/check.mjs'])
+  })
+
   it('settles a reduced batch before a cancelled sibling can broaden approval', () => {
     emit({
       id: 'read-access',
