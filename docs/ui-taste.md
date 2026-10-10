@@ -833,6 +833,36 @@ every 30s and follows working-tree events for the active thread only. Specs:
 [`projects-pane-thread-changes.test.ts`](../src/renderer/views/projects-pane-thread-changes.test.ts),
 [`tests/demo/sidebar-thread-changes.demo.ts`](../tests/demo/sidebar-thread-changes.demo.ts).
 
+## Align trailing row icons
+
+When a list repeats the same row shape, a trailing status icon (PR status, changes glyph,
+attention bell) must land in the same column on every row — not trail the preceding label at a
+distance that drifts with the label's or title's length. `justify-content: space-between` alone
+does not guarantee this once a row has more than two flex items: it splits the row's slack across
+_every_ gap between them, so the icon's distance from its neighbour — and from the row's trailing
+edge — changes with however much spare width that particular row happens to have.
+
+- Give the item that should absorb the row's slack an actual `flex-grow`, not just a size that
+  happens to fit (the cross-project owner label `· workspace` in `.chats-list`, `flex: 1 0 auto`
+  capped with `max-width` rather than frozen at `flex: 0 0 auto`). Growth is invisible when the
+  label's own text is shorter than its box — it just leaves blank space before the next
+  item — so this alone pushes a single trailing icon flush to the row's edge on every row.
+  Weighted `flex-shrink` cannot do this job; see "Decide which label gives way first" above for
+  the matching truncation-order problem.
+- A hard cap on that grower (`max-width`) can still leave slack stranded past it once a row is
+  wide enough or the label short enough. Give the first trailing icon after the label
+  `margin-left: auto` as the fallback claimant, scoped to only the icon closest to the label
+  (`.chat-row:not(:has(.chat-attention-bell)) .chat-pr-status`) — a second icon on the same row
+  (a bell _and_ a PR glyph) must not also grab a share of the slack, or it pulls itself apart
+  from the one ahead of it instead of sitting flush beside it.
+- When more than one icon type can appear in the same slot, order them (in markup and in which one
+  is allowed to claim the slack) so the one that appears most often anchors the trailing edge and
+  the rarer ones sit inward — that is what keeps the column still when an optional icon comes and
+  goes, not just when a title does.
+
+Spec: [`sidebar-thread-sort.demo.ts`](../tests/demo/sidebar-thread-sort.demo.ts)
+(`expectChangesGlyphsAligned`).
+
 ## SSH chrome — plain text, no decorative emoji
 
 The titlebar SSH target is plain `user@host` (`.workspace-ssh-target`), not `⚡ user@host`.

@@ -582,9 +582,18 @@
 }
 /* On a thread row the project label is the part that tells rows apart, so the
    title gives way first: the label keeps its natural width up to a cap and only
-   a very long project name ellipsizes. */
+   a very long project name ellipsizes. Growing the label (not just sizing it to
+   content) is what claims the row's leftover space here: with neither it nor the
+   title growing, `.chat-row`'s `justify-content: space-between` split that space
+   across every gap between the title, the label and any trailing status icon
+   instead of in one place, so the icon's distance from the label — and from the
+   row's trailing edge — drifted with however much spare width the row had. A
+   growing label absorbs that space itself (invisibly, since its text stays
+   left-anchored in the wider box), so anything after it — the PR/changes glyph,
+   the row menu button — lands flush against the row's trailing edge on every
+   row. See docs/ui-taste.md -> "Align trailing row icons". */
 .chats-list .chat-row .chat-thread-owner {
-  flex: 0 0 auto;
+  flex: 1 0 auto;
   max-width: 45%;
 }
 /* One row standing for several runs of a schedule: "N need you" or "N failed". */
@@ -757,6 +766,22 @@
   margin-left: 4px;
   color: var(--text-primary);
   animation: chat-attention-pulse 1.8s ease-in-out infinite;
+}
+/* The owner label's own growth (above) only reaches the row's trailing edge up
+   to its 45% cap — a short title next to a long project name can still leave
+   space stranded past that cap, which `.chat-row`'s `space-between` would
+   otherwise split across every remaining gap. Whichever status icon comes
+   first after the label claims that leftover itself, so the icon (and the row
+   menu button after it) still lands flush against the trailing edge. Only the
+   first one asks: a later icon that also set `margin-left: auto` would split
+   the same leftover space before *it* instead, prying it apart from the one
+   ahead of it. */
+.chats-list .chat-row .chat-attention-bell {
+  margin-left: auto;
+}
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-pr-status,
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-changes-status {
+  margin-left: auto;
 }
 .project-row .chat-attention-bell {
   margin-left: auto;
