@@ -23,6 +23,7 @@ import { showToast } from './toast.ts'
 import { createSimulatorDesktopView, type SimulatorDesktopView } from './simulator-desktop-view.ts'
 import { openRightPanel } from '../controller/panels.ts'
 import { DESKTOP_VIEWER_OFF_DETAIL, DESKTOP_VIEWER_OFF_TITLE } from '@shared/desktop-viewer.ts'
+import { createVncSshHostForm } from './vnc-ssh-host-form.ts'
 
 const CHOOSE_MACHINE_TEXT = 'Choose a device, enter an address, or select a saved SSH machine.'
 
@@ -138,6 +139,22 @@ function mountVncSession(
     role: 'list',
     'aria-label': 'Desktop devices',
   })
+  const addSshButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary vnc-add-ssh-btn' },
+    'Add SSH machine',
+  )
+  const sshHostForm = createVncSshHostForm(
+    api,
+    async (hostId) => {
+      await refreshSshHosts(sshMachineValue(hostId))
+      await discoverSelectedMachine()
+    },
+    () => {
+      addSshButton.hidden = false
+      deviceList.hidden = false
+    },
+  )
   const nearbyButton = el(
     'button',
     {
@@ -418,15 +435,12 @@ function mountVncSession(
     { class: 'vnc-setup-fields' },
     devicesHeading,
     nearbyFeedback,
+    addSshButton,
+    sshHostForm.root,
     deviceList,
     machineSelect,
   )
   const form = el('div', { class: 'vnc-connect-form' }, setupFields, authPanel)
-  const note = el(
-    'p',
-    { class: 'vnc-view-only-note' },
-    'Desktop connections start in view-only mode. Turn on control after connecting.',
-  )
   const controlsBody = el(
     'div',
     { class: 'vnc-controls-body' },
@@ -436,7 +450,6 @@ function mountVncSession(
     controlButton,
     deviceNavigation,
     disconnectButton,
-    note,
   )
   controlsRoot.append(controlsBody)
 
@@ -523,6 +536,10 @@ function mountVncSession(
     setupCredentialHint.textContent = secureCredentialStorage
       ? 'Your login is stored securely after a successful connection.'
       : 'Your login is used for this connection only.'
+    if (machineSelect.value.startsWith(SSH_MACHINE_PREFIX)) {
+      setupCredentialHint.textContent =
+        'SSH secures the connection. Enter a desktop login only if screen sharing requires one.'
+    }
     if (!selectedHasSavedPassword) return
     savedLoginCopy.replaceChildren(
       selectedSavedUsername
@@ -590,7 +607,6 @@ function mountVncSession(
     const android = selectedSimulator()?.platform === 'android'
     backButton.hidden = !connected || !android
     overviewButton.hidden = !connected || !android
-    note.hidden = active || isSimulatorMachine(machineSelect.value)
     disconnectButton.textContent = connected ? 'Disconnect' : 'Cancel'
     portInput.disabled = active
     addressInput.disabled = active
@@ -989,10 +1005,8 @@ function mountVncSession(
       discoveryGeneration++
       renderDiscoveredPorts([])
       empty.textContent = `Connect to view ${selectedSimulator()?.name ?? 'this Simulator'}.`
-      note.hidden = true
     } else if (!channel) {
       empty.textContent = CHOOSE_MACHINE_TEXT
-      note.hidden = false
     }
     const nearby = selectedNearbyServer()
     if (nearby) {
@@ -1630,6 +1644,11 @@ function mountVncSession(
     void loadMachines().finally(() => {
       refreshDevicesButton.disabled = false
     })
+  })
+  addSshButton.addEventListener('click', () => {
+    sshHostForm.open()
+    addSshButton.hidden = true
+    deviceList.hidden = true
   })
   authenticateButton.addEventListener('click', submitCredentials)
   const forgetLogin = (): void => {

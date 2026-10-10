@@ -132,6 +132,41 @@
   display: none;
 }
 
+.vnc-add-ssh-btn {
+  align-self: flex-start;
+}
+
+.vnc-ssh-host-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.vnc-ssh-host-form[hidden] {
+  display: none;
+}
+
+.vnc-ssh-host-form .vnc-field-label input {
+  width: 100%;
+}
+
+.vnc-ssh-host-hint,
+.vnc-ssh-host-status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.vnc-ssh-host-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
 .vnc-devices-heading {
   display: flex;
   align-items: center;
@@ -630,13 +665,6 @@
 .vnc-status-detail {
   color: var(--text-secondary);
   font-weight: 400;
-}
-
-.vnc-view-only-note {
-  margin: auto 0 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-base);
 }
 
 .vnc-viewer-host {
