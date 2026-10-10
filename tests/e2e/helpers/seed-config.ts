@@ -1716,6 +1716,56 @@ export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
   })
 }
 
+/**
+ * A parent thread with a markdown assistant reply, plus a side chat already
+ * branched from it, for the "Side chat" chip + panel plain-text title visual eval.
+ */
+export function seedSideChatMarkdownFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-side-chat-markdown-project'
+  const parentId = 'e2e-side-chat-markdown-parent'
+  const sideId = 'e2e-side-chat-markdown-side'
+  const anchorId = 'msg-side-chat-anchor'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: parentId,
+    [`threads:${projectId}`]: [
+      {
+        id: parentId,
+        title: 'Side chat markdown parent',
+        status: 'idle',
+        messages: [
+          {
+            id: anchorId,
+            role: 'assistant',
+            content:
+              '[PR #3595](https://github.com/copse-dev/agent-pane/pull/3595) is loaded at commit abc',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        todos: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: sideId,
+        title: 'PR #3595 is loaded at commit abc',
+        status: 'idle',
+        messages: [],
+        sideChat: { parentThreadId: parentId, anchorMessageId: anchorId },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+}
+
 /** Long sticky user prompt (>10 lines) for mid-fold accordion visual eval. */
 export function seedUserPromptFoldFixture(workspaceRoot: string): void {
   const projectId = 'e2e-user-prompt-fold-project'

@@ -27,9 +27,28 @@ export interface SideChatOptions {
   title?: string
 }
 
-function excerpt(message: Message): string {
-  const line = message.content.trim().split('\n', 1)[0] ?? ''
+// Strips common inline markdown so a title or context line taken verbatim from
+// a message (often an assistant reply) reads as plain text, not raw source.
+function stripInlineMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+}
+
+/** Plain-text excerpt of `text`'s first line, for a title or a read-only context line. */
+export function excerptText(text: string): string {
+  const line = stripInlineMarkdown(text.trim().split('\n', 1)[0] ?? '')
   return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1)}…`
+}
+
+function excerpt(message: Message): string {
+  return excerptText(message.content)
 }
 
 /**
