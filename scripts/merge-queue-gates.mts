@@ -3,6 +3,7 @@
 // Initial policy admits one entry per build; unknown membership fails closed.
 
 import { computeMergeTree } from './merge-queue-tree.mts'
+import { verifyScreenshotStack } from './screenshot-stack.mts'
 
 const CONTEXTS = ['CLA', 'Screenshot review'] as const
 const ACTIONS_BOT_ID = 41898282
@@ -33,6 +34,11 @@ export interface QueueGateGitHub {
       get(input: { owner: string; repo: string; pull_number: number }): Promise<{ data: unknown }>
     }
     repos: {
+      compareCommitsWithBasehead(input: {
+        owner: string
+        repo: string
+        basehead: string
+      }): Promise<{ data: unknown }>
       getCommit(input: { owner: string; repo: string; ref: string }): Promise<{ data: unknown }>
       listCommitStatusesForRef(input: {
         owner: string
@@ -181,7 +187,10 @@ async function verifyCommit(
 }
 
 async function verifyStatuses(github: QueueGateGitHub, input: Input, entry: Entry): Promise<void> {
-  const latest = new Map<string, { id: number; state: unknown; author: unknown }>()
+  const latest = new Map<
+    string,
+    { id: number; state: unknown; author: unknown; description: unknown }
+  >()
   for (let page = 1; page <= PAGE_LIMIT; page += 1) {
     const { data } = await github.rest.repos.listCommitStatusesForRef({
       owner: input.owner,
@@ -200,6 +209,7 @@ async function verifyStatuses(github: QueueGateGitHub, input: Input, entry: Entr
           id,
           state: field(status, 'state'),
           author: field(field(status, 'creator'), 'id'),
+          description: field(status, 'description'),
         })
       }
     }
@@ -209,6 +219,13 @@ async function verifyStatuses(github: QueueGateGitHub, input: Input, entry: Entr
         if (status?.state !== 'success' || status.author !== ACTIONS_BOT_ID) {
           throw new Error(`Current PR head lacks a trusted successful ${context} decision`)
         }
+      }
+      const stack = await verifyScreenshotStack(github, { ...input, number: entry.pr })
+      const description = latest.get('Screenshot review')?.description
+      if (stack && !stack.approved)
+        throw new Error('Screenshot stack tip lacks current coverage and approval')
+      if (!stack && typeof description === 'string' && description.startsWith('Stack ')) {
+        throw new Error('Screenshot stack deferral no longer has a declaration')
       }
       return
     }

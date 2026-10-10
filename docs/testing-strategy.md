@@ -487,6 +487,53 @@ checkout, and commit only the intentional updates. `pnpm run filter:screenshots`
 is available locally after copying the candidates to discard known render noise
 and shots outside the diff's ownership map; it is an aid, not an author.
 
+### Reviewing a small PR stack once
+
+Screenshot review can be deferred to a declared stack tip. Intermediate states
+may have stale references or screenshot drift; every PR still needs its ordinary
+CI and other merge requirements. This changes human review, not the queue's
+build/e2e requirements.
+
+Put the same declaration in the body of every PR in the stack, ordered from the
+lowest PR to the highest. Set the lower declarations first and the tip last. Pin
+each lower PR's full head SHA; the final PR is the tip and uses its live head:
+
+```text
+<!-- copse-screenshot-stack: #101@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa #102@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb tip=#103 -->
+```
+
+The maximum is 20 PRs. All members must be in this repository and form an ancestor
+chain contained in the tip. The tip must be open and ready for review. Changing
+bodies dispatches CI; the tip runs the complete eligible e2e suite, including
+screens affected by lower layers, even when its own diff is small. Successful CI
+publishes a coverage attestation bound to the declaration and exact tip head,
+and a pinned cumulative comparison against the stack’s merge-base with `main`.
+An explicit tip decision is required even when no new candidate PNGs appear.
+Review the tip's combined screenshot evidence with the existing accept, selected
+accept, or decline controls. Acceptance commits PNGs to the tip and its new head
+must finish its own combined run before lower gates pass.
+
+Lower `Screenshot review` statuses stay pending until the tip has both coverage
+and a successful visual decision. Then they pass as deferred to that tip; their
+comments replace individual acceptance requests with the stack decision. Land
+lower PRs in order through the normal merge queue, then land the tip. The queue
+rechecks the declaration, pinned heads, ancestry, coverage and approval before
+bridging source statuses onto its candidate. Already merged lower members may
+remain in the declaration while their pinned commits are still contained in the
+tip. Keep the stack frozen while landing; rebasing/restacking can change pinned
+heads and require a new declaration and review.
+
+A changed lower head, changed membership, closed/draft tip or removed declaration
+cannot reuse a deferral. Update the shared declaration on every member and rerun
+tip CI. To return to individual review, remove the declaration and rerun the
+individual PR's CI. The **Screenshot stack gates** workflow can be dispatched
+manually to refresh status/comments after an interrupted reconciliation.
+
+Ordinary PRs keep their existing per-PR review. GitHub's queue still admits one
+entry per build: this feature consolidates screenshot decisions without adding
+multi-PR queue batching or bypassing other checks. Intermediate versions can
+ship while the stack lands; that risk is explicitly accepted by opting in.
+
 ## Where each tier runs: `main` and `release`
 
 `main` uses GitHub's merge queue. Queue checks execute the synthetic candidate

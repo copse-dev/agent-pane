@@ -16,6 +16,16 @@ candidate before re-baselining**, and `docs/ui-taste.md`. Resolve these paths fr
 For fresh captures, follow `.agents/skills/screenshot-validate/SKILL.md` and the current development docs.
 This skill reviews evidence; passing CI, a small diff, or a candidate's inclusion is not visual approval.
 
+For a PR with a `copse-screenshot-stack` declaration, also follow
+`docs/testing-strategy.md` → **Reviewing a small PR stack once**. Lower PRs defer
+intermediate screenshot drift through the stack gate; do not individually decline
+unreviewed images to imitate that gate. Review the declared tip's whole stack,
+including the cumulative comparison marked `copse-screenshot-stack-evidence`
+and screenshots committed in lower layers. A tip with no new candidates still
+needs an explicit combined review. Normal image inspection and breakage rules
+apply to the final combined state. The stack gate checks pinned revisions and
+coverage; it does not inspect images for you.
+
 ## 1. Pin the PR and evidence
 
 1. Read the PR description, changed files, code diff, checks, and screenshot evidence comment.

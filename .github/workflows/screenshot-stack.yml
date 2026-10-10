@@ -1,0 +1,98 @@
+name: Screenshot stack gates
+
+# Only trusted workflow code executes. PR bodies and API results are data.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review, converted_to_draft, closed]
+  workflow_run:
+    workflows:
+      [Publish screenshot candidates, Screenshot review decision, Screenshot review selection]
+    types: [completed]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: screenshot-stack-policy
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+    steps:
+      - name: Load trusted screenshot stack policy
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/screenshot-stack.mts
+            scripts/lib/safe-json.mts
+          sparse-checkout-cone-mode: false
+      - name: Reconcile live screenshot stacks
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { reconcileScreenshotStack, parseScreenshotStack } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/screenshot-stack.mts`);
+            const { owner, repo } = context.repo;
+            const open = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const trigger = context.payload.pull_request?.number;
+            const selected = open.filter((pr) =>
+              pr.head.repo?.full_name === `${owner}/${repo}` &&
+              (pr.number === trigger || pr.body?.includes('<!-- copse-screenshot-stack:')));
+            for (const pr of selected) {
+              await reconcileScreenshotStack(github, { owner, repo, number: pr.number });
+              const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+                owner, repo, ref: pr.head.sha, per_page: 100,
+              });
+              const review = statuses.find((status) => status.context === 'Screenshot review');
+              if (!review?.description?.startsWith('Stack ')) continue;
+              const { data: live } = await github.rest.pulls.get({ owner, repo, pull_number: pr.number });
+              if (live.head.sha !== pr.head.sha || live.body !== pr.body) continue;
+              let declaration;
+              try { declaration = parseScreenshotStack(live.body); } catch { /* Error status explains the invalid declaration. */ }
+              if (declaration?.tip === pr.number) continue;
+              // Replace the per-PR request with the stack decision. Only the tip
+              // keeps individual image acceptance controls and a review label.
+              try {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: pr.number, name: 'screenshots-need-review',
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: pr.number, per_page: 100,
+              });
+              const marker = '<!-- copse-e2e-screenshot-review -->';
+              const existing = comments.find((comment) =>
+                comment.user?.id === 41898282 && comment.body?.includes(marker));
+              const start = '<!-- copse-screenshot-review-state -->';
+              const end = '<!-- /copse-screenshot-review-state -->';
+              const detail = review.state === 'success'
+                ? 'Intermediate screenshot drift is deferred; all other PR checks still apply.'
+                : 'Resolve the declaration or complete tip review. All other PR checks still apply.';
+              const block = `${start}\n**${review.description}.** ${detail}\n${end}`;
+              const a = existing?.body.indexOf(start) ?? -1;
+              const b = existing?.body.indexOf(end, a) ?? -1;
+              const body = a >= 0 && b > a
+                ? `${existing.body.slice(0, a)}${block}${existing.body.slice(b + end.length)}`
+                : `${marker}\n### Screenshot stack review\n\n${block}`;
+              if (existing) {
+                if (existing.body !== body) await github.rest.issues.updateComment({
+                  owner, repo, comment_id: existing.id, body,
+                });
+              } else await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+            }

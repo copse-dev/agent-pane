@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import { evaluateMergeQueueGates, type QueueGateGitHub } from './merge-queue-gates.mts'
+import { parseScreenshotStack, STACK_COVERAGE, STACK_DECISION } from './screenshot-stack.mts'
 
 const input = {
   owner: 'copse-dev',
@@ -81,6 +82,9 @@ function fixture(
     rest: {
       pulls: { get: async () => ({ data: pulls[Math.min(pullRead++, pulls.length - 1)] }) },
       repos: {
+        compareCommitsWithBasehead: async () => {
+          throw new Error('Ordinary PR needs no stack comparison')
+        },
         getCommit: async ({ ref }) => {
           assert.equal(ref, input.headSha)
           return { data: commits[Math.min(commitRead++, commits.length - 1)] }
@@ -269,6 +273,117 @@ describe('merge queue decision bridge', () => {
         ],
       },
       /Screenshot review/,
+    )
+  })
+  it('bridges a lower stack deferral only while the covered tip still has explicit approval', async () => {
+    const tipHead = 'd'.repeat(40)
+    const body = `<!-- copse-screenshot-stack: #1@${prHead} tip=#2 -->`
+    const declaration = parseScreenshotStack(body)
+    assert.ok(declaration)
+    for (const approved of [true, false]) {
+      const f = fixture()
+      f.github.rest.pulls.get = async ({ pull_number }): Promise<{ data: unknown }> => ({
+        data: {
+          state: 'open',
+          draft: false,
+          body,
+          head: {
+            sha: pull_number === 1 ? prHead : tipHead,
+            repo: { full_name: 'copse-dev/agent-pane' },
+          },
+          base: {
+            ref: pull_number === 1 ? 'main' : 'lower',
+            repo: { full_name: 'copse-dev/agent-pane' },
+          },
+        },
+      })
+      f.github.rest.repos.compareCommitsWithBasehead = async ({
+        basehead,
+      }): Promise<{ data: unknown }> => ({
+        data: {
+          status: 'ahead',
+          merge_base_commit: { sha: basehead.split('...')[0] },
+        },
+      })
+      f.github.rest.repos.listCommitStatusesForRef = async ({
+        ref,
+      }): Promise<{ data: unknown }> => ({
+        data:
+          ref === prHead
+            ? [
+                status('CLA', 1),
+                {
+                  context: 'Screenshot review',
+                  id: 2,
+                  state: 'success',
+                  creator: { id: 41898282 },
+                  description: 'Stack deferred to approved tip #2',
+                },
+              ]
+            : [
+                {
+                  context: 'Screenshot review',
+                  id: 3,
+                  state: approved ? 'success' : 'pending',
+                  creator: { id: 41898282 },
+                  description: 'Declined by @reviewer',
+                },
+                {
+                  context: STACK_COVERAGE,
+                  id: 4,
+                  state: 'success',
+                  creator: { id: 41898282 },
+                  description: `Stack coverage ${declaration.digest}`,
+                },
+                {
+                  context: STACK_DECISION,
+                  id: 5,
+                  state: 'success',
+                  creator: { id: 41898282 },
+                  description: `Stack decision ${declaration.digest}`,
+                },
+              ],
+      })
+      if (approved) {
+        await evaluateMergeQueueGates(f.github, input, mergeTree)
+        assert.deepEqual(
+          f.writes.slice(-2).map((write) => write.state),
+          ['success', 'success'],
+        )
+      } else {
+        await assert.rejects(
+          evaluateMergeQueueGates(f.github, input, mergeTree),
+          /coverage and approval/,
+        )
+        assert.equal(
+          f.writes.some((write) => write.state === 'success'),
+          false,
+        )
+      }
+    }
+  })
+  it('refuses a successful stack deferral after the source declaration is removed', async () => {
+    const f = fixture({
+      statuses: [
+        [
+          status('CLA', 1),
+          {
+            context: 'Screenshot review',
+            id: 2,
+            state: 'success',
+            creator: { id: 41898282 },
+            description: 'Stack deferred to approved tip #2',
+          },
+        ],
+      ],
+    })
+    await assert.rejects(
+      evaluateMergeQueueGates(f.github, input, mergeTree),
+      /no longer has a declaration/,
+    )
+    assert.equal(
+      f.writes.some((write) => write.state === 'success'),
+      false,
     )
   })
   it('never executes the candidate checkout or installs its dependencies', () => {
