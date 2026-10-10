@@ -119,7 +119,16 @@ describe('settings usage model value map cost axis', () => {
     )
 
     await prepareE2eScreenshot()
-    await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-mtok.png')
+    // The complete fieldset is taller than the settings scrollport. Capture
+    // the chart and its routed-model disclosure separately to avoid clipping.
+    await saveElementScreenshot('.frontier-chart', 'settings-usage-value-map-mtok.png')
+    await hiddenOutliers.$('summary').click()
+    await expect(hiddenOutliers).toHaveAttribute('open')
+    await saveElementScreenshot(
+      'details.frontier-severely-dominated',
+      'settings-usage-value-map-hidden-routes.png',
+    )
+    await hiddenOutliers.$('summary').click()
 
     await taskBtn.click()
     await browser.waitUntil(
@@ -144,7 +153,7 @@ describe('settings usage model value map cost axis', () => {
     assert.equal(await fieldset.$('details.frontier-unpriced-list').isExisting(), false)
 
     await prepareE2eScreenshot()
-    await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-task.png')
+    await saveElementScreenshot('.frontier-chart', 'settings-usage-value-map-task.png')
 
     // The seeded provider supplies token prices, not AA task-cost measurements.
     // Exercise discovery and its routed outlier on the priced, blended axis.
@@ -214,7 +223,7 @@ describe('settings usage model value map cost axis', () => {
     )
 
     await prepareE2eScreenshot()
-    await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-discovery.png')
+    await saveElementScreenshot('.frontier-chart', 'settings-usage-value-map-discovery.png')
 
     // A translation can make either state the wider label. The hidden label
     // must still reserve intrinsic space so switching state never reflows.
