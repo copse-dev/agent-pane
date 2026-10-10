@@ -6,6 +6,8 @@ import { memberOf } from '@shared/member-of.ts'
 export type PanelTab = 'file' | 'diff'
 export type RightPanelMode =
   | 'explorer'
+  | 'context'
+  | 'side-chat'
   | 'terminal'
   | 'changes'
   | 'browser'

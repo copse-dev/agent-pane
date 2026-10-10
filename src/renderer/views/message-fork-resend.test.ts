@@ -89,12 +89,45 @@ describe('per-prompt fork + resend actions (component)', () => {
     assert.equal(resends[1]?.hidden, false)
   })
 
-  it('leaves assistant replies with Copy alone — no prompt actions', () => {
+  it('leaves assistant replies with Copy and Side chat alone — no fork or resend', () => {
     mountConversationWithHistory()
 
     const assistant = document.querySelector('.messages-list .msg-assistant')
     assert.ok(assistant)
+    assert.equal(assistant.querySelector('.msg-fork'), null)
+    assert.equal(assistant.querySelector('.msg-resend'), null)
+    assert.ok(assistant.querySelector('.msg-copy'))
+    assert.ok(assistant.querySelector('.msg-side-chat'), 'a reply can start a side chat')
+    // Both share the top-right corner, never the bottom-right row over the last line.
+    const corner = assistant.querySelector('.message-body > .msg-reply-actions')
+    assert.ok(corner?.querySelector('.msg-side-chat'))
+    assert.ok(corner?.querySelector('.msg-copy'))
     assert.equal(assistant.querySelector('.msg-actions'), null)
+  })
+
+  it('offers Side chat on a prompt and starts one anchored on it without leaving the thread', async () => {
+    const { store, forks, threadId } = mountConversationWithHistory()
+    const bubble = userBubbles()[0]
+    assert.ok(bubble)
+    const anchorId = bubble.dataset['messageId']
+    const opened: string[] = []
+    store.on('side_chat_open_requested', (id) => opened.push(id))
+
+    bubble.querySelector<HTMLButtonElement>('.msg-side-chat')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(store.getState().activeThreadId, threadId, 'the main thread stays open')
+    assert.equal(opened.length, 1)
+    const side = store.getState().threads.find((t) => t.id === opened[0])
+    assert.deepEqual(side?.sideChat, { parentThreadId: threadId, anchorMessageId: anchorId })
+    assert.deepEqual(forks, [['project-1', threadId, opened[0], anchorId]])
+    // The branched message now carries a chip that reopens the side chat.
+    // The list may rebuild its elements on the thread change; look the bubble up again.
+    const chip = userBubbles()[0]?.querySelector<HTMLButtonElement>('.msg-side-chat-chip')
+    assert.ok(chip)
+    assert.equal(chip.textContent, '1 side chat')
+    chip.click()
+    assert.equal(opened.length, 2)
   })
 
   it('Fork from here branches the conversation at that prompt into a new thread', async () => {
