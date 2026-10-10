@@ -1,3 +1,4 @@
+import { startProcessMemoryDiagnostics } from './diagnostics/process-memory.ts'
 import type { ProcessManagerRow, ProcessManagerSnapshot } from '@shared/types/process-manager.ts'
 import {
   buildProcessSnapshot,
@@ -17,7 +18,7 @@ export function createProcessManagerSampler(
   let pending: Promise<ProcessManagerSnapshot> | null = null
   let samples = new Map<string, CpuSample>()
 
-  return () => {
+  const sample = (): Promise<ProcessManagerSnapshot> => {
     const now = Date.now()
     if (cached && now - cached.sampledAt < CACHE_MS) return Promise.resolve(cached)
     if (pending) return pending
@@ -37,4 +38,6 @@ export function createProcessManagerSampler(
       })
     return pending
   }
+  startProcessMemoryDiagnostics(sample)
+  return sample
 }

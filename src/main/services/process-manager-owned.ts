@@ -5,6 +5,7 @@ import { promisify } from 'node:util'
 import type { ManagedProcessHandle, ProcessManagerRow } from '@shared/types/process-manager.ts'
 import { listTerminalProcesses } from './exec/terminal-service.ts'
 import { listBackgroundProcessPids } from './exec/background-process.ts'
+import { listAcpSessionProcesses } from './acp/acp-process-registry.ts'
 import { gortexDaemonPidPath } from './search/semantic-index.ts'
 
 const execFileAsync = promisify(execFile)
@@ -216,6 +217,10 @@ export async function readOwnedProcessRows(
   appPids: ReadonlySet<number>,
 ): Promise<ProcessManagerRow[]> {
   const roots: OwnedProcessRoot[] = [
+    ...listAcpSessionProcesses().map((session): OwnedProcessRoot => ({
+      ...session,
+      type: 'Subprocess',
+    })),
     ...listTerminalProcesses().map(
       ({ id, pid, label, threadId, projectId, ownerId }): OwnedProcessRoot => ({
         pid,

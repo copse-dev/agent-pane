@@ -688,5 +688,6 @@ export async function spawnRemoteAcpTransport(
       return disposal
     },
     resourceFault: faults.current,
+    processId: () => (child.exitCode === null && child.signalCode === null ? child.pid : undefined),
   }
 }
