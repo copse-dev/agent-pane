@@ -46818,7 +46818,9 @@ var init_model_maker_block = __esm({
 function parseClaudeModel(id) {
   const match = id.match(/^claude-(opus|sonnet|fable|haiku)(?:-(\d+(?:-\d+)*))?/);
   if (!match) return null;
-  const family = `claude-${match[1]}`;
+  const familyName = match[1];
+  if (familyName === void 0) return null;
+  const family = `claude-${familyName}`;
   const versionStr = match[2] ?? "0";
   const version2 = versionStr.split("-").map(Number);
   return { model: id, family, version: version2 };
@@ -46827,11 +46829,12 @@ function parseGptModel(id) {
   const match = id.match(/^gpt-([\d.]+)(?:-(sol|terra|luna|mini|nano|astra))?/);
   if (!match) return null;
   const versionStr = match[1];
+  if (versionStr === void 0) return null;
   const parts = versionStr.split(".").map(Number);
   const version2 = parts;
   const variant = match[2];
-  const majorVersion = parts[0];
-  const family = `gpt-${majorVersion}`;
+  const majorVersion = parts[0] ?? 0;
+  const family = `gpt-${String(majorVersion)}`;
   return {
     model: id,
     family,
@@ -75299,7 +75302,9 @@ function mountSettingsDialog(store2, api2) {
               clearInterval(machineRefreshTimer);
               return;
             }
-            void machinesSection.refresh().catch((error62) => console.error("[settings] Machine refresh failed:", error62));
+            void machinesSection.refresh().catch((error62) => {
+              console.error("[settings] Machine refresh failed:", error62);
+            });
           }, 3e3);
         },
         deactivate: () => {
