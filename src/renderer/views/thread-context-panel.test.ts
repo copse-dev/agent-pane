@@ -219,6 +219,13 @@ test('storage combines saved files with the owned checkout and archive uses the 
         truncated: false,
       }),
     },
+    git: {
+      ...base.git,
+      changeStats: async (): ReturnType<typeof base.git.changeStats> => ({
+        additions: 42,
+        deletions: 7,
+      }),
+    },
     worktrees: {
       ...base.worktrees,
       size: async (): ReturnType<typeof base.worktrees.size> => ({
@@ -236,6 +243,19 @@ test('storage combines saved files with the owned checkout and archive uses the 
   assert.equal(viewer.querySelector('[data-context-storage-size]')?.textContent, 'Calculating…')
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(viewer.querySelector('[data-context-storage-size]')?.textContent, 'At least 3.0 KB')
+  assert.equal(
+    viewer.querySelector('[data-context-section="storage"] [data-context-change-stats]')
+      ?.textContent,
+    '+42 −7',
+  )
+  assert.equal(
+    viewer.querySelector('[data-context-change-stats] .git-change-status-added')?.textContent,
+    '+42',
+  )
+  assert.equal(
+    viewer.querySelector('[data-context-change-stats] .git-change-status-deleted')?.textContent,
+    '−7',
+  )
   viewer.querySelector<HTMLElement>('[data-action="archive-thread"]')?.click()
   assert.deepEqual(requests, [['p', id]])
   assert.equal(store.getState().threads[0]?.archivedAt, undefined)
@@ -277,5 +297,51 @@ test('storage ignores a previous thread response and reports lookup failure', as
   finish({ bytes: 1024, truncated: false })
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(viewer.querySelector('[data-context-storage-size]')?.textContent, 'Unavailable')
+  dispose()
+})
+
+test('Storage line totals reject stale thread replies, handle clean checkouts and stop while hidden', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  createThread(store)
+  const base = createFakeApi()
+  const replies: Array<{
+    resolve: (stats: { additions: number; deletions: number } | null) => void
+    reject: (error: Error) => void
+  }> = []
+  const api = {
+    ...base,
+    git: {
+      ...base.git,
+      changeStats: (): ReturnType<typeof base.git.changeStats> =>
+        new Promise((resolve, reject) => replies.push({ resolve, reject })),
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  createThread(store)
+  assert.equal(replies.length, 2)
+  replies[1]?.resolve(null)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  replies[0]?.resolve({ additions: 100, deletions: 20 })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-context-change-stats]')?.textContent, '+0 −0')
+  store.emit('message_done', 'completed-message')
+  replies[2]?.reject(new Error('Git unavailable'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-context-change-stats]')?.textContent, 'Unavailable')
+  assert.equal(
+    viewer.querySelector('[data-context-storage-size]')?.textContent,
+    '24 KB',
+    'Git failure does not affect disk size',
+  )
+  store.setState({ filesPaneOpen: false })
+  store.emit('message_done', 'completed-message')
+  assert.equal(replies.length, 3)
   dispose()
 })

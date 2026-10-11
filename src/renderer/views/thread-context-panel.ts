@@ -336,6 +336,10 @@ export function mountThreadContextPane(
   let storageToken = 0
   let storageKey = ''
   let storageText = 'Calculating…'
+  let changesToken = 0
+  let changesKey = ''
+  let changesText = 'Calculating…'
+  let changeStats: { additions: number; deletions: number } | null = null
   let disposed = false
 
   function activeStorageKey(): string {
@@ -349,7 +353,44 @@ export function mountThreadContextPane(
     ])
   }
 
+  function changesContent(): Array<Node | string> {
+    if (changesKey !== activeStorageKey()) return ['Calculating…']
+    if (!changeStats) return [changesText]
+    return [
+      el('span', { class: 'git-change-status-added' }, `+${String(changeStats.additions)}`),
+      ' ',
+      el('span', { class: 'git-change-status-deleted' }, `−${String(changeStats.deletions)}`),
+    ]
+  }
+
+  async function refreshChanges(): Promise<void> {
+    const thread = getActiveThread(store)
+    const projectId = store.getState().activeProjectId
+    if (!thread || !projectId) return
+    const mine = ++changesToken
+    const key = activeStorageKey()
+    changesKey = key
+    changesText = 'Calculating…'
+    changeStats = null
+    const update = (): void => {
+      const slot = viewerRoot.querySelector('[data-context-change-stats]')
+      if (slot) slot.replaceChildren(...changesContent())
+    }
+    update()
+    try {
+      const stats = await api.git.changeStats(projectId, thread.id)
+      if (disposed || mine !== changesToken || key !== activeStorageKey()) return
+      changeStats = stats ?? { additions: 0, deletions: 0 }
+    } catch (error) {
+      if (disposed || mine !== changesToken || key !== activeStorageKey()) return
+      console.error('[context] change totals lookup failed:', error)
+      changesText = 'Unavailable'
+    }
+    update()
+  }
+
   async function refreshStorage(): Promise<void> {
+    void refreshChanges()
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
     if (!thread || !projectId) return
@@ -450,6 +491,16 @@ export function mountThreadContextPane(
           ),
         ),
         el(
+          'div',
+          { class: 'thread-context-row' },
+          el('span', { class: 'thread-context-main' }, 'Changes'),
+          el(
+            'span',
+            { 'data-context-change-stats': '', title: 'Lines added and removed in this checkout' },
+            ...changesContent(),
+          ),
+        ),
+        el(
           'p',
           { class: 'thread-context-empty' },
           'Saved thread files and its dedicated worktree. Shared project files are excluded.',
@@ -519,6 +570,8 @@ export function mountThreadContextPane(
     store.on('workspace_changed', () => {
       mentionedFor = null
       storageKey = ''
+      changesKey = ''
+      changesToken++
       token++
       storageToken++
       if (contextModeActive(store)) {
@@ -535,6 +588,7 @@ export function mountThreadContextPane(
     disposed = true
     token++
     storageToken++
+    changesToken++
     for (const off of offs) off()
   }
 }

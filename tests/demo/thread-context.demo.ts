@@ -22,6 +22,36 @@ describe('The thread Context panel', () => {
 
   it('lists repos, side chats, links, mentions and subagents for the open thread', async () => {
     await expect($('[data-context-storage-size]')).toHaveText('24 KB')
+    await expect($('[data-context-section="storage"] [data-context-change-stats]')).toHaveText(
+      '+42 −7',
+    )
+    await expect(
+      $('[data-context-section="storage"] .thread-context-row:nth-of-type(2) .thread-context-main'),
+    ).toHaveText('Changes')
+    const colors = await browser.execute(() => {
+      const additions = document.querySelector(
+        '[data-context-change-stats] .git-change-status-added',
+      )
+      const deletions = document.querySelector(
+        '[data-context-change-stats] .git-change-status-deleted',
+      )
+      const probe = document.createElement('span')
+      document.body.append(probe)
+      probe.style.color = 'var(--change-added)'
+      const green = getComputedStyle(probe).color
+      probe.style.color = 'var(--change-deleted)'
+      const red = getComputedStyle(probe).color
+      probe.remove()
+      return {
+        additions: additions ? getComputedStyle(additions).color : null,
+        deletions: deletions ? getComputedStyle(deletions).color : null,
+        green,
+        red,
+      }
+    })
+    expect(colors.additions).toBe(colors.green)
+    expect(colors.deletions).toBe(colors.red)
+    expect(colors.additions).not.toBe(colors.deletions)
     await expect($('[data-action="archive-thread"]')).toBeEnabled()
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('[data-context-section="repos"] .thread-context-repo')).toHaveText(
