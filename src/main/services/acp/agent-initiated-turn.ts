@@ -1,4 +1,6 @@
-import type { ThreadExecutionContext } from '../thread-execution-context.ts'
+// Generic over the bound context: importing the real type (even type-only) would put
+// thread-execution-context's heavy graph in reach of the stdout-owning ACP workers, which
+// scripts/stdout-protocol-guard.test.ts forbids.
 
 /**
  * A coding agent can resume itself after its turn ended (a background-task
@@ -28,17 +30,17 @@ export function setAgentInitiatedTurnAuthority(next: AgentInitiatedTurnAuthority
   authority = next
 }
 
-export interface AgentTurnBridge {
-  setExecutionContext: (context: ThreadExecutionContext | null) => void
+export interface AgentTurnBridge<TContext> {
+  setExecutionContext: (context: TContext | null) => void
   setTurnSignal: (signal: AbortSignal | null) => void
-  setPendingExecutionContext: (pending: Promise<ThreadExecutionContext | null> | null) => void
+  setPendingExecutionContext: (pending: Promise<TContext | null> | null) => void
 }
 
-export interface AgentInitiatedTurnLeaseDeps {
+export interface AgentInitiatedTurnLeaseDeps<TContext> {
   projectId: string
   threadId: string
-  bridge: AgentTurnBridge
-  resolveContext: (projectId: string, threadId: string) => Promise<ThreadExecutionContext>
+  bridge: AgentTurnBridge<TContext>
+  resolveContext: (projectId: string, threadId: string) => Promise<TContext>
   /** Ask the human whether an over-budget self-resume may keep working. */
   confirmContinue: () => Promise<boolean>
   /** Mark the worktree as having a live writer; returns the release. */
@@ -59,8 +61,8 @@ export interface AgentInitiatedTurnLease {
 /** Nothing ends a self-started turn on agents that do not mark it, so bound the binding. */
 const DEFAULT_IDLE_MS = 15 * 60 * 1000
 
-export function createAgentInitiatedTurnLease(
-  deps: AgentInitiatedTurnLeaseDeps,
+export function createAgentInitiatedTurnLease<TContext>(
+  deps: AgentInitiatedTurnLeaseDeps<TContext>,
 ): AgentInitiatedTurnLease {
   const getAuthority = deps.getAuthority ?? ((): AgentInitiatedTurnAuthority | null => authority)
   const idleMs = deps.idleMs ?? DEFAULT_IDLE_MS
@@ -80,7 +82,7 @@ export function createAgentInitiatedTurnLease(
   // of `turn.signal.aborted` would not see past its narrowing.
   const isEnded = (turn: AbortController): boolean => turn.signal.aborted
 
-  const settle = async (turn: AbortController): Promise<ThreadExecutionContext | null> => {
+  const settle = async (turn: AbortController): Promise<TContext | null> => {
     const owner = getAuthority()
     if (!owner) return null
     let claim = await owner.claimAgentInitiatedTurn(deps.projectId, deps.threadId, {

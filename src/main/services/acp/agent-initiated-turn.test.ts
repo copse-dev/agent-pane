@@ -40,7 +40,7 @@ function setup(options: {
     },
   }
   let pending: Promise<ThreadExecutionContext | null> | null = null
-  const deps: AgentInitiatedTurnLeaseDeps = {
+  const deps: AgentInitiatedTurnLeaseDeps<ThreadExecutionContext> = {
     projectId: 'project',
     threadId: 'thread',
     bridge: {
