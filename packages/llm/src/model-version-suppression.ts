@@ -44,7 +44,7 @@ function parseGptModel(id: string): ModelVersion | null {
   const variant = match[2]
   // Group by major version only (5.0, 5.6, 6.1 all → gpt-5 or gpt-6)
   const majorVersion = parts[0] ?? 0
-  const family = `gpt-${majorVersion}`
+  const family = `gpt-${String(majorVersion)}`
 
   return {
     model: id,
