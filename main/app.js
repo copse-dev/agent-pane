@@ -54985,18 +54985,35 @@ var init_thread_proposal = __esm({
   }
 });
 
+// src/shared/tools/copse-tool-call.ts
+function matchesCopseToolName(name, tool) {
+  return name === tool || new RegExp(`^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+${tool}(?![a-z0-9_])`, "i").test(name);
+}
+function isCopseToolCall(call, tool) {
+  return [call.name, call.programmaticName].some(
+    (name) => typeof name === "string" && matchesCopseToolName(name, tool)
+  );
+}
+var init_copse_tool_call = __esm({
+  "src/shared/tools/copse-tool-call.ts"() {
+  }
+});
+
 // src/shared/threads/thread-proposal.ts
+function isThreadProposalCall(call) {
+  return isCopseToolCall(call, THREAD_PROPOSAL_TOOL);
+}
 var init_thread_proposal2 = __esm({
   "src/shared/threads/thread-proposal.ts"() {
+    init_thread_proposal();
+    init_copse_tool_call();
     init_thread_proposal();
   }
 });
 
 // src/shared/threads/reviewer-input.ts
 function isReviewerInputCall(call) {
-  return [call.name, call.programmaticName].some(
-    (name) => name === REVIEWER_INPUT_TOOL || typeof name === "string" && /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+request_review_input(?![a-z0-9_])/i.test(name)
-  );
+  return isCopseToolCall(call, REVIEWER_INPUT_TOOL);
 }
 function parseReviewerInputCall(call, messageId) {
   if (!isReviewerInputCall(call) || call.status !== "done" || !isRecord(call.args)) return null;
@@ -55044,6 +55061,7 @@ var REVIEWER_INPUT_TOOL;
 var init_reviewer_input = __esm({
   "src/shared/threads/reviewer-input.ts"() {
     init_unknown_value3();
+    init_copse_tool_call();
     REVIEWER_INPUT_TOOL = "request_review_input";
   }
 });
@@ -56394,7 +56412,7 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   const regular = [];
   for (const tc2 of toolCalls) {
     if (tc2.subagent) subagents.push(tc2);
-    else if (tc2.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(tc2)) proposals.push(tc2);
+    else if (isThreadProposalCall(tc2) || isReviewerInputCall(tc2)) proposals.push(tc2);
     else regular.push(tc2);
   }
   const result = [];
@@ -97124,9 +97142,6 @@ var init_thread_proposal_card = __esm({
 });
 
 // src/renderer/views/thread-proposal-tool-card.ts
-function isThreadProposalCall(tc2) {
-  return tc2.name === THREAD_PROPOSAL_TOOL;
-}
 function cardState(store2, sourceThreadId, proposalId) {
   const decisions = getThreadById(store2, sourceThreadId)?.threadProposals;
   const status = threadProposalStatus(decisions, proposalId);
