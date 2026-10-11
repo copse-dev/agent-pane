@@ -503,6 +503,7 @@ describe('projects pane automation setup links', () => {
     const conversationRow = host.querySelector('.chat-row:not(.is-automation)')
     assert.ok(automationRow && conversationRow)
     assert.deepEqual(labelsFor(automationRow), [
+      'Conversation access…',
       'Rename',
       'Fork',
       'Archive',
@@ -510,7 +511,13 @@ describe('projects pane automation setup links', () => {
       'Automation setup…',
       'Delete',
     ])
-    assert.deepEqual(labelsFor(conversationRow), ['Rename', 'Fork', 'Archive', 'Delete'])
+    assert.deepEqual(labelsFor(conversationRow), [
+      'Conversation access…',
+      'Rename',
+      'Fork',
+      'Archive',
+      'Delete',
+    ])
   })
 })
 
@@ -632,7 +639,7 @@ describe('workspace-level automations section (#2511)', () => {
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
     assert.deepEqual(
       Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
-      ['Run now', 'Automation setup…'],
+      ['Conversation access…', 'Run now', 'Automation setup…'],
     )
     dismissContextMenu()
   })
