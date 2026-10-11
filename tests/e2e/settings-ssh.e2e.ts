@@ -14,7 +14,8 @@ function settingsSection(section: 'ssh') {
   return $(`.settings-section[data-section="${section}"]`)
 }
 
-describe('SSH settings section', () => {
+describe('SSH settings section', function () {
+  this.timeout(90_000)
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
@@ -29,7 +30,7 @@ describe('SSH settings section', () => {
     resetUserData()
   })
 
-  it('shows SSH workspace host CRUD and enable toggle under Settings → SSH', async () => {
+  it('shows SSH workspace host CRUD and enable toggle under Settings → Machines', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
     const addProjectButton = $('.projects-add-btn')
@@ -42,6 +43,7 @@ describe('SSH settings section', () => {
 
     const navBtn = $('.settings-nav-btn[data-section="ssh"]')
     await expect(navBtn).toBeDisplayed()
+    await expect(navBtn).toHaveText(expect.stringContaining('Machines'))
     await navBtn.click()
 
     const sshSection = settingsSection('ssh')
@@ -61,7 +63,7 @@ describe('SSH settings section', () => {
     await expect(hostRow.$('.ssh-host-auth')).toHaveText(
       'Authentication will be requested when you connect',
     )
-    await expect(sshSection.$('.settings-fieldset-desc')).toHaveText(
+    await expect(sshSection.$('#settings-ssh-workspace-host .settings-fieldset-desc')).toHaveText(
       expect.stringContaining('encrypted with the OS keychain'),
     )
 

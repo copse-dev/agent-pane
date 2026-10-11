@@ -1,8 +1,24 @@
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
+import type { MachineSharing, SharedMachineModel } from './machines.ts'
 import type { ReleaseChannel } from './release-channel.mts'
 
 /** Validated, nonsecret persisted preferences. Host schemas verify this wire contract. */
 export interface SettingsValues {
+  remoteSystemOneModelsEnabled: boolean
+  machineConnections: {
+    version: 1
+    id: string
+    identity: { certificate: string; key: string } | null
+    sharing: MachineSharing
+    machines: Array<{
+      id: string
+      name: string
+      endpoint: { address: string; port: number; fingerprint: string }
+      token: string
+      models: SharedMachineModel[]
+    }>
+    clients: Array<{ id: string; name: string; token: string }>
+  }
   acknowledgedProductAnnouncements: Array<string>
   model: string
   chatGptPlanWelcomeSeen: boolean
@@ -220,6 +236,7 @@ export type SettingsSnapshot = { [K in keyof SettingsValues]?: SettingsValues[K]
 
 /** Dedicated credential, security and host-owned values are never ordinary updates. */
 type DedicatedSettingKey =
+  | 'machineConnections'
   | 'trustedSshHosts'
   | 'classifierProviders'
   | 'safetyScreeningClassifier'
