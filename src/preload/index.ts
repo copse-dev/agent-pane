@@ -268,9 +268,12 @@ const api: ApiClient = {
     readFile: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('fs:read-file', projectId, threadId, path),
     readImage: async (projectId: string, threadId: string, path: string): Promise<string> => {
-      const result = await ipcRenderer.invoke('fs:read-image', projectId, threadId, path)
-      if (result.ok) return result.data
-      throw new Error(result.error)
+      const result: unknown = await ipcRenderer.invoke('fs:read-image', projectId, threadId, path)
+      if (typeof result === 'object' && result !== null) {
+        if ('data' in result && typeof result.data === 'string') return result.data
+        if ('error' in result && typeof result.error === 'string') throw new Error(result.error)
+      }
+      throw new Error('Unexpected fs:read-image response')
     },
     writeFile: (projectId: string, threadId: string, path: string, content: string) =>
       ipcRenderer.invoke('fs:write-file', projectId, threadId, path, content),
