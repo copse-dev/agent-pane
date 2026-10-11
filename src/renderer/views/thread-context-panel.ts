@@ -495,44 +495,42 @@ export function mountThreadContextPane(
     archive.addEventListener('click', () => {
       if (project) store.emit('thread_archive_requested', project.id, thread.id)
     })
-    content
-      .querySelector('[data-context-section="repos"]')
-      ?.after(
+    content.querySelector('[data-context-section="repos"]')?.after(
+      el(
+        'section',
+        { class: 'thread-context-section', 'data-context-section': 'storage' },
+        el('h5', {}, 'Storage'),
         el(
-          'section',
-          { class: 'thread-context-section', 'data-context-section': 'storage' },
-          el('h5', {}, 'Storage'),
+          'div',
+          { class: 'thread-context-row' },
+          el('span', { class: 'thread-context-main' }, 'Retained on disk'),
           el(
-            'div',
-            { class: 'thread-context-row' },
-            el('span', { class: 'thread-context-main' }, 'Retained on disk'),
-            el(
-              'span',
-              { 'data-context-storage-size': '' },
-              storageKey === activeStorageKey() ? storageText : 'Calculating…',
-            ),
+            'span',
+            { 'data-context-storage-size': '' },
+            storageKey === activeStorageKey() ? storageText : 'Calculating…',
           ),
-          el(
-            'div',
-            { class: 'thread-context-row' },
-            el('span', { class: 'thread-context-main' }, 'Changes'),
-            el(
-              'span',
-              {
-                'data-context-change-stats': '',
-                title: 'Lines added and removed in this checkout',
-              },
-              ...changesContent(),
-            ),
-          ),
-          el(
-            'p',
-            { class: 'thread-context-empty' },
-            'Saved thread files and its dedicated worktree. Shared project files are excluded.',
-          ),
-          el('div', { class: 'thread-context-section-actions' }, archive),
         ),
-      )
+        el(
+          'div',
+          { class: 'thread-context-row' },
+          el('span', { class: 'thread-context-main' }, 'Changes'),
+          el(
+            'span',
+            {
+              'data-context-change-stats': '',
+              title: 'Lines added and removed in this checkout',
+            },
+            ...changesContent(),
+          ),
+        ),
+        el(
+          'p',
+          { class: 'thread-context-empty' },
+          'Saved thread files and its dedicated worktree. Shared project files are excluded.',
+        ),
+        el('div', { class: 'thread-context-section-actions' }, archive),
+      ),
+    )
     viewerRoot.append(content)
   }
 
