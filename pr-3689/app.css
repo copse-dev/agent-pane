@@ -1439,8 +1439,15 @@ copse-ui-field input[type=password],
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
 }
-.chats-list .chat-row .chat-thread-owner {
+.automation-row-unrun-badge {
   flex: 0 0 auto;
+  margin-left: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.chats-list .chat-row .chat-thread-owner {
+  flex: 1 0 auto;
   max-width: 45%;
 }
 .automation-fold-row {
@@ -1587,6 +1594,13 @@ copse-ui-field input[type=password],
   margin-left: 4px;
   color: var(--text-primary);
   animation: chat-attention-pulse 1.8s ease-in-out infinite;
+}
+.chats-list .chat-row .chat-attention-bell {
+  margin-left: auto;
+}
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-pr-status,
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-changes-status {
+  margin-left: auto;
 }
 .project-row .chat-attention-bell {
   margin-left: auto;
@@ -5055,10 +5069,7 @@ label {
 .msg-concise .acp-terminal-reference {
   display: none;
 }
-:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant)) > .message-body > :not(.message-visual-evidence, .message-canvas-previews) {
-  display: none;
-}
-:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant)):not(:has(> .tool-result-content > :not([hidden], .acp-terminal-reference), > .thread-proposal, > .reviewer-input-card, > .message-body > .message-visual-evidence, > .message-body > .message-canvas-previews)) {
+.msg-concise:not(:has(> .tool-result-content > :not([hidden], .acp-terminal-reference), > .thread-proposal, > .reviewer-input-card, > .message-body > :not(.message-reasoning, .message-text:empty))) {
   display: none;
 }
 .message-reasoning {

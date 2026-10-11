@@ -53016,9 +53016,18 @@ function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
   renderClassifierTable(host, summary.classifiers, period === "allTime");
 }
 function createUsageSection(api2, store2, onRequestClose) {
+  let pendingSignInProvider = null;
+  const onSignIn = (provider) => {
+    const handler = createPlanSignInHandler(store2, provider, onRequestClose);
+    if (!handler) return void 0;
+    return () => {
+      pendingSignInProvider = provider;
+      handler();
+    };
+  };
   const handleSignIn = {
-    claude: createPlanSignInHandler(store2, "claude", onRequestClose) ?? void 0,
-    codex: createPlanSignInHandler(store2, "codex", onRequestClose) ?? void 0
+    claude: onSignIn("claude"),
+    codex: onSignIn("codex")
   };
   const root = document.createElement("div");
   root.className = "usage-section-root";
@@ -53150,9 +53159,14 @@ function createUsageSection(api2, store2, onRequestClose) {
       renderPlanSection(planEl, null, null, handleSignIn);
     }
     try {
-      const snapshot = await api2.usage.getPlanUsage();
+      const snapshot = await api2.usage.getPlanUsage(pendingSignInProvider !== null);
       cachedPlanSnapshot = snapshot;
       renderPlanSection(planEl, snapshot, null, handleSignIn);
+      if (pendingSignInProvider && snapshot.providers.some(
+        (provider) => provider.provider === pendingSignInProvider && provider.status === "ok"
+      )) {
+        pendingSignInProvider = null;
+      }
     } catch (err2) {
       const message2 = err2 instanceof Error ? err2.message : "Failed to load subscription plan usage.";
       renderPlanSection(planEl, null, message2, handleSignIn);
@@ -54511,6 +54525,7 @@ function mountBranchCiEditor(options) {
   }
   function updateSummary() {
     const kind = currentKind();
+    branch.required = kind === "github-ci-failed" && pullRequest.value.trim() === "";
     for (const item of fields) item.node.hidden = item.kind !== kind;
     if (kind === "github-pr-changed") {
       const base = baseBranch.value.trim() || "the base branch";
@@ -54751,6 +54766,7 @@ function mountBranchCiEditor(options) {
           if (!confirmed) return;
           await api2.automations.removeBranchCi(projectId, definition.id);
           await refresh();
+          await options.onChanged?.();
         }).catch((error62) => {
           showStatus(ipcErrorMessage(error62, "Could not delete the automation."), true);
         });
@@ -54818,6 +54834,7 @@ function mountBranchCiEditor(options) {
       async () => {
         close();
         await refresh();
+        await options.onChanged?.();
       },
       (error62) => {
         showStatus(ipcErrorMessage(error62, "Could not save the automation."), true);
@@ -54879,6 +54896,4888 @@ var init_automation_retained_worktrees = __esm({
       "unpushed-pull-request": "has a pull request branch that is not pushed",
       "in-use": "still has a terminal or background process open"
     };
+  }
+});
+
+// src/shared/store/pending-submissions.ts
+function beginThreadSubmission(store2, threadId) {
+  let pending = pendingByStore.get(store2);
+  if (!pending) {
+    pending = /* @__PURE__ */ new Set();
+    pendingByStore.set(store2, pending);
+  }
+  if (pending.has(threadId)) return false;
+  pending.add(threadId);
+  return true;
+}
+function endThreadSubmission(store2, threadId) {
+  pendingByStore.get(store2)?.delete(threadId);
+}
+function isThreadSubmitting(store2, threadId) {
+  return pendingByStore.get(store2)?.has(threadId) ?? false;
+}
+var pendingByStore;
+var init_pending_submissions = __esm({
+  "src/shared/store/pending-submissions.ts"() {
+    pendingByStore = /* @__PURE__ */ new WeakMap();
+  }
+});
+
+// packages/thread-store/src/thread-proposal.ts
+function trimTo(value, max) {
+  const trimmed2 = value.trim();
+  return trimmed2.length <= max ? trimmed2 : `${trimmed2.slice(0, max - 1).trimEnd()}\u2026`;
+}
+function stringField(args, key) {
+  const value = args[key];
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+function stringListField(args, key) {
+  const value = args[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter(isNonBlankString).map((entry) => entry.trim());
+}
+function parseThreadProposal(id, args) {
+  if (id === "" || !isRecord(args)) return null;
+  const title = stringField(args, "title");
+  const summary = stringField(args, "summary");
+  const prompt = stringField(args, "prompt");
+  if (!title || !summary || !prompt) return null;
+  const rationale = stringField(args, "rationale");
+  const files = stringListField(args, "files");
+  return {
+    id,
+    title: trimTo(title, THREAD_PROPOSAL_TITLE_MAX),
+    summary: trimTo(summary, THREAD_PROPOSAL_SUMMARY_MAX),
+    ...rationale ? { rationale: trimTo(rationale, THREAD_PROPOSAL_SUMMARY_MAX) } : {},
+    prompt,
+    ...files.length > 0 ? { files } : {}
+  };
+}
+function threadProposalStatus(decisions, id) {
+  return findThreadProposalDecision(decisions, id)?.status ?? "pending";
+}
+function findThreadProposalDecision(decisions, id) {
+  return decisions?.find((decision) => decision.id === id);
+}
+function recordThreadProposalDecision(decisions, decision) {
+  const rest = (decisions ?? []).filter((entry) => entry.id !== decision.id);
+  return [...rest, decision];
+}
+function clearThreadProposalDecision(decisions, id) {
+  return (decisions ?? []).filter((entry) => entry.id !== id);
+}
+function threadProposalFileSummary(files) {
+  if (!files || files.length === 0) return null;
+  if (files.length <= THREAD_PROPOSAL_FILES_SHOWN) return files.join(", ");
+  const shown = files.slice(0, THREAD_PROPOSAL_FILES_SHOWN).join(", ");
+  return `${shown} +${String(files.length - THREAD_PROPOSAL_FILES_SHOWN)} more`;
+}
+var THREAD_PROPOSAL_TOOL, THREAD_PROPOSAL_TITLE_MAX, THREAD_PROPOSAL_SUMMARY_MAX, THREAD_PROPOSAL_FILES_SHOWN;
+var init_thread_proposal = __esm({
+  "packages/thread-store/src/thread-proposal.ts"() {
+    init_unknown_value();
+    init_nullish();
+    THREAD_PROPOSAL_TOOL = "propose_thread";
+    THREAD_PROPOSAL_TITLE_MAX = 80;
+    THREAD_PROPOSAL_SUMMARY_MAX = 400;
+    THREAD_PROPOSAL_FILES_SHOWN = 4;
+  }
+});
+
+// src/shared/threads/thread-proposal.ts
+var init_thread_proposal2 = __esm({
+  "src/shared/threads/thread-proposal.ts"() {
+    init_thread_proposal();
+  }
+});
+
+// src/shared/threads/reviewer-input.ts
+function isReviewerInputCall(call) {
+  return [call.name, call.programmaticName].some(
+    (name) => name === REVIEWER_INPUT_TOOL || typeof name === "string" && /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+request_review_input(?![a-z0-9_])/i.test(name)
+  );
+}
+function parseReviewerInputCall(call, messageId) {
+  if (!isReviewerInputCall(call) || call.status !== "done" || !isRecord(call.args)) return null;
+  const { question, context, recommendation, options } = call.args;
+  if (typeof question !== "string" || question.trim() === "" || typeof context !== "string" || context.trim() === "") {
+    return null;
+  }
+  const validOptions = Array.isArray(options) ? options.flatMap(
+    (value) => typeof value === "string" && value.trim() !== "" ? [value] : []
+  ) : [];
+  return {
+    id: call.id,
+    messageId,
+    question: question.trim().slice(0, 300),
+    context: context.trim().slice(0, 1200),
+    ...typeof recommendation === "string" && recommendation.trim() !== "" ? { recommendation: recommendation.trim().slice(0, 600) } : {},
+    options: validOptions.slice(0, 4).map((value) => value.trim().slice(0, 120))
+  };
+}
+function reviewerInputRequests(thread) {
+  return thread.messages.flatMap(
+    (message2) => message2.toolCalls.map((call) => parseReviewerInputCall(call, message2.id)).filter((request) => request !== null)
+  );
+}
+function reviewerInputAnswer(answers, id) {
+  return parseReviewerInputAnswers(answers).find((answer) => answer.id === id);
+}
+function parseReviewerInputAnswers(value) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry["id"] !== "string" || typeof entry["text"] !== "string" || typeof entry["answeredAt"] !== "number" || !Number.isFinite(entry["answeredAt"]) || typeof entry["messageId"] !== "string") {
+      return [];
+    }
+    return [
+      {
+        id: entry["id"],
+        text: entry["text"],
+        answeredAt: entry["answeredAt"],
+        messageId: entry["messageId"]
+      }
+    ];
+  });
+}
+var REVIEWER_INPUT_TOOL;
+var init_reviewer_input = __esm({
+  "src/shared/threads/reviewer-input.ts"() {
+    init_unknown_value3();
+    REVIEWER_INPUT_TOOL = "request_review_input";
+  }
+});
+
+// packages/thread-store/src/thread-sort.ts
+function isHumanUserPrompt(message2) {
+  return message2.role === "user" && (message2.origin === void 0 || message2.editedByUser === true);
+}
+function lastHumanPromptAt(thread) {
+  if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const message2 = thread.messages[i2];
+    if (message2 !== void 0 && isHumanUserPrompt(message2)) return message2.createdAt;
+  }
+  return void 0;
+}
+function threadSortKey(thread) {
+  return lastHumanPromptAt(thread) ?? thread.createdAt;
+}
+function sortThreadsNewestFirst(threads) {
+  return [...threads].sort(
+    (a3, b4) => threadSortKey(b4) - threadSortKey(a3) || b4.createdAt - a3.createdAt
+  );
+}
+var init_thread_sort = __esm({
+  "packages/thread-store/src/thread-sort.ts"() {
+  }
+});
+
+// packages/agent/src/token-estimate.ts
+var CHARS_PER_TOKEN;
+var init_token_estimate = __esm({
+  "packages/agent/src/token-estimate.ts"() {
+    CHARS_PER_TOKEN = 4;
+  }
+});
+
+// src/shared/usage/footer-usage-summary.ts
+function collectSubagentUsage(toolCalls, totals) {
+  for (const toolCall of toolCalls) {
+    const session = toolCall.subagent;
+    if (!session) continue;
+    if (session.kind === "container") continue;
+    if (session.usage) {
+      totals.runs += 1;
+      totals.inputTokens += session.usage.inputTokens;
+      totals.outputTokens += session.usage.outputTokens;
+    }
+    for (const message2 of session.messages) {
+      collectSubagentUsage(message2.toolCalls, totals);
+    }
+  }
+}
+function subagentRunLabel(session) {
+  const kind = session.kind === "custom" && session.agentName ? session.agentName : SUBAGENT_KIND_LABEL[session.kind];
+  const firstLine2 = session.prompt.trim().split("\n")[0] ?? "";
+  if (!firstLine2) return kind;
+  const prompt = firstLine2.length > RUN_PROMPT_MAX_CHARS ? `${firstLine2.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine2;
+  return `${kind} \xB7 ${prompt}`;
+}
+function collectSubagentRuns(toolCalls, runs) {
+  for (const toolCall of toolCalls) {
+    const session = toolCall.subagent;
+    if (!session || session.kind === "container") continue;
+    runs.push({
+      label: subagentRunLabel(session),
+      model: session.model,
+      status: session.status,
+      usage: session.usage ? { inputTokens: session.usage.inputTokens, outputTokens: session.usage.outputTokens } : void 0
+    });
+    for (const message2 of session.messages) collectSubagentRuns(message2.toolCalls, runs);
+  }
+}
+function listSubagentRuns(messages) {
+  const runs = [];
+  for (const message2 of messages) collectSubagentRuns(message2.toolCalls, runs);
+  return runs;
+}
+function sumSubagentUsage(messages) {
+  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
+  for (const message2 of messages) {
+    collectSubagentUsage(message2.toolCalls, totals);
+  }
+  return totals;
+}
+function sumLegacyFoldedSubagentUsage(messages, trailingTurnRunning) {
+  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
+  let turnStart = 0;
+  const collectTurn = (turnEnd, isTrailingTurn) => {
+    if (trailingTurnRunning && isTrailingTurn) return;
+    let outcome;
+    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
+      const candidate = messages[i2]?.turnOutcome;
+      if (candidate !== void 0) outcome = candidate;
+    }
+    if (outcome !== void 0 && outcome.status !== "completed") return;
+    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
+      const message2 = messages[i2];
+      if (message2) collectSubagentUsage(message2.toolCalls, totals);
+    }
+  };
+  for (let i2 = 1; i2 <= messages.length; i2 += 1) {
+    if (i2 < messages.length && messages[i2]?.role !== "user") continue;
+    collectTurn(i2, i2 === messages.length);
+    turnStart = i2;
+  }
+  return totals;
+}
+function estimateAssistantOutputTokens(messages) {
+  let chars = 0;
+  for (const message2 of messages) {
+    if (message2.role !== "assistant") continue;
+    chars += message2.content.length;
+    for (const toolCall of message2.toolCalls) {
+      for (const subMessage of toolCall.subagent?.messages ?? []) {
+        if (subMessage.role === "assistant") chars += subMessage.content.length;
+      }
+    }
+  }
+  return Math.round(chars / CHARS_PER_TOKEN);
+}
+function foldedSubagentShare(measured, legacyFoldedSessions) {
+  if (measured.subagentInputTokens !== void 0 || measured.subagentOutputTokens !== void 0) {
+    return {
+      inputTokens: measured.subagentInputTokens ?? 0,
+      outputTokens: measured.subagentOutputTokens ?? 0
+    };
+  }
+  return legacyFoldedSessions;
+}
+function resolveFooterUsage(input2) {
+  const { inputTokens, outputTokens } = input2.measured;
+  if (inputTokens || outputTokens) {
+    const subagents = sumSubagentUsage(input2.messages);
+    const folded = foldedSubagentShare(
+      input2.measured,
+      sumLegacyFoldedSubagentUsage(input2.messages, input2.running)
+    );
+    return {
+      inputTokens: Math.max(0, inputTokens - folded.inputTokens),
+      outputTokens: Math.max(0, outputTokens - folded.outputTokens),
+      estimated: false,
+      ...subagents.runs > 0 ? {
+        subagentInputTokens: subagents.inputTokens,
+        subagentOutputTokens: subagents.outputTokens
+      } : {}
+    };
+  }
+  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
+  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
+  const total2 = (estimatedInput ?? 0) + estimatedOutput;
+  if (!total2 && !input2.running) return null;
+  return {
+    inputTokens: estimatedInput ?? 0,
+    outputTokens: estimatedOutput,
+    estimated: true
+  };
+}
+function formatFooterUsageSummary(display) {
+  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
+  return display.estimated ? `~${value}` : value;
+}
+function formatFooterUsageDetail(display, opts) {
+  const { inputTokens, outputTokens, estimated } = display;
+  const approx = estimated ? "~" : "";
+  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
+  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
+  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
+  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
+  return `Usage: ${parts.join(" \xB7 ")}`;
+}
+var SUBAGENT_KIND_LABEL, RUN_PROMPT_MAX_CHARS;
+var init_footer_usage_summary = __esm({
+  "src/shared/usage/footer-usage-summary.ts"() {
+    init_estimate_cost();
+    init_token_estimate();
+    init_format_usage_summary();
+    SUBAGENT_KIND_LABEL = {
+      explore: "Explore",
+      investigate_ci: "Investigate CI",
+      delegate: "Delegate",
+      custom: "Custom agent",
+      container: "Container run"
+    };
+    RUN_PROMPT_MAX_CHARS = 36;
+  }
+});
+
+// src/shared/store/thread-helpers.ts
+function getThreadById(store2, id) {
+  if (!id) return void 0;
+  const { threads, backgroundThreads } = store2.getState();
+  return threads.find((t2) => t2.id === id) ?? backgroundThreads.find((b4) => b4.thread.id === id)?.thread;
+}
+function getThreadProjectId(store2, threadId) {
+  const { threads, backgroundThreads, activeProjectId } = store2.getState();
+  if (threads.some((t2) => t2.id === threadId)) return activeProjectId;
+  return backgroundThreads.find((b4) => b4.thread.id === threadId)?.projectId ?? null;
+}
+function patchThreadAnywhere(store2, threadId, patch) {
+  const { threads, backgroundThreads } = store2.getState();
+  if (threads.some((t2) => t2.id === threadId)) {
+    store2.setState({ threads: threads.map((t2) => t2.id === threadId ? patch(t2) : t2) });
+    return true;
+  }
+  const carried = backgroundThreads.find((b4) => b4.thread.id === threadId);
+  if (!carried) return false;
+  store2.setState({
+    backgroundThreads: backgroundThreads.map(
+      (b4) => b4.thread.id === threadId ? { ...b4, thread: patch(b4.thread) } : b4
+    )
+  });
+  return true;
+}
+function getActiveThread(store2) {
+  return getThreadById(store2, store2.getState().activeThreadId);
+}
+function isBlankThread(thread) {
+  if (thread.messagesLoaded === false) return false;
+  if (thread.sideChat !== void 0) return false;
+  return thread.messages.length === 0 && thread.status === "idle";
+}
+function hasUnsubmittedPrompt(thread) {
+  return Boolean(thread.draftPrompt?.trim());
+}
+function isThreadArchived(thread) {
+  return thread.archivedAt != null;
+}
+function isPrunableBlankThread(store2, thread) {
+  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread) && !isThreadArchived(thread) && !isThreadSubmitting(store2, thread.id);
+}
+function pruneBlankThreads(store2, keepIds) {
+  const { threads, activeThreadId } = store2.getState();
+  const remaining = threads.filter((t2) => !isPrunableBlankThread(store2, t2) || keepIds.has(t2.id));
+  if (remaining.length === 0 || remaining.length === threads.length) return;
+  const newActive = activeThreadId && remaining.some((t2) => t2.id === activeThreadId) ? activeThreadId : remaining[0]?.id ?? null;
+  store2.setState({ threads: remaining, activeThreadId: newActive });
+  store2.emit("threads_changed");
+}
+function normalizeBlankThreads(store2) {
+  const { threads, activeThreadId } = store2.getState();
+  const blanks = threads.filter(
+    (t2) => isBlankThread(t2) && !isThreadArchived(t2) && !isThreadSubmitting(store2, t2.id)
+  );
+  const emptyBlanks = blanks.filter((t2) => !hasUnsubmittedPrompt(t2));
+  if (emptyBlanks.length <= 1) return;
+  const keepEmptyId = emptyBlanks.find((t2) => t2.id === activeThreadId)?.id ?? at(
+    emptyBlanks.sort((a3, b4) => b4.createdAt - a3.createdAt),
+    0
+  ).id;
+  const keepIds = /* @__PURE__ */ new Set([...blanks.filter(hasUnsubmittedPrompt).map((t2) => t2.id), keepEmptyId]);
+  pruneBlankThreads(store2, keepIds);
+}
+function createThread(store2, draftPrompt) {
+  const id = randomUUID();
+  const defaultModel = store2.getState().settings?.model;
+  const threads = [
+    {
+      id,
+      title: "New Thread",
+      status: "idle",
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      // Only set model when a default exists; omit under exactOptionalPropertyTypes
+      // rather than assigning undefined. Absent means "use the global default".
+      ...defaultModel !== void 0 ? { model: defaultModel } : {},
+      // A caller-seeded draft (e.g. starting a thread from a roadmap item) must
+      // be on the thread before threads_changed fires: the composer loads
+      // draftPrompt exactly once, when the active thread id changes.
+      ...draftPrompt?.trim() ? { draftPrompt } : {},
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    },
+    ...store2.getState().threads
+  ];
+  store2.setState({
+    threads,
+    activeThreadId: id,
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: []
+  });
+  store2.emit("threads_changed");
+  store2.emit("panel_changed");
+  store2.emit("new_thread_opened");
+  return id;
+}
+function openNewThread(store2) {
+  const { threads, activeThreadId } = store2.getState();
+  const existing = threads.find((t2) => isPrunableBlankThread(store2, t2));
+  if (existing) {
+    const defaultModel = store2.getState().settings?.model;
+    const reseed = (list) => list.map((t2) => {
+      if (t2.id !== existing.id) return t2;
+      const { model: _prevModel, ...rest } = t2;
+      return defaultModel !== void 0 ? { ...rest, model: defaultModel } : rest;
+    });
+    if (activeThreadId !== existing.id) {
+      store2.emit("composer_draft_flush");
+      store2.setState({ activeThreadId: existing.id, threads: reseed(threads) });
+    } else {
+      store2.setState({ threads: reseed(threads) });
+    }
+    store2.emit("threads_changed");
+    pruneBlankThreads(store2, /* @__PURE__ */ new Set([existing.id]));
+    store2.emit("threads_changed");
+    store2.setState({
+      openFile: null,
+      activeDiff: null,
+      stagedDiffs: []
+    });
+    store2.emit("panel_changed");
+    store2.emit("new_thread_opened");
+    return existing.id;
+  }
+  store2.emit("composer_draft_flush");
+  return createThread(store2);
+}
+function switchThread(store2, id) {
+  if (id === store2.getState().activeThreadId) {
+    markThreadRead(store2, id);
+    return;
+  }
+  store2.emit("composer_draft_flush");
+  const state = store2.getState();
+  const pruned = state.threads.filter((t2) => !isPrunableBlankThread(store2, t2) || t2.id === id);
+  const threads = (pruned.length > 0 ? pruned : state.threads).map((thread) => {
+    if (thread.id !== id || thread.unreadAt === void 0) return thread;
+    const { unreadAt: _read, ...readThread } = thread;
+    return readThread;
+  });
+  const panelWasPopulated = state.openFile !== null || state.activeDiff !== null || state.stagedDiffs.length > 0;
+  store2.setState({
+    activeThreadId: id,
+    threads,
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: []
+  });
+  if (panelWasPopulated) store2.emit("panel_changed");
+  store2.emit("threads_changed");
+}
+function nextThreadId(store2) {
+  const { threads, activeThreadId } = store2.getState();
+  if (threads.length < 2) return null;
+  const idx = threads.findIndex((t2) => t2.id === activeThreadId);
+  const target = idx < 0 || idx >= threads.length - 1 ? threads[0] : threads[idx + 1];
+  return target ? target.id : null;
+}
+function prevThreadId(store2) {
+  const { threads, activeThreadId } = store2.getState();
+  if (threads.length < 2) return null;
+  const idx = threads.findIndex((t2) => t2.id === activeThreadId);
+  const target = idx <= 0 ? threads[threads.length - 1] : threads[idx - 1];
+  return target ? target.id : null;
+}
+function markThreadUnread(store2, threadId, at3 = Date.now()) {
+  if (threadId === store2.getState().activeThreadId) return;
+  if (!patchThreadAnywhere(store2, threadId, (thread) => ({ ...thread, unreadAt: at3 }))) return;
+  store2.emit("threads_changed");
+}
+function markThreadRead(store2, threadId) {
+  if (getThreadById(store2, threadId)?.unreadAt === void 0) return;
+  patchThreadAnywhere(store2, threadId, (thread) => {
+    const { unreadAt: _read, ...readThread } = thread;
+    return readThread;
+  });
+  store2.emit("threads_changed");
+}
+function deleteThread(store2, id) {
+  const { threads, activeThreadId } = store2.getState();
+  const doomed = /* @__PURE__ */ new Set([id]);
+  for (const t2 of threads) if (t2.sideChat?.parentThreadId === id) doomed.add(t2.id);
+  const remaining = threads.filter((t2) => !doomed.has(t2.id));
+  if (remaining.length === 0) {
+    createThread(store2);
+    store2.setState({
+      threads: store2.getState().threads.filter((t2) => !doomed.has(t2.id))
+    });
+    store2.emit("threads_changed");
+    return;
+  }
+  const activeDoomed = activeThreadId !== null && doomed.has(activeThreadId);
+  const index = threads.findIndex((t2) => t2.id === id);
+  const parentId = threads.find((t2) => t2.id === id)?.sideChat?.parentThreadId;
+  const listed = remaining.filter((t2) => t2.sideChat === void 0);
+  const pool = listed.length > 0 ? listed : remaining;
+  const newActive = !activeDoomed ? activeThreadId : parentId !== void 0 && remaining.some((t2) => t2.id === parentId) ? parentId : pool[Math.min(index, pool.length - 1)]?.id ?? null;
+  store2.setState({
+    threads: remaining,
+    activeThreadId: newActive,
+    ...activeDoomed ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
+  });
+  store2.emit("threads_changed");
+  if (activeDoomed) store2.emit("panel_changed");
+}
+function archiveThread(store2, id, persisted) {
+  const { threads, activeThreadId } = store2.getState();
+  const target = threads.find((t2) => t2.id === id);
+  if (!target || isThreadArchived(target)) return;
+  const now = persisted?.archivedAt ?? Date.now();
+  const updated = threads.map((t2) => {
+    if (t2.id !== id) {
+      return t2.sideChat?.parentThreadId === id && !isThreadArchived(t2) && t2.status !== "running" ? { ...t2, archivedAt: now, updatedAt: now } : t2;
+    }
+    const archived = { ...t2, archivedAt: now, updatedAt: now };
+    if (persisted) {
+      if (persisted.worktree) {
+        archived.worktree = persisted.worktree;
+        archived.gitBranch = persisted.worktree.branch;
+      } else delete archived.worktree;
+    }
+    return archived;
+  });
+  const visible = updated.filter((t2) => !isThreadArchived(t2) && t2.sideChat === void 0);
+  if (visible.length === 0) {
+    store2.setState({ threads: updated, activeThreadId: null });
+    createThread(store2);
+    return;
+  }
+  const activeArchived = activeThreadId !== null && updated.some((t2) => t2.id === activeThreadId && isThreadArchived(t2));
+  const index = threads.findIndex((t2) => t2.id === id);
+  const parentId = target.sideChat?.parentThreadId;
+  const newActive = !activeArchived ? activeThreadId : parentId !== void 0 && visible.some((t2) => t2.id === parentId) ? parentId : visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id;
+  store2.setState({
+    threads: updated,
+    activeThreadId: newActive,
+    ...activeArchived ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
+  });
+  store2.emit("threads_changed");
+  if (activeArchived) store2.emit("panel_changed");
+}
+function restoreThread(store2, id) {
+  const { threads } = store2.getState();
+  const target = threads.find((t2) => t2.id === id);
+  if (!target || !isThreadArchived(target)) return;
+  store2.setState({
+    threads: threads.map((t2) => {
+      if (t2.id !== id) return t2;
+      const { archivedAt: _archivedAt, ...restored } = t2;
+      return { ...restored, updatedAt: Date.now() };
+    })
+  });
+  store2.emit("threads_changed");
+}
+function recordContextTrim(store2, threadId, record2) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const entry = { ...record2, at: Date.now() };
+    return {
+      ...t2,
+      contextTrims: [...t2.contextTrims ?? [], entry],
+      updatedAt: Date.now()
+    };
+  });
+  store2.emit("threads_changed");
+}
+function addMessage(store2, threadId, role, content = "", images, attachments, opts) {
+  const id = randomUUID();
+  const message2 = {
+    id,
+    role,
+    content,
+    ...images?.length ? { images } : {},
+    ...attachments?.length ? { attachments } : {},
+    ...opts?.model !== void 0 ? { model: opts.model } : {},
+    ...opts?.requestedModel !== void 0 ? { requestedModel: opts.requestedModel } : {},
+    ...opts?.parameters !== void 0 ? { parameters: opts.parameters } : {},
+    ...opts?.origin !== void 0 ? { origin: opts.origin } : {},
+    ...opts?.startingCommit !== void 0 ? { startingCommit: opts.startingCommit } : {},
+    ...opts?.dirty !== void 0 ? { dirty: opts.dirty } : {},
+    toolCalls: [],
+    createdAt: Date.now()
+  };
+  const isHumanPrompt = isHumanUserPrompt(message2);
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    messages: [...t2.messages, message2],
+    // The sidebar sorts on this and never reads transcripts, so it has to be
+    // recorded as the prompt lands rather than derived at display time.
+    ...isHumanPrompt ? { lastPromptAt: message2.createdAt } : {},
+    updatedAt: Date.now()
+  }));
+  let reorderedActiveThreads = false;
+  if (isHumanPrompt) {
+    const { threads } = store2.getState();
+    if (threads.some((thread2) => thread2.id === threadId)) {
+      const sortedThreads = sortThreadsNewestFirst(threads);
+      reorderedActiveThreads = sortedThreads.some((thread2, index) => thread2 !== threads[index]);
+      if (reorderedActiveThreads) store2.setState({ threads: sortedThreads });
+    }
+  }
+  store2.emit("message_added", threadId, id);
+  if (reorderedActiveThreads) store2.emit("threads_changed");
+  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  if (thread && thread.messages.length === 1) {
+    pruneBlankThreads(store2, /* @__PURE__ */ new Set([threadId]));
+  }
+  return id;
+}
+function setThreadDraftPrompt(store2, threadId, draftPrompt) {
+  const thread = getThreadById(store2, threadId);
+  if (!thread) return;
+  if (draftPrompt.trim()) {
+    if (thread.draftPrompt === draftPrompt) return;
+    patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, draftPrompt, updatedAt: Date.now() }));
+  } else {
+    if (thread.draftPrompt === void 0) return;
+    patchThreadAnywhere(store2, threadId, (t2) => {
+      const { draftPrompt: _removed, ...rest } = t2;
+      return { ...rest, updatedAt: Date.now() };
+    });
+  }
+  store2.emit("thread_draft_changed", threadId);
+}
+function markAutomationStartFailed(store2, threadId, failure2) {
+  patchThreadAnywhere(
+    store2,
+    threadId,
+    (t2) => t2.automation ? {
+      ...t2,
+      automation: {
+        ...t2.automation,
+        startFailedAt: Date.now(),
+        ...failure2 ? { failure: { ...failure2, at: Date.now() } } : {}
+      },
+      updatedAt: Date.now()
+    } : t2
+  );
+}
+function markAutomationRunFailed(store2, threadId, failure2) {
+  patchThreadAnywhere(
+    store2,
+    threadId,
+    (t2) => t2.automation ? {
+      ...t2,
+      automation: { ...t2.automation, failure: { ...failure2, at: Date.now() } },
+      updatedAt: Date.now()
+    } : t2
+  );
+}
+function messageLocations(store2) {
+  const { threads, backgroundThreads } = store2.getState();
+  const cached2 = messageIndexByStore.get(store2);
+  if (cached2 && cached2.threads === threads && cached2.backgroundThreads === backgroundThreads) {
+    return cached2.byId;
+  }
+  const byId = /* @__PURE__ */ new Map();
+  const allThreads = [...threads, ...backgroundThreads.map((b4) => b4.thread)];
+  for (const thread of allThreads) {
+    for (const message2 of thread.messages) {
+      if (!byId.has(message2.id)) byId.set(message2.id, { thread, message: message2 });
+    }
+  }
+  messageIndexByStore.set(store2, { threads, backgroundThreads, byId });
+  return byId;
+}
+function locateMessage(store2, messageId) {
+  return messageLocations(store2).get(messageId);
+}
+function updateMessage(store2, messageId, mutate) {
+  const loc = locateMessage(store2, messageId);
+  if (!loc) return null;
+  mutate(loc.message);
+  return loc.thread.id;
+}
+function appendToken(store2, messageId, text2) {
+  updateMessage(store2, messageId, (m2) => {
+    m2.content += text2;
+  });
+  store2.emit("message_token", messageId, text2);
+}
+function appendReasoning(store2, messageId, text2) {
+  updateMessage(store2, messageId, (m2) => {
+    m2.reasoning = (m2.reasoning ?? "") + text2;
+  });
+  store2.emit("message_reasoning", messageId, text2);
+}
+function appendAcpContentBlock(store2, messageId, channel, block) {
+  updateMessage(store2, messageId, (message2) => {
+    if (channel === "thought") {
+      message2.reasoningBlocks = [...message2.reasoningBlocks ?? [], block];
+    } else {
+      message2.contentBlocks = [...message2.contentBlocks ?? [], block];
+    }
+  });
+  store2.emit("message_acp_content", messageId);
+}
+function setMessageContent(store2, messageId, content) {
+  updateMessage(store2, messageId, (m2) => {
+    m2.content = content;
+  });
+  store2.emit("message_token", messageId, content);
+}
+function addMessageCanvasArtefact(store2, messageId, artefact) {
+  updateMessage(store2, messageId, (message2) => {
+    message2.canvasArtefacts = [...message2.canvasArtefacts ?? [], artefact];
+  });
+  store2.emit("message_canvas_artefacts_changed", messageId);
+}
+function addMessageVisualEvidence(store2, messageId, toolCallId, evidence) {
+  const loc = locateMessage(store2, messageId);
+  if (!loc) return;
+  const existing = new Set((loc.message.visualEvidence ?? []).map((item) => item.id));
+  const additions = evidence.filter((item) => !existing.has(item.id)).map((item) => ({
+    ...item,
+    toolCallId,
+    assets: item.assets.map((asset) => ({
+      ...asset,
+      source: { ...asset.source }
+    }))
+  }));
+  if (additions.length === 0) return;
+  loc.message.visualEvidence = [...loc.message.visualEvidence ?? [], ...additions];
+  store2.emit("message_visual_evidence_changed", messageId);
+}
+function setMessageCommandSummary(store2, messageId, commandSummary) {
+  updateMessage(store2, messageId, (m2) => {
+    m2.commandSummary = commandSummary;
+  });
+  store2.emit("tool_call_updated", messageId, "");
+}
+function setMessageToolSummary(store2, messageId, toolSummary) {
+  updateMessage(store2, messageId, (m2) => {
+    m2.toolSummary = toolSummary;
+  });
+  store2.emit("tool_call_updated", messageId, "");
+}
+function setMessageRunSummary(store2, messageId, runSummary2) {
+  updateMessage(store2, messageId, (m2) => {
+    m2.runSummary = runSummary2;
+  });
+  store2.emit("tool_call_updated", messageId, "");
+}
+function addToolCall(store2, messageId, toolCall) {
+  updateMessage(store2, messageId, (m2) => {
+    m2.toolCalls.push(toolCall);
+  });
+  store2.emit("tool_call_started", messageId, toolCall);
+}
+function findToolCall(store2, messageId, toolCallId) {
+  return locateMessage(store2, messageId)?.message.toolCalls.find((tc2) => tc2.id === toolCallId);
+}
+function findToolCallOwner(store2, threadId, toolCallId) {
+  const messages = getThreadById(store2, threadId)?.messages;
+  if (!messages) return void 0;
+  for (let i2 = messages.length - 1; i2 >= 0; i2--) {
+    const message2 = messages[i2];
+    if (message2?.toolCalls.some((tc2) => tc2.id === toolCallId)) return message2.id;
+  }
+  return void 0;
+}
+function updateToolCall(store2, messageId, toolCallId, patch) {
+  updateMessage(store2, messageId, (m2) => {
+    const toolCall = m2.toolCalls.find((tc2) => tc2.id === toolCallId);
+    if (toolCall) Object.assign(toolCall, patch);
+  });
+  store2.emit("tool_call_updated", messageId, toolCallId);
+}
+function addHookCard(store2, messageId, card) {
+  const threadId = updateMessage(store2, messageId, (m2) => {
+    const cards = m2.hookCards ?? (m2.hookCards = []);
+    if (!cards.some((c3) => c3.id === card.id)) cards.push(card);
+  });
+  if (threadId === null) return;
+  store2.emit("hook_card_added", threadId, messageId);
+}
+function updateUsage(store2, threadId, usage) {
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, usage }));
+  store2.emit("usage_updated", threadId);
+}
+function addCacheTokens(base, prevRead, prevCreation, delta) {
+  const next = { ...base };
+  if (delta.cacheReadTokens !== void 0 || prevRead !== void 0) {
+    next.cacheReadTokens = (prevRead ?? 0) + (delta.cacheReadTokens ?? 0);
+  }
+  if (delta.cacheCreationTokens !== void 0 || prevCreation !== void 0) {
+    next.cacheCreationTokens = (prevCreation ?? 0) + (delta.cacheCreationTokens ?? 0);
+  }
+  return next;
+}
+function addUsageDelta(store2, threadId, delta) {
+  const thread = getThreadById(store2, threadId);
+  if (!thread) return;
+  const byModel = { ...thread.usage.byModel ?? {} };
+  const prev = byModel[delta.model] ?? { inputTokens: 0, outputTokens: 0 };
+  const usage = delta.serviceTierUsage !== void 0 ? delta : usageAtServiceTier(
+    delta,
+    usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier)
+  );
+  byModel[delta.model] = mergeModelUsage(prev, usage);
+  const subagentShare = foldedSubagentUsage(thread, delta.subagentUsage ? delta : void 0);
+  updateUsage(
+    store2,
+    threadId,
+    addCacheTokens(
+      {
+        inputTokens: thread.usage.inputTokens + delta.inputTokens,
+        outputTokens: thread.usage.outputTokens + delta.outputTokens,
+        byModel,
+        subagentInputTokens: subagentShare.inputTokens + (delta.subagentUsage ? delta.inputTokens : 0),
+        subagentOutputTokens: subagentShare.outputTokens + (delta.subagentUsage ? delta.outputTokens : 0)
+      },
+      thread.usage.cacheReadTokens,
+      thread.usage.cacheCreationTokens,
+      delta
+    )
+  );
+}
+function foldedSubagentUsage(thread, incoming) {
+  const { usage } = thread;
+  if (usage.subagentInputTokens !== void 0 || usage.subagentOutputTokens !== void 0) {
+    return {
+      inputTokens: usage.subagentInputTokens ?? 0,
+      outputTokens: usage.subagentOutputTokens ?? 0
+    };
+  }
+  if (!usage.inputTokens && !usage.outputTokens) return { inputTokens: 0, outputTokens: 0 };
+  const recorded = sumLegacyFoldedSubagentUsage(thread.messages, thread.status === "running");
+  const priorInput = Math.max(0, recorded.inputTokens - (incoming?.inputTokens ?? 0));
+  const priorOutput = Math.max(0, recorded.outputTokens - (incoming?.outputTokens ?? 0));
+  return {
+    inputTokens: Math.min(priorInput, usage.inputTokens),
+    outputTokens: Math.min(priorOutput, usage.outputTokens)
+  };
+}
+function updateContextSnapshot(store2, threadId, snapshot) {
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    contextSnapshot: { ...snapshot, updatedAt: Date.now() },
+    updatedAt: Date.now()
+  }));
+  store2.emit("context_updated", threadId);
+}
+function clearContextSnapshot(store2, threadId) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const { contextSnapshot: _removed, ...rest } = t2;
+    return rest;
+  });
+  store2.emit("context_updated", threadId);
+}
+function setThreadTodos(store2, threadId, todos) {
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, todos, updatedAt: Date.now() }));
+  store2.emit("todos_changed", threadId);
+}
+function setMessageReview(store2, threadId, messageId, review) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const messages = t2.messages.map((m2) => {
+      if (m2.id !== messageId) return m2;
+      if (review) return { ...m2, review };
+      const { review: _removed, ...rest } = m2;
+      return rest;
+    });
+    return { ...t2, messages, updatedAt: Date.now() };
+  });
+  store2.emit("review_changed", threadId, messageId);
+}
+function setMessageTurnOutcome(store2, threadId, messageId, turnOutcome) {
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    messages: thread.messages.map(
+      (message2) => message2.id === messageId ? { ...message2, turnOutcome } : message2
+    ),
+    updatedAt: Date.now()
+  }));
+  store2.emit("threads_changed");
+}
+function setThreadComparison(store2, threadId, comparison) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const next = { ...t2, updatedAt: Date.now() };
+    if (comparison) next.comparison = comparison;
+    else delete next.comparison;
+    return next;
+  });
+  store2.emit("comparison_changed", threadId);
+}
+function setThreadReviewReport(store2, threadId, report) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const next = { ...t2, updatedAt: Date.now() };
+    if (report) next.reviewReport = report;
+    else delete next.reviewReport;
+    return next;
+  });
+  store2.emit("review_report_changed", threadId, null);
+}
+function setMessageReviewReport(store2, threadId, messageId, report) {
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    updatedAt: Date.now(),
+    messages: thread.messages.map((message2) => {
+      if (message2.id !== messageId) return message2;
+      const next = { ...message2 };
+      if (report) next.reviewReport = report;
+      else delete next.reviewReport;
+      return next;
+    })
+  }));
+  store2.emit("review_report_changed", threadId, messageId);
+}
+function setReviewFindingDismissed(store2, threadId, findingId, dismissed, messageId = null) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    if (messageId !== null) {
+      return {
+        ...t2,
+        updatedAt: Date.now(),
+        messages: t2.messages.map((message2) => {
+          if (message2.id !== messageId || !message2.reviewReport) return message2;
+          return {
+            ...message2,
+            reviewReport: {
+              ...message2.reviewReport,
+              findings: message2.reviewReport.findings.map(
+                (finding) => finding.id === findingId ? { ...finding, dismissed } : finding
+              )
+            }
+          };
+        })
+      };
+    }
+    if (!t2.reviewReport) return t2;
+    return {
+      ...t2,
+      updatedAt: Date.now(),
+      reviewReport: {
+        ...t2.reviewReport,
+        findings: t2.reviewReport.findings.map(
+          (finding) => finding.id === findingId ? { ...finding, dismissed } : finding
+        )
+      }
+    };
+  });
+  store2.emit("review_report_changed", threadId, messageId);
+}
+function setQueuePaused(store2, threadId, paused) {
+  const thread = getThreadById(store2, threadId);
+  if (!thread || Boolean(thread.queuePaused) === paused) return;
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    if (paused) return { ...t2, queuePaused: true, updatedAt: Date.now() };
+    const { queuePaused: _removed, ...rest } = t2;
+    return { ...rest, updatedAt: Date.now() };
+  });
+  store2.emit("threads_changed");
+}
+function setThreadStatus(store2, threadId, status) {
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, status }));
+  store2.emit("thread_status_changed", threadId, status);
+}
+function setThreadTitle(store2, threadId, title, options) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const { autoTitleCount: _previous, ...rest } = t2;
+    return options ? { ...rest, title, autoTitleCount: options.autoTitleCount } : { ...rest, title };
+  });
+  store2.emit("threads_changed");
+}
+function setThreadWorkingBrief(store2, threadId, workingBrief) {
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, workingBrief, updatedAt: Date.now() }));
+  store2.emit("threads_changed");
+}
+function setThreadGitBranch(store2, threadId, branch) {
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, gitBranch: branch, updatedAt: Date.now() }));
+  store2.emit("threads_changed");
+}
+function applyRenamedThreadWorktree(store2, threadId, worktree) {
+  const applied = patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    worktree,
+    gitBranch: worktree.branch,
+    updatedAt: Date.now()
+  }));
+  if (!applied) return;
+  store2.emit("threads_changed");
+  store2.emit("git_branch_changed");
+}
+function recordThreadVideos(store2, threadId, videos) {
+  if (videos.length === 0) return;
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const existing = t2.videos ?? [];
+    const known = new Set(existing.map((v3) => v3.path));
+    const added = videos.filter((v3) => !known.has(v3.path));
+    if (added.length === 0) return t2;
+    return { ...t2, videos: [...existing, ...added], updatedAt: Date.now() };
+  });
+  store2.emit("threads_changed");
+}
+function recordThreadArchives(store2, threadId, archives) {
+  if (archives.length === 0) return;
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const existing = t2.archives ?? [];
+    const known = new Set(existing.map((a3) => a3.path));
+    const added = archives.filter((a3) => !known.has(a3.path));
+    if (added.length === 0) return t2;
+    return { ...t2, archives: [...existing, ...added], updatedAt: Date.now() };
+  });
+  store2.emit("threads_changed");
+}
+function setThreadProposalDecision(store2, threadId, decision) {
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    threadProposals: recordThreadProposalDecision(t2.threadProposals, decision),
+    updatedAt: Date.now()
+  }));
+  store2.emit("threads_changed");
+}
+function setReviewerInputAnswer(store2, threadId, answer) {
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    reviewerInputAnswers: [
+      ...parseReviewerInputAnswers(thread.reviewerInputAnswers).filter(
+        (entry) => entry.id !== answer.id
+      ),
+      answer
+    ],
+    updatedAt: Date.now()
+  }));
+  store2.emit("threads_changed");
+}
+function clearThreadProposalDecisionFor(store2, threadId, proposalId) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const remaining = clearThreadProposalDecision(t2.threadProposals, proposalId);
+    if (remaining.length > 0) return { ...t2, threadProposals: remaining, updatedAt: Date.now() };
+    const { threadProposals: _cleared, ...rest } = t2;
+    return { ...rest, updatedAt: Date.now() };
+  });
+  store2.emit("threads_changed");
+}
+function bindThreadGitBranchIfUnset(store2, threadId, branch) {
+  const thread = getThreadById(store2, threadId);
+  if (!thread || thread.gitBranch) return;
+  setThreadGitBranch(store2, threadId, branch);
+}
+function applyPreparedThreadCheckout(store2, threadId, prepared) {
+  const previousWorktreePath = getThreadById(store2, threadId)?.worktree?.path;
+  const applied = patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    worktreeChoice: prepared.choice,
+    ...prepared.branch ? { gitBranch: prepared.branch } : {},
+    ...prepared.worktree ? { worktree: prepared.worktree } : {},
+    ...prepared.deferredWorktree ? { deferredWorktree: prepared.deferredWorktree } : {},
+    updatedAt: Date.now()
+  }));
+  if (!applied) return;
+  store2.emit("threads_changed");
+  if (prepared.worktree && prepared.worktree.path !== previousWorktreePath) {
+    store2.emit("thread_checkout_changed", threadId);
+  }
+  store2.emit("git_branch_changed");
+}
+var randomUUID, messageIndexByStore;
+var init_thread_helpers = __esm({
+  "src/shared/store/thread-helpers.ts"() {
+    init_model_usage();
+    init_service_tier();
+    init_pending_submissions();
+    init_array_utils2();
+    init_thread_proposal2();
+    init_reviewer_input();
+    init_thread_sort();
+    init_footer_usage_summary();
+    init_thread_sort();
+    randomUUID = () => globalThis.crypto.randomUUID();
+    messageIndexByStore = /* @__PURE__ */ new WeakMap();
+  }
+});
+
+// src/shared/store/review-reports.ts
+function findingLocation(finding) {
+  if (finding.startLine === void 0) return finding.path;
+  const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
+  return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
+}
+function userRunDone(report) {
+  return report?.initiator === "user" && report.status === "done" ? report : null;
+}
+function reviewReportsAwaitingModel(thread) {
+  const repliedAfter = (report, anchorId) => thread.messages.some(
+    (message2) => message2.role === "assistant" && message2.id !== anchorId && message2.createdAt >= report.startedAt
+  );
+  const awaiting = [];
+  const legacy = userRunDone(thread.reviewReport);
+  if (legacy && !repliedAfter(legacy)) awaiting.push(legacy);
+  const anchored = [];
+  for (const message2 of thread.messages) {
+    if (message2.role !== "assistant") continue;
+    const report = userRunDone(message2.reviewReport);
+    if (report && !repliedAfter(report, message2.id)) anchored.push(report);
+  }
+  anchored.sort((a3, b4) => a3.startedAt - b4.startedAt);
+  return [...awaiting, ...anchored];
+}
+function clip(text2, max) {
+  const flat = text2.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
+}
+function reviewedLine(report) {
+  const parts = ["Copse Reviewer"];
+  if (report.baseRef !== "") {
+    const head = report.dirtyWorkingTree ? "the working tree" : `HEAD${report.headCommit !== null ? ` (${report.headCommit.slice(0, 10)})` : ""}`;
+    parts.push(`reviewed ${head} against ${report.baseRef}`);
+  }
+  if (report.models.reviewer !== "") parts.push(`with ${report.models.reviewer}`);
+  return `${parts.join(" ")}.`;
+}
+function groundLine(report) {
+  if (!report.execution.executed) {
+    return report.execution.reason === "" ? "Read-only review: nothing was executed." : `Read-only review: nothing was executed (${report.execution.reason}).`;
+  }
+  const checks = report.checks.map((check2) => `${check2.kind} ${check2.verdict}`);
+  const notChecked = report.notChecked.map((note) => `not checked: ${note}`);
+  const all = [...checks, ...notChecked];
+  return all.length === 0 ? null : `Checks: ${all.join("; ")}.`;
+}
+function findingLine(finding, index) {
+  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${clip(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
+}
+function reportContextText(report) {
+  const lines = [reviewedLine(report)];
+  const ground = groundLine(report);
+  if (ground !== null) lines.push(ground);
+  if (report.note !== void 0) lines.push(report.note);
+  const live = report.findings.filter((finding) => finding.dismissed !== true);
+  const dismissed = report.findings.length - live.length;
+  const dismissedNote = dismissed > 0 ? ` (${String(dismissed)} more dismissed by the user and left out)` : "";
+  if (live.length === 0) {
+    lines.push(report.findings.length === 0 ? "No findings." : `No open findings${dismissedNote}.`);
+  } else {
+    lines.push(`${String(live.length)} finding(s)${dismissedNote}:`);
+    live.slice(0, MAX_CONTEXT_FINDINGS).forEach((finding, index) => {
+      lines.push(findingLine(finding, index));
+    });
+    if (live.length > MAX_CONTEXT_FINDINGS) {
+      lines.push(`\u2026and ${String(live.length - MAX_CONTEXT_FINDINGS)} more on the card.`);
+    }
+  }
+  if (report.appendix > 0) {
+    lines.push(`${String(report.appendix)} lower-ranked finding(s) fell below the report's cut.`);
+  }
+  return lines.join("\n");
+}
+function reviewReportModelContext(reports) {
+  if (reports.length === 0) return void 0;
+  const shown = reports.slice(-MAX_CONTEXT_REPORTS);
+  const omitted = reports.length - shown.length;
+  const intro = reports.length === 1 ? "Since your last reply the user ran Copse Reviewer on this thread\u2019s changes. You did not start this review; the user sees its report as a card in the conversation." : `Since your last reply the user ran Copse Reviewer ${String(reports.length)} times on this thread\u2019s changes, oldest first. You did not start these reviews; the user sees each report as a card in the conversation.` + (omitted > 0 ? ` Only the latest ${String(shown.length)} are summarised here.` : "");
+  const body = [intro, ...shown.map(reportContextText)].join("\n\n");
+  return `<${REVIEW_CONTEXT_TAG}>
+${body}
+</${REVIEW_CONTEXT_TAG}>`;
+}
+var MAX_CONTEXT_REPORTS, MAX_CONTEXT_FINDINGS, MAX_CONTEXT_CLAIM_CHARS, REVIEW_CONTEXT_TAG;
+var init_review_reports = __esm({
+  "src/shared/store/review-reports.ts"() {
+    MAX_CONTEXT_REPORTS = 3;
+    MAX_CONTEXT_FINDINGS = 12;
+    MAX_CONTEXT_CLAIM_CHARS = 400;
+    REVIEW_CONTEXT_TAG = "copse_review_report";
+  }
+});
+
+// src/shared/line-endings.ts
+var init_line_endings = __esm({
+  "src/shared/line-endings.ts"() {
+  }
+});
+
+// src/shared/patch/apply-patch.ts
+function normalizePatchPath(raw) {
+  return raw.trim().replace(/^(?:\.\/)+/, "");
+}
+function summarizePatch(patchText) {
+  const summaries = [];
+  let current = null;
+  for (const raw of patchText.split(/\r?\n/)) {
+    const trimmed2 = raw.trim();
+    if (trimmed2.startsWith(ADD)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(ADD.length)),
+        op: "add",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (trimmed2.startsWith(DELETE)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(DELETE.length)),
+        op: "delete",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (trimmed2.startsWith(UPDATE)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(UPDATE.length)),
+        op: "update",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (current !== null && raw.trimEnd().startsWith(MOVE)) {
+      current.op = "move";
+      current.movePath = normalizePatchPath(raw.trimEnd().slice(MOVE.length));
+    } else if (current !== null && raw.startsWith("+")) {
+      current.additions += 1;
+    } else if (current !== null && raw.startsWith("-") && current.op !== "add") {
+      current.deletions += 1;
+    }
+  }
+  return summaries.filter((summary) => summary.path !== "");
+}
+var ADD, DELETE, UPDATE, MOVE;
+var init_apply_patch = __esm({
+  "src/shared/patch/apply-patch.ts"() {
+    init_line_endings();
+    ADD = "*** Add File: ";
+    DELETE = "*** Delete File: ";
+    UPDATE = "*** Update File: ";
+    MOVE = "*** Move to: ";
+  }
+});
+
+// src/shared/tools/tool-display.ts
+function pickLabel(label, tense) {
+  return typeof label === "string" ? label : label[tense];
+}
+function tenseFromStatus(status) {
+  return status === "running" ? "running" : "done";
+}
+function parseMcp(name) {
+  const match = /^mcp__([\w.-]+?)__([\w.-]+)$/i.exec(name) ?? /^mcp\.([\w-]+)\.([\w.-]+)$/i.exec(name);
+  const server = match?.[1];
+  const tool = match?.[2];
+  return server && tool ? { server, tool } : null;
+}
+function nativeDisplayToolName(name) {
+  const mcp = parseMcp(name);
+  return mcp?.server.toLowerCase() === "copse" ? mcp.tool : name;
+}
+function getToolDisplayName(name, tense = "done") {
+  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)];
+  if (known) return pickLabel(known, tense);
+  const mcp = parseMcp(name);
+  if (mcp?.tool === "startup") return `${mcp.server} startup`;
+  if (mcp) return humanizeIdentifier(mcp.tool);
+  const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, "");
+  if (stripped !== name) return humanizeIdentifier(stripped);
+  return humanizeIdentifier(name);
+}
+function stringArg(args, key) {
+  if (!isRecord(args)) return null;
+  const value = args[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+function fileEditPath(args) {
+  return stringArg(args, "path");
+}
+function getApplyPatchFiles(tc2) {
+  const input2 = stringArg(tc2.args, "input");
+  return input2 === null ? [] : summarizePatch(input2);
+}
+function getToolEditPath(tc2) {
+  const name = nativeDisplayToolName(tc2.name);
+  if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
+  const key = FILE_EDIT_PATH_ARG[name];
+  if (!key) return null;
+  return stringArg(tc2.args, key);
+}
+function stripShellCdPrefix(command) {
+  return command.replace(SHELL_CD_PREFIX_RE, "");
+}
+function shellCommandLabel(command) {
+  const cleaned = stripShellCdPrefix(command).replace(/\s+/g, " ").trim();
+  if (cleaned.length <= SHELL_LABEL_MAX) return cleaned;
+  return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}\u2026`;
+}
+function shellCommandArg(args) {
+  if (!isRecord(args)) return null;
+  const command = args["command"];
+  return typeof command === "string" && command.trim() ? command : null;
+}
+function shellCommandsFromToolCalls(toolCalls) {
+  const commands = [];
+  for (const tc2 of toolCalls) {
+    if (tc2.name !== "run_shell" || tc2.status === "error") continue;
+    const command = shellCommandArg(tc2.args);
+    if (command) commands.push(stripShellCdPrefix(command).trim());
+  }
+  return commands;
+}
+function getToolCallLabel(tc2) {
+  const tense = tenseFromStatus(tc2.status);
+  const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
+  const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
+  const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
+  if (name === "read_skill") {
+    const skillName = stringArg(tc2.args, "name");
+    if (skillName) {
+      if (tc2.status === "running") return `Loading skill ${skillName}`;
+      if (tc2.status === "error") return `Skill ${skillName}`;
+      if (tc2.result?.startsWith("Skill activated by the model: ")) {
+        return `Activated skill ${skillName}`;
+      }
+      return `Read skill ${skillName}`;
+    }
+  }
+  if (name === "write_file" || name === "str_replace") {
+    const path = fileEditPath(tc2.args);
+    if (path) return tense === "running" ? `Editing ${path}` : `Edited ${path}`;
+  }
+  if (name === "apply_patch") {
+    const files = getApplyPatchFiles(tc2);
+    if (files.length === 1) {
+      const only = files[0]?.path ?? "";
+      return tense === "running" ? `Patching ${only}` : `Patched ${only}`;
+    }
+    if (files.length > 1) {
+      return tense === "running" ? `Patching ${String(files.length)} files` : `Patched ${String(files.length)} files`;
+    }
+  }
+  if (name === "delete_file") {
+    const path = fileEditPath(tc2.args);
+    if (path) return tense === "running" ? `Deleting ${path}` : `Deleted ${path}`;
+  }
+  if (name === "rename_file") {
+    const from = stringArg(tc2.args, "from");
+    const to = stringArg(tc2.args, "to");
+    if (from && to) {
+      return tense === "running" ? `Renaming ${from} \u2192 ${to}` : `Renamed ${from} \u2192 ${to}`;
+    }
+  }
+  if (name === "make_directory") {
+    const path = fileEditPath(tc2.args);
+    if (path) {
+      return tense === "running" ? `Creating directory ${path}` : `Created directory ${path}`;
+    }
+  }
+  if (name === "task") {
+    const agentName = tc2.subagent?.agentName ?? stringArg(tc2.args, "subagent_type");
+    if (agentName) {
+      return tense === "running" ? `Running ${agentName}` : `Ran ${agentName}`;
+    }
+  }
+  if (name === "run_shell" || tc2.kind === "execute") {
+    const command = shellCommandArg(tc2.args);
+    if (command) return shellCommandLabel(command);
+    if (title) return shellCommandLabel(title);
+  }
+  if (title) return title;
+  return getToolDisplayName(mcpTitle ?? tc2.name, tense);
+}
+function getToolGroupKey(name, kind) {
+  const builtIn = TOOL_TO_GROUP.get(name);
+  if (builtIn) return builtIn;
+  const mcp = parseMcp(name);
+  if (mcp) {
+    if (mcp.server === "copse") {
+      const copseBuiltIn = TOOL_TO_GROUP.get(mcp.tool);
+      if (copseBuiltIn) return copseBuiltIn;
+    }
+    if (mcp.server === "copse.git") return "git";
+    if (mcp.server === "copse.run") return "shell";
+    return `${MCP_GROUP_PREFIX}${mcp.server}`;
+  }
+  if (kind && ACP_KIND_TO_GROUP[kind]) return ACP_KIND_TO_GROUP[kind];
+  return null;
+}
+function getToolGroupLabel(key, tense = "done") {
+  if (key.startsWith(MCP_GROUP_PREFIX)) {
+    return key.slice(MCP_GROUP_PREFIX.length);
+  }
+  const group = TOOL_GROUPS[key];
+  if (!group) return key;
+  return pickLabel(group.label, tense);
+}
+function aggregateToolStatus(toolCalls) {
+  if (toolCalls.some((tc2) => tc2.status === "running")) return "running";
+  if (toolCalls.some((tc2) => tc2.status === "error")) return "error";
+  return "done";
+}
+function bucketKey(groupKey, isError) {
+  return isError ? `${groupKey}${ERROR_BUCKET_SUFFIX}` : groupKey;
+}
+function buildGroupedDisplayItems(toolCalls) {
+  if (toolCalls.length === 0) return [];
+  const groupMembers = /* @__PURE__ */ new Map();
+  for (const tc2 of toolCalls) {
+    const groupKey = getToolGroupKey(tc2.name, tc2.kind);
+    if (!groupKey) continue;
+    const key = bucketKey(groupKey, tc2.status === "error");
+    const members2 = groupMembers.get(key) ?? [];
+    members2.push(tc2);
+    groupMembers.set(key, members2);
+  }
+  const result = [];
+  const emittedGroups = /* @__PURE__ */ new Set();
+  for (const tc2 of toolCalls) {
+    const groupKey = getToolGroupKey(tc2.name, tc2.kind);
+    if (!groupKey) {
+      result.push({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) });
+      continue;
+    }
+    const key = bucketKey(groupKey, tc2.status === "error");
+    const members2 = groupMembers.get(key);
+    if (members2 && members2.length >= 2) {
+      if (!emittedGroups.has(key)) {
+        emittedGroups.add(key);
+        const tense = tenseFromStatus(aggregateToolStatus(members2));
+        result.push({
+          type: "group",
+          key,
+          label: getToolGroupLabel(groupKey, tense),
+          toolCalls: members2
+        });
+      }
+      continue;
+    }
+    result.push({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) });
+  }
+  return result;
+}
+function summarizeToolTurn(toolCalls, items) {
+  const n2 = toolCalls.length;
+  if (n2 === 0) return "";
+  if (n2 === 1) {
+    const only = toolCalls[0];
+    return only ? getToolCallLabel(only) : "";
+  }
+  const status = aggregateToolStatus(toolCalls);
+  const failed = toolCalls.filter((tc2) => tc2.status === "error").length;
+  let base;
+  if (status === "running") {
+    base = `Using ${String(n2)} tools`;
+  } else if (items.length === 1 && items[0]?.type === "group") {
+    base = items[0].label;
+  } else {
+    base = `Used ${String(n2)} tools`;
+  }
+  if (failed > 0) {
+    return `${base} \xB7 ${String(failed)} failed`;
+  }
+  return base;
+}
+function isSurfacedFailure(tc2, opts) {
+  return tc2.status === "error" && opts?.isInterrupted?.(tc2) !== true;
+}
+function buildToolCallDisplayItems(toolCalls, opts) {
+  if (toolCalls.length === 0) return [];
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
+  const subagents = [];
+  const proposals = [];
+  const regular = [];
+  for (const tc2 of toolCalls) {
+    if (tc2.subagent) subagents.push(tc2);
+    else if (tc2.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(tc2)) proposals.push(tc2);
+    else regular.push(tc2);
+  }
+  const result = [];
+  const grouped = buildGroupedDisplayItems(regular);
+  const hasQuietCall = regular.some((tc2) => !isVisibleFailure(tc2));
+  if (hasQuietCall && regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
+    result.push({
+      type: "rollup",
+      key: TURN_ROLLUP_KEY,
+      label: summarizeToolTurn(regular, grouped),
+      // One disclosure for quiet work; failed calls stay visible beside it.
+      // A call the user interrupted is not a failure, so it stays folded in.
+      children: buildGroupedDisplayItems(regular.filter((tc2) => !isVisibleFailure(tc2))),
+      toolCalls: regular
+    });
+    result.push(...buildGroupedDisplayItems(regular.filter(isVisibleFailure)));
+  } else {
+    result.push(...grouped);
+  }
+  for (const tc2 of [...subagents, ...proposals]) {
+    result.push({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) });
+  }
+  return result;
+}
+function buildSubagentDisplayItems(toolCalls) {
+  return toolCalls.filter((tc2) => tc2.subagent).map((tc2) => ({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) }));
+}
+function summarizeToolRun(run2) {
+  const n2 = run2.toolCalls.length;
+  const status = aggregateToolStatus(run2.toolCalls);
+  const failed = run2.toolCalls.filter((tc2) => tc2.status === "error").length;
+  const polished = run2.summary?.trim();
+  const parts = [];
+  if (polished) {
+    parts.push(polished, `${String(n2)} ${n2 === 1 ? "tool" : "tools"}`);
+  } else {
+    parts.push(status === "running" ? `Using ${String(n2)} tools` : `Used ${String(n2)} tools`);
+  }
+  parts.push(`${String(run2.steps.length)} steps`);
+  if (failed > 0) parts.push(`${String(failed)} failed`);
+  return parts.join(" \xB7 ");
+}
+function summarizeToolRunStep(step, children) {
+  const polished = step.summary?.trim();
+  if (!polished) return summarizeToolTurn(step.toolCalls, children) || "Reasoned";
+  const failed = step.toolCalls.filter((tc2) => tc2.status === "error").length;
+  return failed > 0 ? `${polished} \xB7 ${String(failed)} failed` : polished;
+}
+function buildToolRunDisplayItems(run2, opts) {
+  if (run2.steps.length < 2) return buildToolCallDisplayItems(run2.toolCalls, opts);
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
+  const children = run2.steps.map((step) => ({
+    type: "step",
+    key: `step:${step.messageId}`,
+    label: summarizeToolRunStep(step, buildGroupedDisplayItems(step.toolCalls)),
+    messageId: step.messageId,
+    children: buildGroupedDisplayItems(step.toolCalls.filter((tc2) => !isVisibleFailure(tc2))),
+    toolCalls: step.toolCalls
+  }));
+  return [
+    {
+      type: "rollup",
+      key: RUN_ROLLUP_KEY,
+      label: summarizeToolRun(run2),
+      children,
+      toolCalls: run2.toolCalls
+    },
+    ...buildGroupedDisplayItems(run2.toolCalls.filter(isVisibleFailure))
+  ];
+}
+var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
+var init_tool_display = __esm({
+  "src/shared/tools/tool-display.ts"() {
+    init_apply_patch();
+    init_unknown_value3();
+    init_humanize_identifier();
+    init_thread_proposal2();
+    init_reviewer_input();
+    TOOL_DISPLAY_NAMES = {
+      explore: { running: "Exploring files", done: "Explored files" },
+      read_file: { running: "Reading file", done: "Read file" },
+      list_dir: { running: "Listing directory", done: "Listed directory" },
+      search_code: { running: "Searching code", done: "Searched code" },
+      search_codebase: { running: "Searching codebase", done: "Searched codebase" },
+      semantic_search: { running: "Searching codebase", done: "Searched codebase" },
+      find_files: { running: "Finding files", done: "Found files" },
+      web_search: { running: "Searching the web", done: "Searched the web" },
+      parallel_search: { running: "Searching with Parallel", done: "Searched with Parallel" },
+      fetch_url: { running: "Fetching page", done: "Fetched page" },
+      browser_preview: { running: "Opening preview", done: "Opened preview" },
+      browser_navigate: { running: "Opening browser", done: "Opened browser" },
+      browser_snapshot: { running: "Taking page snapshot", done: "Took page snapshot" },
+      browser_screenshot: { running: "Taking screenshot", done: "Took screenshot" },
+      image_gen: { running: "Generating image", done: "Generated image" },
+      classify_text: { running: "Classifying text", done: "Classified text" },
+      browser_click: { running: "Clicking element", done: "Clicked element" },
+      browser_type: { running: "Typing text", done: "Typed text" },
+      browser_tabs: { running: "Listing browser tabs", done: "Listed browser tabs" },
+      present_visual_evidence: {
+        running: "Presenting visual evidence",
+        done: "Presented visual evidence"
+      },
+      git_status: { running: "Checking git status", done: "Checked git status" },
+      git_diff: { running: "Viewing git diff", done: "Viewed git diff" },
+      git_log: { running: "Viewing git log", done: "Viewed git log" },
+      git_show: { running: "Viewing git commit", done: "Viewed git commit" },
+      gh_pr_list: { running: "Listing pull requests", done: "Listed pull requests" },
+      gh_pr_view: { running: "Viewing pull request", done: "Viewed pull request" },
+      gh_run_list: { running: "Listing CI runs", done: "Listed CI runs" },
+      gh_run_view: { running: "Viewing CI run logs", done: "Viewed CI run logs" },
+      investigate_ci: { running: "Investigating CI", done: "Investigated CI" },
+      delegate_step: { running: "Delegating step", done: "Delegated step" },
+      task: { running: "Running agent", done: "Ran agent" },
+      get_ci_status: { running: "Checking CI status", done: "Checked CI status" },
+      wait_for_ci_checks: { running: "Waiting for CI", done: "Waited for CI" },
+      get_ci_failure_logs: { running: "Fetching CI failure logs", done: "Fetched CI failure logs" },
+      write_file: { running: "Writing file", done: "Wrote file" },
+      str_replace: { running: "Replacing in file", done: "Replaced in file" },
+      apply_patch: { running: "Applying patch", done: "Applied patch" },
+      delete_file: { running: "Deleting file", done: "Deleted file" },
+      rename_file: { running: "Renaming file", done: "Renamed file" },
+      make_directory: { running: "Creating directory", done: "Created directory" },
+      run_shell: { running: "Running command", done: "Ran command" },
+      run_background: { running: "Starting background task", done: "Started background task" },
+      read_terminal: { running: "Reading shell", done: "Read shell" },
+      video_frames: { running: "Reading video", done: "Read video" },
+      ask_user: { running: "Asking user", done: "Asked user" },
+      request_review_input: { running: "Saving question", done: "Saved question" },
+      propose_thread: { running: "Proposing a thread", done: "Proposed a thread" },
+      update_todos: { running: "Updating plan", done: "Updated plan" },
+      run_checkup: { running: "Running checkup", done: "Ran checkup" },
+      container_run: {
+        running: "Running unattended in a container",
+        done: "Ran unattended in a container"
+      },
+      preflight_worktree: { running: "Checking worktree", done: "Checked worktree" },
+      prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" },
+      coordination_check: { running: "Checking overlapping work", done: "Checked overlapping work" },
+      coordination_note: { running: "Sending peer note", done: "Sent peer note" },
+      coordination_read: { running: "Reading peer notes", done: "Read peer notes" },
+      // Deliberately ungrouped: the switch from reading the user's checkout to the
+      // thread's own worktree should stand out in the transcript.
+      request_write_access: { running: "Creating worktree", done: "Created worktree" }
+    };
+    TOOL_GROUPS = {
+      reading: {
+        tools: ["explore", "read_file", "list_dir", "video_frames", "preflight_worktree"],
+        label: { running: "Reading files", done: "Read files" }
+      },
+      searching: {
+        tools: ["search_code", "search_codebase", "semantic_search", "find_files"],
+        label: { running: "Searching", done: "Searched" }
+      },
+      web: {
+        tools: ["web_search", "parallel_search", "fetch_url"],
+        label: { running: "Fetching from web", done: "Fetched from web" }
+      },
+      browser: {
+        tools: [
+          "browser_preview",
+          "browser_navigate",
+          "browser_snapshot",
+          "browser_screenshot",
+          "browser_click",
+          "browser_type",
+          "browser_tabs",
+          "present_visual_evidence"
+        ],
+        label: { running: "Using browser", done: "Used browser" }
+      },
+      git: {
+        tools: [
+          "git_status",
+          "git_diff",
+          "git_log",
+          "git_show",
+          "gh_pr_list",
+          "gh_pr_view",
+          "gh_run_list",
+          "gh_run_view",
+          "get_ci_status",
+          "wait_for_ci_checks",
+          "get_ci_failure_logs"
+        ],
+        label: { running: "Checking git", done: "Checked git" }
+      },
+      writing: {
+        tools: [
+          "write_file",
+          "str_replace",
+          "apply_patch",
+          "delete_file",
+          "rename_file",
+          "make_directory"
+        ],
+        label: { running: "Editing files", done: "Edited files" }
+      },
+      shell: {
+        tools: ["run_shell", "run_background", "read_terminal", "prepare_worktree"],
+        label: { running: "Running commands", done: "Ran commands" }
+      }
+    };
+    TOOL_TO_GROUP = new Map(
+      Object.entries(TOOL_GROUPS).flatMap(([key, { tools }]) => tools.map((name) => [name, key]))
+    );
+    ACP_KIND_TO_GROUP = {
+      execute: "shell",
+      read: "reading",
+      edit: "writing",
+      delete: "writing",
+      move: "writing",
+      search: "searching",
+      fetch: "web"
+    };
+    MCP_GROUP_PREFIX = "mcp:";
+    TURN_ROLLUP_KEY = "turn";
+    RUN_ROLLUP_KEY = "run";
+    FILE_EDIT_PATH_ARG = {
+      write_file: "path",
+      str_replace: "path",
+      delete_file: "path",
+      rename_file: "from",
+      make_directory: "path"
+    };
+    SHELL_CD_PREFIX_RE = /^\s*cd\s+(?:'[^']*'|"[^"]*"|[^\s&|;]+)\s*&&\s*/;
+    SHELL_LABEL_MAX = 96;
+    ERROR_BUCKET_SUFFIX = "::errors";
+  }
+});
+
+// packages/agent/src/todo-steering.ts
+function shouldSteerTodos(userMessage) {
+  const text2 = userMessage.trim().toLowerCase();
+  if (text2.length < 20) return false;
+  const multiStep = /\b(then|after that|also|step \d|first.*second|implement.*test|refactor.*across)\b/.test(text2);
+  const complex = /\b(refactor|migrate|implement|add.*and.*test|fix.*across|multi-file|several files)\b/.test(
+    text2
+  );
+  const audit = /\b(deep[- ]?dive|reviewing|review)\b/.test(text2);
+  return multiStep || complex || audit;
+}
+function formatTodosForPrompt(todos) {
+  if (todos.length === 0) return "";
+  const lines = todos.map((t2) => {
+    const model = t2.assignedModel ? ` [${t2.assignedModel}]` : "";
+    const check2 = t2.check ? ` (check: ${t2.check.kind})` : "";
+    return `- [${t2.status}] ${t2.content}${model}${check2} (id: ${t2.id})`;
+  });
+  return `
+
+## Current plan
+${lines.join("\n")}`;
+}
+var TODO_STEERING_PROMPT;
+var init_todo_steering = __esm({
+  "packages/agent/src/todo-steering.ts"() {
+    TODO_STEERING_PROMPT = `When the user asks for multi-step work (refactors, implement-and-test, changes across several files):
+1. Call update_todos once with 3+ concrete steps before executing tools.
+2. Mark one item in_progress at a time; set completed when done (checks run automatically).
+3. Tag mechanical items with assignedModel: "local" only when they include a verifiable check (shell, fileExists, or typecheck).
+4. For simple one-shot questions or single-file edits, do NOT create todos.`;
+  }
+});
+
+// src/shared/todos/todo-logic.ts
+function activeTodos(todos) {
+  return todos.filter((t2) => t2.status !== "cancelled");
+}
+function todoProgress(todos) {
+  const active2 = activeTodos(todos);
+  const done = active2.filter((t2) => t2.status === "completed").length;
+  return { done, total: active2.length };
+}
+function formatTodoProgress(todos) {
+  const { done, total: total2 } = todoProgress(todos);
+  if (total2 === 0) return null;
+  return `${String(done)}/${String(total2)} done`;
+}
+var init_todo_logic = __esm({
+  "src/shared/todos/todo-logic.ts"() {
+    init_unknown_value3();
+    init_todo_steering();
+  }
+});
+
+// src/renderer/agent-activity.ts
+function promptProgressLabel(fraction) {
+  if (!Number.isFinite(fraction)) return "Processing prompt\u2026";
+  const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
+  return `Processing prompt\u2026 ${percent.toString()}%`;
+}
+function runningToolName(thread) {
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const m2 = thread.messages[i2];
+    if (!m2) continue;
+    const toolCalls = m2.toolCalls;
+    for (let j3 = toolCalls.length - 1; j3 >= 0; j3--) {
+      const tc2 = toolCalls[j3];
+      if (!tc2) continue;
+      if (tc2.status === "running") {
+        return tc2.name === "explore" ? "explore" : tc2.name;
+      }
+      if (tc2.subagent?.status === "running") return "explore";
+    }
+  }
+  return null;
+}
+function agentActivityLabel(thread, writing) {
+  if (!thread || thread.status !== "running") return null;
+  const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
+  const tool = runningToolName(thread);
+  if (tool) {
+    const base = `${getToolDisplayName(tool, "running")}\u2026`;
+    return todoLabel ? `${base} (${todoLabel})` : base;
+  }
+  if (writing) return todoLabel ? `Writing\u2026 (${todoLabel})` : "Writing\u2026";
+  return todoLabel ? `Reasoning\u2026 (${todoLabel})` : "Reasoning\u2026";
+}
+function syncAgentActivity(store2, threadId, writing) {
+  const thread = getThreadById(store2, threadId);
+  const label = agentActivityLabel(thread, writing);
+  store2.emit("agent_activity", threadId, label);
+  return label;
+}
+var CONTEXT_TRIM_ACTIVITY;
+var init_agent_activity = __esm({
+  "src/renderer/agent-activity.ts"() {
+    init_thread_helpers();
+    init_tool_display();
+    init_todo_logic();
+    CONTEXT_TRIM_ACTIVITY = "Shortened earlier messages";
+  }
+});
+
+// packages/agent/src/hooks/continuation-budget.ts
+function canContinue(used, cap = DEFAULT_CONTINUATION_BUDGET) {
+  return used < cap;
+}
+var DEFAULT_CONTINUATION_BUDGET;
+var init_continuation_budget = __esm({
+  "packages/agent/src/hooks/continuation-budget.ts"() {
+    DEFAULT_CONTINUATION_BUDGET = 5;
+  }
+});
+
+// src/renderer/perf.ts
+function readBridge() {
+  const candidate = Reflect.get(globalThis, "__copsePerf");
+  if (typeof candidate !== "object" || candidate === null) return null;
+  const mark2 = Reflect.get(candidate, "mark");
+  const span = Reflect.get(candidate, "span");
+  if (typeof mark2 !== "function" || typeof span !== "function") return null;
+  return {
+    enabled: true,
+    autopilot: Reflect.get(candidate, "autopilot") === true,
+    mark: (name, detail) => {
+      Reflect.apply(mark2, candidate, [name, detail]);
+    },
+    span: (name, ms2, detail) => {
+      Reflect.apply(span, candidate, [name, ms2, detail]);
+    }
+  };
+}
+function mark(name, detail) {
+  bridge?.mark(name, detail);
+}
+function begin(name) {
+  if (!bridge) return () => void 0;
+  const start = performance.now();
+  return (detail) => {
+    bridge.span(name, Math.round((performance.now() - start) * 100) / 100, detail);
+  };
+}
+var bridge, perfOn, autopilotOn;
+var init_perf = __esm({
+  "src/renderer/perf.ts"() {
+    bridge = readBridge();
+    perfOn = bridge !== null;
+    autopilotOn = bridge?.autopilot === true;
+  }
+});
+
+// src/renderer/canvas/artefact-previews.ts
+function previewKey(threadId, title) {
+  return JSON.stringify([threadId, title]);
+}
+function artefactKey(projectId, threadId, title) {
+  return JSON.stringify([projectId, threadId, title]);
+}
+function cacheArtefact(key, artefact) {
+  artefacts.delete(key);
+  artefacts.set(key, artefact);
+  while (artefacts.size > MAX_CACHED_ARTEFACTS) {
+    const oldest = artefacts.keys().next().value;
+    if (oldest === void 0) break;
+    artefacts.delete(oldest);
+  }
+}
+function setArtefactPreview(threadId, title, preview) {
+  if (preview) previews.set(previewKey(threadId, title), preview);
+}
+function getArtefactPreview(threadId, title) {
+  return previews.get(previewKey(threadId, title));
+}
+function setArtefactContent(projectId, threadId, artefact) {
+  cacheArtefact(artefactKey(projectId, threadId, artefact.title), artefact);
+  setArtefactPreview(threadId, artefact.title, artefact.preview);
+}
+function getArtefactContent(projectId, threadId, title) {
+  const key = artefactKey(projectId, threadId, title);
+  const artefact = artefacts.get(key);
+  if (artefact) cacheArtefact(key, artefact);
+  return artefact;
+}
+function loadArtefactContent(api2, projectId, threadId, title) {
+  const cached2 = getArtefactContent(projectId, threadId, title);
+  if (cached2) return Promise.resolve(cached2);
+  const key = artefactKey(projectId, threadId, title);
+  const existing = artefactReads.get(key);
+  if (existing) return existing;
+  const request = api2.canvas.readArtefact(projectId, threadId, title).then((artefact) => {
+    if (artefact?.title === title) setArtefactContent(projectId, threadId, artefact);
+    return artefact?.title === title ? artefact : null;
+  }).catch(() => null).finally(() => {
+    artefactReads.delete(key);
+  });
+  artefactReads.set(key, request);
+  return request;
+}
+async function hydrateArtefactPreviews(api2, projectId, threadId) {
+  const saved = await api2.canvas.listArtefacts(projectId, threadId).catch(() => []);
+  let added = false;
+  for (const artefact of saved) {
+    if (!artefact.preview) continue;
+    setArtefactPreview(threadId, artefact.title, artefact.preview);
+    added = true;
+  }
+  return added;
+}
+function setArtefactShowHandler(handler) {
+  showHandler = handler;
+}
+function requestArtefactShow(threadId, title) {
+  showHandler?.(threadId, title);
+}
+function artefactUriFromToolResult(result) {
+  if (!result) return null;
+  const match = /\bui:\/\/[^\s)\]]+/.exec(result);
+  return match ? match[0] : null;
+}
+var previews, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
+var init_artefact_previews = __esm({
+  "src/renderer/canvas/artefact-previews.ts"() {
+    previews = /* @__PURE__ */ new Map();
+    artefacts = /* @__PURE__ */ new Map();
+    artefactReads = /* @__PURE__ */ new Map();
+    MAX_CACHED_ARTEFACTS = 20;
+    showHandler = null;
+  }
+});
+
+// packages/thread-store/src/side-chat.ts
+function excerpt(message2) {
+  const line = message2.content.trim().split("\n", 1)[0] ?? "";
+  return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
+}
+function buildSideChatThread(parent, options) {
+  if (parent.sideChat !== void 0) return null;
+  const anchor2 = parent.messages.find((message2) => message2.id === options.anchorMessageId);
+  if (!anchor2) return null;
+  const model = options.model ?? parent.model;
+  const now = Date.now();
+  return {
+    id: globalThis.crypto.randomUUID(),
+    title: options.title ?? (excerpt(anchor2) || "Side chat"),
+    status: "idle",
+    messages: [],
+    // A fresh side chat has nothing to scan: mark both caches as scanned and empty so
+    // the index never queues it for a transcript backfill.
+    prRefs: [],
+    links: [],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    ...model !== void 0 ? { model } : {},
+    sideChat: { parentThreadId: parent.id, anchorMessageId: anchor2.id },
+    createdAt: now,
+    updatedAt: now
+  };
+}
+function toSideChatRow(thread) {
+  const link = thread.sideChat;
+  if (link === void 0) return null;
+  return {
+    id: thread.id,
+    title: thread.title,
+    ...thread.model !== void 0 ? { model: thread.model } : {},
+    anchorMessageId: link.anchorMessageId,
+    archived: thread.archivedAt != null,
+    unread: thread.unreadAt !== void 0,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt
+  };
+}
+function sideChatsOf(threads, parentId, includeArchived = false) {
+  const rows = [];
+  for (const thread of threads) {
+    if (thread.sideChat?.parentThreadId !== parentId) continue;
+    const row2 = toSideChatRow(thread);
+    if (row2 && (includeArchived || !row2.archived)) rows.push(row2);
+  }
+  return rows.sort((a3, b4) => a3.createdAt - b4.createdAt || a3.id.localeCompare(b4.id));
+}
+function withoutSideChats(threads) {
+  const ids = new Set(threads.map((thread) => thread.id));
+  return threads.filter(
+    (thread) => thread.sideChat === void 0 || !ids.has(thread.sideChat.parentThreadId)
+  );
+}
+function unreadSideChatParents(threads) {
+  const parents = /* @__PURE__ */ new Set();
+  for (const thread of threads) {
+    if (thread.sideChat && thread.unreadAt !== void 0 && thread.archivedAt == null)
+      parents.add(thread.sideChat.parentThreadId);
+  }
+  return parents;
+}
+var MAX_TITLE_LENGTH;
+var init_side_chat = __esm({
+  "packages/thread-store/src/side-chat.ts"() {
+    MAX_TITLE_LENGTH = 80;
+  }
+});
+
+// src/shared/threads/side-chat.ts
+var init_side_chat2 = __esm({
+  "src/shared/threads/side-chat.ts"() {
+    init_side_chat();
+  }
+});
+
+// src/renderer/controller/background-threads.ts
+function carryRunningThreads(store2, outgoingProjectId, outgoingThreads) {
+  const running = outgoingThreads.filter(
+    (t2) => t2.status === "running" || isThreadSubmitting(store2, t2.id)
+  );
+  if (running.length === 0) return;
+  const existing = store2.getState().backgroundThreads;
+  const carriedIds = new Set(existing.map((b4) => b4.thread.id));
+  const added = running.filter((t2) => !carriedIds.has(t2.id)).map((thread) => ({ projectId: outgoingProjectId, thread }));
+  if (added.length === 0) return;
+  store2.setState({ backgroundThreads: [...existing, ...added] });
+}
+function adoptBackgroundThreads(store2, projectId, disk) {
+  const { backgroundThreads } = store2.getState();
+  const adopting = new Map(
+    backgroundThreads.filter((b4) => b4.projectId === projectId).map((b4) => [b4.thread.id, b4.thread])
+  );
+  if (adopting.size === 0) return [...disk];
+  store2.setState({
+    backgroundThreads: backgroundThreads.filter((b4) => b4.projectId !== projectId)
+  });
+  const merged = disk.map((diskThread) => {
+    const memory = adopting.get(diskThread.id);
+    if (!memory) return diskThread;
+    adopting.delete(diskThread.id);
+    return memory;
+  });
+  return [...merged, ...adopting.values()];
+}
+function backgroundProjectOf(store2, threadId) {
+  return store2.getState().backgroundThreads.find((b4) => b4.thread.id === threadId)?.projectId;
+}
+function dropBackgroundThread(store2, threadId) {
+  const { backgroundThreads } = store2.getState();
+  if (!backgroundThreads.some((b4) => b4.thread.id === threadId)) return;
+  store2.setState({
+    backgroundThreads: backgroundThreads.filter((b4) => b4.thread.id !== threadId)
+  });
+}
+function dropProjectBackgroundThreads(store2, projectId) {
+  const { backgroundThreads } = store2.getState();
+  if (!backgroundThreads.some((b4) => b4.projectId === projectId)) return;
+  store2.setState({
+    backgroundThreads: backgroundThreads.filter(
+      (b4) => b4.projectId !== projectId || b4.thread.status === "running"
+    )
+  });
+}
+var init_background_threads = __esm({
+  "src/renderer/controller/background-threads.ts"() {
+    init_pending_submissions();
+  }
+});
+
+// src/renderer/controller/persistence.ts
+function serializedSet(api2, key, value) {
+  const prev = writeChains.get(key) ?? Promise.resolve();
+  const next = prev.catch(() => void 0).then(() => api2.storage.set(key, value));
+  writeChains.set(key, next);
+  void next.finally(() => {
+    if (writeChains.get(key) === next) writeChains.delete(key);
+  }).catch(() => void 0);
+  return next;
+}
+function persistProjects(api2, projects) {
+  const json3 = JSON.stringify(projects);
+  if (json3 === persistedProjectsJson) return Promise.resolve();
+  persistedProjectsJson = json3;
+  return serializedSet(api2, KEY_PROJECTS, projects).catch((error62) => {
+    if (persistedProjectsJson === json3) persistedProjectsJson = null;
+    throw error62;
+  });
+}
+function serializedWrite(key, write) {
+  const prev = writeChains.get(key);
+  let next;
+  if (prev) {
+    next = prev.catch(() => void 0).then(write);
+  } else {
+    try {
+      next = write();
+    } catch (error62) {
+      next = Promise.reject(error62 instanceof Error ? error62 : new Error(String(error62)));
+    }
+  }
+  writeChains.set(key, next);
+  void next.finally(() => {
+    if (writeChains.get(key) === next) writeChains.delete(key);
+  });
+  return next;
+}
+function setNavigationOwnership(owns) {
+  ownsNavigation = owns;
+}
+function ownsWindowSession() {
+  return ownsNavigation;
+}
+function suspendNavigationWrites() {
+  navigationRestored = false;
+}
+function markNavigationRestored(restored) {
+  navigationRestored = true;
+  lastNavigation = restored;
+}
+function holdNavigation(projectId) {
+  navigationHeldFor = projectId;
+}
+function serializedNavigation(api2, navigation) {
+  if (!ownsNavigation || !navigationRestored) return Promise.resolve();
+  if (navigationHeldFor !== null && navigation.activeProjectId !== navigationHeldFor || lastNavigation !== null && lastNavigation.activeProjectId === navigation.activeProjectId && lastNavigation.activeThreadId === navigation.activeThreadId) {
+    return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
+  }
+  lastNavigation = navigation;
+  return serializedWrite("mainWindow:navigation", () => api2.windowState.setNavigation(navigation));
+}
+function metaOf(thread) {
+  const { messages: _messages, messagesLoaded: _messagesLoaded, ...meta3 } = thread;
+  return meta3;
+}
+function metaSig(meta3) {
+  return JSON.stringify(meta3);
+}
+function metaPatch(prev, next) {
+  const before = { ...prev };
+  const after = { ...next };
+  const patch = {};
+  for (const key of Object.keys(after)) {
+    if (!Object.hasOwn(before, key) || JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+      patch[key] = after[key];
+    }
+  }
+  for (const key of Object.keys(before)) {
+    if (!Object.hasOwn(after, key)) patch[key] = void 0;
+  }
+  return patch;
+}
+function reconcileThreads(api2, projectId, threads) {
+  const prev = persistedMeta.get(projectId) ?? /* @__PURE__ */ new Map();
+  const next = /* @__PURE__ */ new Map();
+  const writes = [];
+  for (const t2 of threads) {
+    const meta3 = metaOf(t2);
+    next.set(t2.id, meta3);
+    const key = threadWriteKey(projectId, t2.id);
+    const prevMeta = prev.get(t2.id);
+    if (prevMeta === void 0) {
+      writes.push(serializedWrite(key, () => api2.threads.create(projectId, t2)));
+    } else if (metaSig(prevMeta) !== metaSig(meta3)) {
+      const patch = metaPatch(prevMeta, meta3);
+      writes.push(serializedWrite(key, () => api2.threads.updateMeta(projectId, t2.id, patch)));
+    }
+  }
+  for (const id of prev.keys()) {
+    if (!next.has(id)) {
+      writes.push(
+        serializedWrite(threadWriteKey(projectId, id), () => api2.threads.delete(projectId, id))
+      );
+    }
+  }
+  persistedMeta.set(projectId, next);
+  return Promise.all(writes).then(() => void 0);
+}
+function flushProjectThreads(api2, projectId, threads) {
+  return reconcileThreads(api2, projectId, threads);
+}
+async function loadProjects(api2) {
+  const projects = recordArrayOrEmpty(await api2.storage.get(KEY_PROJECTS)).flatMap((value) => {
+    const id = value["id"];
+    const path = value["path"];
+    const name = value["name"];
+    if (typeof id !== "string" || typeof path !== "string" || typeof name !== "string") return [];
+    const project2 = { id, path, name };
+    if (typeof value["sshHost"] === "string") project2.sshHost = value["sshHost"];
+    if (typeof value["missing"] === "boolean") project2.missing = value["missing"];
+    if (typeof value["groupId"] === "string") project2.groupId = value["groupId"];
+    const worktreeMode = value["worktreeMode"];
+    if (worktreeMode === "never" || worktreeMode === "always" || worktreeMode === "on-write") {
+      project2.worktreeMode = worktreeMode;
+    } else if (worktreeMode === "from-default-branch") {
+      project2.worktreeMode = "always";
+    }
+    return [project2];
+  });
+  const projectGroups = recordArrayOrEmpty(await api2.storage.get(KEY_PROJECT_GROUPS)).flatMap(
+    (value) => {
+      const id = value["id"];
+      const name = value["name"];
+      if (typeof id !== "string" || typeof name !== "string") return [];
+      const group = { id, name };
+      if (value["collapsed"] === true) group.collapsed = true;
+      return [group];
+    }
+  );
+  const navigation = await api2.windowState.getNavigation();
+  return { projects, projectGroups, ...navigation };
+}
+async function saveProjects(api2, projects, activeProjectId, activeThreadId) {
+  await Promise.all([
+    persistProjects(api2, projects),
+    serializedNavigation(api2, { activeProjectId, activeThreadId })
+  ]);
+}
+function saveNavigation(api2, activeProjectId, activeThreadId) {
+  return serializedNavigation(api2, { activeProjectId, activeThreadId });
+}
+function saveProjectGroups(api2, groups) {
+  return serializedSet(api2, KEY_PROJECT_GROUPS, groups);
+}
+async function loadThreads(api2, projectId) {
+  const threads = sortThreadsNewestFirst(await api2.threads.loadProject(projectId));
+  const metas = /* @__PURE__ */ new Map();
+  for (const t2 of threads) metas.set(t2.id, metaOf(t2));
+  persistedMeta.set(projectId, metas);
+  return threads;
+}
+function awaitPendingThreadPersistence() {
+  return activeAutosave?.whenIdle() ?? Promise.resolve();
+}
+function attachAutosave(store2, api2) {
+  let timer = null;
+  let projectsDirty = false;
+  let inflightFlush = Promise.resolve();
+  const reconcile = (projectId) => reconcileThreads(api2, projectId, store2.getState().threads);
+  const persistMessage = (projectId, threadId, messageId) => {
+    const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+    const message2 = thread?.messages.find((m2) => m2.id === messageId);
+    if (!message2) return;
+    void reconcile(projectId);
+    void serializedWrite(
+      threadWriteKey(projectId, threadId),
+      () => api2.threads.appendMessage(projectId, threadId, message2)
+    );
+  };
+  const persistBackgroundMessage = (projectId, threadId, messageId) => {
+    const message2 = getThreadById(store2, threadId)?.messages.find((m2) => m2.id === messageId);
+    if (!message2) return;
+    void serializedWrite(
+      threadWriteKey(projectId, threadId),
+      () => api2.threads.appendMessage(projectId, threadId, message2)
+    );
+  };
+  const threadIdOfMessage = (messageId) => {
+    const { threads, backgroundThreads, activeThreadId } = store2.getState();
+    const active2 = threads.find((t2) => t2.id === activeThreadId);
+    if (active2?.messages.some((m2) => m2.id === messageId)) return active2.id;
+    return (threads.find(
+      (t2) => t2.messagesLoaded !== false && t2.messages.some((m2) => m2.id === messageId)
+    ) ?? backgroundThreads.map((b4) => b4.thread).find((t2) => t2.messagesLoaded !== false && t2.messages.some((m2) => m2.id === messageId)))?.id;
+  };
+  const flushNow = () => {
+    const { activeProjectId, activeThreadId, projects } = store2.getState();
+    const writes = [];
+    if (projectsDirty) {
+      projectsDirty = false;
+      writes.push(persistProjects(api2, projects));
+    }
+    writes.push(serializedNavigation(api2, { activeProjectId, activeThreadId }));
+    if (activeProjectId) writes.push(reconcile(activeProjectId));
+    const done = Promise.all(writes).then(() => void 0);
+    inflightFlush = Promise.all([inflightFlush.catch(() => void 0), done]).then(() => void 0);
+    return done;
+  };
+  const schedule = () => {
+    if (timer !== null) return;
+    timer = setTimeout(() => {
+      timer = null;
+      void flushNow();
+    }, AUTOSAVE_DEBOUNCE_MS);
+  };
+  const flush = () => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    return flushNow().then(() => inflightFlush);
+  };
+  const unsubscribes = [
+    store2.on("threads_changed", () => {
+      const { activeProjectId, threads } = store2.getState();
+      if (!activeProjectId) {
+        schedule();
+        return;
+      }
+      const prev = persistedMeta.get(activeProjectId) ?? /* @__PURE__ */ new Map();
+      if (threads.some((t2) => !prev.has(t2.id))) {
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        void flushNow();
+        return;
+      }
+      schedule();
+    }),
+    store2.on("thread_draft_changed", () => {
+      schedule();
+    }),
+    store2.on("usage_updated", () => {
+      schedule();
+    }),
+    store2.on("thread_status_changed", () => {
+      schedule();
+    }),
+    store2.on("todos_changed", () => {
+      schedule();
+    }),
+    store2.on("context_updated", () => {
+      schedule();
+    }),
+    // A dismissed (or landed) comparison changes thread metadata with no other
+    // event in flight — e.g. dismissing a failed card on an idle thread — so it
+    // needs its own autosave trigger or the card resurrects on reload.
+    store2.on("comparison_changed", () => {
+      schedule();
+    }),
+    // Same for the review report: a dismissed finding or a cleared card is a
+    // metadata-only change on an idle thread. A report anchored to a message
+    // lives on that message's spine line instead, so re-finalize the message:
+    // a standalone review (Changes view "Review") ends with a `done` that has
+    // no streaming message, so no `message_done` would ever carry it to disk.
+    store2.on("review_report_changed", (threadId, messageId) => {
+      if (messageId === null) {
+        schedule();
+        return;
+      }
+      const message2 = getThreadById(store2, threadId)?.messages.find(
+        (candidate) => candidate.id === messageId
+      );
+      if (!message2) return;
+      if (message2.reviewReport?.status === "running") return;
+      if (message2.toolCalls.some((toolCall) => toolCall.status === "running")) return;
+      const backgroundProjectId = backgroundProjectOf(store2, threadId);
+      if (backgroundProjectId) {
+        persistBackgroundMessage(backgroundProjectId, threadId, messageId);
+        return;
+      }
+      const { activeProjectId } = store2.getState();
+      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId);
+    }),
+    store2.on("projects_changed", () => {
+      projectsDirty = true;
+      schedule();
+    }),
+    store2.on("message_added", (threadId, messageId) => {
+      const message2 = getThreadById(store2, threadId)?.messages.find((m2) => m2.id === messageId);
+      if (message2?.role === "user") {
+        const backgroundProjectId = backgroundProjectOf(store2, threadId);
+        if (backgroundProjectId) {
+          persistBackgroundMessage(backgroundProjectId, threadId, messageId);
+          return;
+        }
+      }
+      const { activeProjectId } = store2.getState();
+      if (!activeProjectId) return;
+      if (message2?.role === "user") persistMessage(activeProjectId, threadId, messageId);
+      else schedule();
+    }),
+    store2.on("message_done", (messageId) => {
+      const threadId = threadIdOfMessage(messageId);
+      if (!threadId) return;
+      const backgroundProjectId = backgroundProjectOf(store2, threadId);
+      if (backgroundProjectId) {
+        persistBackgroundMessage(backgroundProjectId, threadId, messageId);
+        return;
+      }
+      const { activeProjectId } = store2.getState();
+      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId);
+    }),
+    // ACP agents may patch raw input/output after the turn's message was first
+    // finalized (including between-turn background updates). Re-finalize the
+    // owning message when that tool settles so events.jsonl + its result blob
+    // carry the latest args/response across an app restart. Do not persist a
+    // running tool: the v1 spine deliberately has no running status.
+    store2.on("tool_call_updated", (messageId, toolCallId) => {
+      const threadId = threadIdOfMessage(messageId);
+      if (!threadId) return;
+      const message2 = getThreadById(store2, threadId)?.messages.find(
+        (candidate) => candidate.id === messageId
+      );
+      if (!message2) return;
+      if (toolCallId) {
+        const toolCall = message2.toolCalls.find((candidate) => candidate.id === toolCallId);
+        if (!toolCall || toolCall.status === "running") return;
+      }
+      const backgroundProjectId = backgroundProjectOf(store2, threadId);
+      if (backgroundProjectId) {
+        persistBackgroundMessage(backgroundProjectId, threadId, messageId);
+        return;
+      }
+      const { activeProjectId } = store2.getState();
+      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId);
+    })
+  ];
+  const onPagehide = () => void flush();
+  window.addEventListener("pagehide", onPagehide);
+  const whenIdle = () => inflightFlush.catch(() => void 0);
+  const autosave = {
+    flush,
+    whenIdle,
+    detach() {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      unsubscribes.forEach((u2) => {
+        u2();
+      });
+      window.removeEventListener("pagehide", onPagehide);
+      if (activeAutosave === autosave) activeAutosave = null;
+    }
+  };
+  activeAutosave = autosave;
+  return autosave;
+}
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var init_persistence = __esm({
+  "src/renderer/controller/persistence.ts"() {
+    init_thread_helpers();
+    init_background_threads();
+    init_unknown_value3();
+    KEY_PROJECTS = "projects";
+    KEY_PROJECT_GROUPS = "projectGroups";
+    writeChains = /* @__PURE__ */ new Map();
+    persistedProjectsJson = null;
+    ownsNavigation = true;
+    navigationRestored = true;
+    lastNavigation = null;
+    navigationHeldFor = null;
+    threadWriteKey = (projectId, threadId) => `thread:${projectId}:${threadId}`;
+    persistedMeta = /* @__PURE__ */ new Map();
+    AUTOSAVE_DEBOUNCE_MS = 250;
+    activeAutosave = null;
+  }
+});
+
+// src/renderer/controller/project-view-state.ts
+function captureProjectViewState(state) {
+  return {
+    filesPaneOpen: state.filesPaneOpen,
+    rightPanelMode: state.rightPanelMode,
+    panelTab: state.panelTab
+  };
+}
+function recordProjectViewState(registry2, projectId, view) {
+  if (!projectId) return;
+  registry2.set(projectId, view);
+}
+function resolveProjectViewState(registry2, projectId) {
+  return registry2.get(projectId) ?? { ...DEFAULT_PROJECT_VIEW_STATE };
+}
+function forgetProjectViewState(registry2, projectId) {
+  registry2.delete(projectId);
+}
+var DEFAULT_PROJECT_VIEW_STATE;
+var init_project_view_state = __esm({
+  "src/renderer/controller/project-view-state.ts"() {
+    DEFAULT_PROJECT_VIEW_STATE = {
+      filesPaneOpen: false,
+      rightPanelMode: "explorer",
+      panelTab: "file"
+    };
+  }
+});
+
+// src/renderer/views/toast.ts
+function ensureHost() {
+  let host = document.getElementById(TOAST_HOST_ID);
+  if (!host) {
+    host = document.createElement("div");
+    host.id = TOAST_HOST_ID;
+    host.className = "toast-host";
+    host.setAttribute("role", "status");
+    host.setAttribute("aria-live", "polite");
+    document.body.append(host);
+  }
+  return host;
+}
+function normalizeMessage(error62) {
+  if (error62 instanceof Error) return error62.message;
+  if (typeof error62 === "string") return error62;
+  if (typeof ErrorEvent !== "undefined" && error62 instanceof ErrorEvent) {
+    return describeErrorEvent(error62);
+  }
+  if (typeof Event !== "undefined" && error62 instanceof Event) {
+    return describeEvent(error62);
+  }
+  return String(error62);
+}
+function describeErrorEvent(event) {
+  if (event.error instanceof Error && event.error.message) return event.error.message;
+  const location = formatSourceLocation(event.filename, event.lineno, event.colno);
+  if (event.message) return location ? `${event.message} (${location})` : event.message;
+  if (location) return `script error at ${location}`;
+  return describeEvent(event);
+}
+function describeEvent(event) {
+  const target = event.target;
+  if (typeof Element !== "undefined" && target instanceof Element) {
+    const tag = target.tagName.toLowerCase();
+    const src = target.getAttribute("src") ?? target.getAttribute("href");
+    return src ? `failed to load <${tag}> ${src}` : `<${tag}> ${event.type} event`;
+  }
+  return `${event.type} event`;
+}
+function formatSourceLocation(filename, lineno, colno) {
+  if (!filename) return "";
+  const parts = [filename];
+  if (lineno) parts.push(String(lineno));
+  if (colno) parts.push(String(colno));
+  return parts.join(":");
+}
+function showToast(message2, opts = {}) {
+  const host = ensureHost();
+  const variant = opts.variant ?? "info";
+  const duration3 = opts.durationMs ?? DEFAULT_DURATION_MS;
+  const existing = findVisibleToast(message2, variant);
+  if (existing) {
+    existing.refresh(duration3);
+    return existing.dismiss;
+  }
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${variant}`;
+  toast.textContent = message2;
+  host.append(toast);
+  let timer = setTimeout(() => {
+    toast.remove();
+  }, duration3);
+  const dismiss = () => {
+    clearTimeout(timer);
+    toast.remove();
+  };
+  const refresh = (ms2) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      toast.remove();
+    }, ms2);
+  };
+  toastControls.set(toast, { dismiss, refresh });
+  toast.addEventListener("click", dismiss);
+  return dismiss;
+}
+function findVisibleToast(message2, variant) {
+  const host = document.getElementById(TOAST_HOST_ID);
+  if (!host) return null;
+  for (const node2 of host.querySelectorAll(`.toast-${variant}`)) {
+    if (node2.textContent === message2) return toastControls.get(node2) ?? null;
+  }
+  return null;
+}
+function showErrorToast(prefix, error62) {
+  const message2 = `${prefix}: ${normalizeMessage(error62)}`;
+  console.error(message2, error62);
+  const e2e = window.__copseE2e;
+  e2e?.pushErrorToast?.(message2);
+  showToast(message2, { variant: "error" });
+}
+var TOAST_HOST_ID, DEFAULT_DURATION_MS, toastControls;
+var init_toast = __esm({
+  "src/renderer/views/toast.ts"() {
+    TOAST_HOST_ID = "toast-host";
+    DEFAULT_DURATION_MS = 6e3;
+    toastControls = /* @__PURE__ */ new WeakMap();
+  }
+});
+
+// packages/thread-store/src/github-pr-url.ts
+function parseGithubPrUrl(rawUrl) {
+  const trimmed2 = rawUrl.trim();
+  if (!trimmed2) return null;
+  try {
+    const url2 = new URL(trimmed2);
+    if (url2.hostname.replace(/^www\./i, "").toLowerCase() !== "github.com") return null;
+    const match = url2.pathname.match(GITHUB_PR_PATH_RE);
+    if (!match) return null;
+    const [, ownerGroup, repoGroup, numberGroup] = match;
+    if (ownerGroup === void 0 || repoGroup === void 0 || numberGroup === void 0) {
+      return null;
+    }
+    const owner = ownerGroup;
+    const repo = repoGroup.replace(/\.git$/i, "");
+    const number4 = Number.parseInt(numberGroup, 10);
+    if (!Number.isFinite(number4) || number4 <= 0) return null;
+    return { owner, repo, number: number4, url: trimmed2 };
+  } catch {
+    return null;
+  }
+}
+function stripUrlTrailingPunctuation(url2) {
+  return url2.replace(URL_TRAILING_PUNCTUATION_RE, "");
+}
+function githubPrKeyMatchesTerm(key, term) {
+  const digits = /^#?(\d+)$/.exec(term)?.[1];
+  return digits === void 0 ? key.includes(term) : key.endsWith(`#${digits}`);
+}
+function extractGithubPrUrls(text2) {
+  const seen = /* @__PURE__ */ new Set();
+  const refs = [];
+  for (const match of text2.matchAll(GITHUB_PR_URL_RE)) {
+    const raw = stripUrlTrailingPunctuation(match[0]);
+    const parsed2 = parseGithubPrUrl(raw);
+    if (!parsed2) continue;
+    const key = githubPrKey(parsed2);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push(parsed2);
+  }
+  return refs;
+}
+function githubRepoKey(ref) {
+  return `${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}`;
+}
+function githubPrKey(ref) {
+  return `${githubRepoKey(ref)}#${String(ref.number)}`;
+}
+var GITHUB_PR_PATH_RE, GITHUB_PR_URL_RE, URL_TRAILING_PUNCTUATION_RE;
+var init_github_pr_url = __esm({
+  "packages/thread-store/src/github-pr-url.ts"() {
+    GITHUB_PR_PATH_RE = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/[^?#]*)?$/i;
+    GITHUB_PR_URL_RE = /https?:\/\/(?:www\.)?github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+(?:[^\s)\]>]*)/gi;
+    URL_TRAILING_PUNCTUATION_RE = /[.,;:)\]>*_~`'"]+$/;
+  }
+});
+
+// src/shared/git/github-pr-url.ts
+var init_github_pr_url2 = __esm({
+  "src/shared/git/github-pr-url.ts"() {
+    init_github_pr_url();
+  }
+});
+
+// packages/std/src/assert-never.ts
+function assertNever2(value, context) {
+  throw new Error(`${context}: unhandled value ${JSON.stringify(value)}`);
+}
+var init_assert_never = __esm({
+  "packages/std/src/assert-never.ts"() {
+  }
+});
+
+// packages/thread-store/src/thread-pr-status.ts
+function collectThreadPrRefs(thread) {
+  const seen = /* @__PURE__ */ new Set();
+  const refs = [];
+  const push = (ref) => {
+    const key = githubPrKey(ref);
+    if (seen.has(key)) return;
+    seen.add(key);
+    refs.push(ref);
+  };
+  for (const message2 of thread.messages) {
+    for (const ref of extractGithubPrUrls(message2.content)) push(ref);
+  }
+  const linkedUrl = thread.remoteAgentLink?.prUrl;
+  if (linkedUrl) {
+    const parsed2 = parseGithubPrUrl(linkedUrl);
+    if (parsed2) push(parsed2);
+  }
+  return refs;
+}
+function normalizePrLifecycleState(state, merged = false) {
+  const normalized = state.trim().toUpperCase();
+  if (normalized === "OPEN") return "open";
+  if (normalized === "MERGED" || merged) return "merged";
+  if (normalized === "CLOSED") return "closed";
+  return "unknown";
+}
+function summarizeThreadPrStatus(states, refs = []) {
+  if (states.length === 0) return null;
+  let openCount = 0;
+  let mergedCount = 0;
+  let knownCount = 0;
+  for (const state of states) {
+    if (state === "unknown") continue;
+    knownCount += 1;
+    if (state === "open") openCount += 1;
+    else if (state === "merged") mergedCount += 1;
+  }
+  if (knownCount === 0) return null;
+  if (openCount > 0) {
+    const rollup = {
+      kind: "open",
+      openCount,
+      totalCount: knownCount
+    };
+    if (openCount === 1 && knownCount === 1 && refs[0]) {
+      return { ...rollup, primaryNumber: refs[0].number };
+    }
+    return rollup;
+  }
+  if (mergedCount === knownCount) {
+    return { kind: "merged", totalCount: knownCount };
+  }
+  return { kind: "closed", totalCount: knownCount };
+}
+function describeThreadPrStatus(rollup) {
+  switch (rollup.kind) {
+    case "open":
+      if (rollup.primaryNumber != null) {
+        return `Pull request #${String(rollup.primaryNumber)} is open`;
+      }
+      return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+    case "merged":
+      return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
+    case "closed":
+      return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
+    default:
+      return assertNever2(rollup, "describeThreadPrStatus");
+  }
+}
+var init_thread_pr_status = __esm({
+  "packages/thread-store/src/thread-pr-status.ts"() {
+    init_assert_never();
+    init_github_pr_url();
+  }
+});
+
+// src/shared/git/thread-pr-status.ts
+var init_thread_pr_status2 = __esm({
+  "src/shared/git/thread-pr-status.ts"() {
+    init_thread_pr_status();
+  }
+});
+
+// src/renderer/controller/sidebar-thread.ts
+function sidebarPrRefs(thread) {
+  const cached2 = [...thread.prRefs ?? [], ...(thread.prProductions ?? []).map((item) => item.pr)];
+  if (thread.messages && thread.messagesLoaded !== false) {
+    const scraped = collectThreadPrRefs({
+      messages: thread.messages,
+      ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}
+    });
+    const seen = new Set(scraped.map(githubPrKey));
+    const cachedOnly = cached2.filter((ref) => {
+      const key = githubPrKey(ref);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return [...scraped, ...cachedOnly];
+  }
+  return [...new Map(cached2.map((ref) => [githubPrKey(ref), ref])).values()];
+}
+function sidebarLastPromptAt(thread) {
+  if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
+  const messages = thread.messages ?? [];
+  for (let i2 = messages.length - 1; i2 >= 0; i2--) {
+    const message2 = messages[i2];
+    if (message2 !== void 0 && isHumanUserPrompt(message2)) return message2.createdAt;
+  }
+  return void 0;
+}
+function compactSidebarThread(thread) {
+  const lastPromptAt = sidebarLastPromptAt(thread);
+  return {
+    id: thread.id,
+    title: thread.title,
+    ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
+    ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
+    status: thread.status,
+    ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
+    ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
+    ...thread.sideChat ? { sideChat: thread.sideChat } : {},
+    ...thread.automation ? { automation: thread.automation } : {},
+    ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {},
+    prRefs: sidebarPrRefs(thread),
+    ...thread.prProductions ? { prProductions: thread.prProductions } : {}
+  };
+}
+var init_sidebar_thread = __esm({
+  "src/renderer/controller/sidebar-thread.ts"() {
+    init_github_pr_url2();
+    init_thread_pr_status2();
+    init_thread_sort();
+  }
+});
+
+// src/renderer/views/new-project-dialog.ts
+var new_project_dialog_exports = {};
+__export(new_project_dialog_exports, {
+  openNewProjectDialog: () => openNewProjectDialog
+});
+function ensureDialog2() {
+  if (dialogEl) return dialogEl;
+  dialogEl = el("dialog", { id: "new-project-dialog", class: "new-project-dialog" });
+  document.body.append(dialogEl);
+  return dialogEl;
+}
+function openNewProjectDialog(api2, defaultParentDir) {
+  const dialog2 = ensureDialog2();
+  clear(dialog2);
+  const nameInput = el("input", {
+    type: "text",
+    class: "new-project-name",
+    placeholder: "my-project",
+    "aria-label": "Project name",
+    spellcheck: "false",
+    autocomplete: "off"
+  });
+  const parentInput = el("input", {
+    type: "text",
+    class: "new-project-parent",
+    placeholder: "~/Projects",
+    "aria-label": "Parent directory",
+    spellcheck: "false",
+    autocomplete: "off"
+  });
+  parentInput.value = defaultParentDir;
+  const browseBtn = el("button", { type: "button", class: "new-project-browse" }, "Browse\u2026");
+  const pathPreview = el("p", { class: "field-hint new-project-path-preview" });
+  const error62 = el("p", { class: "new-project-error field-hint", hidden: true });
+  const okBtn = el("button", { type: "button", class: "ui-btn ui-btn-primary" }, "Create");
+  const cancelBtn = el("button", { type: "button", class: "ui-btn" }, "Cancel");
+  function updatePathPreview() {
+    const name = nameInput.value.trim();
+    const parent = parentInput.value.trim();
+    pathPreview.textContent = name && parent ? `${parent}/${name}` : "";
+  }
+  function renderError(message2) {
+    error62.textContent = message2;
+    error62.hidden = false;
+  }
+  nameInput.addEventListener("input", updatePathPreview);
+  parentInput.addEventListener("input", updatePathPreview);
+  browseBtn.addEventListener("click", () => {
+    void (async () => {
+      const picked = await api2.workspace.pickParentDirectory();
+      if (picked) parentInput.value = picked;
+      updatePathPreview();
+    })();
+  });
+  dialog2.append(
+    el("h3", {}, "New project"),
+    el(
+      "p",
+      { class: "field-hint" },
+      "Create a folder with a starter AGENT.md and README.md, then git init it."
+    ),
+    el("label", { class: "new-project-field" }, "Name ", nameInput),
+    el(
+      "label",
+      { class: "new-project-field" },
+      "Parent directory ",
+      el("div", { class: "new-project-parent-row" }, parentInput, browseBtn)
+    ),
+    pathPreview,
+    error62,
+    el("div", { class: "new-project-actions" }, cancelBtn, okBtn)
+  );
+  return new Promise((resolve) => {
+    let settled = false;
+    const perOpen = new AbortController();
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      perOpen.abort();
+      dialog2.close();
+      resolve(value);
+    };
+    dialog2.addEventListener(
+      "cancel",
+      () => {
+        finish(null);
+      },
+      { signal: perOpen.signal }
+    );
+    cancelBtn.addEventListener("click", () => {
+      finish(null);
+    });
+    okBtn.addEventListener("click", () => {
+      const name = nameInput.value.trim();
+      const parentDir = parentInput.value.trim();
+      if (!name) {
+        renderError("Enter a project name.");
+        return;
+      }
+      if (!parentDir) {
+        renderError("Choose a parent directory.");
+        return;
+      }
+      finish({ name, parentDir });
+    });
+    dialog2.addEventListener(
+      "keydown",
+      (e3) => {
+        if (e3.key === "Enter" && e3.target === nameInput) {
+          e3.preventDefault();
+          okBtn.click();
+        }
+      },
+      { signal: perOpen.signal }
+    );
+    dialog2.showModal();
+    nameInput.focus();
+  });
+}
+var dialogEl;
+var init_new_project_dialog = __esm({
+  "src/renderer/views/new-project-dialog.ts"() {
+    init_helpers();
+    dialogEl = null;
+  }
+});
+
+// src/renderer/views/remote-folder-path.ts
+function parentRemotePath(path) {
+  if (path === "/" || path === "") return "/";
+  const trimmed2 = path.replace(/\/+$/, "");
+  const idx = trimmed2.lastIndexOf("/");
+  return idx <= 0 ? "/" : trimmed2.slice(0, idx);
+}
+function remotePathSegments(path) {
+  const normalized = !path || path === "/" ? "/" : path.startsWith("/") ? path.replace(/\/+$/, "") || "/" : `/${path}`;
+  const segments = [{ label: "/", path: "/" }];
+  if (normalized === "/") return segments;
+  let acc = "";
+  for (const part of normalized.split("/").filter(Boolean)) {
+    acc += `/${part}`;
+    segments.push({ label: part, path: acc });
+  }
+  return segments;
+}
+function remotePathShowsSeparatorAfter(segment) {
+  return segment.path !== "/";
+}
+function fillRemotePathBreadcrumbs(nav, path, onNavigate) {
+  nav.replaceChildren();
+  const segments = remotePathSegments(path);
+  for (let i2 = 0; i2 < segments.length; i2 += 1) {
+    const segment = segments[i2];
+    if (!segment) continue;
+    const isCurrent = i2 === segments.length - 1;
+    if (isCurrent) {
+      const current = document.createElement("span");
+      current.className = "remote-folder-crumb remote-folder-crumb-current";
+      current.textContent = segment.label;
+      nav.append(current);
+      continue;
+    }
+    const crumb = document.createElement("button");
+    crumb.type = "button";
+    crumb.className = "remote-folder-crumb";
+    crumb.setAttribute("aria-label", `Go to ${segment.path}`);
+    crumb.textContent = segment.label;
+    crumb.addEventListener("click", () => {
+      onNavigate(segment.path);
+    });
+    nav.append(crumb);
+    if (remotePathShowsSeparatorAfter(segment)) {
+      const sep = document.createElement("span");
+      sep.className = "remote-folder-crumb-sep";
+      sep.setAttribute("aria-hidden", "true");
+      sep.textContent = "/";
+      nav.append(sep);
+    }
+  }
+}
+var init_remote_folder_path = __esm({
+  "src/renderer/views/remote-folder-path.ts"() {
+  }
+});
+
+// src/renderer/views/remote-folder-dialog.ts
+var remote_folder_dialog_exports = {};
+__export(remote_folder_dialog_exports, {
+  openRemoteFolderDialog: () => openRemoteFolderDialog
+});
+function ensureDialog3() {
+  if (dialogEl2) return dialogEl2;
+  dialogEl2 = el("dialog", { id: "remote-folder-dialog", class: "remote-folder-dialog" });
+  document.body.append(dialogEl2);
+  return dialogEl2;
+}
+function openRemoteFolderDialog(api2) {
+  const dialog2 = ensureDialog3();
+  clear(dialog2);
+  const hostSelect = el("select", { class: "remote-folder-host", "aria-label": "SSH host" });
+  const addHostBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary remote-folder-add-host-btn" },
+    "Add host"
+  );
+  const breadcrumbs = el("nav", {
+    class: "remote-folder-breadcrumbs",
+    "aria-label": "Remote path"
+  });
+  const list = el("div", { class: "remote-folder-list", role: "listbox" });
+  const status = el("p", { class: "remote-folder-status field-hint" });
+  const upBtn = el(
+    "button",
+    { type: "button", class: "remote-folder-up", "aria-label": "Go up one directory" },
+    arrowLeftIcon("ui-icon ui-icon-sm"),
+    "Up"
+  );
+  const openBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary remote-folder-open" },
+    "Open"
+  );
+  const cancelBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary remote-folder-cancel" },
+    "Cancel"
+  );
+  const draft = emptySshHostDraft();
+  const idInput = el("input", {
+    type: "text",
+    name: "remoteFolderHostId",
+    class: "remote-folder-host-id",
+    placeholder: "my-server",
+    "aria-label": "Host id"
+  });
+  const labelInput = el("input", {
+    type: "text",
+    name: "remoteFolderHostLabel",
+    class: "remote-folder-host-label",
+    placeholder: "Production",
+    "aria-label": "Host label"
+  });
+  const hostInput = el("input", {
+    type: "text",
+    name: "remoteFolderHostHost",
+    class: "remote-folder-host-host",
+    placeholder: "example.com or ~/.ssh/config alias",
+    "aria-label": "Hostname"
+  });
+  const userInput = el("input", {
+    type: "text",
+    name: "remoteFolderHostUser",
+    class: "remote-folder-host-user",
+    placeholder: "ubuntu",
+    "aria-label": "SSH user"
+  });
+  const portInput = el("input", {
+    type: "text",
+    name: "remoteFolderHostPort",
+    class: "remote-folder-host-port",
+    placeholder: "22",
+    inputmode: "numeric",
+    "aria-label": "SSH port"
+  });
+  const identityInput = el("input", {
+    type: "text",
+    name: "remoteFolderHostIdentity",
+    class: "remote-folder-host-identity",
+    placeholder: "~/.ssh/id_ed25519",
+    "aria-label": "Identity file"
+  });
+  const saveHostBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary remote-folder-save-host" },
+    "Save host"
+  );
+  const cancelAddBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary remote-folder-cancel-add" },
+    "Cancel"
+  );
+  const importBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost remote-folder-import-config" },
+    "Import from ~/.ssh/config"
+  );
+  const addHostHint = el(
+    "p",
+    { class: "field-hint remote-folder-add-host-hint" },
+    "Add an SSH host to browse and open a remote folder."
+  );
+  const addHostForm = el(
+    "div",
+    { class: "remote-folder-add-host-form ssh-host-form", hidden: true },
+    addHostHint,
+    el("label", {}, "Id ", idInput),
+    el("label", {}, "Label ", labelInput),
+    el("label", {}, "Host ", hostInput),
+    el("label", {}, "User ", userInput),
+    el("label", {}, "Port ", portInput),
+    el("label", {}, "Identity file ", identityInput),
+    el(
+      "div",
+      { class: "remote-folder-add-host-actions provider-actions" },
+      importBtn,
+      cancelAddBtn,
+      saveHostBtn
+    )
+  );
+  const browsePanel = el(
+    "div",
+    { class: "remote-folder-browse" },
+    el("div", { class: "remote-folder-toolbar" }, upBtn, breadcrumbs),
+    list
+  );
+  dialog2.append(
+    el("h3", {}, "Open remote folder"),
+    el("p", { class: "field-hint" }, "Choose an SSH host and folder on the remote machine."),
+    el(
+      "div",
+      { class: "remote-folder-host-row" },
+      el("label", { class: "remote-folder-host-label-wrap" }, "Host ", hostSelect),
+      addHostBtn
+    ),
+    addHostForm,
+    browsePanel,
+    status,
+    el("div", { class: "remote-folder-actions" }, cancelBtn, openBtn)
+  );
+  let hosts = [];
+  let currentHostId = "";
+  let currentPath = "/";
+  let loading = false;
+  let addingHost = false;
+  let idTouched = false;
+  function setAddingHost(next) {
+    addingHost = next;
+    addHostForm.hidden = !next;
+    addHostBtn.hidden = next;
+    browsePanel.hidden = next;
+    openBtn.hidden = next;
+    if (next) {
+      Object.assign(draft, emptySshHostDraft());
+      idTouched = false;
+      idInput.value = "";
+      labelInput.value = "";
+      hostInput.value = "";
+      userInput.value = "";
+      portInput.value = "";
+      identityInput.value = "";
+      idInput.disabled = false;
+      addHostHint.textContent = hosts.length === 0 ? "No SSH hosts yet. Add one to browse and open a remote folder." : "Add an SSH host to browse and open a remote folder.";
+      status.textContent = "";
+      labelInput.focus();
+    }
+  }
+  function fillHostSelect(selectedId) {
+    clear(hostSelect);
+    for (const host of hosts) {
+      hostSelect.append(el("option", { value: host.id }, `${host.label} (${host.host})`));
+    }
+    if (hosts.length === 0) {
+      hostSelect.append(el("option", { value: "", disabled: true, selected: true }, "No hosts yet"));
+      hostSelect.disabled = true;
+      currentHostId = "";
+      return;
+    }
+    hostSelect.disabled = false;
+    const preferred = (selectedId && hosts.some((h3) => h3.id === selectedId) ? selectedId : void 0) ?? hosts[0]?.id ?? "";
+    currentHostId = preferred;
+    hostSelect.value = preferred;
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      dialog2.close();
+      resolve(value);
+    };
+    dialog2.addEventListener("cancel", () => {
+      finish(null);
+    });
+    cancelBtn.addEventListener("click", () => {
+      finish(null);
+    });
+    addHostBtn.addEventListener("click", () => {
+      setAddingHost(true);
+    });
+    cancelAddBtn.addEventListener("click", () => {
+      if (hosts.length === 0) {
+        finish(null);
+        return;
+      }
+      setAddingHost(false);
+      status.textContent = "";
+    });
+    labelInput.addEventListener("input", () => {
+      draft.label = labelInput.value;
+      if (!idTouched && !idInput.disabled) {
+        idInput.value = slugifyHostId(draft.label);
+        draft.id = idInput.value;
+      }
+    });
+    idInput.addEventListener("input", () => {
+      idTouched = true;
+      draft.id = idInput.value;
+    });
+    hostInput.addEventListener("input", () => {
+      draft.host = hostInput.value;
+    });
+    userInput.addEventListener("input", () => {
+      draft.user = userInput.value;
+    });
+    portInput.addEventListener("input", () => {
+      draft.port = portInput.value;
+    });
+    identityInput.addEventListener("input", () => {
+      draft.identityFile = identityInput.value;
+    });
+    async function persistAndSelect(host) {
+      const raw = await api2.settings.get("sshWorkspaceHosts");
+      const existing = parseSshWorkspaceHosts(raw);
+      await api2.settings.set("sshWorkspaceHosts", upsertHost(existing, host));
+      hosts = await api2.sshWorkspace.listHosts();
+      fillHostSelect(host.id);
+      setAddingHost(false);
+      status.textContent = `Saved host \u201C${host.label}\u201D.`;
+      await browse("/");
+    }
+    saveHostBtn.addEventListener("click", () => {
+      void (async () => {
+        draft.label = labelInput.value;
+        draft.id = idInput.value;
+        draft.host = hostInput.value;
+        draft.user = userInput.value;
+        draft.port = portInput.value;
+        draft.identityFile = identityInput.value;
+        const parsed2 = parseSshHostDraft(draft);
+        if (!parsed2.ok) {
+          setInlineStatus(status, "error", parsed2.error);
+          return;
+        }
+        try {
+          await persistAndSelect(parsed2.host);
+        } catch (err2) {
+          const message2 = ipcErrorMessage(err2, "Could not save the host.");
+          setInlineStatus(status, "error", message2);
+          showToast(message2, { variant: "error" });
+        }
+      })();
+    });
+    importBtn.addEventListener("click", () => {
+      void (async () => {
+        try {
+          const aliases = await api2.sshWorkspace.listConfigAliases();
+          if (aliases.length === 0) {
+            setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
+            return;
+          }
+          const raw = await api2.settings.get("sshWorkspaceHosts");
+          const existing = parseSshWorkspaceHosts(raw);
+          const imported = importSshConfigHosts(existing, aliases);
+          await api2.settings.set("sshWorkspaceHosts", imported.hosts);
+          hosts = await api2.sshWorkspace.listHosts();
+          fillHostSelect(imported.firstAliasHostId);
+          setAddingHost(false);
+          status.textContent = imported.importedHostIds.length === 0 ? "All SSH config aliases are already imported." : `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`;
+          if (currentHostId) await browse("/");
+        } catch (err2) {
+          const message2 = ipcErrorMessage(err2, "Could not import from ~/.ssh/config.");
+          setInlineStatus(status, "error", message2);
+          showToast(message2, { variant: "error" });
+        }
+      })();
+    });
+    async function loadHosts() {
+      status.textContent = "Loading hosts\u2026";
+      try {
+        hosts = await api2.sshWorkspace.listHosts();
+        fillHostSelect();
+        if (hosts.length === 0) {
+          openBtn.disabled = true;
+          upBtn.disabled = true;
+          setAddingHost(true);
+          return;
+        }
+        setAddingHost(false);
+        await browse("/");
+      } catch (err2) {
+        setInlineStatus(status, "error", ipcErrorMessage(err2, "Could not load SSH hosts."));
+      }
+    }
+    function renderBreadcrumbs(path) {
+      fillRemotePathBreadcrumbs(breadcrumbs, path, (next) => {
+        void browse(next);
+      });
+    }
+    async function browse(path) {
+      if (!currentHostId || loading || addingHost) return;
+      loading = true;
+      openBtn.disabled = true;
+      upBtn.disabled = true;
+      status.textContent = "Connecting\u2026";
+      clear(list);
+      try {
+        await api2.sshWorkspace.connect(currentHostId);
+        currentPath = path;
+        renderBreadcrumbs(currentPath);
+        const entries2 = await api2.sshWorkspace.listDirectory(
+          currentHostId,
+          currentPath
+        );
+        status.textContent = entries2.length === 0 ? "No subfolders here \u2014 open this folder or go up." : "";
+        for (const entry of entries2) {
+          const row2 = el(
+            "button",
+            {
+              type: "button",
+              class: "remote-folder-entry",
+              role: "option"
+            },
+            entry.name
+          );
+          row2.addEventListener("click", () => {
+            void browse(entry.path);
+          });
+          list.append(row2);
+        }
+        upBtn.disabled = currentPath === "/";
+        openBtn.disabled = false;
+      } catch (err2) {
+        currentPath = path;
+        renderBreadcrumbs(currentPath);
+        setInlineStatus(status, "error", ipcErrorMessage(err2, "Could not reach the host."));
+      } finally {
+        loading = false;
+        if (hosts.length > 0 && currentHostId) {
+          upBtn.disabled = currentPath === "/";
+          openBtn.disabled = false;
+        }
+      }
+    }
+    hostSelect.addEventListener("change", () => {
+      currentHostId = hostSelect.value;
+      void browse("/");
+    });
+    upBtn.addEventListener("click", () => {
+      void browse(parentRemotePath(currentPath));
+    });
+    openBtn.addEventListener("click", () => {
+      if (!currentHostId) return;
+      finish({ hostId: currentHostId, path: currentPath });
+    });
+    void loadHosts();
+    dialog2.showModal();
+  });
+}
+var dialogEl2;
+var init_remote_folder_dialog = __esm({
+  "src/renderer/views/remote-folder-dialog.ts"() {
+    init_helpers();
+    init_toast();
+    init_ssh_host_helpers();
+    init_remote_folder_path();
+    init_icons();
+    init_inline_status();
+    init_ipc_error_message();
+    dialogEl2 = null;
+  }
+});
+
+// src/renderer/controller/projects.ts
+function formatSshProjectName(hostLabel3, remotePath) {
+  return `${hostLabel3}:${remotePath}`;
+}
+function projectDisplayName(project2) {
+  if (!project2.sshHost) return project2.name;
+  const colon = project2.name.indexOf(":");
+  const label = colon > 0 ? project2.name.slice(0, colon) : project2.sshHost;
+  return formatSshProjectName(label, project2.path);
+}
+function projectDedupKey(sshHost, path) {
+  return `${sshHost ?? ""}\0${path}`;
+}
+function findProjectByKey(projects, sshHost, path) {
+  const key = projectDedupKey(sshHost, path);
+  return projects.find((p2) => projectDedupKey(p2.sshHost, p2.path) === key);
+}
+async function ensureSshConnected(api2, hostId) {
+  const states = await api2.sshWorkspace.getStates();
+  const state = states.find((s16) => s16.hostId === hostId);
+  if (state?.status === "connected") return;
+  await api2.sshWorkspace.connect(hostId);
+}
+function paginateSidebarThreads(threads, visibleLimit, activeThreadId) {
+  const total2 = threads.length;
+  let visibleCount = Math.min(visibleLimit, total2);
+  if (activeThreadId) {
+    const index = threads.findIndex((t2) => t2.id === activeThreadId);
+    if (index >= visibleCount) {
+      visibleCount = Math.min(
+        Math.ceil((index + 1) / SIDEBAR_THREADS_PAGE_SIZE) * SIDEBAR_THREADS_PAGE_SIZE,
+        total2
+      );
+    }
+  }
+  return {
+    visibleThreads: threads.slice(0, visibleCount),
+    visibleCount,
+    hasMore: visibleCount < total2
+  };
+}
+function clearPendingSwitch() {
+  pendingSwitch = null;
+  holdNavigation(null);
+}
+function settleActivationWaiter(projectId, error62) {
+  const waiter = activationWaiters.get(projectId);
+  if (!waiter) return;
+  activationWaiters.delete(projectId);
+  waiter.unsub?.();
+  if (error62) waiter.reject(error62);
+  else waiter.resolve();
+}
+function endSwitch(gen, projectId) {
+  if (pendingSwitch?.gen !== gen) return;
+  clearPendingSwitch();
+  settleActivationWaiter(projectId);
+}
+function supersedePendingSwitch() {
+  if (!pendingSwitch) return;
+  const superseded = pendingSwitch;
+  clearPendingSwitch();
+  settleActivationWaiter(superseded.projectId);
+}
+function getSidebarThreads(store2, projectId) {
+  const { activeProjectId, threads } = store2.getState();
+  const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
+  return withoutSideChats(list).filter((t2) => t2.archivedAt == null);
+}
+function getSideChatUnreadParents(store2, projectId) {
+  const { activeProjectId, threads } = store2.getState();
+  if (projectId !== activeProjectId) return /* @__PURE__ */ new Set();
+  const cached2 = sideChatUnreadCache.get(threads);
+  if (cached2) return cached2;
+  const parents = unreadSideChatParents(threads);
+  sideChatUnreadCache.set(threads, parents);
+  return parents;
+}
+function attentionThreadId(store2, threadId) {
+  for (const list of [store2.getState().threads, ...threadCache.values()]) {
+    const thread = list.find((t2) => t2.id === threadId);
+    if (!thread) continue;
+    const parentId = thread.sideChat?.parentThreadId;
+    return parentId !== void 0 && list.some((t2) => t2.id === parentId) ? parentId : threadId;
+  }
+  return threadId;
+}
+function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
+  const cached2 = threadCache.get(projectId);
+  if (!cached2) return;
+  threadCache.set(
+    projectId,
+    cached2.map((thread) => thread.id === threadId ? { ...thread, archivedAt } : thread)
+  );
+}
+function applyCachedSidebarPrRefs(projectId, refs) {
+  const cached2 = threadCache.get(projectId);
+  if (!cached2) return false;
+  const byThread = new Map(refs.map(({ threadId, prRefs }) => [threadId, prRefs]));
+  if (!cached2.some((thread) => byThread.has(thread.id))) return false;
+  threadCache.set(
+    projectId,
+    cached2.map((thread) => {
+      const prRefs = byThread.get(thread.id);
+      return prRefs ? { ...thread, prRefs } : thread;
+    })
+  );
+  return true;
+}
+function isProjectSwitchInFlight(store2, projectId) {
+  const { activeProjectId, expandedProjectId, workspaceRoot } = store2.getState();
+  if (expandedProjectId === projectId && activeProjectId !== projectId) return true;
+  return activeProjectId === projectId && !workspaceRoot;
+}
+function isListedProject(store2, projectId) {
+  return store2.getState().projects.some((project2) => project2.id === projectId);
+}
+function cacheThreads(projectId, threads) {
+  if (liveCacheProjectId !== null && liveCacheProjectId !== projectId) {
+    const outgoing = threadCache.get(liveCacheProjectId);
+    if (outgoing) threadCache.set(liveCacheProjectId, outgoing.map(compactSidebarThread));
+  }
+  liveCacheProjectId = projectId;
+  threadCache.set(projectId, threads);
+}
+async function preloadSidebarThreads(store2, api2) {
+  const pending = store2.getState().projects.filter((project2) => !project2.sshHost && !project2.missing).map((project2) => project2.id);
+  const unwanted = (id) => id === store2.getState().activeProjectId || threadCache.has(id) || !store2.getState().projects.some((project2) => project2.id === id);
+  for (const id of pending) {
+    if (unwanted(id)) continue;
+    let loaded;
+    try {
+      loaded = await loadThreads(api2, id);
+    } catch {
+      continue;
+    }
+    if (unwanted(id)) continue;
+    threadCache.set(id, loaded.map(compactSidebarThread));
+    store2.emit("sidebar_threads_loaded");
+  }
+}
+function attachProjectThreadCache(store2) {
+  return store2.on("threads_changed", () => {
+    const { activeProjectId, threads } = store2.getState();
+    if (activeProjectId && isListedProject(store2, activeProjectId)) {
+      cacheThreads(activeProjectId, threads);
+    }
+  });
+}
+async function trySetWorkspace(api2, path, sshHost) {
+  try {
+    await api2.workspace.set(path, sshHost);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function setWorkspaceInOrder(api2, path, sshHost) {
+  const next = workspaceChain.catch(() => void 0).then(() => trySetWorkspace(api2, path, sshHost));
+  workspaceChain = next;
+  return next;
+}
+function cancelPendingSwitch(store2, api2) {
+  const cancelled = pendingSwitch;
+  if (!cancelled) return;
+  clearPendingSwitch();
+  switchGeneration += 1;
+  settleActivationWaiter(cancelled.projectId);
+  if (!cancelled.dispatched) return;
+  const { activeProjectId, projects } = store2.getState();
+  const active2 = projects.find((p2) => p2.id === activeProjectId);
+  if (!active2) return;
+  void setWorkspaceInOrder(api2, active2.path, active2.sshHost);
+  void saveProjects(api2, projects, active2.id, store2.getState().activeThreadId);
+}
+function abortProjectActivation(store2, id, gen, outgoingId, error62) {
+  if (gen !== switchGeneration) return;
+  if (pendingSwitch?.gen === gen) clearPendingSwitch();
+  settleActivationWaiter(id, error62);
+  const revertExpanded = outgoingId ?? store2.getState().activeProjectId;
+  if (revertExpanded) {
+    store2.setState({ expandedProjectId: revertExpanded });
+  }
+  store2.emit("projects_changed");
+  store2.emit("workspace_changed");
+}
+function clearMissing(project2) {
+  if (!project2.missing) return project2;
+  const { missing: _missing, ...rest } = project2;
+  return rest;
+}
+function projectsWithMissingCleared(projects, id) {
+  if (!projects.some((p2) => p2.id === id && p2.missing)) return projects;
+  return projects.map((p2) => p2.id === id ? clearMissing(p2) : p2);
+}
+async function markProjectMissing(store2, api2, id) {
+  const projects = store2.getState().projects.map((p2) => p2.id === id ? { ...p2, missing: true } : p2);
+  store2.setState({ projects });
+  await saveProjects(
+    api2,
+    projects,
+    store2.getState().activeProjectId,
+    store2.getState().activeThreadId
+  );
+  store2.emit("projects_changed");
+}
+async function removeProject(store2, api2, id) {
+  const state = store2.getState();
+  if (!state.projects.some((p2) => p2.id === id)) return;
+  forgetProjectViewState(projectViewState, id);
+  threadCache.delete(id);
+  if (liveCacheProjectId === id) liveCacheProjectId = null;
+  dropProjectBackgroundThreads(store2, id);
+  const projects = state.projects.filter((p2) => p2.id !== id);
+  const wasActive = state.activeProjectId === id;
+  const wasExpanded = (state.expandedProjectId ?? state.activeProjectId) === id;
+  if (!wasActive) {
+    if (wasExpanded) cancelPendingSwitch(store2, api2);
+    await saveProjects(api2, projects, state.activeProjectId, state.activeThreadId);
+    threadCache.delete(id);
+    store2.setState({
+      projects,
+      expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId
+    });
+    store2.emit("projects_changed");
+    return;
+  }
+  supersedePendingSwitch();
+  switchGeneration += 1;
+  const next = projects[0] ?? null;
+  await saveProjects(api2, projects, next?.id ?? null, null);
+  if (!next) {
+    store2.setState({
+      projects: [],
+      activeProjectId: null,
+      expandedProjectId: null,
+      workspaceRoot: null,
+      threads: [],
+      activeThreadId: null,
+      openFile: null,
+      filesPaneOpen: false
+    });
+    store2.emit("projects_changed");
+    store2.emit("workspace_changed");
+    store2.emit("threads_changed");
+    store2.emit("panel_changed");
+    store2.emit("files_pane_changed");
+    return;
+  }
+  store2.setState({ projects });
+  store2.emit("projects_changed");
+  await activateAndWait(store2, api2, next.id, next.path, next.sshHost);
+}
+function setExpandedProject(store2, id) {
+  store2.setState({ expandedProjectId: id });
+}
+function expandProject(store2, id) {
+  setExpandedProject(store2, id);
+  store2.emit("projects_changed");
+}
+async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, outgoingThreads, pendingThreadId) {
+  const endActivate = begin("switch:activate");
+  mark("switch:start");
+  if (gen !== switchGeneration) {
+    endSwitch(gen, id);
+    endActivate({ outcome: "superseded" });
+    return;
+  }
+  if (sshHost) {
+    const enabled = await api2.settings.get("sshWorkspaceEnabled");
+    if (enabled !== true) {
+      endActivate({ outcome: "ssh-disabled" });
+      abortProjectActivation(
+        store2,
+        id,
+        gen,
+        outgoingId,
+        new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.")
+      );
+      return;
+    }
+    try {
+      await ensureSshConnected(api2, sshHost);
+    } catch (err2) {
+      if (gen !== switchGeneration) {
+        endSwitch(gen, id);
+        endActivate({ outcome: "superseded" });
+        return;
+      }
+      const message2 = err2 instanceof Error ? err2.message : String(err2);
+      endActivate({ outcome: "ssh-failed" });
+      abortProjectActivation(
+        store2,
+        id,
+        gen,
+        outgoingId,
+        new Error(`SSH connection failed: ${message2}`)
+      );
+      return;
+    }
+  }
+  const flushOutgoing = outgoingId && outgoingId !== id ? flushProjectThreads(api2, outgoingId, outgoingThreads) : Promise.resolve();
+  if (pendingSwitch?.gen === gen) {
+    pendingSwitch.dispatched = true;
+    holdNavigation(id);
+  }
+  const projectsAtDispatch = store2.getState().projects;
+  const persistSelection = saveProjects(api2, projectsAtDispatch, id, pendingThreadId);
+  const endWorkspace = begin("switch:workspace-set");
+  const workspaceOpened = setWorkspaceInOrder(api2, path, sshHost);
+  const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened]);
+  endWorkspace({ opened });
+  if (gen !== switchGeneration) {
+    endSwitch(gen, id);
+    endActivate({ outcome: "superseded" });
+    return;
+  }
+  if (!opened) {
+    holdNavigation(null);
+    await markProjectMissing(store2, api2, id);
+    endActivate({ outcome: "missing" });
+    abortProjectActivation(
+      store2,
+      id,
+      gen,
+      outgoingId,
+      new Error(
+        sshHost ? "Could not open the remote workspace folder." : "Project folder could not be opened \u2014 relocate it from the sidebar."
+      )
+    );
+    return;
+  }
+  const endLoad = begin("switch:load-threads");
+  const loaded = await loadThreads(api2, id);
+  endLoad({ threads: loaded.length });
+  if (gen !== switchGeneration || store2.getState().expandedProjectId !== id) {
+    endSwitch(gen, id);
+    endActivate({ outcome: "superseded" });
+    return;
+  }
+  const endApply = begin("switch:apply-state");
+  if (outgoingId && outgoingId !== id) {
+    const state = store2.getState();
+    const liveOutgoingThreads = state.activeProjectId === outgoingId ? state.threads : outgoingThreads;
+    carryRunningThreads(store2, outgoingId, liveOutgoingThreads);
+  }
+  const merged = adoptBackgroundThreads(store2, id, loaded);
+  cacheThreads(id, merged);
+  const activeThreadId = pendingThreadId && merged.some((t2) => t2.id === pendingThreadId) ? pendingThreadId : merged[0]?.id ?? null;
+  const view = resolveProjectViewState(projectViewState, id);
+  store2.setState({
+    activeProjectId: id,
+    expandedProjectId: id,
+    workspaceRoot: path,
+    threads: merged,
+    activeThreadId,
+    openFile: null,
+    panelTab: view.panelTab,
+    filesPaneOpen: view.filesPaneOpen,
+    rightPanelMode: view.rightPanelMode,
+    // Opening succeeded — lift any prior "folder missing" quarantine (#997).
+    projects: projectsWithMissingCleared(store2.getState().projects, id)
+  });
+  if (activeThreadId) markThreadRead(store2, activeThreadId);
+  if (merged.length === 0) createThread(store2);
+  else normalizeBlankThreads(store2);
+  store2.emit("projects_changed");
+  store2.emit("workspace_changed");
+  store2.emit("threads_changed");
+  store2.emit("panel_changed");
+  store2.emit("files_pane_changed");
+  endApply({ threads: merged.length });
+  const { projects, activeThreadId: appliedThreadId } = store2.getState();
+  await (projects === projectsAtDispatch ? saveNavigation(api2, id, appliedThreadId) : saveProjects(api2, projects, id, appliedThreadId));
+  endSwitch(gen, id);
+  endActivate({ outcome: "ok", threads: merged.length });
+  void resumePendingQueues(store2, api2);
+}
+function dispatchCallers() {
+  const frames = (new Error().stack ?? "").split("\n").slice(3, 8);
+  return frames.map((frame) => /at (?:async )?([^\s(]+)/.exec(frame)?.[1] ?? "?").join(" < ");
+}
+function activate(store2, api2, id, path, sshHost, pendingThreadId) {
+  const { activeProjectId, threads, expandedProjectId } = store2.getState();
+  if (activeProjectId === id) {
+    if ((expandedProjectId ?? activeProjectId) !== id) expandProject(store2, id);
+    cancelPendingSwitch(store2, api2);
+    return;
+  }
+  expandProject(store2, id);
+  if (perfOn) {
+    mark("switch:dispatch", {
+      callers: dispatchCallers(),
+      restarts: pendingSwitch?.projectId === id
+    });
+  }
+  cancelPendingSwitch(store2, api2);
+  const gen = ++switchGeneration;
+  pendingSwitch = { gen, projectId: id, dispatched: false };
+  const outgoingId = activeProjectId;
+  const outgoingThreads = threads;
+  if (outgoingId && isListedProject(store2, outgoingId)) {
+    cacheThreads(outgoingId, outgoingThreads);
+    recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store2.getState()));
+  }
+  void finishActivate(
+    store2,
+    api2,
+    id,
+    path,
+    sshHost,
+    gen,
+    outgoingId,
+    outgoingThreads,
+    pendingThreadId
+  ).catch(async (error62) => {
+    if (gen !== switchGeneration) {
+      endSwitch(gen, id);
+      return;
+    }
+    holdNavigation(null);
+    const state = store2.getState();
+    const active2 = state.projects.find((project2) => project2.id === state.activeProjectId);
+    const root = active2?.path ?? state.workspaceRoot;
+    await Promise.all([
+      root ? setWorkspaceInOrder(api2, root, active2?.sshHost) : Promise.resolve(),
+      saveNavigation(api2, state.activeProjectId, state.activeThreadId)
+    ]).catch((restoreError) => {
+      console.warn("[projects] could not restore navigation after a failed switch:", restoreError);
+    });
+    const failure2 = error62 instanceof Error ? error62 : new Error(String(error62));
+    if (gen === switchGeneration) {
+      abortProjectActivation(store2, id, gen, state.activeProjectId, failure2);
+    } else {
+      endSwitch(gen, id);
+    }
+    console.warn("[projects] project activation failed:", failure2);
+  });
+}
+function switchProject(store2, api2, id, pendingThreadId = null) {
+  const proj = store2.getState().projects.find((p2) => p2.id === id);
+  if (!proj) return;
+  activate(store2, api2, id, proj.path, proj.sshHost, pendingThreadId);
+}
+async function activateMobileProject(store2, api2, id) {
+  const project2 = store2.getState().projects.find((item) => item.id === id);
+  if (!project2 || project2.missing) throw new Error("Project unavailable on the desktop.");
+  if (store2.getState().activeProjectId === id) {
+    cancelPendingSwitch(store2, api2);
+    return;
+  }
+  await activateAndWait(store2, api2, id, project2.path, project2.sshHost);
+}
+function switchProjectThread(store2, api2, projectId, threadId) {
+  const { activeProjectId, expandedProjectId } = store2.getState();
+  if (projectId === activeProjectId) {
+    cancelPendingSwitch(store2, api2);
+    if (expandedProjectId !== projectId) expandProject(store2, projectId);
+    switchThread(store2, threadId);
+    return;
+  }
+  switchProject(store2, api2, projectId, threadId);
+}
+async function addProjectFromPath(store2, api2, path) {
+  const existing = findProjectByKey(store2.getState().projects, void 0, path);
+  let id;
+  if (existing) {
+    id = existing.id;
+  } else {
+    id = uuid3();
+    store2.setState({
+      projects: [...store2.getState().projects, { id, path, name: basename(path) }]
+    });
+  }
+  return activateAndWait(store2, api2, id, path);
+}
+async function addProjectFromRemotePath(store2, api2, hostId, path) {
+  const enabled = await api2.settings.get("sshWorkspaceEnabled");
+  if (enabled !== true) {
+    throw new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.");
+  }
+  const canonical2 = await api2.sshWorkspace.registerRoot(hostId, path);
+  const existing = findProjectByKey(store2.getState().projects, hostId, canonical2);
+  let id;
+  if (existing) {
+    id = existing.id;
+  } else {
+    id = uuid3();
+    const hosts = await api2.sshWorkspace.listHosts();
+    const host = hosts.find((h3) => h3.id === hostId);
+    const label = host?.label ?? hostId;
+    store2.setState({
+      projects: [
+        ...store2.getState().projects,
+        { id, path: canonical2, name: formatSshProjectName(label, canonical2), sshHost: hostId }
+      ]
+    });
+  }
+  return activateAndWait(store2, api2, id, canonical2, hostId);
+}
+function activateAndWait(store2, api2, id, path, sshHost) {
+  activate(store2, api2, id, path, sshHost, null);
+  return waitForProjectActivation(store2, id);
+}
+async function waitForProjectActivation(store2, projectId) {
+  if (store2.getState().activeProjectId === projectId) return;
+  await new Promise((resolve, reject) => {
+    const waiter = { resolve, reject };
+    activationWaiters.set(projectId, waiter);
+    const unsub = store2.on("workspace_changed", () => {
+      if (store2.getState().activeProjectId === projectId) {
+        activationWaiters.delete(projectId);
+        unsub();
+        resolve();
+      }
+    });
+    waiter.unsub = unsub;
+  });
+}
+async function quarantineAndRestoreNext(store2, api2, id) {
+  await markProjectMissing(store2, api2, id);
+  const next = store2.getState().projects.find((p2) => p2.id !== id && !p2.missing);
+  if (next) {
+    store2.setState({
+      activeProjectId: next.id,
+      expandedProjectId: next.id,
+      threads: [],
+      activeThreadId: null
+    });
+    await restoreProject(store2, api2, next.id);
+    return;
+  }
+  store2.setState({
+    activeProjectId: null,
+    expandedProjectId: null,
+    workspaceRoot: null,
+    threads: [],
+    activeThreadId: null
+  });
+  await saveProjects(api2, store2.getState().projects, null, null);
+  store2.emit("workspace_changed");
+  store2.emit("threads_changed");
+}
+async function restoreProject(store2, api2, id, preferredThreadId = null) {
+  const proj = store2.getState().projects.find((p2) => p2.id === id);
+  if (!proj) return;
+  if (proj.sshHost) {
+    const enabled = await api2.settings.get("sshWorkspaceEnabled");
+    if (enabled !== true) return;
+    try {
+      await ensureSshConnected(api2, proj.sshHost);
+    } catch {
+      return;
+    }
+  }
+  const [workspaceOpened, loaded] = await Promise.all([
+    setWorkspaceInOrder(api2, proj.path, proj.sshHost),
+    loadThreads(api2, id)
+  ]);
+  if (!workspaceOpened) {
+    await quarantineAndRestoreNext(store2, api2, id);
+    return;
+  }
+  const merged = adoptBackgroundThreads(store2, id, loaded);
+  cacheThreads(id, merged);
+  store2.setState({
+    activeProjectId: id,
+    expandedProjectId: id,
+    workspaceRoot: proj.path,
+    threads: merged,
+    activeThreadId: preferredThreadId && merged.some((thread) => thread.id === preferredThreadId) ? preferredThreadId : merged[0]?.id ?? null,
+    // Opening succeeded — lift any prior quarantine on this project (#997).
+    projects: projectsWithMissingCleared(store2.getState().projects, id)
+  });
+  const activeThreadId = store2.getState().activeThreadId;
+  if (activeThreadId) markThreadRead(store2, activeThreadId);
+  await saveProjects(api2, store2.getState().projects, id, activeThreadId).catch((error62) => {
+    console.warn(`[projects] could not persist the restored project ${id}:`, error62);
+  });
+  if (merged.length === 0) createThread(store2);
+  else normalizeBlankThreads(store2);
+  store2.emit("projects_changed");
+  store2.emit("workspace_changed");
+  store2.emit("threads_changed");
+  void resumePendingQueues(store2, api2);
+}
+async function createNewProject(store2, api2) {
+  const { openNewProjectDialog: openNewProjectDialog2 } = await Promise.resolve().then(() => (init_new_project_dialog(), new_project_dialog_exports));
+  const inferred = lastProjectDirectory(store2);
+  const home = await api2.workspace.getHomeDirectory();
+  const parentDir = inferred !== "" ? inferred : home;
+  const picked = await openNewProjectDialog2(api2, parentDir);
+  if (!picked) return false;
+  let root;
+  try {
+    root = await api2.workspace.createNewProject(picked.name, picked.parentDir);
+  } catch (err2) {
+    showErrorToast("Could not create project", err2);
+    return false;
+  }
+  await addProjectFromPath(store2, api2, root);
+  const state = store2.getState();
+  const threadId = state.activeThreadId ?? createThread(store2);
+  setThreadDraftPrompt(store2, threadId, NEW_PROJECT_STARTER_PROMPT);
+  return true;
+}
+function lastProjectDirectory(store2) {
+  const projects = store2.getState().projects;
+  const last = projects[projects.length - 1];
+  if (last && !last.sshHost && last.path) {
+    const slash = last.path.lastIndexOf("/");
+    if (slash > 0) return last.path.slice(0, slash);
+  }
+  return "";
+}
+async function addProject(store2, api2) {
+  const path = await api2.workspace.open();
+  if (!path) return false;
+  await addProjectFromPath(store2, api2, path);
+  return true;
+}
+async function addRemoteProject(store2, api2) {
+  const { openRemoteFolderDialog: openRemoteFolderDialog2 } = await Promise.resolve().then(() => (init_remote_folder_dialog(), remote_folder_dialog_exports));
+  const picked = await openRemoteFolderDialog2(api2);
+  if (!picked) return false;
+  await addProjectFromRemotePath(store2, api2, picked.hostId, picked.path);
+  return true;
+}
+async function relocateProject(store2, api2, id) {
+  const proj = store2.getState().projects.find((p2) => p2.id === id);
+  if (!proj || proj.sshHost) return false;
+  const path = await api2.workspace.open();
+  if (!path) return false;
+  const projects = store2.getState().projects.map((p2) => p2.id === id ? clearMissing({ ...p2, path }) : p2);
+  store2.setState({ projects });
+  store2.emit("projects_changed");
+  await activateAndWait(store2, api2, id, path);
+  return true;
+}
+function parseDismissedOrphanStores(value) {
+  if (!Array.isArray(value)) return [];
+  const ids = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const item of value) {
+    if (typeof item !== "string" || item.length === 0 || seen.has(item)) continue;
+    seen.add(item);
+    ids.push(item);
+  }
+  return ids;
+}
+function updateDismissedOrphanStores(api2, update) {
+  const next = dismissedOrphanStoresChain.catch(() => void 0).then(async () => {
+    const current = parseDismissedOrphanStores(await api2.storage.get(KEY_DISMISSED_ORPHAN_STORES));
+    const updated = update(current);
+    if (updated.length === current.length && updated.every((storeId, index) => storeId === current[index]))
+      return;
+    await serializedSet(api2, KEY_DISMISSED_ORPHAN_STORES, updated);
+  });
+  dismissedOrphanStoresChain = next;
+  return next;
+}
+async function listOrphanProjects(api2) {
+  const [orphans, dismissedRaw] = await Promise.all([
+    api2.threads.listOrphans(),
+    api2.storage.get(KEY_DISMISSED_ORPHAN_STORES)
+  ]);
+  const dismissed = new Set(parseDismissedOrphanStores(dismissedRaw));
+  if (dismissed.size === 0) return orphans;
+  return orphans.filter((orphan) => !dismissed.has(orphan.id));
+}
+async function dismissOrphanProject(api2, storeId) {
+  await updateDismissedOrphanStores(
+    api2,
+    (current) => current.includes(storeId) ? current : [...current, storeId]
+  );
+}
+async function recoverOrphanProject(store2, api2, storeId, confirm2) {
+  if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
+  if (confirm2 && !await confirm2()) return false;
+  const path = await api2.workspace.open();
+  if (!path) return false;
+  if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
+  store2.setState({
+    projects: [...store2.getState().projects, { id: storeId, path, name: basename(path) }]
+  });
+  store2.emit("projects_changed");
+  await updateDismissedOrphanStores(
+    api2,
+    (current) => current.includes(storeId) ? current.filter((id) => id !== storeId) : current
+  );
+  await activateAndWait(store2, api2, storeId, path);
+  return true;
+}
+var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
+var init_projects = __esm({
+  "src/renderer/controller/projects.ts"() {
+    init_side_chat2();
+    init_thread_helpers();
+    init_persistence();
+    init_message_queue();
+    init_project_view_state();
+    init_toast();
+    init_sidebar_thread();
+    init_background_threads();
+    init_perf();
+    uuid3 = () => globalThis.crypto.randomUUID();
+    basename = (p2) => p2.split("/").pop() ?? p2;
+    SIDEBAR_THREADS_PAGE_SIZE = 10;
+    threadCache = /* @__PURE__ */ new Map();
+    liveCacheProjectId = null;
+    projectViewState = /* @__PURE__ */ new Map();
+    switchGeneration = 0;
+    pendingSwitch = null;
+    activationWaiters = /* @__PURE__ */ new Map();
+    sideChatUnreadCache = /* @__PURE__ */ new WeakMap();
+    workspaceChain = Promise.resolve();
+    NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
+    KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
+    dismissedOrphanStoresChain = Promise.resolve();
+  }
+});
+
+// src/renderer/controller/thread-hydration.ts
+function hydrationFailed(threadId) {
+  return failedThreadIds.has(threadId);
+}
+function ensureThreadMessages(projectId, threadId) {
+  return activeHydrator?.ensure(projectId, threadId) ?? Promise.resolve();
+}
+function needsHydration(thread) {
+  return thread.messagesLoaded === false;
+}
+function isPinned(thread, activeThreadId) {
+  if (thread.id === activeThreadId) return true;
+  if (thread.status === "running") return true;
+  return (thread.pendingMessages?.length ?? 0) > 0;
+}
+function attachThreadHydration(store2, api2) {
+  const inFlight4 = /* @__PURE__ */ new Map();
+  let recency = [];
+  const touch = (threadId) => {
+    recency = [...recency.filter((id) => id !== threadId), threadId];
+  };
+  const evict = () => {
+    const { threads, activeThreadId } = store2.getState();
+    const byId = new Map(threads.map((t2) => [t2.id, t2]));
+    const evictable = recency.filter((id) => {
+      const thread = byId.get(id);
+      return thread !== void 0 && !isPinned(thread, activeThreadId);
+    });
+    const overBudget = evictable.length - HYDRATED_THREAD_BUDGET;
+    if (overBudget <= 0) return;
+    const dropping = new Set(evictable.slice(0, overBudget));
+    recency = recency.filter((id) => !dropping.has(id));
+    store2.setState({
+      threads: threads.map(
+        (t2) => dropping.has(t2.id) ? { ...t2, messages: [], messagesLoaded: false } : t2
+      )
+    });
+  };
+  const fetchInto = (projectId, threadId) => {
+    const key = `${projectId}:${threadId}`;
+    const existing = inFlight4.get(key);
+    if (existing) return existing;
+    failedThreadIds.delete(threadId);
+    const endHydrate = begin("thread:hydrate");
+    const request = api2.threads.loadMessages(projectId, threadId).then((messages) => {
+      endHydrate({ messages: messages.length });
+      const state = store2.getState();
+      if (state.activeProjectId !== projectId) return;
+      if (!state.threads.some((t2) => t2.id === threadId)) return;
+      store2.setState({
+        threads: state.threads.map((t2) => {
+          if (t2.id !== threadId) return t2;
+          const diskIds = new Set(messages.map((m2) => m2.id));
+          const streamedMeanwhile = t2.messages.filter((m2) => !diskIds.has(m2.id));
+          const hydrated = {
+            ...t2,
+            messages: [...messages, ...streamedMeanwhile],
+            messagesLoaded: true
+          };
+          const promptedAt = lastHumanPromptAt(hydrated);
+          return promptedAt === void 0 ? hydrated : { ...hydrated, lastPromptAt: promptedAt };
+        })
+      });
+      touch(threadId);
+      evict();
+      store2.emit("threads_changed");
+      void hydrateArtefactPreviews(api2, projectId, threadId).then((added) => {
+        if (added) store2.emit("threads_changed");
+      });
+    }).catch((err2) => {
+      console.error("[threads] could not load transcript", err2);
+      failedThreadIds.add(threadId);
+      store2.emit("threads_changed");
+    }).finally(() => {
+      inFlight4.delete(key);
+    });
+    inFlight4.set(key, request);
+    return request;
+  };
+  activeHydrator = {
+    ensure: (projectId, threadId) => {
+      const state = store2.getState();
+      const thread = state.threads.find((t2) => t2.id === threadId);
+      if (thread && !needsHydration(thread)) {
+        touch(threadId);
+        return Promise.resolve();
+      }
+      return fetchInto(projectId, threadId);
+    }
+  };
+  let lastActiveThreadId = null;
+  const hydrateActive = () => {
+    const { activeProjectId, activeThreadId, threads } = store2.getState();
+    if (!activeProjectId || !activeThreadId) return;
+    const freshlySelected = activeThreadId !== lastActiveThreadId;
+    lastActiveThreadId = activeThreadId;
+    const thread = threads.find((t2) => t2.id === activeThreadId);
+    if (!thread) return;
+    if (!needsHydration(thread)) {
+      touch(activeThreadId);
+      return;
+    }
+    if (freshlySelected) failedThreadIds.delete(activeThreadId);
+    if (failedThreadIds.has(activeThreadId)) return;
+    void fetchInto(activeProjectId, activeThreadId);
+  };
+  const offThreads = store2.on("threads_changed", hydrateActive);
+  const offWorkspace = store2.on("workspace_changed", hydrateActive);
+  hydrateActive();
+  const offPrRefs = api2.threads.onPrRefs((projectId, refs) => {
+    const state = store2.getState();
+    if (refs.length === 0) return;
+    if (state.activeProjectId !== projectId) {
+      if (applyCachedSidebarPrRefs(projectId, refs)) store2.emit("threads_changed");
+      return;
+    }
+    const byThread = new Map(refs.map((entry) => [entry.threadId, entry.prRefs]));
+    if (!state.threads.some((t2) => byThread.has(t2.id))) return;
+    store2.setState({
+      threads: state.threads.map((t2) => {
+        const prRefs = byThread.get(t2.id);
+        return prRefs ? { ...t2, prRefs } : t2;
+      })
+    });
+    store2.emit("threads_changed");
+  });
+  return () => {
+    offThreads();
+    offWorkspace();
+    offPrRefs();
+    activeHydrator = null;
+    recency = [];
+    inFlight4.clear();
+    failedThreadIds.clear();
+  };
+}
+var HYDRATED_THREAD_BUDGET, activeHydrator, failedThreadIds;
+var init_thread_hydration = __esm({
+  "src/renderer/controller/thread-hydration.ts"() {
+    init_perf();
+    init_thread_helpers();
+    init_artefact_previews();
+    init_projects();
+    HYDRATED_THREAD_BUDGET = 8;
+    activeHydrator = null;
+    failedThreadIds = /* @__PURE__ */ new Set();
+  }
+});
+
+// src/shared/agent-turn-busy.ts
+function isAgentTurnBusyError(reason) {
+  if (reason instanceof Error && reason.name === AGENT_TURN_BUSY_ERROR_NAME) return true;
+  return errorMessage(reason).includes(`${AGENT_TURN_BUSY_ERROR_NAME}:`);
+}
+var AGENT_TURN_BUSY_ERROR_NAME;
+var init_agent_turn_busy = __esm({
+  "src/shared/agent-turn-busy.ts"() {
+    init_errors4();
+    AGENT_TURN_BUSY_ERROR_NAME = "AgentTurnBusyError";
+  }
+});
+
+// src/renderer/controller/send-now-aborts.ts
+function markSendNowAbort(threadId) {
+  sendNowThreads.add(threadId);
+}
+function takeSendNowAbort(threadId) {
+  return sendNowThreads.delete(threadId);
+}
+var sendNowThreads;
+var init_send_now_aborts = __esm({
+  "src/renderer/controller/send-now-aborts.ts"() {
+    sendNowThreads = /* @__PURE__ */ new Set();
+  }
+});
+
+// src/renderer/controller/message-queue.ts
+function isHeldMessage(item) {
+  return item.autoDispatch === false;
+}
+function isMachineContinuation(item) {
+  return item.origin?.kind === "hook";
+}
+function continuationBudgetHeldNote() {
+  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next hook follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
+}
+function isStaleEpoch(thread, epoch) {
+  return thread.currentEpoch !== void 0 && thread.currentEpoch !== epoch;
+}
+function newEpoch() {
+  return globalThis.crypto.randomUUID();
+}
+function startHumanTurnTree(store2, threadId) {
+  return startRootTurnTree(store2, threadId);
+}
+function startAutomationTurnTree(store2, threadId) {
+  return startRootTurnTree(store2, threadId);
+}
+function startRootTurnTree(store2, threadId) {
+  const epoch = newEpoch();
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    currentEpoch: epoch,
+    continuationUsed: 0
+  }));
+  return epoch;
+}
+function foldBackContinuationUsed(store2, threadId, turnTreeId, used) {
+  const thread = getThreadById(store2, threadId);
+  if (!thread) return;
+  const currentKey = thread.currentEpoch ?? threadId;
+  if (currentKey !== turnTreeId) return;
+  const next = Math.max(thread.continuationUsed ?? 0, used);
+  if (next === (thread.continuationUsed ?? 0)) return;
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, continuationUsed: next }));
+}
+function setMessageHookOrigin(store2, messageId, origin) {
+  const threads = store2.getState().threads.map((t2) => ({
+    ...t2,
+    messages: t2.messages.map((m2) => m2.id !== messageId ? m2 : { ...m2, origin })
+  }));
+  store2.setState({ threads });
+}
+function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }, queuedModel) {
+  const thread = getThreadById(store2, threadId);
+  const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
+  const selectedModel = queuedModel ?? thread?.model;
+  return {
+    ...payload,
+    ...reviewContext !== void 0 ? { reviewContext } : {},
+    priorTodos: thread?.todos ?? payload.priorTodos ?? [],
+    ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
+    // A queued human prompt carries its own model snapshot; hook-authored
+    // prompts without one follow the live thread selection. Absent → main uses
+    // the global default.
+    ...selectedModel !== void 0 ? { model: selectedModel } : {},
+    // The composer's reasoning dial, read at dispatch time for the same reason:
+    // turning it up while a message sits queued should apply to that message.
+    ...thread?.reasoning !== void 0 ? { reasoning: thread.reasoning } : {},
+    // C3: thread the turn-tree epoch + the machine turns already spent so the
+    // main-process continuation ledger keys and seeds the same counter this
+    // renderer enforces at drain time (decision 5 / 16). Read at dispatch time so
+    // a queue-drain continuation carries the up-to-date spent count.
+    ...thread?.currentEpoch !== void 0 ? { turnTreeId: thread.currentEpoch } : {},
+    ...thread?.continuationUsed !== void 0 ? { continuationBudgetUsed: thread.continuationUsed } : {}
+  };
+}
+function beginPendingDispatch(store2, threadId) {
+  const byThread = pendingDispatches.get(store2) ?? /* @__PURE__ */ new Map();
+  byThread.set(threadId, (byThread.get(threadId) ?? 0) + 1);
+  pendingDispatches.set(store2, byThread);
+}
+function finishPendingDispatch(store2, threadId) {
+  const byThread = pendingDispatches.get(store2);
+  const count = byThread?.get(threadId) ?? 0;
+  if (count <= 1) byThread?.delete(threadId);
+  else byThread?.set(threadId, count - 1);
+}
+function hasPendingDispatch(store2, threadId) {
+  return (pendingDispatches.get(store2)?.get(threadId) ?? 0) > 0;
+}
+function dispatchAgentRun(store2, api2, threadId, payload, queued) {
+  const { activeProjectId, backgroundThreads } = store2.getState();
+  const projectId = backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId;
+  if (!projectId) throw new Error("Cannot run thread without an owning project");
+  patchThreadAnywhere(store2, threadId, (thread) => {
+    if (thread.interruptedTurnAt === void 0) return thread;
+    const { interruptedTurnAt: _interruptedTurnAt, ...rest } = thread;
+    return rest;
+  });
+  clearContextSnapshot(store2, threadId);
+  setThreadStatus(store2, threadId, "running");
+  syncAgentActivity(store2, threadId, false);
+  mark("ttft:renderer-dispatch");
+  if (queued) beginPendingDispatch(store2, threadId);
+  const run2 = api2.agent.run(
+    projectId,
+    threadId,
+    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload, queued?.model))
+  );
+  if (!queued) {
+    void run2;
+    return;
+  }
+  void run2.catch((err2) => {
+    if (!isAgentTurnBusyError(err2)) throw err2;
+    requeueBusyMessage(store2, api2, threadId, queued);
+  }).finally(() => {
+    finishPendingDispatch(store2, threadId);
+    if (getThreadById(store2, threadId)?.status === "idle") {
+      drainMessageQueue(store2, api2, threadId);
+    }
+  });
+}
+function requeueBusyMessage(store2, api2, threadId, item) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const pending = t2.pendingMessages ?? [];
+    if (pending.some((entry) => entry.messageId === item.messageId)) return t2;
+    const requeued = { ...t2, pendingMessages: [item, ...pending], updatedAt: Date.now() };
+    return isMachineContinuation(item) && (t2.continuationUsed ?? 0) > 0 ? { ...requeued, continuationUsed: (t2.continuationUsed ?? 0) - 1 } : requeued;
+  });
+  store2.emit("message_queued", threadId, item.messageId);
+  store2.emit("threads_changed");
+  if (getThreadById(store2, threadId)?.status === "idle") drainMessageQueue(store2, api2, threadId);
+}
+function enqueueUserMessage(store2, threadId, item) {
+  const queued = item.model !== void 0 || isMachineContinuation(item) ? item : {
+    ...item,
+    model: getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
+  };
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    pendingMessages: [...t2.pendingMessages ?? [], queued],
+    updatedAt: Date.now()
+  }));
+  store2.emit("message_queued", threadId, queued.messageId);
+  store2.emit("threads_changed");
+}
+function updateQueuedMessageModel(store2, threadId, messageId, model) {
+  const thread = getThreadById(store2, threadId);
+  if (!thread?.pendingMessages?.some((item) => item.messageId === messageId)) return;
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    pendingMessages: (t2.pendingMessages ?? []).map(
+      (item) => item.messageId === messageId ? { ...item, model } : item
+    ),
+    updatedAt: Date.now()
+  }));
+  store2.emit("threads_changed");
+}
+function drainMessageQueue(store2, api2, threadId) {
+  if (hasPendingDispatch(store2, threadId)) return;
+  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  if (!thread || thread.status !== "idle" || thread.queuePaused) return;
+  const pending = thread.pendingMessages ?? [];
+  if (pending.length === 0) return;
+  let used = thread.continuationUsed ?? 0;
+  let next;
+  const heldByBudget = [];
+  for (const item of pending) {
+    if (isHeldMessage(item)) continue;
+    if (isMachineContinuation(item)) {
+      if (!canContinue(used)) {
+        heldByBudget.push(item.messageId);
+        continue;
+      }
+      used += 1;
+      next = item;
+      break;
+    }
+    next = item;
+    break;
+  }
+  if (!next && heldByBudget.length === 0) return;
+  const rest = pending.filter((item) => item !== next);
+  const budgetHeld = new Set(heldByBudget);
+  const threads = store2.getState().threads.map((t2) => {
+    if (t2.id !== threadId) return t2;
+    const { pendingMessages: _removed, ...restThread } = t2;
+    const messages = movePendingUserMessagesToEnd(t2.messages, pending);
+    const nextPending = rest.map(
+      (item) => budgetHeld.has(item.messageId) ? { ...item, autoDispatch: false } : item
+    );
+    const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
+    return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
+  });
+  store2.setState({ threads });
+  if (heldByBudget.length > 0) addMessage(store2, threadId, "error", continuationBudgetHeldNote());
+  store2.emit("threads_changed");
+  if (next) dispatchAgentRun(store2, api2, threadId, next.payload, next);
+}
+function movePendingUserMessagesToEnd(messages, pending) {
+  const messagesById = new Map(messages.map((message2) => [message2.id, message2]));
+  const pendingMessages = [];
+  const movedIds = /* @__PURE__ */ new Set();
+  for (const item of pending) {
+    const message2 = messagesById.get(item.messageId);
+    if (!message2 || message2.role !== "user" || movedIds.has(message2.id)) continue;
+    pendingMessages.push(message2);
+    movedIds.add(message2.id);
+  }
+  if (pendingMessages.length === 0) return messages;
+  const settledMessages = messages.filter((message2) => !movedIds.has(message2.id));
+  const nextMessages = [...settledMessages, ...pendingMessages];
+  const alreadyInOrder = nextMessages.every((message2, index) => message2 === messages[index]);
+  return alreadyInOrder ? messages : nextMessages;
+}
+async function runningThreadIdsOrNone(api2) {
+  try {
+    return await api2.agent.runningThreadIds();
+  } catch {
+    return null;
+  }
+}
+async function resumePendingQueues(store2, api2) {
+  const runningThreadIds = await runningThreadIdsOrNone(api2);
+  const reallyRunning = new Set(runningThreadIds ?? []);
+  for (const thread of store2.getState().threads) {
+    if (thread.queuePaused) setQueuePaused(store2, thread.id, false);
+    let status = thread.status;
+    if (status === "running" && !reallyRunning.has(thread.id)) {
+      if (runningThreadIds !== null) {
+        patchThreadAnywhere(store2, thread.id, (current) => ({
+          ...current,
+          interruptedTurnAt: Date.now()
+        }));
+      }
+      setThreadStatus(store2, thread.id, "idle");
+      status = "idle";
+    }
+    if (status === "idle" && (thread.pendingMessages?.length ?? 0) > 0) {
+      const projectId = store2.getState().activeProjectId;
+      const threadId = thread.id;
+      if (projectId) {
+        void ensureThreadMessages(projectId, threadId).then(() => {
+          if (store2.getState().activeProjectId !== projectId) return;
+          drainMessageQueue(store2, api2, threadId);
+        });
+      } else {
+        drainMessageQueue(store2, api2, threadId);
+      }
+    }
+  }
+}
+function queuedMessageIds(thread) {
+  return new Set((thread.pendingMessages ?? []).map((item) => item.messageId));
+}
+function queuedPayloadText(payload) {
+  const content = payload.content;
+  if (typeof content === "string") return content;
+  return content.find((block) => block.type === "text")?.text ?? "";
+}
+function withPayloadText(content, text2) {
+  if (typeof content === "string") return text2;
+  const firstText = content.findIndex((block) => block.type === "text");
+  if (firstText === -1) return [...content, { type: "text", text: text2 }];
+  return content.map(
+    (block, index) => index === firstText && block.type === "text" ? { ...block, text: text2 } : block
+  );
+}
+function updateQueuedMessageText(store2, threadId, messageId, text2) {
+  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  const item = thread?.pendingMessages?.find((p2) => p2.messageId === messageId);
+  if (!item) return;
+  const threads = store2.getState().threads.map(
+    (t2) => t2.id !== threadId ? t2 : {
+      ...t2,
+      pendingMessages: (t2.pendingMessages ?? []).map(
+        (p2) => p2.messageId !== messageId ? p2 : {
+          ...p2,
+          payload: { ...p2.payload, content: withPayloadText(p2.payload.content, text2) },
+          // Editing a hook-originated message keeps `kind: 'hook'` but
+          // flips `editedByUser` so the spine stays honest (decision 10).
+          ...p2.origin?.kind === "hook" ? { editedByUser: true } : {}
+        }
+      ),
+      updatedAt: Date.now()
+    }
+  );
+  store2.setState({ threads });
+  setMessageContent(store2, messageId, text2);
+  if (item.origin?.kind === "hook") {
+    const withEdit = store2.getState().threads.map((t2) => ({
+      ...t2,
+      messages: t2.messages.map((m2) => m2.id !== messageId ? m2 : { ...m2, editedByUser: true })
+    }));
+    store2.setState({ threads: withEdit });
+  }
+  store2.emit("threads_changed");
+}
+function removeQueuedMessage(store2, threadId, messageId) {
+  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  if (!thread) return;
+  const pending = thread.pendingMessages ?? [];
+  if (!pending.some((p2) => p2.messageId === messageId)) return;
+  const remainingPending = pending.filter((p2) => p2.messageId !== messageId);
+  const threads = store2.getState().threads.map((t2) => {
+    if (t2.id !== threadId) return t2;
+    const { pendingMessages: _removed, ...rest } = t2;
+    return {
+      ...rest,
+      messages: t2.messages.filter((m2) => m2.id !== messageId),
+      ...remainingPending.length > 0 ? { pendingMessages: remainingPending } : {},
+      updatedAt: Date.now()
+    };
+  });
+  store2.setState({ threads });
+  store2.emit("threads_changed");
+}
+function sendQueuedMessageNow(store2, api2, threadId, messageId) {
+  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  const pending = thread?.pendingMessages ?? [];
+  const target = pending.find((p2) => p2.messageId === messageId);
+  if (!thread || !target) return;
+  const reordered = [target, ...pending.filter((p2) => p2.messageId !== messageId)];
+  const threads = store2.getState().threads.map((t2) => {
+    if (t2.id !== threadId) return t2;
+    const { queuePaused: _removed, ...rest } = t2;
+    return { ...rest, pendingMessages: reordered, updatedAt: Date.now() };
+  });
+  store2.setState({ threads });
+  store2.emit("threads_changed");
+  if (thread.status === "running") {
+    markSendNowAbort(threadId);
+    void api2.agent.abort(threadId);
+  } else {
+    drainMessageQueue(store2, api2, threadId);
+  }
+}
+function enqueueHookMessage(store2, api2, threadId, input2) {
+  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  if (!thread) return;
+  const messageId = addMessage(store2, threadId, "user", input2.text);
+  setMessageHookOrigin(store2, messageId, input2.origin);
+  const stale = isStaleEpoch(thread, input2.epoch);
+  const item = {
+    messageId,
+    payload: { content: input2.text },
+    createdAt: Date.now(),
+    origin: input2.origin,
+    epoch: input2.epoch,
+    // Downgrade a stale send-now to held (decision 16) — decided *before* any
+    // send-now abort path is reached below.
+    ...stale ? { autoDispatch: false } : {}
+  };
+  enqueueUserMessage(store2, threadId, item);
+  if (stale) return;
+  if (input2.sendNow) sendQueuedMessageNow(store2, api2, threadId, messageId);
+  else drainMessageQueue(store2, api2, threadId);
+}
+function releaseHeldMessage(store2, api2, threadId, messageId) {
+  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  const item = thread?.pendingMessages?.find((p2) => p2.messageId === messageId);
+  if (!thread || !item) return;
+  const epoch = newEpoch();
+  const threads = store2.getState().threads.map((t2) => {
+    if (t2.id !== threadId) return t2;
+    return {
+      ...t2,
+      currentEpoch: epoch,
+      // A human release starts a fresh turn tree with a reset budget (decision 5).
+      continuationUsed: 0,
+      pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
+        if (p2.messageId !== messageId) return p2;
+        const { autoDispatch: _released, ...rest } = p2;
+        return rest;
+      }),
+      updatedAt: Date.now()
+    };
+  });
+  store2.setState({ threads });
+  store2.emit("threads_changed");
+  sendQueuedMessageNow(store2, api2, threadId, messageId);
+}
+var pendingDispatches;
+var init_message_queue = __esm({
+  "src/renderer/controller/message-queue.ts"() {
+    init_lm_studio_defaults();
+    init_thread_helpers();
+    init_review_reports();
+    init_agent_activity();
+    init_continuation_budget();
+    init_thread_hydration();
+    init_perf();
+    init_agent_turn_busy();
+    init_send_now_aborts();
+    pendingDispatches = /* @__PURE__ */ new WeakMap();
+  }
+});
+
+// src/renderer/controller/automations.ts
+function getCachedAutomationSchedules(projectId) {
+  return scheduleCache.get(projectId) ?? [];
+}
+function getCachedEventAutomations(projectId) {
+  return eventAutomationCache.get(projectId) ?? [];
+}
+async function refreshAutomationSchedules(store2, api2, projectId) {
+  const [schedules, eventAutomations] = await Promise.all([
+    api2.automations.list(projectId),
+    api2.automations.listBranchCi(projectId)
+  ]);
+  scheduleCache.set(projectId, schedules);
+  eventAutomationCache.set(projectId, eventAutomations);
+  store2.emit("automation_schedules_loaded");
+  return schedules;
+}
+function startFailureDetail(error62) {
+  return ipcErrorMessage(error62, "the checkout could not be prepared");
+}
+function isPendingAutomation(thread) {
+  return thread.automation !== void 0 && thread.status === "idle" && thread.automation.startFailedAt === void 0 && Boolean(thread.draftPrompt?.trim());
+}
+function attachAutomationController(store2, api2) {
+  const starting = /* @__PURE__ */ new Set();
+  const retryTimers = /* @__PURE__ */ new Map();
+  const retrying = /* @__PURE__ */ new Set();
+  const retryPending = (threadId) => {
+    startThread(threadId).catch((error62) => {
+      console.error("[automations] Failed to retry scheduled task:", error62);
+    });
+  };
+  function retryKey(projectId, threadId) {
+    return JSON.stringify([projectId, threadId]);
+  }
+  function clearRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const timer = retryTimers.get(key);
+    if (timer !== void 0) clearTimeout(timer);
+    retryTimers.delete(key);
+    retrying.delete(key);
+  }
+  function scheduleRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const firstDenial = !retrying.has(key);
+    retrying.add(key);
+    if (!retryTimers.has(key)) {
+      const timer = setTimeout(() => {
+        retryTimers.delete(key);
+        if (store2.getState().activeProjectId === projectId) retryPending(threadId);
+      }, AUTOMATION_START_RETRY_MS);
+      retryTimers.set(key, timer);
+    }
+    return firstDenial;
+  }
+  async function startThread(threadId) {
+    const initial = getThreadById(store2, threadId);
+    const projectId = store2.getState().activeProjectId;
+    if (!projectId) return;
+    if (!initial || !isPendingAutomation(initial)) {
+      clearRetry(projectId, threadId);
+      return;
+    }
+    if (starting.has(threadId)) return;
+    const prompt = initial.draftPrompt?.trim();
+    if (!prompt) return;
+    starting.add(threadId);
+    let hydrated = false;
+    let checkoutStarted = false;
+    try {
+      await ensureThreadMessages(projectId, threadId);
+      hydrated = true;
+      if (store2.getState().activeProjectId !== projectId) return;
+      const admission = await api2.automations.canStart(projectId, threadId);
+      if (!admission.allowed) {
+        let shouldRecord = true;
+        if (admission.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            admission.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!admission.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
+      if (!initial.worktreeChoice) {
+        checkoutStarted = true;
+        const prepared = await api2.agent.prepareCheckout(
+          projectId,
+          threadId,
+          prompt,
+          "worktree",
+          initial.model
+        );
+        if (store2.getState().activeProjectId !== projectId) return;
+        applyPreparedThreadCheckout(store2, threadId, prepared);
+        checkoutStarted = false;
+      }
+      const current = getThreadById(store2, threadId);
+      if (!current || !isPendingAutomation(current)) {
+        clearRetry(projectId, threadId);
+        return;
+      }
+      const beforeDispatch = await api2.automations.canStart(projectId, threadId);
+      if (!beforeDispatch.allowed) {
+        let shouldRecord = true;
+        if (beforeDispatch.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            beforeDispatch.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!beforeDispatch.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
+      clearRetry(projectId, threadId);
+      addMessage(store2, threadId, "user", prompt);
+      setThreadDraftPrompt(store2, threadId, "");
+      startAutomationTurnTree(store2, threadId);
+      dispatchAgentRun(store2, api2, threadId, { content: prompt });
+    } catch (error62) {
+      console.error("[automations] Failed to start scheduled task:", error62);
+      if (hydrated) {
+        const message2 = startFailureDetail(error62);
+        const code = checkoutStarted ? "worktree-failed" : classifyAutomationFailureMessage(message2);
+        markAutomationStartFailed(store2, threadId, { code, message: message2 });
+        api2.automations.reportStartFailure(projectId, threadId, { code, message: message2 }).catch((reportError) => {
+          console.error("[automations] Could not report a start failure:", reportError);
+        });
+        addMessage(
+          store2,
+          threadId,
+          "error",
+          `This scheduled run could not start: ${startFailureDetail(error62)}
+
+Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause is resolved. The schedule is not held up: its next run starts normally.`
+        );
+      }
+    } finally {
+      starting.delete(threadId);
+    }
+  }
+  function startPendingForActiveProject() {
+    for (const thread of store2.getState().threads) {
+      if (isPendingAutomation(thread)) void startThread(thread.id);
+    }
+  }
+  async function receiveTrigger(event) {
+    if (store2.getState().activeProjectId !== event.projectId) return;
+    const loaded = await api2.threads.loadProject(event.projectId);
+    if (store2.getState().activeProjectId !== event.projectId) return;
+    const created = loaded.find((thread) => thread.id === event.threadId);
+    if (!created) return;
+    if (!store2.getState().threads.some((thread) => thread.id === created.id)) {
+      store2.setState({
+        threads: sortThreadsNewestFirst([created, ...store2.getState().threads])
+      });
+      store2.emit("threads_changed");
+    }
+    await startThread(created.id);
+  }
+  function refreshSchedulesForActiveProject() {
+    const projectId = store2.getState().activeProjectId;
+    if (!projectId) return;
+    void refreshAutomationSchedules(store2, api2, projectId).catch((error62) => {
+      console.error("[automations] Failed to refresh schedules:", error62);
+    });
+  }
+  const unsubscribeTrigger = api2.automations.onTriggered((event) => {
+    void receiveTrigger(event);
+  });
+  const unsubscribeWorkspace = store2.on("workspace_changed", () => {
+    startPendingForActiveProject();
+    refreshSchedulesForActiveProject();
+  });
+  startPendingForActiveProject();
+  refreshSchedulesForActiveProject();
+  return () => {
+    for (const timer of retryTimers.values()) clearTimeout(timer);
+    retryTimers.clear();
+    retrying.clear();
+    unsubscribeTrigger();
+    unsubscribeWorkspace();
+  };
+}
+var scheduleCache, eventAutomationCache, AUTOMATION_START_RETRY_MS;
+var init_automations2 = __esm({
+  "src/renderer/controller/automations.ts"() {
+    init_ipc_error_message();
+    init_automation_failure();
+    init_thread_helpers();
+    init_message_queue();
+    init_thread_hydration();
+    scheduleCache = /* @__PURE__ */ new Map();
+    eventAutomationCache = /* @__PURE__ */ new Map();
+    AUTOMATION_START_RETRY_MS = 15e3;
   }
 });
 
@@ -55157,6 +60056,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     showStatus,
     hideStatus,
     onScheduleSelected: (draft) => void openForm(void 0, draft),
+    onChanged: async () => {
+      if (projectId) await refreshAutomationSchedules(store2, api2, projectId);
+    },
     ...actions.openRun ? { onOpenRun: actions.openRun } : {}
   });
   const modelPicker = mountModelSelectPicker(modelSelect, {
@@ -55603,7 +60505,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     if (!projectId) return;
     try {
       const [loadedSchedules, loadedPermissions] = await Promise.all([
-        api2.automations.list(projectId),
+        refreshAutomationSchedules(store2, api2, projectId),
         api2.automations.permissionOptions(projectId),
         ciEditor.refresh()
       ]);
@@ -55728,6 +60630,7 @@ var init_automation_plugin_settings = __esm({
     init_ipc_error_message();
     init_automation_retained_worktrees();
     init_automation_failure();
+    init_automations2();
     WEEKDAYS = [
       "Sunday",
       "Monday",
@@ -64665,4687 +69568,6 @@ var init_appearance = __esm({
   }
 });
 
-// packages/thread-store/src/side-chat.ts
-function excerpt(message2) {
-  const line = message2.content.trim().split("\n", 1)[0] ?? "";
-  return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
-}
-function buildSideChatThread(parent, options) {
-  if (parent.sideChat !== void 0) return null;
-  const anchor2 = parent.messages.find((message2) => message2.id === options.anchorMessageId);
-  if (!anchor2) return null;
-  const model = options.model ?? parent.model;
-  const now = Date.now();
-  return {
-    id: globalThis.crypto.randomUUID(),
-    title: options.title ?? (excerpt(anchor2) || "Side chat"),
-    status: "idle",
-    messages: [],
-    // A fresh side chat has nothing to scan: mark both caches as scanned and empty so
-    // the index never queues it for a transcript backfill.
-    prRefs: [],
-    links: [],
-    usage: { inputTokens: 0, outputTokens: 0 },
-    ...model !== void 0 ? { model } : {},
-    sideChat: { parentThreadId: parent.id, anchorMessageId: anchor2.id },
-    createdAt: now,
-    updatedAt: now
-  };
-}
-function toSideChatRow(thread) {
-  const link = thread.sideChat;
-  if (link === void 0) return null;
-  return {
-    id: thread.id,
-    title: thread.title,
-    ...thread.model !== void 0 ? { model: thread.model } : {},
-    anchorMessageId: link.anchorMessageId,
-    archived: thread.archivedAt != null,
-    unread: thread.unreadAt !== void 0,
-    createdAt: thread.createdAt,
-    updatedAt: thread.updatedAt
-  };
-}
-function sideChatsOf(threads, parentId, includeArchived = false) {
-  const rows = [];
-  for (const thread of threads) {
-    if (thread.sideChat?.parentThreadId !== parentId) continue;
-    const row2 = toSideChatRow(thread);
-    if (row2 && (includeArchived || !row2.archived)) rows.push(row2);
-  }
-  return rows.sort((a3, b4) => a3.createdAt - b4.createdAt || a3.id.localeCompare(b4.id));
-}
-function withoutSideChats(threads) {
-  const ids = new Set(threads.map((thread) => thread.id));
-  return threads.filter(
-    (thread) => thread.sideChat === void 0 || !ids.has(thread.sideChat.parentThreadId)
-  );
-}
-function unreadSideChatParents(threads) {
-  const parents = /* @__PURE__ */ new Set();
-  for (const thread of threads) {
-    if (thread.sideChat && thread.unreadAt !== void 0 && thread.archivedAt == null)
-      parents.add(thread.sideChat.parentThreadId);
-  }
-  return parents;
-}
-var MAX_TITLE_LENGTH;
-var init_side_chat = __esm({
-  "packages/thread-store/src/side-chat.ts"() {
-    MAX_TITLE_LENGTH = 80;
-  }
-});
-
-// src/shared/threads/side-chat.ts
-var init_side_chat2 = __esm({
-  "src/shared/threads/side-chat.ts"() {
-    init_side_chat();
-  }
-});
-
-// src/shared/store/pending-submissions.ts
-function beginThreadSubmission(store2, threadId) {
-  let pending = pendingByStore.get(store2);
-  if (!pending) {
-    pending = /* @__PURE__ */ new Set();
-    pendingByStore.set(store2, pending);
-  }
-  if (pending.has(threadId)) return false;
-  pending.add(threadId);
-  return true;
-}
-function endThreadSubmission(store2, threadId) {
-  pendingByStore.get(store2)?.delete(threadId);
-}
-function isThreadSubmitting(store2, threadId) {
-  return pendingByStore.get(store2)?.has(threadId) ?? false;
-}
-var pendingByStore;
-var init_pending_submissions = __esm({
-  "src/shared/store/pending-submissions.ts"() {
-    pendingByStore = /* @__PURE__ */ new WeakMap();
-  }
-});
-
-// packages/thread-store/src/thread-proposal.ts
-function trimTo(value, max) {
-  const trimmed2 = value.trim();
-  return trimmed2.length <= max ? trimmed2 : `${trimmed2.slice(0, max - 1).trimEnd()}\u2026`;
-}
-function stringField(args, key) {
-  const value = args[key];
-  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
-}
-function stringListField(args, key) {
-  const value = args[key];
-  if (!Array.isArray(value)) return [];
-  return value.filter(isNonBlankString).map((entry) => entry.trim());
-}
-function parseThreadProposal(id, args) {
-  if (id === "" || !isRecord(args)) return null;
-  const title = stringField(args, "title");
-  const summary = stringField(args, "summary");
-  const prompt = stringField(args, "prompt");
-  if (!title || !summary || !prompt) return null;
-  const rationale = stringField(args, "rationale");
-  const files = stringListField(args, "files");
-  return {
-    id,
-    title: trimTo(title, THREAD_PROPOSAL_TITLE_MAX),
-    summary: trimTo(summary, THREAD_PROPOSAL_SUMMARY_MAX),
-    ...rationale ? { rationale: trimTo(rationale, THREAD_PROPOSAL_SUMMARY_MAX) } : {},
-    prompt,
-    ...files.length > 0 ? { files } : {}
-  };
-}
-function threadProposalStatus(decisions, id) {
-  return findThreadProposalDecision(decisions, id)?.status ?? "pending";
-}
-function findThreadProposalDecision(decisions, id) {
-  return decisions?.find((decision) => decision.id === id);
-}
-function recordThreadProposalDecision(decisions, decision) {
-  const rest = (decisions ?? []).filter((entry) => entry.id !== decision.id);
-  return [...rest, decision];
-}
-function clearThreadProposalDecision(decisions, id) {
-  return (decisions ?? []).filter((entry) => entry.id !== id);
-}
-function threadProposalFileSummary(files) {
-  if (!files || files.length === 0) return null;
-  if (files.length <= THREAD_PROPOSAL_FILES_SHOWN) return files.join(", ");
-  const shown = files.slice(0, THREAD_PROPOSAL_FILES_SHOWN).join(", ");
-  return `${shown} +${String(files.length - THREAD_PROPOSAL_FILES_SHOWN)} more`;
-}
-var THREAD_PROPOSAL_TOOL, THREAD_PROPOSAL_TITLE_MAX, THREAD_PROPOSAL_SUMMARY_MAX, THREAD_PROPOSAL_FILES_SHOWN;
-var init_thread_proposal = __esm({
-  "packages/thread-store/src/thread-proposal.ts"() {
-    init_unknown_value();
-    init_nullish();
-    THREAD_PROPOSAL_TOOL = "propose_thread";
-    THREAD_PROPOSAL_TITLE_MAX = 80;
-    THREAD_PROPOSAL_SUMMARY_MAX = 400;
-    THREAD_PROPOSAL_FILES_SHOWN = 4;
-  }
-});
-
-// src/shared/threads/thread-proposal.ts
-var init_thread_proposal2 = __esm({
-  "src/shared/threads/thread-proposal.ts"() {
-    init_thread_proposal();
-  }
-});
-
-// src/shared/threads/reviewer-input.ts
-function isReviewerInputCall(call) {
-  return [call.name, call.programmaticName].some(
-    (name) => name === REVIEWER_INPUT_TOOL || typeof name === "string" && /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+request_review_input(?![a-z0-9_])/i.test(name)
-  );
-}
-function parseReviewerInputCall(call, messageId) {
-  if (!isReviewerInputCall(call) || call.status !== "done" || !isRecord(call.args)) return null;
-  const { question, context, recommendation, options } = call.args;
-  if (typeof question !== "string" || question.trim() === "" || typeof context !== "string" || context.trim() === "") {
-    return null;
-  }
-  const validOptions = Array.isArray(options) ? options.flatMap(
-    (value) => typeof value === "string" && value.trim() !== "" ? [value] : []
-  ) : [];
-  return {
-    id: call.id,
-    messageId,
-    question: question.trim().slice(0, 300),
-    context: context.trim().slice(0, 1200),
-    ...typeof recommendation === "string" && recommendation.trim() !== "" ? { recommendation: recommendation.trim().slice(0, 600) } : {},
-    options: validOptions.slice(0, 4).map((value) => value.trim().slice(0, 120))
-  };
-}
-function reviewerInputRequests(thread) {
-  return thread.messages.flatMap(
-    (message2) => message2.toolCalls.map((call) => parseReviewerInputCall(call, message2.id)).filter((request) => request !== null)
-  );
-}
-function reviewerInputAnswer(answers, id) {
-  return parseReviewerInputAnswers(answers).find((answer) => answer.id === id);
-}
-function parseReviewerInputAnswers(value) {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
-    if (!isRecord(entry) || typeof entry["id"] !== "string" || typeof entry["text"] !== "string" || typeof entry["answeredAt"] !== "number" || !Number.isFinite(entry["answeredAt"]) || typeof entry["messageId"] !== "string") {
-      return [];
-    }
-    return [
-      {
-        id: entry["id"],
-        text: entry["text"],
-        answeredAt: entry["answeredAt"],
-        messageId: entry["messageId"]
-      }
-    ];
-  });
-}
-var REVIEWER_INPUT_TOOL;
-var init_reviewer_input = __esm({
-  "src/shared/threads/reviewer-input.ts"() {
-    init_unknown_value3();
-    REVIEWER_INPUT_TOOL = "request_review_input";
-  }
-});
-
-// packages/thread-store/src/thread-sort.ts
-function isHumanUserPrompt(message2) {
-  return message2.role === "user" && (message2.origin === void 0 || message2.editedByUser === true);
-}
-function lastHumanPromptAt(thread) {
-  if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
-  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
-    const message2 = thread.messages[i2];
-    if (message2 !== void 0 && isHumanUserPrompt(message2)) return message2.createdAt;
-  }
-  return void 0;
-}
-function threadSortKey(thread) {
-  return lastHumanPromptAt(thread) ?? thread.createdAt;
-}
-function sortThreadsNewestFirst(threads) {
-  return [...threads].sort(
-    (a3, b4) => threadSortKey(b4) - threadSortKey(a3) || b4.createdAt - a3.createdAt
-  );
-}
-var init_thread_sort = __esm({
-  "packages/thread-store/src/thread-sort.ts"() {
-  }
-});
-
-// packages/agent/src/token-estimate.ts
-var CHARS_PER_TOKEN;
-var init_token_estimate = __esm({
-  "packages/agent/src/token-estimate.ts"() {
-    CHARS_PER_TOKEN = 4;
-  }
-});
-
-// src/shared/usage/footer-usage-summary.ts
-function collectSubagentUsage(toolCalls, totals) {
-  for (const toolCall of toolCalls) {
-    const session = toolCall.subagent;
-    if (!session) continue;
-    if (session.kind === "container") continue;
-    if (session.usage) {
-      totals.runs += 1;
-      totals.inputTokens += session.usage.inputTokens;
-      totals.outputTokens += session.usage.outputTokens;
-    }
-    for (const message2 of session.messages) {
-      collectSubagentUsage(message2.toolCalls, totals);
-    }
-  }
-}
-function subagentRunLabel(session) {
-  const kind = session.kind === "custom" && session.agentName ? session.agentName : SUBAGENT_KIND_LABEL[session.kind];
-  const firstLine2 = session.prompt.trim().split("\n")[0] ?? "";
-  if (!firstLine2) return kind;
-  const prompt = firstLine2.length > RUN_PROMPT_MAX_CHARS ? `${firstLine2.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine2;
-  return `${kind} \xB7 ${prompt}`;
-}
-function collectSubagentRuns(toolCalls, runs) {
-  for (const toolCall of toolCalls) {
-    const session = toolCall.subagent;
-    if (!session || session.kind === "container") continue;
-    runs.push({
-      label: subagentRunLabel(session),
-      model: session.model,
-      status: session.status,
-      usage: session.usage ? { inputTokens: session.usage.inputTokens, outputTokens: session.usage.outputTokens } : void 0
-    });
-    for (const message2 of session.messages) collectSubagentRuns(message2.toolCalls, runs);
-  }
-}
-function listSubagentRuns(messages) {
-  const runs = [];
-  for (const message2 of messages) collectSubagentRuns(message2.toolCalls, runs);
-  return runs;
-}
-function sumSubagentUsage(messages) {
-  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
-  for (const message2 of messages) {
-    collectSubagentUsage(message2.toolCalls, totals);
-  }
-  return totals;
-}
-function sumLegacyFoldedSubagentUsage(messages, trailingTurnRunning) {
-  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
-  let turnStart = 0;
-  const collectTurn = (turnEnd, isTrailingTurn) => {
-    if (trailingTurnRunning && isTrailingTurn) return;
-    let outcome;
-    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
-      const candidate = messages[i2]?.turnOutcome;
-      if (candidate !== void 0) outcome = candidate;
-    }
-    if (outcome !== void 0 && outcome.status !== "completed") return;
-    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
-      const message2 = messages[i2];
-      if (message2) collectSubagentUsage(message2.toolCalls, totals);
-    }
-  };
-  for (let i2 = 1; i2 <= messages.length; i2 += 1) {
-    if (i2 < messages.length && messages[i2]?.role !== "user") continue;
-    collectTurn(i2, i2 === messages.length);
-    turnStart = i2;
-  }
-  return totals;
-}
-function estimateAssistantOutputTokens(messages) {
-  let chars = 0;
-  for (const message2 of messages) {
-    if (message2.role !== "assistant") continue;
-    chars += message2.content.length;
-    for (const toolCall of message2.toolCalls) {
-      for (const subMessage of toolCall.subagent?.messages ?? []) {
-        if (subMessage.role === "assistant") chars += subMessage.content.length;
-      }
-    }
-  }
-  return Math.round(chars / CHARS_PER_TOKEN);
-}
-function foldedSubagentShare(measured, legacyFoldedSessions) {
-  if (measured.subagentInputTokens !== void 0 || measured.subagentOutputTokens !== void 0) {
-    return {
-      inputTokens: measured.subagentInputTokens ?? 0,
-      outputTokens: measured.subagentOutputTokens ?? 0
-    };
-  }
-  return legacyFoldedSessions;
-}
-function resolveFooterUsage(input2) {
-  const { inputTokens, outputTokens } = input2.measured;
-  if (inputTokens || outputTokens) {
-    const subagents = sumSubagentUsage(input2.messages);
-    const folded = foldedSubagentShare(
-      input2.measured,
-      sumLegacyFoldedSubagentUsage(input2.messages, input2.running)
-    );
-    return {
-      inputTokens: Math.max(0, inputTokens - folded.inputTokens),
-      outputTokens: Math.max(0, outputTokens - folded.outputTokens),
-      estimated: false,
-      ...subagents.runs > 0 ? {
-        subagentInputTokens: subagents.inputTokens,
-        subagentOutputTokens: subagents.outputTokens
-      } : {}
-    };
-  }
-  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
-  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
-  const total2 = (estimatedInput ?? 0) + estimatedOutput;
-  if (!total2 && !input2.running) return null;
-  return {
-    inputTokens: estimatedInput ?? 0,
-    outputTokens: estimatedOutput,
-    estimated: true
-  };
-}
-function formatFooterUsageSummary(display) {
-  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
-  return display.estimated ? `~${value}` : value;
-}
-function formatFooterUsageDetail(display, opts) {
-  const { inputTokens, outputTokens, estimated } = display;
-  const approx = estimated ? "~" : "";
-  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
-  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
-  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
-  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
-  return `Usage: ${parts.join(" \xB7 ")}`;
-}
-var SUBAGENT_KIND_LABEL, RUN_PROMPT_MAX_CHARS;
-var init_footer_usage_summary = __esm({
-  "src/shared/usage/footer-usage-summary.ts"() {
-    init_estimate_cost();
-    init_token_estimate();
-    init_format_usage_summary();
-    SUBAGENT_KIND_LABEL = {
-      explore: "Explore",
-      investigate_ci: "Investigate CI",
-      delegate: "Delegate",
-      custom: "Custom agent",
-      container: "Container run"
-    };
-    RUN_PROMPT_MAX_CHARS = 36;
-  }
-});
-
-// src/shared/store/thread-helpers.ts
-function getThreadById(store2, id) {
-  if (!id) return void 0;
-  const { threads, backgroundThreads } = store2.getState();
-  return threads.find((t2) => t2.id === id) ?? backgroundThreads.find((b4) => b4.thread.id === id)?.thread;
-}
-function getThreadProjectId(store2, threadId) {
-  const { threads, backgroundThreads, activeProjectId } = store2.getState();
-  if (threads.some((t2) => t2.id === threadId)) return activeProjectId;
-  return backgroundThreads.find((b4) => b4.thread.id === threadId)?.projectId ?? null;
-}
-function patchThreadAnywhere(store2, threadId, patch) {
-  const { threads, backgroundThreads } = store2.getState();
-  if (threads.some((t2) => t2.id === threadId)) {
-    store2.setState({ threads: threads.map((t2) => t2.id === threadId ? patch(t2) : t2) });
-    return true;
-  }
-  const carried = backgroundThreads.find((b4) => b4.thread.id === threadId);
-  if (!carried) return false;
-  store2.setState({
-    backgroundThreads: backgroundThreads.map(
-      (b4) => b4.thread.id === threadId ? { ...b4, thread: patch(b4.thread) } : b4
-    )
-  });
-  return true;
-}
-function getActiveThread(store2) {
-  return getThreadById(store2, store2.getState().activeThreadId);
-}
-function isBlankThread(thread) {
-  if (thread.messagesLoaded === false) return false;
-  if (thread.sideChat !== void 0) return false;
-  return thread.messages.length === 0 && thread.status === "idle";
-}
-function hasUnsubmittedPrompt(thread) {
-  return Boolean(thread.draftPrompt?.trim());
-}
-function isThreadArchived(thread) {
-  return thread.archivedAt != null;
-}
-function isPrunableBlankThread(store2, thread) {
-  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread) && !isThreadArchived(thread) && !isThreadSubmitting(store2, thread.id);
-}
-function pruneBlankThreads(store2, keepIds) {
-  const { threads, activeThreadId } = store2.getState();
-  const remaining = threads.filter((t2) => !isPrunableBlankThread(store2, t2) || keepIds.has(t2.id));
-  if (remaining.length === 0 || remaining.length === threads.length) return;
-  const newActive = activeThreadId && remaining.some((t2) => t2.id === activeThreadId) ? activeThreadId : remaining[0]?.id ?? null;
-  store2.setState({ threads: remaining, activeThreadId: newActive });
-  store2.emit("threads_changed");
-}
-function normalizeBlankThreads(store2) {
-  const { threads, activeThreadId } = store2.getState();
-  const blanks = threads.filter(
-    (t2) => isBlankThread(t2) && !isThreadArchived(t2) && !isThreadSubmitting(store2, t2.id)
-  );
-  const emptyBlanks = blanks.filter((t2) => !hasUnsubmittedPrompt(t2));
-  if (emptyBlanks.length <= 1) return;
-  const keepEmptyId = emptyBlanks.find((t2) => t2.id === activeThreadId)?.id ?? at(
-    emptyBlanks.sort((a3, b4) => b4.createdAt - a3.createdAt),
-    0
-  ).id;
-  const keepIds = /* @__PURE__ */ new Set([...blanks.filter(hasUnsubmittedPrompt).map((t2) => t2.id), keepEmptyId]);
-  pruneBlankThreads(store2, keepIds);
-}
-function createThread(store2, draftPrompt) {
-  const id = randomUUID();
-  const defaultModel = store2.getState().settings?.model;
-  const threads = [
-    {
-      id,
-      title: "New Thread",
-      status: "idle",
-      messages: [],
-      usage: { inputTokens: 0, outputTokens: 0 },
-      // Only set model when a default exists; omit under exactOptionalPropertyTypes
-      // rather than assigning undefined. Absent means "use the global default".
-      ...defaultModel !== void 0 ? { model: defaultModel } : {},
-      // A caller-seeded draft (e.g. starting a thread from a roadmap item) must
-      // be on the thread before threads_changed fires: the composer loads
-      // draftPrompt exactly once, when the active thread id changes.
-      ...draftPrompt?.trim() ? { draftPrompt } : {},
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    },
-    ...store2.getState().threads
-  ];
-  store2.setState({
-    threads,
-    activeThreadId: id,
-    openFile: null,
-    activeDiff: null,
-    stagedDiffs: []
-  });
-  store2.emit("threads_changed");
-  store2.emit("panel_changed");
-  store2.emit("new_thread_opened");
-  return id;
-}
-function openNewThread(store2) {
-  const { threads, activeThreadId } = store2.getState();
-  const existing = threads.find((t2) => isPrunableBlankThread(store2, t2));
-  if (existing) {
-    const defaultModel = store2.getState().settings?.model;
-    const reseed = (list) => list.map((t2) => {
-      if (t2.id !== existing.id) return t2;
-      const { model: _prevModel, ...rest } = t2;
-      return defaultModel !== void 0 ? { ...rest, model: defaultModel } : rest;
-    });
-    if (activeThreadId !== existing.id) {
-      store2.emit("composer_draft_flush");
-      store2.setState({ activeThreadId: existing.id, threads: reseed(threads) });
-    } else {
-      store2.setState({ threads: reseed(threads) });
-    }
-    store2.emit("threads_changed");
-    pruneBlankThreads(store2, /* @__PURE__ */ new Set([existing.id]));
-    store2.emit("threads_changed");
-    store2.setState({
-      openFile: null,
-      activeDiff: null,
-      stagedDiffs: []
-    });
-    store2.emit("panel_changed");
-    store2.emit("new_thread_opened");
-    return existing.id;
-  }
-  store2.emit("composer_draft_flush");
-  return createThread(store2);
-}
-function switchThread(store2, id) {
-  if (id === store2.getState().activeThreadId) {
-    markThreadRead(store2, id);
-    return;
-  }
-  store2.emit("composer_draft_flush");
-  const state = store2.getState();
-  const pruned = state.threads.filter((t2) => !isPrunableBlankThread(store2, t2) || t2.id === id);
-  const threads = (pruned.length > 0 ? pruned : state.threads).map((thread) => {
-    if (thread.id !== id || thread.unreadAt === void 0) return thread;
-    const { unreadAt: _read, ...readThread } = thread;
-    return readThread;
-  });
-  const panelWasPopulated = state.openFile !== null || state.activeDiff !== null || state.stagedDiffs.length > 0;
-  store2.setState({
-    activeThreadId: id,
-    threads,
-    openFile: null,
-    activeDiff: null,
-    stagedDiffs: []
-  });
-  if (panelWasPopulated) store2.emit("panel_changed");
-  store2.emit("threads_changed");
-}
-function nextThreadId(store2) {
-  const { threads, activeThreadId } = store2.getState();
-  if (threads.length < 2) return null;
-  const idx = threads.findIndex((t2) => t2.id === activeThreadId);
-  const target = idx < 0 || idx >= threads.length - 1 ? threads[0] : threads[idx + 1];
-  return target ? target.id : null;
-}
-function prevThreadId(store2) {
-  const { threads, activeThreadId } = store2.getState();
-  if (threads.length < 2) return null;
-  const idx = threads.findIndex((t2) => t2.id === activeThreadId);
-  const target = idx <= 0 ? threads[threads.length - 1] : threads[idx - 1];
-  return target ? target.id : null;
-}
-function markThreadUnread(store2, threadId, at3 = Date.now()) {
-  if (threadId === store2.getState().activeThreadId) return;
-  if (!patchThreadAnywhere(store2, threadId, (thread) => ({ ...thread, unreadAt: at3 }))) return;
-  store2.emit("threads_changed");
-}
-function markThreadRead(store2, threadId) {
-  const { threads } = store2.getState();
-  if (!threads.some((thread) => thread.id === threadId && thread.unreadAt !== void 0)) return;
-  store2.setState({
-    threads: threads.map((thread) => {
-      if (thread.id !== threadId || thread.unreadAt === void 0) return thread;
-      const { unreadAt: _read, ...readThread } = thread;
-      return readThread;
-    })
-  });
-  store2.emit("threads_changed");
-}
-function deleteThread(store2, id) {
-  const { threads, activeThreadId } = store2.getState();
-  const doomed = /* @__PURE__ */ new Set([id]);
-  for (const t2 of threads) if (t2.sideChat?.parentThreadId === id) doomed.add(t2.id);
-  const remaining = threads.filter((t2) => !doomed.has(t2.id));
-  if (remaining.length === 0) {
-    createThread(store2);
-    store2.setState({
-      threads: store2.getState().threads.filter((t2) => !doomed.has(t2.id))
-    });
-    store2.emit("threads_changed");
-    return;
-  }
-  const activeDoomed = activeThreadId !== null && doomed.has(activeThreadId);
-  const index = threads.findIndex((t2) => t2.id === id);
-  const parentId = threads.find((t2) => t2.id === id)?.sideChat?.parentThreadId;
-  const listed = remaining.filter((t2) => t2.sideChat === void 0);
-  const pool = listed.length > 0 ? listed : remaining;
-  const newActive = !activeDoomed ? activeThreadId : parentId !== void 0 && remaining.some((t2) => t2.id === parentId) ? parentId : pool[Math.min(index, pool.length - 1)]?.id ?? null;
-  store2.setState({
-    threads: remaining,
-    activeThreadId: newActive,
-    ...activeDoomed ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
-  });
-  store2.emit("threads_changed");
-  if (activeDoomed) store2.emit("panel_changed");
-}
-function archiveThread(store2, id, persisted) {
-  const { threads, activeThreadId } = store2.getState();
-  const target = threads.find((t2) => t2.id === id);
-  if (!target || isThreadArchived(target)) return;
-  const now = persisted?.archivedAt ?? Date.now();
-  const updated = threads.map((t2) => {
-    if (t2.id !== id) {
-      return t2.sideChat?.parentThreadId === id && !isThreadArchived(t2) && t2.status !== "running" ? { ...t2, archivedAt: now, updatedAt: now } : t2;
-    }
-    const archived = { ...t2, archivedAt: now, updatedAt: now };
-    if (persisted) {
-      if (persisted.worktree) {
-        archived.worktree = persisted.worktree;
-        archived.gitBranch = persisted.worktree.branch;
-      } else delete archived.worktree;
-    }
-    return archived;
-  });
-  const visible = updated.filter((t2) => !isThreadArchived(t2) && t2.sideChat === void 0);
-  if (visible.length === 0) {
-    store2.setState({ threads: updated, activeThreadId: null });
-    createThread(store2);
-    return;
-  }
-  const activeArchived = activeThreadId !== null && updated.some((t2) => t2.id === activeThreadId && isThreadArchived(t2));
-  const index = threads.findIndex((t2) => t2.id === id);
-  const parentId = target.sideChat?.parentThreadId;
-  const newActive = !activeArchived ? activeThreadId : parentId !== void 0 && visible.some((t2) => t2.id === parentId) ? parentId : visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id;
-  store2.setState({
-    threads: updated,
-    activeThreadId: newActive,
-    ...activeArchived ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
-  });
-  store2.emit("threads_changed");
-  if (activeArchived) store2.emit("panel_changed");
-}
-function restoreThread(store2, id) {
-  const { threads } = store2.getState();
-  const target = threads.find((t2) => t2.id === id);
-  if (!target || !isThreadArchived(target)) return;
-  store2.setState({
-    threads: threads.map((t2) => {
-      if (t2.id !== id) return t2;
-      const { archivedAt: _archivedAt, ...restored } = t2;
-      return { ...restored, updatedAt: Date.now() };
-    })
-  });
-  store2.emit("threads_changed");
-}
-function recordContextTrim(store2, threadId, record2) {
-  patchThreadAnywhere(store2, threadId, (t2) => {
-    const entry = { ...record2, at: Date.now() };
-    return {
-      ...t2,
-      contextTrims: [...t2.contextTrims ?? [], entry],
-      updatedAt: Date.now()
-    };
-  });
-  store2.emit("threads_changed");
-}
-function addMessage(store2, threadId, role, content = "", images, attachments, opts) {
-  const id = randomUUID();
-  const message2 = {
-    id,
-    role,
-    content,
-    ...images?.length ? { images } : {},
-    ...attachments?.length ? { attachments } : {},
-    ...opts?.model !== void 0 ? { model: opts.model } : {},
-    ...opts?.requestedModel !== void 0 ? { requestedModel: opts.requestedModel } : {},
-    ...opts?.parameters !== void 0 ? { parameters: opts.parameters } : {},
-    ...opts?.origin !== void 0 ? { origin: opts.origin } : {},
-    ...opts?.startingCommit !== void 0 ? { startingCommit: opts.startingCommit } : {},
-    ...opts?.dirty !== void 0 ? { dirty: opts.dirty } : {},
-    toolCalls: [],
-    createdAt: Date.now()
-  };
-  const isHumanPrompt = isHumanUserPrompt(message2);
-  patchThreadAnywhere(store2, threadId, (t2) => ({
-    ...t2,
-    messages: [...t2.messages, message2],
-    // The sidebar sorts on this and never reads transcripts, so it has to be
-    // recorded as the prompt lands rather than derived at display time.
-    ...isHumanPrompt ? { lastPromptAt: message2.createdAt } : {},
-    updatedAt: Date.now()
-  }));
-  let reorderedActiveThreads = false;
-  if (isHumanPrompt) {
-    const { threads } = store2.getState();
-    if (threads.some((thread2) => thread2.id === threadId)) {
-      const sortedThreads = sortThreadsNewestFirst(threads);
-      reorderedActiveThreads = sortedThreads.some((thread2, index) => thread2 !== threads[index]);
-      if (reorderedActiveThreads) store2.setState({ threads: sortedThreads });
-    }
-  }
-  store2.emit("message_added", threadId, id);
-  if (reorderedActiveThreads) store2.emit("threads_changed");
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
-  if (thread && thread.messages.length === 1) {
-    pruneBlankThreads(store2, /* @__PURE__ */ new Set([threadId]));
-  }
-  return id;
-}
-function setThreadDraftPrompt(store2, threadId, draftPrompt) {
-  const thread = getThreadById(store2, threadId);
-  if (!thread) return;
-  if (draftPrompt.trim()) {
-    if (thread.draftPrompt === draftPrompt) return;
-    patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, draftPrompt, updatedAt: Date.now() }));
-  } else {
-    if (thread.draftPrompt === void 0) return;
-    patchThreadAnywhere(store2, threadId, (t2) => {
-      const { draftPrompt: _removed, ...rest } = t2;
-      return { ...rest, updatedAt: Date.now() };
-    });
-  }
-  store2.emit("thread_draft_changed", threadId);
-}
-function markAutomationStartFailed(store2, threadId, failure2) {
-  patchThreadAnywhere(
-    store2,
-    threadId,
-    (t2) => t2.automation ? {
-      ...t2,
-      automation: {
-        ...t2.automation,
-        startFailedAt: Date.now(),
-        ...failure2 ? { failure: { ...failure2, at: Date.now() } } : {}
-      },
-      updatedAt: Date.now()
-    } : t2
-  );
-}
-function markAutomationRunFailed(store2, threadId, failure2) {
-  patchThreadAnywhere(
-    store2,
-    threadId,
-    (t2) => t2.automation ? {
-      ...t2,
-      automation: { ...t2.automation, failure: { ...failure2, at: Date.now() } },
-      updatedAt: Date.now()
-    } : t2
-  );
-}
-function messageLocations(store2) {
-  const { threads, backgroundThreads } = store2.getState();
-  const cached2 = messageIndexByStore.get(store2);
-  if (cached2 && cached2.threads === threads && cached2.backgroundThreads === backgroundThreads) {
-    return cached2.byId;
-  }
-  const byId = /* @__PURE__ */ new Map();
-  const allThreads = [...threads, ...backgroundThreads.map((b4) => b4.thread)];
-  for (const thread of allThreads) {
-    for (const message2 of thread.messages) {
-      if (!byId.has(message2.id)) byId.set(message2.id, { thread, message: message2 });
-    }
-  }
-  messageIndexByStore.set(store2, { threads, backgroundThreads, byId });
-  return byId;
-}
-function locateMessage(store2, messageId) {
-  return messageLocations(store2).get(messageId);
-}
-function updateMessage(store2, messageId, mutate) {
-  const loc = locateMessage(store2, messageId);
-  if (!loc) return null;
-  mutate(loc.message);
-  return loc.thread.id;
-}
-function appendToken(store2, messageId, text2) {
-  updateMessage(store2, messageId, (m2) => {
-    m2.content += text2;
-  });
-  store2.emit("message_token", messageId, text2);
-}
-function appendReasoning(store2, messageId, text2) {
-  updateMessage(store2, messageId, (m2) => {
-    m2.reasoning = (m2.reasoning ?? "") + text2;
-  });
-  store2.emit("message_reasoning", messageId, text2);
-}
-function appendAcpContentBlock(store2, messageId, channel, block) {
-  updateMessage(store2, messageId, (message2) => {
-    if (channel === "thought") {
-      message2.reasoningBlocks = [...message2.reasoningBlocks ?? [], block];
-    } else {
-      message2.contentBlocks = [...message2.contentBlocks ?? [], block];
-    }
-  });
-  store2.emit("message_acp_content", messageId);
-}
-function setMessageContent(store2, messageId, content) {
-  updateMessage(store2, messageId, (m2) => {
-    m2.content = content;
-  });
-  store2.emit("message_token", messageId, content);
-}
-function addMessageCanvasArtefact(store2, messageId, artefact) {
-  updateMessage(store2, messageId, (message2) => {
-    message2.canvasArtefacts = [...message2.canvasArtefacts ?? [], artefact];
-  });
-  store2.emit("message_canvas_artefacts_changed", messageId);
-}
-function addMessageVisualEvidence(store2, messageId, toolCallId, evidence) {
-  const loc = locateMessage(store2, messageId);
-  if (!loc) return;
-  const existing = new Set((loc.message.visualEvidence ?? []).map((item) => item.id));
-  const additions = evidence.filter((item) => !existing.has(item.id)).map((item) => ({
-    ...item,
-    toolCallId,
-    assets: item.assets.map((asset) => ({
-      ...asset,
-      source: { ...asset.source }
-    }))
-  }));
-  if (additions.length === 0) return;
-  loc.message.visualEvidence = [...loc.message.visualEvidence ?? [], ...additions];
-  store2.emit("message_visual_evidence_changed", messageId);
-}
-function setMessageCommandSummary(store2, messageId, commandSummary) {
-  updateMessage(store2, messageId, (m2) => {
-    m2.commandSummary = commandSummary;
-  });
-  store2.emit("tool_call_updated", messageId, "");
-}
-function setMessageToolSummary(store2, messageId, toolSummary) {
-  updateMessage(store2, messageId, (m2) => {
-    m2.toolSummary = toolSummary;
-  });
-  store2.emit("tool_call_updated", messageId, "");
-}
-function setMessageRunSummary(store2, messageId, runSummary2) {
-  updateMessage(store2, messageId, (m2) => {
-    m2.runSummary = runSummary2;
-  });
-  store2.emit("tool_call_updated", messageId, "");
-}
-function addToolCall(store2, messageId, toolCall) {
-  updateMessage(store2, messageId, (m2) => {
-    m2.toolCalls.push(toolCall);
-  });
-  store2.emit("tool_call_started", messageId, toolCall);
-}
-function findToolCall(store2, messageId, toolCallId) {
-  return locateMessage(store2, messageId)?.message.toolCalls.find((tc2) => tc2.id === toolCallId);
-}
-function findToolCallOwner(store2, threadId, toolCallId) {
-  const messages = getThreadById(store2, threadId)?.messages;
-  if (!messages) return void 0;
-  for (let i2 = messages.length - 1; i2 >= 0; i2--) {
-    const message2 = messages[i2];
-    if (message2?.toolCalls.some((tc2) => tc2.id === toolCallId)) return message2.id;
-  }
-  return void 0;
-}
-function updateToolCall(store2, messageId, toolCallId, patch) {
-  updateMessage(store2, messageId, (m2) => {
-    const toolCall = m2.toolCalls.find((tc2) => tc2.id === toolCallId);
-    if (toolCall) Object.assign(toolCall, patch);
-  });
-  store2.emit("tool_call_updated", messageId, toolCallId);
-}
-function addHookCard(store2, messageId, card) {
-  const threadId = updateMessage(store2, messageId, (m2) => {
-    const cards = m2.hookCards ?? (m2.hookCards = []);
-    if (!cards.some((c3) => c3.id === card.id)) cards.push(card);
-  });
-  if (threadId === null) return;
-  store2.emit("hook_card_added", threadId, messageId);
-}
-function updateUsage(store2, threadId, usage) {
-  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, usage }));
-  store2.emit("usage_updated", threadId);
-}
-function addCacheTokens(base, prevRead, prevCreation, delta) {
-  const next = { ...base };
-  if (delta.cacheReadTokens !== void 0 || prevRead !== void 0) {
-    next.cacheReadTokens = (prevRead ?? 0) + (delta.cacheReadTokens ?? 0);
-  }
-  if (delta.cacheCreationTokens !== void 0 || prevCreation !== void 0) {
-    next.cacheCreationTokens = (prevCreation ?? 0) + (delta.cacheCreationTokens ?? 0);
-  }
-  return next;
-}
-function addUsageDelta(store2, threadId, delta) {
-  const thread = getThreadById(store2, threadId);
-  if (!thread) return;
-  const byModel = { ...thread.usage.byModel ?? {} };
-  const prev = byModel[delta.model] ?? { inputTokens: 0, outputTokens: 0 };
-  const usage = delta.serviceTierUsage !== void 0 ? delta : usageAtServiceTier(
-    delta,
-    usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier)
-  );
-  byModel[delta.model] = mergeModelUsage(prev, usage);
-  const subagentShare = foldedSubagentUsage(thread, delta.subagentUsage ? delta : void 0);
-  updateUsage(
-    store2,
-    threadId,
-    addCacheTokens(
-      {
-        inputTokens: thread.usage.inputTokens + delta.inputTokens,
-        outputTokens: thread.usage.outputTokens + delta.outputTokens,
-        byModel,
-        subagentInputTokens: subagentShare.inputTokens + (delta.subagentUsage ? delta.inputTokens : 0),
-        subagentOutputTokens: subagentShare.outputTokens + (delta.subagentUsage ? delta.outputTokens : 0)
-      },
-      thread.usage.cacheReadTokens,
-      thread.usage.cacheCreationTokens,
-      delta
-    )
-  );
-}
-function foldedSubagentUsage(thread, incoming) {
-  const { usage } = thread;
-  if (usage.subagentInputTokens !== void 0 || usage.subagentOutputTokens !== void 0) {
-    return {
-      inputTokens: usage.subagentInputTokens ?? 0,
-      outputTokens: usage.subagentOutputTokens ?? 0
-    };
-  }
-  if (!usage.inputTokens && !usage.outputTokens) return { inputTokens: 0, outputTokens: 0 };
-  const recorded = sumLegacyFoldedSubagentUsage(thread.messages, thread.status === "running");
-  const priorInput = Math.max(0, recorded.inputTokens - (incoming?.inputTokens ?? 0));
-  const priorOutput = Math.max(0, recorded.outputTokens - (incoming?.outputTokens ?? 0));
-  return {
-    inputTokens: Math.min(priorInput, usage.inputTokens),
-    outputTokens: Math.min(priorOutput, usage.outputTokens)
-  };
-}
-function updateContextSnapshot(store2, threadId, snapshot) {
-  patchThreadAnywhere(store2, threadId, (t2) => ({
-    ...t2,
-    contextSnapshot: { ...snapshot, updatedAt: Date.now() },
-    updatedAt: Date.now()
-  }));
-  store2.emit("context_updated", threadId);
-}
-function clearContextSnapshot(store2, threadId) {
-  const threads = store2.getState().threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
-    const { contextSnapshot: _removed, ...rest } = t2;
-    return rest;
-  });
-  store2.setState({ threads });
-  store2.emit("context_updated", threadId);
-}
-function setThreadTodos(store2, threadId, todos) {
-  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, todos, updatedAt: Date.now() }));
-  store2.emit("todos_changed", threadId);
-}
-function setMessageReview(store2, threadId, messageId, review) {
-  patchThreadAnywhere(store2, threadId, (t2) => {
-    const messages = t2.messages.map((m2) => {
-      if (m2.id !== messageId) return m2;
-      if (review) return { ...m2, review };
-      const { review: _removed, ...rest } = m2;
-      return rest;
-    });
-    return { ...t2, messages, updatedAt: Date.now() };
-  });
-  store2.emit("review_changed", threadId, messageId);
-}
-function setMessageTurnOutcome(store2, threadId, messageId, turnOutcome) {
-  const threads = store2.getState().threads.map((thread) => {
-    if (thread.id !== threadId) return thread;
-    return {
-      ...thread,
-      messages: thread.messages.map(
-        (message2) => message2.id === messageId ? { ...message2, turnOutcome } : message2
-      ),
-      updatedAt: Date.now()
-    };
-  });
-  store2.setState({ threads });
-  store2.emit("threads_changed");
-}
-function setThreadComparison(store2, threadId, comparison) {
-  patchThreadAnywhere(store2, threadId, (t2) => {
-    const next = { ...t2, updatedAt: Date.now() };
-    if (comparison) next.comparison = comparison;
-    else delete next.comparison;
-    return next;
-  });
-  store2.emit("comparison_changed", threadId);
-}
-function setThreadReviewReport(store2, threadId, report) {
-  patchThreadAnywhere(store2, threadId, (t2) => {
-    const next = { ...t2, updatedAt: Date.now() };
-    if (report) next.reviewReport = report;
-    else delete next.reviewReport;
-    return next;
-  });
-  store2.emit("review_report_changed", threadId, null);
-}
-function setMessageReviewReport(store2, threadId, messageId, report) {
-  patchThreadAnywhere(store2, threadId, (thread) => ({
-    ...thread,
-    updatedAt: Date.now(),
-    messages: thread.messages.map((message2) => {
-      if (message2.id !== messageId) return message2;
-      const next = { ...message2 };
-      if (report) next.reviewReport = report;
-      else delete next.reviewReport;
-      return next;
-    })
-  }));
-  store2.emit("review_report_changed", threadId, messageId);
-}
-function setReviewFindingDismissed(store2, threadId, findingId, dismissed, messageId = null) {
-  patchThreadAnywhere(store2, threadId, (t2) => {
-    if (messageId !== null) {
-      return {
-        ...t2,
-        updatedAt: Date.now(),
-        messages: t2.messages.map((message2) => {
-          if (message2.id !== messageId || !message2.reviewReport) return message2;
-          return {
-            ...message2,
-            reviewReport: {
-              ...message2.reviewReport,
-              findings: message2.reviewReport.findings.map(
-                (finding) => finding.id === findingId ? { ...finding, dismissed } : finding
-              )
-            }
-          };
-        })
-      };
-    }
-    if (!t2.reviewReport) return t2;
-    return {
-      ...t2,
-      updatedAt: Date.now(),
-      reviewReport: {
-        ...t2.reviewReport,
-        findings: t2.reviewReport.findings.map(
-          (finding) => finding.id === findingId ? { ...finding, dismissed } : finding
-        )
-      }
-    };
-  });
-  store2.emit("review_report_changed", threadId, messageId);
-}
-function setQueuePaused(store2, threadId, paused) {
-  const { threads } = store2.getState();
-  const thread = threads.find((t2) => t2.id === threadId);
-  if (!thread || Boolean(thread.queuePaused) === paused) return;
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
-    if (paused) return { ...t2, queuePaused: true, updatedAt: Date.now() };
-    const { queuePaused: _removed, ...rest } = t2;
-    return { ...rest, updatedAt: Date.now() };
-  });
-  store2.setState({ threads: updated });
-  store2.emit("threads_changed");
-}
-function setThreadStatus(store2, threadId, status) {
-  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, status }));
-  store2.emit("thread_status_changed", threadId, status);
-}
-function setThreadTitle(store2, threadId, title, options) {
-  patchThreadAnywhere(store2, threadId, (t2) => {
-    const { autoTitleCount: _previous, ...rest } = t2;
-    return options ? { ...rest, title, autoTitleCount: options.autoTitleCount } : { ...rest, title };
-  });
-  store2.emit("threads_changed");
-}
-function setThreadWorkingBrief(store2, threadId, workingBrief) {
-  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, workingBrief, updatedAt: Date.now() }));
-  store2.emit("threads_changed");
-}
-function setThreadGitBranch(store2, threadId, branch) {
-  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, gitBranch: branch, updatedAt: Date.now() }));
-  store2.emit("threads_changed");
-}
-function applyRenamedThreadWorktree(store2, threadId, worktree) {
-  const applied = patchThreadAnywhere(store2, threadId, (thread) => ({
-    ...thread,
-    worktree,
-    gitBranch: worktree.branch,
-    updatedAt: Date.now()
-  }));
-  if (!applied) return;
-  store2.emit("threads_changed");
-  store2.emit("git_branch_changed");
-}
-function recordThreadVideos(store2, threadId, videos) {
-  if (videos.length === 0) return;
-  patchThreadAnywhere(store2, threadId, (t2) => {
-    const existing = t2.videos ?? [];
-    const known = new Set(existing.map((v3) => v3.path));
-    const added = videos.filter((v3) => !known.has(v3.path));
-    if (added.length === 0) return t2;
-    return { ...t2, videos: [...existing, ...added], updatedAt: Date.now() };
-  });
-  store2.emit("threads_changed");
-}
-function recordThreadArchives(store2, threadId, archives) {
-  if (archives.length === 0) return;
-  patchThreadAnywhere(store2, threadId, (t2) => {
-    const existing = t2.archives ?? [];
-    const known = new Set(existing.map((a3) => a3.path));
-    const added = archives.filter((a3) => !known.has(a3.path));
-    if (added.length === 0) return t2;
-    return { ...t2, archives: [...existing, ...added], updatedAt: Date.now() };
-  });
-  store2.emit("threads_changed");
-}
-function setThreadProposalDecision(store2, threadId, decision) {
-  patchThreadAnywhere(store2, threadId, (t2) => ({
-    ...t2,
-    threadProposals: recordThreadProposalDecision(t2.threadProposals, decision),
-    updatedAt: Date.now()
-  }));
-  store2.emit("threads_changed");
-}
-function setReviewerInputAnswer(store2, threadId, answer) {
-  patchThreadAnywhere(store2, threadId, (thread) => ({
-    ...thread,
-    reviewerInputAnswers: [
-      ...parseReviewerInputAnswers(thread.reviewerInputAnswers).filter(
-        (entry) => entry.id !== answer.id
-      ),
-      answer
-    ],
-    updatedAt: Date.now()
-  }));
-  store2.emit("threads_changed");
-}
-function clearThreadProposalDecisionFor(store2, threadId, proposalId) {
-  patchThreadAnywhere(store2, threadId, (t2) => {
-    const remaining = clearThreadProposalDecision(t2.threadProposals, proposalId);
-    if (remaining.length > 0) return { ...t2, threadProposals: remaining, updatedAt: Date.now() };
-    const { threadProposals: _cleared, ...rest } = t2;
-    return { ...rest, updatedAt: Date.now() };
-  });
-  store2.emit("threads_changed");
-}
-function bindThreadGitBranchIfUnset(store2, threadId, branch) {
-  const thread = getThreadById(store2, threadId);
-  if (!thread || thread.gitBranch) return;
-  setThreadGitBranch(store2, threadId, branch);
-}
-function applyPreparedThreadCheckout(store2, threadId, prepared) {
-  const previousWorktreePath = getThreadById(store2, threadId)?.worktree?.path;
-  const applied = patchThreadAnywhere(store2, threadId, (thread) => ({
-    ...thread,
-    worktreeChoice: prepared.choice,
-    ...prepared.branch ? { gitBranch: prepared.branch } : {},
-    ...prepared.worktree ? { worktree: prepared.worktree } : {},
-    ...prepared.deferredWorktree ? { deferredWorktree: prepared.deferredWorktree } : {},
-    updatedAt: Date.now()
-  }));
-  if (!applied) return;
-  store2.emit("threads_changed");
-  if (prepared.worktree && prepared.worktree.path !== previousWorktreePath) {
-    store2.emit("thread_checkout_changed", threadId);
-  }
-  store2.emit("git_branch_changed");
-}
-var randomUUID, messageIndexByStore;
-var init_thread_helpers = __esm({
-  "src/shared/store/thread-helpers.ts"() {
-    init_model_usage();
-    init_service_tier();
-    init_pending_submissions();
-    init_array_utils2();
-    init_thread_proposal2();
-    init_reviewer_input();
-    init_thread_sort();
-    init_footer_usage_summary();
-    init_thread_sort();
-    randomUUID = () => globalThis.crypto.randomUUID();
-    messageIndexByStore = /* @__PURE__ */ new WeakMap();
-  }
-});
-
-// src/renderer/controller/background-threads.ts
-function carryRunningThreads(store2, outgoingProjectId, outgoingThreads) {
-  const running = outgoingThreads.filter(
-    (t2) => t2.status === "running" || isThreadSubmitting(store2, t2.id)
-  );
-  if (running.length === 0) return;
-  const existing = store2.getState().backgroundThreads;
-  const carriedIds = new Set(existing.map((b4) => b4.thread.id));
-  const added = running.filter((t2) => !carriedIds.has(t2.id)).map((thread) => ({ projectId: outgoingProjectId, thread }));
-  if (added.length === 0) return;
-  store2.setState({ backgroundThreads: [...existing, ...added] });
-}
-function adoptBackgroundThreads(store2, projectId, disk) {
-  const { backgroundThreads } = store2.getState();
-  const adopting = new Map(
-    backgroundThreads.filter((b4) => b4.projectId === projectId).map((b4) => [b4.thread.id, b4.thread])
-  );
-  if (adopting.size === 0) return [...disk];
-  store2.setState({
-    backgroundThreads: backgroundThreads.filter((b4) => b4.projectId !== projectId)
-  });
-  const merged = disk.map((diskThread) => {
-    const memory = adopting.get(diskThread.id);
-    if (!memory) return diskThread;
-    adopting.delete(diskThread.id);
-    return memory;
-  });
-  return [...merged, ...adopting.values()];
-}
-function backgroundProjectOf(store2, threadId) {
-  return store2.getState().backgroundThreads.find((b4) => b4.thread.id === threadId)?.projectId;
-}
-function dropBackgroundThread(store2, threadId) {
-  const { backgroundThreads } = store2.getState();
-  if (!backgroundThreads.some((b4) => b4.thread.id === threadId)) return;
-  store2.setState({
-    backgroundThreads: backgroundThreads.filter((b4) => b4.thread.id !== threadId)
-  });
-}
-function dropProjectBackgroundThreads(store2, projectId) {
-  const { backgroundThreads } = store2.getState();
-  if (!backgroundThreads.some((b4) => b4.projectId === projectId)) return;
-  store2.setState({
-    backgroundThreads: backgroundThreads.filter(
-      (b4) => b4.projectId !== projectId || b4.thread.status === "running"
-    )
-  });
-}
-var init_background_threads = __esm({
-  "src/renderer/controller/background-threads.ts"() {
-    init_pending_submissions();
-  }
-});
-
-// src/renderer/controller/persistence.ts
-function serializedSet(api2, key, value) {
-  const prev = writeChains.get(key) ?? Promise.resolve();
-  const next = prev.catch(() => void 0).then(() => api2.storage.set(key, value));
-  writeChains.set(key, next);
-  void next.finally(() => {
-    if (writeChains.get(key) === next) writeChains.delete(key);
-  }).catch(() => void 0);
-  return next;
-}
-function persistProjects(api2, projects) {
-  const json3 = JSON.stringify(projects);
-  if (json3 === persistedProjectsJson) return Promise.resolve();
-  persistedProjectsJson = json3;
-  return serializedSet(api2, KEY_PROJECTS, projects).catch((error62) => {
-    if (persistedProjectsJson === json3) persistedProjectsJson = null;
-    throw error62;
-  });
-}
-function serializedWrite(key, write) {
-  const prev = writeChains.get(key);
-  let next;
-  if (prev) {
-    next = prev.catch(() => void 0).then(write);
-  } else {
-    try {
-      next = write();
-    } catch (error62) {
-      next = Promise.reject(error62 instanceof Error ? error62 : new Error(String(error62)));
-    }
-  }
-  writeChains.set(key, next);
-  void next.finally(() => {
-    if (writeChains.get(key) === next) writeChains.delete(key);
-  });
-  return next;
-}
-function setNavigationOwnership(owns) {
-  ownsNavigation = owns;
-}
-function ownsWindowSession() {
-  return ownsNavigation;
-}
-function suspendNavigationWrites() {
-  navigationRestored = false;
-}
-function markNavigationRestored(restored) {
-  navigationRestored = true;
-  lastNavigation = restored;
-}
-function holdNavigation(projectId) {
-  navigationHeldFor = projectId;
-}
-function serializedNavigation(api2, navigation) {
-  if (!ownsNavigation || !navigationRestored) return Promise.resolve();
-  if (navigationHeldFor !== null && navigation.activeProjectId !== navigationHeldFor || lastNavigation !== null && lastNavigation.activeProjectId === navigation.activeProjectId && lastNavigation.activeThreadId === navigation.activeThreadId) {
-    return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
-  }
-  lastNavigation = navigation;
-  return serializedWrite("mainWindow:navigation", () => api2.windowState.setNavigation(navigation));
-}
-function metaOf(thread) {
-  const { messages: _messages, messagesLoaded: _messagesLoaded, ...meta3 } = thread;
-  return meta3;
-}
-function metaSig(meta3) {
-  return JSON.stringify(meta3);
-}
-function metaPatch(prev, next) {
-  const patch = { ...next };
-  for (const key of Object.keys(prev)) {
-    if (!Object.hasOwn(next, key)) patch[key] = void 0;
-  }
-  return patch;
-}
-function reconcileThreads(api2, projectId, threads) {
-  const prev = persistedMeta.get(projectId) ?? /* @__PURE__ */ new Map();
-  const next = /* @__PURE__ */ new Map();
-  const writes = [];
-  for (const t2 of threads) {
-    const meta3 = metaOf(t2);
-    next.set(t2.id, meta3);
-    const key = threadWriteKey(projectId, t2.id);
-    const prevMeta = prev.get(t2.id);
-    if (prevMeta === void 0) {
-      writes.push(serializedWrite(key, () => api2.threads.create(projectId, t2)));
-    } else if (metaSig(prevMeta) !== metaSig(meta3)) {
-      const patch = metaPatch(prevMeta, meta3);
-      writes.push(serializedWrite(key, () => api2.threads.updateMeta(projectId, t2.id, patch)));
-    }
-  }
-  for (const id of prev.keys()) {
-    if (!next.has(id)) {
-      writes.push(
-        serializedWrite(threadWriteKey(projectId, id), () => api2.threads.delete(projectId, id))
-      );
-    }
-  }
-  persistedMeta.set(projectId, next);
-  return Promise.all(writes).then(() => void 0);
-}
-function flushProjectThreads(api2, projectId, threads) {
-  return reconcileThreads(api2, projectId, threads);
-}
-async function loadProjects(api2) {
-  const projects = recordArrayOrEmpty(await api2.storage.get(KEY_PROJECTS)).flatMap((value) => {
-    const id = value["id"];
-    const path = value["path"];
-    const name = value["name"];
-    if (typeof id !== "string" || typeof path !== "string" || typeof name !== "string") return [];
-    const project2 = { id, path, name };
-    if (typeof value["sshHost"] === "string") project2.sshHost = value["sshHost"];
-    if (typeof value["missing"] === "boolean") project2.missing = value["missing"];
-    if (typeof value["groupId"] === "string") project2.groupId = value["groupId"];
-    const worktreeMode = value["worktreeMode"];
-    if (worktreeMode === "never" || worktreeMode === "always" || worktreeMode === "on-write") {
-      project2.worktreeMode = worktreeMode;
-    } else if (worktreeMode === "from-default-branch") {
-      project2.worktreeMode = "always";
-    }
-    return [project2];
-  });
-  const projectGroups = recordArrayOrEmpty(await api2.storage.get(KEY_PROJECT_GROUPS)).flatMap(
-    (value) => {
-      const id = value["id"];
-      const name = value["name"];
-      if (typeof id !== "string" || typeof name !== "string") return [];
-      const group = { id, name };
-      if (value["collapsed"] === true) group.collapsed = true;
-      return [group];
-    }
-  );
-  const navigation = await api2.windowState.getNavigation();
-  return { projects, projectGroups, ...navigation };
-}
-async function saveProjects(api2, projects, activeProjectId, activeThreadId) {
-  await Promise.all([
-    persistProjects(api2, projects),
-    serializedNavigation(api2, { activeProjectId, activeThreadId })
-  ]);
-}
-function saveNavigation(api2, activeProjectId, activeThreadId) {
-  return serializedNavigation(api2, { activeProjectId, activeThreadId });
-}
-function saveProjectGroups(api2, groups) {
-  return serializedSet(api2, KEY_PROJECT_GROUPS, groups);
-}
-async function loadThreads(api2, projectId) {
-  const threads = sortThreadsNewestFirst(await api2.threads.loadProject(projectId));
-  const metas = /* @__PURE__ */ new Map();
-  for (const t2 of threads) metas.set(t2.id, metaOf(t2));
-  persistedMeta.set(projectId, metas);
-  return threads;
-}
-function awaitPendingThreadPersistence() {
-  return activeAutosave?.whenIdle() ?? Promise.resolve();
-}
-function attachAutosave(store2, api2) {
-  let timer = null;
-  let projectsDirty = false;
-  let inflightFlush = Promise.resolve();
-  const reconcile = (projectId) => reconcileThreads(api2, projectId, store2.getState().threads);
-  const persistMessage = (projectId, threadId, messageId) => {
-    const thread = store2.getState().threads.find((t2) => t2.id === threadId);
-    const message2 = thread?.messages.find((m2) => m2.id === messageId);
-    if (!message2) return;
-    void reconcile(projectId);
-    void serializedWrite(
-      threadWriteKey(projectId, threadId),
-      () => api2.threads.appendMessage(projectId, threadId, message2)
-    );
-  };
-  const persistBackgroundMessage = (projectId, threadId, messageId) => {
-    const message2 = getThreadById(store2, threadId)?.messages.find((m2) => m2.id === messageId);
-    if (!message2) return;
-    void serializedWrite(
-      threadWriteKey(projectId, threadId),
-      () => api2.threads.appendMessage(projectId, threadId, message2)
-    );
-  };
-  const threadIdOfMessage = (messageId) => {
-    const { threads, backgroundThreads, activeThreadId } = store2.getState();
-    const active2 = threads.find((t2) => t2.id === activeThreadId);
-    if (active2?.messages.some((m2) => m2.id === messageId)) return active2.id;
-    return (threads.find(
-      (t2) => t2.messagesLoaded !== false && t2.messages.some((m2) => m2.id === messageId)
-    ) ?? backgroundThreads.map((b4) => b4.thread).find((t2) => t2.messagesLoaded !== false && t2.messages.some((m2) => m2.id === messageId)))?.id;
-  };
-  const flushNow = () => {
-    const { activeProjectId, activeThreadId, projects } = store2.getState();
-    const writes = [];
-    if (projectsDirty) {
-      projectsDirty = false;
-      writes.push(persistProjects(api2, projects));
-    }
-    writes.push(serializedNavigation(api2, { activeProjectId, activeThreadId }));
-    if (activeProjectId) writes.push(reconcile(activeProjectId));
-    const done = Promise.all(writes).then(() => void 0);
-    inflightFlush = Promise.all([inflightFlush.catch(() => void 0), done]).then(() => void 0);
-    return done;
-  };
-  const schedule = () => {
-    if (timer !== null) return;
-    timer = setTimeout(() => {
-      timer = null;
-      void flushNow();
-    }, AUTOSAVE_DEBOUNCE_MS);
-  };
-  const flush = () => {
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
-    return flushNow().then(() => inflightFlush);
-  };
-  const unsubscribes = [
-    store2.on("threads_changed", () => {
-      const { activeProjectId, threads } = store2.getState();
-      if (!activeProjectId) {
-        schedule();
-        return;
-      }
-      const prev = persistedMeta.get(activeProjectId) ?? /* @__PURE__ */ new Map();
-      if (threads.some((t2) => !prev.has(t2.id))) {
-        if (timer !== null) {
-          clearTimeout(timer);
-          timer = null;
-        }
-        void flushNow();
-        return;
-      }
-      schedule();
-    }),
-    store2.on("thread_draft_changed", () => {
-      schedule();
-    }),
-    store2.on("usage_updated", () => {
-      schedule();
-    }),
-    store2.on("thread_status_changed", () => {
-      schedule();
-    }),
-    store2.on("todos_changed", () => {
-      schedule();
-    }),
-    store2.on("context_updated", () => {
-      schedule();
-    }),
-    // A dismissed (or landed) comparison changes thread metadata with no other
-    // event in flight — e.g. dismissing a failed card on an idle thread — so it
-    // needs its own autosave trigger or the card resurrects on reload.
-    store2.on("comparison_changed", () => {
-      schedule();
-    }),
-    // Same for the review report: a dismissed finding or a cleared card is a
-    // metadata-only change on an idle thread. A report anchored to a message
-    // lives on that message's spine line instead, so re-finalize the message:
-    // a standalone review (Changes view "Review") ends with a `done` that has
-    // no streaming message, so no `message_done` would ever carry it to disk.
-    store2.on("review_report_changed", (threadId, messageId) => {
-      if (messageId === null) {
-        schedule();
-        return;
-      }
-      const message2 = getThreadById(store2, threadId)?.messages.find(
-        (candidate) => candidate.id === messageId
-      );
-      if (!message2) return;
-      if (message2.reviewReport?.status === "running") return;
-      if (message2.toolCalls.some((toolCall) => toolCall.status === "running")) return;
-      const backgroundProjectId = backgroundProjectOf(store2, threadId);
-      if (backgroundProjectId) {
-        persistBackgroundMessage(backgroundProjectId, threadId, messageId);
-        return;
-      }
-      const { activeProjectId } = store2.getState();
-      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId);
-    }),
-    store2.on("projects_changed", () => {
-      projectsDirty = true;
-      schedule();
-    }),
-    store2.on("message_added", (threadId, messageId) => {
-      const message2 = getThreadById(store2, threadId)?.messages.find((m2) => m2.id === messageId);
-      if (message2?.role === "user") {
-        const backgroundProjectId = backgroundProjectOf(store2, threadId);
-        if (backgroundProjectId) {
-          persistBackgroundMessage(backgroundProjectId, threadId, messageId);
-          return;
-        }
-      }
-      const { activeProjectId } = store2.getState();
-      if (!activeProjectId) return;
-      if (message2?.role === "user") persistMessage(activeProjectId, threadId, messageId);
-      else schedule();
-    }),
-    store2.on("message_done", (messageId) => {
-      const threadId = threadIdOfMessage(messageId);
-      if (!threadId) return;
-      const backgroundProjectId = backgroundProjectOf(store2, threadId);
-      if (backgroundProjectId) {
-        persistBackgroundMessage(backgroundProjectId, threadId, messageId);
-        return;
-      }
-      const { activeProjectId } = store2.getState();
-      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId);
-    }),
-    // ACP agents may patch raw input/output after the turn's message was first
-    // finalized (including between-turn background updates). Re-finalize the
-    // owning message when that tool settles so events.jsonl + its result blob
-    // carry the latest args/response across an app restart. Do not persist a
-    // running tool: the v1 spine deliberately has no running status.
-    store2.on("tool_call_updated", (messageId, toolCallId) => {
-      const threadId = threadIdOfMessage(messageId);
-      if (!threadId) return;
-      const message2 = getThreadById(store2, threadId)?.messages.find(
-        (candidate) => candidate.id === messageId
-      );
-      if (!message2) return;
-      if (toolCallId) {
-        const toolCall = message2.toolCalls.find((candidate) => candidate.id === toolCallId);
-        if (!toolCall || toolCall.status === "running") return;
-      }
-      const backgroundProjectId = backgroundProjectOf(store2, threadId);
-      if (backgroundProjectId) {
-        persistBackgroundMessage(backgroundProjectId, threadId, messageId);
-        return;
-      }
-      const { activeProjectId } = store2.getState();
-      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId);
-    })
-  ];
-  const onPagehide = () => void flush();
-  window.addEventListener("pagehide", onPagehide);
-  const whenIdle = () => inflightFlush.catch(() => void 0);
-  const autosave = {
-    flush,
-    whenIdle,
-    detach() {
-      if (timer !== null) {
-        clearTimeout(timer);
-        timer = null;
-      }
-      unsubscribes.forEach((u2) => {
-        u2();
-      });
-      window.removeEventListener("pagehide", onPagehide);
-      if (activeAutosave === autosave) activeAutosave = null;
-    }
-  };
-  activeAutosave = autosave;
-  return autosave;
-}
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
-var init_persistence = __esm({
-  "src/renderer/controller/persistence.ts"() {
-    init_thread_helpers();
-    init_background_threads();
-    init_unknown_value3();
-    KEY_PROJECTS = "projects";
-    KEY_PROJECT_GROUPS = "projectGroups";
-    writeChains = /* @__PURE__ */ new Map();
-    persistedProjectsJson = null;
-    ownsNavigation = true;
-    navigationRestored = true;
-    lastNavigation = null;
-    navigationHeldFor = null;
-    threadWriteKey = (projectId, threadId) => `thread:${projectId}:${threadId}`;
-    persistedMeta = /* @__PURE__ */ new Map();
-    AUTOSAVE_DEBOUNCE_MS = 250;
-    activeAutosave = null;
-  }
-});
-
-// src/shared/store/review-reports.ts
-function findingLocation(finding) {
-  if (finding.startLine === void 0) return finding.path;
-  const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
-  return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
-}
-function userRunDone(report) {
-  return report?.initiator === "user" && report.status === "done" ? report : null;
-}
-function reviewReportsAwaitingModel(thread) {
-  const repliedAfter = (report, anchorId) => thread.messages.some(
-    (message2) => message2.role === "assistant" && message2.id !== anchorId && message2.createdAt >= report.startedAt
-  );
-  const awaiting = [];
-  const legacy = userRunDone(thread.reviewReport);
-  if (legacy && !repliedAfter(legacy)) awaiting.push(legacy);
-  const anchored = [];
-  for (const message2 of thread.messages) {
-    if (message2.role !== "assistant") continue;
-    const report = userRunDone(message2.reviewReport);
-    if (report && !repliedAfter(report, message2.id)) anchored.push(report);
-  }
-  anchored.sort((a3, b4) => a3.startedAt - b4.startedAt);
-  return [...awaiting, ...anchored];
-}
-function clip(text2, max) {
-  const flat = text2.replace(/\s+/g, " ").trim();
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
-}
-function reviewedLine(report) {
-  const parts = ["Copse Reviewer"];
-  if (report.baseRef !== "") {
-    const head = report.dirtyWorkingTree ? "the working tree" : `HEAD${report.headCommit !== null ? ` (${report.headCommit.slice(0, 10)})` : ""}`;
-    parts.push(`reviewed ${head} against ${report.baseRef}`);
-  }
-  if (report.models.reviewer !== "") parts.push(`with ${report.models.reviewer}`);
-  return `${parts.join(" ")}.`;
-}
-function groundLine(report) {
-  if (!report.execution.executed) {
-    return report.execution.reason === "" ? "Read-only review: nothing was executed." : `Read-only review: nothing was executed (${report.execution.reason}).`;
-  }
-  const checks = report.checks.map((check2) => `${check2.kind} ${check2.verdict}`);
-  const notChecked = report.notChecked.map((note) => `not checked: ${note}`);
-  const all = [...checks, ...notChecked];
-  return all.length === 0 ? null : `Checks: ${all.join("; ")}.`;
-}
-function findingLine(finding, index) {
-  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${clip(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
-}
-function reportContextText(report) {
-  const lines = [reviewedLine(report)];
-  const ground = groundLine(report);
-  if (ground !== null) lines.push(ground);
-  if (report.note !== void 0) lines.push(report.note);
-  const live = report.findings.filter((finding) => finding.dismissed !== true);
-  const dismissed = report.findings.length - live.length;
-  const dismissedNote = dismissed > 0 ? ` (${String(dismissed)} more dismissed by the user and left out)` : "";
-  if (live.length === 0) {
-    lines.push(report.findings.length === 0 ? "No findings." : `No open findings${dismissedNote}.`);
-  } else {
-    lines.push(`${String(live.length)} finding(s)${dismissedNote}:`);
-    live.slice(0, MAX_CONTEXT_FINDINGS).forEach((finding, index) => {
-      lines.push(findingLine(finding, index));
-    });
-    if (live.length > MAX_CONTEXT_FINDINGS) {
-      lines.push(`\u2026and ${String(live.length - MAX_CONTEXT_FINDINGS)} more on the card.`);
-    }
-  }
-  if (report.appendix > 0) {
-    lines.push(`${String(report.appendix)} lower-ranked finding(s) fell below the report's cut.`);
-  }
-  return lines.join("\n");
-}
-function reviewReportModelContext(reports) {
-  if (reports.length === 0) return void 0;
-  const shown = reports.slice(-MAX_CONTEXT_REPORTS);
-  const omitted = reports.length - shown.length;
-  const intro = reports.length === 1 ? "Since your last reply the user ran Copse Reviewer on this thread\u2019s changes. You did not start this review; the user sees its report as a card in the conversation." : `Since your last reply the user ran Copse Reviewer ${String(reports.length)} times on this thread\u2019s changes, oldest first. You did not start these reviews; the user sees each report as a card in the conversation.` + (omitted > 0 ? ` Only the latest ${String(shown.length)} are summarised here.` : "");
-  const body = [intro, ...shown.map(reportContextText)].join("\n\n");
-  return `<${REVIEW_CONTEXT_TAG}>
-${body}
-</${REVIEW_CONTEXT_TAG}>`;
-}
-var MAX_CONTEXT_REPORTS, MAX_CONTEXT_FINDINGS, MAX_CONTEXT_CLAIM_CHARS, REVIEW_CONTEXT_TAG;
-var init_review_reports = __esm({
-  "src/shared/store/review-reports.ts"() {
-    MAX_CONTEXT_REPORTS = 3;
-    MAX_CONTEXT_FINDINGS = 12;
-    MAX_CONTEXT_CLAIM_CHARS = 400;
-    REVIEW_CONTEXT_TAG = "copse_review_report";
-  }
-});
-
-// src/shared/line-endings.ts
-var init_line_endings = __esm({
-  "src/shared/line-endings.ts"() {
-  }
-});
-
-// src/shared/patch/apply-patch.ts
-function normalizePatchPath(raw) {
-  return raw.trim().replace(/^(?:\.\/)+/, "");
-}
-function summarizePatch(patchText) {
-  const summaries = [];
-  let current = null;
-  for (const raw of patchText.split(/\r?\n/)) {
-    const trimmed2 = raw.trim();
-    if (trimmed2.startsWith(ADD)) {
-      current = {
-        path: normalizePatchPath(trimmed2.slice(ADD.length)),
-        op: "add",
-        additions: 0,
-        deletions: 0
-      };
-      summaries.push(current);
-    } else if (trimmed2.startsWith(DELETE)) {
-      current = {
-        path: normalizePatchPath(trimmed2.slice(DELETE.length)),
-        op: "delete",
-        additions: 0,
-        deletions: 0
-      };
-      summaries.push(current);
-    } else if (trimmed2.startsWith(UPDATE)) {
-      current = {
-        path: normalizePatchPath(trimmed2.slice(UPDATE.length)),
-        op: "update",
-        additions: 0,
-        deletions: 0
-      };
-      summaries.push(current);
-    } else if (current !== null && raw.trimEnd().startsWith(MOVE)) {
-      current.op = "move";
-      current.movePath = normalizePatchPath(raw.trimEnd().slice(MOVE.length));
-    } else if (current !== null && raw.startsWith("+")) {
-      current.additions += 1;
-    } else if (current !== null && raw.startsWith("-") && current.op !== "add") {
-      current.deletions += 1;
-    }
-  }
-  return summaries.filter((summary) => summary.path !== "");
-}
-var ADD, DELETE, UPDATE, MOVE;
-var init_apply_patch = __esm({
-  "src/shared/patch/apply-patch.ts"() {
-    init_line_endings();
-    ADD = "*** Add File: ";
-    DELETE = "*** Delete File: ";
-    UPDATE = "*** Update File: ";
-    MOVE = "*** Move to: ";
-  }
-});
-
-// src/shared/tools/tool-display.ts
-function pickLabel(label, tense) {
-  return typeof label === "string" ? label : label[tense];
-}
-function tenseFromStatus(status) {
-  return status === "running" ? "running" : "done";
-}
-function parseMcp(name) {
-  const match = /^mcp__([\w.-]+?)__([\w.-]+)$/i.exec(name) ?? /^mcp\.([\w-]+)\.([\w.-]+)$/i.exec(name);
-  const server = match?.[1];
-  const tool = match?.[2];
-  return server && tool ? { server, tool } : null;
-}
-function nativeDisplayToolName(name) {
-  const mcp = parseMcp(name);
-  return mcp?.server.toLowerCase() === "copse" ? mcp.tool : name;
-}
-function getToolDisplayName(name, tense = "done") {
-  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)];
-  if (known) return pickLabel(known, tense);
-  const mcp = parseMcp(name);
-  if (mcp?.tool === "startup") return `${mcp.server} startup`;
-  if (mcp) return humanizeIdentifier(mcp.tool);
-  const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, "");
-  if (stripped !== name) return humanizeIdentifier(stripped);
-  return humanizeIdentifier(name);
-}
-function stringArg(args, key) {
-  if (!isRecord(args)) return null;
-  const value = args[key];
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-function fileEditPath(args) {
-  return stringArg(args, "path");
-}
-function getApplyPatchFiles(tc2) {
-  const input2 = stringArg(tc2.args, "input");
-  return input2 === null ? [] : summarizePatch(input2);
-}
-function getToolEditPath(tc2) {
-  const name = nativeDisplayToolName(tc2.name);
-  if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
-  const key = FILE_EDIT_PATH_ARG[name];
-  if (!key) return null;
-  return stringArg(tc2.args, key);
-}
-function stripShellCdPrefix(command) {
-  return command.replace(SHELL_CD_PREFIX_RE, "");
-}
-function shellCommandLabel(command) {
-  const cleaned = stripShellCdPrefix(command).replace(/\s+/g, " ").trim();
-  if (cleaned.length <= SHELL_LABEL_MAX) return cleaned;
-  return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}\u2026`;
-}
-function shellCommandArg(args) {
-  if (!isRecord(args)) return null;
-  const command = args["command"];
-  return typeof command === "string" && command.trim() ? command : null;
-}
-function shellCommandsFromToolCalls(toolCalls) {
-  const commands = [];
-  for (const tc2 of toolCalls) {
-    if (tc2.name !== "run_shell" || tc2.status === "error") continue;
-    const command = shellCommandArg(tc2.args);
-    if (command) commands.push(stripShellCdPrefix(command).trim());
-  }
-  return commands;
-}
-function getToolCallLabel(tc2) {
-  const tense = tenseFromStatus(tc2.status);
-  const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
-  const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
-  const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
-  if (name === "read_skill") {
-    const skillName = stringArg(tc2.args, "name");
-    if (skillName) {
-      if (tc2.status === "running") return `Loading skill ${skillName}`;
-      if (tc2.status === "error") return `Skill ${skillName}`;
-      if (tc2.result?.startsWith("Skill activated by the model: ")) {
-        return `Activated skill ${skillName}`;
-      }
-      return `Read skill ${skillName}`;
-    }
-  }
-  if (name === "write_file" || name === "str_replace") {
-    const path = fileEditPath(tc2.args);
-    if (path) return tense === "running" ? `Editing ${path}` : `Edited ${path}`;
-  }
-  if (name === "apply_patch") {
-    const files = getApplyPatchFiles(tc2);
-    if (files.length === 1) {
-      const only = files[0]?.path ?? "";
-      return tense === "running" ? `Patching ${only}` : `Patched ${only}`;
-    }
-    if (files.length > 1) {
-      return tense === "running" ? `Patching ${String(files.length)} files` : `Patched ${String(files.length)} files`;
-    }
-  }
-  if (name === "delete_file") {
-    const path = fileEditPath(tc2.args);
-    if (path) return tense === "running" ? `Deleting ${path}` : `Deleted ${path}`;
-  }
-  if (name === "rename_file") {
-    const from = stringArg(tc2.args, "from");
-    const to = stringArg(tc2.args, "to");
-    if (from && to) {
-      return tense === "running" ? `Renaming ${from} \u2192 ${to}` : `Renamed ${from} \u2192 ${to}`;
-    }
-  }
-  if (name === "make_directory") {
-    const path = fileEditPath(tc2.args);
-    if (path) {
-      return tense === "running" ? `Creating directory ${path}` : `Created directory ${path}`;
-    }
-  }
-  if (name === "task") {
-    const agentName = tc2.subagent?.agentName ?? stringArg(tc2.args, "subagent_type");
-    if (agentName) {
-      return tense === "running" ? `Running ${agentName}` : `Ran ${agentName}`;
-    }
-  }
-  if (name === "run_shell" || tc2.kind === "execute") {
-    const command = shellCommandArg(tc2.args);
-    if (command) return shellCommandLabel(command);
-    if (title) return shellCommandLabel(title);
-  }
-  if (title) return title;
-  return getToolDisplayName(mcpTitle ?? tc2.name, tense);
-}
-function getToolGroupKey(name, kind) {
-  const builtIn = TOOL_TO_GROUP.get(name);
-  if (builtIn) return builtIn;
-  const mcp = parseMcp(name);
-  if (mcp) {
-    if (mcp.server === "copse") {
-      const copseBuiltIn = TOOL_TO_GROUP.get(mcp.tool);
-      if (copseBuiltIn) return copseBuiltIn;
-    }
-    if (mcp.server === "copse.git") return "git";
-    if (mcp.server === "copse.run") return "shell";
-    return `${MCP_GROUP_PREFIX}${mcp.server}`;
-  }
-  if (kind && ACP_KIND_TO_GROUP[kind]) return ACP_KIND_TO_GROUP[kind];
-  return null;
-}
-function getToolGroupLabel(key, tense = "done") {
-  if (key.startsWith(MCP_GROUP_PREFIX)) {
-    return key.slice(MCP_GROUP_PREFIX.length);
-  }
-  const group = TOOL_GROUPS[key];
-  if (!group) return key;
-  return pickLabel(group.label, tense);
-}
-function aggregateToolStatus(toolCalls) {
-  if (toolCalls.some((tc2) => tc2.status === "running")) return "running";
-  if (toolCalls.some((tc2) => tc2.status === "error")) return "error";
-  return "done";
-}
-function bucketKey(groupKey, isError) {
-  return isError ? `${groupKey}${ERROR_BUCKET_SUFFIX}` : groupKey;
-}
-function buildGroupedDisplayItems(toolCalls) {
-  if (toolCalls.length === 0) return [];
-  const groupMembers = /* @__PURE__ */ new Map();
-  for (const tc2 of toolCalls) {
-    const groupKey = getToolGroupKey(tc2.name, tc2.kind);
-    if (!groupKey) continue;
-    const key = bucketKey(groupKey, tc2.status === "error");
-    const members2 = groupMembers.get(key) ?? [];
-    members2.push(tc2);
-    groupMembers.set(key, members2);
-  }
-  const result = [];
-  const emittedGroups = /* @__PURE__ */ new Set();
-  for (const tc2 of toolCalls) {
-    const groupKey = getToolGroupKey(tc2.name, tc2.kind);
-    if (!groupKey) {
-      result.push({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) });
-      continue;
-    }
-    const key = bucketKey(groupKey, tc2.status === "error");
-    const members2 = groupMembers.get(key);
-    if (members2 && members2.length >= 2) {
-      if (!emittedGroups.has(key)) {
-        emittedGroups.add(key);
-        const tense = tenseFromStatus(aggregateToolStatus(members2));
-        result.push({
-          type: "group",
-          key,
-          label: getToolGroupLabel(groupKey, tense),
-          toolCalls: members2
-        });
-      }
-      continue;
-    }
-    result.push({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) });
-  }
-  return result;
-}
-function summarizeToolTurn(toolCalls, items) {
-  const n2 = toolCalls.length;
-  if (n2 === 0) return "";
-  if (n2 === 1) {
-    const only = toolCalls[0];
-    return only ? getToolCallLabel(only) : "";
-  }
-  const status = aggregateToolStatus(toolCalls);
-  const failed = toolCalls.filter((tc2) => tc2.status === "error").length;
-  let base;
-  if (status === "running") {
-    base = `Using ${String(n2)} tools`;
-  } else if (items.length === 1 && items[0]?.type === "group") {
-    base = items[0].label;
-  } else {
-    base = `Used ${String(n2)} tools`;
-  }
-  if (failed > 0) {
-    return `${base} \xB7 ${String(failed)} failed`;
-  }
-  return base;
-}
-function isSurfacedFailure(tc2, opts) {
-  return tc2.status === "error" && opts?.isInterrupted?.(tc2) !== true;
-}
-function buildToolCallDisplayItems(toolCalls, opts) {
-  if (toolCalls.length === 0) return [];
-  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
-  const subagents = [];
-  const proposals = [];
-  const regular = [];
-  for (const tc2 of toolCalls) {
-    if (tc2.subagent) subagents.push(tc2);
-    else if (tc2.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(tc2)) proposals.push(tc2);
-    else regular.push(tc2);
-  }
-  const result = [];
-  const grouped = buildGroupedDisplayItems(regular);
-  const hasQuietCall = regular.some((tc2) => !isVisibleFailure(tc2));
-  if (hasQuietCall && regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
-    result.push({
-      type: "rollup",
-      key: TURN_ROLLUP_KEY,
-      label: summarizeToolTurn(regular, grouped),
-      // One disclosure for quiet work; failed calls stay visible beside it.
-      // A call the user interrupted is not a failure, so it stays folded in.
-      children: buildGroupedDisplayItems(regular.filter((tc2) => !isVisibleFailure(tc2))),
-      toolCalls: regular
-    });
-    result.push(...buildGroupedDisplayItems(regular.filter(isVisibleFailure)));
-  } else {
-    result.push(...grouped);
-  }
-  for (const tc2 of [...subagents, ...proposals]) {
-    result.push({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) });
-  }
-  return result;
-}
-function buildSubagentDisplayItems(toolCalls) {
-  return toolCalls.filter((tc2) => tc2.subagent).map((tc2) => ({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) }));
-}
-function summarizeToolRun(run2) {
-  const n2 = run2.toolCalls.length;
-  const status = aggregateToolStatus(run2.toolCalls);
-  const failed = run2.toolCalls.filter((tc2) => tc2.status === "error").length;
-  const polished = run2.summary?.trim();
-  const parts = [];
-  if (polished) {
-    parts.push(polished, `${String(n2)} ${n2 === 1 ? "tool" : "tools"}`);
-  } else {
-    parts.push(status === "running" ? `Using ${String(n2)} tools` : `Used ${String(n2)} tools`);
-  }
-  parts.push(`${String(run2.steps.length)} steps`);
-  if (failed > 0) parts.push(`${String(failed)} failed`);
-  return parts.join(" \xB7 ");
-}
-function summarizeToolRunStep(step, children) {
-  const polished = step.summary?.trim();
-  if (!polished) return summarizeToolTurn(step.toolCalls, children) || "Reasoned";
-  const failed = step.toolCalls.filter((tc2) => tc2.status === "error").length;
-  return failed > 0 ? `${polished} \xB7 ${String(failed)} failed` : polished;
-}
-function buildToolRunDisplayItems(run2, opts) {
-  if (run2.steps.length < 2) return buildToolCallDisplayItems(run2.toolCalls, opts);
-  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
-  const children = run2.steps.map((step) => ({
-    type: "step",
-    key: `step:${step.messageId}`,
-    label: summarizeToolRunStep(step, buildGroupedDisplayItems(step.toolCalls)),
-    messageId: step.messageId,
-    children: buildGroupedDisplayItems(step.toolCalls.filter((tc2) => !isVisibleFailure(tc2))),
-    toolCalls: step.toolCalls
-  }));
-  return [
-    {
-      type: "rollup",
-      key: RUN_ROLLUP_KEY,
-      label: summarizeToolRun(run2),
-      children,
-      toolCalls: run2.toolCalls
-    },
-    ...buildGroupedDisplayItems(run2.toolCalls.filter(isVisibleFailure))
-  ];
-}
-var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
-var init_tool_display = __esm({
-  "src/shared/tools/tool-display.ts"() {
-    init_apply_patch();
-    init_unknown_value3();
-    init_humanize_identifier();
-    init_thread_proposal2();
-    init_reviewer_input();
-    TOOL_DISPLAY_NAMES = {
-      explore: { running: "Exploring files", done: "Explored files" },
-      read_file: { running: "Reading file", done: "Read file" },
-      list_dir: { running: "Listing directory", done: "Listed directory" },
-      search_code: { running: "Searching code", done: "Searched code" },
-      search_codebase: { running: "Searching codebase", done: "Searched codebase" },
-      semantic_search: { running: "Searching codebase", done: "Searched codebase" },
-      find_files: { running: "Finding files", done: "Found files" },
-      web_search: { running: "Searching the web", done: "Searched the web" },
-      parallel_search: { running: "Searching with Parallel", done: "Searched with Parallel" },
-      fetch_url: { running: "Fetching page", done: "Fetched page" },
-      browser_preview: { running: "Opening preview", done: "Opened preview" },
-      browser_navigate: { running: "Opening browser", done: "Opened browser" },
-      browser_snapshot: { running: "Taking page snapshot", done: "Took page snapshot" },
-      browser_screenshot: { running: "Taking screenshot", done: "Took screenshot" },
-      image_gen: { running: "Generating image", done: "Generated image" },
-      classify_text: { running: "Classifying text", done: "Classified text" },
-      browser_click: { running: "Clicking element", done: "Clicked element" },
-      browser_type: { running: "Typing text", done: "Typed text" },
-      browser_tabs: { running: "Listing browser tabs", done: "Listed browser tabs" },
-      present_visual_evidence: {
-        running: "Presenting visual evidence",
-        done: "Presented visual evidence"
-      },
-      git_status: { running: "Checking git status", done: "Checked git status" },
-      git_diff: { running: "Viewing git diff", done: "Viewed git diff" },
-      git_log: { running: "Viewing git log", done: "Viewed git log" },
-      git_show: { running: "Viewing git commit", done: "Viewed git commit" },
-      gh_pr_list: { running: "Listing pull requests", done: "Listed pull requests" },
-      gh_pr_view: { running: "Viewing pull request", done: "Viewed pull request" },
-      gh_run_list: { running: "Listing CI runs", done: "Listed CI runs" },
-      gh_run_view: { running: "Viewing CI run logs", done: "Viewed CI run logs" },
-      investigate_ci: { running: "Investigating CI", done: "Investigated CI" },
-      delegate_step: { running: "Delegating step", done: "Delegated step" },
-      task: { running: "Running agent", done: "Ran agent" },
-      get_ci_status: { running: "Checking CI status", done: "Checked CI status" },
-      wait_for_ci_checks: { running: "Waiting for CI", done: "Waited for CI" },
-      get_ci_failure_logs: { running: "Fetching CI failure logs", done: "Fetched CI failure logs" },
-      write_file: { running: "Writing file", done: "Wrote file" },
-      str_replace: { running: "Replacing in file", done: "Replaced in file" },
-      apply_patch: { running: "Applying patch", done: "Applied patch" },
-      delete_file: { running: "Deleting file", done: "Deleted file" },
-      rename_file: { running: "Renaming file", done: "Renamed file" },
-      make_directory: { running: "Creating directory", done: "Created directory" },
-      run_shell: { running: "Running command", done: "Ran command" },
-      run_background: { running: "Starting background task", done: "Started background task" },
-      read_terminal: { running: "Reading shell", done: "Read shell" },
-      video_frames: { running: "Reading video", done: "Read video" },
-      ask_user: { running: "Asking user", done: "Asked user" },
-      request_review_input: { running: "Saving question", done: "Saved question" },
-      propose_thread: { running: "Proposing a thread", done: "Proposed a thread" },
-      update_todos: { running: "Updating plan", done: "Updated plan" },
-      run_checkup: { running: "Running checkup", done: "Ran checkup" },
-      container_run: {
-        running: "Running unattended in a container",
-        done: "Ran unattended in a container"
-      },
-      preflight_worktree: { running: "Checking worktree", done: "Checked worktree" },
-      prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" },
-      coordination_check: { running: "Checking overlapping work", done: "Checked overlapping work" },
-      coordination_note: { running: "Sending peer note", done: "Sent peer note" },
-      coordination_read: { running: "Reading peer notes", done: "Read peer notes" },
-      // Deliberately ungrouped: the switch from reading the user's checkout to the
-      // thread's own worktree should stand out in the transcript.
-      request_write_access: { running: "Creating worktree", done: "Created worktree" }
-    };
-    TOOL_GROUPS = {
-      reading: {
-        tools: ["explore", "read_file", "list_dir", "video_frames", "preflight_worktree"],
-        label: { running: "Reading files", done: "Read files" }
-      },
-      searching: {
-        tools: ["search_code", "search_codebase", "semantic_search", "find_files"],
-        label: { running: "Searching", done: "Searched" }
-      },
-      web: {
-        tools: ["web_search", "parallel_search", "fetch_url"],
-        label: { running: "Fetching from web", done: "Fetched from web" }
-      },
-      browser: {
-        tools: [
-          "browser_preview",
-          "browser_navigate",
-          "browser_snapshot",
-          "browser_screenshot",
-          "browser_click",
-          "browser_type",
-          "browser_tabs",
-          "present_visual_evidence"
-        ],
-        label: { running: "Using browser", done: "Used browser" }
-      },
-      git: {
-        tools: [
-          "git_status",
-          "git_diff",
-          "git_log",
-          "git_show",
-          "gh_pr_list",
-          "gh_pr_view",
-          "gh_run_list",
-          "gh_run_view",
-          "get_ci_status",
-          "wait_for_ci_checks",
-          "get_ci_failure_logs"
-        ],
-        label: { running: "Checking git", done: "Checked git" }
-      },
-      writing: {
-        tools: [
-          "write_file",
-          "str_replace",
-          "apply_patch",
-          "delete_file",
-          "rename_file",
-          "make_directory"
-        ],
-        label: { running: "Editing files", done: "Edited files" }
-      },
-      shell: {
-        tools: ["run_shell", "run_background", "read_terminal", "prepare_worktree"],
-        label: { running: "Running commands", done: "Ran commands" }
-      }
-    };
-    TOOL_TO_GROUP = new Map(
-      Object.entries(TOOL_GROUPS).flatMap(([key, { tools }]) => tools.map((name) => [name, key]))
-    );
-    ACP_KIND_TO_GROUP = {
-      execute: "shell",
-      read: "reading",
-      edit: "writing",
-      delete: "writing",
-      move: "writing",
-      search: "searching",
-      fetch: "web"
-    };
-    MCP_GROUP_PREFIX = "mcp:";
-    TURN_ROLLUP_KEY = "turn";
-    RUN_ROLLUP_KEY = "run";
-    FILE_EDIT_PATH_ARG = {
-      write_file: "path",
-      str_replace: "path",
-      delete_file: "path",
-      rename_file: "from",
-      make_directory: "path"
-    };
-    SHELL_CD_PREFIX_RE = /^\s*cd\s+(?:'[^']*'|"[^"]*"|[^\s&|;]+)\s*&&\s*/;
-    SHELL_LABEL_MAX = 96;
-    ERROR_BUCKET_SUFFIX = "::errors";
-  }
-});
-
-// packages/agent/src/todo-steering.ts
-function shouldSteerTodos(userMessage) {
-  const text2 = userMessage.trim().toLowerCase();
-  if (text2.length < 20) return false;
-  const multiStep = /\b(then|after that|also|step \d|first.*second|implement.*test|refactor.*across)\b/.test(text2);
-  const complex = /\b(refactor|migrate|implement|add.*and.*test|fix.*across|multi-file|several files)\b/.test(
-    text2
-  );
-  const audit = /\b(deep[- ]?dive|reviewing|review)\b/.test(text2);
-  return multiStep || complex || audit;
-}
-function formatTodosForPrompt(todos) {
-  if (todos.length === 0) return "";
-  const lines = todos.map((t2) => {
-    const model = t2.assignedModel ? ` [${t2.assignedModel}]` : "";
-    const check2 = t2.check ? ` (check: ${t2.check.kind})` : "";
-    return `- [${t2.status}] ${t2.content}${model}${check2} (id: ${t2.id})`;
-  });
-  return `
-
-## Current plan
-${lines.join("\n")}`;
-}
-var TODO_STEERING_PROMPT;
-var init_todo_steering = __esm({
-  "packages/agent/src/todo-steering.ts"() {
-    TODO_STEERING_PROMPT = `When the user asks for multi-step work (refactors, implement-and-test, changes across several files):
-1. Call update_todos once with 3+ concrete steps before executing tools.
-2. Mark one item in_progress at a time; set completed when done (checks run automatically).
-3. Tag mechanical items with assignedModel: "local" only when they include a verifiable check (shell, fileExists, or typecheck).
-4. For simple one-shot questions or single-file edits, do NOT create todos.`;
-  }
-});
-
-// src/shared/todos/todo-logic.ts
-function activeTodos(todos) {
-  return todos.filter((t2) => t2.status !== "cancelled");
-}
-function todoProgress(todos) {
-  const active2 = activeTodos(todos);
-  const done = active2.filter((t2) => t2.status === "completed").length;
-  return { done, total: active2.length };
-}
-function formatTodoProgress(todos) {
-  const { done, total: total2 } = todoProgress(todos);
-  if (total2 === 0) return null;
-  return `${String(done)}/${String(total2)} done`;
-}
-var init_todo_logic = __esm({
-  "src/shared/todos/todo-logic.ts"() {
-    init_unknown_value3();
-    init_todo_steering();
-  }
-});
-
-// src/renderer/agent-activity.ts
-function promptProgressLabel(fraction) {
-  if (!Number.isFinite(fraction)) return "Processing prompt\u2026";
-  const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
-  return `Processing prompt\u2026 ${percent.toString()}%`;
-}
-function runningToolName(thread) {
-  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
-    const m2 = thread.messages[i2];
-    if (!m2) continue;
-    const toolCalls = m2.toolCalls;
-    for (let j3 = toolCalls.length - 1; j3 >= 0; j3--) {
-      const tc2 = toolCalls[j3];
-      if (!tc2) continue;
-      if (tc2.status === "running") {
-        return tc2.name === "explore" ? "explore" : tc2.name;
-      }
-      if (tc2.subagent?.status === "running") return "explore";
-    }
-  }
-  return null;
-}
-function agentActivityLabel(thread, writing) {
-  if (!thread || thread.status !== "running") return null;
-  const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
-  const tool = runningToolName(thread);
-  if (tool) {
-    const base = `${getToolDisplayName(tool, "running")}\u2026`;
-    return todoLabel ? `${base} (${todoLabel})` : base;
-  }
-  if (writing) return todoLabel ? `Writing\u2026 (${todoLabel})` : "Writing\u2026";
-  return todoLabel ? `Reasoning\u2026 (${todoLabel})` : "Reasoning\u2026";
-}
-function syncAgentActivity(store2, threadId, writing) {
-  const thread = getThreadById(store2, threadId);
-  const label = agentActivityLabel(thread, writing);
-  store2.emit("agent_activity", threadId, label);
-  return label;
-}
-var CONTEXT_TRIM_ACTIVITY;
-var init_agent_activity = __esm({
-  "src/renderer/agent-activity.ts"() {
-    init_thread_helpers();
-    init_tool_display();
-    init_todo_logic();
-    CONTEXT_TRIM_ACTIVITY = "Shortened earlier messages";
-  }
-});
-
-// packages/agent/src/hooks/continuation-budget.ts
-function canContinue(used, cap = DEFAULT_CONTINUATION_BUDGET) {
-  return used < cap;
-}
-var DEFAULT_CONTINUATION_BUDGET;
-var init_continuation_budget = __esm({
-  "packages/agent/src/hooks/continuation-budget.ts"() {
-    DEFAULT_CONTINUATION_BUDGET = 5;
-  }
-});
-
-// src/renderer/perf.ts
-function readBridge() {
-  const candidate = Reflect.get(globalThis, "__copsePerf");
-  if (typeof candidate !== "object" || candidate === null) return null;
-  const mark2 = Reflect.get(candidate, "mark");
-  const span = Reflect.get(candidate, "span");
-  if (typeof mark2 !== "function" || typeof span !== "function") return null;
-  return {
-    enabled: true,
-    autopilot: Reflect.get(candidate, "autopilot") === true,
-    mark: (name, detail) => {
-      Reflect.apply(mark2, candidate, [name, detail]);
-    },
-    span: (name, ms2, detail) => {
-      Reflect.apply(span, candidate, [name, ms2, detail]);
-    }
-  };
-}
-function mark(name, detail) {
-  bridge?.mark(name, detail);
-}
-function begin(name) {
-  if (!bridge) return () => void 0;
-  const start = performance.now();
-  return (detail) => {
-    bridge.span(name, Math.round((performance.now() - start) * 100) / 100, detail);
-  };
-}
-var bridge, perfOn, autopilotOn;
-var init_perf = __esm({
-  "src/renderer/perf.ts"() {
-    bridge = readBridge();
-    perfOn = bridge !== null;
-    autopilotOn = bridge?.autopilot === true;
-  }
-});
-
-// src/renderer/canvas/artefact-previews.ts
-function previewKey(threadId, title) {
-  return JSON.stringify([threadId, title]);
-}
-function artefactKey(projectId, threadId, title) {
-  return JSON.stringify([projectId, threadId, title]);
-}
-function cacheArtefact(key, artefact) {
-  artefacts.delete(key);
-  artefacts.set(key, artefact);
-  while (artefacts.size > MAX_CACHED_ARTEFACTS) {
-    const oldest = artefacts.keys().next().value;
-    if (oldest === void 0) break;
-    artefacts.delete(oldest);
-  }
-}
-function setArtefactPreview(threadId, title, preview) {
-  if (preview) previews.set(previewKey(threadId, title), preview);
-}
-function getArtefactPreview(threadId, title) {
-  return previews.get(previewKey(threadId, title));
-}
-function setArtefactContent(projectId, threadId, artefact) {
-  cacheArtefact(artefactKey(projectId, threadId, artefact.title), artefact);
-  setArtefactPreview(threadId, artefact.title, artefact.preview);
-}
-function getArtefactContent(projectId, threadId, title) {
-  const key = artefactKey(projectId, threadId, title);
-  const artefact = artefacts.get(key);
-  if (artefact) cacheArtefact(key, artefact);
-  return artefact;
-}
-function loadArtefactContent(api2, projectId, threadId, title) {
-  const cached2 = getArtefactContent(projectId, threadId, title);
-  if (cached2) return Promise.resolve(cached2);
-  const key = artefactKey(projectId, threadId, title);
-  const existing = artefactReads.get(key);
-  if (existing) return existing;
-  const request = api2.canvas.readArtefact(projectId, threadId, title).then((artefact) => {
-    if (artefact?.title === title) setArtefactContent(projectId, threadId, artefact);
-    return artefact?.title === title ? artefact : null;
-  }).catch(() => null).finally(() => {
-    artefactReads.delete(key);
-  });
-  artefactReads.set(key, request);
-  return request;
-}
-async function hydrateArtefactPreviews(api2, projectId, threadId) {
-  const saved = await api2.canvas.listArtefacts(projectId, threadId).catch(() => []);
-  let added = false;
-  for (const artefact of saved) {
-    if (!artefact.preview) continue;
-    setArtefactPreview(threadId, artefact.title, artefact.preview);
-    added = true;
-  }
-  return added;
-}
-function setArtefactShowHandler(handler) {
-  showHandler = handler;
-}
-function requestArtefactShow(threadId, title) {
-  showHandler?.(threadId, title);
-}
-function artefactUriFromToolResult(result) {
-  if (!result) return null;
-  const match = /\bui:\/\/[^\s)\]]+/.exec(result);
-  return match ? match[0] : null;
-}
-var previews, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
-var init_artefact_previews = __esm({
-  "src/renderer/canvas/artefact-previews.ts"() {
-    previews = /* @__PURE__ */ new Map();
-    artefacts = /* @__PURE__ */ new Map();
-    artefactReads = /* @__PURE__ */ new Map();
-    MAX_CACHED_ARTEFACTS = 20;
-    showHandler = null;
-  }
-});
-
-// src/renderer/controller/thread-hydration.ts
-function hydrationFailed(threadId) {
-  return failedThreadIds.has(threadId);
-}
-function ensureThreadMessages(projectId, threadId) {
-  return activeHydrator?.ensure(projectId, threadId) ?? Promise.resolve();
-}
-function needsHydration(thread) {
-  return thread.messagesLoaded === false;
-}
-function isPinned(thread, activeThreadId) {
-  if (thread.id === activeThreadId) return true;
-  if (thread.status === "running") return true;
-  return (thread.pendingMessages?.length ?? 0) > 0;
-}
-function attachThreadHydration(store2, api2) {
-  const inFlight4 = /* @__PURE__ */ new Map();
-  let recency = [];
-  const touch = (threadId) => {
-    recency = [...recency.filter((id) => id !== threadId), threadId];
-  };
-  const evict = () => {
-    const { threads, activeThreadId } = store2.getState();
-    const byId = new Map(threads.map((t2) => [t2.id, t2]));
-    const evictable = recency.filter((id) => {
-      const thread = byId.get(id);
-      return thread !== void 0 && !isPinned(thread, activeThreadId);
-    });
-    const overBudget = evictable.length - HYDRATED_THREAD_BUDGET;
-    if (overBudget <= 0) return;
-    const dropping = new Set(evictable.slice(0, overBudget));
-    recency = recency.filter((id) => !dropping.has(id));
-    store2.setState({
-      threads: threads.map(
-        (t2) => dropping.has(t2.id) ? { ...t2, messages: [], messagesLoaded: false } : t2
-      )
-    });
-  };
-  const fetchInto = (projectId, threadId) => {
-    const key = `${projectId}:${threadId}`;
-    const existing = inFlight4.get(key);
-    if (existing) return existing;
-    failedThreadIds.delete(threadId);
-    const endHydrate = begin("thread:hydrate");
-    const request = api2.threads.loadMessages(projectId, threadId).then((messages) => {
-      endHydrate({ messages: messages.length });
-      const state = store2.getState();
-      if (state.activeProjectId !== projectId) return;
-      if (!state.threads.some((t2) => t2.id === threadId)) return;
-      store2.setState({
-        threads: state.threads.map((t2) => {
-          if (t2.id !== threadId) return t2;
-          const diskIds = new Set(messages.map((m2) => m2.id));
-          const streamedMeanwhile = t2.messages.filter((m2) => !diskIds.has(m2.id));
-          const hydrated = {
-            ...t2,
-            messages: [...messages, ...streamedMeanwhile],
-            messagesLoaded: true
-          };
-          const promptedAt = lastHumanPromptAt(hydrated);
-          return promptedAt === void 0 ? hydrated : { ...hydrated, lastPromptAt: promptedAt };
-        })
-      });
-      touch(threadId);
-      evict();
-      store2.emit("threads_changed");
-      void hydrateArtefactPreviews(api2, projectId, threadId).then((added) => {
-        if (added) store2.emit("threads_changed");
-      });
-    }).catch((err2) => {
-      console.error("[threads] could not load transcript", err2);
-      failedThreadIds.add(threadId);
-      store2.emit("threads_changed");
-    }).finally(() => {
-      inFlight4.delete(key);
-    });
-    inFlight4.set(key, request);
-    return request;
-  };
-  activeHydrator = {
-    ensure: (projectId, threadId) => {
-      const state = store2.getState();
-      const thread = state.threads.find((t2) => t2.id === threadId);
-      if (thread && !needsHydration(thread)) {
-        touch(threadId);
-        return Promise.resolve();
-      }
-      return fetchInto(projectId, threadId);
-    }
-  };
-  let lastActiveThreadId = null;
-  const hydrateActive = () => {
-    const { activeProjectId, activeThreadId, threads } = store2.getState();
-    if (!activeProjectId || !activeThreadId) return;
-    const freshlySelected = activeThreadId !== lastActiveThreadId;
-    lastActiveThreadId = activeThreadId;
-    const thread = threads.find((t2) => t2.id === activeThreadId);
-    if (!thread) return;
-    if (!needsHydration(thread)) {
-      touch(activeThreadId);
-      return;
-    }
-    if (freshlySelected) failedThreadIds.delete(activeThreadId);
-    if (failedThreadIds.has(activeThreadId)) return;
-    void fetchInto(activeProjectId, activeThreadId);
-  };
-  const offThreads = store2.on("threads_changed", hydrateActive);
-  const offWorkspace = store2.on("workspace_changed", hydrateActive);
-  hydrateActive();
-  const offPrRefs = api2.threads.onPrRefs((projectId, refs) => {
-    const state = store2.getState();
-    if (refs.length === 0) return;
-    if (state.activeProjectId !== projectId) {
-      if (applyCachedSidebarPrRefs(projectId, refs)) store2.emit("threads_changed");
-      return;
-    }
-    const byThread = new Map(refs.map((entry) => [entry.threadId, entry.prRefs]));
-    if (!state.threads.some((t2) => byThread.has(t2.id))) return;
-    store2.setState({
-      threads: state.threads.map((t2) => {
-        const prRefs = byThread.get(t2.id);
-        return prRefs ? { ...t2, prRefs } : t2;
-      })
-    });
-    store2.emit("threads_changed");
-  });
-  return () => {
-    offThreads();
-    offWorkspace();
-    offPrRefs();
-    activeHydrator = null;
-    recency = [];
-    inFlight4.clear();
-    failedThreadIds.clear();
-  };
-}
-var HYDRATED_THREAD_BUDGET, activeHydrator, failedThreadIds;
-var init_thread_hydration = __esm({
-  "src/renderer/controller/thread-hydration.ts"() {
-    init_perf();
-    init_thread_helpers();
-    init_artefact_previews();
-    init_projects();
-    HYDRATED_THREAD_BUDGET = 8;
-    activeHydrator = null;
-    failedThreadIds = /* @__PURE__ */ new Set();
-  }
-});
-
-// src/shared/agent-turn-busy.ts
-function isAgentTurnBusyError(reason) {
-  if (reason instanceof Error && reason.name === AGENT_TURN_BUSY_ERROR_NAME) return true;
-  return errorMessage(reason).includes(`${AGENT_TURN_BUSY_ERROR_NAME}:`);
-}
-var AGENT_TURN_BUSY_ERROR_NAME;
-var init_agent_turn_busy = __esm({
-  "src/shared/agent-turn-busy.ts"() {
-    init_errors4();
-    AGENT_TURN_BUSY_ERROR_NAME = "AgentTurnBusyError";
-  }
-});
-
-// src/renderer/controller/send-now-aborts.ts
-function markSendNowAbort(threadId) {
-  sendNowThreads.add(threadId);
-}
-function takeSendNowAbort(threadId) {
-  return sendNowThreads.delete(threadId);
-}
-var sendNowThreads;
-var init_send_now_aborts = __esm({
-  "src/renderer/controller/send-now-aborts.ts"() {
-    sendNowThreads = /* @__PURE__ */ new Set();
-  }
-});
-
-// src/renderer/controller/message-queue.ts
-function isHeldMessage(item) {
-  return item.autoDispatch === false;
-}
-function isMachineContinuation(item) {
-  return item.origin?.kind === "hook";
-}
-function continuationBudgetHeldNote() {
-  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next hook follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
-}
-function isStaleEpoch(thread, epoch) {
-  return thread.currentEpoch !== void 0 && thread.currentEpoch !== epoch;
-}
-function newEpoch() {
-  return globalThis.crypto.randomUUID();
-}
-function startHumanTurnTree(store2, threadId) {
-  return startRootTurnTree(store2, threadId);
-}
-function startAutomationTurnTree(store2, threadId) {
-  return startRootTurnTree(store2, threadId);
-}
-function startRootTurnTree(store2, threadId) {
-  const epoch = newEpoch();
-  patchThreadAnywhere(store2, threadId, (t2) => ({
-    ...t2,
-    currentEpoch: epoch,
-    continuationUsed: 0
-  }));
-  return epoch;
-}
-function foldBackContinuationUsed(store2, threadId, turnTreeId, used) {
-  const thread = getThreadById(store2, threadId);
-  if (!thread) return;
-  const currentKey = thread.currentEpoch ?? threadId;
-  if (currentKey !== turnTreeId) return;
-  const next = Math.max(thread.continuationUsed ?? 0, used);
-  if (next === (thread.continuationUsed ?? 0)) return;
-  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, continuationUsed: next }));
-}
-function setMessageHookOrigin(store2, messageId, origin) {
-  const threads = store2.getState().threads.map((t2) => ({
-    ...t2,
-    messages: t2.messages.map((m2) => m2.id !== messageId ? m2 : { ...m2, origin })
-  }));
-  store2.setState({ threads });
-}
-function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }, queuedModel) {
-  const thread = getThreadById(store2, threadId);
-  const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
-  const selectedModel = queuedModel ?? thread?.model;
-  return {
-    ...payload,
-    ...reviewContext !== void 0 ? { reviewContext } : {},
-    priorTodos: thread?.todos ?? payload.priorTodos ?? [],
-    ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
-    // A queued human prompt carries its own model snapshot; hook-authored
-    // prompts without one follow the live thread selection. Absent → main uses
-    // the global default.
-    ...selectedModel !== void 0 ? { model: selectedModel } : {},
-    // The composer's reasoning dial, read at dispatch time for the same reason:
-    // turning it up while a message sits queued should apply to that message.
-    ...thread?.reasoning !== void 0 ? { reasoning: thread.reasoning } : {},
-    // C3: thread the turn-tree epoch + the machine turns already spent so the
-    // main-process continuation ledger keys and seeds the same counter this
-    // renderer enforces at drain time (decision 5 / 16). Read at dispatch time so
-    // a queue-drain continuation carries the up-to-date spent count.
-    ...thread?.currentEpoch !== void 0 ? { turnTreeId: thread.currentEpoch } : {},
-    ...thread?.continuationUsed !== void 0 ? { continuationBudgetUsed: thread.continuationUsed } : {}
-  };
-}
-function beginPendingDispatch(store2, threadId) {
-  const byThread = pendingDispatches.get(store2) ?? /* @__PURE__ */ new Map();
-  byThread.set(threadId, (byThread.get(threadId) ?? 0) + 1);
-  pendingDispatches.set(store2, byThread);
-}
-function finishPendingDispatch(store2, threadId) {
-  const byThread = pendingDispatches.get(store2);
-  const count = byThread?.get(threadId) ?? 0;
-  if (count <= 1) byThread?.delete(threadId);
-  else byThread?.set(threadId, count - 1);
-}
-function hasPendingDispatch(store2, threadId) {
-  return (pendingDispatches.get(store2)?.get(threadId) ?? 0) > 0;
-}
-function dispatchAgentRun(store2, api2, threadId, payload, queued) {
-  const { activeProjectId, backgroundThreads } = store2.getState();
-  const projectId = backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId;
-  if (!projectId) throw new Error("Cannot run thread without an owning project");
-  patchThreadAnywhere(store2, threadId, (thread) => {
-    if (thread.interruptedTurnAt === void 0) return thread;
-    const { interruptedTurnAt: _interruptedTurnAt, ...rest } = thread;
-    return rest;
-  });
-  clearContextSnapshot(store2, threadId);
-  setThreadStatus(store2, threadId, "running");
-  syncAgentActivity(store2, threadId, false);
-  mark("ttft:renderer-dispatch");
-  if (queued) beginPendingDispatch(store2, threadId);
-  const run2 = api2.agent.run(
-    projectId,
-    threadId,
-    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload, queued?.model))
-  );
-  if (!queued) {
-    void run2;
-    return;
-  }
-  void run2.catch((err2) => {
-    if (!isAgentTurnBusyError(err2)) throw err2;
-    requeueBusyMessage(store2, api2, threadId, queued);
-  }).finally(() => {
-    finishPendingDispatch(store2, threadId);
-    if (getThreadById(store2, threadId)?.status === "idle") {
-      drainMessageQueue(store2, api2, threadId);
-    }
-  });
-}
-function requeueBusyMessage(store2, api2, threadId, item) {
-  patchThreadAnywhere(store2, threadId, (t2) => {
-    const pending = t2.pendingMessages ?? [];
-    if (pending.some((entry) => entry.messageId === item.messageId)) return t2;
-    const requeued = { ...t2, pendingMessages: [item, ...pending], updatedAt: Date.now() };
-    return isMachineContinuation(item) && (t2.continuationUsed ?? 0) > 0 ? { ...requeued, continuationUsed: (t2.continuationUsed ?? 0) - 1 } : requeued;
-  });
-  store2.emit("message_queued", threadId, item.messageId);
-  store2.emit("threads_changed");
-  if (getThreadById(store2, threadId)?.status === "idle") drainMessageQueue(store2, api2, threadId);
-}
-function enqueueUserMessage(store2, threadId, item) {
-  const queued = item.model !== void 0 || isMachineContinuation(item) ? item : {
-    ...item,
-    model: getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
-  };
-  patchThreadAnywhere(store2, threadId, (t2) => ({
-    ...t2,
-    pendingMessages: [...t2.pendingMessages ?? [], queued],
-    updatedAt: Date.now()
-  }));
-  store2.emit("message_queued", threadId, queued.messageId);
-  store2.emit("threads_changed");
-}
-function updateQueuedMessageModel(store2, threadId, messageId, model) {
-  const thread = getThreadById(store2, threadId);
-  if (!thread?.pendingMessages?.some((item) => item.messageId === messageId)) return;
-  patchThreadAnywhere(store2, threadId, (t2) => ({
-    ...t2,
-    pendingMessages: (t2.pendingMessages ?? []).map(
-      (item) => item.messageId === messageId ? { ...item, model } : item
-    ),
-    updatedAt: Date.now()
-  }));
-  store2.emit("threads_changed");
-}
-function drainMessageQueue(store2, api2, threadId) {
-  if (hasPendingDispatch(store2, threadId)) return;
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
-  if (!thread || thread.status !== "idle" || thread.queuePaused) return;
-  const pending = thread.pendingMessages ?? [];
-  if (pending.length === 0) return;
-  let used = thread.continuationUsed ?? 0;
-  let next;
-  const heldByBudget = [];
-  for (const item of pending) {
-    if (isHeldMessage(item)) continue;
-    if (isMachineContinuation(item)) {
-      if (!canContinue(used)) {
-        heldByBudget.push(item.messageId);
-        continue;
-      }
-      used += 1;
-      next = item;
-      break;
-    }
-    next = item;
-    break;
-  }
-  if (!next && heldByBudget.length === 0) return;
-  const rest = pending.filter((item) => item !== next);
-  const budgetHeld = new Set(heldByBudget);
-  const threads = store2.getState().threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
-    const { pendingMessages: _removed, ...restThread } = t2;
-    const messages = movePendingUserMessagesToEnd(t2.messages, pending);
-    const nextPending = rest.map(
-      (item) => budgetHeld.has(item.messageId) ? { ...item, autoDispatch: false } : item
-    );
-    const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
-    return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
-  });
-  store2.setState({ threads });
-  if (heldByBudget.length > 0) addMessage(store2, threadId, "error", continuationBudgetHeldNote());
-  store2.emit("threads_changed");
-  if (next) dispatchAgentRun(store2, api2, threadId, next.payload, next);
-}
-function movePendingUserMessagesToEnd(messages, pending) {
-  const messagesById = new Map(messages.map((message2) => [message2.id, message2]));
-  const pendingMessages = [];
-  const movedIds = /* @__PURE__ */ new Set();
-  for (const item of pending) {
-    const message2 = messagesById.get(item.messageId);
-    if (!message2 || message2.role !== "user" || movedIds.has(message2.id)) continue;
-    pendingMessages.push(message2);
-    movedIds.add(message2.id);
-  }
-  if (pendingMessages.length === 0) return messages;
-  const settledMessages = messages.filter((message2) => !movedIds.has(message2.id));
-  const nextMessages = [...settledMessages, ...pendingMessages];
-  const alreadyInOrder = nextMessages.every((message2, index) => message2 === messages[index]);
-  return alreadyInOrder ? messages : nextMessages;
-}
-async function runningThreadIdsOrNone(api2) {
-  try {
-    return await api2.agent.runningThreadIds();
-  } catch {
-    return null;
-  }
-}
-async function resumePendingQueues(store2, api2) {
-  const runningThreadIds = await runningThreadIdsOrNone(api2);
-  const reallyRunning = new Set(runningThreadIds ?? []);
-  for (const thread of store2.getState().threads) {
-    if (thread.queuePaused) setQueuePaused(store2, thread.id, false);
-    let status = thread.status;
-    if (status === "running" && !reallyRunning.has(thread.id)) {
-      if (runningThreadIds !== null) {
-        patchThreadAnywhere(store2, thread.id, (current) => ({
-          ...current,
-          interruptedTurnAt: Date.now()
-        }));
-      }
-      setThreadStatus(store2, thread.id, "idle");
-      status = "idle";
-    }
-    if (status === "idle" && (thread.pendingMessages?.length ?? 0) > 0) {
-      const projectId = store2.getState().activeProjectId;
-      const threadId = thread.id;
-      if (projectId) {
-        void ensureThreadMessages(projectId, threadId).then(() => {
-          if (store2.getState().activeProjectId !== projectId) return;
-          drainMessageQueue(store2, api2, threadId);
-        });
-      } else {
-        drainMessageQueue(store2, api2, threadId);
-      }
-    }
-  }
-}
-function queuedMessageIds(thread) {
-  return new Set((thread.pendingMessages ?? []).map((item) => item.messageId));
-}
-function queuedPayloadText(payload) {
-  const content = payload.content;
-  if (typeof content === "string") return content;
-  return content.find((block) => block.type === "text")?.text ?? "";
-}
-function withPayloadText(content, text2) {
-  if (typeof content === "string") return text2;
-  const firstText = content.findIndex((block) => block.type === "text");
-  if (firstText === -1) return [...content, { type: "text", text: text2 }];
-  return content.map(
-    (block, index) => index === firstText && block.type === "text" ? { ...block, text: text2 } : block
-  );
-}
-function updateQueuedMessageText(store2, threadId, messageId, text2) {
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
-  const item = thread?.pendingMessages?.find((p2) => p2.messageId === messageId);
-  if (!item) return;
-  const threads = store2.getState().threads.map(
-    (t2) => t2.id !== threadId ? t2 : {
-      ...t2,
-      pendingMessages: (t2.pendingMessages ?? []).map(
-        (p2) => p2.messageId !== messageId ? p2 : {
-          ...p2,
-          payload: { ...p2.payload, content: withPayloadText(p2.payload.content, text2) },
-          // Editing a hook-originated message keeps `kind: 'hook'` but
-          // flips `editedByUser` so the spine stays honest (decision 10).
-          ...p2.origin?.kind === "hook" ? { editedByUser: true } : {}
-        }
-      ),
-      updatedAt: Date.now()
-    }
-  );
-  store2.setState({ threads });
-  setMessageContent(store2, messageId, text2);
-  if (item.origin?.kind === "hook") {
-    const withEdit = store2.getState().threads.map((t2) => ({
-      ...t2,
-      messages: t2.messages.map((m2) => m2.id !== messageId ? m2 : { ...m2, editedByUser: true })
-    }));
-    store2.setState({ threads: withEdit });
-  }
-  store2.emit("threads_changed");
-}
-function removeQueuedMessage(store2, threadId, messageId) {
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
-  if (!thread) return;
-  const pending = thread.pendingMessages ?? [];
-  if (!pending.some((p2) => p2.messageId === messageId)) return;
-  const remainingPending = pending.filter((p2) => p2.messageId !== messageId);
-  const threads = store2.getState().threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
-    const { pendingMessages: _removed, ...rest } = t2;
-    return {
-      ...rest,
-      messages: t2.messages.filter((m2) => m2.id !== messageId),
-      ...remainingPending.length > 0 ? { pendingMessages: remainingPending } : {},
-      updatedAt: Date.now()
-    };
-  });
-  store2.setState({ threads });
-  store2.emit("threads_changed");
-}
-function sendQueuedMessageNow(store2, api2, threadId, messageId) {
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
-  const pending = thread?.pendingMessages ?? [];
-  const target = pending.find((p2) => p2.messageId === messageId);
-  if (!thread || !target) return;
-  const reordered = [target, ...pending.filter((p2) => p2.messageId !== messageId)];
-  const threads = store2.getState().threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
-    const { queuePaused: _removed, ...rest } = t2;
-    return { ...rest, pendingMessages: reordered, updatedAt: Date.now() };
-  });
-  store2.setState({ threads });
-  store2.emit("threads_changed");
-  if (thread.status === "running") {
-    markSendNowAbort(threadId);
-    void api2.agent.abort(threadId);
-  } else {
-    drainMessageQueue(store2, api2, threadId);
-  }
-}
-function enqueueHookMessage(store2, api2, threadId, input2) {
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
-  if (!thread) return;
-  const messageId = addMessage(store2, threadId, "user", input2.text);
-  setMessageHookOrigin(store2, messageId, input2.origin);
-  const stale = isStaleEpoch(thread, input2.epoch);
-  const item = {
-    messageId,
-    payload: { content: input2.text },
-    createdAt: Date.now(),
-    origin: input2.origin,
-    epoch: input2.epoch,
-    // Downgrade a stale send-now to held (decision 16) — decided *before* any
-    // send-now abort path is reached below.
-    ...stale ? { autoDispatch: false } : {}
-  };
-  enqueueUserMessage(store2, threadId, item);
-  if (stale) return;
-  if (input2.sendNow) sendQueuedMessageNow(store2, api2, threadId, messageId);
-  else drainMessageQueue(store2, api2, threadId);
-}
-function releaseHeldMessage(store2, api2, threadId, messageId) {
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
-  const item = thread?.pendingMessages?.find((p2) => p2.messageId === messageId);
-  if (!thread || !item) return;
-  const epoch = newEpoch();
-  const threads = store2.getState().threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
-    return {
-      ...t2,
-      currentEpoch: epoch,
-      // A human release starts a fresh turn tree with a reset budget (decision 5).
-      continuationUsed: 0,
-      pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
-        if (p2.messageId !== messageId) return p2;
-        const { autoDispatch: _released, ...rest } = p2;
-        return rest;
-      }),
-      updatedAt: Date.now()
-    };
-  });
-  store2.setState({ threads });
-  store2.emit("threads_changed");
-  sendQueuedMessageNow(store2, api2, threadId, messageId);
-}
-var pendingDispatches;
-var init_message_queue = __esm({
-  "src/renderer/controller/message-queue.ts"() {
-    init_lm_studio_defaults();
-    init_thread_helpers();
-    init_review_reports();
-    init_agent_activity();
-    init_continuation_budget();
-    init_thread_hydration();
-    init_perf();
-    init_agent_turn_busy();
-    init_send_now_aborts();
-    pendingDispatches = /* @__PURE__ */ new WeakMap();
-  }
-});
-
-// src/renderer/controller/project-view-state.ts
-function captureProjectViewState(state) {
-  return {
-    filesPaneOpen: state.filesPaneOpen,
-    rightPanelMode: state.rightPanelMode,
-    panelTab: state.panelTab
-  };
-}
-function recordProjectViewState(registry2, projectId, view) {
-  if (!projectId) return;
-  registry2.set(projectId, view);
-}
-function resolveProjectViewState(registry2, projectId) {
-  return registry2.get(projectId) ?? { ...DEFAULT_PROJECT_VIEW_STATE };
-}
-function forgetProjectViewState(registry2, projectId) {
-  registry2.delete(projectId);
-}
-var DEFAULT_PROJECT_VIEW_STATE;
-var init_project_view_state = __esm({
-  "src/renderer/controller/project-view-state.ts"() {
-    DEFAULT_PROJECT_VIEW_STATE = {
-      filesPaneOpen: false,
-      rightPanelMode: "explorer",
-      panelTab: "file"
-    };
-  }
-});
-
-// src/renderer/views/toast.ts
-function ensureHost() {
-  let host = document.getElementById(TOAST_HOST_ID);
-  if (!host) {
-    host = document.createElement("div");
-    host.id = TOAST_HOST_ID;
-    host.className = "toast-host";
-    host.setAttribute("role", "status");
-    host.setAttribute("aria-live", "polite");
-    document.body.append(host);
-  }
-  return host;
-}
-function normalizeMessage(error62) {
-  if (error62 instanceof Error) return error62.message;
-  if (typeof error62 === "string") return error62;
-  if (typeof ErrorEvent !== "undefined" && error62 instanceof ErrorEvent) {
-    return describeErrorEvent(error62);
-  }
-  if (typeof Event !== "undefined" && error62 instanceof Event) {
-    return describeEvent(error62);
-  }
-  return String(error62);
-}
-function describeErrorEvent(event) {
-  if (event.error instanceof Error && event.error.message) return event.error.message;
-  const location = formatSourceLocation(event.filename, event.lineno, event.colno);
-  if (event.message) return location ? `${event.message} (${location})` : event.message;
-  if (location) return `script error at ${location}`;
-  return describeEvent(event);
-}
-function describeEvent(event) {
-  const target = event.target;
-  if (typeof Element !== "undefined" && target instanceof Element) {
-    const tag = target.tagName.toLowerCase();
-    const src = target.getAttribute("src") ?? target.getAttribute("href");
-    return src ? `failed to load <${tag}> ${src}` : `<${tag}> ${event.type} event`;
-  }
-  return `${event.type} event`;
-}
-function formatSourceLocation(filename, lineno, colno) {
-  if (!filename) return "";
-  const parts = [filename];
-  if (lineno) parts.push(String(lineno));
-  if (colno) parts.push(String(colno));
-  return parts.join(":");
-}
-function showToast(message2, opts = {}) {
-  const host = ensureHost();
-  const variant = opts.variant ?? "info";
-  const duration3 = opts.durationMs ?? DEFAULT_DURATION_MS;
-  const existing = findVisibleToast(message2, variant);
-  if (existing) {
-    existing.refresh(duration3);
-    return existing.dismiss;
-  }
-  const toast = document.createElement("div");
-  toast.className = `toast toast-${variant}`;
-  toast.textContent = message2;
-  host.append(toast);
-  let timer = setTimeout(() => {
-    toast.remove();
-  }, duration3);
-  const dismiss = () => {
-    clearTimeout(timer);
-    toast.remove();
-  };
-  const refresh = (ms2) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      toast.remove();
-    }, ms2);
-  };
-  toastControls.set(toast, { dismiss, refresh });
-  toast.addEventListener("click", dismiss);
-  return dismiss;
-}
-function findVisibleToast(message2, variant) {
-  const host = document.getElementById(TOAST_HOST_ID);
-  if (!host) return null;
-  for (const node2 of host.querySelectorAll(`.toast-${variant}`)) {
-    if (node2.textContent === message2) return toastControls.get(node2) ?? null;
-  }
-  return null;
-}
-function showErrorToast(prefix, error62) {
-  const message2 = `${prefix}: ${normalizeMessage(error62)}`;
-  console.error(message2, error62);
-  const e2e = window.__copseE2e;
-  e2e?.pushErrorToast?.(message2);
-  showToast(message2, { variant: "error" });
-}
-var TOAST_HOST_ID, DEFAULT_DURATION_MS, toastControls;
-var init_toast = __esm({
-  "src/renderer/views/toast.ts"() {
-    TOAST_HOST_ID = "toast-host";
-    DEFAULT_DURATION_MS = 6e3;
-    toastControls = /* @__PURE__ */ new WeakMap();
-  }
-});
-
-// packages/thread-store/src/github-pr-url.ts
-function parseGithubPrUrl(rawUrl) {
-  const trimmed2 = rawUrl.trim();
-  if (!trimmed2) return null;
-  try {
-    const url2 = new URL(trimmed2);
-    if (url2.hostname.replace(/^www\./i, "").toLowerCase() !== "github.com") return null;
-    const match = url2.pathname.match(GITHUB_PR_PATH_RE);
-    if (!match) return null;
-    const [, ownerGroup, repoGroup, numberGroup] = match;
-    if (ownerGroup === void 0 || repoGroup === void 0 || numberGroup === void 0) {
-      return null;
-    }
-    const owner = ownerGroup;
-    const repo = repoGroup.replace(/\.git$/i, "");
-    const number4 = Number.parseInt(numberGroup, 10);
-    if (!Number.isFinite(number4) || number4 <= 0) return null;
-    return { owner, repo, number: number4, url: trimmed2 };
-  } catch {
-    return null;
-  }
-}
-function stripUrlTrailingPunctuation(url2) {
-  return url2.replace(URL_TRAILING_PUNCTUATION_RE, "");
-}
-function githubPrKeyMatchesTerm(key, term) {
-  const digits = /^#?(\d+)$/.exec(term)?.[1];
-  return digits === void 0 ? key.includes(term) : key.endsWith(`#${digits}`);
-}
-function extractGithubPrUrls(text2) {
-  const seen = /* @__PURE__ */ new Set();
-  const refs = [];
-  for (const match of text2.matchAll(GITHUB_PR_URL_RE)) {
-    const raw = stripUrlTrailingPunctuation(match[0]);
-    const parsed2 = parseGithubPrUrl(raw);
-    if (!parsed2) continue;
-    const key = githubPrKey(parsed2);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    refs.push(parsed2);
-  }
-  return refs;
-}
-function githubRepoKey(ref) {
-  return `${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}`;
-}
-function githubPrKey(ref) {
-  return `${githubRepoKey(ref)}#${String(ref.number)}`;
-}
-var GITHUB_PR_PATH_RE, GITHUB_PR_URL_RE, URL_TRAILING_PUNCTUATION_RE;
-var init_github_pr_url = __esm({
-  "packages/thread-store/src/github-pr-url.ts"() {
-    GITHUB_PR_PATH_RE = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/[^?#]*)?$/i;
-    GITHUB_PR_URL_RE = /https?:\/\/(?:www\.)?github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+(?:[^\s)\]>]*)/gi;
-    URL_TRAILING_PUNCTUATION_RE = /[.,;:)\]>*_~`'"]+$/;
-  }
-});
-
-// src/shared/git/github-pr-url.ts
-var init_github_pr_url2 = __esm({
-  "src/shared/git/github-pr-url.ts"() {
-    init_github_pr_url();
-  }
-});
-
-// packages/std/src/assert-never.ts
-function assertNever2(value, context) {
-  throw new Error(`${context}: unhandled value ${JSON.stringify(value)}`);
-}
-var init_assert_never = __esm({
-  "packages/std/src/assert-never.ts"() {
-  }
-});
-
-// packages/thread-store/src/thread-pr-status.ts
-function collectThreadPrRefs(thread) {
-  const seen = /* @__PURE__ */ new Set();
-  const refs = [];
-  const push = (ref) => {
-    const key = githubPrKey(ref);
-    if (seen.has(key)) return;
-    seen.add(key);
-    refs.push(ref);
-  };
-  for (const message2 of thread.messages) {
-    for (const ref of extractGithubPrUrls(message2.content)) push(ref);
-  }
-  const linkedUrl = thread.remoteAgentLink?.prUrl;
-  if (linkedUrl) {
-    const parsed2 = parseGithubPrUrl(linkedUrl);
-    if (parsed2) push(parsed2);
-  }
-  return refs;
-}
-function normalizePrLifecycleState(state, merged = false) {
-  const normalized = state.trim().toUpperCase();
-  if (normalized === "OPEN") return "open";
-  if (normalized === "MERGED" || merged) return "merged";
-  if (normalized === "CLOSED") return "closed";
-  return "unknown";
-}
-function summarizeThreadPrStatus(states, refs = []) {
-  if (states.length === 0) return null;
-  let openCount = 0;
-  let mergedCount = 0;
-  let knownCount = 0;
-  for (const state of states) {
-    if (state === "unknown") continue;
-    knownCount += 1;
-    if (state === "open") openCount += 1;
-    else if (state === "merged") mergedCount += 1;
-  }
-  if (knownCount === 0) return null;
-  if (openCount > 0) {
-    const rollup = {
-      kind: "open",
-      openCount,
-      totalCount: knownCount
-    };
-    if (openCount === 1 && knownCount === 1 && refs[0]) {
-      return { ...rollup, primaryNumber: refs[0].number };
-    }
-    return rollup;
-  }
-  if (mergedCount === knownCount) {
-    return { kind: "merged", totalCount: knownCount };
-  }
-  return { kind: "closed", totalCount: knownCount };
-}
-function describeThreadPrStatus(rollup) {
-  switch (rollup.kind) {
-    case "open":
-      if (rollup.primaryNumber != null) {
-        return `Pull request #${String(rollup.primaryNumber)} is open`;
-      }
-      return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
-    case "merged":
-      return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
-    case "closed":
-      return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
-    default:
-      return assertNever2(rollup, "describeThreadPrStatus");
-  }
-}
-var init_thread_pr_status = __esm({
-  "packages/thread-store/src/thread-pr-status.ts"() {
-    init_assert_never();
-    init_github_pr_url();
-  }
-});
-
-// src/shared/git/thread-pr-status.ts
-var init_thread_pr_status2 = __esm({
-  "src/shared/git/thread-pr-status.ts"() {
-    init_thread_pr_status();
-  }
-});
-
-// src/renderer/controller/sidebar-thread.ts
-function sidebarPrRefs(thread) {
-  const cached2 = [...thread.prRefs ?? [], ...(thread.prProductions ?? []).map((item) => item.pr)];
-  if (thread.messages && thread.messagesLoaded !== false) {
-    const scraped = collectThreadPrRefs({
-      messages: thread.messages,
-      ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}
-    });
-    const seen = new Set(scraped.map(githubPrKey));
-    const cachedOnly = cached2.filter((ref) => {
-      const key = githubPrKey(ref);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    return [...scraped, ...cachedOnly];
-  }
-  return [...new Map(cached2.map((ref) => [githubPrKey(ref), ref])).values()];
-}
-function sidebarLastPromptAt(thread) {
-  if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
-  const messages = thread.messages ?? [];
-  for (let i2 = messages.length - 1; i2 >= 0; i2--) {
-    const message2 = messages[i2];
-    if (message2 !== void 0 && isHumanUserPrompt(message2)) return message2.createdAt;
-  }
-  return void 0;
-}
-function compactSidebarThread(thread) {
-  const lastPromptAt = sidebarLastPromptAt(thread);
-  return {
-    id: thread.id,
-    title: thread.title,
-    ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
-    ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
-    status: thread.status,
-    ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
-    ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
-    ...thread.sideChat ? { sideChat: thread.sideChat } : {},
-    ...thread.automation ? { automation: thread.automation } : {},
-    ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {},
-    prRefs: sidebarPrRefs(thread),
-    ...thread.prProductions ? { prProductions: thread.prProductions } : {}
-  };
-}
-var init_sidebar_thread = __esm({
-  "src/renderer/controller/sidebar-thread.ts"() {
-    init_github_pr_url2();
-    init_thread_pr_status2();
-    init_thread_sort();
-  }
-});
-
-// src/renderer/views/new-project-dialog.ts
-var new_project_dialog_exports = {};
-__export(new_project_dialog_exports, {
-  openNewProjectDialog: () => openNewProjectDialog
-});
-function ensureDialog2() {
-  if (dialogEl) return dialogEl;
-  dialogEl = el("dialog", { id: "new-project-dialog", class: "new-project-dialog" });
-  document.body.append(dialogEl);
-  return dialogEl;
-}
-function openNewProjectDialog(api2, defaultParentDir) {
-  const dialog2 = ensureDialog2();
-  clear(dialog2);
-  const nameInput = el("input", {
-    type: "text",
-    class: "new-project-name",
-    placeholder: "my-project",
-    "aria-label": "Project name",
-    spellcheck: "false",
-    autocomplete: "off"
-  });
-  const parentInput = el("input", {
-    type: "text",
-    class: "new-project-parent",
-    placeholder: "~/Projects",
-    "aria-label": "Parent directory",
-    spellcheck: "false",
-    autocomplete: "off"
-  });
-  parentInput.value = defaultParentDir;
-  const browseBtn = el("button", { type: "button", class: "new-project-browse" }, "Browse\u2026");
-  const pathPreview = el("p", { class: "field-hint new-project-path-preview" });
-  const error62 = el("p", { class: "new-project-error field-hint", hidden: true });
-  const okBtn = el("button", { type: "button", class: "ui-btn ui-btn-primary" }, "Create");
-  const cancelBtn = el("button", { type: "button", class: "ui-btn" }, "Cancel");
-  function updatePathPreview() {
-    const name = nameInput.value.trim();
-    const parent = parentInput.value.trim();
-    pathPreview.textContent = name && parent ? `${parent}/${name}` : "";
-  }
-  function renderError(message2) {
-    error62.textContent = message2;
-    error62.hidden = false;
-  }
-  nameInput.addEventListener("input", updatePathPreview);
-  parentInput.addEventListener("input", updatePathPreview);
-  browseBtn.addEventListener("click", () => {
-    void (async () => {
-      const picked = await api2.workspace.pickParentDirectory();
-      if (picked) parentInput.value = picked;
-      updatePathPreview();
-    })();
-  });
-  dialog2.append(
-    el("h3", {}, "New project"),
-    el(
-      "p",
-      { class: "field-hint" },
-      "Create a folder with a starter AGENT.md and README.md, then git init it."
-    ),
-    el("label", { class: "new-project-field" }, "Name ", nameInput),
-    el(
-      "label",
-      { class: "new-project-field" },
-      "Parent directory ",
-      el("div", { class: "new-project-parent-row" }, parentInput, browseBtn)
-    ),
-    pathPreview,
-    error62,
-    el("div", { class: "new-project-actions" }, cancelBtn, okBtn)
-  );
-  return new Promise((resolve) => {
-    let settled = false;
-    const perOpen = new AbortController();
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      perOpen.abort();
-      dialog2.close();
-      resolve(value);
-    };
-    dialog2.addEventListener(
-      "cancel",
-      () => {
-        finish(null);
-      },
-      { signal: perOpen.signal }
-    );
-    cancelBtn.addEventListener("click", () => {
-      finish(null);
-    });
-    okBtn.addEventListener("click", () => {
-      const name = nameInput.value.trim();
-      const parentDir = parentInput.value.trim();
-      if (!name) {
-        renderError("Enter a project name.");
-        return;
-      }
-      if (!parentDir) {
-        renderError("Choose a parent directory.");
-        return;
-      }
-      finish({ name, parentDir });
-    });
-    dialog2.addEventListener(
-      "keydown",
-      (e3) => {
-        if (e3.key === "Enter" && e3.target === nameInput) {
-          e3.preventDefault();
-          okBtn.click();
-        }
-      },
-      { signal: perOpen.signal }
-    );
-    dialog2.showModal();
-    nameInput.focus();
-  });
-}
-var dialogEl;
-var init_new_project_dialog = __esm({
-  "src/renderer/views/new-project-dialog.ts"() {
-    init_helpers();
-    dialogEl = null;
-  }
-});
-
-// src/renderer/views/remote-folder-path.ts
-function parentRemotePath(path) {
-  if (path === "/" || path === "") return "/";
-  const trimmed2 = path.replace(/\/+$/, "");
-  const idx = trimmed2.lastIndexOf("/");
-  return idx <= 0 ? "/" : trimmed2.slice(0, idx);
-}
-function remotePathSegments(path) {
-  const normalized = !path || path === "/" ? "/" : path.startsWith("/") ? path.replace(/\/+$/, "") || "/" : `/${path}`;
-  const segments = [{ label: "/", path: "/" }];
-  if (normalized === "/") return segments;
-  let acc = "";
-  for (const part of normalized.split("/").filter(Boolean)) {
-    acc += `/${part}`;
-    segments.push({ label: part, path: acc });
-  }
-  return segments;
-}
-function remotePathShowsSeparatorAfter(segment) {
-  return segment.path !== "/";
-}
-function fillRemotePathBreadcrumbs(nav, path, onNavigate) {
-  nav.replaceChildren();
-  const segments = remotePathSegments(path);
-  for (let i2 = 0; i2 < segments.length; i2 += 1) {
-    const segment = segments[i2];
-    if (!segment) continue;
-    const isCurrent = i2 === segments.length - 1;
-    if (isCurrent) {
-      const current = document.createElement("span");
-      current.className = "remote-folder-crumb remote-folder-crumb-current";
-      current.textContent = segment.label;
-      nav.append(current);
-      continue;
-    }
-    const crumb = document.createElement("button");
-    crumb.type = "button";
-    crumb.className = "remote-folder-crumb";
-    crumb.setAttribute("aria-label", `Go to ${segment.path}`);
-    crumb.textContent = segment.label;
-    crumb.addEventListener("click", () => {
-      onNavigate(segment.path);
-    });
-    nav.append(crumb);
-    if (remotePathShowsSeparatorAfter(segment)) {
-      const sep = document.createElement("span");
-      sep.className = "remote-folder-crumb-sep";
-      sep.setAttribute("aria-hidden", "true");
-      sep.textContent = "/";
-      nav.append(sep);
-    }
-  }
-}
-var init_remote_folder_path = __esm({
-  "src/renderer/views/remote-folder-path.ts"() {
-  }
-});
-
-// src/renderer/views/remote-folder-dialog.ts
-var remote_folder_dialog_exports = {};
-__export(remote_folder_dialog_exports, {
-  openRemoteFolderDialog: () => openRemoteFolderDialog
-});
-function ensureDialog3() {
-  if (dialogEl2) return dialogEl2;
-  dialogEl2 = el("dialog", { id: "remote-folder-dialog", class: "remote-folder-dialog" });
-  document.body.append(dialogEl2);
-  return dialogEl2;
-}
-function openRemoteFolderDialog(api2) {
-  const dialog2 = ensureDialog3();
-  clear(dialog2);
-  const hostSelect = el("select", { class: "remote-folder-host", "aria-label": "SSH host" });
-  const addHostBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary remote-folder-add-host-btn" },
-    "Add host"
-  );
-  const breadcrumbs = el("nav", {
-    class: "remote-folder-breadcrumbs",
-    "aria-label": "Remote path"
-  });
-  const list = el("div", { class: "remote-folder-list", role: "listbox" });
-  const status = el("p", { class: "remote-folder-status field-hint" });
-  const upBtn = el(
-    "button",
-    { type: "button", class: "remote-folder-up", "aria-label": "Go up one directory" },
-    arrowLeftIcon("ui-icon ui-icon-sm"),
-    "Up"
-  );
-  const openBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-primary remote-folder-open" },
-    "Open"
-  );
-  const cancelBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary remote-folder-cancel" },
-    "Cancel"
-  );
-  const draft = emptySshHostDraft();
-  const idInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostId",
-    class: "remote-folder-host-id",
-    placeholder: "my-server",
-    "aria-label": "Host id"
-  });
-  const labelInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostLabel",
-    class: "remote-folder-host-label",
-    placeholder: "Production",
-    "aria-label": "Host label"
-  });
-  const hostInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostHost",
-    class: "remote-folder-host-host",
-    placeholder: "example.com or ~/.ssh/config alias",
-    "aria-label": "Hostname"
-  });
-  const userInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostUser",
-    class: "remote-folder-host-user",
-    placeholder: "ubuntu",
-    "aria-label": "SSH user"
-  });
-  const portInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostPort",
-    class: "remote-folder-host-port",
-    placeholder: "22",
-    inputmode: "numeric",
-    "aria-label": "SSH port"
-  });
-  const identityInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostIdentity",
-    class: "remote-folder-host-identity",
-    placeholder: "~/.ssh/id_ed25519",
-    "aria-label": "Identity file"
-  });
-  const saveHostBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-primary remote-folder-save-host" },
-    "Save host"
-  );
-  const cancelAddBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary remote-folder-cancel-add" },
-    "Cancel"
-  );
-  const importBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-ghost remote-folder-import-config" },
-    "Import from ~/.ssh/config"
-  );
-  const addHostHint = el(
-    "p",
-    { class: "field-hint remote-folder-add-host-hint" },
-    "Add an SSH host to browse and open a remote folder."
-  );
-  const addHostForm = el(
-    "div",
-    { class: "remote-folder-add-host-form ssh-host-form", hidden: true },
-    addHostHint,
-    el("label", {}, "Id ", idInput),
-    el("label", {}, "Label ", labelInput),
-    el("label", {}, "Host ", hostInput),
-    el("label", {}, "User ", userInput),
-    el("label", {}, "Port ", portInput),
-    el("label", {}, "Identity file ", identityInput),
-    el(
-      "div",
-      { class: "remote-folder-add-host-actions provider-actions" },
-      importBtn,
-      cancelAddBtn,
-      saveHostBtn
-    )
-  );
-  const browsePanel = el(
-    "div",
-    { class: "remote-folder-browse" },
-    el("div", { class: "remote-folder-toolbar" }, upBtn, breadcrumbs),
-    list
-  );
-  dialog2.append(
-    el("h3", {}, "Open remote folder"),
-    el("p", { class: "field-hint" }, "Choose an SSH host and folder on the remote machine."),
-    el(
-      "div",
-      { class: "remote-folder-host-row" },
-      el("label", { class: "remote-folder-host-label-wrap" }, "Host ", hostSelect),
-      addHostBtn
-    ),
-    addHostForm,
-    browsePanel,
-    status,
-    el("div", { class: "remote-folder-actions" }, cancelBtn, openBtn)
-  );
-  let hosts = [];
-  let currentHostId = "";
-  let currentPath = "/";
-  let loading = false;
-  let addingHost = false;
-  let idTouched = false;
-  function setAddingHost(next) {
-    addingHost = next;
-    addHostForm.hidden = !next;
-    addHostBtn.hidden = next;
-    browsePanel.hidden = next;
-    openBtn.hidden = next;
-    if (next) {
-      Object.assign(draft, emptySshHostDraft());
-      idTouched = false;
-      idInput.value = "";
-      labelInput.value = "";
-      hostInput.value = "";
-      userInput.value = "";
-      portInput.value = "";
-      identityInput.value = "";
-      idInput.disabled = false;
-      addHostHint.textContent = hosts.length === 0 ? "No SSH hosts yet. Add one to browse and open a remote folder." : "Add an SSH host to browse and open a remote folder.";
-      status.textContent = "";
-      labelInput.focus();
-    }
-  }
-  function fillHostSelect(selectedId) {
-    clear(hostSelect);
-    for (const host of hosts) {
-      hostSelect.append(el("option", { value: host.id }, `${host.label} (${host.host})`));
-    }
-    if (hosts.length === 0) {
-      hostSelect.append(el("option", { value: "", disabled: true, selected: true }, "No hosts yet"));
-      hostSelect.disabled = true;
-      currentHostId = "";
-      return;
-    }
-    hostSelect.disabled = false;
-    const preferred = (selectedId && hosts.some((h3) => h3.id === selectedId) ? selectedId : void 0) ?? hosts[0]?.id ?? "";
-    currentHostId = preferred;
-    hostSelect.value = preferred;
-  }
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      dialog2.close();
-      resolve(value);
-    };
-    dialog2.addEventListener("cancel", () => {
-      finish(null);
-    });
-    cancelBtn.addEventListener("click", () => {
-      finish(null);
-    });
-    addHostBtn.addEventListener("click", () => {
-      setAddingHost(true);
-    });
-    cancelAddBtn.addEventListener("click", () => {
-      if (hosts.length === 0) {
-        finish(null);
-        return;
-      }
-      setAddingHost(false);
-      status.textContent = "";
-    });
-    labelInput.addEventListener("input", () => {
-      draft.label = labelInput.value;
-      if (!idTouched && !idInput.disabled) {
-        idInput.value = slugifyHostId(draft.label);
-        draft.id = idInput.value;
-      }
-    });
-    idInput.addEventListener("input", () => {
-      idTouched = true;
-      draft.id = idInput.value;
-    });
-    hostInput.addEventListener("input", () => {
-      draft.host = hostInput.value;
-    });
-    userInput.addEventListener("input", () => {
-      draft.user = userInput.value;
-    });
-    portInput.addEventListener("input", () => {
-      draft.port = portInput.value;
-    });
-    identityInput.addEventListener("input", () => {
-      draft.identityFile = identityInput.value;
-    });
-    async function persistAndSelect(host) {
-      const raw = await api2.settings.get("sshWorkspaceHosts");
-      const existing = parseSshWorkspaceHosts(raw);
-      await api2.settings.set("sshWorkspaceHosts", upsertHost(existing, host));
-      hosts = await api2.sshWorkspace.listHosts();
-      fillHostSelect(host.id);
-      setAddingHost(false);
-      status.textContent = `Saved host \u201C${host.label}\u201D.`;
-      await browse("/");
-    }
-    saveHostBtn.addEventListener("click", () => {
-      void (async () => {
-        draft.label = labelInput.value;
-        draft.id = idInput.value;
-        draft.host = hostInput.value;
-        draft.user = userInput.value;
-        draft.port = portInput.value;
-        draft.identityFile = identityInput.value;
-        const parsed2 = parseSshHostDraft(draft);
-        if (!parsed2.ok) {
-          setInlineStatus(status, "error", parsed2.error);
-          return;
-        }
-        try {
-          await persistAndSelect(parsed2.host);
-        } catch (err2) {
-          const message2 = ipcErrorMessage(err2, "Could not save the host.");
-          setInlineStatus(status, "error", message2);
-          showToast(message2, { variant: "error" });
-        }
-      })();
-    });
-    importBtn.addEventListener("click", () => {
-      void (async () => {
-        try {
-          const aliases = await api2.sshWorkspace.listConfigAliases();
-          if (aliases.length === 0) {
-            setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
-            return;
-          }
-          const raw = await api2.settings.get("sshWorkspaceHosts");
-          const existing = parseSshWorkspaceHosts(raw);
-          const imported = importSshConfigHosts(existing, aliases);
-          await api2.settings.set("sshWorkspaceHosts", imported.hosts);
-          hosts = await api2.sshWorkspace.listHosts();
-          fillHostSelect(imported.firstAliasHostId);
-          setAddingHost(false);
-          status.textContent = imported.importedHostIds.length === 0 ? "All SSH config aliases are already imported." : `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`;
-          if (currentHostId) await browse("/");
-        } catch (err2) {
-          const message2 = ipcErrorMessage(err2, "Could not import from ~/.ssh/config.");
-          setInlineStatus(status, "error", message2);
-          showToast(message2, { variant: "error" });
-        }
-      })();
-    });
-    async function loadHosts() {
-      status.textContent = "Loading hosts\u2026";
-      try {
-        hosts = await api2.sshWorkspace.listHosts();
-        fillHostSelect();
-        if (hosts.length === 0) {
-          openBtn.disabled = true;
-          upBtn.disabled = true;
-          setAddingHost(true);
-          return;
-        }
-        setAddingHost(false);
-        await browse("/");
-      } catch (err2) {
-        setInlineStatus(status, "error", ipcErrorMessage(err2, "Could not load SSH hosts."));
-      }
-    }
-    function renderBreadcrumbs(path) {
-      fillRemotePathBreadcrumbs(breadcrumbs, path, (next) => {
-        void browse(next);
-      });
-    }
-    async function browse(path) {
-      if (!currentHostId || loading || addingHost) return;
-      loading = true;
-      openBtn.disabled = true;
-      upBtn.disabled = true;
-      status.textContent = "Connecting\u2026";
-      clear(list);
-      try {
-        await api2.sshWorkspace.connect(currentHostId);
-        currentPath = path;
-        renderBreadcrumbs(currentPath);
-        const entries2 = await api2.sshWorkspace.listDirectory(
-          currentHostId,
-          currentPath
-        );
-        status.textContent = entries2.length === 0 ? "No subfolders here \u2014 open this folder or go up." : "";
-        for (const entry of entries2) {
-          const row2 = el(
-            "button",
-            {
-              type: "button",
-              class: "remote-folder-entry",
-              role: "option"
-            },
-            entry.name
-          );
-          row2.addEventListener("click", () => {
-            void browse(entry.path);
-          });
-          list.append(row2);
-        }
-        upBtn.disabled = currentPath === "/";
-        openBtn.disabled = false;
-      } catch (err2) {
-        currentPath = path;
-        renderBreadcrumbs(currentPath);
-        setInlineStatus(status, "error", ipcErrorMessage(err2, "Could not reach the host."));
-      } finally {
-        loading = false;
-        if (hosts.length > 0 && currentHostId) {
-          upBtn.disabled = currentPath === "/";
-          openBtn.disabled = false;
-        }
-      }
-    }
-    hostSelect.addEventListener("change", () => {
-      currentHostId = hostSelect.value;
-      void browse("/");
-    });
-    upBtn.addEventListener("click", () => {
-      void browse(parentRemotePath(currentPath));
-    });
-    openBtn.addEventListener("click", () => {
-      if (!currentHostId) return;
-      finish({ hostId: currentHostId, path: currentPath });
-    });
-    void loadHosts();
-    dialog2.showModal();
-  });
-}
-var dialogEl2;
-var init_remote_folder_dialog = __esm({
-  "src/renderer/views/remote-folder-dialog.ts"() {
-    init_helpers();
-    init_toast();
-    init_ssh_host_helpers();
-    init_remote_folder_path();
-    init_icons();
-    init_inline_status();
-    init_ipc_error_message();
-    dialogEl2 = null;
-  }
-});
-
-// src/renderer/controller/projects.ts
-function formatSshProjectName(hostLabel3, remotePath) {
-  return `${hostLabel3}:${remotePath}`;
-}
-function projectDisplayName(project2) {
-  if (!project2.sshHost) return project2.name;
-  const colon = project2.name.indexOf(":");
-  const label = colon > 0 ? project2.name.slice(0, colon) : project2.sshHost;
-  return formatSshProjectName(label, project2.path);
-}
-function projectDedupKey(sshHost, path) {
-  return `${sshHost ?? ""}\0${path}`;
-}
-function findProjectByKey(projects, sshHost, path) {
-  const key = projectDedupKey(sshHost, path);
-  return projects.find((p2) => projectDedupKey(p2.sshHost, p2.path) === key);
-}
-async function ensureSshConnected(api2, hostId) {
-  const states = await api2.sshWorkspace.getStates();
-  const state = states.find((s16) => s16.hostId === hostId);
-  if (state?.status === "connected") return;
-  await api2.sshWorkspace.connect(hostId);
-}
-function paginateSidebarThreads(threads, visibleLimit, activeThreadId) {
-  const total2 = threads.length;
-  let visibleCount = Math.min(visibleLimit, total2);
-  if (activeThreadId) {
-    const index = threads.findIndex((t2) => t2.id === activeThreadId);
-    if (index >= visibleCount) {
-      visibleCount = Math.min(
-        Math.ceil((index + 1) / SIDEBAR_THREADS_PAGE_SIZE) * SIDEBAR_THREADS_PAGE_SIZE,
-        total2
-      );
-    }
-  }
-  return {
-    visibleThreads: threads.slice(0, visibleCount),
-    visibleCount,
-    hasMore: visibleCount < total2
-  };
-}
-function clearPendingSwitch() {
-  pendingSwitch = null;
-  holdNavigation(null);
-}
-function settleActivationWaiter(projectId, error62) {
-  const waiter = activationWaiters.get(projectId);
-  if (!waiter) return;
-  activationWaiters.delete(projectId);
-  waiter.unsub?.();
-  if (error62) waiter.reject(error62);
-  else waiter.resolve();
-}
-function endSwitch(gen, projectId) {
-  if (pendingSwitch?.gen !== gen) return;
-  clearPendingSwitch();
-  settleActivationWaiter(projectId);
-}
-function supersedePendingSwitch() {
-  if (!pendingSwitch) return;
-  const superseded = pendingSwitch;
-  clearPendingSwitch();
-  settleActivationWaiter(superseded.projectId);
-}
-function getSidebarThreads(store2, projectId) {
-  const { activeProjectId, threads } = store2.getState();
-  const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
-  return withoutSideChats(list).filter((t2) => t2.archivedAt == null);
-}
-function getSideChatUnreadParents(store2, projectId) {
-  const { activeProjectId, threads } = store2.getState();
-  if (projectId !== activeProjectId) return /* @__PURE__ */ new Set();
-  const cached2 = sideChatUnreadCache.get(threads);
-  if (cached2) return cached2;
-  const parents = unreadSideChatParents(threads);
-  sideChatUnreadCache.set(threads, parents);
-  return parents;
-}
-function attentionThreadId(store2, threadId) {
-  for (const list of [store2.getState().threads, ...threadCache.values()]) {
-    const thread = list.find((t2) => t2.id === threadId);
-    if (!thread) continue;
-    const parentId = thread.sideChat?.parentThreadId;
-    return parentId !== void 0 && list.some((t2) => t2.id === parentId) ? parentId : threadId;
-  }
-  return threadId;
-}
-function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
-  const cached2 = threadCache.get(projectId);
-  if (!cached2) return;
-  threadCache.set(
-    projectId,
-    cached2.map((thread) => thread.id === threadId ? { ...thread, archivedAt } : thread)
-  );
-}
-function applyCachedSidebarPrRefs(projectId, refs) {
-  const cached2 = threadCache.get(projectId);
-  if (!cached2) return false;
-  const byThread = new Map(refs.map(({ threadId, prRefs }) => [threadId, prRefs]));
-  if (!cached2.some((thread) => byThread.has(thread.id))) return false;
-  threadCache.set(
-    projectId,
-    cached2.map((thread) => {
-      const prRefs = byThread.get(thread.id);
-      return prRefs ? { ...thread, prRefs } : thread;
-    })
-  );
-  return true;
-}
-function isProjectSwitchInFlight(store2, projectId) {
-  const { activeProjectId, expandedProjectId, workspaceRoot } = store2.getState();
-  if (expandedProjectId === projectId && activeProjectId !== projectId) return true;
-  return activeProjectId === projectId && !workspaceRoot;
-}
-function isListedProject(store2, projectId) {
-  return store2.getState().projects.some((project2) => project2.id === projectId);
-}
-function cacheThreads(projectId, threads) {
-  if (liveCacheProjectId !== null && liveCacheProjectId !== projectId) {
-    const outgoing = threadCache.get(liveCacheProjectId);
-    if (outgoing) threadCache.set(liveCacheProjectId, outgoing.map(compactSidebarThread));
-  }
-  liveCacheProjectId = projectId;
-  threadCache.set(projectId, threads);
-}
-async function preloadSidebarThreads(store2, api2) {
-  const pending = store2.getState().projects.filter((project2) => !project2.sshHost && !project2.missing).map((project2) => project2.id);
-  const unwanted = (id) => id === store2.getState().activeProjectId || threadCache.has(id) || !store2.getState().projects.some((project2) => project2.id === id);
-  for (const id of pending) {
-    if (unwanted(id)) continue;
-    let loaded;
-    try {
-      loaded = await loadThreads(api2, id);
-    } catch {
-      continue;
-    }
-    if (unwanted(id)) continue;
-    threadCache.set(id, loaded.map(compactSidebarThread));
-    store2.emit("sidebar_threads_loaded");
-  }
-}
-function attachProjectThreadCache(store2) {
-  return store2.on("threads_changed", () => {
-    const { activeProjectId, threads } = store2.getState();
-    if (activeProjectId && isListedProject(store2, activeProjectId)) {
-      cacheThreads(activeProjectId, threads);
-    }
-  });
-}
-async function trySetWorkspace(api2, path, sshHost) {
-  try {
-    await api2.workspace.set(path, sshHost);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function setWorkspaceInOrder(api2, path, sshHost) {
-  const next = workspaceChain.catch(() => void 0).then(() => trySetWorkspace(api2, path, sshHost));
-  workspaceChain = next;
-  return next;
-}
-function cancelPendingSwitch(store2, api2) {
-  const cancelled = pendingSwitch;
-  if (!cancelled) return;
-  clearPendingSwitch();
-  switchGeneration += 1;
-  settleActivationWaiter(cancelled.projectId);
-  if (!cancelled.dispatched) return;
-  const { activeProjectId, projects } = store2.getState();
-  const active2 = projects.find((p2) => p2.id === activeProjectId);
-  if (!active2) return;
-  void setWorkspaceInOrder(api2, active2.path, active2.sshHost);
-  void saveProjects(api2, projects, active2.id, store2.getState().activeThreadId);
-}
-function abortProjectActivation(store2, id, gen, outgoingId, error62) {
-  if (gen !== switchGeneration) return;
-  if (pendingSwitch?.gen === gen) clearPendingSwitch();
-  settleActivationWaiter(id, error62);
-  const revertExpanded = outgoingId ?? store2.getState().activeProjectId;
-  if (revertExpanded) {
-    store2.setState({ expandedProjectId: revertExpanded });
-  }
-  store2.emit("projects_changed");
-  store2.emit("workspace_changed");
-}
-function clearMissing(project2) {
-  if (!project2.missing) return project2;
-  const { missing: _missing, ...rest } = project2;
-  return rest;
-}
-function projectsWithMissingCleared(projects, id) {
-  if (!projects.some((p2) => p2.id === id && p2.missing)) return projects;
-  return projects.map((p2) => p2.id === id ? clearMissing(p2) : p2);
-}
-async function markProjectMissing(store2, api2, id) {
-  const projects = store2.getState().projects.map((p2) => p2.id === id ? { ...p2, missing: true } : p2);
-  store2.setState({ projects });
-  await saveProjects(
-    api2,
-    projects,
-    store2.getState().activeProjectId,
-    store2.getState().activeThreadId
-  );
-  store2.emit("projects_changed");
-}
-async function removeProject(store2, api2, id) {
-  const state = store2.getState();
-  if (!state.projects.some((p2) => p2.id === id)) return;
-  forgetProjectViewState(projectViewState, id);
-  threadCache.delete(id);
-  if (liveCacheProjectId === id) liveCacheProjectId = null;
-  dropProjectBackgroundThreads(store2, id);
-  const projects = state.projects.filter((p2) => p2.id !== id);
-  const wasActive = state.activeProjectId === id;
-  const wasExpanded = (state.expandedProjectId ?? state.activeProjectId) === id;
-  if (!wasActive) {
-    if (wasExpanded) cancelPendingSwitch(store2, api2);
-    await saveProjects(api2, projects, state.activeProjectId, state.activeThreadId);
-    threadCache.delete(id);
-    store2.setState({
-      projects,
-      expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId
-    });
-    store2.emit("projects_changed");
-    return;
-  }
-  supersedePendingSwitch();
-  switchGeneration += 1;
-  const next = projects[0] ?? null;
-  await saveProjects(api2, projects, next?.id ?? null, null);
-  if (!next) {
-    store2.setState({
-      projects: [],
-      activeProjectId: null,
-      expandedProjectId: null,
-      workspaceRoot: null,
-      threads: [],
-      activeThreadId: null,
-      openFile: null,
-      filesPaneOpen: false
-    });
-    store2.emit("projects_changed");
-    store2.emit("workspace_changed");
-    store2.emit("threads_changed");
-    store2.emit("panel_changed");
-    store2.emit("files_pane_changed");
-    return;
-  }
-  store2.setState({ projects });
-  store2.emit("projects_changed");
-  await activateAndWait(store2, api2, next.id, next.path, next.sshHost);
-}
-function setExpandedProject(store2, id) {
-  store2.setState({ expandedProjectId: id });
-}
-function expandProject(store2, id) {
-  setExpandedProject(store2, id);
-  store2.emit("projects_changed");
-}
-async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, outgoingThreads, pendingThreadId) {
-  const endActivate = begin("switch:activate");
-  mark("switch:start");
-  if (gen !== switchGeneration) {
-    endSwitch(gen, id);
-    endActivate({ outcome: "superseded" });
-    return;
-  }
-  if (sshHost) {
-    const enabled = await api2.settings.get("sshWorkspaceEnabled");
-    if (enabled !== true) {
-      endActivate({ outcome: "ssh-disabled" });
-      abortProjectActivation(
-        store2,
-        id,
-        gen,
-        outgoingId,
-        new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.")
-      );
-      return;
-    }
-    try {
-      await ensureSshConnected(api2, sshHost);
-    } catch (err2) {
-      if (gen !== switchGeneration) {
-        endSwitch(gen, id);
-        endActivate({ outcome: "superseded" });
-        return;
-      }
-      const message2 = err2 instanceof Error ? err2.message : String(err2);
-      endActivate({ outcome: "ssh-failed" });
-      abortProjectActivation(
-        store2,
-        id,
-        gen,
-        outgoingId,
-        new Error(`SSH connection failed: ${message2}`)
-      );
-      return;
-    }
-  }
-  const flushOutgoing = outgoingId && outgoingId !== id ? flushProjectThreads(api2, outgoingId, outgoingThreads) : Promise.resolve();
-  if (pendingSwitch?.gen === gen) {
-    pendingSwitch.dispatched = true;
-    holdNavigation(id);
-  }
-  const projectsAtDispatch = store2.getState().projects;
-  const persistSelection = saveProjects(api2, projectsAtDispatch, id, pendingThreadId);
-  const endWorkspace = begin("switch:workspace-set");
-  const workspaceOpened = setWorkspaceInOrder(api2, path, sshHost);
-  const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened]);
-  endWorkspace({ opened });
-  if (gen !== switchGeneration) {
-    endSwitch(gen, id);
-    endActivate({ outcome: "superseded" });
-    return;
-  }
-  if (!opened) {
-    holdNavigation(null);
-    await markProjectMissing(store2, api2, id);
-    endActivate({ outcome: "missing" });
-    abortProjectActivation(
-      store2,
-      id,
-      gen,
-      outgoingId,
-      new Error(
-        sshHost ? "Could not open the remote workspace folder." : "Project folder could not be opened \u2014 relocate it from the sidebar."
-      )
-    );
-    return;
-  }
-  const endLoad = begin("switch:load-threads");
-  const loaded = await loadThreads(api2, id);
-  endLoad({ threads: loaded.length });
-  if (gen !== switchGeneration || store2.getState().expandedProjectId !== id) {
-    endSwitch(gen, id);
-    endActivate({ outcome: "superseded" });
-    return;
-  }
-  const endApply = begin("switch:apply-state");
-  if (outgoingId && outgoingId !== id) {
-    const state = store2.getState();
-    const liveOutgoingThreads = state.activeProjectId === outgoingId ? state.threads : outgoingThreads;
-    carryRunningThreads(store2, outgoingId, liveOutgoingThreads);
-  }
-  const merged = adoptBackgroundThreads(store2, id, loaded);
-  cacheThreads(id, merged);
-  const activeThreadId = pendingThreadId && merged.some((t2) => t2.id === pendingThreadId) ? pendingThreadId : merged[0]?.id ?? null;
-  const view = resolveProjectViewState(projectViewState, id);
-  store2.setState({
-    activeProjectId: id,
-    expandedProjectId: id,
-    workspaceRoot: path,
-    threads: merged,
-    activeThreadId,
-    openFile: null,
-    panelTab: view.panelTab,
-    filesPaneOpen: view.filesPaneOpen,
-    rightPanelMode: view.rightPanelMode,
-    // Opening succeeded — lift any prior "folder missing" quarantine (#997).
-    projects: projectsWithMissingCleared(store2.getState().projects, id)
-  });
-  if (activeThreadId) markThreadRead(store2, activeThreadId);
-  if (merged.length === 0) createThread(store2);
-  else normalizeBlankThreads(store2);
-  store2.emit("projects_changed");
-  store2.emit("workspace_changed");
-  store2.emit("threads_changed");
-  store2.emit("panel_changed");
-  store2.emit("files_pane_changed");
-  endApply({ threads: merged.length });
-  const { projects, activeThreadId: appliedThreadId } = store2.getState();
-  await (projects === projectsAtDispatch ? saveNavigation(api2, id, appliedThreadId) : saveProjects(api2, projects, id, appliedThreadId));
-  endSwitch(gen, id);
-  endActivate({ outcome: "ok", threads: merged.length });
-  void resumePendingQueues(store2, api2);
-}
-function dispatchCallers() {
-  const frames = (new Error().stack ?? "").split("\n").slice(3, 8);
-  return frames.map((frame) => /at (?:async )?([^\s(]+)/.exec(frame)?.[1] ?? "?").join(" < ");
-}
-function activate(store2, api2, id, path, sshHost, pendingThreadId) {
-  const { activeProjectId, threads, expandedProjectId } = store2.getState();
-  if (activeProjectId === id) {
-    if ((expandedProjectId ?? activeProjectId) !== id) expandProject(store2, id);
-    cancelPendingSwitch(store2, api2);
-    return;
-  }
-  expandProject(store2, id);
-  if (perfOn) {
-    mark("switch:dispatch", {
-      callers: dispatchCallers(),
-      restarts: pendingSwitch?.projectId === id
-    });
-  }
-  cancelPendingSwitch(store2, api2);
-  const gen = ++switchGeneration;
-  pendingSwitch = { gen, projectId: id, dispatched: false };
-  const outgoingId = activeProjectId;
-  const outgoingThreads = threads;
-  if (outgoingId && isListedProject(store2, outgoingId)) {
-    cacheThreads(outgoingId, outgoingThreads);
-    recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store2.getState()));
-  }
-  void finishActivate(
-    store2,
-    api2,
-    id,
-    path,
-    sshHost,
-    gen,
-    outgoingId,
-    outgoingThreads,
-    pendingThreadId
-  ).catch(async (error62) => {
-    if (gen !== switchGeneration) {
-      endSwitch(gen, id);
-      return;
-    }
-    holdNavigation(null);
-    const state = store2.getState();
-    const active2 = state.projects.find((project2) => project2.id === state.activeProjectId);
-    const root = active2?.path ?? state.workspaceRoot;
-    await Promise.all([
-      root ? setWorkspaceInOrder(api2, root, active2?.sshHost) : Promise.resolve(),
-      saveNavigation(api2, state.activeProjectId, state.activeThreadId)
-    ]).catch((restoreError) => {
-      console.warn("[projects] could not restore navigation after a failed switch:", restoreError);
-    });
-    const failure2 = error62 instanceof Error ? error62 : new Error(String(error62));
-    if (gen === switchGeneration) {
-      abortProjectActivation(store2, id, gen, state.activeProjectId, failure2);
-    } else {
-      endSwitch(gen, id);
-    }
-    console.warn("[projects] project activation failed:", failure2);
-  });
-}
-function switchProject(store2, api2, id, pendingThreadId = null) {
-  const proj = store2.getState().projects.find((p2) => p2.id === id);
-  if (!proj) return;
-  activate(store2, api2, id, proj.path, proj.sshHost, pendingThreadId);
-}
-async function activateMobileProject(store2, api2, id) {
-  const project2 = store2.getState().projects.find((item) => item.id === id);
-  if (!project2 || project2.missing) throw new Error("Project unavailable on the desktop.");
-  if (store2.getState().activeProjectId === id) {
-    cancelPendingSwitch(store2, api2);
-    return;
-  }
-  await activateAndWait(store2, api2, id, project2.path, project2.sshHost);
-}
-function switchProjectThread(store2, api2, projectId, threadId) {
-  const { activeProjectId, expandedProjectId } = store2.getState();
-  if (projectId === activeProjectId) {
-    cancelPendingSwitch(store2, api2);
-    if (expandedProjectId !== projectId) expandProject(store2, projectId);
-    switchThread(store2, threadId);
-    return;
-  }
-  switchProject(store2, api2, projectId, threadId);
-}
-async function addProjectFromPath(store2, api2, path) {
-  const existing = findProjectByKey(store2.getState().projects, void 0, path);
-  let id;
-  if (existing) {
-    id = existing.id;
-  } else {
-    id = uuid3();
-    store2.setState({
-      projects: [...store2.getState().projects, { id, path, name: basename(path) }]
-    });
-  }
-  return activateAndWait(store2, api2, id, path);
-}
-async function addProjectFromRemotePath(store2, api2, hostId, path) {
-  const enabled = await api2.settings.get("sshWorkspaceEnabled");
-  if (enabled !== true) {
-    throw new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.");
-  }
-  const canonical2 = await api2.sshWorkspace.registerRoot(hostId, path);
-  const existing = findProjectByKey(store2.getState().projects, hostId, canonical2);
-  let id;
-  if (existing) {
-    id = existing.id;
-  } else {
-    id = uuid3();
-    const hosts = await api2.sshWorkspace.listHosts();
-    const host = hosts.find((h3) => h3.id === hostId);
-    const label = host?.label ?? hostId;
-    store2.setState({
-      projects: [
-        ...store2.getState().projects,
-        { id, path: canonical2, name: formatSshProjectName(label, canonical2), sshHost: hostId }
-      ]
-    });
-  }
-  return activateAndWait(store2, api2, id, canonical2, hostId);
-}
-function activateAndWait(store2, api2, id, path, sshHost) {
-  activate(store2, api2, id, path, sshHost, null);
-  return waitForProjectActivation(store2, id);
-}
-async function waitForProjectActivation(store2, projectId) {
-  if (store2.getState().activeProjectId === projectId) return;
-  await new Promise((resolve, reject) => {
-    const waiter = { resolve, reject };
-    activationWaiters.set(projectId, waiter);
-    const unsub = store2.on("workspace_changed", () => {
-      if (store2.getState().activeProjectId === projectId) {
-        activationWaiters.delete(projectId);
-        unsub();
-        resolve();
-      }
-    });
-    waiter.unsub = unsub;
-  });
-}
-async function quarantineAndRestoreNext(store2, api2, id) {
-  await markProjectMissing(store2, api2, id);
-  const next = store2.getState().projects.find((p2) => p2.id !== id && !p2.missing);
-  if (next) {
-    store2.setState({
-      activeProjectId: next.id,
-      expandedProjectId: next.id,
-      threads: [],
-      activeThreadId: null
-    });
-    await restoreProject(store2, api2, next.id);
-    return;
-  }
-  store2.setState({
-    activeProjectId: null,
-    expandedProjectId: null,
-    workspaceRoot: null,
-    threads: [],
-    activeThreadId: null
-  });
-  await saveProjects(api2, store2.getState().projects, null, null);
-  store2.emit("workspace_changed");
-  store2.emit("threads_changed");
-}
-async function restoreProject(store2, api2, id, preferredThreadId = null) {
-  const proj = store2.getState().projects.find((p2) => p2.id === id);
-  if (!proj) return;
-  if (proj.sshHost) {
-    const enabled = await api2.settings.get("sshWorkspaceEnabled");
-    if (enabled !== true) return;
-    try {
-      await ensureSshConnected(api2, proj.sshHost);
-    } catch {
-      return;
-    }
-  }
-  const [workspaceOpened, loaded] = await Promise.all([
-    setWorkspaceInOrder(api2, proj.path, proj.sshHost),
-    loadThreads(api2, id)
-  ]);
-  if (!workspaceOpened) {
-    await quarantineAndRestoreNext(store2, api2, id);
-    return;
-  }
-  const merged = adoptBackgroundThreads(store2, id, loaded);
-  cacheThreads(id, merged);
-  store2.setState({
-    activeProjectId: id,
-    expandedProjectId: id,
-    workspaceRoot: proj.path,
-    threads: merged,
-    activeThreadId: preferredThreadId && merged.some((thread) => thread.id === preferredThreadId) ? preferredThreadId : merged[0]?.id ?? null,
-    // Opening succeeded — lift any prior quarantine on this project (#997).
-    projects: projectsWithMissingCleared(store2.getState().projects, id)
-  });
-  const activeThreadId = store2.getState().activeThreadId;
-  if (activeThreadId) markThreadRead(store2, activeThreadId);
-  await saveProjects(api2, store2.getState().projects, id, activeThreadId).catch((error62) => {
-    console.warn(`[projects] could not persist the restored project ${id}:`, error62);
-  });
-  if (merged.length === 0) createThread(store2);
-  else normalizeBlankThreads(store2);
-  store2.emit("projects_changed");
-  store2.emit("workspace_changed");
-  store2.emit("threads_changed");
-  void resumePendingQueues(store2, api2);
-}
-async function createNewProject(store2, api2) {
-  const { openNewProjectDialog: openNewProjectDialog2 } = await Promise.resolve().then(() => (init_new_project_dialog(), new_project_dialog_exports));
-  const inferred = lastProjectDirectory(store2);
-  const home = await api2.workspace.getHomeDirectory();
-  const parentDir = inferred !== "" ? inferred : home;
-  const picked = await openNewProjectDialog2(api2, parentDir);
-  if (!picked) return false;
-  let root;
-  try {
-    root = await api2.workspace.createNewProject(picked.name, picked.parentDir);
-  } catch (err2) {
-    showErrorToast("Could not create project", err2);
-    return false;
-  }
-  await addProjectFromPath(store2, api2, root);
-  const state = store2.getState();
-  const threadId = state.activeThreadId ?? createThread(store2);
-  setThreadDraftPrompt(store2, threadId, NEW_PROJECT_STARTER_PROMPT);
-  return true;
-}
-function lastProjectDirectory(store2) {
-  const projects = store2.getState().projects;
-  const last = projects[projects.length - 1];
-  if (last && !last.sshHost && last.path) {
-    const slash = last.path.lastIndexOf("/");
-    if (slash > 0) return last.path.slice(0, slash);
-  }
-  return "";
-}
-async function addProject(store2, api2) {
-  const path = await api2.workspace.open();
-  if (!path) return false;
-  await addProjectFromPath(store2, api2, path);
-  return true;
-}
-async function addRemoteProject(store2, api2) {
-  const { openRemoteFolderDialog: openRemoteFolderDialog2 } = await Promise.resolve().then(() => (init_remote_folder_dialog(), remote_folder_dialog_exports));
-  const picked = await openRemoteFolderDialog2(api2);
-  if (!picked) return false;
-  await addProjectFromRemotePath(store2, api2, picked.hostId, picked.path);
-  return true;
-}
-async function relocateProject(store2, api2, id) {
-  const proj = store2.getState().projects.find((p2) => p2.id === id);
-  if (!proj || proj.sshHost) return false;
-  const path = await api2.workspace.open();
-  if (!path) return false;
-  const projects = store2.getState().projects.map((p2) => p2.id === id ? clearMissing({ ...p2, path }) : p2);
-  store2.setState({ projects });
-  store2.emit("projects_changed");
-  await activateAndWait(store2, api2, id, path);
-  return true;
-}
-function parseDismissedOrphanStores(value) {
-  if (!Array.isArray(value)) return [];
-  const ids = [];
-  const seen = /* @__PURE__ */ new Set();
-  for (const item of value) {
-    if (typeof item !== "string" || item.length === 0 || seen.has(item)) continue;
-    seen.add(item);
-    ids.push(item);
-  }
-  return ids;
-}
-function updateDismissedOrphanStores(api2, update) {
-  const next = dismissedOrphanStoresChain.catch(() => void 0).then(async () => {
-    const current = parseDismissedOrphanStores(await api2.storage.get(KEY_DISMISSED_ORPHAN_STORES));
-    const updated = update(current);
-    if (updated.length === current.length && updated.every((storeId, index) => storeId === current[index]))
-      return;
-    await serializedSet(api2, KEY_DISMISSED_ORPHAN_STORES, updated);
-  });
-  dismissedOrphanStoresChain = next;
-  return next;
-}
-async function listOrphanProjects(api2) {
-  const [orphans, dismissedRaw] = await Promise.all([
-    api2.threads.listOrphans(),
-    api2.storage.get(KEY_DISMISSED_ORPHAN_STORES)
-  ]);
-  const dismissed = new Set(parseDismissedOrphanStores(dismissedRaw));
-  if (dismissed.size === 0) return orphans;
-  return orphans.filter((orphan) => !dismissed.has(orphan.id));
-}
-async function dismissOrphanProject(api2, storeId) {
-  await updateDismissedOrphanStores(
-    api2,
-    (current) => current.includes(storeId) ? current : [...current, storeId]
-  );
-}
-async function recoverOrphanProject(store2, api2, storeId, confirm2) {
-  if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
-  if (confirm2 && !await confirm2()) return false;
-  const path = await api2.workspace.open();
-  if (!path) return false;
-  if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
-  store2.setState({
-    projects: [...store2.getState().projects, { id: storeId, path, name: basename(path) }]
-  });
-  store2.emit("projects_changed");
-  await updateDismissedOrphanStores(
-    api2,
-    (current) => current.includes(storeId) ? current.filter((id) => id !== storeId) : current
-  );
-  await activateAndWait(store2, api2, storeId, path);
-  return true;
-}
-var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
-var init_projects = __esm({
-  "src/renderer/controller/projects.ts"() {
-    init_side_chat2();
-    init_thread_helpers();
-    init_persistence();
-    init_message_queue();
-    init_project_view_state();
-    init_toast();
-    init_sidebar_thread();
-    init_background_threads();
-    init_perf();
-    uuid3 = () => globalThis.crypto.randomUUID();
-    basename = (p2) => p2.split("/").pop() ?? p2;
-    SIDEBAR_THREADS_PAGE_SIZE = 10;
-    threadCache = /* @__PURE__ */ new Map();
-    liveCacheProjectId = null;
-    projectViewState = /* @__PURE__ */ new Map();
-    switchGeneration = 0;
-    pendingSwitch = null;
-    activationWaiters = /* @__PURE__ */ new Map();
-    sideChatUnreadCache = /* @__PURE__ */ new WeakMap();
-    workspaceChain = Promise.resolve();
-    NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
-    KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
-    dismissedOrphanStoresChain = Promise.resolve();
-  }
-});
-
 // src/shared/git/thread-link.ts
 var GIT_THREAD_LINK_SETTING, DEFAULT_GIT_THREAD_LINK_ENABLED;
 var init_thread_link = __esm({
@@ -70572,11 +70794,11 @@ function mountSettingsDialog(store2, api2) {
               <legend>Concise threads</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="conciseThreadsEnabled" />
-                Show only the results of turns from highly capable models
+                Hide tool details and reasoning from highly capable models
               </label>
               <p class="field-hint">
                 For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning, and the
                 tool errors the model recovers from stay hidden; while it works, you see what it
                 is doing now. Other models always show the full thread.
               </p>
@@ -77213,7 +77435,7 @@ function conciseMultiTurnMessages(model) {
           id: `concise-multi-steps-${String(n2)}`,
           role: "assistant",
           model,
-          content: "Checking the code.",
+          content: "",
           toolCalls: [
             {
               id: `concise-multi-read-${String(n2)}`,
@@ -77264,7 +77486,15 @@ function conciseMultiTurnMessages(model) {
         role: "assistant",
         model,
         content,
-        toolCalls: [],
+        toolCalls: [
+          {
+            id: `concise-multi-audit-${String(n2)}-${String(i2)}`,
+            name: "sandbox_network_audit",
+            args: {},
+            status: "done",
+            result: "Audit complete."
+          }
+        ],
         createdAt: at3 + 3 + i2
       }))
     ];
@@ -79211,6 +79441,13 @@ var init_demo_scenarios = __esm({
           theme: "dark",
           uiTintStrength: "off"
         },
+        // Two rows carry a trailing changes glyph, with very different title lengths,
+        // so a grouped view's "· demo" owner labels can't hide a glyph that isn't
+        // pinned to the row's trailing edge.
+        threadChanges: {
+          "demo-sidebar-sort-b": { dirty: false, unpushed: 2 },
+          "demo-sidebar-sort-c": { dirty: true }
+        },
         // Newest-prompted first, as the store keeps them: neither creation nor title order.
         threads: [
           {
@@ -79264,6 +79501,89 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME - 5
           }
         ]
+      },
+      {
+        id: "sidebar-cleanup-ssh",
+        label: "Cleanup for SSH pull requests",
+        project: {
+          ...project("demo-cleanup-ssh", "Remote widgets", "/srv/widgets"),
+          sshHost: "build-host"
+        },
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          sshWorkspaceEnabled: true
+        },
+        threads: ["open", "closed"].map((state, index) => ({
+          id: `ssh-cleanup-${state}`,
+          title: state === "open" ? "Remote PR still open" : "Remote PR completed",
+          status: state === "open" ? "running" : "idle",
+          messages: [],
+          messagesLoaded: false,
+          prRefs: [
+            {
+              owner: "acme",
+              repo: "widgets",
+              number: index + 1,
+              url: `https://github.com/acme/widgets/pull/${String(index + 1)}`
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: FIXED_TIME - index,
+          updatedAt: FIXED_TIME - index
+        })),
+        pullRequests: [1, 2].map((number4) => ({
+          owner: "acme",
+          repo: "widgets",
+          number: number4,
+          url: `https://github.com/acme/widgets/pull/${String(number4)}`,
+          title: "Remote change",
+          state: number4 === 1 ? "OPEN" : "CLOSED",
+          body: "",
+          files: [],
+          checks: "success"
+        }))
+      },
+      {
+        id: "sidebar-cleanup-after-pr",
+        label: "Cleanup after merged or closed PRs",
+        project: project("demo-cleanup-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threadChanges: {
+          "cleanup-dirty": { dirty: true },
+          "cleanup-unpushed": { dirty: false, unpushed: 2 },
+          "cleanup-clean": { dirty: false }
+        },
+        threads: ["dirty", "unpushed", "clean"].map((state, index) => ({
+          id: `cleanup-${state}`,
+          title: state === "dirty" ? "New edits after merge" : state === "unpushed" ? "Unpushed follow-up" : "Finished and clean",
+          status: "idle",
+          messages: [],
+          messagesLoaded: false,
+          prRefs: [
+            {
+              owner: "acme",
+              repo: "widgets",
+              number: index + 1,
+              url: `https://github.com/acme/widgets/pull/${String(index + 1)}`
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: FIXED_TIME - index,
+          updatedAt: FIXED_TIME - index
+        })),
+        pullRequests: [1, 2, 3].map((number4) => ({
+          owner: "acme",
+          repo: "widgets",
+          number: number4,
+          url: `https://github.com/acme/widgets/pull/${String(number4)}`,
+          title: "Previous change",
+          state: number4 === 2 ? "CLOSED" : "MERGED",
+          body: "",
+          files: [],
+          checks: "success"
+        }))
       },
       {
         id: "sidebar-thread-changes",
@@ -80585,6 +80905,7 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     threads: {
+      storageSize: () => resolved2({ bytes: 24576, truncated: false }),
       archive: (_projectId, threadId) => {
         const archivedAt = Date.now();
         const thread = threads.find((candidate) => candidate.id === threadId);
@@ -81873,6 +82194,7 @@ function createStore(initial) {
     browser_url_requested: /* @__PURE__ */ new Set(),
     browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
     pr_open_requested: /* @__PURE__ */ new Set(),
+    thread_archive_requested: /* @__PURE__ */ new Set(),
     side_chat_open_requested: /* @__PURE__ */ new Set(),
     canvas_artefact_requested: /* @__PURE__ */ new Set(),
     canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
@@ -81895,7 +82217,8 @@ function createStore(initial) {
     code_block_run_requested: /* @__PURE__ */ new Set(),
     code_block_run_finished: /* @__PURE__ */ new Set(),
     attention_changed: /* @__PURE__ */ new Set(),
-    sidebar_threads_loaded: /* @__PURE__ */ new Set()
+    sidebar_threads_loaded: /* @__PURE__ */ new Set(),
+    automation_schedules_loaded: /* @__PURE__ */ new Set()
   };
   function on3(event, handler) {
     listeners[event].add(handler);
@@ -87441,14 +87764,20 @@ function startRunNow(api2, target) {
   });
 }
 function automationMenuEntries(api2, target, openSetup) {
-  return [
-    { heading: target.scheduleName },
+  const eventAutomation = getCachedEventAutomations(target.project.id).some(
+    (definition) => definition.id === target.scheduleId
+  );
+  const runEntries = eventAutomation ? [] : [
     {
       label: "Run now",
       onSelect: () => {
         startRunNow(api2, target);
       }
-    },
+    }
+  ];
+  return [
+    { heading: target.scheduleName },
+    ...runEntries,
     {
       label: "Automation setup\u2026",
       onSelect: openSetup
@@ -87523,6 +87852,7 @@ function mountProjectsPane(root, store2, api2) {
   };
   let compactRows = false;
   let projectFilterId = null;
+  let needsCleanupOnly = false;
   const filterLabel = el("span", { class: "projects-filter-label" }, "All projects");
   const projectFilterBtn = el(
     "button",
@@ -87594,9 +87924,12 @@ function mountProjectsPane(root, store2, api2) {
     const chosen = projects.find((project2) => project2.id === projectFilterId);
     if (!chosen) projectFilterId = null;
     const projectName = chosen ? projectDisplayName(chosen) : "All projects";
-    filterLabel.textContent = projectName;
-    projectFilterBtn.classList.toggle("is-filtering", chosen !== void 0);
-    projectFilterBtn.setAttribute("aria-label", `Show: ${projectName}`);
+    filterLabel.textContent = needsCleanupOnly ? `${projectName} \xB7 Needs cleanup` : projectName;
+    projectFilterBtn.classList.toggle("is-filtering", chosen !== void 0 || needsCleanupOnly);
+    projectFilterBtn.setAttribute(
+      "aria-label",
+      needsCleanupOnly ? `Show: ${projectName}, needs cleanup only` : `Show: ${projectName}`
+    );
     sortLabel.textContent = SORT_LABELS[sidebarThreadSort];
     sortDir.textContent = sidebarThreadSortReverse ? "\u2191" : "\u2193";
   }
@@ -87627,7 +87960,17 @@ function mountProjectsPane(root, store2, api2) {
           projectFilterId = project2.id;
           render();
         }
-      }))
+      })),
+      { separator: true },
+      {
+        label: "Needs cleanup only",
+        toggle: true,
+        checked: needsCleanupOnly,
+        onSelect: () => {
+          needsCleanupOnly = !needsCleanupOnly;
+          render();
+        }
+      }
     ]);
   });
   sortBtn.addEventListener("click", () => {
@@ -87760,7 +88103,11 @@ function mountProjectsPane(root, store2, api2) {
         const key = threadChangeKey(ref.projectId, ref.threadId);
         threadChangeInFlight.delete(key);
         const summary = results[i2] ?? null;
-        if (!sameThreadChangeSummary(threadChangeCache.get(key)?.summary ?? null, summary)) {
+        const previous = threadChangeCache.get(key);
+        if (!sameThreadChangeSummary(previous?.summary ?? null, summary)) {
+          changed = true;
+        }
+        if (needsCleanupOnly && (!previous || Date.now() - previous.at > THREAD_CHANGE_TTL_MS)) {
           changed = true;
         }
         threadChangeCache.set(key, { summary, at: Date.now() });
@@ -87941,6 +88288,7 @@ function mountProjectsPane(root, store2, api2) {
   }
   function recheckStaleThreadChanges() {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    if (needsCleanupOnly) render();
     const now = Date.now();
     refreshThreadChanges(
       threadChangeRendered.filter(({ projectId, threadId }) => {
@@ -87967,6 +88315,18 @@ function mountProjectsPane(root, store2, api2) {
     ensurePrLifecycles(refs);
     const states = refs.map((ref) => cachedPrLifecycle(githubPrKey(ref)) ?? "unknown");
     return summarizeThreadPrStatus(states, refs);
+  }
+  function threadNeedsCleanup(project2, thread) {
+    if (sidebarPrRefs(thread).some((ref) => {
+      const state = cachedPrLifecycle(githubPrKey(ref)) ?? "unknown";
+      return state === "open" || state === "unknown";
+    }))
+      return true;
+    if (thread.status === "running") return false;
+    if (project2.sshHost) return false;
+    const cached2 = threadChangeCache.get(threadChangeKey(project2.id, thread.id));
+    if (!cached2 || Date.now() - cached2.at > THREAD_CHANGE_TTL_MS) return true;
+    return describeThreadChanges(cached2.summary) !== null;
   }
   function renderMissingNotice(project2) {
     const wrap = el("div", { class: "project-missing-notice" });
@@ -88535,13 +88895,14 @@ function mountProjectsPane(root, store2, api2) {
             prRollup.kind === "open" && conflictsForThread(thread)
           )
         );
-      } else if (thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
+      }
+      if ((!prRollup || needsCleanupOnly && prRollup.kind !== "open") && thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
         const key = threadChangeKey(project2.id, thread.id);
         threadChangeSeen.push({ projectId: project2.id, threadId: thread.id });
         threadChangeSeenKeys.add(key);
         const cached2 = threadChangeCache.get(key);
         const changesLabel = describeThreadChanges(cached2?.summary ?? null);
-        if (changesLabel) {
+        if (changesLabel && !prRollup) {
           chatRow.classList.add("has-changes-status");
           chatRow.append(chatChangesStatus(changesLabel));
         }
@@ -88576,13 +88937,31 @@ function mountProjectsPane(root, store2, api2) {
     function renderAutomationsSection() {
       const scheduleOwners = /* @__PURE__ */ new Map();
       for (const project2 of projects) {
+        for (const schedule of getCachedAutomationSchedules(project2.id)) {
+          scheduleOwners.set(`${project2.id}\0${schedule.id}`, {
+            project: project2,
+            scheduleId: schedule.id,
+            scheduleName: schedule.name,
+            runs: []
+          });
+        }
+        for (const eventAutomation of getCachedEventAutomations(project2.id)) {
+          scheduleOwners.set(`${project2.id}\0${eventAutomation.id}`, {
+            project: project2,
+            scheduleId: eventAutomation.id,
+            scheduleName: eventAutomation.name,
+            runs: []
+          });
+        }
         for (const thread of getSidebarThreads(store2, project2.id)) {
           const scheduleId = thread.automation?.scheduleId;
           if (!scheduleId) continue;
           const scheduleKey = `${project2.id}\0${scheduleId}`;
           const owner = scheduleOwners.get(scheduleKey);
+          const scheduleName = thread.automation?.scheduleName ?? thread.title;
           if (owner) owner.runs.push(thread);
-          else scheduleOwners.set(scheduleKey, { project: project2, scheduleId, runs: [thread] });
+          else
+            scheduleOwners.set(scheduleKey, { project: project2, scheduleId, scheduleName, runs: [thread] });
         }
       }
       if (scheduleOwners.size === 0) return null;
@@ -88648,19 +89027,49 @@ function mountProjectsPane(root, store2, api2) {
       );
       if (sectionExpanded) {
         const rows = el("div", { class: "automation-thread-rows" });
-        for (const { project: project2, scheduleId, runs } of scheduleOwners.values()) {
-          const firstRun = runs[0];
-          if (!firstRun) continue;
+        for (const { project: project2, scheduleId, scheduleName, runs } of scheduleOwners.values()) {
           const projectSuffix = el(
             "span",
             { class: "chat-thread-owner" },
             `\xB7 ${projectDisplayName(project2)}`
           );
+          if (runs.length === 0) {
+            const row2 = el(
+              "div",
+              { class: "chat-row is-automation is-automation-unrun" },
+              el("span", { class: "chat-title" }, scheduleName)
+            );
+            row2.append(
+              projectSuffix,
+              el("span", { class: "automation-row-unrun-badge" }, "Never run")
+            );
+            const setupBtn = automationSetupBtn(`${scheduleName} setup`, () => {
+              openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+            });
+            row2.append(setupBtn);
+            row2.addEventListener("click", () => {
+              openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+            });
+            row2.addEventListener("contextmenu", (e3) => {
+              e3.preventDefault();
+              e3.stopPropagation();
+              showContextMenu(
+                e3.clientX,
+                e3.clientY,
+                automationMenuEntries(api2, { project: project2, scheduleName, scheduleId }, () => {
+                  openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+                })
+              );
+            });
+            rows.append(row2);
+            continue;
+          }
+          const firstRun = runs[0];
+          if (!firstRun) continue;
           if (runs.length === 1) {
             const row2 = renderThreadRow(project2, firstRun);
             row2.querySelector(".chat-title")?.after(projectSuffix);
-            const scheduleName2 = firstRun.automation?.scheduleName ?? firstRun.title;
-            const setupBtn = automationSetupBtn(`${scheduleName2} setup`, () => {
+            const setupBtn = automationSetupBtn(`${scheduleName} setup`, () => {
               openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
             });
             const menuButton = row2.querySelector(".chat-menu-btn");
@@ -88674,7 +89083,6 @@ function mountProjectsPane(root, store2, api2) {
           const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
           const foldEntries = foldAutomationRuns(runs, isThreadAwaitingAttention);
           const scheduleRevealed = showingAllRuns || foldEntries.length > 0;
-          const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title;
           const scheduleGroup = el("div", {
             class: "automation-schedule-group",
             "data-schedule-id": scheduleId
@@ -88973,7 +89381,9 @@ function mountProjectsPane(root, store2, api2) {
         (t2) => filterText(t2.title || "New Thread").includes(threadFilter) || contentFilter.matches.has(t2.id) || residentRequestMatches(t2.messages ?? [], threadFilter)
       ) : sidebarThreads;
       const conversationThreads = orderSidebarThreads(
-        matchingThreads.filter((thread) => thread.automation === void 0),
+        matchingThreads.filter(
+          (thread) => thread.automation === void 0 && (!needsCleanupOnly || threadNeedsCleanup(project2, thread))
+        ),
         // A filter's matches stay newest first; the chosen order is for the browse list.
         isFiltering ? "activity" : store2.getState().sidebarThreadSort,
         !isFiltering && store2.getState().sidebarThreadSortReverse
@@ -89022,8 +89432,16 @@ function mountProjectsPane(root, store2, api2) {
         );
       } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
+      } else if (isFiltering && !contentFilter.waiting && conversationThreads.length === 0) {
+        chats.append(el("div", { class: "sidebar-empty" }, "No matching threads need cleanup"));
       } else if (!isFiltering && visibleThreads.length === 0) {
-        chats.append(el("div", { class: "sidebar-empty" }, "No threads yet"));
+        chats.append(
+          el(
+            "div",
+            { class: "sidebar-empty" },
+            needsCleanupOnly ? "Nothing needs cleanup" : "No threads yet"
+          )
+        );
       }
       for (const thread of visibleThreads) {
         chats.append(renderThreadRow(project2, thread));
@@ -89064,14 +89482,16 @@ function mountProjectsPane(root, store2, api2) {
         if (project2.missing) continue;
         owners.set(project2.id, project2);
         for (const thread of getSidebarThreads(store2, project2.id)) {
-          if (thread.automation === void 0) rows.push({ projectId: project2.id, thread });
+          if (thread.automation === void 0 && (!needsCleanupOnly || threadNeedsCleanup(project2, thread))) {
+            rows.push({ projectId: project2.id, thread });
+          }
         }
       }
       const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
       const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse);
       const sections = mode === "status" ? groupRowsByStatus(ordered, isThreadAwaitingAttention) : [{ id: "all", label: "", rows: ordered }];
       const withThreads = new Set(ordered.map((row2) => row2.projectId));
-      const emptyProjectRows = Array.from(owners.values()).filter((project2) => !withThreads.has(project2.id)).map((project2) => {
+      const emptyProjectRows = needsCleanupOnly ? [] : Array.from(owners.values()).filter((project2) => !withThreads.has(project2.id)).map((project2) => {
         const nameRow = el(
           "button",
           { class: "project-row", title: project2.path },
@@ -89087,7 +89507,14 @@ function mountProjectsPane(root, store2, api2) {
         );
       });
       if (ordered.length === 0) {
-        return [el("div", { class: "sidebar-empty" }, "No threads yet"), ...emptyProjectRows];
+        return [
+          el(
+            "div",
+            { class: "sidebar-empty" },
+            needsCleanupOnly ? "Nothing needs cleanup" : "No threads yet"
+          ),
+          ...emptyProjectRows
+        ];
       }
       return sections.map((section2) => {
         const block = el("div", { class: "thread-section", "data-section-id": section2.id });
@@ -89227,12 +89654,16 @@ function mountProjectsPane(root, store2, api2) {
   window.addEventListener("focus", recheckStaleThreadChanges);
   document.addEventListener("visibilitychange", recheckStaleThreadChanges);
   const unsubs = [
+    store2.on("thread_archive_requested", (projectId, threadId) => {
+      void archiveProjectThread(projectId, threadId);
+    }),
     unsubWorkingTree,
     store2.on("projects_changed", render),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", render),
     store2.on("sidebar_threads_loaded", render),
+    store2.on("automation_schedules_loaded", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", () => {
@@ -89309,6 +89740,7 @@ var init_projects_pane = __esm({
     init_activity_panel();
     init_thread_history_editor();
     init_automation_fold();
+    init_automations2();
     init_ssh_workspace_ui();
     init_thread_naming();
     init_persistence();
@@ -133787,6 +134219,47 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   let mentionedIn = [];
   let mentionedFor = null;
   let token = 0;
+  let storageToken = 0;
+  let storageKey = "";
+  let storageText = "Calculating\u2026";
+  let disposed = false;
+  function activeStorageKey() {
+    const state = store2.getState();
+    const thread = getActiveThread(store2);
+    return JSON.stringify([
+      state.activeProjectId,
+      thread?.id,
+      thread?.worktree?.path,
+      thread?.worktree?.retiredAt
+    ]);
+  }
+  async function refreshStorage() {
+    const thread = getActiveThread(store2);
+    const projectId = store2.getState().activeProjectId;
+    if (!thread || !projectId) return;
+    const mine = ++storageToken;
+    const key = activeStorageKey();
+    storageKey = key;
+    storageText = "Calculating\u2026";
+    const update = () => {
+      const slot = viewerRoot.querySelector("[data-context-storage-size]");
+      if (slot) slot.textContent = storageText;
+    };
+    update();
+    try {
+      const [saved, checkout] = await Promise.all([
+        api2.threads.storageSize(projectId, thread.id),
+        thread.worktree && thread.worktree.retiredAt === void 0 ? api2.worktrees.size(projectId, thread.worktree.path) : Promise.resolve({ bytes: 0, truncated: false })
+      ]);
+      if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
+      storageText = `${saved.truncated || checkout.truncated ? "At least " : ""}${formatByteSize(saved.bytes + checkout.bytes)}`;
+    } catch (error62) {
+      if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
+      console.error("[context] storage lookup failed:", error62);
+      storageText = "Unavailable";
+    }
+    update();
+  }
   const handlers3 = {
     openThread: (threadId) => {
       switchThread(store2, threadId);
@@ -133827,7 +134300,44 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : []
     });
-    viewerRoot.append(renderThreadContext(model, handlers3));
+    const content = renderThreadContext(model, handlers3);
+    const archive = el(
+      "button",
+      {
+        type: "button",
+        class: "thread-context-action",
+        "data-action": "archive-thread",
+        disabled: thread.archivedAt !== void 0
+      },
+      "Archive thread"
+    );
+    archive.addEventListener("click", () => {
+      if (project2) store2.emit("thread_archive_requested", project2.id, thread.id);
+    });
+    content.prepend(
+      el(
+        "section",
+        { class: "thread-context-section", "data-context-section": "storage" },
+        el("h5", {}, "Storage"),
+        el(
+          "div",
+          { class: "thread-context-row" },
+          el("span", { class: "thread-context-main" }, "Retained on disk"),
+          el(
+            "span",
+            { "data-context-storage-size": "" },
+            storageKey === activeStorageKey() ? storageText : "Calculating\u2026"
+          )
+        ),
+        el(
+          "p",
+          { class: "thread-context-empty" },
+          "Saved thread files and its dedicated worktree. Shared project files are excluded."
+        ),
+        el("div", { class: "thread-context-section-actions" }, archive)
+      )
+    );
+    viewerRoot.append(content);
     for (const kind of CONTEXT_SECTIONS) {
       const jump = el(
         "button",
@@ -133842,6 +134352,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     }
   }
   async function refreshMentions() {
+    void refreshStorage();
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (!thread || !projectId) return;
@@ -133852,7 +134363,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     } catch (error62) {
       console.error("[context] backlink lookup failed:", error62);
     }
-    if (mine !== token || getActiveThread(store2)?.id !== thread.id) return;
+    if (disposed || mine !== token || getActiveThread(store2)?.id !== thread.id) return;
     mentionedIn = rows;
     mentionedFor = thread.id;
     if (contextModeActive(store2)) render();
@@ -133873,6 +134384,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       const active2 = getActiveThread(store2)?.id ?? null;
       render();
       if (active2 !== mentionedFor) void refreshMentions();
+      else if (storageKey !== activeStorageKey()) void refreshStorage();
     }),
     store2.on("message_done", () => {
       if (!contextModeActive(store2)) return;
@@ -133881,7 +134393,13 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     }),
     store2.on("workspace_changed", () => {
       mentionedFor = null;
-      if (contextModeActive(store2)) render();
+      storageKey = "";
+      token++;
+      storageToken++;
+      if (contextModeActive(store2)) {
+        render();
+        void refreshMentions();
+      }
     })
   ];
   if (contextModeActive(store2)) {
@@ -133889,12 +134407,16 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     void refreshMentions();
   }
   return () => {
+    disposed = true;
+    token++;
+    storageToken++;
     for (const off of offs) off();
   };
 }
 var CONTEXT_SECTIONS, SECTION_TITLES;
 var init_thread_context_panel = __esm({
   "src/renderer/views/thread-context-panel.ts"() {
+    init_file_bytes();
     init_helpers();
     init_icons();
     init_thread_helpers();
@@ -157991,184 +158513,6 @@ var init_agent = __esm({
     init_remote_agent_stream();
     init_perf();
     pendingTurn = /* @__PURE__ */ new Map();
-  }
-});
-
-// src/renderer/controller/automations.ts
-function startFailureDetail(error62) {
-  return ipcErrorMessage(error62, "the checkout could not be prepared");
-}
-function isPendingAutomation(thread) {
-  return thread.automation !== void 0 && thread.status === "idle" && thread.automation.startFailedAt === void 0 && Boolean(thread.draftPrompt?.trim());
-}
-function attachAutomationController(store2, api2) {
-  const starting = /* @__PURE__ */ new Set();
-  const retryTimers = /* @__PURE__ */ new Map();
-  const retrying = /* @__PURE__ */ new Set();
-  const retryPending = (threadId) => {
-    startThread(threadId).catch((error62) => {
-      console.error("[automations] Failed to retry scheduled task:", error62);
-    });
-  };
-  function retryKey(projectId, threadId) {
-    return JSON.stringify([projectId, threadId]);
-  }
-  function clearRetry(projectId, threadId) {
-    const key = retryKey(projectId, threadId);
-    const timer = retryTimers.get(key);
-    if (timer !== void 0) clearTimeout(timer);
-    retryTimers.delete(key);
-    retrying.delete(key);
-  }
-  function scheduleRetry(projectId, threadId) {
-    const key = retryKey(projectId, threadId);
-    const firstDenial = !retrying.has(key);
-    retrying.add(key);
-    if (!retryTimers.has(key)) {
-      const timer = setTimeout(() => {
-        retryTimers.delete(key);
-        if (store2.getState().activeProjectId === projectId) retryPending(threadId);
-      }, AUTOMATION_START_RETRY_MS);
-      retryTimers.set(key, timer);
-    }
-    return firstDenial;
-  }
-  async function startThread(threadId) {
-    const initial = getThreadById(store2, threadId);
-    const projectId = store2.getState().activeProjectId;
-    if (!projectId) return;
-    if (!initial || !isPendingAutomation(initial)) {
-      clearRetry(projectId, threadId);
-      return;
-    }
-    if (starting.has(threadId)) return;
-    const prompt = initial.draftPrompt?.trim();
-    if (!prompt) return;
-    starting.add(threadId);
-    let hydrated = false;
-    let checkoutStarted = false;
-    try {
-      await ensureThreadMessages(projectId, threadId);
-      hydrated = true;
-      if (store2.getState().activeProjectId !== projectId) return;
-      const admission = await api2.automations.canStart(projectId, threadId);
-      if (!admission.allowed) {
-        let shouldRecord = true;
-        if (admission.retryable) shouldRecord = scheduleRetry(projectId, threadId);
-        else clearRetry(projectId, threadId);
-        if (shouldRecord) {
-          addMessage(
-            store2,
-            threadId,
-            "error",
-            admission.reason ?? "This automation run is no longer eligible."
-          );
-        }
-        if (!admission.retryable) setThreadDraftPrompt(store2, threadId, "");
-        return;
-      }
-      if (!initial.worktreeChoice) {
-        checkoutStarted = true;
-        const prepared = await api2.agent.prepareCheckout(
-          projectId,
-          threadId,
-          prompt,
-          "worktree",
-          initial.model
-        );
-        if (store2.getState().activeProjectId !== projectId) return;
-        applyPreparedThreadCheckout(store2, threadId, prepared);
-        checkoutStarted = false;
-      }
-      const current = getThreadById(store2, threadId);
-      if (!current || !isPendingAutomation(current)) {
-        clearRetry(projectId, threadId);
-        return;
-      }
-      const beforeDispatch = await api2.automations.canStart(projectId, threadId);
-      if (!beforeDispatch.allowed) {
-        let shouldRecord = true;
-        if (beforeDispatch.retryable) shouldRecord = scheduleRetry(projectId, threadId);
-        else clearRetry(projectId, threadId);
-        if (shouldRecord) {
-          addMessage(
-            store2,
-            threadId,
-            "error",
-            beforeDispatch.reason ?? "This automation run is no longer eligible."
-          );
-        }
-        if (!beforeDispatch.retryable) setThreadDraftPrompt(store2, threadId, "");
-        return;
-      }
-      clearRetry(projectId, threadId);
-      addMessage(store2, threadId, "user", prompt);
-      setThreadDraftPrompt(store2, threadId, "");
-      startAutomationTurnTree(store2, threadId);
-      dispatchAgentRun(store2, api2, threadId, { content: prompt });
-    } catch (error62) {
-      console.error("[automations] Failed to start scheduled task:", error62);
-      if (hydrated) {
-        const message2 = startFailureDetail(error62);
-        const code = checkoutStarted ? "worktree-failed" : classifyAutomationFailureMessage(message2);
-        markAutomationStartFailed(store2, threadId, { code, message: message2 });
-        api2.automations.reportStartFailure(projectId, threadId, { code, message: message2 }).catch((reportError) => {
-          console.error("[automations] Could not report a start failure:", reportError);
-        });
-        addMessage(
-          store2,
-          threadId,
-          "error",
-          `This scheduled run could not start: ${startFailureDetail(error62)}
-
-Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause is resolved. The schedule is not held up: its next run starts normally.`
-        );
-      }
-    } finally {
-      starting.delete(threadId);
-    }
-  }
-  function startPendingForActiveProject() {
-    for (const thread of store2.getState().threads) {
-      if (isPendingAutomation(thread)) void startThread(thread.id);
-    }
-  }
-  async function receiveTrigger(event) {
-    if (store2.getState().activeProjectId !== event.projectId) return;
-    const loaded = await api2.threads.loadProject(event.projectId);
-    if (store2.getState().activeProjectId !== event.projectId) return;
-    const created = loaded.find((thread) => thread.id === event.threadId);
-    if (!created) return;
-    if (!store2.getState().threads.some((thread) => thread.id === created.id)) {
-      store2.setState({
-        threads: sortThreadsNewestFirst([created, ...store2.getState().threads])
-      });
-      store2.emit("threads_changed");
-    }
-    await startThread(created.id);
-  }
-  const unsubscribeTrigger = api2.automations.onTriggered((event) => {
-    void receiveTrigger(event);
-  });
-  const unsubscribeWorkspace = store2.on("workspace_changed", startPendingForActiveProject);
-  startPendingForActiveProject();
-  return () => {
-    for (const timer of retryTimers.values()) clearTimeout(timer);
-    retryTimers.clear();
-    retrying.clear();
-    unsubscribeTrigger();
-    unsubscribeWorkspace();
-  };
-}
-var AUTOMATION_START_RETRY_MS;
-var init_automations2 = __esm({
-  "src/renderer/controller/automations.ts"() {
-    init_ipc_error_message();
-    init_automation_failure();
-    init_thread_helpers();
-    init_message_queue();
-    init_thread_hydration();
-    AUTOMATION_START_RETRY_MS = 15e3;
   }
 });
 
