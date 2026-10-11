@@ -245,9 +245,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               clearInterval(machineRefreshTimer)
               return
             }
-            void machinesSection
-              .refresh()
-              .catch((error: unknown) => console.error('[settings] Machine refresh failed:', error))
+            void machinesSection.refresh().catch((error: unknown) => {
+              console.error('[settings] Machine refresh failed:', error)
+            })
           }, 3000)
         },
         deactivate: (): void => {
