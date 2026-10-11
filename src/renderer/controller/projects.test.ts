@@ -29,6 +29,7 @@ import {
 } from './projects.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { collectActivityThreads } from './activity-model.ts'
+import { __resetPersistenceForTest, markNavigationRestored, saveNavigation } from './persistence.ts'
 
 function thread(id: string, title = id): Thread {
   return {
@@ -433,6 +434,274 @@ test('a project switch repaints before its final navigation write lands and writ
 
   assert.deepEqual(navigations, [null, 't-b'])
   assert.equal(projectWrites.length, 1, 'the unchanged projects list is persisted once per switch')
+})
+
+test('an autosave flush mid-switch cannot point main back at the outgoing project before the repaint', async () => {
+  resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
+  const store = createStore({
+    projects: [
+      { id: 'nav-a', path: '/a', name: 'A' },
+      { id: 'nav-b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'nav-a',
+    expandedProjectId: 'nav-a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  markNavigationRestored({ activeProjectId: 'nav-a', activeThreadId: 't-a' })
+
+  let releaseWorkspace: () => void = () => undefined
+  const workspaceGate = new Promise<string>((resolve) => {
+    releaseWorkspace = (): void => {
+      resolve('/b')
+    }
+  })
+  // Stands in for main's legacy `activeProjectId` mirror, which project-scoped
+  // reads such as `roadmap:list` resolve their directory from.
+  const persistedActive: Array<string | null> = []
+  const api = makeApi({
+    workspaceSet: () => workspaceGate,
+    setNavigation: async (navigation) => {
+      persistedActive.push(navigation.activeProjectId)
+    },
+    loadProjectThreads: async () => [thread('t-b')],
+  })
+  let seenOnRepaint: string | null | undefined
+  store.on('workspace_changed', () => {
+    seenOnRepaint = persistedActive.at(-1)
+  })
+
+  switchProject(store, api, 'nav-b')
+  await waitUntil(() => persistedActive.includes('nav-b'))
+  // The debounced autosave fires while the switch waits on workspace.set. Its
+  // flush persists the store's navigation, which still names the outgoing project.
+  const { activeProjectId, activeThreadId } = store.getState()
+  assert.equal(activeProjectId, 'nav-a')
+  await saveNavigation(api, activeProjectId, activeThreadId)
+  releaseWorkspace()
+  await waitUntil(() => seenOnRepaint !== undefined)
+
+  assert.equal(store.getState().activeProjectId, 'nav-b')
+  assert.equal(seenOnRepaint, 'nav-b', 'project-scoped reads on repaint resolve the new project')
+  assert.ok(!persistedActive.includes('nav-a'), 'the outgoing project is never re-persisted')
+})
+
+test('a project switch that cannot open its folder persists the project it stays on', async () => {
+  resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
+  const store = createStore({
+    projects: [
+      { id: 'stay-a', path: '/a', name: 'A' },
+      { id: 'gone-b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'stay-a',
+    expandedProjectId: 'stay-a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  markNavigationRestored({ activeProjectId: 'stay-a', activeThreadId: 't-a' })
+
+  const persistedActive: Array<string | null> = []
+  const api = makeApi({
+    workspaceSet: async () => {
+      throw new Error('no such folder')
+    },
+    setNavigation: async (navigation) => {
+      persistedActive.push(navigation.activeProjectId)
+    },
+  })
+
+  switchProject(store, api, 'gone-b')
+  await waitUntil(() => store.getState().expandedProjectId === 'stay-a')
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  assert.equal(store.getState().activeProjectId, 'stay-a')
+  assert.deepEqual(persistedActive, ['gone-b', 'stay-a'])
+})
+
+test('a failed target thread load restores main and navigation before rejecting its waiter', async () => {
+  resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  markNavigationRestored({ activeProjectId: 'a', activeThreadId: 't-a' })
+  const roots: string[] = []
+  const selections: Array<string | null> = []
+  const api = makeApi({
+    workspaceOpen: async () => '/b',
+    workspaceSet: async (path) => {
+      roots.push(path)
+      return path
+    },
+    setNavigation: async (navigation) => {
+      selections.push(navigation.activeProjectId)
+    },
+    loadProjectThreads: async () => {
+      throw new Error('thread load failed')
+    },
+  })
+  await assert.rejects(addProject(store, api), /thread load failed/)
+  assert.deepEqual(roots, ['/b', '/a'])
+  assert.equal(selections.at(-1), 'a')
+  assert.equal(store.getState().activeProjectId, 'a')
+  assert.equal(store.getState().expandedProjectId, 'a')
+  assert.equal(store.getState().workspaceRoot, '/a')
+  assert.equal(store.getState().threads[0]?.id, 't-a')
+  assert.equal(isProjectSwitchInFlight(store, store.getState().expandedProjectId ?? ''), false)
+  await saveNavigation(api, 'a', 't-next')
+  assert.equal(selections.at(-1), 'a', 'the navigation hold has been released')
+})
+
+test('a superseded thread-load failure cannot roll back a newer project switch', async () => {
+  resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
+  const store = createStore({
+    projects: ['a', 'b', 'c'].map((id) => ({ id, path: `/${id}`, name: id })),
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  markNavigationRestored({ activeProjectId: 'a', activeThreadId: 't-a' })
+  let failLoad: (error: Error) => void = () => undefined
+  let loading = false
+  const load = new Promise<Thread[]>((_resolve, reject) => {
+    failLoad = reject
+  })
+  const roots: string[] = []
+  const selections: Array<string | null> = []
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      roots.push(path)
+      return path
+    },
+    setNavigation: async (navigation) => {
+      selections.push(navigation.activeProjectId)
+    },
+    loadProjectThreads: async (id) => {
+      if (id === 'b') {
+        loading = true
+        return load
+      }
+      return [thread('t-c')]
+    },
+  })
+  switchProject(store, api, 'b')
+  await waitUntil(() => loading)
+  switchProject(store, api, 'c')
+  await waitUntil(() => store.getState().activeProjectId === 'c')
+  failLoad(new Error('old load failed'))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.deepEqual(roots, ['/b', '/a', '/c'])
+  assert.equal(selections.at(-1), 'c')
+  assert.equal(store.getState().expandedProjectId, 'c')
+  assert.equal(isProjectSwitchInFlight(store, store.getState().expandedProjectId ?? ''), false)
+})
+
+test('a disabled SSH successor restores a previously dispatched switch', async () => {
+  resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+      { id: 'c', path: '/c', name: 'C', sshHost: 'disabled-host' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  markNavigationRestored({ activeProjectId: 'a', activeThreadId: 't-a' })
+  const roots: string[] = []
+  const selections: Array<string | null> = []
+  let loading = false
+  let release: (threads: Thread[]) => void = () => undefined
+  const load = new Promise<Thread[]>((resolve) => {
+    release = resolve
+  })
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      roots.push(path)
+      return path
+    },
+    setNavigation: async (navigation) => {
+      selections.push(navigation.activeProjectId)
+    },
+    loadProjectThreads: async () => {
+      loading = true
+      return load
+    },
+    settingsGet: async () => false,
+  })
+  switchProject(store, api, 'b')
+  await waitUntil(() => loading)
+  switchProject(store, api, 'c')
+  await waitUntil(() => roots.at(-1) === '/a' && selections.at(-1) === 'a')
+  release([thread('t-b')])
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(store.getState().activeProjectId, 'a')
+  assert.equal(store.getState().expandedProjectId, 'a')
+  assert.deepEqual(roots, ['/b', '/a'])
+  assert.equal(selections.at(-1), 'a')
+})
+
+test('an older failure cannot settle a newer activation waiter for the same project', async () => {
+  resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  markNavigationRestored({ activeProjectId: 'a', activeThreadId: 't-a' })
+  let calls = 0
+  let rejectOld: (error: Error) => void = () => undefined
+  let resolveNew: (threads: Thread[]) => void = () => undefined
+  const oldLoad = new Promise<Thread[]>((_resolve, reject) => {
+    rejectOld = reject
+  })
+  const newLoad = new Promise<Thread[]>((resolve) => {
+    resolveNew = resolve
+  })
+  const api = makeApi({
+    workspaceOpen: async () => '/b',
+    loadProjectThreads: async () => {
+      calls += 1
+      return calls === 1 ? oldLoad : newLoad
+    },
+  })
+  const oldActivation = addProject(store, api)
+  await waitUntil(() => calls === 1)
+  let settled = false
+  const newActivation = addProject(store, api).then(() => {
+    settled = true
+  })
+  await waitUntil(() => calls === 2)
+  rejectOld(new Error('old failure'))
+  await oldActivation
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(settled, false)
+  resolveNew([thread('t-b')])
+  await newActivation
+  assert.equal(store.getState().activeProjectId, 'b')
 })
 
 test('switchProjectThread selects the clicked thread after activation', async () => {

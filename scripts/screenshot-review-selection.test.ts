@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
@@ -77,15 +78,20 @@ interface Scenario {
   body?: string
   permission?: string
   author?: string
-  statuses?: { context: string; state: string; description: string }[]
+  statuses?: { context: string; state: string; description: string; creator?: { id: number } }[]
   parents?: string[]
   compareRef?: string | null
   prSha?: string
+  prBody?: string
 }
 
 async function validate(scenario: Scenario = {}): Promise<Map<string, string>> {
   const outputs = new Map<string, string>()
   await execute('Validate the selection against the live head', {
+    require: (name: string): { createHash: typeof createHash } => {
+      assert.equal(name, 'node:crypto')
+      return { createHash }
+    },
     context,
     process: { env: { COMMENT_ID: '9', PR_NUMBER: '123', ACTOR: 'maintainer' } },
     core: { notice: () => {}, setOutput: (key: string, value: string) => outputs.set(key, value) },
@@ -113,6 +119,7 @@ async function validate(scenario: Scenario = {}): Promise<Map<string, string>> {
           get: async () => ({
             data: {
               state: 'open',
+              body: scenario.prBody,
               head: {
                 ref: 'claude/feature',
                 sha: scenario.prSha ?? HEAD,
@@ -149,6 +156,27 @@ async function validate(scenario: Scenario = {}): Promise<Map<string, string>> {
 }
 
 describe('screenshot review selection', () => {
+  it('binds a tip selection to matching combined coverage', async () => {
+    const prBody = `<!-- copse-screenshot-stack: #122@${HEAD} tip=#123 -->`
+    const digest = createHash('sha256').update(prBody).digest('hex')
+    const review = {
+      context: 'Screenshot review',
+      state: 'pending',
+      description: 'combined review',
+    }
+    const coverage = {
+      context: 'Screenshot stack coverage',
+      state: 'success',
+      description: `Stack coverage ${digest}`,
+      creator: { id: 41898282 },
+    }
+    const accepted = await validate({ prBody, statuses: [review, coverage] })
+    assert.equal(accepted.get('outcome'), 'accept')
+    assert.equal(accepted.get('stack-digest'), digest)
+    const refused = await validate({ prBody, statuses: [review] })
+    assert.equal(refused.get('outcome'), 'refuse')
+    assert.match(refused.get('reason') ?? '', /combined screenshot coverage/)
+  })
   it('starts only from a human edit of the bot evidence comment with the trigger ticked', () => {
     assert.deepEqual(workflow.on.issue_comment.types, ['edited'])
     const condition = workflow.jobs.select.if
@@ -213,6 +241,7 @@ async function recordSelection(
   env: Record<string, string> = {},
   liveHead = COMPARE,
   missingLabel = false,
+  body = '',
 ): Promise<{ removed: string[]; statuses: string[]; updated: string[]; created: string[] }> {
   const removed: string[] = []
   const statuses: string[] = []
@@ -241,6 +270,7 @@ async function recordSelection(
           get: async () => ({
             data: {
               state: 'open',
+              body,
               head: { sha: liveHead, repo: { full_name: 'copse-dev/agent-pane' } },
             },
           }),
@@ -270,6 +300,15 @@ async function recordSelection(
 }
 
 describe('recording a screenshot checkbox decision', () => {
+  it('preserves stack-tip approval on the selected PNG-only follow-up', async () => {
+    const result = await recordSelection(
+      { STACK_DIGEST: 'd'.repeat(64) },
+      COMPARE,
+      false,
+      `<!-- copse-screenshot-stack: #122@${HEAD} tip=#123 -->`,
+    )
+    assert.deepEqual(result.statuses, [HEAD, HEAD, COMPARE, COMPARE])
+  })
   it('clears the reminder after committing the selection and records the reviewed head', async () => {
     const result = await recordSelection()
     assert.deepEqual(result.removed, ['screenshots-need-review'])

@@ -12,6 +12,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { installTerminalFileLinks, type TerminalFileLinks } from './terminal-file-links.ts'
+import { createTerminalWebLinkHandler } from './terminal-web-links.ts'
 import { planScope, tabsForScope } from './scoped-tabs.ts'
 import { at } from '@shared/array-utils.ts'
 import { readXtermScrollback } from '../terminal/xterm-scrollback.ts'
@@ -159,6 +160,7 @@ export function mountTerminalsPane(
       fontSize: scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: xtermThemeFromTokens(readEditorThemeTokens()),
+      linkHandler: createTerminalWebLinkHandler(api.shell),
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
@@ -423,6 +425,31 @@ export function mountTerminalsPane(
     })
     tab.container.addEventListener('mousedown', () => {
       if (activeTabId === tab.id) focusTab(tab)
+    })
+    tab.container.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(e.clientX, e.clientY, [
+        {
+          label: 'Copy',
+          disabled: !tab.term.hasSelection(),
+          onSelect: (): void => {
+            void navigator.clipboard.writeText(tab.term.getSelection())
+          },
+        },
+        {
+          label: 'Paste',
+          disabled: !tab.sessionId,
+          onSelect: (): void => {
+            void navigator.clipboard.readText().then((text) => {
+              if (text && tab.sessionId) {
+                tab.term.paste(text)
+                focusTab(tab)
+              }
+            })
+          },
+        },
+      ])
     })
   }
 

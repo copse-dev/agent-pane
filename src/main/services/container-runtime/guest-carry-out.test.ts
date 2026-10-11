@@ -71,3 +71,40 @@ describe('bundleCarryOut', () => {
     }
   })
 })
+
+it('exports a completed rebase and refuses an unfinished conflicting rebase', () => {
+  const { dir, base } = guestCheckout()
+  const out = mkdtempSync(join(tmpdir(), 'copse-rebase-out-'))
+  try {
+    git(dir, ['checkout', '-qb', 'new-base'])
+    writeFileSync(join(dir, 'README.md'), 'upstream\n')
+    git(dir, ['add', '-A'])
+    git(dir, ['commit', '-qm', 'upstream'])
+    const onto = git(dir, ['rev-parse', 'HEAD'])
+    git(dir, ['checkout', '-q', 'work'])
+    writeFileSync(join(dir, 'README.md'), 'feature\n')
+    git(dir, ['add', '-A'])
+    git(dir, ['commit', '-qm', 'feature'])
+    const head = git(dir, ['rev-parse', 'HEAD'])
+    assert.throws(() => git(dir, ['rebase', onto]))
+    // Even staged conflict resolutions are not evidence the rebase finished.
+    writeFileSync(join(dir, 'README.md'), 'resolved\n')
+    git(dir, ['add', '-A'])
+    assert.throws(
+      () => bundleCarryOut(git, dir, head, join(out, 'out.bundle')),
+      /unfinished Git operation/,
+    )
+    execFileSync('git', ['-c', 'core.editor=true', 'rebase', '--continue'], { cwd: dir })
+    const commits = bundleCarryOut(git, dir, head, join(out, 'out.bundle'))
+    assert.ok(commits.length >= 1)
+    const host = join(out, 'host')
+    git(out, ['init', '-q', host])
+    git(host, ['fetch', dir, base])
+    git(host, ['fetch', join(out, 'out.bundle'), 'refs/heads/work:refs/heads/result'])
+    assert.equal(git(host, ['show', 'result:README.md']), 'resolved')
+    git(host, ['merge-base', '--is-ancestor', onto, 'result'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(out, { recursive: true, force: true })
+  }
+})
