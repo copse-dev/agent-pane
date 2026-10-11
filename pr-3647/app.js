@@ -87540,7 +87540,9 @@ function mountProjectsPane(root, store2, api2) {
         if (!sameThreadChangeSummary(previous?.summary ?? null, summary)) {
           changed = true;
         }
-        if (needsCleanupOnly && !previous) changed = true;
+        if (needsCleanupOnly && (!previous || Date.now() - previous.at > THREAD_CHANGE_TTL_MS)) {
+          changed = true;
+        }
         threadChangeCache.set(key, { summary, at: Date.now() });
       }
       if (changed && generation === threadChangeGeneration) render(true);
@@ -87719,6 +87721,7 @@ function mountProjectsPane(root, store2, api2) {
   }
   function recheckStaleThreadChanges() {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    if (needsCleanupOnly) render();
     const now = Date.now();
     refreshThreadChanges(
       threadChangeRendered.filter(({ projectId, threadId }) => {
@@ -87755,7 +87758,7 @@ function mountProjectsPane(root, store2, api2) {
     if (thread.status === "running") return false;
     if (project2.sshHost) return false;
     const cached2 = threadChangeCache.get(threadChangeKey(project2.id, thread.id));
-    if (!cached2) return true;
+    if (!cached2 || Date.now() - cached2.at > THREAD_CHANGE_TTL_MS) return true;
     return describeThreadChanges(cached2.summary) !== null;
   }
   function renderMissingNotice(project2) {
