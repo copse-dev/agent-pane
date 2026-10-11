@@ -116,14 +116,19 @@ export function createAppearanceSection(
       if (radio) radio.checked = true
     },
     collect(data, dirty): SettingsUpdate {
+      const fontSize = Number.parseFloat(formDataString(data, 'fontSize'))
+      const uiScale = Number.parseFloat(formDataString(data, 'uiScale'))
+      const state = store.getState()
       const theme = data.get('theme'),
         panel = data.get('rightPanelPosition'),
         icon = data.get('appIconVariant')
       return {
         ...(dirty.has('theme') && isThemePreference(theme) ? { theme } : {}),
-        ...(dirty.has('fontSize') ? { fontSize: Number(formDataString(data, 'fontSize')) } : {}),
+        ...(dirty.has('fontSize')
+          ? { fontSize: Number.isFinite(fontSize) ? fontSize : state.fontSize }
+          : {}),
         ...(dirty.has('uiScale')
-          ? { uiScale: clampUiScale(Number(formDataString(data, 'uiScale'))) }
+          ? { uiScale: clampUiScale(Number.isFinite(uiScale) ? uiScale : state.uiScale) }
           : {}),
         ...(dirty.has('autoPortraitRightPanel')
           ? { autoPortraitRightPanel: data.has('autoPortraitRightPanel') }
