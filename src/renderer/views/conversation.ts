@@ -171,6 +171,8 @@ import {
   updateQueuedMessageText,
 } from '../controller/message-queue.ts'
 import { forkThread } from '../controller/fork-thread.ts'
+import { startSideChat } from '../controller/side-chat.ts'
+import { sideChatsOf, type SideChatRow } from '@shared/threads/side-chat.ts'
 import { lastResendableMessage, resendLastMessage } from '../controller/resend-message.ts'
 import { recoverFailedTurn, turnRecoveryForMessage } from '../controller/turn-recovery.ts'
 import { createTurnRecoveryCard } from './turn-recovery-card.ts'
@@ -4038,7 +4040,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     // Copy only when there is reply text — tool-only bubbles stay compact.
     if (msg.role === 'assistant' && msg.content.trim()) {
-      attachCopyButton(body, msgId, store)
+      attachReplyActions(body, threadId, msgId)
     }
     // Every settled prompt can start a fork of the conversation as it stood at
     // that point; only the latest one can be resent (see syncUserActions).
@@ -4076,6 +4078,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Render any hook cards folded onto this message's turn (decision 10).
     renderMessageHookCards(threadId, msgId)
     renderMessageTurnRecovery(threadId, msgId)
+    attachSideChatChip(threadId, msgId)
   }
 
   /**
@@ -4151,6 +4154,100 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   /**
+   * A reply's hover actions sit together in its top-right corner (Copy, and Side
+   * chat outside a side chat) so they never cover the reply's last line, where a
+   * drag that selects text would land on an invisible button.
+   */
+  function attachReplyActions(body: HTMLElement, threadId: string, msgId: string): void {
+    const sideChat = buildSideChatAction(threadId, msgId)
+    const host = sideChat ? el('div', { class: 'msg-reply-actions' }, sideChat) : body
+    attachCopyButton(host, msgId, store)
+    if (host !== body) body.append(host)
+  }
+
+  /**
+   * "Side chat": branch a side question off this message without touching the
+   * thread (prototype #3538). Absent inside a side chat, which does not nest.
+   */
+  function buildSideChatAction(threadId: string, msgId: string): HTMLButtonElement | null {
+    if (getThreadById(store, threadId)?.sideChat !== undefined) return null
+    const button = el(
+      'button',
+      {
+        class: 'msg-action msg-side-chat',
+        type: 'button',
+        title: 'Ask a side question about this message',
+      },
+      'Side chat',
+    )
+    button.addEventListener('click', () => {
+      button.disabled = true
+      void startSideChat(store, api, threadId, { anchorMessageId: msgId })
+        .then((id) => {
+          if (id === null)
+            showToast('Could not start a side chat from this message.', { variant: 'error' })
+        })
+        .finally(() => (button.disabled = false))
+    })
+    return button
+  }
+
+  /**
+   * A chip under a message that has side chats branched from it, opening the first
+   * unread one (else the first). Rebuilt only when the set of anchors changes.
+   */
+  let sideChatChipSignature = ''
+  function sideChatChipFor(rows: readonly SideChatRow[]): HTMLElement {
+    const unread = rows.find((row) => row.unread)
+    const target = unread ?? rows[0]
+    const chip = el(
+      'button',
+      {
+        type: 'button',
+        class: 'msg-side-chat-chip',
+        'data-unread': unread ? 'true' : undefined,
+        title: 'Open the side chat',
+      },
+      unread ? el('span', { class: 'msg-side-chat-chip-dot', 'aria-hidden': 'true' }) : '',
+      `${String(rows.length)} side ${rows.length === 1 ? 'chat' : 'chats'}`,
+    )
+    chip.addEventListener('click', () => {
+      if (target) store.emit('side_chat_open_requested', target.id)
+    })
+    return chip
+  }
+  function anchoredSideChats(threadId: string, msgId: string): SideChatRow[] {
+    return sideChatsOf(store.getState().threads, threadId).filter(
+      (row) => row.anchorMessageId === msgId,
+    )
+  }
+  function attachSideChatChip(threadId: string, msgId: string): void {
+    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
+    if (!msgEl) return
+    for (const child of Array.from(msgEl.children)) {
+      if (child.classList.contains('msg-side-chat-chip')) child.remove()
+    }
+    const rows = anchoredSideChats(threadId, msgId)
+    if (rows.length > 0) msgEl.append(sideChatChipFor(rows))
+  }
+  function syncSideChatChips(): void {
+    const thread = getActiveThread(store)
+    const rows = thread ? sideChatsOf(store.getState().threads, thread.id) : []
+    const signature = thread
+      ? `${thread.id}|${rows.map((row) => `${row.anchorMessageId}:${row.id}:${row.unread ? 'u' : 'r'}`).join(',')}`
+      : ''
+    if (signature === sideChatChipSignature) return
+    sideChatChipSignature = signature
+    list.querySelectorAll('.msg-side-chat-chip').forEach((node) => {
+      node.remove()
+    })
+    if (!thread) return
+    for (const anchorId of new Set(rows.map((row) => row.anchorMessageId))) {
+      attachSideChatChip(thread.id, anchorId)
+    }
+  }
+
+  /**
    * Per-prompt actions. **Fork from here** branches the conversation as it stood
    * at that message into a new thread; **Resend** submits the prompt again as a
    * fresh turn. Both are hover affordances on the user bubble, matching the
@@ -4195,7 +4292,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     resend.addEventListener('click', () => {
       runResend(threadId)
     })
-    const actions = el('div', { class: 'msg-actions' }, fork, resend)
+    const sideChat = buildSideChatAction(threadId, msgId)
+    const actions = el(
+      'div',
+      { class: 'msg-actions' },
+      fork,
+      ...(sideChat ? [sideChat] : []),
+      resend,
+    )
     const message = getThreadById(store, threadId)?.messages.find((item) => item.id === msgId)
     if ((message?.images?.length ?? 0) > 0) {
       const imageCount = message?.images?.length ?? 0
@@ -4950,7 +5054,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         // release it from any anchor that absorbed it while it streamed.
         resyncRunMembership(thread, mid)
         const body = msgEl?.querySelector<HTMLElement>('.message-body')
-        if (body && !body.querySelector('.msg-copy')) attachCopyButton(body, mid, store)
+        if (body && thread && !body.querySelector('.msg-copy'))
+          attachReplyActions(body, thread.id, mid)
         // Answer is in: tuck a body-level reasoning trail away unless the user
         // opened it. Nested trails inside a tool rollup stay with that rollup.
         const reasoning = body?.querySelector<HTMLDetailsElement>(':scope > .message-reasoning')
@@ -4969,6 +5074,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       rebuildForThread()
       syncFromStore()
       reviewerInput.sync()
+      syncSideChatChips()
     }),
     store.on('todos_changed', () => {
       syncTodoPanel()

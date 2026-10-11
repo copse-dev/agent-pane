@@ -1,3 +1,4 @@
+import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
@@ -24,6 +25,7 @@ import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
   backgroundClassifierId,
+  getClassifierProfile,
   listClassifierProfiles,
   saveClassifierProfile,
   removeClassifierProfile,
@@ -32,6 +34,7 @@ import {
   setScreeningClassifier,
   testClassifierProfile,
 } from '../services/classifiers/classifier-service.ts'
+import { recordClassifierResultUsage } from '../services/classifiers/classifier-usage.ts'
 import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
@@ -475,6 +478,7 @@ import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import {
   lookupPrThreadRelationships,
   lookupThreadPrRelationships,
+  lookupThreadBacklinks,
 } from '../services/thread-store.ts'
 
 import {
@@ -669,9 +673,10 @@ export function registerAllHandlers(
     }
   })
 
-  ipcMain.handle('process-manager:snapshot', (event) => {
+  ipcMain.handle('process-manager:snapshot', async (event) => {
     assertMainFrameSender(event, win)
-    return processManagerSnapshot()
+    const snapshot = await processManagerSnapshot()
+    return { ...snapshot, network: networkActivity.snapshot() }
   })
 
   ipcMain.handle('process-manager:stop-background', (event, ...rawArgs) => {
@@ -1404,9 +1409,13 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     return removeClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
-  ipcMain.handle('classifiers:test', (event, raw: unknown) => {
+  ipcMain.handle('classifiers:test', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
-    return testClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+    const id = parseIpcArgs(keyProviderSchema.max(53), [raw])
+    const result = await testClassifierProfile(id)
+    // The sample is a real call: tokens a provider reports for it count like any other.
+    recordClassifierResultUsage(getClassifierProfile(id).label, result)
+    return result
   })
   ipcMain.handle('classifiers:screening', (event) => {
     assertMainFrameSender(event, win)
@@ -1440,6 +1449,10 @@ export function registerAllHandlers(
   ipcMain.handle('local-classifiers:stop', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     return localClassifiers().stop(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:uninstall', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().uninstall(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
   ipcMain.handle('local-classifiers:connect', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
@@ -2078,6 +2091,19 @@ export function registerAllHandlers(
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return deleteThreadResourcesAndStore(pid, tid, threadDeletionRuntime)
   })
+  // Active threads that link to a URL or another thread: an indexed read of
+  // recorded thread metadata that never touches a transcript.
+  ipcMain.handle(
+    'threads:backlinks',
+    (event, projectId: unknown, kind: unknown, target: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, linkKind, linkTarget] = parseIpcArgs(
+        z.tuple([zProjectId, z.enum(['url', 'thread']), z.string().min(1).max(2048)]),
+        [projectId, kind, target],
+      )
+      return lookupThreadBacklinks(pid, linkKind, linkTarget)
+    },
+  )
   // Seed a freshly created fork's provider-format history from the thread it was
   // branched off. The renderer owns the visible transcript copy; this is the
   // half it cannot do, since `agent-history.json` never leaves the main process.
@@ -3421,7 +3447,18 @@ export function registerAllHandlers(
   ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'context',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     createPanePopoutWindow(parsed, seed)
@@ -3430,7 +3467,18 @@ export function registerAllHandlers(
   ipcMain.handle('panes:take-popout-seed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'context',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     return takePopoutSeed(parsed)

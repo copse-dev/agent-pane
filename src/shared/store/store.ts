@@ -79,6 +79,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     browser_url_requested: new Set(),
     browser_url_bar_focus_requested: new Set(),
     pr_open_requested: new Set(),
+    side_chat_open_requested: new Set(),
     canvas_artefact_requested: new Set(),
     canvas_artefact_show_requested: new Set(),
     settings_changed: new Set(),

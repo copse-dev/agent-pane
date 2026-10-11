@@ -156,6 +156,40 @@ describe('projects pane thread rename + archive (component)', () => {
     assert.equal(isThreadArchived(archived), true)
   })
 
+  it('refuses to archive a chat while one of its side chats is running', async () => {
+    const side: Thread = {
+      ...thread('s2', 'Side question'),
+      status: 'running',
+      sideChat: { parentThreadId: 't2', anchorMessageId: 'm1' },
+    }
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t1', 'Keep me'), thread('t2', 'Has a side chat'), side],
+      activeThreadId: 't1',
+    })
+    mount(store, makeApi())
+
+    rowFor('Has a side chat').dispatchEvent(
+      new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+    )
+    const archiveItem = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu .context-menu-item'),
+    ).find((i) => i.textContent === 'Archive')
+    assert.ok(archiveItem)
+    archiveItem.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    for (const id of ['t2', 's2']) {
+      const kept = store.getState().threads.find((t) => t.id === id)
+      assert.ok(kept)
+      assert.equal(isThreadArchived(kept), false, `${id} stays unarchived`)
+    }
+    assert.ok(rowFor('Has a side chat'))
+  })
+
   it('keeps a dirty chat visible on Cancel and only discards after confirmation', async () => {
     const archivedThread = thread('t2', 'Local edits')
     const worktree = {
