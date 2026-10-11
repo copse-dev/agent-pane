@@ -1,3 +1,5 @@
+import { networkActivity, networkCommandLabel } from '../diagnostics/network-activity.ts'
+import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { setPriority } from 'node:os'
 import { StringDecoder } from 'node:string_decoder'
 import { getWorkspaceRoot } from '../workspace.ts'
@@ -110,7 +112,40 @@ function prepareGitInvocation(
   }
 }
 
-export function runCommand(
+export async function runCommand(
+  cmd: string,
+  args: string[],
+  opts: RunCommandOptions = {},
+): Promise<CommandResult> {
+  const label = networkCommandLabel(cmd, args)
+  const owner = currentThreadExecutionContext()
+  const activity = label
+    ? networkActivity.start({
+        source: 'command',
+        label,
+        ...(owner ? { threadId: owner.threadId, projectId: owner.projectId } : {}),
+      })
+    : null
+  try {
+    const result = await runCommandImpl(cmd, args, opts)
+    activity?.finish(
+      opts.signal?.aborted ? 'cancelled' : result.code === 0 ? 'completed' : 'failed',
+      result.code,
+    )
+    return result
+  } catch (error) {
+    activity?.finish(
+      error instanceof CommandTimeoutError
+        ? 'timed-out'
+        : opts.signal?.aborted
+          ? 'cancelled'
+          : 'failed',
+    )
+    throw error
+  }
+}
+
+function runCommandImpl(
   cmd: string,
   args: string[],
   opts: RunCommandOptions = {},

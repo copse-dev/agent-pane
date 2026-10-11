@@ -174,6 +174,7 @@ jobs:
             for (const [namespace, method] of [
               ['pulls', 'get'],
               ['repos', 'getCommit'],
+              ['repos', 'compareCommitsWithBasehead'],
               ['repos', 'listCommitStatusesForRef'],
               ['repos', 'createCommitStatus'],
             ]) {
@@ -404,8 +405,47 @@ jobs:
       # — see that job for why. Every early-exit branch here predates the oracle's
       # analysis of the diff, so each one emits `unit_mode=full`: only the oracle
       # path has looked at what actually changed, so only it may thin.
+      # Capture the source event before testing: later body edits must not
+      # attach a stack declaration to evidence produced for a different stack.
+      - name: Capture screenshot stack coverage request
+        id: screenshot-stack
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, writeFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          import { parseScreenshotStack } from './scripts/screenshot-stack.mts';
+          const declaration = parseScreenshotStack(process.env.PR_BODY);
+          const tip = declaration?.tip === Number(process.env.PR_NUMBER) && process.env.PR_DRAFT === 'false';
+          appendFileSync(process.env.GITHUB_OUTPUT, `tip=${tip}\n`);
+          if (tip) {
+            execFileSync('git', ['fetch', '--no-tags', '--quiet', 'origin',
+              '+refs/heads/main:refs/remotes/origin/main']);
+            const base = execFileSync('git', ['merge-base', 'HEAD', 'origin/main'],
+              { encoding: 'utf8' }).trim();
+            writeFileSync('screenshot-stack-coverage.json', JSON.stringify({
+              declaration: declaration.text, number: declaration.tip,
+              head: process.env.HEAD_SHA, base,
+            }));
+          }
+          NODE
+
+      - name: Preserve screenshot stack coverage request
+        if: steps.screenshot-stack.outputs.tip == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshot-stack-coverage-${{ github.run_id }}
+          path: screenshot-stack-coverage.json
+          if-no-files-found: error
+          retention-days: 14
+
       - id: plan
         env:
+          STACK_TIP: ${{ steps.screenshot-stack.outputs.tip }}
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           # PR/queue base on pull_request; previous-tip on push. Empty for schedule.
@@ -426,6 +466,14 @@ jobs:
           BASE_REF="${BASE_REF#refs/heads/}"
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A stack tip covers all lower layers, not only its immediate PR
+          # diff. Run the complete suite even for a PNG-only acceptance commit;
+          # the coverage attestation must belong to this exact combined head.
+          if [ "${STACK_TIP:-false}" = "true" ]; then
+            echo "Declared screenshot stack tip -> full combined e2e suite"
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
