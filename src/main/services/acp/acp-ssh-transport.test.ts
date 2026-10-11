@@ -192,12 +192,12 @@ describe('remote re-auth login terminal command', () => {
   })
 
   it('is the bare login command with a missing-CLI guard — never wrapped in ssh', () => {
-    const cmd = buildRemoteAcpLoginCommand('claude /login', {
+    const cmd = buildRemoteAcpLoginCommand('claude auth login', {
       hostId: 'dev',
       remoteRoot: REMOTE_ROOT,
     })
     assert.ok(cmd)
-    assert.ok(cmd.includes('claude /login'))
+    assert.ok(cmd.includes('claude auth login'))
     assert.ok(cmd.includes('command -v claude'), 'missing-CLI hint guard precedes the login')
     // Regression pin: on an SSH workspace the Shells tab is already a pty on
     // the host. Wrapping this in `ssh -tt …` ran ssh ON the host, nested, with
@@ -210,7 +210,7 @@ describe('remote re-auth login terminal command', () => {
 
   it('returns null when the host is no longer configured', () => {
     assert.equal(
-      buildRemoteAcpLoginCommand('claude /login', { hostId: 'ghost', remoteRoot: REMOTE_ROOT }),
+      buildRemoteAcpLoginCommand('claude auth login', { hostId: 'ghost', remoteRoot: REMOTE_ROOT }),
       null,
     )
   })
