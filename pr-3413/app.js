@@ -117832,6 +117832,8 @@ ${description}
   let classifierUseOwner = null;
   let classifierUseSeq = 0;
   let classifierUseInFlight = false;
+  let classifierUseInFlightForced = false;
+  let classifierUseRereadQueued = false;
   function refreshClassifierUse(thread, force = false) {
     const projectId = store2.getState().activeProjectId;
     if (!thread || projectId === null) {
@@ -117840,28 +117842,42 @@ ${description}
       classifierUseOwner = null;
       classifierUseSeq++;
       classifierUseInFlight = false;
+      classifierUseRereadQueued = false;
       return;
     }
     const last = thread.messages.at(-1);
     const key = `${projectId}:${thread.id}:${thread.status}:${String(thread.messages.length)}:${String(last?.toolCalls.length ?? 0)}`;
-    if (force ? classifierUseInFlight : key === classifierUseKey) return;
+    if (force && classifierUseInFlight) {
+      if (!classifierUseInFlightForced) classifierUseRereadQueued = true;
+      return;
+    }
+    if (!force && key === classifierUseKey) return;
     const owner = `${projectId}:${thread.id}`;
     if (owner !== classifierUseOwner) classifierUse = null;
     classifierUseOwner = owner;
     classifierUseKey = key;
     const seq = ++classifierUseSeq;
     classifierUseInFlight = true;
+    classifierUseInFlightForced = force;
+    classifierUseRereadQueued = false;
+    const settle2 = () => {
+      classifierUseInFlight = false;
+      if (!classifierUseRereadQueued) return;
+      classifierUseRereadQueued = false;
+      refreshClassifierUse(getActiveThread(store2), true);
+    };
     api2.usage.getThreadClassifierUse(projectId, thread.id).then(
       (use) => {
         if (seq !== classifierUseSeq) return;
-        classifierUseInFlight = false;
         const next = use.calls > 0 ? use : null;
-        if (JSON.stringify(next) === JSON.stringify(classifierUse)) return;
-        classifierUse = next;
-        updateFooter();
+        if (JSON.stringify(next) !== JSON.stringify(classifierUse)) {
+          classifierUse = next;
+          updateFooter();
+        }
+        settle2();
       },
       () => {
-        if (seq === classifierUseSeq) classifierUseInFlight = false;
+        if (seq === classifierUseSeq) settle2();
       }
     );
   }
