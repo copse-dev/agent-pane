@@ -78590,7 +78590,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-oracle",
             title: "Run outside sandbox?",
             body: "node .tmp/dep-candidates.mjs",
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Runs a script file from the project, so Copse can't tell what it does",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Runs a script file from the project, so Copse can't tell what it does\n\nThis runs with your user account\u2019s access to files and the network, beyond the project sandbox.",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
@@ -78598,7 +78598,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-syntax",
             title: "Run outside sandbox?",
             body: "mkdir -p node_modules && ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild",
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path\n\nThis runs with your user account\u2019s access to files and the network, beyond the project sandbox.",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
@@ -78606,7 +78606,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-test",
             title: "Run outside sandbox?",
             body: "ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild",
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path\n\nThis runs with your user account\u2019s access to files and the network, beyond the project sandbox.",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           }
@@ -83915,10 +83915,9 @@ function mountTitlebar(root, store2, api2) {
       workspaceBranch.textContent = "";
       return;
     }
-    void api2.git.branchStatus(owner.projectId, owner.threadId).then(
-      (s16) => {
+    void api2.git.currentBranch(owner.projectId, owner.threadId).then(
+      (branch) => {
         if (token !== branchToken) return;
-        const branch = s16.currentBranch;
         workspaceBranch.hidden = !branch;
         workspaceBranch.textContent = branch ?? "";
         setTooltip(workspaceBranch, branch ? `On branch ${branch}` : null);
@@ -85061,28 +85060,32 @@ function approvalRequestDetails(req) {
   return parts;
 }
 function mergeApprovalAdvice(values) {
-  const unique = [];
-  const seen = /* @__PURE__ */ new Set();
+  const sections = [];
+  const sectionIndexes = /* @__PURE__ */ new Map();
   for (const value of values) {
-    if (!value || seen.has(value)) continue;
-    seen.add(value);
-    unique.push(value);
+    if (!value) continue;
+    for (const section2 of value.split("\n\n")) {
+      const lines = section2.split("\n");
+      const lead = lines[0];
+      const reasons = lines.slice(1);
+      if (lead && reasons.length > 0 && reasons.every((line) => line.startsWith(REASON_BULLET))) {
+        const index = sectionIndexes.get(lead);
+        if (index !== void 0) {
+          const existing = sections[index];
+          if (existing === void 0) continue;
+          const mergedReasons = new Set(existing.split("\n").slice(1));
+          for (const reason of reasons) mergedReasons.add(reason);
+          sections[index] = [lead, ...mergedReasons].join("\n");
+          continue;
+        }
+        sectionIndexes.set(lead, sections.length);
+        sections.push(section2);
+      } else if (!sections.includes(section2)) {
+        sections.push(section2);
+      }
+    }
   }
-  if (unique.length <= 1) return unique[0];
-  const lines = unique.map((value) => value.split("\n"));
-  const sharedLead = lines[0]?.[0];
-  if (sharedLead === void 0 || !lines.every((parts) => parts[0] === sharedLead)) {
-    return unique.join("\n\n");
-  }
-  const merged = [sharedLead];
-  const seenDetails = /* @__PURE__ */ new Set();
-  for (const parts of lines) {
-    const details = parts.slice(1).join("\n");
-    if (!details || seenDetails.has(details)) continue;
-    seenDetails.add(details);
-    merged.push(details);
-  }
-  return merged.join("\n");
+  return sections.length > 0 ? sections.join("\n\n") : void 0;
 }
 function mountApprovalDialog(api2, store2, options = {}) {
   const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS;
@@ -129313,6 +129316,29 @@ var init_terminal_file_links = __esm({
   }
 });
 
+// src/renderer/views/terminal-web-links.ts
+function createTerminalWebLinkHandler(shell4, confirmOpen = (uri) => showConfirmDialog({
+  message: "Open this link in your browser?",
+  detail: uri,
+  confirmLabel: "Open"
+})) {
+  return {
+    activate: (_event, uri) => {
+      if (!/^https?:\/\//.test(uri)) return;
+      void confirmOpen(uri).then(async (confirmed) => {
+        if (confirmed) await shell4.openExternal(uri);
+      }).catch((error62) => {
+        console.warn("Could not open terminal link", error62);
+      });
+    }
+  };
+}
+var init_terminal_web_links = __esm({
+  "src/renderer/views/terminal-web-links.ts"() {
+    init_confirm_dialog();
+  }
+});
+
 // src/renderer/views/scoped-tabs.ts
 function tabsForScope(tabs, scopeId) {
   return [...tabs].filter((t2) => t2.scopeId === scopeId);
@@ -129467,7 +129493,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
       cursorBlink: true,
       fontSize: scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      theme: xtermThemeFromTokens(readEditorThemeTokens())
+      theme: xtermThemeFromTokens(readEditorThemeTokens()),
+      linkHandler: createTerminalWebLinkHandler(api2.shell)
     });
     const fitAddon = new o2();
     term.loadAddon(fitAddon);
@@ -129703,6 +129730,31 @@ ${output2}` : "Terminal output: (none)"
     });
     tab.container.addEventListener("mousedown", () => {
       if (activeTabId === tab.id) focusTab(tab);
+    });
+    tab.container.addEventListener("contextmenu", (e3) => {
+      e3.preventDefault();
+      e3.stopPropagation();
+      showContextMenu(e3.clientX, e3.clientY, [
+        {
+          label: "Copy",
+          disabled: !tab.term.hasSelection(),
+          onSelect: () => {
+            void navigator.clipboard.writeText(tab.term.getSelection());
+          }
+        },
+        {
+          label: "Paste",
+          disabled: !tab.sessionId,
+          onSelect: () => {
+            void navigator.clipboard.readText().then((text2) => {
+              if (text2 && tab.sessionId) {
+                tab.term.paste(text2);
+                focusTab(tab);
+              }
+            });
+          }
+        }
+      ]);
     });
   }
   function currentThreadId() {
@@ -130046,6 +130098,7 @@ var init_terminals_pane = __esm({
     init_pane_popout_button();
     init_selection_to_chat2();
     init_terminal_file_links();
+    init_terminal_web_links();
     init_scoped_tabs();
     init_array_utils2();
     init_xterm_scrollback();
