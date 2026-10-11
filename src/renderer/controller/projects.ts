@@ -174,7 +174,8 @@ function settleActivationWaiter(projectId: string, error?: Error): void {
  * never mounts.
  */
 function endSwitch(gen: number, projectId: string): void {
-  if (pendingSwitch?.gen === gen) clearPendingSwitch()
+  if (pendingSwitch?.gen !== gen) return
+  clearPendingSwitch()
   settleActivationWaiter(projectId)
 }
 
@@ -738,7 +739,7 @@ function activate(
       restarts: pendingSwitch?.projectId === id,
     })
   }
-  supersedePendingSwitch()
+  cancelPendingSwitch(store, api)
   const gen = ++switchGeneration
   pendingSwitch = { gen, projectId: id, dispatched: false }
   const outgoingId = activeProjectId
@@ -761,18 +762,33 @@ function activate(
     outgoingId,
     outgoingThreads,
     pendingThreadId,
-  ).catch((error: unknown) => {
-    // A switch that throws (a failed thread load, say) never reaches endSwitch.
-    // Retire it anyway, or its hold on navigation outlives it and drops every
-    // later write until the next switch. Its waiter fails rather than resolving:
-    // the target project was never applied.
-    if (pendingSwitch?.gen === gen) clearPendingSwitch()
-    if (gen === switchGeneration) {
-      settleActivationWaiter(id, error instanceof Error ? error : new Error(String(error)))
+  ).catch(async (error: unknown) => {
+    if (gen !== switchGeneration) {
+      endSwitch(gen, id)
+      return
     }
-    // `activate` discards this promise, so a rethrow would only become an
-    // unhandled rejection; waiting callers already received the error above.
-    console.error('[projects] project switch failed', error)
+    // A failed load leaves the outgoing project in the store, even though main
+    // and navigation already name the target. Queue restoration before another
+    // switch can dispatch, then notify waiters only once those writes settle.
+    holdNavigation(null)
+    const state = store.getState()
+    const active = state.projects.find((project) => project.id === state.activeProjectId)
+    const root = active?.path ?? state.workspaceRoot
+    await Promise.all([
+      root ? setWorkspaceInOrder(api, root, active?.sshHost) : Promise.resolve(),
+      saveNavigation(api, state.activeProjectId, state.activeThreadId),
+    ]).catch((restoreError: unknown) => {
+      console.warn('[projects] could not restore navigation after a failed switch:', restoreError)
+    })
+    const failure = error instanceof Error ? error : new Error(String(error))
+    if (gen === switchGeneration) {
+      abortProjectActivation(store, id, gen, state.activeProjectId, failure)
+    } else {
+      endSwitch(gen, id)
+    }
+    // activate is also fire-and-forget from sidebar clicks: do not create an
+    // unhandled rejection. Awaiting callers receive the error through their waiter.
+    console.warn('[projects] project activation failed:', failure)
   })
 }
 

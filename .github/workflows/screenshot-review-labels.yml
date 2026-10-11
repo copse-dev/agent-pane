@@ -106,6 +106,20 @@ jobs:
               return;
             }
 
+            if (pr.body?.includes('<!-- copse-screenshot-stack:') && pr.body.includes(`tip=#${number} -->`)) {
+              const declarations = [...pr.body.matchAll(/<!-- copse-screenshot-stack: [^\n]+ -->/g)];
+              const { createHash } = require('node:crypto');
+              const digest = declarations.length === 1
+                ? createHash('sha256').update(declarations[0][0]).digest('hex') : '';
+              const coverage = statuses.find((status) => status.context === 'Screenshot stack coverage');
+              if (coverage?.state !== 'success' || coverage.creator?.id !== 41898282 || !digest ||
+                  coverage.description !== `Stack coverage ${digest}`) {
+                refuse('the stack tip has not published combined screenshot coverage yet.');
+                return;
+              }
+              core.setOutput('stack-digest', digest);
+            }
+
             if (label === 'decline-screenshots') {
               if (review.state === 'success') {
                 refuse(`the \`Screenshot review\` check for \`${sha12}\` has already passed: ${review.description}.`);
@@ -238,6 +252,7 @@ jobs:
           HEAD_SHA: ${{ steps.validate.outputs.head-sha }}
           COMPARE_COMMIT: ${{ steps.validate.outputs.compare-commit }}
           CHANGED: ${{ steps.validate.outputs.changed }}
+          STACK_DIGEST: ${{ steps.validate.outputs.stack-digest }}
           TOKEN_MINTED: ${{ steps.app-token.outputs.token != '' }}
           PUSHED: ${{ steps.fast-forward.outputs.pushed }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -254,16 +269,19 @@ jobs:
             const stateStart = '<!-- copse-screenshot-review-state -->';
             const stateEnd = '<!-- /copse-screenshot-review-state -->';
             // The publisher keeps a status whose description starts this way.
-            const setDecision = (description) =>
-              github.rest.repos.createCommitStatus({
-                owner,
-                repo,
-                sha,
-                state: 'success',
-                context: 'Screenshot review',
-                description,
-                target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
+            const setDecision = async (description, decisionSha = sha) => {
+              await github.rest.repos.createCommitStatus({
+                owner, repo, sha: decisionSha, state: 'success', context: 'Screenshot review',
+                description, target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
               });
+              if (/^[0-9a-f]{64}$/.test(process.env.STACK_DIGEST || '')) {
+                await github.rest.repos.createCommitStatus({
+                  owner, repo, sha: decisionSha, state: 'success', context: 'Screenshot stack decision',
+                  description: `Stack decision ${process.env.STACK_DIGEST}`,
+                  target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
+                });
+              }
+            };
 
             let decision = '';
             let refusal = '';
@@ -279,7 +297,7 @@ jobs:
               await setDecision(`Accepted by @${actor}; committed as ${commit12}`);
               decision =
                 `**Reviewed:** accepted by @${actor}. The PR branch was fast-forwarded from \`${sha12}\` to ` +
-                `\`${commit12}\`, committing ${count} screenshot${count === 1 ? '' : 's'}; CI re-runs on it without e2e.`;
+                `\`${commit12}\`, committing ${count} screenshot${count === 1 ? '' : 's'}; CI re-runs; declared stack tips repeat combined e2e, other PNG-only heads skip it.`;
             } else if (outcome === 'accept') {
               refusal =
                 process.env.TOKEN_MINTED === 'true'
@@ -312,6 +330,12 @@ jobs:
             const expectedHead = outcome === 'accept' ? process.env.COMPARE_COMMIT : sha;
             const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             if (parent.state === 'open' && parent.head.sha === expectedHead && parent.head.repo?.full_name === `${owner}/${repo}`) {
+              // Stack tips rerun combined e2e on the PNG-only follow-up.
+              // Preserve the explicit review decision; coverage is earned later.
+              if (outcome === 'accept' && parent.body?.includes('<!-- copse-screenshot-stack:') &&
+                  parent.body.includes(`tip=#${number} -->`)) {
+                await setDecision(`Accepted by @${actor}; screenshot-only follow-up of ${sha12}`, expectedHead);
+              }
               try {
                 await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'screenshots-need-review' });
               } catch (error) {
