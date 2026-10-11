@@ -118903,6 +118903,12 @@ ${reply}`);
       await submit();
       return true;
     },
+    sendMessage: async (content) => {
+      if (!getActiveThreadId() || imageDescriptionInProgress) return false;
+      composer.value = content;
+      await submit();
+      return true;
+    },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
     attachArchive: addArchiveChip,
@@ -133064,6 +133070,17 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         },
         (check2, headSha) => {
           if (!prDetails) return;
+          const key = prRelationKey(prDetails);
+          const producingThreadId = (prRelationships ?? threadLinks.get(key) ?? []).find(
+            (row2) => row2.kinds.includes("produced")
+          )?.threadId;
+          if (producingThreadId) {
+            switchThread(store2, producingThreadId);
+            void getPromptAttachmentHandlers()?.sendMessage?.(
+              prCheckFixDraft(prDetails, check2, headSha)
+            );
+            return;
+          }
           startPrCheckFixThread(store2, prDetails, check2, headSha);
           getPromptAttachmentHandlers()?.focusComposer?.();
         }
