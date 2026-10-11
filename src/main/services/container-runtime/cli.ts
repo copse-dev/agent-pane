@@ -11,6 +11,10 @@
  *
  *   --workspace <dir>       git checkout to carry in (default: cwd)
  *   --prompt <text>         the task
+ *   --prompt-file <path>   read the task from a UTF-8 file instead of --prompt
+ *   --report <path>        write the host run record as JSON for automation
+ *   --rebase-onto <sha>    include this exact commit as refs/copse/rebase-base
+ *   --install-dependencies install dependencies inside the guest
  *   --model <id>            model id the provider serves (default: $COPSE_MODEL)
  *   --provider-url <url>    OpenAI-compatible base URL this host calls for the guest's
  *                           inference; the guest never dials it, so it needs no --allow
@@ -25,6 +29,7 @@
  *                           broker dials localhost on loopback itself, never through the resolver
  *   --ttl <minutes>         wall-clock budget (default 120)
  *   --tokens <n>            token ceiling (default 2,000,000)
+ *   --max-output-tokens <n> per-response output limit (default 16,384)
  *   --max-steps <n>         cap on agent steps (default: product default)
  *   --image <ref>           worker image (default copse-worker:local)
  *   --base-image <ref>      base image for --build (default: node:24-trixie-slim, pinned by digest)
@@ -36,6 +41,7 @@
  *   --sweep                 remove every managed container and volume that is not running
  *   --forget-store          remove the shared pnpm store volume; the next install refills it
  */
+import { readFile, writeFile } from 'node:fs/promises'
 import {
   assertThreadContainerEngine,
   buildWorkerImage,
@@ -47,8 +53,7 @@ import {
   WORKER_IMAGE,
 } from './thread-container.ts'
 import { createResolvedProviderFetch } from './resolved-provider-fetch.ts'
-import { buildGuestProvider } from './guest-provider.ts'
-import { withCredentialOutputRedaction } from '@copse/llm/credential-output-provider.ts'
+import { buildCliProvider, parseOutputLimit } from './cli-provider.ts'
 import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { takeProviderKeyFromEnv } from './cli-provider-key.ts'
@@ -66,7 +71,9 @@ function parseCli(argv: readonly string[]): Cli {
     if (!token.startsWith('--')) throw new Error(`Unexpected argument: ${token}`)
     const name = token.slice(2)
     const next = argv[index + 1]
-    const boolean = ['build', 'list', 'sweep', 'forget-store'].includes(name)
+    const boolean = ['build', 'list', 'sweep', 'forget-store', 'install-dependencies'].includes(
+      name,
+    )
     const value = boolean || next === undefined || next.startsWith('--') ? '' : next
     if (value !== '') index++
     const list = flags.get(name) ?? []
@@ -91,6 +98,7 @@ async function main(): Promise<void> {
   // Docker subprocess inherits.
   const apiKeyEnv = cli.one('api-key-env')
   const apiKey = takeProviderKeyFromEnv(apiKeyEnv)
+  const outputLimit = parseOutputLimit(cli.one('max-output-tokens'))
   // One engine for the whole invocation; COPSE_CONTAINER_ENGINE picks it.
   const engine = await assertThreadContainerEngine()
   if (cli.has('list')) {
@@ -149,35 +157,29 @@ async function main(): Promise<void> {
   }
   if (apiKeyEnv && !apiKey) throw new Error(`Provider key variable ${apiKeyEnv} is not set`)
   const maxSteps = cli.one('max-steps')
+  const rebaseOnto = cli.one('rebase-onto')
   const model = required(cli.one('model') ?? process.env['COPSE_MODEL'], '--model')
   const transport = createResolvedProviderFetch(egressResolve)
   const record = await runThreadInContainer({
     engine,
     workspace: cli.one('workspace') ?? process.cwd(),
-    prompt: required(cli.one('prompt'), '--prompt'),
+    prompt: cli.one('prompt-file')
+      ? await readFile(required(cli.one('prompt-file'), '--prompt-file'), 'utf8')
+      : required(cli.one('prompt'), '--prompt'),
+    installDependencies: cli.has('install-dependencies'),
+    ...(rebaseOnto ? { rebaseOnto } : {}),
     model,
     // CLI provider inference and its selected key stay on this host (A1″).
     hostInference: (maxOutputTokens): Promise<LLMProvider> =>
       Promise.resolve(
-        withCredentialOutputRedaction(
-          buildGuestProvider(
-            {
-              kind: 'openai-compatible',
-              model,
-              apiKeySlug: 'cli',
-              url: providerUrl,
-              label: 'the --provider-url endpoint',
-              local: true,
-              includeUsage: true,
-              apiStyle: null,
-              extraBody: null,
-              params: { maxOutputTokens },
-            },
-            apiKey ?? null,
-            transport.fetch,
-          ),
-          apiKey ? [apiKey] : [],
-        ),
+        buildCliProvider({
+          model,
+          url: providerUrl,
+          apiKey,
+          remainingTokens: maxOutputTokens,
+          outputLimit,
+          fetch: transport.fetch,
+        }),
       ),
     budgets: {
       wallClockMs: Number(cli.one('ttl') ?? '120') * 60_000,
@@ -188,6 +190,8 @@ async function main(): Promise<void> {
     image,
     ...(maxSteps !== undefined ? { maxSteps: Number(maxSteps) } : {}),
   }).finally(() => transport.close())
+  const reportPath = cli.one('report')
+  if (reportPath) await writeFile(reportPath, JSON.stringify(record), { mode: 0o600 })
   const result = record.result
   console.log('')
   console.log(`run ${record.runtimeId}: ${result?.stopReason ?? 'no result written'}`)

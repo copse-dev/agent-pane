@@ -260,7 +260,11 @@ describe('screenshot publication', () => {
     const artifactSteps = steps.filter(
       (step) =>
         ['candidates', 'compare'].includes(step.id ?? '') ||
-        ['actions/checkout@v7.0.1', 'actions/download-artifact@v8'].includes(step.uses ?? ''),
+        (['actions/checkout@v7.0.1', 'actions/download-artifact@v8'].includes(step.uses ?? '') &&
+          ![
+            'Load trusted screenshot stack policy',
+            'Download screenshot stack coverage request',
+          ].includes(step.name ?? '')),
     )
     assert.equal(artifactSteps.length, 4)
     for (const step of artifactSteps)
@@ -539,10 +543,7 @@ describe('blocking screenshot review gate', () => {
     )
     const failClosed = steps.at(-1)
     assert.equal(failClosed?.name, 'Fail the screenshot review closed')
-    assert.equal(
-      failClosed.if,
-      "failure() && steps.discover.outputs.gate-sha != '' && steps.gate.outcome != 'success'",
-    )
+    assert.equal(failClosed.if, "failure() && steps.discover.outputs.gate-sha != ''")
     assert.match(z.string().parse(failClosed.with?.['script']), /state: 'error'/)
   })
 })
