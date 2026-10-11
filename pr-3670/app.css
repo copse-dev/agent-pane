@@ -1439,8 +1439,15 @@ copse-ui-field input[type=password],
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
 }
-.chats-list .chat-row .chat-thread-owner {
+.automation-row-unrun-badge {
   flex: 0 0 auto;
+  margin-left: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.chats-list .chat-row .chat-thread-owner {
+  flex: 1 0 auto;
   max-width: 45%;
 }
 .automation-fold-row {
@@ -1587,6 +1594,13 @@ copse-ui-field input[type=password],
   margin-left: 4px;
   color: var(--text-primary);
   animation: chat-attention-pulse 1.8s ease-in-out infinite;
+}
+.chats-list .chat-row .chat-attention-bell {
+  margin-left: auto;
+}
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-pr-status,
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-changes-status {
+  margin-left: auto;
 }
 .project-row .chat-attention-bell {
   margin-left: auto;
@@ -16923,6 +16937,40 @@ dialog.activity-panel-overlay {
 .vnc-setup-fields[hidden] {
   display: none;
 }
+.vnc-add-ssh-btn {
+  align-self: flex-start;
+}
+.vnc-ssh-host-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+.vnc-ssh-host-form[hidden] {
+  display: none;
+}
+.vnc-ssh-host-form .vnc-field-label input {
+  width: 100%;
+}
+.vnc-ssh-host-hint,
+.vnc-ssh-host-status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.vnc-ssh-host-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.vnc-ssh-host-actions > button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .vnc-devices-heading {
   display: flex;
   align-items: center;
@@ -17098,6 +17146,22 @@ dialog.activity-panel-overlay {
 .vnc-disconnect-btn {
   justify-content: center;
   width: 100%;
+}
+.vnc-capture-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+.vnc-capture-actions:has(> button:not([hidden])) > button {
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+}
+.vnc-capture-actions:not(:has(> button:not([hidden]))) {
+  display: none;
+}
+.vnc-annotate-btn[aria-pressed=true] {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .vnc-discovery-retry {
   align-self: flex-start;
@@ -17304,12 +17368,6 @@ dialog.activity-panel-overlay {
   color: var(--text-secondary);
   font-weight: 400;
 }
-.vnc-view-only-note {
-  margin: auto 0 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-base);
-}
 .vnc-viewer-host {
   position: relative;
   display: flex;
@@ -17329,6 +17387,7 @@ dialog.activity-panel-overlay {
   min-height: 0;
 }
 .vnc-screen {
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
