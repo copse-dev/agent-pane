@@ -128657,6 +128657,29 @@ var init_terminal_file_links = __esm({
   }
 });
 
+// src/renderer/views/terminal-web-links.ts
+function createTerminalWebLinkHandler(shell3, confirmOpen = (uri) => showConfirmDialog({
+  message: "Open this link in your browser?",
+  detail: uri,
+  confirmLabel: "Open"
+})) {
+  return {
+    activate: (_event, uri) => {
+      if (!/^https?:\/\//.test(uri)) return;
+      void confirmOpen(uri).then(async (confirmed) => {
+        if (confirmed) await shell3.openExternal(uri);
+      }).catch((error62) => {
+        console.warn("Could not open terminal link", error62);
+      });
+    }
+  };
+}
+var init_terminal_web_links = __esm({
+  "src/renderer/views/terminal-web-links.ts"() {
+    init_confirm_dialog();
+  }
+});
+
 // src/renderer/views/scoped-tabs.ts
 function tabsForScope(tabs, scopeId) {
   return [...tabs].filter((t2) => t2.scopeId === scopeId);
@@ -128811,7 +128834,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
       cursorBlink: true,
       fontSize: scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      theme: xtermThemeFromTokens(readEditorThemeTokens())
+      theme: xtermThemeFromTokens(readEditorThemeTokens()),
+      linkHandler: createTerminalWebLinkHandler(api2.shell)
     });
     const fitAddon = new o2();
     term.loadAddon(fitAddon);
@@ -129415,6 +129439,7 @@ var init_terminals_pane = __esm({
     init_pane_popout_button();
     init_selection_to_chat2();
     init_terminal_file_links();
+    init_terminal_web_links();
     init_scoped_tabs();
     init_array_utils2();
     init_xterm_scrollback();
