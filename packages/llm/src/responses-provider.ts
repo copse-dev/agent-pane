@@ -101,6 +101,8 @@ export class ResponsesProvider implements LLMProvider {
   constructor(
     model: string,
     opts: {
+      /** Per-provider transport; the restricted ChatGPT route retains its fixed fetch policy. */
+      fetch?: typeof globalThis.fetch
       /** Omitted for first-party OpenAI, which uses the SDK's default endpoint. */
       baseURL?: string
       apiKey: string
@@ -167,7 +169,9 @@ export class ResponsesProvider implements LLMProvider {
             ): ReturnType<typeof globalThis.fetch> =>
               globalThis.fetch(input, { ...init, redirect: 'error' }),
           }
-        : {}),
+        : opts.fetch
+          ? { fetch: opts.fetch }
+          : {}),
       // Keep one retry owner. Otherwise the SDK's two internal retries multiply
       // yieldStreamWithRetry's bounded attempts for every pre-stream failure.
       maxRetries: 0,

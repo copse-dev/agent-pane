@@ -26,6 +26,7 @@ interface EmitReq {
   rememberLabel?: string
   collapseDetails?: boolean
   approveOnceLabel?: string
+  approveLabel?: string
   allowTurnTreeLease?: boolean
   turnTreeLeaseLabel?: string
   turnTreeLeaseDefault?: boolean
@@ -86,6 +87,7 @@ function makeApi(): {
         rememberLabel: req.rememberLabel,
         collapseDetails: req.collapseDetails,
         approveOnceLabel: req.approveOnceLabel,
+        approveLabel: req.approveLabel,
         allowTurnTreeLease: req.allowTurnTreeLease,
         turnTreeLeaseLabel:
           req.turnTreeLeaseLabel ??
@@ -306,12 +308,52 @@ describe('approval dialog coalescing', () => {
     assert.equal(approve().textContent, 'Approve all (3)')
   })
 
+  it('shows a shared sandbox warning once across different reason lists', () => {
+    const warning =
+      'This runs with your user account’s access to files and the network, beyond the project sandbox.'
+    emit({
+      id: 'install',
+      title: 'Run outside sandbox?',
+      body: 'pnpm install',
+      bodyAdvice:
+        'The project sandbox would block this command:\n' +
+        '• Installs or updates packages\n' +
+        '• Runs code written inside the command itself\n\n' +
+        warning,
+      bodyFooter: 'Allow running it once outside the sandbox?',
+    })
+    emit({
+      id: 'script',
+      title: 'Run outside sandbox?',
+      body: 'node scripts/check.mjs',
+      bodyAdvice:
+        'The project sandbox would block this command:\n' +
+        '• Runs a script file from the project\n\n' +
+        warning,
+      bodyFooter: 'Allow running it once outside the sandbox?',
+    })
+    fireWindow()
+
+    const advice = qsRequired(dialog, '.approval-advice')
+    assert.deepEqual(
+      [...advice.querySelectorAll('.approval-reasons li')].map((item) => item.textContent),
+      [
+        'Installs or updates packages',
+        'Runs code written inside the command itself',
+        'Runs a script file from the project',
+      ],
+    )
+    assert.equal(advice.textContent.split(warning).length, 2)
+    assert.deepEqual(bodies(), ['pnpm install', 'node scripts/check.mjs'])
+  })
+
   it('settles a reduced batch before a cancelled sibling can broaden approval', () => {
     emit({
       id: 'read-access',
       title: 'Read outside the project?',
       collapseDetails: true,
       approveOnceLabel: 'Approve this command',
+      approveLabel: 'Allow reads for this chat',
     })
     emit({ id: 'sibling' })
     fireWindow()
@@ -323,7 +365,7 @@ describe('approval dialog coalescing', () => {
     // The same primary-button position now grants the remaining request's
     // broader read-access scope. A click committed against "Approve all" must
     // not land on the changed action until the user has had time to see it.
-    assert.equal(approve().textContent, 'Approve')
+    assert.equal(approve().textContent, 'Allow reads for this chat')
     assert.equal(approve().disabled, true)
     approve().click()
     assert.deepEqual(responses, [])

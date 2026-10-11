@@ -51,8 +51,8 @@ describe('unattended container run (browser-hosted)', () => {
     await expect(dialog.$('.model-picker-filter')).toBeDisplayed()
     await browser.keys('Escape')
     const hint = await dialog.$('.container-run-model-hint').getText()
-    expect(hint).toContain('endpoint')
-    expect(hint).toContain('scoped to the run')
+    expect(hint).toContain('desktop calls')
+    expect(hint).toContain('keys and sign-in tokens stay on the desktop')
     await task.setValue('Fix the failing lint rule')
     await expect(dialog.$('.container-run-start')).toBeEnabled()
     await expect(dialog.$('.container-run-start')).toHaveText('Start unattended run')
@@ -106,7 +106,7 @@ describe('unattended container run (browser-hosted)', () => {
     await expect(status).toHaveAttribute('data-phase', 'finished')
     const summary = await dialog.$('.container-run-summary').getText()
     expect(summary).toContain('Finished')
-    expect(summary).toContain('api.anthropic.com:443')
+    expect(summary).toContain('inference.copse.internal:443')
     expect(summary).toContain('brokered egress')
     expect(summary).toContain('refs/copse/runs/run-demo-1')
     expect(summary).toContain('absent')
@@ -119,7 +119,9 @@ describe('unattended container run (browser-hosted)', () => {
     expect(summary).toMatch(/Agent\s*Copse/)
     // What the guest held to authenticate: a scoped key here, never a login
     // unless the user opted into carrying one in.
-    expect(summary).toMatch(/Credential\s*one API key, scoped to the run/)
+    expect(summary).toMatch(
+      /Credential\s*Provider authentication held on the desktop; no keys or tokens in the container/,
+    )
     expect(summary).toMatch(/Effects refused\s*0/)
     // Section headings render uppercase through CSS; compare the source text.
     await expect(dialog.$('.container-run-deferrals h4')).toHaveText(

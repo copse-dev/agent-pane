@@ -18,6 +18,7 @@ import {
   type DynamicModelSelector,
 } from '@copse/llm/dynamic-model.ts'
 import { pickDynamicModel } from '@copse/llm/dynamic-model-pick.ts'
+import { hostRoutedNamespace } from '@copse/llm/model-selection.ts'
 import type { FrontierPoint } from '@copse/llm/pareto-frontier.ts'
 import { FALLBACK_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { routableFrontierPoints, toRoutableModelId } from './best-value-model.ts'
@@ -34,6 +35,8 @@ export interface ResolveDynamicModelOptions {
   exclude?: readonly string[]
   /** Candidate pool, when the caller already loaded it (resolves several selectors). */
   pool?: readonly FrontierPoint[]
+  /** Only choose provider-callable routes for in-process workers. Pinned choices still pass through. */
+  callableOnly?: boolean
 }
 
 /** A role assignment may itself be dynamic; bound the indirection. */
@@ -89,7 +92,10 @@ export async function resolveDynamicModelId(
   // rule the app uses when it has no other information about which model to use.
   if (selector.kind === 'role') selector = { kind: 'best-value' }
 
-  const pool = opts.pool ?? (await routableFrontierPoints())
+  const candidates = opts.pool ?? (await routableFrontierPoints(opts))
+  const pool = opts.callableOnly
+    ? candidates.filter((point) => hostRoutedNamespace(toRoutableModelId(point)) === null)
+    : candidates
   const excluded = new Set(opts.exclude ?? [])
   const remaining = excluded.size
     ? pool.filter((point) => !excluded.has(toRoutableModelId(point)))

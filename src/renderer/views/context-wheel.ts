@@ -100,29 +100,40 @@ export function createContextWheel(): {
 
   let popoverActive = false
   let currentUsage: FooterUsageTooltipModel | null = null
-
-  // Whether the pointer or focus is on the wheel. A re-render hides the popover
-  // while it rebuilds, so this is what puts it back: without it, anything that
-  // updates the footer while the hover is open — including the re-read the hover
-  // itself triggers — would close it under the user.
-  let engaged = false
+  let hovered = false
+  let focused = false
 
   function showPopover(): void {
-    engaged = true
     if (popoverActive) popover.hidden = false
   }
   function hidePopover(): void {
-    engaged = false
     popover.hidden = true
   }
   /** Reopen after a re-render, if the pointer never left and there is still something to show. */
   function restoreEngagedPopover(): void {
-    if (engaged && popoverActive && !root.hidden) popover.hidden = false
+    if ((hovered || focused) && popoverActive && !root.hidden) popover.hidden = false
   }
-  root.addEventListener('mouseenter', showPopover)
-  root.addEventListener('mouseleave', hidePopover)
-  root.addEventListener('focusin', showPopover)
-  root.addEventListener('focusout', hidePopover)
+  // Pointer clicks must not pin a hover by taking focus. Keyboard focus still
+  // opens the details; interactions inside the popover keep their defaults.
+  root.addEventListener('mousedown', (event) => {
+    if (event.target instanceof Node && !popover.contains(event.target)) event.preventDefault()
+  })
+  root.addEventListener('mouseenter', () => {
+    hovered = true
+    showPopover()
+  })
+  root.addEventListener('mouseleave', () => {
+    hovered = false
+    if (!focused) hidePopover()
+  })
+  root.addEventListener('focusin', () => {
+    focused = true
+    showPopover()
+  })
+  root.addEventListener('focusout', () => {
+    focused = false
+    if (!hovered) hidePopover()
+  })
 
   function clearSegments(): void {
     while (segGroup.firstChild) segGroup.firstChild.remove()

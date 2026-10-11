@@ -60,9 +60,11 @@ export interface HeadlessAgentProfile {
   /**
    * Tools the run must never offer, unregistered after bootstrap and before
    * the agent sees a list — whatever the bootstrap's own probes decided. The
-   * container worker names the GitHub and CI tools here (decision A10).
+   * benchmark profiles use this to exercise otherwise unavailable paths.
    */
   readonly excludeTools?: readonly string[]
+  /** Exact supported tool surface; omitted uses the ordinary registry, empty offers no tools. */
+  readonly includeTools?: readonly string[]
   /** Explicit trust posture used by MCP, hooks, shell routing, and permission policy. */
   readonly workspaceTrusted: boolean
   /** Host interaction channels; omitted channels resolve deterministically without ambient UI. */
@@ -73,6 +75,8 @@ export interface HeadlessAgentProfile {
     readonly maxLlmCalls?: number
     /** False for benchmark/eval profiles whose limits are part of the result contract. */
     readonly adaptiveExtensions?: boolean
+    /** Token cap for the recovery stream after a reasoning circle is cut; the product cap when omitted. */
+    readonly reasoningRecoveryMaxTokens?: number
   }
 }
 
@@ -199,6 +203,12 @@ export async function runHeadlessAgent(
                       const registry = createRegistry()
                       registerSkillTools(registry)
                       if (profile.loadMcpServers) await loadMcpServers(registry)
+                      if (profile.includeTools !== undefined) {
+                        const allowed = new Set(profile.includeTools)
+                        for (const name of registry.names()) {
+                          if (!allowed.has(name)) registry.unregister(name)
+                        }
+                      }
                       for (const name of profile.excludeTools ?? []) {
                         if (registry.has(name)) registry.unregister(name)
                       }
@@ -287,6 +297,12 @@ export async function runHeadlessAgent(
                                   : {}),
                                 ...(profile.limits?.adaptiveExtensions !== undefined
                                   ? { adaptiveExtensions: profile.limits.adaptiveExtensions }
+                                  : {}),
+                                ...(profile.limits?.reasoningRecoveryMaxTokens !== undefined
+                                  ? {
+                                      reasoningRecoveryMaxTokens:
+                                        profile.limits.reasoningRecoveryMaxTokens,
+                                    }
                                   : {}),
                               },
                             )

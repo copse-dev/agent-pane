@@ -2,7 +2,7 @@ import { summarizePatch, type PatchFileSummary } from '../patch/apply-patch.ts'
 import type { ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
-import { THREAD_PROPOSAL_TOOL } from '@shared/threads/thread-proposal.ts'
+import { isThreadProposalCall } from '@shared/threads/thread-proposal.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import type { ToolRun, ToolRunStep } from './tool-runs.ts'
 
@@ -38,6 +38,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   browser_snapshot: { running: 'Taking page snapshot', done: 'Took page snapshot' },
   browser_screenshot: { running: 'Taking screenshot', done: 'Took screenshot' },
   image_gen: { running: 'Generating image', done: 'Generated image' },
+  classify_text: { running: 'Classifying text', done: 'Classified text' },
   browser_click: { running: 'Clicking element', done: 'Clicked element' },
   browser_type: { running: 'Typing text', done: 'Typed text' },
   browser_tabs: { running: 'Listing browser tabs', done: 'Listed browser tabs' },
@@ -547,7 +548,7 @@ export function buildToolCallDisplayItems(
     // A proposed thread is an offer addressed to the user, so it keeps a
     // top-level card for the same reason a subagent does: folded into
     // `Used 12 tools` it is an offer nobody is ever shown.
-    else if (tc.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(tc)) proposals.push(tc)
+    else if (isThreadProposalCall(tc) || isReviewerInputCall(tc)) proposals.push(tc)
     else regular.push(tc)
   }
 

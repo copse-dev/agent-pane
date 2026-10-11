@@ -391,6 +391,14 @@ dialog.activity-panel-overlay {
      rather than running under it. */
   overflow-y: auto;
 }
+/* The portrait chrome lifts the composer by the mode strip beneath it, and the
+   conversation reserves the same extra room (input-bar.css); without it the
+   caption and the card's foot ran under the composer. */
+#app.is-portrait-chrome .activity-home {
+  padding-bottom: calc(
+    var(--chat-composer-height) + var(--chrome-action-band-height) + var(--spacing-md)
+  );
+}
 /* display above would otherwise beat the UA's [hidden] rule. */
 .activity-home[data-idle='true'],
 .activity-home[hidden] {
@@ -476,6 +484,13 @@ dialog.activity-panel-overlay {
 .activity-strip-need {
   color: var(--text-primary);
   font-weight: 600;
+}
+
+/* With every group folded there is no row to show, so the detail is hidden: the
+   list takes the card rather than leaving a blank half beside it. */
+.activity-panel-body:has(> .activity-detail[hidden]),
+.activity-home .activity-panel-body:has(> .activity-detail[hidden]) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* The card: list and detail. */
@@ -699,4 +714,44 @@ dialog.activity-panel-overlay {
       position: static;
     }
   }
+}
+
+.activity-automation-notice {
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
+.activity-automation-notice[hidden] {
+  display: none;
+}
+.activity-issue {
+  color: var(--warning);
+}
+.activity-row[data-state='failed'] .activity-issue {
+  color: var(--danger);
+}
+.activity-issue-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning) 8%, var(--bg-base));
+}
+.activity-issue-detail p {
+  margin: 0;
+  line-height: var(--line-height-base);
+}
+.activity-issue-title {
+  font-weight: 600;
+}
+.activity-issue-message,
+.activity-issue-remedy {
+  color: var(--text-secondary);
 }

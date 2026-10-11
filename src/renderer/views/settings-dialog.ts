@@ -366,6 +366,19 @@ async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<
   }
 }
 
+/**
+ * Show a scannable QR for Mobile Companion's current URL inline in Settings,
+ * next to the native "Set up or manage…" flow. The server generates the QR
+ * (via `qrcode`) from the same URL already shown as text, so this adds no new
+ * trust claim — it only saves typing the address into the phone's browser.
+ */
+async function mountMobileCompanionQr(overlay: HTMLElement, api: ApiClient): Promise<void> {
+  const status = await api.mobile.status()
+  qsRequired(overlay, '#mobile-companion-qr-image').innerHTML = status.qrSvg ?? ''
+  qsRequired(overlay, '#mobile-companion-qr-url').textContent = status.url ?? ''
+  qsRequired(overlay, '#mobile-companion-qr').hidden = !status.url || !status.qrSvg
+}
+
 /** Parse a `number`-kind field's form value, clamping to a non-negative integer. */
 function parseNonNegativeInt(value: string, fallback: number): number {
   const n = Number.parseInt(value, 10)
@@ -1554,6 +1567,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   Set up or manage…
                 </button>
               </div>
+              <div id="mobile-companion-qr" class="mobile-companion-qr" hidden>
+                <div id="mobile-companion-qr-image" class="mobile-companion-qr-image" aria-hidden="true"></div>
+                <div class="mobile-companion-qr-text">
+                  <p class="field-hint">Scan with your phone's camera to open Copse.</p>
+                  <code id="mobile-companion-qr-url" class="mobile-companion-qr-url"></code>
+                </div>
+              </div>
             </fieldset>
 
             <fieldset>
@@ -1587,11 +1607,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <legend>Concise threads</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="conciseThreadsEnabled" />
-                Show only the results of turns from highly capable models
+                Hide tool details and reasoning from highly capable models
               </label>
               <p class="field-hint">
                 For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning, and the
                 tool errors the model recovers from stay hidden; while it works, you see what it
                 is doing now. Other models always show the full thread.
               </p>
@@ -1615,16 +1635,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="containerRunsEnabled" />
-                Let a thread run unattended inside a disposable Docker container
+                Let a thread run unattended inside a disposable container
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
                 snapshot of the thread's checkout with no prompts and brings its commits back for
-                you to apply. Its network reaches only its model's origin, plus, when the run
-                installs dependencies (on by default, per run), the npm registry, GitHub and
-                Electron's download hosts. Needs Docker; the first run builds the worker image. A
-                run carries one credential: the model's API key, or, if you opt in per run, your
-                Codex or Gemini sign-in copied into the container.
+                you to apply. Built-in models infer on the desktop; their keys and sign-in tokens stay there. When the run
+                installs dependencies (on by default, per run), it can reach the npm registry, GitHub and
+                Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
+                External coding agents run in the container with their selected API key, or, if you opt in
+                per run, your Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 
@@ -3676,6 +3696,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     input.dataset['pluginId'] = pluginId
     input.dataset['settingKey'] = field.id
 
+    // What an emptied number field reverts to: the last value it persisted.
+    let lastNumberValue = input.value
     // Persist on change so the manifest schema is the source of truth — no
     // Save-button plumbing needed, mirroring the MCP per-server toggle.
     input.addEventListener('change', () => {
@@ -3686,6 +3708,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         }
         value = input.checked
       } else if (field.kind === 'number') {
+        // An emptied number field is not 0 (`Number('')`): put the stored value back.
+        if (input.value.trim() === '' || !Number.isFinite(Number(input.value))) {
+          input.value = lastNumberValue
+          return
+        }
+        lastNumberValue = input.value
         value = Number(input.value)
       }
       void api.plugins.setSetting(pluginId, field.id, value).catch(() => {
@@ -4711,6 +4739,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   overlay.addEventListener('settings-open', () => {
+    void mountMobileCompanionQr(overlay, api).catch((error: unknown) => {
+      qsRequired(overlay, '#mobile-companion-qr').hidden = true
+      console.error('[settings] Could not load Mobile Companion status:', error)
+    })
     appearanceBaseline = currentAppearance()
     appearanceCommitted = false
     resetDirtyState()
@@ -4965,7 +4997,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : DEFAULT_THEME_PREFERENCE
       // `theme` is the concrete value panes render; `system` resolves against the OS.
       const theme = resolveTheme(themePreference)
-      const fontSize = parseInt(formDataString(data, 'fontSize'), 10)
+      // An emptied field is not a size; keep the current one rather than send NaN.
+      const fontSizeRaw = parseInt(formDataString(data, 'fontSize'), 10)
+      const fontSize = Number.isFinite(fontSizeRaw) ? fontSizeRaw : store.getState().fontSize
       const uiScaleField = data.get('uiScale')
       const uiScaleRaw = typeof uiScaleField === 'string' ? parseFloat(uiScaleField) : Number.NaN
       const uiScale = Number.isFinite(uiScaleRaw)

@@ -21,6 +21,7 @@ const LEGACY_MCP_GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
 const EMPTY_OVERRIDES: Record<string, ToolPermissionPolicy> = {}
 
 const ALWAYS_ASK_TOOLS = new Set([
+  'classify_text',
   'browser_navigate',
   'fetch_url',
   'parallel_search',
@@ -29,6 +30,7 @@ const ALWAYS_ASK_TOOLS = new Set([
   'run_shell',
   'web_search',
   'gh_pr_approve',
+  'gh_push',
   'gh_pr_create',
   'gh_pr_enable_auto_merge',
   'gh_pr_mark_ready',
@@ -42,6 +44,7 @@ const UNCONDITIONALLY_ASK_TOOLS = new Map<string, string>([
     'Worktree preparation must show its exact install and setup plan for every invocation.',
   ],
   ['gh_pr_approve', 'This action changes pull request state and must be approved each time.'],
+  ['gh_push', 'Pushing a branch changes remote state and must be approved each time.'],
   ['gh_pr_create', 'Creating a pull request changes remote state and must be approved each time.'],
   [
     'gh_pr_enable_auto_merge',

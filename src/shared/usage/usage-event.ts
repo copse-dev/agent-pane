@@ -17,7 +17,7 @@ export const USAGE_EVENTS_MIGRATED_FILE = 'migrated.jsonl'
 /** Where the ledger lived before it had its own files; read once to migrate it. */
 export const LEGACY_USAGE_EVENTS_STORAGE_KEY = 'usageEvents'
 
-export type UsageSource = 'agent' | 'small-tasks' | 'safety-classifier' | 'advisor'
+export type UsageSource = 'agent' | 'small-tasks' | 'safety-classifier' | 'advisor' | 'classifier'
 
 export interface UsageEvent extends ModelUsage {
   at: number
@@ -37,6 +37,13 @@ export interface UsageEvent extends ModelUsage {
    * consecutive calls explains a cache miss Copse's request bytes do not.
    */
   hostingProvider?: string
+  /**
+   * The saved classifier connection that served a `classifier` call (its label
+   * when the call was made). Classifier tokens are not chat-model tokens, so
+   * aggregation groups them by this and `model` instead of mixing them into the
+   * cloud/local model tables.
+   */
+  provider?: string
 }
 
 export interface UsageRecordInput extends ModelUsage {
@@ -50,4 +57,5 @@ export interface UsageRecordInput extends ModelUsage {
   requestedServiceTier?: ServiceTier
   responseServiceTier?: ServiceTier
   hostingProvider?: string
+  provider?: string
 }

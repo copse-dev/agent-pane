@@ -212,23 +212,58 @@ export async function inspectThreadCheckoutRoot(
   )
 }
 
+/**
+ * Whether anything for this thread can still write to its checkout. A detached
+ * checkout is repaired only once this is false: Git recovery run under a live
+ * agent turn or background task would race its own commands.
+ */
+export type ThreadCheckoutBusy = (projectId: string, threadId: string) => boolean
+
 /** Whether the thread's isolated checkout is detached; shared and retired checkouts report attached. */
 export async function inspectThreadCheckoutAttachment(
   projectId: string,
   threadId: string,
+  isBusy: ThreadCheckoutBusy,
 ): Promise<ThreadWorktreeAttachment> {
   const input = await activeThreadWorktreeInput(projectId, threadId)
-  return input ? inspectThreadWorktreeAttachment(input) : { state: 'attached' }
+  if (!input) return { state: 'attached' }
+  const attachment = await inspectThreadWorktreeAttachment(input)
+  return attachment.state === 'detached'
+    ? { ...attachment, agentBusy: isBusy(projectId, threadId) }
+    : attachment
 }
 
 /** Reattach the thread's detached isolated checkout to its recorded branch. */
 export async function reattachThreadCheckout(
   projectId: string,
   threadId: string,
+  isBusy: ThreadCheckoutBusy,
 ): Promise<ThreadWorktreeReattachResult> {
+  if (isBusy(projectId, threadId)) {
+    throw new Error(
+      'The agent is still working in this checkout. Wait for it to finish, then reattach.',
+    )
+  }
   const input = await activeThreadWorktreeInput(projectId, threadId)
   if (!input) throw new Error('Only an active thread worktree can be reattached')
   return reattachThreadWorktree(input)
+}
+
+/**
+ * The (project id, persisted root) pairs thread contexts have been resolved
+ * against in this process. Resolution requires the project to be in the
+ * persisted list at that root, so a pair outlives the user removing or
+ * relocating the project while one of its turns is still running.
+ */
+const resolvedProjectRoots = new Map<string, Set<string>>()
+
+/**
+ * Whether a thread context was resolved for `projectId` at `root` from the
+ * persisted project list in this process — true for a real project even after
+ * its removal or relocation, never for a headless run's synthesised id.
+ */
+export function wasThreadContextResolvedAt(projectId: string, root: string): boolean {
+  return resolvedProjectRoots.get(projectId)?.has(root) === true
 }
 
 async function resolveThreadExecutionContextUncached(
@@ -238,6 +273,9 @@ async function resolveThreadExecutionContextUncached(
 ): Promise<ThreadExecutionContext> {
   const projectRoot = dependencies.getProjectRoot(projectId)
   if (!projectRoot) throw new Error(`Cannot resolve root for project "${projectId}"`)
+  const resolvedRoots = resolvedProjectRoots.get(projectId) ?? new Set<string>()
+  resolvedRoots.add(projectRoot)
+  resolvedProjectRoots.set(projectId, resolvedRoots)
 
   const threadMeta = await dependencies.getThreadMeta(projectId, threadId)
   if (threadMeta == null) {

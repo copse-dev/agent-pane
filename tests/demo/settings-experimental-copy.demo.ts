@@ -28,6 +28,15 @@ describe('browser-hosted Experimental settings copy', () => {
     assert.match(hint, /must stay awake/)
     assert.doesNotMatch(hint, /\bsecure(?:ly)?\b/i)
 
+    // The demo fixture reports Mobile Companion as enabled and running, so the
+    // pairing QR — a scannable copy of the same URL already shown as text —
+    // renders inline rather than requiring a trip through the native "Set up
+    // or manage…" dialog.
+    const qr = $('#mobile-companion-qr')
+    await expect(qr).toBeDisplayed()
+    await expect(qr.$('#mobile-companion-qr-image svg')).toExist()
+    await expect(qr.$('#mobile-companion-qr-url')).toHaveText('https://192.168.1.42:42773')
+
     await fieldset.scrollIntoView()
     await saveElementScreenshot(MOBILE_FIELDSET, 'settings-mobile-companion.png')
   })
@@ -55,6 +64,7 @@ describe('browser-hosted Experimental settings copy', () => {
     const hint = await fieldset.$('.field-hint').getText()
     assert.match(hint, /above 50 on the Artificial Analysis Intelligence Index/)
     assert.match(hint, /Other models always show the full thread/)
+    assert.match(hint, /keeps all assistant messages and screenshots visible/)
 
     await saveElementScreenshot(CONCISE_FIELDSET, 'settings-experimental-concise-threads.png')
   })

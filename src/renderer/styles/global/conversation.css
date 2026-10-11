@@ -62,25 +62,30 @@
 .transcript-selection-quote {
   position: fixed;
   z-index: 999;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
   width: min(360px, calc(100vw - 24px));
+  min-height: 44px;
+  padding: 6px 7px 6px 13px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
   color: var(--text-primary);
   box-shadow: var(--shadow-md);
-  overflow: hidden;
 }
 .transcript-selection-quote[hidden] {
   display: none;
 }
 .transcript-selection-reply {
   display: block;
-  width: 100%;
-  min-height: 76px;
+  flex: 1;
+  min-width: 0;
+  min-height: 26px;
   max-height: 200px;
-  padding: 14px 16px 8px;
+  padding: 1px 0;
   border: 0;
-  border-radius: 0;
   background: transparent;
   color: var(--text-primary);
   font: inherit;
@@ -99,9 +104,7 @@
 }
 .transcript-selection-actions {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 4px 10px 10px;
+  align-items: flex-end;
 }
 .transcript-selection-actions button {
   display: inline-flex;
@@ -126,7 +129,8 @@
   cursor: default;
 }
 .transcript-selection-status {
-  padding: 0 16px 12px;
+  flex-basis: 100%;
+  padding: 0 6px 4px;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
 }
@@ -452,7 +456,7 @@
   flex-shrink: 0;
 }
 /* Concise thread view (views/concise-thread.ts): a capable model's bubbles
-   show only what its work produced. Tool cards — and with them the tool errors
+   keep assistant text and produced output. Tool cards — and with them the tool errors
    the model recovered from — and reasoning trails stay out of the transcript;
    the activity row carries the live state. Cards that ask the user stay. */
 .msg-concise > .tool-card:not(.thread-proposal, .reviewer-input-card),
@@ -460,24 +464,16 @@
 .msg-concise .acp-terminal-reference {
   display: none;
 }
-/* A bubble carrying tool calls is process: its text narrates the steps, so
-   only its produced output (screenshots, evidence, canvas previews) remains.
-   That holds while a tool runs and once the turn moved on to a later bubble;
-   the turn's last bubble stays in full when it finished, even with audit calls. */
-:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant))
-  > .message-body
-  > :not(.message-visual-evidence, .message-canvas-previews) {
-  display: none;
-}
-/* With no produced output at all, the bubble takes no room. (Selectors here
-   must not nest :has(): that is invalid CSS and drops the whole rule.) */
-:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant)):not(
+/* Collapse only bubbles with no user-facing content. Tool presence and later
+   assistant messages must never hide prose, including completed audit-bearing
+   answers in earlier turns. Inspect the live DOM so streaming text reveals an
+   initially empty tool-only bubble as soon as it arrives. */
+.msg-concise:not(
   :has(
     > .tool-result-content > :not([hidden], .acp-terminal-reference),
     > .thread-proposal,
     > .reviewer-input-card,
-    > .message-body > .message-visual-evidence,
-    > .message-body > .message-canvas-previews
+    > .message-body > :not(.message-reasoning, .message-text:empty)
   )
 ) {
   display: none;
@@ -658,8 +654,30 @@
   opacity: 1;
 }
 .message-body:hover:has(.code-block-shell:hover) .msg-copy,
-.message-body:hover:has(.code-block-shell:focus-within) .msg-copy {
+.message-body:hover:has(.code-block-shell:focus-within) .msg-copy,
+.message-body:hover:has(.code-block-shell:hover) .msg-reply-actions .msg-action,
+.message-body:hover:has(.code-block-shell:focus-within) .msg-reply-actions .msg-action {
   opacity: 0;
+}
+/* A reply's actions share Copy's top-right corner, so none of them covers the
+   reply's last line (where a drag that selects text ends). */
+.msg-reply-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  gap: var(--spacing-xs);
+}
+.msg-reply-actions .msg-copy {
+  position: static;
+}
+.msg-reply-actions .msg-action {
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.message-body:hover .msg-reply-actions .msg-action,
+.msg-reply-actions .msg-action:focus-visible {
+  opacity: 1;
 }
 /* Per-prompt actions (fork the conversation from here / resend the prompt).
    Mirrors .msg-copy's hover affordance, anchored to the bubble's bottom-right
@@ -1672,4 +1690,29 @@ span.acp-resource-title {
   .canvas-inline-placeholder-icon {
     animation: none;
   }
+}
+/* Chip under a message that has side chats branched from it (prototype #3538). */
+.msg-side-chat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 1px 8px;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font: inherit;
+  font-size: var(--font-size-2xs);
+  cursor: pointer;
+}
+.msg-side-chat-chip:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.msg-side-chat-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
 }

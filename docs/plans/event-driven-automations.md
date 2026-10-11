@@ -5,8 +5,41 @@ Status: **Partially implemented.** Slice A's durable admission/recovery inbox is
 A first branch-specific GitHub Actions adapter now installs it at app startup and
 adds saved branch triggers to the shared Automations editor. It polls while Copse is
 open and creates fresh tasks for newly completed failures on the branch's current
-head. PR-specific check filters, delivery history, and the remaining slice B
-controls are still proposals.
+head. PR-scoped CI with workflow filters, pull-request and issue-label triggers, and
+delivery history were added on 2026-10-07 (see the status update below).
+
+## Status update (2026-10-07)
+
+Slice B's remaining controls and slice C's first two adapters are implemented, all through the
+existing inbox and one saved-definition store (older builds carry the new rows through untouched
+because the store already preserves rows it cannot read):
+
+| Trigger (`trigger.kind`) | Filters                                                                     | Delivery identity                                 | Freshness rule before a run starts               |
+| ------------------------ | --------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| `github-ci-failed`       | branch **or** pull request number; optional workflow-name list (max 10)     | workflow run id + attempt                         | current head SHA of the branch / PR is unchanged |
+| `github-pr-changed`      | base branch; `ready-for-review` or `new-commits`                            | `pr:<n>:<head12>:<ready or commits>`              | PR still open, not draft, same head SHA          |
+| `github-issue-labeled`   | label (restricted alphabet: it is interpolated into a `gh --jq` expression) | `evt:<issue-event id>` (re-labelling = new event) | issue still open and still carries the label     |
+
+- Saving baselines what already exists, so enabling a trigger never replays history.
+- **Delivery history** (`history()`; manager → "Recent deliveries"): the last deliveries with an
+  outcome — started (with a link to the task), waiting (a limit holds it; rechecked each minute),
+  filtered out (with the reason, e.g. "Check “lint” is not one of the selected checks"), or held
+  (fenced: definition changed, deleted, plugin disabled, superseded). Only _failed CI runs_, new
+  PR heads and labelled-issue events are admitted, so the receipts store is bounded by events a
+  user could plausibly want explained; there is still no automatic receipt expiry (slice A's
+  note stands).
+- Per-definition `lastProblem` records a failed poll (rate limit, auth, repository changed) and a
+  run that could not start; a successful poll clears the former.
+- One adapter now serves several (source, event type) routes (`additionalRoutes`); the CI route
+  identity is unchanged so existing receipts and bindings stay valid.
+
+Still open: _local task completed_ adapter; selected-check filters use **workflow names** from
+the workflow-runs API (job-level checks need the check-runs API); no cost/token allowance per
+definition (only the 3-runs-per-24-hours cap, the one-active-run rule and the worktree cap); no
+protection against a PR automation re-triggering itself beyond that daily cap (the `new-commits`
+trigger does not know which commits an automation pushed); webhooks; pending-delivery coalescing
+to "newest only" (waiting deliveries are rechecked individually, so a burst of pushes queues one
+delivery per head, each of which goes stale-checked and is dropped if superseded).
 
 Extends [Project automations](automations.md) and the authenticated-trigger phase of
 [Background supervisor](background-supervisor.md#p6--campaigns--authenticated-trigger-adapters).

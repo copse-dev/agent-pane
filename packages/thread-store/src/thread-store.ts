@@ -21,6 +21,7 @@ import type {
   Thread,
   ThreadCatalogEntry,
   ThreadCatalogHit,
+  ThreadLink,
 } from './thread-types.ts'
 import { sortThreadsNewestFirst } from './thread-sort.ts'
 import { stripToolResultImages } from '@copse/llm/tool-result-images.ts'
@@ -66,6 +67,12 @@ import {
   githubRepoKey,
 } from './github-pr-url.ts'
 import { collectThreadPrRefs } from './thread-pr-status.ts'
+import {
+  backlinksFor,
+  extractThreadLinks,
+  mergeThreadLinks,
+  type ThreadBacklink,
+} from './thread-links.ts'
 import { isRecord, parseJsonUnknown } from '@copse/std/unknown-value.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
@@ -123,6 +130,12 @@ const AGENT_PR_INDEX_FILE = 'agent-pr-index-v2.jsonl'
 const STREAM_STATS_FILE = 'stream-stats.jsonl'
 const REASONING_CHECKPOINTS_FILE = 'reasoning-checkpoints.jsonl'
 const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
+/**
+ * Subdirectories of `blobs/` written outside the spine: user-attached media
+ * ({@link threadMediaDir}) and extracted archives ({@link threadArchivesDir}).
+ * Their files are never spine refs, so {@link pruneStaleFiles} leaves them alone.
+ */
+const UNREFERENCED_BLOB_PREFIXES = ['blobs/media/', 'blobs/archives/']
 /** Directories a spine ref may point into (plan artifacts are refs but never pruned). */
 const REF_DIRS = [...CONTENT_DIRS, 'plans']
 
@@ -235,13 +248,13 @@ async function writeStoreFileAsync(path: string, data: string, mode?: number): P
 function writeFileEnsuringDir(fullPath: string, contents: string): void {
   assertStorePath(fullPath)
   mkdirSync(dirname(fullPath), { recursive: true })
-  writeStoreFileSync(fullPath, contents)
+  atomicWriteFile(fullPath, contents)
 }
 
 async function writeFileEnsuringDirAsync(fullPath: string, contents: string): Promise<void> {
   assertStorePath(fullPath)
   await fsPromises.mkdir(dirname(fullPath), { recursive: true })
-  await writeStoreFileAsync(fullPath, contents)
+  await atomicWriteFileAsync(fullPath, contents)
 }
 
 /**
@@ -276,10 +289,15 @@ async function appendJsonlLine(path: string, line: string): Promise<void> {
 function atomicWriteFile(path: string, data: string, mode?: number): void {
   assertStorePath(path)
   const tmp = `${path}.copse-${String(process.pid)}.tmp`
-  if (mode === undefined) writeStoreFileSync(tmp, data)
-  else writeStoreFileSync(tmp, data, mode)
-  markIndexSourceWrite(path)
-  renameSync(tmp, path)
+  try {
+    if (mode === undefined) writeStoreFileSync(tmp, data)
+    else writeStoreFileSync(tmp, data, mode)
+    markIndexSourceWrite(path)
+    renameSync(tmp, path)
+  } catch (error) {
+    rmSync(tmp, { force: true })
+    throw error
+  }
 }
 
 /** Async atomic replace with an operation-unique temp path, safe across yielded writes. */
@@ -419,7 +437,7 @@ async function knownMessageIdsFor(dir: string): Promise<Set<string>> {
   if (raw !== '' && !raw.endsWith('\n')) {
     // Normalize a legacy file with no trailing newline before switching to
     // true appends below, which assume one is already there.
-    await writeStoreFileAsync(eventsPath, `${raw}\n`)
+    await atomicWriteFileAsync(eventsPath, `${raw}\n`)
   }
   const ids = new Set<string>()
   for (const entry of parseSpineEntries(raw)) {
@@ -458,9 +476,9 @@ function writeThread(projectId: string, thread: Thread): void {
   for (const target of targets) writeFileEnsuringDir(target.path, target.contents)
   const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
   const { body, preservedRefs } = rebuildSpinePreservingNonMessageLines(existingRaw, spine)
-  writeStoreFileSync(join(dir, EVENTS_FILE), body)
+  atomicWriteFile(join(dir, EVENTS_FILE), body)
   const previous = readMeta(dir)
-  writeStoreFileSync(
+  atomicWriteFile(
     join(dir, META_FILE),
     `${JSON.stringify({
       ...metaOf(thread),
@@ -479,7 +497,7 @@ function pruneStaleFiles(dir: string, files: FileToWrite[], preservedRefs: strin
     const root = join(dir, contentDir)
     if (!existsSync(root)) continue
     for (const rel of listFilesRecursive(root, dir)) {
-      if (!keep.has(rel)) {
+      if (!keep.has(rel) && !UNREFERENCED_BLOB_PREFIXES.some((prefix) => rel.startsWith(prefix))) {
         try {
           unlinkSync(join(dir, rel))
         } catch {
@@ -766,15 +784,25 @@ async function mergePrRefsIntoMetaUnqueued(
   projectId: string,
   threadId: string,
   found: readonly GithubPrRef[],
+  foundLinks: readonly ThreadLink[] = [],
 ): Promise<GithubPrRef[] | null> {
-  if (found.length === 0) return null
+  if (found.length === 0 && foundLinks.length === 0) return null
   const path = join(threadDir(projectId, threadId), META_FILE)
   const meta = parseMeta(await readOrNull(path))
   if (meta === null) return null
   const { refs, added } = mergeGithubPrRefs(meta.prRefs ?? [], found)
-  if (!added) return null
-  await atomicWriteFileAsync(path, JSON.stringify({ ...meta, prRefs: refs }, null, 2))
-  return refs
+  // Links ride the same read-merge-write: one meta write per message, not two.
+  const { links, added: linksAdded } = mergeThreadLinks(meta.links ?? [], foundLinks)
+  if (!added && !linksAdded) return null
+  await atomicWriteFileAsync(
+    path,
+    JSON.stringify(
+      { ...meta, ...(added ? { prRefs: refs } : {}), ...(linksAdded ? { links } : {}) },
+      null,
+      2,
+    ),
+  )
+  return added ? refs : null
 }
 
 /**
@@ -798,13 +826,30 @@ export function recordThreadPrRefs(
   return runStoreWrite(projectId, () => mergePrRefsIntoMetaUnqueued(projectId, threadId, found))
 }
 
+/**
+ * Recorded links are append-only. A renderer patch carries the renderer's copy,
+ * which can lag a link the main process just recorded, so union rather than replace.
+ */
+function mergedLinksField(
+  current: ThreadMeta,
+  patch: Partial<ThreadMeta>,
+): { links?: ThreadLink[] } {
+  if (current.links === undefined && patch.links === undefined) return {}
+  return { links: mergeThreadLinks(current.links ?? [], patch.links ?? []).links }
+}
+
 async function mergePrRefsIntoMeta(
   projectId: string,
   threadId: string,
   message: Message,
 ): Promise<void> {
   try {
-    await mergePrRefsIntoMetaUnqueued(projectId, threadId, extractGithubPrUrls(message.content))
+    await mergePrRefsIntoMetaUnqueued(
+      projectId,
+      threadId,
+      extractGithubPrUrls(message.content),
+      extractThreadLinks(message.content),
+    )
   } catch {
     // Diagnostic metadata; never worth failing the write it rides along with.
   }
@@ -1085,7 +1130,7 @@ function readCatalog(projectId: string): Map<string, CatalogEntry> {
 function writeCatalog(projectId: string, entries: Map<string, CatalogEntry>): void {
   const sorted = [...entries.values()].sort((a, b) => b.updatedAt - a.updatedAt)
   mkdirSync(projectDir(projectId), { recursive: true })
-  writeStoreFileSync(catalogPath(projectId), sorted.map((e) => JSON.stringify(e)).join('\n') + '\n')
+  atomicWriteFile(catalogPath(projectId), sorted.map((e) => JSON.stringify(e)).join('\n') + '\n')
 }
 
 function upsertCatalogEntry(projectId: string, thread: Thread): void {
@@ -1237,7 +1282,7 @@ function readAgentPrIndex(projectId: string): Map<string, RemoteAgentPrIndexEntr
 function writeAgentPrIndex(projectId: string, entries: Map<string, RemoteAgentPrIndexEntry>): void {
   mkdirSync(projectDir(projectId), { recursive: true })
   const body = [...entries.values()].map((e) => JSON.stringify(e)).join('\n')
-  writeStoreFileSync(agentPrIndexPath(projectId), body ? `${body}\n` : '')
+  atomicWriteFile(agentPrIndexPath(projectId), body ? `${body}\n` : '')
 }
 
 /** Fold a link into an in-memory index map. No-op when the link has no PR yet. */
@@ -1528,6 +1573,24 @@ export function lookupThreadPrRelationships(
   )
 }
 
+/**
+ * Active threads that mention a URL or another thread. Complete only for threads
+ * whose links were recorded (on append); legacy transcripts are not scanned.
+ */
+export function lookupThreadBacklinks(
+  projectId: string,
+  kind: ThreadLink['kind'],
+  target: string,
+): Promise<ThreadBacklink[]> {
+  return runSerialized(queueKey(projectId), () =>
+    withThreadIndex(
+      projectId,
+      (index) => index.backlinks(kind, target),
+      async () => backlinksFor(await readProjectThreadMetas(projectId), kind, target),
+    ),
+  )
+}
+
 /** Direct source reader for diagnostics/rebuilds; deliberately bypasses the projection. */
 export function loadProjectThreadMetasFromFiles(
   projectId: string,
@@ -1682,6 +1745,33 @@ async function readProjectThreadMetasCached(
   return threads
 }
 
+/** Logical bytes retained in this thread's store; never follow links outside it. */
+export async function measureThreadStorage(
+  projectId: string,
+  threadId: string,
+): Promise<{ bytes: number; truncated: boolean }> {
+  const root = threadDir(projectId, threadId)
+  const pending = [root]
+  let bytes = 0
+  let visited = 0
+  while (pending.length > 0) {
+    const path = pending.pop()
+    if (path === undefined) break
+    if (++visited > 100_000) return { bytes, truncated: true }
+    try {
+      const stat = await fsPromises.lstat(path)
+      if (stat.isSymbolicLink()) continue
+      if (stat.isFile()) bytes += stat.size
+      else if (stat.isDirectory()) {
+        for (const name of await fsPromises.readdir(path)) pending.push(join(path, name))
+      }
+    } catch (error) {
+      if (!(isRecord(error) && error['code'] === 'ENOENT')) throw error
+    }
+  }
+  return { bytes, truncated: false }
+}
+
 /** A thread's on-disk metadata (`meta.json`), or null if missing/malformed. */
 export function getThreadMeta(projectId: string, threadId: string): Promise<ThreadMeta | null> {
   return runSerialized(queueKey(projectId), () => readMeta(threadDir(projectId, threadId)))
@@ -1710,7 +1800,7 @@ export function recordThreadAgentLink(
     // Only patch an existing thread; the renderer writes the initial meta.json.
     if (current === null) return
     const nextMeta: ThreadMeta = { ...current, remoteAgentLink: { ...link }, id: threadId }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
     const index = loadOrRebuildAgentPrIndex(projectId)
     let changed = removeThreadFromIndex(index, threadId)
     if (link.prUrl) {
@@ -1792,7 +1882,7 @@ export function appendImportedRemoteAgentRunResult(
         updatedAt: Math.max(latestMeta.updatedAt, updatedAt),
         id: threadId,
       }
-      writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
+      atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
       upsertCatalogEntry(projectId, { ...current, ...nextMeta, messages: current.messages })
       return existing
     }
@@ -1832,7 +1922,7 @@ export function appendImportedRemoteAgentRunResult(
       updatedAt: Math.max(latestMeta.updatedAt, input.message.createdAt),
       id: threadId,
     }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
     upsertCatalogEntry(projectId, {
       ...current,
       ...nextMeta,
@@ -1863,7 +1953,7 @@ export function attachThreadPrUrl(
     if (!prUrl) return
     const merged: RemoteAgentLink = { ...link, prUrl }
     const nextMeta: ThreadMeta = { ...current, remoteAgentLink: merged, id: threadId }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
     const index = loadOrRebuildAgentPrIndex(projectId)
     indexAgentLink(index, threadId, merged)
     writeAgentPrIndex(projectId, index)
@@ -2033,7 +2123,7 @@ async function appendMessageUnqueued(
     )
     if (existingIndex >= 0) entries[existingIndex] = { raw, line }
     else entries.push({ raw, line })
-    await writeStoreFileAsync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
+    await atomicWriteFileAsync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
   }
   // The sidebar's PR chip is derived from links in message text, which a
   // metadata-only load never reads. Derive it only after the spine commit, so
@@ -2203,7 +2293,7 @@ export function recordModelSelection(
     }
     const modelSelections = [...(current.modelSelections ?? []), selection]
     const next: ThreadMeta = { ...current, model: line.to, modelSelections, id: threadId }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(next)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(next)}\n`)
     refreshCatalogLine(projectId, threadId)
   })
 }
@@ -2240,8 +2330,9 @@ export function updateMeta(
       id: threadId,
       ...(current.prProductions ? { prProductions: current.prProductions } : {}),
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
+      ...mergedLinksField(current, patch),
     }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
     refreshCatalogLine(projectId, threadId)
   })
 }
@@ -2262,8 +2353,9 @@ export function updateMetaOrThrow(
       id: threadId,
       ...(current.prProductions ? { prProductions: current.prProductions } : {}),
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
+      ...mergedLinksField(current, patch),
     }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
     refreshCatalogLine(projectId, threadId)
   })
 }
@@ -2284,7 +2376,7 @@ export function clearThreadWorktree(projectId: string, threadId: string): Promis
     const current = readMeta(dir)
     if (current === null || current.worktree === undefined) return false
     const { worktree: _removed, ...rest } = current
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify({ ...rest, id: threadId })}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify({ ...rest, id: threadId })}\n`)
     refreshCatalogLine(projectId, threadId)
     return true
   })
@@ -2523,6 +2615,23 @@ export function recoverThreadHistoryMutation(projectId: string, threadId: string
  */
 export function threadBlobsDir(projectId: string, threadId: string): string {
   return join(threadDir(projectId, threadId), 'blobs')
+}
+
+/**
+ * Where the attachment stores keep media a user drops into a thread
+ * (`blobs/media/`). Files here are not spine refs; a whole-thread save keeps
+ * them, and they go away only with the thread directory.
+ */
+export function threadMediaDir(projectId: string, threadId: string): string {
+  return join(threadBlobsDir(projectId, threadId), 'media')
+}
+
+/**
+ * Where `read_archive` unpacks an attached archive (`blobs/archives/`). Like
+ * {@link threadMediaDir}, a whole-thread save keeps it.
+ */
+export function threadArchivesDir(projectId: string, threadId: string): string {
+  return join(threadBlobsDir(projectId, threadId), 'archives')
 }
 
 /**

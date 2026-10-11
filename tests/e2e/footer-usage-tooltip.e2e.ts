@@ -78,6 +78,16 @@ describe('footer context and usage hover', () => {
     await wheel.click()
     await $('#pane-projects').moveTo({ xOffset: 8, yOffset: 8 })
 
+    await saveAppScreenshot('footer-usage-tooltip-after-click.png')
+    await expect($('.context-wheel-popover')).not.toBeDisplayed()
+    expect(
+      await browser.execute(() => document.activeElement?.classList.contains('context-wheel')),
+    ).toBe(false)
+
+    // Pointer suppression must preserve the keyboard affordance.
+    await browser.execute(() => document.querySelector<HTMLElement>('.context-wheel')?.focus())
+    await expect($('.context-wheel-popover')).toBeDisplayed()
+    await browser.keys('Tab')
     await expect($('.context-wheel-popover')).not.toBeDisplayed()
   })
 })

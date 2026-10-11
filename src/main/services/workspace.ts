@@ -424,6 +424,21 @@ export function getProjectById(
   return project ?? null
 }
 
+/** Paths of persisted projects backed by a local checkout (no `sshHost`). */
+export function listLocalProjectRoots(): readonly string[] {
+  const projects = storageGet(PROJECTS_KEY)
+  if (!Array.isArray(projects)) return []
+
+  const roots: string[] = []
+  for (const project of projects) {
+    if (!isRecord(project)) continue
+    if (typeof project['sshHost'] === 'string') continue
+    const path = project['path']
+    if (typeof path === 'string' && path.length > 0) roots.push(path)
+  }
+  return roots
+}
+
 /** SSH host id (`sshWorkspaceHosts[].id`) for the active project, if any. */
 export function getActiveProjectSshHost(): string | undefined {
   const activeProjectId = storageGet(ACTIVE_PROJECT_KEY)

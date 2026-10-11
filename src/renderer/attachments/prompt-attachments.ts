@@ -43,6 +43,8 @@ export interface PromptAttachmentHandlers {
   quoteText(content: string, reply?: string): void
   /** Add the quote and reply to the current prompt and hand it to normal Send; false means no handoff. */
   sendQuotedReply?: (content: string, reply: string) => Promise<boolean>
+  /** Replace the composer text with `content` and submit it to the active thread; false means no handoff. */
+  sendMessage?: (content: string) => Promise<boolean>
   /** Move keyboard focus to the chat composer after a selection attachment. */
   focusComposer?: () => void
 }

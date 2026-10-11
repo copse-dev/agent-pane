@@ -213,6 +213,15 @@ describe('applyChunks', () => {
     assert.equal(apply('a\nb', ' a', '-b', '+B'), 'a\nB')
   })
 
+  it('keeps an insertion ahead of a replacement that starts on the same line', () => {
+    assert.equal(apply('a\nb\nc\n', '@@ a', '+x', '@@', '-b', '+B'), 'a\nx\nB\nc\n')
+  })
+
+  it('rewrites only the touched lines of a mixed-EOL file', () => {
+    assert.equal(apply('a\nb\nc\r\n', '-a', '+A'), 'A\nb\nc\r\n')
+    assert.equal(apply('a\r\nb\r\nc\n', '-a', '+A1', '+A2'), 'A1\r\nA2\r\nb\r\nc\n')
+  })
+
   it('tolerates a trailing blank line in the hunk that the file lacks', () => {
     assert.equal(apply('a\nb', ' a', '-b', '+B', ''), 'a\nB')
   })

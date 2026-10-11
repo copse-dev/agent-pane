@@ -33,6 +33,13 @@ function activeTerminalHelper() {
   return $('.terminals-tab-panel.is-active .xterm-helper-textarea')
 }
 
+async function composerIsFocused(): Promise<boolean> {
+  return browser.execute(() => {
+    const el = document.activeElement
+    return el instanceof HTMLElement && el.classList.contains('prompt-input')
+  })
+}
+
 async function waitForShellReady(label: string): Promise<void> {
   await browser.waitUntil(
     async () => {
@@ -135,17 +142,29 @@ describe('shared terminal command history across threads (#2433)', function () {
       `expected ${historyPath} to contain the marker written from thread A's shell, got:\n${historyOnDisk}`,
     )
 
+    // Simulate the user having been typing in the composer before switching
+    // threads; `.chat-row` is a plain (non-focusable) div, so a native click on
+    // it leaves focus exactly where it was unless app code moves it. Earlier
+    // code (`onScopeSwitch`/`setActiveTab` in terminals-pane.ts) unconditionally
+    // called `tab.term.focus()` on every thread switch while terminal mode was
+    // active, stealing focus from the composer the instant a thread's Shells
+    // tab was restored or spawned.
+    await $('.prompt-input').click()
+    await expect(composerIsFocused()).resolves.toBe(true)
+
     // Switch to thread B: it has no Shells tab yet, so the terminal pane
     // (already open from thread A) spawns a fresh PTY for it automatically
     // (`onScopeSwitch` in terminals-pane.ts) — a second, independent approval.
     const threadBRow = await $(`.chat-row[data-thread-id="${THREAD_B_ID}"]`)
     await threadBRow.click()
     await expect(threadBRow).toHaveElementClass('selected')
+    await expect(composerIsFocused()).resolves.toBe(true)
     await approveUnsandboxedTerminalIfPrompted()
 
     const shellB = await $('.terminals-tab-panel.is-active .terminal-container .xterm')
     await shellB.waitForExist({ timeout: 30_000 })
     await waitForShellReady('thread B')
+    await expect(composerIsFocused()).resolves.toBe(true)
 
     // Thread B's shell never typed a command of its own, so the one history
     // entry it loaded at startup from the shared HISTFILE is unambiguously what

@@ -516,7 +516,7 @@ export function classifyProviderAccessFailure(err: unknown): ProviderAccessFailu
 /** Map provider / local-model failures to user-facing chat text. */
 export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext): string {
   if (err instanceof ThreadWorktreeDetachedError) {
-    return `This thread's checkout is detached from its branch. Your files are preserved. Use the recovery button next to the branch name below the composer (**Reattach**, **Continue rebase**, or **Reset bisect**) to put it back on \`${err.branch}\`, then retry.`
+    return `This thread's checkout is detached from its branch. Your files are preserved. Once the agent has stopped, a recovery button appears next to the branch name below the composer (**Reattach**, **Continue rebase**, **Commit and continue**, or **Reset bisect**, depending on what Git left half-done). Use it to put the checkout back on \`${err.branch}\`, then retry. It is hidden while the agent or a background task is still running.`
   }
   if (err instanceof ThreadWorktreeOnBaseBranchError) {
     return `This thread's checkout is on its base branch \`${err.baseBranch}\` instead of its own branch, so Copse will not run in it: edits would land directly on \`${err.baseBranch}\`. Your files are preserved. In the checkout at \`${err.path}\`, run \`git checkout ${err.branch}\` to return to the thread branch (or \`git checkout -b <new-branch>\` to start a fresh one), then retry.`

@@ -16,12 +16,14 @@ import { nonEmptyStringOr } from './unknown-value.ts'
 // validates `remoteAgentLink.provider`; imported for the helpers below and
 // re-exported so remote-agent consumers keep their existing import path.
 import {
+  REMOTE_AGENT_PROVIDER_OPENAI,
   REMOTE_AGENT_PROVIDER_ANTHROPIC,
   REMOTE_AGENT_PROVIDER_CURSOR,
   isRemoteAgentProvider,
   type RemoteAgentProvider,
 } from '@copse/thread-store/remote-agent-provider.ts'
 export {
+  REMOTE_AGENT_PROVIDER_OPENAI,
   REMOTE_AGENT_PROVIDER_ANTHROPIC,
   REMOTE_AGENT_PROVIDER_CURSOR,
   REMOTE_AGENT_PROVIDERS,
@@ -51,6 +53,11 @@ export interface RemoteAgentModelOption {
 }
 
 export const REMOTE_AGENT_MODELS: readonly RemoteAgentModelOption[] = [
+  {
+    provider: REMOTE_AGENT_PROVIDER_OPENAI,
+    value: 'remote-agent:openai',
+    label: 'OpenAI Cloud Agent',
+  },
   {
     provider: REMOTE_AGENT_PROVIDER_CURSOR,
     value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_CURSOR}`,

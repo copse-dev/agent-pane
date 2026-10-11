@@ -26,7 +26,8 @@ export function formatReadOutsideProjectPromptParts(
     // A grant does widen what the agent can see, so the footer says what stays
     // off limits instead of leaving that to a separate warning.
     bodyFooter:
-      'Allow this for the rest of the thread? Writing, installing, and network access ' +
-      'still ask, and so do credential files (.env, ~/.ssh, ~/.aws).',
+      'Approving once runs only this command. “Allow reads for this chat” allows eligible reads of other paths outside the project too, for the rest of this chat. ' +
+      'It does not allow writing, installing, or network access, and credential ' +
+      'files (.env, ~/.ssh, ~/.aws) always ask again.',
   }
 }

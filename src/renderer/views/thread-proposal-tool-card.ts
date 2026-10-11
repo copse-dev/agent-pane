@@ -5,7 +5,7 @@ import {
   parseThreadProposal,
   threadProposalStatus,
   findThreadProposalDecision,
-  THREAD_PROPOSAL_TOOL,
+  isThreadProposalCall,
   type ThreadProposal,
 } from '@shared/threads/thread-proposal.ts'
 import {
@@ -30,9 +30,7 @@ import { createThreadProposalCard, type ThreadProposalCardState } from './thread
  * second copy of the offer being persisted anywhere.
  */
 
-export function isThreadProposalCall(tc: ToolCall): boolean {
-  return tc.name === THREAD_PROPOSAL_TOOL
-}
+export { isThreadProposalCall }
 
 function cardState(
   store: AppStore,

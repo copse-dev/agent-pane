@@ -88,7 +88,11 @@ export function modelMakerForSelection(value: string): ModelMaker | null {
   const selection = parseModelSelection(value)
   if (selection.namespace === 'auto' || selection.namespace === 'plugin-model') return null
   if (selection.namespace === 'remote-agent' && !selection.id) {
-    return selection.agent === 'anthropic' ? 'anthropic' : null
+    return selection.agent === 'anthropic'
+      ? 'anthropic'
+      : selection.agent === 'openai'
+        ? 'openai'
+        : null
   }
   if (selection.namespace === 'acp' && !selection.id) return makerFromAgent(selection.agent)
 

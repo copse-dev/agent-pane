@@ -1,3 +1,4 @@
+import { OpenAiCancellationError } from './remote/openai-agents-api.ts'
 import { runWithInlineCanvas } from './inline-canvas-context.ts'
 import { MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { promptRoutingContext, resolvePromptModel } from './providers/prompt-model-routing.ts'
@@ -19,8 +20,10 @@ import {
   DEFAULT_MAX_LLM_CALLS,
   isAgentRunTimeoutAbort,
 } from '@copse/agent/agent-loop-limits.ts'
+import { withClassifierToolOffer } from '../tools/classifier-tool.ts'
+import { configuredClassifierProfiles } from './classifiers/classifier-service.ts'
 import {
-  PRODUCT_REASONING_CHECKPOINT_POLICY,
+  productReasoningCheckpointPolicy,
   PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
 } from '@copse/agent/reasoning-checkpoint-policy.ts'
 import {
@@ -224,6 +227,7 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import { type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
+import { createOpenAiHostTools } from './remote/openai-host-tools.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
 import {
   offerAcpClaudeFallback,
@@ -443,6 +447,8 @@ function parentTools(
   // is gated the same way, on attached archives.
   tools = applyVideoToolAvailability(tools, threadVideos)
   tools = applyArchiveToolAvailability(tools, threadArchives)
+  // classify_text is offered once a classifier connection is saved.
+  tools = withClassifierToolOffer(tools, configuredClassifierProfiles())
   return tools
 }
 
@@ -753,6 +759,12 @@ export interface RunAgentOptions {
   maxLlmCalls?: number
   /** Disable adaptive budget grants when a host requires exact loop limits. */
   adaptiveExtensions?: boolean
+  /**
+   * Token cap for the one recovery stream after a reasoning circle is cut; the
+   * product default (`PRODUCT_REASONING_RECOVERY_MAX_TOKENS`) applies when omitted.
+   * Set only by an explicit host profile that needs more room.
+   */
+  reasoningRecoveryMaxTokens?: number
   /** Plugin-scoped setting resolver owned by an explicit host profile. */
   resolvePluginSetting?: (pluginId: string, key: string) => unknown
   /**
@@ -1526,12 +1538,28 @@ async function runAgentWithInlineCanvas(
       const controller = new AbortController()
       abortMap.set(threadId, controller)
       setActiveRunThread(threadId)
-      const runAbort = createAgentRunAbortScheduler(controller)
+      const runAbort = createAgentRunAbortScheduler(
+        controller,
+        new AgentRunDeadline(
+          AGENT_RUN_IDLE_TIMEOUT_MS,
+          AGENT_RUN_HARD_MAX_MS,
+          Date.now(),
+          Date.now,
+          { excludePausesFromHardMax: remoteSelection.provider === 'openai' },
+        ),
+      )
       runAbort.schedule()
+      if (remoteSelection.provider === 'openai') {
+        registerRunDeadline(threadId, runAbort.deadline)
+        beginHookRunRecording(threadId)
+      }
       try {
         const result = await runRemoteAgentFromSettings({
           threadId,
           provider: remoteSelection.provider,
+          ...(remoteSelection.provider === 'openai'
+            ? { hostTools: createOpenAiHostTools(registry, threadId) }
+            : {}),
           ...(remoteSelection.model ? { model: remoteSelection.model } : {}),
           userPrompt: outboundPrompt,
           priorMessages,
@@ -1553,7 +1581,9 @@ async function runAgentWithInlineCanvas(
         // Abort (Stop / Send now) is a clean interrupt — Cursor's adapter already
         // emits CANCELLED `done` when it handles the signal; if an abort still
         // escapes here, don't paint it as a provider error in the transcript.
-        if (controller.signal.aborted) {
+        // OpenAI cancellation/recovery failures still need a visible notice,
+        // even when Stop has already aborted the local stream.
+        if (controller.signal.aborted && !(err instanceof OpenAiCancellationError)) {
           const timedOut = isAgentRunTimeoutAbort(controller.signal)
           recordTurnFailure(controller.signal.reason, {
             source: timedOut ? 'host' : 'user',
@@ -1573,6 +1603,11 @@ async function runAgentWithInlineCanvas(
       } finally {
         // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
         fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+        if (remoteSelection.provider === 'openai') {
+          cancelApprovalsForThread(threadId)
+          clearRunDeadline(threadId, runAbort.deadline)
+          endHookRunRecording(threadId)
+        }
         runAbort.clear()
         clearActiveRunThread(threadId)
         abortMap.delete(threadId)
@@ -2339,7 +2374,9 @@ async function runAgentWithInlineCanvas(
                   ...(options?.adaptiveExtensions !== undefined
                     ? { adaptiveExtensions: options.adaptiveExtensions }
                     : {}),
-                  reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+                  reasoningCheckpointPolicy: productReasoningCheckpointPolicy(
+                    options?.reasoningRecoveryMaxTokens,
+                  ),
                   reasoningRunawayTextToleranceChars:
                     PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
                   runDeadline: runAbort.deadline,

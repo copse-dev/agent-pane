@@ -1,3 +1,5 @@
+import { OPENAI_AGENT_RETENTION_NOTICE } from '@shared/openai-cloud-agent.ts'
+import { CLOUD_MODELS } from '@copse/llm/model-catalog.ts'
 import { ACP_RETENTION_NOTICE } from '@shared/acp-retention.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
@@ -1153,4 +1155,41 @@ describe('ACP retention qualification', () => {
       assert.match(ACP_RETENTION_NOTICE.detail, /signed-in account and upstream model provider/)
     }
   })
+})
+
+describe('OpenAI cloud agent prototype picker', () => {
+  it('requires an API key independently of ChatGPT plan availability', async () => {
+    const none = await fetchModelOptions(mockApi(), '')
+    assert.ok(!none.some((option) => option.value.startsWith('remote-agent:openai')))
+    const options = await fetchModelOptions(mockApi({ available: { openai: true } }), '')
+    const cloud = options.find((option) => option.value === 'remote-agent:openai#gpt-6.1-sol')
+    assert.ok(cloud)
+    assert.equal(cloud.group, 'OpenAI Cloud Agent (prototype)')
+    assert.equal(cloud.retention, OPENAI_AGENT_RETENTION_NOTICE)
+    const rows = options.filter((option) => option.value.startsWith('remote-agent:openai#'))
+    assert.equal(rows[0]?.value, cloud.value)
+    assert.deepEqual(
+      new Set(rows.map((row) => row.value)),
+      new Set(
+        CLOUD_MODELS.filter(([, , provider]) => provider === 'openai').map(
+          ([id]) => `remote-agent:openai#${id}`,
+        ),
+      ),
+    )
+    assert.ok(
+      rows.every((row) => row.retention === OPENAI_AGENT_RETENTION_NOTICE && row.supportsImages),
+    )
+    assert.equal(cloud.supportsImages, true)
+  })
+})
+
+it('preserves OpenAI cloud current selections with retention and without duplicates', async () => {
+  for (const current of ['remote-agent:openai#gpt-6-astra', 'remote-agent:openai#custom-model']) {
+    for (const available of [true, false]) {
+      const rows = await fetchModelOptions(mockApi({ available: { openai: available } }), current)
+      const selected = rows.filter((row) => row.value === current)
+      assert.equal(selected.length, 1)
+      assert.equal(selected[0]?.retention, OPENAI_AGENT_RETENTION_NOTICE)
+    }
+  }
 })

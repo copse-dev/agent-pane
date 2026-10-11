@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createStore } from './store.ts'
 import {
   archiveThread,
+  restoreThread,
   createThread,
   deleteThread,
   openNewThread,
@@ -22,9 +23,16 @@ import {
   updateToolCall,
   applyPreparedThreadCheckout,
   setThreadTitle,
+  setMessageTurnOutcome,
+  clearContextSnapshot,
+  setQueuePaused,
+  markThreadRead,
+  setThreadStatus,
 } from './thread-helpers.ts'
 import type { AppStore } from './store.ts'
+import { buildSideChatThread } from '@copse/thread-store/side-chat.ts'
 import type { Thread } from '@shared/types'
+import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 
 describe('addMessage prompt provenance', () => {
@@ -839,7 +847,136 @@ describe('archiveThread', () => {
     archiveThread(store, first)
     assert.equal(getThreadById(store, first)?.archivedAt, stamped)
   })
+
+  describe('side chats', () => {
+    function withSideChat(store: AppStore, parentId: string): string {
+      const parent = getThreadById(store, parentId)
+      const anchor = parent?.messages[0]
+      assert.ok(parent && anchor)
+      const side = buildSideChatThread(parent, { anchorMessageId: anchor.id })
+      assert.ok(side)
+      store.setState({ threads: [side, ...store.getState().threads] })
+      return side.id
+    }
+
+    it('archives a thread together with its side chats', () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      const second = createThread(store)
+      addMessage(store, second, 'user', 'second')
+      const side = withSideChat(store, first)
+
+      archiveThread(store, first)
+
+      assert.equal(isThreadArchived(getThreadById(store, side) ?? failMissing()), true)
+      assert.equal(store.getState().activeThreadId, second)
+    })
+
+    it("leaves a running side chat out of its parent's archive", () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      createThread(store)
+      const side = withSideChat(store, first)
+      setThreadStatus(store, side, 'running')
+
+      archiveThread(store, first)
+
+      assert.equal(isThreadArchived(getThreadById(store, first) ?? failMissing()), true)
+      assert.equal(isThreadArchived(getThreadById(store, side) ?? failMissing()), false)
+    })
+
+    it('returns focus to the parent when the active side chat is archived, leaving the parent alone', () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      const second = createThread(store)
+      addMessage(store, second, 'user', 'second')
+      const side = withSideChat(store, first)
+      store.setState({ activeThreadId: side })
+
+      archiveThread(store, side)
+
+      assert.equal(store.getState().activeThreadId, first)
+      assert.equal(isThreadArchived(getThreadById(store, first) ?? failMissing()), false)
+      assert.equal(isThreadArchived(getThreadById(store, side) ?? failMissing()), true)
+    })
+
+    it('deleting a thread deletes its side chats, and a deleted side chat returns to its parent', () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      const second = createThread(store)
+      addMessage(store, second, 'user', 'second')
+      const side = withSideChat(store, first)
+      const sibling = withSideChat(store, first)
+      store.setState({ activeThreadId: side })
+
+      deleteThread(store, side)
+      assert.equal(getThreadById(store, side), undefined)
+      assert.equal(store.getState().activeThreadId, first)
+      assert.ok(getThreadById(store, sibling))
+
+      deleteThread(store, first)
+      assert.equal(getThreadById(store, first), undefined)
+      assert.equal(getThreadById(store, sibling), undefined)
+      assert.equal(store.getState().activeThreadId, second)
+    })
+
+    it('never prunes an empty side chat as a blank thread when switching away', () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      const second = createThread(store)
+      addMessage(store, second, 'user', 'second')
+      const side = withSideChat(store, first)
+      assert.equal(isBlankThread(getThreadById(store, side) ?? failMissing()), false)
+      store.setState({ activeThreadId: side })
+
+      switchThread(store, second)
+      normalizeBlankThreads(store)
+
+      assert.ok(getThreadById(store, side))
+    })
+
+    it('restores an archived side chat without touching its parent', () => {
+      const store = createStore()
+      const first = createThread(store)
+      addMessage(store, first, 'user', 'first')
+      const second = createThread(store)
+      addMessage(store, second, 'user', 'second')
+      const side = withSideChat(store, first)
+      archiveThread(store, side)
+      assert.equal(isThreadArchived(getThreadById(store, side) ?? failMissing()), true)
+
+      restoreThread(store, side)
+
+      const restored = getThreadById(store, side) ?? failMissing()
+      assert.equal(isThreadArchived(restored), false)
+      assert.equal('archivedAt' in restored, false)
+      assert.equal(restored.sideChat?.parentThreadId, first)
+    })
+
+    it('does not count side chats as visible threads when the last real thread is archived', () => {
+      const store = createStore()
+      const only = createThread(store)
+      addMessage(store, only, 'user', 'solo')
+      withSideChat(store, only)
+
+      archiveThread(store, only)
+
+      const active = getActiveThread(store)
+      assert.ok(active)
+      assert.equal(isBlankThread(active), true)
+      assert.equal(active.sideChat, undefined)
+    })
+  })
 })
+
+function failMissing(): never {
+  throw new Error('thread missing from store')
+}
 
 describe('per-chunk streaming updates mutate in place, independent of loaded history (#1155/#1255)', () => {
   // Two non-blank threads, each with a streaming assistant message. addMessage
@@ -1037,5 +1174,60 @@ describe('setThreadTitle', () => {
     assert.ok(thread)
     assert.equal(thread.title, 'Mine')
     assert.equal('autoTitleCount' in thread, false)
+  })
+})
+
+// A run carried across a project switch (#1841) lives in `backgroundThreads`;
+// its terminal outcome and queue/context state must land there, or the turn's
+// durable record is lost before its message is persisted.
+describe('helpers that patch a carried background thread', () => {
+  function carried(): Thread {
+    return {
+      id: 'carried',
+      title: 'carried',
+      status: 'running',
+      messages: [{ id: 'reply', role: 'assistant', content: 'done', toolCalls: [], createdAt: 1 }],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      contextSnapshot: {
+        contextWindow: 2,
+        conversationBudget: 2,
+        conversationTokens: 1,
+        fillRatio: 0.5,
+        updatedAt: 1,
+      },
+      queuePaused: true,
+      unreadAt: 5,
+      createdAt: 1,
+      updatedAt: 1,
+    }
+  }
+
+  it('records turn outcome, context, queue, and read state on the carried copy', () => {
+    const store = createStore({
+      threads: [],
+      backgroundThreads: [{ projectId: 'other-project', thread: carried() }],
+    })
+    const outcome: TurnOutcome = {
+      status: 'completed',
+      stopReason: 'end_turn',
+      source: 'provider',
+      executor: 'local',
+      provider: 'openai',
+      model: 'gpt',
+      endedAt: 2,
+    }
+
+    setMessageTurnOutcome(store, 'carried', 'reply', outcome)
+    clearContextSnapshot(store, 'carried')
+    setQueuePaused(store, 'carried', false)
+    markThreadRead(store, 'carried')
+
+    const thread = getThreadById(store, 'carried')
+    assert.ok(thread)
+    assert.deepEqual(thread.messages[0]?.turnOutcome, outcome)
+    assert.equal(thread.contextSnapshot, undefined)
+    assert.equal(thread.queuePaused, undefined)
+    assert.equal(thread.unreadAt, undefined)
+    assert.deepEqual(store.getState().threads, [])
   })
 })

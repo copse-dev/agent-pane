@@ -18,6 +18,10 @@ export interface WorkspaceLinkResolutionContext {
   projectRelativePath: string
 }
 
+// Hosted agents and Copse containers use this checkout root. Resolve the suffix
+// against the owning thread, never against a path on the desktop filesystem.
+const HOSTED_CHECKOUT_PREFIX = '/workspace/repo/'
+
 function relativePathInside(root: string, target: string): string | null {
   const rel = relative(resolve(root), resolve(target))
   if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null
@@ -30,7 +34,6 @@ function normalizeWorkspaceLinkCandidate(
   context: WorkspaceLinkResolutionContext,
 ): string {
   if (!candidate.startsWith('/')) return candidate
-
   const fromExecutionRoot = relativePathInside(root, candidate)
   if (fromExecutionRoot) return fromExecutionRoot
 
@@ -38,6 +41,9 @@ function normalizeWorkspaceLinkCandidate(
   // isolated checkout.
   const fromProjectRoot = relativePathInside(context.projectRoot, candidate)
   if (fromProjectRoot) return fromProjectRoot
+
+  if (candidate.startsWith(HOSTED_CHECKOUT_PREFIX))
+    return candidate.slice(HOSTED_CHECKOUT_PREFIX.length)
 
   // Agent messages persist longer than their linked worktrees. Rebase a path
   // from any earlier worktree in this same managed project onto the active
@@ -141,7 +147,7 @@ export async function resolveFileReferences(
       continue
     }
 
-    if (normalized.includes('/')) continue
+    if (normalized.includes('/') || candidate.trim().startsWith(HOSTED_CHECKOUT_PREFIX)) continue
 
     const basenameMatches = pathsByBasename.get(normalized) ?? []
     const [onlyMatch] = basenameMatches

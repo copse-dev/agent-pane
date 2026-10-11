@@ -11,8 +11,10 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 const PROJECT_ID = 'e2e-thread-archive-worktree'
 const CLEAN_ID = 'archive-clean'
 const DIRTY_ID = 'archive-dirty'
+const BUSY_ID = 'archive-busy'
 const CLEAN_BRANCH = 'copse/archive-clean'
 const DIRTY_BRANCH = 'copse/archive-dirty'
+const BUSY_BRANCH = 'copse/archive-busy'
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -23,6 +25,7 @@ describe('archive chat and remove its worktree', function () {
   let projectRoot = ''
   let cleanRoot = ''
   let dirtyRoot = ''
+  let busyRoot = ''
   let cleanHead = ''
 
   before(async () => {
@@ -33,6 +36,7 @@ describe('archive chat and remove its worktree', function () {
     projectRoot = join(dirname(worktreesRoot), 'thread-archive-project')
     cleanRoot = join(worktreesRoot, PROJECT_ID, CLEAN_ID)
     dirtyRoot = join(worktreesRoot, PROJECT_ID, DIRTY_ID)
+    busyRoot = join(worktreesRoot, PROJECT_ID, BUSY_ID)
     rmSync(projectRoot, { recursive: true, force: true })
     rmSync(join(worktreesRoot, PROJECT_ID), { recursive: true, force: true })
     mkdirSync(projectRoot, { recursive: true })
@@ -47,6 +51,7 @@ describe('archive chat and remove its worktree', function () {
     mkdirSync(dirname(cleanRoot), { recursive: true })
     git(projectRoot, ['worktree', 'add', '-b', CLEAN_BRANCH, cleanRoot, 'main'])
     git(projectRoot, ['worktree', 'add', '-b', DIRTY_BRANCH, dirtyRoot, 'main'])
+    git(projectRoot, ['worktree', 'add', '-b', BUSY_BRANCH, busyRoot, 'main'])
     writeFileSync(join(cleanRoot, 'committed.txt'), 'unmerged work\n')
     git(cleanRoot, ['add', '.'])
     git(cleanRoot, ['commit', '-qm', 'keep committed work'])
@@ -99,6 +104,7 @@ describe('archive chat and remove its worktree', function () {
         },
         worktreeThread(CLEAN_ID, 'Committed work', CLEAN_BRANCH, cleanRoot),
         worktreeThread(DIRTY_ID, 'Local edits', DIRTY_BRANCH, dirtyRoot),
+        worktreeThread(BUSY_ID, 'Busy shell', BUSY_BRANCH, busyRoot),
       ],
     })
     await browser.reloadSession()
@@ -107,7 +113,7 @@ describe('archive chat and remove its worktree', function () {
 
   after(() => {
     resetUserData()
-    for (const path of [cleanRoot, dirtyRoot]) {
+    for (const path of [cleanRoot, dirtyRoot, busyRoot]) {
       if (!projectRoot || !path || !existsSync(path)) continue
       try {
         git(projectRoot, ['worktree', 'remove', '--force', path])
@@ -149,19 +155,20 @@ describe('archive chat and remove its worktree', function () {
     for (const text of [
       'README.md',
       'notes/draft.txt',
-      'local.log',
       'permanently discarded',
       'committed work on its branch will be kept',
     ]) {
       await expect(dialog.$('.confirm-dialog-detail')).toHaveText(expect.stringContaining(text))
     }
+    await expect(dialog.$('.confirm-dialog-detail')).not.toHaveText(
+      expect.stringContaining('local.log'),
+    )
     await expect(dialog.$('.confirm-dialog-confirm')).toHaveText('Discard and archive')
     await saveAppScreenshot('thread-archive-discard-confirm.png')
     await dialog.$('.confirm-dialog-cancel').click()
     await expect($(`.chat-row[data-thread-id="${DIRTY_ID}"]`)).toBeExisting()
     assert.equal(readFileSync(join(dirtyRoot, 'README.md'), 'utf8'), 'uncommitted edit\n')
     assert.equal(readFileSync(join(dirtyRoot, 'notes/draft.txt'), 'utf8'), 'untracked draft\n')
-    assert.equal(readFileSync(join(dirtyRoot, 'local.log'), 'utf8'), 'ignored file\n')
 
     await archiveFromSidebar(DIRTY_ID)
     await dialog.waitForDisplayed({ timeout: 10_000 })
@@ -212,5 +219,54 @@ describe('archive chat and remove its worktree', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await expect($(`.chat-row[data-thread-id="${DIRTY_ID}"]`)).not.toBeExisting()
     await expect($(`.chat-row[data-thread-id="${CLEAN_ID}"]`)).not.toBeExisting()
+  })
+
+  it('asks before stopping a chat’s live shell, then stops it and archives', async () => {
+    await $(`.chat-row[data-thread-id="${BUSY_ID}"]`).waitForDisplayed({ timeout: 30_000 })
+    // Creating a shell is gated by an approval prompt on hosts without an OS
+    // sandbox, so start it without awaiting and approve if the prompt appears.
+    await browser.execute(
+      (projectId: string, threadId: string) => {
+        void window.api.terminal
+          .create(80, 24, { projectId, threadId, label: 'Dev server' })
+          .then((id: string) => {
+            document.body.dataset['e2eBusyTerminal'] = id
+          })
+      },
+      PROJECT_ID,
+      BUSY_ID,
+    )
+    const approval = $('#approval-dialog')
+    await browser.waitUntil(
+      async () => {
+        if (await approval.isDisplayed()) await approval.$('.approval-approve').click()
+        return (await $('body').getAttribute('data-e2e-busy-terminal')) !== null
+      },
+      { timeout: 30_000, timeoutMsg: 'expected the chat’s shell to start' },
+    )
+    await archiveFromSidebar(BUSY_ID)
+    const dialog = $('#confirm-dialog')
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await expect(dialog.$('.confirm-dialog-message')).toHaveText(
+      'Stop running work and archive “Busy shell”?',
+    )
+    await expect(dialog.$('.confirm-dialog-detail')).toHaveText(
+      expect.stringContaining('its open terminals'),
+    )
+    await expect(dialog.$('.confirm-dialog-confirm')).toHaveText('Stop and archive')
+    await saveAppScreenshot('thread-archive-stop-confirm.png')
+    await dialog.$('.confirm-dialog-cancel').click()
+    await expect($(`.chat-row[data-thread-id="${BUSY_ID}"]`)).toBeExisting()
+    assert.equal(existsSync(busyRoot), true)
+
+    await archiveFromSidebar(BUSY_ID)
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await dialog.$('.confirm-dialog-confirm').click()
+    await $(`.chat-row[data-thread-id="${BUSY_ID}"]`).waitForExist({
+      reverse: true,
+      timeout: 15_000,
+    })
+    assert.equal(existsSync(busyRoot), false)
+    assert.ok(git(projectRoot, ['branch', '--list', BUSY_BRANCH]))
   })
 })

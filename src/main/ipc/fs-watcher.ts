@@ -1,6 +1,6 @@
 import * as fs from 'node:fs'
 import * as fsp from 'node:fs/promises'
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import {
   assertMainFrameSender,
   parseIpcArgs,
@@ -23,12 +23,32 @@ import {
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { z } from 'zod'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
+import { WatchSubscriptions } from './fs-watch-subscriptions.ts'
 
 const watchers = new Map<string, fs.FSWatcher>()
+const subscriptions = new WatchSubscriptions()
+const trackedSenders = new Set<number>()
 const watcherArgs = z.tuple([zProjectId, zThreadId, zPathString])
 
 function watcherKey(projectId: string, threadId: string, relPath: string): string {
   return `${projectId}\0${threadId}\0${relPath}`
+}
+
+function stopWatch(key: string): void {
+  unwatchRemotePath(key)
+  watchers.get(key)?.close()
+  watchers.delete(key)
+}
+
+/** Release a window's subscriptions when it goes away without unwatching. */
+function trackSender(sender: WebContents): void {
+  const id = sender.id
+  if (trackedSenders.has(id)) return
+  trackedSenders.add(id)
+  sender.once('destroyed', () => {
+    trackedSenders.delete(id)
+    for (const key of subscriptions.removeSubscriber(id)) stopWatch(key)
+  })
 }
 
 export function initFsWatcher(win: BrowserWindow): void {
@@ -38,6 +58,11 @@ export function initFsWatcher(win: BrowserWindow): void {
     const root = (await resolveThreadExecutionContext(projectId, threadId)).root
     const abs = await resolvePathWithinRoot(rel, root)
     const key = watcherKey(projectId, threadId, rel)
+    // The window may have closed during the awaits above; its `destroyed`
+    // event has then already fired and would never release this subscription.
+    if (event.sender.isDestroyed()) return
+    trackSender(event.sender)
+    subscriptions.add(key, event.sender.id)
     // Node's fs.watch can only observe the local machine, so a remote workspace
     // must never reach the local watcher below — an unresolvable host means no
     // updates rather than a watch on a same-named local path.
@@ -83,12 +108,8 @@ export function initFsWatcher(win: BrowserWindow): void {
     assertMainFrameSender(event, win)
     const [projectId, threadId, rel] = parseIpcArgs(watcherArgs, rawArgs)
     const key = watcherKey(projectId, threadId, rel)
-    if (isActiveSshWorkspace()) {
-      unwatchRemotePath(key)
-      return
-    }
-    watchers.get(key)?.close()
-    watchers.delete(key)
+    // Other windows may still be watching the same file.
+    if (subscriptions.remove(key, event.sender.id)) stopWatch(key)
   })
 }
 
@@ -153,5 +174,6 @@ export function closeAllWatchers(): void {
     w.close()
   })
   watchers.clear()
+  subscriptions.clear()
   stopRemoteFilePolling()
 }

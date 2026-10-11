@@ -22,7 +22,7 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Standard shell mode              | Contained commands may auto-run; external and destructive commands normally prompt. Local containment requires active macOS Seatbelt or Linux bubblewrap.                                                                                               |
 | Auto-run and deterministic tiers | Extra shape grants are Off, Reads, Reads + local commits, or Reads + local commits + pushes. Require auto-run, workspace trust and an active project sandbox; can authorize an external command without a prompt.                                       |
-| Trusted commands                 | Explicit binary grants route eligible commands outside the sandbox in trusted projects with auto-run on. Every segment must qualify; Always ask suppresses the grant.                                                                                   |
+| Trusted commands                 | Explicit binary grants route eligible commands outside the sandbox in trusted projects with auto-run on. Every segment must qualify and none may redirect into a file other than `/dev/null`; Always ask suppresses the grant.                          |
 | Per-tool override                | Inherited behavior, Always allow, Always ask or Blocked. Ordinary approval is independent of operation-specific gates and runtime containment.                                                                                                          |
 | Read-only agent mode             | Default-deny tool allowlist; MCP tools need read-only/non-destructive hints and retain their ordinary gate. Child calls inherit the run scope.                                                                                                          |
 | Strict external denial           | Classifier confidence plus a deterministic destructive signal can hard-deny. The classifier cannot authorize execution.                                                                                                                                 |
@@ -168,6 +168,17 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+`pnpm exec <command>` runs an installed command and is not itself an install or shell
+`exec` signal. Its child command still receives the normal scope checks, so downloads,
+opaque interpreter code, and outside-project paths keep their existing policy. Corepack
+and package downloads retain their existing gates.
+
+Remembered local port-binding consent is keyed by the project root, shared across its
+thread worktrees. Command execution still uses the thread's execution root and passes
+the shell gate. Other projects require their own consent, and disabling the Background
+tasks plugin still revokes its loopback-binding capability. Legacy worktree-root grants
+are not broadened automatically; the next project-level consent can be remembered.
+
 Newline-separated commands are inspected independently. For example, an opaque
 `python3 - <<'PY'` heredoc followed by `wc -l src/a.ts` stays ambiguous and runs inside
 an active sandbox: the TypeScript file belongs to `wc`, not to the interpreter.
@@ -200,7 +211,24 @@ A detached thread checkout remains usable by agent turns, file and editor operat
 only during validated Git recovery. Main must validate the persisted checkout path, Git registration,
 repository identity, and base commit, and the per-worktree Git directory must contain an active Git
 recovery marker. The persisted branch identity is retained while HEAD is detached. An unrelated
-detached checkout remains blocked. The footer offers recovery continuation after the agent turn ends.
+detached checkout remains blocked. The footer offers recovery only while nothing can write to the
+checkout: not during a turn (including one waiting on approval), and not while a background task
+for the thread is alive. Main computes that (`agentBusy` on the attachment inspection) and
+`reattachWorktree` refuses under the same condition, so a stale or scripted call cannot race an
+agent.
+
+Recovery is the fallback; prevention comes first. In a managed thread worktree the gate refuses,
+before any prompt, the commands that strand a checkout: `git rebase` (any form), `git pull
+--rebase` (flag or `-c pull.rebase=…`), `git bisect start`, and `git switch|checkout --detach`.
+A rebase that stops on a conflict or a failed signature leaves HEAD detached, and approving it
+would only strand the thread. The refusal names the alternative (`git merge`, `git pull
+--no-rebase`, `git worktree add --detach` outside the checkout) and says to ask the user to run
+the command in a terminal if it is truly needed. Exits from an operation already under way
+(`rebase --abort|--continue|--skip|--quit`, `bisect reset`) are never refused. Shared project
+checkouts are the user's own and keep ordinary policy. Classifier: `detectCheckoutDetachingCommand`
+(`packages/shell-guard/src/checkout-detach.ts`). Limits: the classifier is static, so a
+bare `git pull` under a `pull.rebase` set only in a config file, a script that rebases, or an
+external ACP agent's own shell is not covered; recovery stays available for those.
 
 ### Deferred-worktree threads (prototype)
 
@@ -373,7 +401,9 @@ classified by the file it opens.
 
 The grant authorizes no command by itself. `read-outside-project.ts` re-analyzes every later command
 and must prove it is a plain read through a fail-closed allow-list. An unknown command head, write
-flag, redirect, environment variable, or privilege wrapper falls back to the ordinary prompt.
+flag, redirect, environment variable, or privilege wrapper falls back to the ordinary prompt; the
+whole wrapper chain counts, so `nohup env …` is refused like `env …`. Another user's home
+(`~name/…`) and `~+`/`~-` are never resolved into a grant target.
 Shell-builtin assignment forms such as `printf -v` also fall back: they can change `PATH` and
 replace a later reader without containing a leading `NAME=value` token.
 Credential targets (`.env*`, `*.pem`, `~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`, and similar) and
@@ -444,6 +474,30 @@ pinned ASRT patch provides per-spawn macOS socket permissions for these isolated
 processes. See [the threat model](threat-model.md#scoped-ssh-signing) for exact limits.
 
 ## What an approval prompt says
+
+Prompt prose explains the effect, execution boundary, and duration of the grant outside the
+detail box. The box holds the complete command, arguments, or variable URL. Web-fetch,
+browser-navigation, and provider-host prompts put only the requested URL there; the surrounding
+copy names the origin/host and whether approval covers one request, the chat's browser session,
+or a persistent Settings grant. Provider-host approval always persists, so its action is labeled
+“Always allow host”. Browser origin grants cover the chat's browser session even without remembering.
+
+Static sandbox escapes, agent-expected escapes, and retries after a sandbox failure all warn
+that execution uses the user's access to files and the network beyond the project sandbox.
+Commands with no available sandbox say so even when the immediate reason is that auto-run is off.
+Contained prompts still warn that project files can change. The execution policy is unchanged.
+
+GitHub write tools explain their specific remote effect. PR creation exposes the repository,
+title, head, base, draft status, and body. A single literal `gh pr create` invocation with known
+flags and explicit title/body gets the same publication explanation alongside the full command.
+Unknown flags, shell expansions, scripts, and compound commands retain the general reasons.
+These explanations are presentation only and never authorize or reroute a command.
+
+Remembered tool approvals cover the exact tool with other arguments; schedule grants cover
+future runs of the named schedule. The outside-project read grant still covers all eligible
+outside-project reads for the chat, not only the paths currently displayed. Its primary action
+is labeled “Allow reads for this chat”; the secondary action approves just the displayed command.
+Batch and Activity views use the same advice, complete details, and footer as individual prompts.
 
 Classifier reasons are **identifiers, not copy**. The regex pass and the token pass share them
 verbatim so the two dedupe against each other, and every answered prompt writes them into the
@@ -532,7 +586,8 @@ While active:
   remain hard-denied by the harm gate.
 - Writing or opaque GitHub CLI forms (`gh pr create`, `gh api -X POST`, `gh api -f …`,
   `gh api graphql`, …) prompt via the harm gate. A `gh api` call is a read only as a plain GET:
-  one REST endpoint (no full URL), no method other than `GET`, no field, `--input` or header flag.
+  one REST endpoint (no full URL), no method other than `GET`, no field, `--input`, header or
+  `--hostname` flag.
   `gh run download` may run inside the project sandbox, which contains its local writes.
   It does not receive a classifier read grant: running or retrying it outside the sandbox
   requires approval, even when the session has an active sandbox. Dedicated mutating GitHub tools

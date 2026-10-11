@@ -1,8 +1,8 @@
 /**
  * Take the provider key the thread-container CLI was pointed at (`--api-key-env
- * <NAME>`) out of its own environment. The key crosses to the guest only over
- * the stdio link (decision A17); left in `process.env`, every Docker subprocess
- * the CLI starts would inherit it. Call before the first Docker command.
+ * <NAME>`) out of its own environment. The key is held by host inference
+ * (decision A1″); left in `process.env`, every engine subprocess the CLI
+ * starts would inherit it. Call before the first Docker command.
  * Returns the value, or undefined when no variable was named or it is unset.
  */
 export function takeProviderKeyFromEnv(

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { getSecretCipher, type SecretCipher } from '../storage/secret-cipher.ts'
-import { deleteSetting, getSetting, setSetting } from '../storage/settings.ts'
+import { deleteSetting, getDecodedSetting, setSetting } from '../storage/settings.ts'
 
 // One encrypted record per remote MCP server URL. The key is the URL, not the
 // server's name: a token is only ever presented to the resource it was issued
@@ -55,7 +55,10 @@ export interface McpOAuthStoreDependencies {
 
 const defaultDependencies: McpOAuthStoreDependencies = {
   getCipher: getSecretCipher,
-  read: (key) => getSetting<unknown>(key, null),
+  // The per-URL keys have no registered schema, so decode them here: a
+  // `getSetting(key, null)` read matches only a stored `null` and would lose
+  // every sign-in it was asked for.
+  read: (key) => getDecodedSetting(key, storedSecretSchema),
   write: setSetting,
   remove: deleteSetting,
 }

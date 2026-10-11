@@ -150,4 +150,29 @@ describe('acp stop button', () => {
     const texts = chunks.flatMap((c) => (c.type === 'text' ? [c.text] : []))
     assert.deepEqual(texts, ['first'], 'chunks after abort must not be forwarded')
   })
+
+  it('never sends the prompt for a turn stopped before it started', async () => {
+    let prompted = false
+    const runner: AcpTurnRunner = async () => {
+      prompted = true
+      await new Promise<void>(() => {})
+      return { stopReason: 'end_turn' }
+    }
+    const { entry } = await acquireAcpSession({
+      threadId: 't1',
+      config: CONFIG,
+      createTransport: runnerTransport(runner),
+    })
+    const controller = new AbortController()
+    controller.abort()
+    entry.open.handlers.current = abortOnFirstChunk(controller, [])
+
+    const result = await runAcpSessionPrompt(entry.open, 'go', undefined, controller.signal, 20)
+    // Give a sent prompt time to reach the in-process agent.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    assert.equal(result.stopReason, 'cancelled')
+    assert.equal(prompted, false, 'the agent never starts a turn the user already stopped')
+    assert.equal(entry.open.isClosed(), false, 'no prompt was in flight, so the session stays warm')
+  })
 })

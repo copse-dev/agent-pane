@@ -30,6 +30,30 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'external')
   })
 
+  it('keeps local pnpm exec commands contained without hiding their payload', () => {
+    for (const command of [
+      'pnpm exec tsc --noEmit',
+      'pnpm exec -- eslint src',
+      'pnpm exec vitest run',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'sandbox', command)
+    }
+    for (const command of [
+      'pnpm install',
+      'npm exec tsc',
+      'corepack pnpm exec tsc',
+      'pnpm exec curl https://example.com',
+      'pnpm exec node -e "process.exit()"',
+      'pnpm exec cat /etc/passwd',
+      'pnpm exec tsc; exec curl https://example.com',
+      'pnpm exec tsc; npm install',
+      'pnpm exec tsc $(curl https://example.com)',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+    }
+    assert.equal(analyzeShellCommand('pnpm dlx tsc', root).verdict, 'ambiguous')
+  })
+
   it('flags git push', () => {
     const r = analyzeShellCommand('git push origin main', root)
     assert.equal(r.verdict, 'external')
@@ -546,6 +570,25 @@ PY`,
     const xdg = analyzeShellCommand('xdg-open ./report.html', root)
     assert.equal(xdg.verdict, 'external')
     assert.ok(xdg.reasons.some((x) => /xdg-open/.test(x)))
+  })
+
+  it('sees an opener behind a pass-through wrapper', () => {
+    // The command-position regex stops at the wrapper, so `nohup open …` read as
+    // a contained command and auto-ran while bare `open` prompted.
+    for (const cmd of [
+      'nohup open https://attacker.example',
+      'nice open -a Calculator',
+      'env FOO=1 open ./report.html',
+      'timeout 5 open ./report.html',
+      'nohup xdg-open https://attacker.example',
+    ]) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
+      assert.ok(
+        r.reasons.some((x) => /outside the sandbox \((?:xdg-)?open\)/.test(x)),
+        cmd,
+      )
+    }
   })
 
   it('does not treat `open` inside another command word as a launch', () => {

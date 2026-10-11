@@ -126,6 +126,7 @@ COPY --chown=root:root worker.cjs entrypoint.sh ./
 # The image copies them as root, so normalise read/traverse bits before the
 # unprivileged worker loads the runtime. Preserve executable files with X.
 RUN chmod -R a+rX /app/node_modules \\
+    && chmod 0644 /app/package.json /app/worker.cjs \\
     && chmod 0755 /app/entrypoint.sh \\
     && mkdir -p /workspace/.pnpm-store \\
     && chown -R "\${WORKER_UID}" /workspace

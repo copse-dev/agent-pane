@@ -255,6 +255,28 @@ describe('tool permissions', () => {
     assert.deepEqual(overrides(), {})
     assert.equal(await setToolPermissionForExecution('gh_pr_create', 'allow'), false)
   })
+  it('requires approval for branch pushing and rejects an allow update', async () => {
+    const registry = new ToolRegistry()
+    registerTool(registry, 'gh_push')
+    const id = copseToolPermissionId('gh_push')
+    const initial = listToolPermissionCatalog(registry, []).groups[0]?.tools[0]
+
+    assert.ok(initial)
+    assert.equal(initial.defaultPolicy, 'ask')
+    assert.deepEqual(initial.disabledPolicies, ['allow'])
+    assert.match(initial.disabledReason ?? '', /remote state/u)
+
+    await setSetting(OVERRIDES_KEY, { [id]: 'allow' })
+    const hardened = listToolPermissionCatalog(registry, []).groups[0]?.tools[0]
+    assert.ok(hardened)
+    assert.equal(hardened.policy, 'ask')
+    assert.deepEqual(resolveToolPermission('gh_push'), { id, policy: 'ask' })
+    await setSetting(OVERRIDES_KEY, {})
+
+    await updateToolPermissions(registry, [], { toolIds: [id], policy: 'allow' })
+    assert.deepEqual(overrides(), {})
+    assert.equal(await setToolPermissionForExecution('gh_push', 'allow'), false)
+  })
 
   it('requires approval for host GUI launches and rejects an allow update', async () => {
     const registry = new ToolRegistry()

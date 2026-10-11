@@ -294,6 +294,23 @@ describe('Guarded YOLO shell harm gate', () => {
     }
   })
 
+  it("expands ~name to that user's home instead of a project-relative name", () => {
+    // `~tester/` is this user's home; left unexpanded it resolved inside the
+    // workspace and the home-root deny never saw it.
+    assert.equal(action('rm -rf ~tester/'), 'deny')
+    assert.equal(action('rm -rf ~tester'), 'deny')
+    assert.equal(action('cat ~tester/.ssh/id_rsa'), 'deny')
+    assert.equal(action('cat ~tester/.env'), 'deny')
+    // Not caught by the secret-filename check, so this one was allowed outright.
+    assert.equal(action('cat ~tester/.aws/config'), 'deny')
+    assert.equal(action('ls -la ~tester'), 'deny')
+    // `~+` is `$PWD`, the workspace root here, so it is denied exactly as `.` is.
+    assert.equal(action('rm -rf ~+/'), 'deny')
+    assert.equal(action('rm -rf ~+'), 'deny')
+    // `~-` is `$OLDPWD`, which no static reading knows: still a prompt, never allowed.
+    assert.equal(action('rm -rf ~-/'), 'prompt')
+  })
+
   it('denies catastrophic commands hidden in compounds, substitutions, and interpreters', () => {
     for (const command of [
       'echo ready && rm -rf /',
@@ -409,17 +426,48 @@ describe('Guarded YOLO shell harm gate', () => {
   })
 
   it('models redirects, which carry no command name at all', () => {
-    // Truncating a system file is unrecoverable in place; a credential file is a
-    // takeover whether the write appends or truncates.
-    assert.equal(action('echo "" > /etc/hosts'), 'deny')
+    // A credential file is a takeover whether the write appends or truncates. A
+    // redirect into any other system file prompts, the same as the named writers
+    // (see the consistency test below).
+    assert.equal(action('echo "" > /etc/hosts'), 'prompt')
     assert.equal(action('echo "tester ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers'), 'deny')
+    assert.equal(action('echo "" > /etc/passwd'), 'deny')
     assert.equal(action(': > /Users/tester/.ssh/id_rsa'), 'prompt')
     assert.equal(action('echo x >> /Users/tester/.bashrc'), 'prompt')
     assert.equal(action('tee /etc/hosts < /dev/null'), 'prompt')
+    // The clobber, both-streams and csh-style operators write exactly as `>`
+    // does, so they meet the same answers rather than reading as no write.
+    for (const operator of ['>|', '&>', '>&']) {
+      assert.equal(action(`echo '' ${operator} /etc/hosts`), 'prompt', operator)
+      assert.equal(action(`echo '' ${operator} /etc/passwd`), 'deny', operator)
+    }
     // In-workspace and /tmp writes are ordinary build output.
     assert.equal(action('echo built > dist/marker.txt'), 'allow')
     assert.equal(action('echo line >> logs/app.log'), 'allow')
     assert.equal(action('echo x > /tmp/scratch.txt'), 'allow')
+  })
+
+  it('treats every way of overwriting a system file alike, and keeps credential files denied', () => {
+    // `cat >`, `tee`, `cp`, `mv`, `dd` and `install` all replace the file's content
+    // in place, so none of them may be stricter than the others.
+    for (const command of [
+      'cat > /etc/nginx/nginx.conf <<EOF\nserver {}\nEOF',
+      'echo server > /etc/nginx/nginx.conf',
+      'printf x | tee /etc/nginx/nginx.conf',
+      'cp new.conf /etc/nginx/nginx.conf',
+      'mv new.conf /etc/nginx/nginx.conf',
+      'install -m 644 new.conf /etc/nginx/nginx.conf',
+    ]) {
+      assert.equal(action(command), 'prompt', command)
+    }
+    // The same routes into a host credential file stay denied.
+    for (const command of [
+      'echo x > /etc/shadow',
+      'printf x | tee /etc/shadow',
+      'cp new /etc/sudoers',
+    ]) {
+      assert.equal(action(command), 'deny', command)
+    }
   })
 
   it('denies signals that take out the whole session', () => {
