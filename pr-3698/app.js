@@ -22073,6 +22073,124 @@ var init_sources_section = __esm({
   }
 });
 
+// src/renderer/views/settings-profile-vault.ts
+function createProfileVaultSection(api2) {
+  const root = el("fieldset", {
+    class: "profile-vault-section",
+    "data-testid": "profile-vault-section"
+  });
+  const legend = el("legend", {}, "Saved-secret encryption");
+  const description = el(
+    "p",
+    { class: "settings-fieldset-desc" },
+    "Saved API keys and SSH/VNC credentials are automatically protected with this Mac\u2019s Secure Enclave on supported Macs. Copse normally unlocks them silently. Conversations, repositories and browser cookies are outside this protection."
+  );
+  const status = el(
+    "p",
+    { class: "field-hint", role: "status", "aria-live": "polite" },
+    "Checking availability\u2026"
+  );
+  const controls = el("div", { class: "profile-vault-controls" });
+  const notice = el("p", { class: "field-hint", role: "status", "aria-live": "polite" });
+  root.append(legend, description, status, controls, notice);
+  let pending = false;
+  const run2 = async (action) => {
+    if (!api2 || pending) return;
+    pending = true;
+    for (const button2 of controls.querySelectorAll(
+      "button, input"
+    ))
+      button2.disabled = true;
+    notice.textContent = action.action === "retry-migration" || action.action === "unlock" ? "Opening saved-secret encryption\u2026" : "Complete the native authentication window to continue.";
+    try {
+      const result = await api2.run(action);
+      notice.textContent = result.ok ? action.action === "retry-migration" || action.action === "recover" ? "Restarting Copse\u2026" : action.action === "set-auth" ? "Updated. The startup authentication setting takes effect next time you launch Copse." : "Done." : action.action === "retry-migration" && result.reason === "corrupt" ? "Migration did not finish. Your saved credentials are unchanged." : result.reason === "cancelled" ? "Cancelled. Your saved credentials are unchanged." : result.reason === "locked" ? "Unlock saved secrets to continue." : result.reason === "recovery-required" ? "This Mac does not have the device key. Restore access with your recovery key." : result.reason === "corrupt" ? "Verification failed. Check the recovery key and restore a complete profile backup if needed." : result.reason === "unavailable" ? "The native encryption helper or macOS authentication is unavailable." : result.reason;
+    } catch {
+      notice.textContent = "Could not reach the encryption service.";
+    } finally {
+      pending = false;
+      await refresh();
+    }
+  };
+  const button = (label, action) => {
+    const control = el("button", { type: "button", class: "ui-btn" }, label);
+    control.addEventListener("click", () => {
+      void run2(action);
+    });
+    return control;
+  };
+  const render = (current) => {
+    root.dataset["state"] = current.state;
+    controls.replaceChildren();
+    if (current.state === "busy" || current.state === "unlocking") {
+      status.textContent = "Updating saved-secret encryption\u2026";
+      return;
+    }
+    if (!current.available) {
+      status.textContent = current.enabled ? "Saved secrets are encrypted and locked. The signed macOS helper is unavailable in this build." : "Available on Macs with Secure Enclave and the signed Copse encryption helper.";
+      return;
+    }
+    if (!current.enabled) {
+      status.textContent = current.migrationFailed ? current.migrationBlocker ? `Automatic migration could not finish: the ${current.migrationBlocker} could not be read. Your credentials still use the existing OS secure storage. Re-enter or remove it, then retry.` : "Automatic migration could not finish. Your credentials still use the existing OS secure storage. Close other Copse processes and retry." : current.automatic ? "This profile will migrate automatically when Copse starts." : "Uses existing OS secure storage. Automatic device encryption requires a supported signed Copse release.";
+      if (current.automatic)
+        controls.append(button("Retry migration", { action: "retry-migration" }));
+      return;
+    }
+    const unlocked = current.state === "unlocked";
+    status.textContent = `${unlocked ? "Unlocked on this Mac." : "Saved secrets are locked."} ${current.recovery === "verified" ? "Recovery key verified for this profile key." : "Recovery key not backed up."}`;
+    const authentication = el("input", { type: "checkbox" });
+    authentication.checked = current.requireAuth ?? true;
+    const authenticationLabel = el("label", { class: "profile-vault-choice" });
+    authenticationLabel.append(
+      authentication,
+      document.createTextNode("Require authentication when Copse starts")
+    );
+    authentication.addEventListener("change", () => {
+      void run2({ action: "set-auth", requireAuth: authentication.checked });
+    });
+    controls.append(
+      authenticationLabel,
+      el(
+        "p",
+        { class: "field-hint" },
+        "Once unlocked, saved secrets remain available through sleep and screen lock until you quit. Exporting a recovery key always requires authentication."
+      )
+    );
+    const actions = el("div", { class: "profile-vault-actions" });
+    if (!unlocked) actions.append(button("Unlock", { action: "unlock" }));
+    actions.append(
+      button("Back up recovery key", { action: "backup" }),
+      button("Restore access", { action: "recover" })
+    );
+    controls.append(
+      actions,
+      el(
+        "p",
+        { class: "field-hint" },
+        "Keep a separate backup of your profile files. A recovery key cannot restore deleted files."
+      )
+    );
+  };
+  async function refresh() {
+    if (!api2) {
+      render({ state: "unavailable", available: false, enabled: false, recovery: "not-backed-up" });
+      return;
+    }
+    try {
+      render(await api2.status());
+    } catch {
+      status.textContent = "Could not read saved-secret encryption status.";
+    }
+  }
+  void refresh();
+  return root;
+}
+var init_settings_profile_vault = __esm({
+  "src/renderer/views/settings-profile-vault.ts"() {
+    init_helpers();
+  }
+});
+
 // src/renderer/ipc-error-message.ts
 function unwrapIpcErrorText(text2) {
   let message2 = text2;
@@ -59245,12 +59363,13 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }, queuedModel) {
+function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, executionMode: _previousMode, ...payload }, queuedModel) {
   const thread = getThreadById(store2, threadId);
   const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
   const selectedModel = queuedModel ?? thread?.model;
   return {
     ...payload,
+    ...thread?.executionMode === "agent" ? { executionMode: "agent" } : {},
     ...reviewContext !== void 0 ? { reviewContext } : {},
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
@@ -59524,7 +59643,7 @@ function sendQueuedMessageNow(store2, api2, threadId, messageId) {
   store2.emit("threads_changed");
   if (thread.status === "running") {
     markSendNowAbort(threadId);
-    void api2.agent.abort(threadId);
+    void api2.agent.abort(threadId, "send_now");
   } else {
     drainMessageQueue(store2, api2, threadId);
   }
@@ -70509,10 +70628,10 @@ function mountSettingsDialog(store2, api2) {
           <section class="settings-section" data-section="storage">
             <h3>Storage</h3>
             <p class="settings-section-desc">
-              What Copse keeps on disk for each local project, and what it costs. Nothing here
-              changes how the agent behaves \u2014 it is where you go to see what has accumulated and
-              reclaim space.
+              Protect saved credentials, inspect what Copse keeps on disk, and reclaim project storage.
             </p>
+
+            <div id="settings-profile-vault-host" class="settings-mount"></div>
 
             <label class="storage-project-field">
               <span>Project</span>
@@ -71015,6 +71134,9 @@ function mountSettingsDialog(store2, api2) {
       "Hide their models across OpenRouter, direct providers, and agents with a named model. Saved selections from blocked makers cannot run."
     ),
     makerBlockList
+  );
+  qsRequired(overlay, "#settings-profile-vault-host").append(
+    createProfileVaultSection(api2.profileVault)
   );
   const ghCliSection = createGhCliSection(api2);
   qsRequired(overlay, "#settings-gh-cli-host").append(ghCliSection.root);
@@ -73564,6 +73686,7 @@ var init_settings_dialog = __esm({
     init_sources_section();
     init_settings_sources_skills();
     init_source_row();
+    init_settings_profile_vault();
     init_errors4();
     init_ipc_error_message();
     init_humanize_identifier();
@@ -74023,6 +74146,7 @@ function parseAgentRunPayload(rawPrompt) {
       })) : [];
       return {
         userContent: content2.data,
+        ...parsed2["executionMode"] === "agent" ? { executionMode: "agent" } : {},
         invokedSkills: invokedSkills.success ? invokedSkills.data : [],
         priorTodos: normalizedTodos,
         ...typeof parsed2["invokedAgent"] === "string" && parsed2["invokedAgent"] ? { invokedAgent: parsed2["invokedAgent"] } : {},
@@ -78950,6 +79074,44 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "vault-setup",
+        label: "Saved-secret encryption: migration pending",
+        project: project("demo-vault-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [],
+        profileVault: {
+          state: "disabled",
+          enabled: false,
+          available: true,
+          recovery: "not-backed-up",
+          automatic: true,
+          migrationFailed: true,
+          migrationBlocker: "saved API key \u201Copenai\u201D"
+        }
+      },
+      {
+        id: "vault-locked",
+        label: "Saved-secret encryption: locked",
+        project: project("demo-vault-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [],
+        profileVault: { state: "locked", enabled: true, available: true, recovery: "not-backed-up" }
+      },
+      {
+        id: "vault-verified",
+        label: "Saved-secret encryption: verified",
+        project: project("demo-vault-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [],
+        profileVault: {
+          state: "unlocked",
+          enabled: true,
+          available: true,
+          recovery: "verified",
+          requireAuth: false
+        }
+      },
+      {
         id: "settings-footer",
         label: "Settings scroll + sticky footer geometry",
         project: project("demo-settings-footer-project"),
@@ -81155,6 +81317,21 @@ function createDemoApi(scenario, options = {}) {
         models: scenario.chatGptPlan?.activeClientId ? [{ slug: "gpt-5.6-luna", displayName: "GPT-5.6-Luna" }] : []
       })
     },
+    profileVault: {
+      status: () => resolved2(
+        scenario.profileVault ?? {
+          state: "unavailable",
+          enabled: false,
+          available: false,
+          recovery: "not-backed-up"
+        }
+      ),
+      // Native authentication is deliberately not simulated by the browser demo.
+      run: () => resolved2({
+        ok: false,
+        reason: "Native authentication requires the desktop app. No credentials were changed."
+      })
+    },
     settings: {
       getSnapshot: () => {
         const values = Object.fromEntries(settings);
@@ -81505,6 +81682,7 @@ function createDemoApi(scenario, options = {}) {
       // The demo has no linked worktrees, so there is never a detached one.
       worktreeAttachment: () => resolved2({ state: "attached" }),
       reattachWorktree: () => Promise.reject(new Error("The demo has no thread worktrees")),
+      restoreWorktree: () => Promise.reject(new Error("The demo has no thread worktrees")),
       promptState: () => resolved2({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId, _threadId, branch) => {
         currentBranch = branch;
@@ -87318,7 +87496,9 @@ function namingMessages(thread) {
   );
 }
 function promptWords(message2) {
-  return stripPastePlaceholders(message2.content);
+  const stripped = stripPastePlaceholders(message2.content);
+  if (stripped) return stripped;
+  return (message2.attachments ?? []).filter((a3) => a3.kind === "paste" && a3.content).map((a3) => a3.content).join("\n\n").trim();
 }
 function namingInput(userMessages) {
   const first = userMessages[0];
@@ -113693,10 +113873,11 @@ var init_build_skill_user_content = __esm({
 });
 
 // src/renderer/views/acp-config-options.ts
-function acpOptionGroupsFor(agent) {
+function acpOptionGroupsFor(agent, agentManaged = false) {
   const groups = [];
   for (const option of agent.availableConfigOptions ?? []) {
-    if (option.category === "model" || option.choices.length < 2) continue;
+    if (option.category === "model" || agentManaged && option.category === "mode" || option.choices.length < 2)
+      continue;
     groups.push({
       id: option.configId,
       kind: "config",
@@ -113709,7 +113890,7 @@ function acpOptionGroupsFor(agent) {
     (option) => option.category === "mode"
   );
   const modes = agent.availablePermissionModes ?? [];
-  if (!hasConfigMode && modes.length > 1) {
+  if (!agentManaged && !hasConfigMode && modes.length > 1) {
     groups.push({
       id: ACP_MODE_GROUP_ID,
       kind: "mode",
@@ -113727,13 +113908,13 @@ function acpOptionGroupsFor(agent) {
 async function readAgents(api2) {
   return parseAcpAgentConfigs(await api2.settings.get("registeredAcpAgents"));
 }
-async function loadAcpOptionGroups(api2, model) {
+async function loadAcpOptionGroups(api2, model, agentManaged = false) {
   const selection2 = parseAcpModelSelection(model);
   if (!selection2) return null;
   const selectedId = canonicalAcpAgentId(selection2.id);
   const agent = (await readAgents(api2)).find((candidate) => candidate.id === selectedId);
   if (!agent?.enabled) return null;
-  const groups = acpOptionGroupsFor(agent);
+  const groups = acpOptionGroupsFor(agent, agentManaged);
   return groups.length > 0 ? { agentId: agent.id, groups } : null;
 }
 async function saveAcpOptionSelection(api2, agentId, group, value) {
@@ -113843,7 +114024,11 @@ function mountFooterModelPicker(root, api2, getCurrent, onSelect, pickerOpts = {
       // effort). Both hang off whichever value is selected, so they reload with
       // the model list.
       loadValueGroups: async (current) => {
-        const loaded = await loadAcpOptionGroups(api2, current);
+        const loaded = await loadAcpOptionGroups(
+          api2,
+          current,
+          pickerOpts.isAgentManaged?.() === true
+        );
         optionAgentId = loaded?.agentId ?? null;
         optionGroups = loaded?.groups ?? [];
         const reasoning = pickerOpts.getReasoning ? reasoningValueGroup(current, pickerOpts.getReasoning()) : null;
@@ -114025,7 +114210,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     return thread ? isBlankThread(thread) : false;
   }
   function getDisplayBranch() {
-    return activeBaseBranch() ?? getActiveThreadBranch() ?? status?.currentBranch ?? null;
+    return activeBaseBranch() ?? getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
   }
   function getVisiblePr() {
     const pr2 = status?.pr;
@@ -114119,6 +114304,15 @@ function mountFooterBranchStatus(host, store2, api2) {
       trigger.title = `This checkout is detached from ${current.branch}. Recovery is offered once the agent stops working in it.`;
     }
     if (!shown) return;
+    if (current.state === "missing") {
+      const title2 = current.reason ?? "Worktree removed. Restore committed files from the retained branch to continue this chat. Dependencies and local-only files are not restored.";
+      trigger.title = title2;
+      reattachButton.title = title2;
+      reattachButton.disabled = reattaching || current.reason !== null;
+      reattachButton.setAttribute("aria-label", `Restore worktree for ${current.branch}`);
+      reattachButton.textContent = reattaching ? "Restoring\u2026" : "Restore worktree";
+      return;
+    }
     const title = detachedTitle(current);
     trigger.title = title;
     reattachButton.title = title;
@@ -114152,7 +114346,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
   }
   function agentCanTouchCheckout(current) {
-    return getActiveThread2()?.status === "running" || current?.agentBusy === true;
+    return getActiveThread2()?.status === "running" || current?.state === "detached" && current.agentBusy === true;
   }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
@@ -114167,7 +114361,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function readDetachedAttachment(owner) {
     try {
       const attachment = await api2.git.worktreeAttachment(owner.projectId, owner.threadId);
-      return attachment.state === "detached" ? attachment : null;
+      return attachment.state !== "attached" ? attachment : null;
     } catch (error62) {
       reportBranchFailure("inspect worktree attachment", error62);
       return null;
@@ -114178,7 +114372,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const current = activeDetached();
     if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
-    if (current.recovery) {
+    if (current.state === "detached" && current.recovery) {
       const runId = globalThis.crypto.randomUUID();
       recoveryRuns.set(recoveryKey(owner.projectId, owner.threadId), runId);
       renderReattach();
@@ -114199,13 +114393,22 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattaching = true;
     renderReattach();
     try {
+      if (current.state === "missing") {
+        await api2.git.restoreWorktree(owner.projectId, owner.threadId);
+        showToast(`Restored worktree for ${current.branch}. You can continue this chat.`);
+        store2.emit("git_branch_changed");
+        return;
+      }
       const result = await api2.git.reattachWorktree(owner.projectId, owner.threadId);
       showToast(
         result.backupBranch ? `Reattached to ${result.branch}. Its previous tip is saved as ${result.backupBranch}.` : `Reattached to ${result.branch}`
       );
       store2.emit("git_branch_changed");
     } catch (error62) {
-      showErrorToast("Could not reattach the checkout", error62);
+      showErrorToast(
+        current.state === "missing" ? "Could not restore the worktree" : "Could not reattach the checkout",
+        error62
+      );
     } finally {
       reattaching = false;
       refreshNow();
@@ -116200,6 +116403,109 @@ var init_guarded_yolo_control = __esm({
   }
 });
 
+// src/renderer/views/agent-execution-mode-control.ts
+function mountAgentExecutionModeControl(store2, isAgentSelected, onChange) {
+  const badge = el(
+    "span",
+    { class: "agent-execution-mode-badge", role: "status", hidden: "" },
+    "Agent managed"
+  );
+  const shell3 = createOverlayDialog({
+    id: "agent-execution-mode-dialog",
+    className: "agent-execution-mode-dialog"
+  });
+  const title = el("h2", { id: "agent-execution-mode-title" }, "Execution mode");
+  const description = el("p", {}, "Choose how the selected agent acts in this thread.");
+  const copse = el(
+    "button",
+    { type: "button", class: "agent-execution-mode-option", "data-mode": "copse" },
+    el("strong", {}, "Copse managed"),
+    el("span", {}, "Use Copse action approvals and its sandbox where available.")
+  );
+  const agent = el(
+    "button",
+    { type: "button", class: "agent-execution-mode-option", "data-mode": "agent" },
+    el("strong", {}, "Agent managed"),
+    el("span", {}, "Use the agent\u2019s own tools, safety checks, and approval decisions.")
+  );
+  const note = el(
+    "p",
+    { class: "agent-execution-mode-note" },
+    "Agent managed runs the selected agent without Copse\u2019s process sandbox. Copse shows the activity the agent reports. Copse tools still use their own permissions. The change applies to the next turn."
+  );
+  const cancel = el("button", { type: "button" }, "Cancel");
+  const apply3 = el(
+    "button",
+    { type: "button", class: "agent-execution-mode-apply" },
+    "Apply to thread"
+  );
+  shell3.dialog.setAttribute("aria-labelledby", title.id);
+  shell3.dialog.append(
+    title,
+    description,
+    el("div", { class: "agent-execution-mode-options" }, copse, agent),
+    note,
+    el("div", { class: "agent-execution-mode-actions" }, cancel, apply3)
+  );
+  let selected = "copse";
+  function activeThread() {
+    return getActiveThread(store2);
+  }
+  function refresh() {
+    const thread = activeThread();
+    badge.hidden = !thread || thread.executionMode !== "agent" || !isAgentSelected();
+  }
+  function renderSelection() {
+    copse.setAttribute("aria-pressed", String(selected === "copse"));
+    agent.setAttribute("aria-pressed", String(selected === "agent"));
+    apply3.disabled = selected === (activeThread()?.executionMode === "agent" ? "agent" : "copse");
+  }
+  function open2() {
+    if (!activeThread() || !isAgentSelected()) return;
+    selected = activeThread()?.executionMode === "agent" ? "agent" : "copse";
+    renderSelection();
+    shell3.open();
+  }
+  copse.addEventListener("click", () => {
+    selected = "copse";
+    renderSelection();
+  });
+  agent.addEventListener("click", () => {
+    selected = "agent";
+    renderSelection();
+  });
+  cancel.addEventListener("click", shell3.close);
+  apply3.addEventListener("click", () => {
+    const thread = activeThread();
+    if (!thread) return;
+    patchThreadAnywhere(store2, thread.id, (current) => {
+      const { executionMode: _previous, ...rest } = current;
+      return selected === "agent" ? { ...rest, executionMode: "agent", updatedAt: Date.now() } : { ...rest, updatedAt: Date.now() };
+    });
+    store2.emit("threads_changed");
+    shell3.close();
+    refresh();
+    onChange();
+  });
+  refresh();
+  return {
+    element: badge,
+    menuLabel: () => "Execution mode\u2026",
+    open: open2,
+    refresh,
+    destroy: () => {
+      shell3.dialog.remove();
+    }
+  };
+}
+var init_agent_execution_mode_control = __esm({
+  "src/renderer/views/agent-execution-mode-control.ts"() {
+    init_thread_helpers();
+    init_helpers();
+    init_dialog_shell();
+  }
+});
+
 // src/shared/container-acp-agents.ts
 function containerAcpAgentTitles() {
   return CONTAINER_ACP_AGENTS.map((agent) => findAcpCatalogEntry(agent.id)?.title ?? agent.id);
@@ -117380,6 +117686,11 @@ function mountInputBar(root, store2, api2, opts = {}) {
   void refreshContainerRunsSetting();
   const footer = el("div", { class: "input-footer" });
   const modelHost = el("div", { class: "footer-model-host" });
+  const executionMode = mountAgentExecutionModeControl(
+    store2,
+    () => isAcpModel(footerChatModel()),
+    () => footerOverflow?.update()
+  );
   const checkoutHost = el("div", { class: "footer-checkout-host" });
   const checkoutBtn = el("button", {
     type: "button",
@@ -117406,8 +117717,13 @@ function mountInputBar(root, store2, api2, opts = {}) {
   const contextWheel = createContextWheel();
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api2);
   usageGroup.append(contextWheel.root, queueIndicator);
-  footer.append(modelHost, checkoutHost, branchHost);
+  footer.append(modelHost, executionMode.element, checkoutHost, branchHost);
   footerOverflow = mountFooterOverflow(footer, [
+    {
+      label: executionMode.menuLabel,
+      hidden: () => !getActiveThreadId() || !isAcpModel(footerChatModel()),
+      onClick: executionMode.open
+    },
     {
       label: guardedYolo.menuLabel,
       hidden: () => !getActiveThreadId(),
@@ -117519,6 +117835,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
   const modelPicker = mountFooterModelPicker(modelHost, api2, footerChatModel, selectChatModel, {
     formatCurrentLabel: footerModelDisplayLabel,
     getCurrentRoute: footerResolvedModel,
+    isAgentManaged: () => getActiveThread(store2)?.executionMode === "agent",
     isSshWorkspace: () => {
       const { activeProjectId, projects } = store2.getState();
       if (!activeProjectId) return false;
@@ -118417,8 +118734,17 @@ ${description}
     },
     true
   );
+  let sendNowChordAt = 0;
   composer.el.addEventListener("keydown", (e3) => {
     if (e3.isComposing) return;
+    const control = e3.ctrlKey || e3.metaKey;
+    const chord = control && !e3.altKey && !e3.shiftKey && e3.key.toLowerCase() === "s" && sendNowChordAt > 0 && Date.now() - sendNowChordAt < 1500;
+    sendNowChordAt = control && !e3.altKey && !e3.shiftKey && e3.key.toLowerCase() === "x" ? Date.now() : 0;
+    if (chord || control && e3.key === "Enter" && !e3.altKey && !e3.shiftKey) {
+      e3.preventDefault();
+      void submit(true);
+      return;
+    }
     if (e3.key === "Tab" && !e3.shiftKey && !e3.ctrlKey && !e3.metaKey && !e3.altKey) {
       const hint = nextStepHint.current();
       if (hint !== null && !composer.value.trim() && !isAutocompletePickerOpen()) {
@@ -118436,12 +118762,12 @@ ${description}
     e3.preventDefault();
     void submit();
   });
-  async function submit() {
+  async function submit(sendNow = false) {
     const id = getActiveThreadId();
     if (!id || imageDescriptionInProgress || !beginThreadSubmission(store2, id)) return;
     updateState();
     try {
-      await performSubmit(id);
+      await performSubmit(id, sendNow);
     } catch (error62) {
       console.error("Could not send prompt", { threadId: id, error: error62 });
       checkoutErrors.set(id, error62 instanceof Error ? error62.message : "Could not send message");
@@ -118451,7 +118777,7 @@ ${description}
       updateCheckoutControl();
     }
   }
-  async function performSubmit(id) {
+  async function performSubmit(id, sendNow) {
     mark("ttft:composer-submit");
     followUps.clearSuggestions();
     nextStepHint.clear();
@@ -118478,8 +118804,15 @@ ${description}
       videoRefs: currentVideoRefs(),
       archiveRefs: currentArchiveRefs()
     };
-    if (!rawText && attachedFiles2.length === 0 && attachedImages2.length === 0 && attachedVideos2.length === 0 && attachedArchives2.length === 0 && attachedThreads2.length === 0 && attachedShells2.length === 0)
+    if (!rawText && attachedFiles2.length === 0 && attachedImages2.length === 0 && attachedVideos2.length === 0 && attachedArchives2.length === 0 && attachedThreads2.length === 0 && attachedShells2.length === 0) {
+      if (sendNow) {
+        const target = getThreadById(store2, id)?.pendingMessages?.find(
+          (item) => item.autoDispatch !== false
+        );
+        if (target) sendQueuedMessageNow(store2, api2, id, target.messageId);
+      }
       return;
+    }
     const projectId = store2.getState().activeProjectId;
     const thread = getThreadById(store2, id);
     if (!projectId || !thread) return;
@@ -118702,6 +119035,7 @@ ${description}
     };
     if (getThreadById(store2, id)?.status === "running") {
       enqueueUserMessage(store2, id, queued);
+      if (sendNow) sendQueuedMessageNow(store2, api2, id, messageId);
     } else {
       startHumanTurnTree(store2, id);
       dispatchAgentRun(store2, api2, id, payload, queued);
@@ -119124,6 +119458,8 @@ ${reply}`);
     }),
     store2.on("threads_changed", () => {
       syncComposerThread();
+      executionMode.refresh();
+      footerOverflow.update();
       guardedYolo.refresh();
       containerRun.refresh();
       hideBranchMismatch();
@@ -119211,6 +119547,7 @@ ${reply}`);
       modelPicker.destroy();
       footerOverflow.destroy();
       guardedYolo.destroy();
+      executionMode.destroy();
       containerRun.destroy();
       footerCompact.destroy();
       portraitPanelControls.destroy();
@@ -119270,6 +119607,7 @@ var init_input_bar = __esm({
     init_composer_draft_autosave();
     init_panel_mode_controls();
     init_guarded_yolo_control();
+    init_agent_execution_mode_control();
     init_container_run_control();
     init_active_thread_owner();
     init_unknown_value3();
