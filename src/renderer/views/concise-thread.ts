@@ -1,8 +1,6 @@
-// Concise thread view (prototype): a model capable enough to be trusted with its
-// own process shows only what it produced — screenshots, visual evidence, canvas
-// previews and its closing summary — while its tool calls, reasoning, narration
-// and the tool errors it recovers from stay out of the transcript. While it
-// works, the activity row (spinner + the one current item) is the whole story.
+// Concise thread view keeps all assistant text and produced output visible.
+// Tool cards, reasoning and terminal references stay hidden; the activity row
+// reports live work. Tool-only bubbles collapse without hiding adjacent prose.
 //
 // The gate is the model's Artificial Analysis Intelligence Index on the
 // canonical scale, resolved per assistant message so a thread that switches
@@ -13,9 +11,6 @@
 // Experimental and off by default: Settings → Experimental → Concise threads
 // (`conciseThreadsEnabled`, held in app state so rendering reads it
 // synchronously). With it off, every transcript renders in full.
-//
-// A turn that *failed* is exempt: the model never saw that error, so it cannot
-// have handled it, and hiding it would leave a stopped spinner and nothing else.
 
 import { resolveModelIntellect } from '@copse/llm/intellect-lookup.ts'
 import type { Message, Thread, ToolCall } from '@shared/types'
@@ -50,9 +45,8 @@ export function isConciseMessage(msg: Pick<Message, 'role' | 'model' | 'requeste
 }
 
 /**
- * Whether a concise message carries tool calls, so its text narrates steps
- * unless it is the turn's last bubble (the stylesheet decides that from the DOM,
- * which stays right as later bubbles arrive). A failed turn keeps its text.
+ * Whether a concise message carries tool steps. This class records activity;
+ * it must not determine whether the message's text is visible.
  */
 export function isConciseStepsMessage(
   msg: Pick<Message, 'role' | 'model' | 'requestedModel' | 'toolCalls' | 'turnOutcome'>,
@@ -61,9 +55,8 @@ export function isConciseStepsMessage(
 }
 
 /**
- * Whether a concise message is process rather than product: a tool is running
- * in it, so its text is narration rather than the summary, and everything but
- * its produced output is hidden. A failed turn keeps its text.
+ * Whether a concise message has an active tool. Assistant text remains visible
+ * throughout tool execution.
  */
 export function isConciseWorkingMessage(
   msg: Pick<Message, 'role' | 'model' | 'requestedModel' | 'toolCalls' | 'turnOutcome'>,

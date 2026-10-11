@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 // The same `promises` binding the thread store imports, so the spies below
 // patch the exact object it calls.
-import { promises as fsPromises } from 'node:fs'
+import fs, { promises as fsPromises } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LLMMessage, Message, Thread } from '@shared/types'
@@ -23,6 +24,7 @@ import {
   appendMessage,
   appendImportedRemoteAgentRunResult,
   updateMeta,
+  updateMetaOrThrow,
   getThreadMeta,
   recordThreadAgentLink,
   attachThreadPrUrl,
@@ -42,6 +44,8 @@ import {
   clearAcpSessionBinding,
   type AcpSessionBinding,
   findThreadOwners,
+  threadArchivesDir,
+  threadMediaDir,
 } from './thread-store.ts'
 import { storageSet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
@@ -240,6 +244,72 @@ describe('thread-store', () => {
     await saveProjectThread('proj-1', thread('t1', { messages: [assistantMsg('a1', 'x', 'R')] }))
     assert.ok(!existsSync(join(dir, 'messages', 'u2.md')))
     assert.ok(existsSync(join(dir, 'messages', 'a1.md')))
+  })
+
+  it('keeps attached media in blobs/media when a whole-thread save prunes stale blobs', async () => {
+    await saveProjectThread('proj-1', thread('t1', { messages: [assistantMsg('a1', 'x', 'R')] }))
+    // Dropped videos and archives are stored here by their attachment stores and
+    // are never spine refs; a re-save (history edit, undo, recovery) must keep them.
+    const media = threadMediaDir('proj-1', 't1')
+    mkdirSync(join(media, 'archive-1'), { recursive: true })
+    writeFileSync(join(media, 'clip.mov'), 'video bytes')
+    writeFileSync(join(media, 'archive-1', 'notes.txt'), 'extracted')
+    await saveProjectThread('proj-1', thread('t1', { messages: [userMsg('u2', 'y')] }))
+    assert.ok(existsSync(join(media, 'clip.mov')))
+    assert.ok(existsSync(join(media, 'archive-1', 'notes.txt')))
+    assert.ok(!existsSync(join(root, 'proj-1', 't1', 'messages', 'a1.md')))
+  })
+
+  it('keeps extracted archives in blobs/archives when a whole-thread save prunes stale blobs', async () => {
+    await saveProjectThread('proj-1', thread('t1', { messages: [assistantMsg('a1', 'x', 'R')] }))
+    // read_archive unpacks here once and reuses the directory; pruning the files
+    // would leave an empty extraction that is "reused" with nothing in it.
+    const extracted = join(threadArchivesDir('proj-1', 't1'), 'bundle-abc123')
+    mkdirSync(join(extracted, 'src'), { recursive: true })
+    writeFileSync(join(extracted, 'src', 'a.txt'), 'extracted')
+    await saveProjectThread('proj-1', thread('t1', { messages: [userMsg('u2', 'y')] }))
+    assert.ok(existsSync(join(extracted, 'src', 'a.txt')))
+  })
+
+  it('keeps the previous meta.json and spine when a rewrite fails mid-write', async () => {
+    await saveProjectThread('proj-1', thread('t1', { messages: [userMsg('u1', 'hi')] }))
+    const dir = join(root, 'proj-1', 't1')
+    const metaBefore = readFileSync(join(dir, 'meta.json'), 'utf8')
+    const eventsBefore = readFileSync(join(dir, 'events.jsonl'), 'utf8')
+    const proseBefore = readFileSync(join(dir, 'messages', 'u1.md'), 'utf8')
+    // A full disk (or a crash) between opening and writing a file: an in-place
+    // O_TRUNC rewrite would leave meta.json empty and the thread unloadable.
+    const realWriteFileSync = fs.writeFileSync
+    const failingWrite = mock.method(
+      fs,
+      'writeFileSync',
+      (...args: Parameters<typeof fs.writeFileSync>) => {
+        if (typeof args[0] === 'number')
+          throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' })
+        realWriteFileSync(...args)
+      },
+    )
+    syncBuiltinESMExports()
+    try {
+      await assert.rejects(updateMetaOrThrow('proj-1', 't1', { title: 'Renamed' }))
+      await assert.rejects(
+        saveProjectThread(
+          'proj-1',
+          thread('t1', { messages: [userMsg('u1', 'hi'), userMsg('u2', 'later')] }),
+        ),
+      )
+    } finally {
+      failingWrite.mock.restore()
+      syncBuiltinESMExports()
+    }
+    assert.equal(readFileSync(join(dir, 'meta.json'), 'utf8'), metaBefore)
+    assert.equal(readFileSync(join(dir, 'events.jsonl'), 'utf8'), eventsBefore)
+    assert.equal(readFileSync(join(dir, 'messages', 'u1.md'), 'utf8'), proseBefore)
+    const loaded = await loadProjectThreads('proj-1')
+    assert.deepEqual(
+      loaded.map((t) => [t.title, t.messages.map((m) => m.id)]),
+      [['t1', ['u1']]],
+    )
   })
 
   it('skips a thread whose spine references a missing file rather than dropping the project', async () => {
