@@ -222,14 +222,20 @@ export class AgentDispatcher {
     this.dependencies = dependencies
   }
 
-  async dispatch(request: AgentDispatchRequest): Promise<void> {
+  async dispatch(
+    request: AgentDispatchRequest,
+    host: AgentHost<StreamChunk> = this.host,
+  ): Promise<void> {
     perfMark('ttft:main-dispatch')
     const key = dispatchKey(request.projectId, request.threadId)
     // Claim the thread before the renderer epoch sidecar is written. That
     // write can await disk, but an accepted local dispatch already owns the
     // conversation and must block an imported cloud snapshot from committing.
-    await this.dispatchExclusively(request, key, (host) =>
-      this.dispatchAccepted(request, key, host),
+    await this.dispatchExclusively(
+      request,
+      key,
+      (deferringHost) => this.dispatchAccepted(request, key, deferringHost),
+      host,
     )
   }
 
@@ -393,8 +399,11 @@ export class AgentDispatcher {
         // Claim before loading or persisting machine bookkeeping. Otherwise a
         // foreground dispatch can take the thread during either await, after
         // the continuation has already consumed budget and recorded a start.
-        return this.dispatchExclusively(request, key, (host) =>
-          this.executeClaimedMachine(request, key, host),
+        return this.dispatchExclusively(
+          request,
+          key,
+          (host) => this.executeClaimedMachine(request, key, host),
+          this.host,
         )
       }
       try {
@@ -520,6 +529,7 @@ export class AgentDispatcher {
     request: AgentDispatchRequest,
     key: string,
     run: (host: AgentHost<StreamChunk>) => Promise<T>,
+    targetHost: AgentHost<StreamChunk>,
   ): Promise<T> {
     this.assertDispatchable(request.projectId, request.threadId)
     const existing = this.active.get(key)
@@ -539,7 +549,7 @@ export class AgentDispatcher {
           terminalDone ??= chunk
           return
         }
-        this.host.emit(threadId, chunk)
+        targetHost.emit(threadId, chunk)
       },
     }
     const running = run(terminalDeferringHost)
@@ -556,8 +566,8 @@ export class AgentDispatcher {
       // final commit failed; a retry must start from the still-authoritative
       // persisted history instead.
       if (committed && terminalDone !== undefined) {
-        if (terminalOutcome !== undefined) this.host.emit(request.threadId, terminalOutcome)
-        this.host.emit(request.threadId, terminalDone)
+        if (terminalOutcome !== undefined) targetHost.emit(request.threadId, terminalOutcome)
+        targetHost.emit(request.threadId, terminalDone)
       }
     }
   }
