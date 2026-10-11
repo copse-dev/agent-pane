@@ -67,6 +67,7 @@ export function attachImageCopyMenu(image: HTMLImageElement): void {
 export interface ImageExpandItem {
   src: string
   alt: string
+  onUpdate?: (png: string) => boolean
 }
 
 function expandableImageSource(image: HTMLImageElement): string {
@@ -132,7 +133,14 @@ function annotatableImage(
     annotation ??= mountAnnotationLayer(frame, {
       label: imageTitle(item),
       captureBase,
+      ...(item.onUpdate ? { actionLabel: 'Update' } : {}),
       onSend: (payload): boolean => {
+        if (item.onUpdate) {
+          if (!payload.png || !payload.captured) return false
+          const updated = item.onUpdate(payload.png)
+          if (updated) closePreview()
+          return updated
+        }
         const attached = attachAnnotation(payload, imageTitle(item))
         if (attached) closePreview()
         return attached
@@ -320,9 +328,16 @@ function openImageGalleryViewer(
   })
 }
 
-function openSingleImage(src: string, alt: string, returnFocus?: () => HTMLElement | null): void {
+function openSingleImage(
+  src: string,
+  alt: string,
+  returnFocus?: () => HTMLElement | null,
+  onUpdate?: (png: string) => boolean,
+): void {
   let session: AttachmentPreviewSession | null = null
-  const entry = annotatableImage({ src, alt }, () => session?.close())
+  const entry = annotatableImage({ src, alt, ...(onUpdate ? { onUpdate } : {}) }, () =>
+    session?.close(),
+  )
   const content = el('div', { class: 'image-expand-single' }, entry.frame, entry.button)
   session = openAttachmentPreview({
     kind: 'image',
@@ -342,9 +357,10 @@ export function openImageExpand(
   src: string,
   alt = 'Expanded attachment',
   returnFocus?: () => HTMLElement | null,
+  onUpdate?: (png: string) => boolean,
 ): void {
   if (!src) return
-  openSingleImage(src, alt, returnFocus)
+  openSingleImage(src, alt, returnFocus, onUpdate)
 }
 
 /** Open a navigable image gallery in the shared attachment lightbox. */
@@ -379,6 +395,7 @@ export function attachImageExpand(
   alt?: string,
   gallery?: readonly ImageExpandItem[],
   galleryIndex?: number,
+  onUpdate?: (png: string) => boolean,
 ): void {
   if (img.dataset['imageExpand'] === 'true') return
   img.dataset['imageExpand'] = 'true'
@@ -408,7 +425,7 @@ export function attachImageExpand(
       openImageGallery(gallery, galleryIndex ?? 0, focusTarget)
       return
     }
-    openImageExpand(src, label, focusTarget)
+    openImageExpand(src, label, focusTarget, onUpdate)
   }
 
   img.addEventListener('click', (event) => {
