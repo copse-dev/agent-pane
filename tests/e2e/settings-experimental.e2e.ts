@@ -151,6 +151,12 @@ describe('experimental settings section', () => {
     const mobileCompanionHint = await mobileCompanion.$('.field-hint').getText()
     assert.match(mobileCompanionHint, /same local network/i)
     assert.doesNotMatch(mobileCompanionHint, /\bsecure(?:ly)?\b/i)
+    // Mobile Companion is off by default, so the real `mobile:status` IPC call
+    // must resolve to no URL and the pairing QR must stay hidden — it only
+    // appears once a server is actually running (see
+    // settings-experimental-copy.demo.ts for the enabled/running appearance,
+    // exercised against the demo fixture).
+    await expect($('#mobile-companion-qr')).not.toBeDisplayed()
 
     // The classifier is described in plain terms: how hard the task is and which
     // model suits it, with no internal tool or scale vocabulary.
