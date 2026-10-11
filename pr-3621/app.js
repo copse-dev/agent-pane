@@ -53016,9 +53016,18 @@ function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
   renderClassifierTable(host, summary.classifiers, period === "allTime");
 }
 function createUsageSection(api2, store2, onRequestClose) {
+  let pendingSignInProvider = null;
+  const onSignIn = (provider) => {
+    const handler = createPlanSignInHandler(store2, provider, onRequestClose);
+    if (!handler) return void 0;
+    return () => {
+      pendingSignInProvider = provider;
+      handler();
+    };
+  };
   const handleSignIn = {
-    claude: createPlanSignInHandler(store2, "claude", onRequestClose) ?? void 0,
-    codex: createPlanSignInHandler(store2, "codex", onRequestClose) ?? void 0
+    claude: onSignIn("claude"),
+    codex: onSignIn("codex")
   };
   const root = document.createElement("div");
   root.className = "usage-section-root";
@@ -53150,9 +53159,14 @@ function createUsageSection(api2, store2, onRequestClose) {
       renderPlanSection(planEl, null, null, handleSignIn);
     }
     try {
-      const snapshot = await api2.usage.getPlanUsage();
+      const snapshot = await api2.usage.getPlanUsage(pendingSignInProvider !== null);
       cachedPlanSnapshot = snapshot;
       renderPlanSection(planEl, snapshot, null, handleSignIn);
+      if (pendingSignInProvider && snapshot.providers.some(
+        (provider) => provider.provider === pendingSignInProvider && provider.status === "ok"
+      )) {
+        pendingSignInProvider = null;
+      }
     } catch (err2) {
       const message2 = err2 instanceof Error ? err2.message : "Failed to load subscription plan usage.";
       renderPlanSection(planEl, null, message2, handleSignIn);
@@ -65250,14 +65264,10 @@ function markThreadUnread(store2, threadId, at3 = Date.now()) {
   store2.emit("threads_changed");
 }
 function markThreadRead(store2, threadId) {
-  const { threads } = store2.getState();
-  if (!threads.some((thread) => thread.id === threadId && thread.unreadAt !== void 0)) return;
-  store2.setState({
-    threads: threads.map((thread) => {
-      if (thread.id !== threadId || thread.unreadAt === void 0) return thread;
-      const { unreadAt: _read, ...readThread } = thread;
-      return readThread;
-    })
+  if (getThreadById(store2, threadId)?.unreadAt === void 0) return;
+  patchThreadAnywhere(store2, threadId, (thread) => {
+    const { unreadAt: _read, ...readThread } = thread;
+    return readThread;
   });
   store2.emit("threads_changed");
 }
@@ -65626,12 +65636,10 @@ function updateContextSnapshot(store2, threadId, snapshot) {
   store2.emit("context_updated", threadId);
 }
 function clearContextSnapshot(store2, threadId) {
-  const threads = store2.getState().threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     const { contextSnapshot: _removed, ...rest } = t2;
     return rest;
   });
-  store2.setState({ threads });
   store2.emit("context_updated", threadId);
 }
 function setThreadTodos(store2, threadId, todos) {
@@ -65651,17 +65659,13 @@ function setMessageReview(store2, threadId, messageId, review) {
   store2.emit("review_changed", threadId, messageId);
 }
 function setMessageTurnOutcome(store2, threadId, messageId, turnOutcome) {
-  const threads = store2.getState().threads.map((thread) => {
-    if (thread.id !== threadId) return thread;
-    return {
-      ...thread,
-      messages: thread.messages.map(
-        (message2) => message2.id === messageId ? { ...message2, turnOutcome } : message2
-      ),
-      updatedAt: Date.now()
-    };
-  });
-  store2.setState({ threads });
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    messages: thread.messages.map(
+      (message2) => message2.id === messageId ? { ...message2, turnOutcome } : message2
+    ),
+    updatedAt: Date.now()
+  }));
   store2.emit("threads_changed");
 }
 function setThreadComparison(store2, threadId, comparison) {
@@ -65731,16 +65735,13 @@ function setReviewFindingDismissed(store2, threadId, findingId, dismissed, messa
   store2.emit("review_report_changed", threadId, messageId);
 }
 function setQueuePaused(store2, threadId, paused) {
-  const { threads } = store2.getState();
-  const thread = threads.find((t2) => t2.id === threadId);
+  const thread = getThreadById(store2, threadId);
   if (!thread || Boolean(thread.queuePaused) === paused) return;
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     if (paused) return { ...t2, queuePaused: true, updatedAt: Date.now() };
     const { queuePaused: _removed, ...rest } = t2;
     return { ...rest, updatedAt: Date.now() };
   });
-  store2.setState({ threads: updated });
   store2.emit("threads_changed");
 }
 function setThreadStatus(store2, threadId, status) {
@@ -65987,9 +65988,16 @@ function metaSig(meta3) {
   return JSON.stringify(meta3);
 }
 function metaPatch(prev, next) {
-  const patch = { ...next };
-  for (const key of Object.keys(prev)) {
-    if (!Object.hasOwn(next, key)) patch[key] = void 0;
+  const before = { ...prev };
+  const after = { ...next };
+  const patch = {};
+  for (const key of Object.keys(after)) {
+    if (!Object.hasOwn(before, key) || JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+      patch[key] = after[key];
+    }
+  }
+  for (const key of Object.keys(before)) {
+    if (!Object.hasOwn(after, key)) patch[key] = void 0;
   }
   return patch;
 }
@@ -70573,11 +70581,11 @@ function mountSettingsDialog(store2, api2) {
               <legend>Concise threads</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="conciseThreadsEnabled" />
-                Show only the results of turns from highly capable models
+                Hide tool details and reasoning from highly capable models
               </label>
               <p class="field-hint">
                 For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning, and the
                 tool errors the model recovers from stay hidden; while it works, you see what it
                 is doing now. Other models always show the full thread.
               </p>
@@ -77214,7 +77222,7 @@ function conciseMultiTurnMessages(model) {
           id: `concise-multi-steps-${String(n2)}`,
           role: "assistant",
           model,
-          content: "Checking the code.",
+          content: "",
           toolCalls: [
             {
               id: `concise-multi-read-${String(n2)}`,
@@ -77265,7 +77273,15 @@ function conciseMultiTurnMessages(model) {
         role: "assistant",
         model,
         content,
-        toolCalls: [],
+        toolCalls: [
+          {
+            id: `concise-multi-audit-${String(n2)}-${String(i2)}`,
+            name: "sandbox_network_audit",
+            args: {},
+            status: "done",
+            result: "Audit complete."
+          }
+        ],
         createdAt: at3 + 3 + i2
       }))
     ];
