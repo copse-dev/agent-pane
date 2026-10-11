@@ -104,6 +104,27 @@ export type { FrontierTooltip, ModelCardResolveApi } from './intellect-frontier-
 /** Card links warmed per render. Matches the `model-cards:resolve` batch cap. */
 const MAX_CARD_PREFETCH = 128
 
+// Hide a dominated point only when a priced model with at least its intellect
+// costs at most a quarter as much. Free plan/local routes are excluded from
+// this comparison: their effective $0 price would hide almost every paid route.
+const SEVERE_DOMINATION_PRICE_RATIO = 4
+
+export function isSeverelyDominated(
+  point: FrontierPoint,
+  points: readonly FrontierPoint[],
+): boolean {
+  return (
+    !point.onFrontier &&
+    point.costPerMTok > 0 &&
+    points.some(
+      (other) =>
+        other.id !== point.id &&
+        other.intellect >= point.intellect &&
+        other.costPerMTok > 0 &&
+        point.costPerMTok >= other.costPerMTok * SEVERE_DOMINATION_PRICE_RATIO,
+    )
+  )
+}
 export type { OpenRouterPricedModel }
 export { extraProviderFrontierCandidates, localFrontierCandidates, openRouterFrontierCandidates }
 
@@ -1041,7 +1062,11 @@ export function createIntellectFrontierPanel(
     // rather than each claiming a labelled dot. Dropping dominated points
     // cannot change the frontier.
     const dominatedLive = allPoints.filter((p) => p.discovery === true && !p.onFrontier)
-    const points = allPoints.filter((p) => p.discovery !== true || p.onFrontier)
+    const routedPoints = allPoints.filter((p) => p.discovery !== true)
+    const severelyDominated = routedPoints.filter((p) => isSeverelyDominated(p, routedPoints))
+    const points = allPoints.filter(
+      (p) => (p.discovery !== true || p.onFrontier) && !severelyDominated.includes(p),
+    )
     // Discoverable points are deliberately absent from the default chart, but
     // the feed still supplied their price. Exclude them from the "no price"
     // disclosure without pretending they are routable or plotting them. Use
@@ -1151,6 +1176,27 @@ export function createIntellectFrontierPanel(
           ),
           renderBandedModelList(
             dominatedLive.map((p) => ({
+              id: p.id,
+              intellect: p.intellect,
+              estimated: p.intellectEstimated,
+              costPerMTok: p.costPerMTok,
+            })),
+          ),
+        ),
+      )
+    }
+    if (severelyDominated.length > 0) {
+      liveNoteParts.push(
+        el(
+          'details',
+          { class: 'frontier-severely-dominated' },
+          el(
+            'summary',
+            {},
+            `${String(severelyDominated.length)} models cost at least 4× more than an equally capable priced model`,
+          ),
+          renderBandedModelList(
+            severelyDominated.map((p) => ({
               id: p.id,
               intellect: p.intellect,
               estimated: p.intellectEstimated,
