@@ -52,6 +52,7 @@ import {
 } from './model-options.ts'
 import { mountModelSelectPicker } from './model-picker.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
+import { createAcpAgentsList } from './setup/acp-agents-list.ts'
 import { createProvidersPanel } from './setup/providers-section.ts'
 import { createClassifiersSection } from './setup/classifiers-section.ts'
 import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
@@ -1799,6 +1800,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       },
     ],
     showOpenAiServiceTier: true,
+    // The Coding agents list below owns agents on this machine.
+    deviceAgents: false,
     cloudAgents: [
       {
         vendor: 'cursor',
@@ -1814,6 +1817,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     cloudAgentOptions: qsRequired(overlay, '#settings-cloud-agent-options'),
   })
   qsRequired(overlay, '#settings-providers-host').append(providersPanel.root)
+  const agentsList = createAcpAgentsList(api)
+  qsRequired(overlay, '#settings-providers-host').append(agentsList.root)
 
   const makerBlockList = el('div', { class: 'model-maker-block-list' })
   for (const maker of MODEL_MAKERS) {
@@ -2148,6 +2153,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (!searchContentLoaded) {
       searchContentLoaded = true
       void providersPanel.refresh()
+      void agentsList.refresh()
       void classifiersSection.refresh()
       void sshWorkspaceSection.refresh()
       void refreshSources()
@@ -4802,6 +4808,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await refreshStage('provider-sections', async () => {
         await envKeyDetectSection.refresh()
         await providersPanel.refresh()
+        await agentsList.refresh()
       })
 
       const form = qsRequired<HTMLFormElement>(overlay, 'form')

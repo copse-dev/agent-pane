@@ -90,6 +90,12 @@ export function createProvidersPanel(
      * cheap PATH scan, installs wait for first use.
      */
     deviceAutoSetup?: boolean
+    /**
+     * Whether agents installed on this machine appear under their providers.
+     * Defaults to true (onboarding). Settings turns it off because its own
+     * Coding agents list owns them.
+     */
+    deviceAgents?: boolean
   } = {},
 ): ProvidersPanel {
   const cloudAgents = opts.cloudAgents ?? []
@@ -171,6 +177,7 @@ export function createProvidersPanel(
   let openAiTierDirty = false
 
   const deviceAutoSetup = opts.deviceAutoSetup ?? true
+  const deviceAgents = opts.deviceAgents ?? true
 
   const offeredOpenAiTier = new Set<string>(SERVICE_TIER_CHOICES.map((choice) => choice.value))
 
@@ -268,7 +275,9 @@ export function createProvidersPanel(
     return {
       api: (vendor.api ?? []).filter((id) => apiPanel.labelFor(id) !== null),
       local: (vendor.local ?? []).filter((id) => localPanel.labelFor(id) !== null),
-      agents: (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null),
+      agents: deviceAgents
+        ? (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null)
+        : [],
       cloud: cloudAgentByVendor.get(vendor.id),
     }
   }
@@ -296,7 +305,7 @@ export function createProvidersPanel(
       if (claimed.has(id)) continue
       list.push({ id, label: apiPanel.labelFor(id) ?? id, api: [id] })
     }
-    for (const id of agentsPanel.agentIds()) {
+    for (const id of deviceAgents ? agentsPanel.agentIds() : []) {
       if (claimed.has(id)) continue
       list.push({ id, label: agentsPanel.labelFor(id) ?? id, agents: [id] })
     }
@@ -376,7 +385,7 @@ export function createProvidersPanel(
 
   function addForm(): HTMLElement {
     const picker = el('select', {})
-    for (const entry of ADD_KINDS) {
+    for (const entry of ADD_KINDS.filter((e) => deviceAgents || e.kind !== 'agent')) {
       picker.append(el('option', { value: entry.kind }, entry.label))
     }
     picker.value = selectedAddKind
