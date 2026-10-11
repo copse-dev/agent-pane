@@ -140,6 +140,14 @@
     "label": "Sidebar thread sort"
   },
   {
+    "id": "sidebar-cleanup-ssh",
+    "label": "Cleanup for SSH pull requests"
+  },
+  {
+    "id": "sidebar-cleanup-after-pr",
+    "label": "Cleanup after merged or closed PRs"
+  },
+  {
     "id": "sidebar-thread-changes",
     "label": "Sidebar changes glyph"
   },
@@ -162,6 +170,10 @@
   {
     "id": "activity-home-question",
     "label": "Activity home with a question waiting"
+  },
+  {
+    "id": "activity-home-read-history",
+    "label": "Activity home listing threads that finished before launch"
   },
   {
     "id": "activity-home-empty",
