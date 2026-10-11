@@ -30,6 +30,30 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'external')
   })
 
+  it('keeps local pnpm exec commands contained without hiding their payload', () => {
+    for (const command of [
+      'pnpm exec tsc --noEmit',
+      'pnpm exec -- eslint src',
+      'pnpm exec vitest run',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'sandbox', command)
+    }
+    for (const command of [
+      'pnpm install',
+      'npm exec tsc',
+      'corepack pnpm exec tsc',
+      'pnpm exec curl https://example.com',
+      'pnpm exec node -e "process.exit()"',
+      'pnpm exec cat /etc/passwd',
+      'pnpm exec tsc; exec curl https://example.com',
+      'pnpm exec tsc; npm install',
+      'pnpm exec tsc $(curl https://example.com)',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+    }
+    assert.equal(analyzeShellCommand('pnpm dlx tsc', root).verdict, 'ambiguous')
+  })
+
   it('flags git push', () => {
     const r = analyzeShellCommand('git push origin main', root)
     assert.equal(r.verdict, 'external')

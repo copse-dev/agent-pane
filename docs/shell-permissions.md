@@ -168,6 +168,17 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+`pnpm exec <command>` runs an installed command and is not itself an install or shell
+`exec` signal. Its child command still receives the normal scope checks, so downloads,
+opaque interpreter code, and outside-project paths keep their existing policy. Corepack
+and package downloads retain their existing gates.
+
+Remembered local port-binding consent is keyed by the project root, shared across its
+thread worktrees. Command execution still uses the thread's execution root and passes
+the shell gate. Other projects require their own consent, and disabling the Background
+tasks plugin still revokes its loopback-binding capability. Legacy worktree-root grants
+are not broadened automatically; the next project-level consent can be remembered.
+
 Newline-separated commands are inspected independently. For example, an opaque
 `python3 - <<'PY'` heredoc followed by `wc -l src/a.ts` stays ambiguous and runs inside
 an active sandbox: the TypeScript file belongs to `wc`, not to the interpreter.

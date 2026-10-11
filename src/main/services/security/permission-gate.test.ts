@@ -148,6 +148,42 @@ describe('package command approval scope', () => {
       }
     })
   }
+
+  it('names a delete beside a sandboxed npx instead of the package prompt', async () => {
+    setPermissionGateForTests(null)
+    const root = mkdtempSync(join(tmpdir(), 'package-scope-'))
+    const restore = setWorkspaceRootForTest(root)
+    setSetting('safetyClassifierEnabled', false)
+    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    const requests: { title: string; cause: string | undefined }[] = []
+    setApprovalHandler(async ({ title, cause }) => {
+      requests.push({ title, cause })
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('npx wdio run wdio.conf.ts', {
+          sandboxEnabled: true,
+          autoRun: true,
+          executionRoot: root,
+        }),
+        true,
+      )
+      assert.equal(requests.length, 0)
+      await ensureShellCommandPermitted('rm -f probe.e2e.ts && npx wdio run wdio.conf.ts', {
+        sandboxEnabled: true,
+        autoRun: true,
+        executionRoot: root,
+      })
+      assert.equal(requests.length, 1)
+      assert.notEqual(requests[0]?.cause, 'shell-package-install')
+      assert.notEqual(requests[0]?.title, 'Run package command?')
+    } finally {
+      setApprovalHandler(null)
+      restore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('prepare_worktree permission', () => {
@@ -1313,6 +1349,15 @@ describe('ensureShellCommandPermitted — SSH workspace execution target', () =>
     assert.deepEqual(remote.prompts, ['shell-no-containment'])
   })
 
+  it('runs local pnpm exec contained but prompts on the SSH host', async () => {
+    const command = 'pnpm exec tsc --noEmit'
+    assert.deepEqual(await runGate(command, 'local'), { permitted: true, prompts: [] })
+    assert.deepEqual(await runGate(command, 'ssh'), {
+      permitted: false,
+      prompts: ['shell-no-containment'],
+    })
+  })
+
   it('fails closed when the active project is remote but cannot route over SSH', async () => {
     // The spawn refuses this state; the gate must not fall back to "local and
     // contained" for it either.
@@ -1470,7 +1515,7 @@ describe('run_background permission', () => {
     }
   })
 
-  it('prompts a port-binding start, then remembers the grant per workspace', async () => {
+  it('remembers port binding across sibling worktrees but not other projects', async () => {
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/port-binding-project')
     await setSetting('safetyClassifierEnabled', false)
@@ -1483,14 +1528,28 @@ describe('run_background permission', () => {
     })
     try {
       const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
+      const start = (projectRoot: string, threadId: string): Promise<boolean> =>
+        runWithThreadExecutionContext(
+          {
+            projectId: projectRoot,
+            projectRoot,
+            threadId,
+            root: `${projectRoot}/worktrees/${threadId}`,
+            checkoutMode: 'worktree',
+            branch: `copse/${threadId}`,
+          },
+          () => ensureToolPermitted({ toolName: 'run_background', args }),
+        )
+      assert.equal(await start('/tmp/port-binding-project', 'first'), true)
+      assert.equal(await start('/tmp/port-binding-project', 'second'), true)
+      assert.equal(portPrompts, 1, 'another worktree of the same project must not re-prompt')
+      assert.equal(await start('/tmp/port-binding-other-project', 'third'), true)
+      assert.equal(portPrompts, 2, 'another project must obtain its own consent')
+      // A shared checkout uses the same project grant as its worktrees.
       assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
-      assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
-      assert.equal(
-        portPrompts,
-        1,
-        'second port-binding start in the same workspace must not re-prompt',
-      )
+      assert.equal(portPrompts, 2)
     } finally {
+      await setSetting('portBindingAllowedRoots', [])
       setApprovalHandler(null)
       restore()
       await setSetting('safetyClassifierEnabled', false)

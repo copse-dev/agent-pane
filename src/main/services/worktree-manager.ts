@@ -679,7 +679,7 @@ async function fetchDefaultBranch(projectRoot: string, branch: string): Promise<
   await git(projectRoot, ['fetch', '--quiet', 'origin', branch]).catch(() => undefined)
 }
 
-async function hasOriginRemote(projectRoot: string): Promise<boolean> {
+export async function hasOriginRemote(projectRoot: string): Promise<boolean> {
   return (await git(projectRoot, ['remote', 'get-url', 'origin'])).code === 0
 }
 
