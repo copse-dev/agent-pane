@@ -80790,7 +80790,7 @@ function createDemoApi(scenario, options = {}) {
         url: scenario.mobileCompanion?.url ?? null,
         qrSvg: scenario.mobileCompanion?.qrSvg ?? null,
         rootCertificatePath: null,
-        addresses: [],
+        addresses: scenario.mobileCompanion ? [{ address: new URL(scenario.mobileCompanion.url).hostname, interfaceName: "Wi-Fi" }] : [],
         devices: [],
         pairing: null,
         lastError: null
