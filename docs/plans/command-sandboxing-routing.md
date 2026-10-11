@@ -152,8 +152,10 @@ command list.
   `chown`/`chmod`/`chgrp`/`chattr`/`takeown` or by relocation (`mv`, `rsync --delete`),
   which destroy access without deleting anything; raw-device destruction, including
   verbs that name no `/dev` node in a recognised form (`wipefs`, `blkdiscard`,
-  `sgdisk --zap-all`, `cryptsetup luksFormat`); truncating redirects into a system
-  tree and any write to a host credential file (`/etc/sudoers`, `/etc/shadow`);
+  `sgdisk --zap-all`, `cryptsetup luksFormat`); any write to a host credential file
+  (`/etc/sudoers`, `/etc/shadow`) by any route; a redirect into any other system tree prompts,
+  like `tee`, `cp` and `mv` into it (a truncating redirect used to be a hard deny, which made
+  `cat > /etc/x` stricter than `tee /etc/x` for the same effect);
   destruction of backups and recovery state (`vssadmin delete shadows`, `tmutil
 delete`, `journalctl --vacuum-*`, `bcdedit … recoveryenabled No`); disabling host
   security controls (`csrutil disable`, `setenforce 0`, `Set-MpPreference -Disable*`);

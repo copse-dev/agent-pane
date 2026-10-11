@@ -39,6 +39,11 @@ const MAX_NESTED_DISCOVERED_FILES = 200
 const MAX_NESTED_CONTEXT_PATHS = 64
 const MAX_ACTIVE_NESTED_FILES = 8
 const MAX_NESTED_FILE_BYTES = 32 * 1024
+/**
+ * Root project instruction files come from the workspace, which may be an
+ * untrusted clone: they are read (to list them in Sources) even when inactive.
+ */
+const MAX_PROJECT_FILE_BYTES = 256 * 1024
 const MAX_ACTIVE_NESTED_BYTES = 64 * 1024
 /**
  * How long a full inventory serves callers outside a turn (Settings and
@@ -230,7 +235,7 @@ async function readProjectTrimmed(
       const content = buffer.subarray(0, Math.min(bytesRead, maxBytes)).toString('utf-8').trim()
       if (!content) return null
       return truncated
-        ? `${content}\n\n[Copse truncated this nested AGENTS.md at ${String(maxBytes)} bytes.]`
+        ? `${content}\n\n[Copse truncated this instruction file at ${String(maxBytes)} bytes.]`
         : content
     } finally {
       await handle.close()
@@ -625,7 +630,9 @@ async function readInstructionFiles(
   for (const name of files) {
     const path = join(root, name)
     const content =
-      scope === 'global' ? await readTrimmed(path) : await readProjectTrimmed(path, root)
+      scope === 'global'
+        ? await readTrimmed(path)
+        : await readProjectTrimmed(path, root, MAX_PROJECT_FILE_BYTES)
     if (!content) continue
     sources.push({ path, name, scope, content, active: scope === 'global' || trusted, trusted })
   }

@@ -1,17 +1,6 @@
-import {
-  lstat,
-  mkdir,
-  mkdtemp,
-  open,
-  readFile,
-  readdir,
-  readlink,
-  realpath,
-  rm,
-  rmdir,
-} from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, rmdir } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { constants, realpathSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
@@ -1552,107 +1541,6 @@ export async function listProjectWorktrees(projectRoot: string): Promise<Worktre
   return listRecords((await repositoryLocation(projectRoot)).repositoryRoot)
 }
 
-/** Bounded, content-bound confirmation. Links are fingerprinted, never followed.
- * External editors are not locked: repeat this snapshot immediately before Git
- * removal and fail closed on observed mutation; this is not an atomic FS snapshot.
- */
-async function archiveContentIdentity(root: string, paths: string[]): Promise<string> {
-  const hash = createHash('sha256')
-  let entries = 0
-  let bytes = 0
-  const limit = 64 * 1024 * 1024
-  const checkAncestors = async (path: string): Promise<void> => {
-    const rel = relative(root, path)
-    if (rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel))
-      throw new Error('Archive file escaped its worktree.')
-    let parent = dirname(path)
-    while (parent !== root) {
-      if (parent === dirname(parent)) throw new Error('Invalid archive file path.')
-      if ((await lstat(parent)).isSymbolicLink())
-        throw new Error('Archive file parent is a symlink.')
-      parent = dirname(parent)
-    }
-  }
-  const visit = async (path: string): Promise<void> => {
-    if (++entries > 10_000) throw new Error('Too many files to safely confirm archival.')
-    await checkAncestors(path)
-    const name = relative(root, path)
-    const stat = await lstat(path).catch((error: unknown) => {
-      if (ownErrorCode(error) === 'ENOENT') return null
-      throw error
-    })
-    if (!stat) {
-      hash.update(JSON.stringify([name, 'missing']))
-      return
-    }
-    if (stat.isSymbolicLink()) {
-      hash.update(JSON.stringify([name, 'link', await readlink(path)]))
-      return
-    }
-    if (stat.isDirectory()) {
-      hash.update(JSON.stringify([name, 'directory']))
-      for (const child of (await readdir(path)).sort()) await visit(join(path, child))
-      const after = await lstat(path)
-      await checkAncestors(path)
-      if (
-        !after.isDirectory() ||
-        after.ino !== stat.ino ||
-        after.dev !== stat.dev ||
-        after.ctimeMs !== stat.ctimeMs
-      )
-        throw new Error('Archive directory changed during inspection.')
-      return
-    }
-    if (!stat.isFile()) throw new Error('Cannot safely confirm a special archive file.')
-    if (stat.size > limit - bytes)
-      throw new Error('Too much file content to safely confirm archival.')
-    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
-    try {
-      const before = await handle.stat()
-      if (
-        !before.isFile() ||
-        before.ino !== stat.ino ||
-        before.dev !== stat.dev ||
-        before.size !== stat.size
-      )
-        throw new Error('Archive file changed during inspection.')
-      const contentHash = createHash('sha256')
-      const buffer = Buffer.alloc(Math.min(64 * 1024, limit - bytes + 1))
-      let size = 0
-      while (bytes <= limit) {
-        const result = await handle.read(
-          buffer,
-          0,
-          Math.min(buffer.length, limit - bytes + 1),
-          null,
-        )
-        if (result.bytesRead === 0) break
-        bytes += result.bytesRead
-        size += result.bytesRead
-        if (bytes > limit) throw new Error('Too much file content to safely confirm archival.')
-        contentHash.update(buffer.subarray(0, result.bytesRead))
-      }
-      const after = await handle.stat()
-      const current = await lstat(path)
-      await checkAncestors(path)
-      if (
-        !current.isFile() ||
-        current.ino !== before.ino ||
-        current.dev !== before.dev ||
-        size !== stat.size ||
-        after.mtimeMs !== before.mtimeMs ||
-        after.ctimeMs !== before.ctimeMs
-      )
-        throw new Error('Archive file changed during inspection.')
-      hash.update(JSON.stringify([name, 'file', stat.mode, size, contentHash.digest('hex')]))
-    } finally {
-      await handle.close()
-    }
-  }
-  for (const path of [...new Set(paths)].sort()) await visit(resolve(root, path))
-  return hash.digest('hex')
-}
-
 export type ArchiveWorktreeResult =
   | { status: 'removed'; worktree: ThreadWorktree }
   | { status: 'blocked-dirty'; paths: string[]; fingerprint: string }
@@ -1690,6 +1578,11 @@ export async function archiveThreadWorktree(
     }
     const validated = await validateThreadWorktree(input)
     const { root, gitDir: _gitDir, commonGitDir: _commonGitDir, ...worktree } = validated
+    // Git's own view of the checkout: tracked edits, staged changes and
+    // untracked files. Ignored files (build output, caches) are regenerable and
+    // are not listed or fingerprinted. Callers stop every process they own
+    // before archiving, so this only has to notice a change between the user's
+    // confirmation and removal, not catch a live writer.
     const snapshot = async (): Promise<{
       paths: string[]
       fingerprint: string
@@ -1700,10 +1593,7 @@ export async function archiveThreadWorktree(
         '--porcelain=v1',
         '-z',
         '--untracked-files=all',
-        '--ignored=matching',
       ])
-      if (status.code !== 0 || status.stdoutTruncated)
-        throw new Error('Cannot completely inspect thread worktree status.')
       const head = await inspectGit(validated.path, ['rev-parse', 'HEAD'])
       const branch = await inspectGit(validated.path, [
         'symbolic-ref',
@@ -1711,48 +1601,16 @@ export async function archiveThreadWorktree(
         '--short',
         'HEAD',
       ])
-      const index = await inspectGit(validated.path, ['ls-files', '--stage', '-z'])
       if (
+        status.code !== 0 ||
         head.code !== 0 ||
         branch.code !== 0 ||
-        index.code !== 0 ||
+        status.stdoutTruncated ||
         head.stdoutTruncated ||
-        branch.stdoutTruncated ||
-        index.stdoutTruncated
+        branch.stdoutTruncated
       )
-        throw new Error('Cannot identify archive snapshot.')
-      const paths = changedPaths(status.stdout)
-      const content = await archiveContentIdentity(validated.path, paths)
-      const verifyStatus = await inspectGit(validated.path, [
-        'status',
-        '--porcelain=v1',
-        '-z',
-        '--untracked-files=all',
-        '--ignored=matching',
-      ])
-      const verifyHead = await inspectGit(validated.path, ['rev-parse', 'HEAD'])
-      const verifyBranch = await inspectGit(validated.path, [
-        'symbolic-ref',
-        '--quiet',
-        '--short',
-        'HEAD',
-      ])
-      const verifyIndex = await inspectGit(validated.path, ['ls-files', '--stage', '-z'])
-      if (
-        branch.stdout.trim() !== validated.branch ||
-        verifyStatus.code !== 0 ||
-        verifyStatus.stdoutTruncated ||
-        verifyHead.stdoutTruncated ||
-        verifyBranch.stdoutTruncated ||
-        verifyIndex.stdoutTruncated ||
-        verifyHead.code !== 0 ||
-        verifyBranch.code !== 0 ||
-        verifyIndex.code !== 0 ||
-        verifyStatus.stdout !== status.stdout ||
-        verifyHead.stdout !== head.stdout ||
-        verifyBranch.stdout !== branch.stdout ||
-        verifyIndex.stdout !== index.stdout
-      )
+        throw new Error('Cannot completely inspect thread worktree status.')
+      if (branch.stdout.trim() !== validated.branch)
         throw new Error('Archive checkout changed during inspection; try again.')
       const fingerprint = createHash('sha256')
         .update(
@@ -1763,12 +1621,10 @@ export async function archiveThreadWorktree(
             branch.stdout,
             head.stdout,
             status.stdout,
-            index.stdout,
-            content,
           ]),
         )
         .digest('hex')
-      return { paths, fingerprint, dirty: status.stdout.length > 0 }
+      return { paths: changedPaths(status.stdout), fingerprint, dirty: status.stdout.length > 0 }
     }
     const initial = await snapshot()
     if (initial.dirty && confirmation !== initial.fingerprint)

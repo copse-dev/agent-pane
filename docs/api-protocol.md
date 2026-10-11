@@ -73,23 +73,77 @@ every member, with two documented escapes:
    unit test `scripts/lib/api-protocol.test.ts` fails on a stale file, so the
    surface only changes when someone regenerates and reviews the diff.
 3. Classify the change for compatibility. **Additive** (a new channel or
-   method, a new optional trailing argument, a new optional result field)
-   keeps the version; **breaking** (a channel or method removed or renamed, an
-   argument made required or inserted, a result narrowed) requires bumping
-   `API_PROTOCOL_VERSION`. The manifest diff shows channel-level changes; type
-   shape changes are only visible to the generator, which regenerates the
-   protocol at a git ref (a temporary worktree borrowing this checkout's
-   `node_modules`), compares full shapes with `$ref`s inlined and doc comments
-   ignored, and exits non-zero on a breaking change without a bump:
+   method, a new optional result field) keeps the version; **breaking** (a
+   channel or method removed or renamed, an argument added, made required or
+   inserted, a result narrowed) requires bumping `API_PROTOCOL_VERSION`. The
+   manifest diff shows channel-level changes; type shape changes are only
+   visible to the generator, which regenerates the protocol at a git ref (a
+   temporary worktree borrowing this checkout's `node_modules`), compares shapes
+   with `$ref`s inlined and doc comments ignored, and exits non-zero on a
+   breaking change without a bump.
+
+   It compares each shape in the direction its data travels, because only the
+   host may add to what it sends. A client built against the old shape ignores a
+   field it does not know, and one built against the new shape must already
+   cope with an optional field being absent, so these widenings are additive:
+
+   - a field that is not required, added to data the host sends (invoke
+     results, event payloads, and the arguments of a subscribe handler) in an
+     object, an array item, a record value, or a union or intersection member,
+     at any depth;
+   - an optional trailing argument to a subscribe handler, which an old handler
+     ignores.
+
+   Everything else that differs is breaking, including a field or argument added
+   to data the client sends (a host validates its arguments as a closed tuple,
+   and the preload forwards an optional argument even when it is absent), a
+   field added beside a record index, a renamed parameter (it cannot be told
+   apart from two same-typed parameters swapping places), a field added to one
+   union member that another member has (a client may tell members apart by
+   which fields are present), a new union member or enum value, a field that
+   became required or optional, and a changed type (including a parameter that
+   becomes `T | undefined`). Union members are matched as a set, since the
+   generator orders them by serialization. Run the check against `main`:
 
    ```bash
    node scripts/gen-api-protocol.mts --compare-ref origin/main
    ```
 
-   CI runs exactly this against the PR base in the `precheck` job, so the rule
-   is enforced rather than advisory. The freshness test alone would not be
-   enough: regenerating the manifest after a breaking change satisfies it
-   without bumping anything.
+   Without `--released-ref` this applies the stricter rule of a bump over the
+   base; CI runs it against the PR base in the `precheck` job with the release
+   from step 4, so the rule is enforced rather than advisory. The freshness test
+   alone would not be enough: regenerating the manifest after a breaking change
+   satisfies it without bumping anything.
+
+4. Bump against the latest release, not against trunk. A version names a
+   released surface: the peers that can meet with different builds come from
+   different releases, so only releases must disagree on the version when their
+   surfaces are incompatible. A breaking change therefore needs a version above
+   the newest surface that ships without it, and every breaking change between
+   two releases shares one bump. When `main` already carries an unreleased bump,
+   leave the version alone; otherwise set it to one more than the release's.
+   Explain the change in the pull request rather than in a comment line beside
+   the constant: concurrent pull requests then make the same one-line edit, or
+   none, so they merge cleanly and never renumber because another landed first.
+
+   CI passes that surface to the same command. It is the latest `v*` tag on
+   `release`, ignoring a tag on the commit under test (a push to `release` is
+   tagged while CI runs). For a change landing on `main` while a promotion that
+   carries a not-yet-tagged package version is pending, it is that promotion's
+   head (`promote/main`), since that is what ships next, unless that head already
+   contains the commit under test. When CI cannot read
+   either, it falls back to requiring a bump over the base, so a missing tag
+   only makes the gate stricter:
+
+   ```bash
+   node scripts/gen-api-protocol.mts --compare-ref origin/main \
+     --released-ref "$(git describe --tags --abbrev=0 --match 'v[0-9]*' origin/release)"
+   ```
+
+   A breaking change can still land on `main` after a promotion was pinned but
+   before CI read it. The promotion that follows then fails this check, which is
+   the gate working: land a bump on `main` to one more than the release, and
+   promote again.
 
 The same test also pins that every facade method is bound to exactly one
 namespaced channel, and that every invoke/send channel has a literal

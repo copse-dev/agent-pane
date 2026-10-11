@@ -1,55 +1,92 @@
+/* Sits directly under the tab bar in the Overview tab's content, so it gets
+   the same section chrome as `.pr-viewer-meta`/`.pr-activity` (horizontal
+   gutter + bottom rule) instead of relying on a header ancestor for it. One
+   wrapping row: label, chips, then the related toggle wherever there is room. */
 .pr-thread-relationships {
-  display: grid;
-  gap: 12px;
-  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--border);
 }
 
 .pr-thread-relationships:empty {
   display: none;
 }
 
-.pr-thread-group h5 {
-  margin: 0 0 6px;
-  color: var(--text-secondary);
-  font-size: calc(11px * var(--ui-scale));
-  font-weight: 600;
+/* Groups are transparent so their label and chips flow in the host's row. */
+.pr-thread-group {
+  display: contents;
 }
 
-.pr-thread-link {
+/* The expanded related chips start a row of their own under the byline. */
+.pr-thread-group.pr-thread-group-more {
   display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.pr-thread-group h5 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.pr-thread-link,
+.pr-thread-toggle {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  padding: 6px 8px;
-  color: var(--text-primary);
+  gap: var(--spacing-xs);
+  max-width: 100%;
+  padding: 2px var(--spacing-sm);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius);
   text-align: left;
   cursor: pointer;
 }
 
-.pr-thread-link + .pr-thread-link {
-  margin-top: 4px;
+.pr-thread-link {
+  color: var(--text-primary);
 }
-.pr-thread-link:hover {
+
+.pr-thread-toggle {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.pr-thread-toggle .ui-icon {
+  transition: transform 0.1s ease;
+}
+
+.pr-thread-toggle[aria-expanded='true'] .ui-icon {
+  transform: rotate(90deg);
+}
+
+.pr-thread-link:hover,
+.pr-thread-toggle:hover {
   background: var(--bg-hover);
 }
 .pr-thread-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 14rem;
 }
 .pr-thread-kind {
   flex-shrink: 0;
   color: var(--text-secondary);
-  font-size: calc(10px * var(--ui-scale));
+  font-size: var(--font-size-2xs);
 }
 .pr-thread-empty {
-  margin: 4px 0;
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
   color: var(--text-secondary);
-  font-size: calc(11px * var(--ui-scale));
+  font-size: var(--font-size-xs);
 }
 
 .pr-list-relationship {

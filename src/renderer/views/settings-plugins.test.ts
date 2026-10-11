@@ -945,4 +945,20 @@ describe('settings → plugins list', () => {
       value: 'new-label',
     })
   })
+
+  it('an emptied number field restores its last value instead of persisting 0', async () => {
+    const list = await openPlugins({ plugins: [demoPlugin] }, spy)
+    const numberInput = list.querySelector<HTMLInputElement>('.plugin-setting-number')
+    assert.ok(numberInput)
+    numberInput.value = '11'
+    numberInput.dispatchEvent(new Event('change'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    spy.lastSetSetting = null
+
+    numberInput.value = ''
+    numberInput.dispatchEvent(new Event('change'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(spy.lastSetSetting, null)
+    assert.equal(numberInput.value, '11')
+  })
 })

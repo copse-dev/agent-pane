@@ -8,6 +8,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
 import { PRIOR_DENIAL_MARKER } from './denied-operations.ts'
 import { analyzeShellCommand } from './shell-scope.ts'
 import { formatUnsandboxedPromptParts } from './sandbox-failure.ts'
@@ -31,7 +32,8 @@ describe('outside-sandbox approval copy', () => {
     assert.equal(
       bodyAdvice,
       'The project sandbox would block this command:\n' +
-        "• Runs code written or built inside the command itself, so Copse can't tell what it does",
+        "• Runs code written or built inside the command itself, so Copse can't tell what it does" +
+        `\n\n${UNSANDBOXED_ACCESS_WARNING}`,
     )
     assert.equal(bodyFooter, 'Allow running it once outside the sandbox?')
   })
@@ -47,6 +49,8 @@ describe('outside-sandbox approval copy', () => {
       'The project sandbox would block this command:',
       '• Downloads from the internet (curl/wget)',
       '• Reads or writes in your home directory, outside the project',
+      '',
+      UNSANDBOXED_ACCESS_WARNING,
     ])
   })
 
@@ -54,7 +58,8 @@ describe('outside-sandbox approval copy', () => {
     const { bodyAdvice } = formatExternalSandboxPromptParts('some-tool', [])
     assert.equal(
       bodyAdvice,
-      'The project sandbox would block this command:\n• Needs network or outside-project access',
+      'The project sandbox would block this command:\n• Needs network or outside-project access' +
+        `\n\n${UNSANDBOXED_ACCESS_WARNING}`,
     )
   })
 
@@ -74,7 +79,8 @@ describe('outside-sandbox approval copy', () => {
       bodyAdvice,
       'The agent expects the project sandbox to block this command:\n' +
         '• Runs the GitHub CLI, which may reach GitHub\n\n' +
-        'It is asking to run outside the sandbox up front, rather than letting it fail inside first.',
+        'It is asking to run outside the sandbox up front, rather than letting it fail inside first.' +
+        `\n\n${UNSANDBOXED_ACCESS_WARNING}`,
     )
     assert.match(bodyFooter ?? '', /not a confirmed sandbox block/)
   })
@@ -134,23 +140,35 @@ describe('outside-sandbox approval copy', () => {
   })
 })
 
-describe('in-sandbox approval copy', () => {
-  it('explains why a contained command is still being asked about', () => {
-    const command = 'rm -rf build'
-    const { bodyFooter } = formatShellPromptParts(command, [
-      'recursive/forced delete (rm -rf)',
-      'find -delete bulk removal',
-    ])
-
-    assert.equal(
-      bodyFooter,
-      'Why this needs approval:\n' +
-        '• Deletes files and folders recursively (rm -rf)\n' +
-        '• Deletes every file a search matches (find -delete)',
-    )
+describe('shell execution boundary copy', () => {
+  it('explains project damage inside the sandbox and keeps the command complete', () => {
+    const parts = formatShellPromptParts('rm -rf build', ['recursive/forced delete (rm -rf)'])
+    assert.equal(parts.command, 'rm -rf build')
+    assert.match(parts.bodyAdvice ?? '', /inside the project sandbox/)
+    assert.match(parts.bodyAdvice ?? '', /Deletes files and folders recursively/)
+    assert.doesNotMatch(parts.bodyAdvice ?? '', /user account’s access/)
   })
-
-  it('omits the footer entirely when there is nothing to explain', () => {
-    assert.deepEqual(formatShellPromptParts('ls -la', []), { command: 'ls -la' })
+  it('warns about host access even if auto-run being off is the only reason', () => {
+    const parts = formatShellPromptParts(
+      'node --version',
+      ['Auto-run for sandbox commands is disabled in Settings'],
+      false,
+    )
+    assert.equal(parts.command, 'node --version')
+    assert.match(parts.bodyAdvice ?? '', /sandbox is unavailable/)
+    assert.ok(parts.bodyAdvice?.includes(UNSANDBOXED_ACCESS_WARNING))
+  })
+  it('warns about unrestricted access on every escape path', () => {
+    for (const format of [
+      formatExternalSandboxPromptParts,
+      formatExpectedSandboxBlockPromptParts,
+      formatUnsandboxedPromptParts,
+    ]) {
+      const parts = format('gh pr create --title "Fix" --body "Review"', [
+        'GitHub CLI (may reach GitHub)',
+      ])
+      assert.ok(parts.bodyAdvice?.includes(UNSANDBOXED_ACCESS_WARNING))
+      assert.match(parts.bodyAdvice ?? '', /publishes a pull request/)
+    }
   })
 })

@@ -29,6 +29,27 @@ Host dev github.com
     assert.equal(aliases[0]?.alias, 'lab')
   })
 
+  it('does not let a Match block override the preceding Host', () => {
+    const aliases = parseSshConfig(`
+Host dev
+  HostName dev.example
+Match host dev exec "test -n $VPN"
+  User vpn-user
+  Port 2222
+Host lab
+  HostName lab.local
+`)
+    assert.deepEqual(aliases, [
+      { alias: 'dev', hostname: 'dev.example' },
+      { alias: 'lab', hostname: 'lab.local' },
+    ])
+  })
+
+  it('does not import negated host patterns as aliases', () => {
+    const aliases = parseSshConfig('Host prod !bastion\n  HostName prod.example\n')
+    assert.deepEqual(aliases, [{ alias: 'prod', hostname: 'prod.example' }])
+  })
+
   it('strips quotes from identity file paths', () => {
     const aliases = parseSshConfig(`
 Host dev

@@ -137,6 +137,11 @@ adapter that is behind the npm registry latest can be upgraded the same way.
 Upgrades use the `npm` beside the resolved binary so an nvm/prefix install stays
 in that prefix. Cursor is never auto-installed (its installer is not npm).
 
+Auto-setup also runs every time a workspace opens, so a preset whose binary is
+already on `PATH` (no missing package to install) is registered and shows up in
+the model picker without visiting Settings at all — the approval dialog only
+appears when there is a package to install or upgrade.
+
 > Tip: you can **Add** a known agent before installing it — Copse stores the
 > config now, and you run the shown Install/Sign in commands when ready.
 

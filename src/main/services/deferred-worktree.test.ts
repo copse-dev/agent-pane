@@ -279,19 +279,8 @@ describe('deferred worktree allocation', () => {
     deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
   })
 
-  it('allocates from the recorded base, names the branch, and seeds the live dirty work', async () => {
-    const { dependencies, allocations, getThread } = fixture(
-      {
-        inspect: async () => ({
-          isGitRepository: true,
-          currentBranch: 'main',
-          defaultBranch: 'main',
-          isDirty: true,
-          hasSubmodules: false,
-        }),
-      },
-      deferredThread,
-    )
+  it('allocates from the recorded base, names the branch, and never seeds dirty work', async () => {
+    const { dependencies, allocations, getThread } = fixture({}, deferredThread)
     const prepared = await createDeferredWorktreeAllocation(dependencies)({
       projectId: 'project-1',
       threadId: 'thread-1',
@@ -302,7 +291,7 @@ describe('deferred worktree allocation', () => {
     assert.ok(allocation)
     assert.equal(allocation.baseBranch, 'main')
     assert.equal(allocation.branchTitle, 'fix login redirect')
-    assert.equal(allocation.seedFromDirtyProject, true)
+    assert.equal(allocation.seedFromDirtyProject, false)
     assert.equal(prepared.checkoutMode, 'worktree')
     assert.ok(prepared.deferredWorktree, 'the allocating call reports the deferral it resolved')
     assert.equal(getThread().worktree?.branch, WORKTREE.branch)
@@ -613,7 +602,7 @@ describe('deferred allocation against a real repository', () => {
     }
   })
 
-  it('names the branch from the agent and carries the dirty work it read', async () => {
+  it('names the branch from the agent and starts clean despite dirty work it read', async () => {
     previousRoot = process.env['COPSE_WORKTREES_DIR']
     const temp = await mkdtemp(join(tmpdir(), 'copse-deferred-'))
     cleanups.push(temp)
@@ -644,8 +633,8 @@ describe('deferred allocation against a real repository', () => {
     const worktree = prepared.worktree
     assert.ok(worktree)
     assert.match(worktree.branch, /^copse\/fix-login-redirect-/)
-    assert.equal(worktree.seededFromDirtyProject, true)
-    assert.equal(await readFile(join(worktree.path, 'README.md'), 'utf-8'), 'user edit\n')
+    assert.equal(worktree.seededFromDirtyProject, false)
+    assert.equal(await readFile(join(worktree.path, 'README.md'), 'utf-8'), 'base\n')
     // The user's checkout is exactly as it was: same branch, same dirty file.
     assert.equal(git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']).trim(), 'main')
     assert.equal(git(repo, ['status', '--porcelain']).trim(), 'M README.md')

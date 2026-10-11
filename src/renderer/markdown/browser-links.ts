@@ -4,6 +4,7 @@ import { openBrowserUrl, openPullRequest } from '../controller/panels.ts'
 import { parseGithubPrUrl } from '@shared/git/github-pr-url.ts'
 import { bindPrLinkPreviews } from './pr-link-preview.ts'
 import { showErrorToast } from '../views/toast.ts'
+import { DEFAULT_CURSOR_AGENT_BASE_URL } from '@shared/remote-agent.ts'
 
 function linkHttpHref(link: HTMLAnchorElement): string | null {
   const href = link.href
@@ -11,7 +12,9 @@ function linkHttpHref(link: HTMLAnchorElement): string | null {
   return href
 }
 
-function remoteArtifactFromHref(href: string): { agentId: string; path: string } | null {
+function remoteArtifactFromHref(
+  href: string,
+): { agentId: string; path: string; origin: string } | null {
   let url: URL
   try {
     url = new URL(href)
@@ -21,8 +24,35 @@ function remoteArtifactFromHref(href: string): { agentId: string; path: string }
   const match = url.pathname.match(/^\/v1\/agents\/([^/]+)\/artifacts\/download$/)
   const path = url.searchParams.get('path')
   if (!match?.[1] || !path) return null
-  return { agentId: decodeURIComponent(match[1]), path }
+  return { agentId: decodeURIComponent(match[1]), path, origin: url.origin }
 }
+
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The server an artifact link must point at for Copse to fetch it through the
+ * remote agent API — the one main downloads from. A look-alike path on any
+ * other host is an ordinary link.
+ */
+async function artifactServerOrigin(
+  agentId: string,
+  settings: Pick<ApiClient['settings'], 'get'> | undefined,
+): Promise<string | null> {
+  if (agentId.startsWith('openai:')) return OPENAI_AGENTS_ORIGIN
+  const configured = await settings?.get('remoteAgentBaseUrl')
+  // Main falls back to the default for an unset or invalid base URL; so do we.
+  const configuredOrigin =
+    typeof configured === 'string' && configured.trim() ? originOf(configured.trim()) : null
+  return configuredOrigin ?? originOf(DEFAULT_CURSOR_AGENT_BASE_URL)
+}
+
+const OPENAI_AGENTS_ORIGIN = 'https://api.openai.com'
 
 export function bindBrowserLinkClicks(
   root: HTMLElement,
@@ -31,6 +61,7 @@ export function bindBrowserLinkClicks(
     remoteAgent: Pick<ApiClient['remoteAgent'], 'downloadArtifact'>
     gh?: Pick<ApiClient['gh'], 'status'> & Partial<Pick<ApiClient['gh'], 'prDetails'>>
     shell?: Pick<ApiClient['shell'], 'openExternal'>
+    settings?: Pick<ApiClient['settings'], 'get'>
   },
 ): () => void {
   // Marks this container as one whose external links follow the "open links in
@@ -46,6 +77,26 @@ export function bindBrowserLinkClicks(
       return
     }
     openBrowserUrl(store, href)
+  }
+
+  const openLink = (href: string): void => {
+    // The in-app PR pane is a nicer view of a GitHub PR, but it is still an
+    // in-app destination — so it only applies while links are set to open in
+    // the built-in browser. With that off, the toggle is a true global switch
+    // and a PR link opens in the system browser like any other external link.
+    const githubPr = parseGithubPrUrl(href)
+    if (githubPr && api?.gh && store.getState().openLinksInBuiltInBrowser) {
+      void api.gh.status().then((status) => {
+        if (status.installed && status.authenticated) {
+          openPullRequest(store, githubPr)
+          return
+        }
+        openPlainLink(href)
+      })
+      return
+    }
+
+    openPlainLink(href)
   }
 
   const onClick = (event: MouseEvent): void => {
@@ -64,9 +115,13 @@ export function bindBrowserLinkClicks(
     event.stopPropagation()
     const artifact = remoteArtifactFromHref(href)
     if (artifact && api) {
-      void api.remoteAgent
-        .downloadArtifact(artifact.agentId, artifact.path)
-        .then((url) => {
+      void artifactServerOrigin(artifact.agentId, api.settings)
+        .then(async (origin) => {
+          if (origin !== artifact.origin) {
+            openLink(href)
+            return
+          }
+          const url = await api.remoteAgent.downloadArtifact(artifact.agentId, artifact.path)
           if (url) openBrowserUrl(store, url)
         })
         .catch((err: unknown) => {
@@ -76,23 +131,7 @@ export function bindBrowserLinkClicks(
       return
     }
 
-    // The in-app PR pane is a nicer view of a GitHub PR, but it is still an
-    // in-app destination — so it only applies while links are set to open in
-    // the built-in browser. With that off, the toggle is a true global switch
-    // and a PR link opens in the system browser like any other external link.
-    const githubPr = parseGithubPrUrl(href)
-    if (githubPr && api?.gh && store.getState().openLinksInBuiltInBrowser) {
-      void api.gh.status().then((status) => {
-        if (status.installed && status.authenticated) {
-          openPullRequest(store, githubPr)
-          return
-        }
-        openPlainLink(href)
-      })
-      return
-    }
-
-    openPlainLink(href)
+    openLink(href)
   }
 
   const unbindPreviews = bindPrLinkPreviews(

@@ -36,9 +36,20 @@ describe('matchesScratchEntry', () => {
     assert.equal(matchesScratchEntry('/tmp/claude', '/tmp/other'), false)
   })
 
-  it('matches a glob entry by the prefix before the star', () => {
-    assert.equal(matchesScratchEntry('/tmp/claude-*', '/tmp/claude-9f2a-cwd'), true)
-    assert.equal(matchesScratchEntry('/tmp/claude-*', '/tmp/other'), false)
+  it('matches a glob entry within one segment, as the seatbelt compiles it', () => {
+    const cases: Array<[string, string, boolean]> = [
+      ['/tmp/claude-*', '/tmp/claude-9f2a-cwd', true],
+      ['/tmp/claude-*', '/tmp/claude-', true],
+      ['/tmp/claude-*', '/tmp/other', false],
+      // ASRT emits `^/tmp/claude-[^/]*$`: no deeper path, so no subtree waiver.
+      ['/tmp/claude-*', '/tmp/claude-9f2a/nested/file', false],
+      ['/tmp/claude-*', '/tmp/claude-x/y', false],
+      ['/var/a.b-*/c', '/var/a.b-1/c', true],
+      ['/var/a.b-*/c', '/var/aXb-1/c', false],
+    ]
+    for (const [entry, path, expected] of cases) {
+      assert.equal(matchesScratchEntry(entry, path), expected, `${entry} vs ${path}`)
+    }
   })
 
   it('refuses a glob shallower than two segments', () => {

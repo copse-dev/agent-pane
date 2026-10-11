@@ -8,6 +8,7 @@ import type { ModelUsageBreakdown } from '@shared/usage/aggregate-usage.ts'
 import {
   claudeReasonNeedsLogin,
   createPlanSignInHandler,
+  renderClassifierTable,
   renderModelTable,
   renderPlanProvider,
   renderPlanWorthItSection,
@@ -475,5 +476,49 @@ describe('renderPlanWorthItSection', () => {
       'insufficient_history',
     )
     assert.match(host.querySelector('.usage-worth-reason')?.textContent ?? '', /completed weekly/)
+  })
+})
+
+describe('renderClassifierTable', () => {
+  const rows = [
+    { provider: 'Kev (local)', model: 'kev-4b', inputTokens: 12_400, outputTokens: 310, calls: 42 },
+    {
+      provider: '<img src=x onerror=alert(1)>',
+      model: '<b>m</b>',
+      inputTokens: 5,
+      outputTokens: 1,
+      calls: 1,
+    },
+  ]
+
+  it('lists each connection and model with calls and tokens, and no cost column', () => {
+    const host = document.createElement('div')
+    renderClassifierTable(host, rows, false)
+    assert.equal(host.querySelector('h4')?.textContent, 'Classifiers')
+    const headers = [...host.querySelectorAll('th')].map((th) => th.textContent)
+    assert.deepEqual(headers, ['Classifier', 'Model', 'Calls', 'Input', 'Output'])
+    const first = [...(host.querySelector('tbody tr')?.querySelectorAll('td') ?? [])].map(
+      (td) => td.textContent,
+    )
+    assert.deepEqual(first, ['Kev (local)', 'kev-4b', '42', '12.4k', '310'])
+  })
+
+  it('shows a connection label as text, never as markup', () => {
+    const host = document.createElement('div')
+    renderClassifierTable(host, rows, false)
+    assert.equal(host.querySelector('img'), null)
+    assert.equal(host.querySelector('b'), null)
+    assert.match(host.textContent, /<img src=x onerror=alert\(1\)>/)
+  })
+
+  it('says so when a window has no classifier calls, and explains All time', () => {
+    const empty = document.createElement('div')
+    renderClassifierTable(empty, [], false)
+    assert.equal(empty.querySelector('table'), null)
+    assert.match(empty.textContent, /No classifier usage in this period/)
+    const allTime = document.createElement('div')
+    renderClassifierTable(allTime, rows, true)
+    assert.equal(allTime.querySelector('table'), null)
+    assert.match(allTime.textContent, /day, month and 90-day windows only/)
   })
 })

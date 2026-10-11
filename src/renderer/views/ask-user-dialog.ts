@@ -4,6 +4,8 @@ import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
+import { attentionThreadId } from '../controller/projects.ts'
+import { sideChatPromptOrigin } from '../controller/side-chat.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
 
 interface AskUserRequest {
@@ -75,16 +77,20 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
   // answers map back to questions by index.
   let inputs: HTMLTextAreaElement[] = []
 
+  // A side chat is never the active thread: its questions surface over its parent.
   function isShowable(req: AskUserRequest): boolean {
-    return !req.threadId || req.threadId === store.getState().activeThreadId
+    return (
+      !req.threadId || attentionThreadId(store, req.threadId) === store.getState().activeThreadId
+    )
   }
 
   // Flag every queued question that belongs to a non-focused thread so the
   // sidebar can show an attention indicator on it.
   function syncAttention(): void {
     const activeThreadId = store.getState().activeThreadId
+    // A side chat's question flags its parent: the side chat has no sidebar row.
     const waiting = queue
-      .map((req) => req.threadId)
+      .map((req) => (req.threadId ? attentionThreadId(store, req.threadId) : undefined))
       .filter((id): id is string => !!id && id !== activeThreadId)
     setAttentionThreads(store, 'ask', waiting)
     // Every queue mutation ends here, so this is where other surfaces hear of it.
@@ -95,7 +101,19 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
     if (!active) return
     clear(form)
     inputs = []
-    form.append(el('h3', { class: 'ask-user-title' }, 'The agent has a question'))
+    const asker = sideChatPromptOrigin(store, [active.threadId])
+    form.append(
+      el(
+        'h3',
+        { class: 'ask-user-title' },
+        asker ? 'A side chat has a question' : 'The agent has a question',
+      ),
+    )
+    if (asker) {
+      form.append(el('p', { class: 'ask-user-origin' }, asker.label))
+      // Show the asking side chat beside its parent so the question has its context.
+      store.emit('side_chat_open_requested', asker.firstSideChatId)
+    }
 
     active.questions.forEach((q, i) => {
       const questionId = `ask-user-question-${String(i)}`

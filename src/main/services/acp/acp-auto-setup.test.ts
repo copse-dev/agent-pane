@@ -9,6 +9,7 @@ import {
   installAcpPackageChanges,
   planAcpAutoSetup,
   requestAcpPackageInstallApproval,
+  runAcpAutoSetup,
   updateCurrentAcpAgentModels,
   type AcpAutoSetupInput,
   type AcpPackageChange,
@@ -16,10 +17,47 @@ import {
 import { setApprovalHandler } from '../approval.ts'
 import { listAcpAgents } from './acp-agent-registry.ts'
 import { setSetting } from '../storage/settings.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
+import { storageSet } from '../storage/storage.ts'
 
 afterEach(async () => {
   setApprovalHandler(null)
   await setSetting('registeredAcpAgents', [])
+})
+
+describe('runAcpAutoSetup on an SSH workspace', () => {
+  afterEach(async () => {
+    setWorkspaceRootForTest(null)
+    storageSet('activeProjectId', null)
+    storageSet('projects', [])
+    await setSetting('sshWorkspaceEnabled', false)
+    await setSetting('sshWorkspaceHosts', [])
+  })
+
+  it('is a no-op: never detects, installs, or registers anything', async () => {
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    storageSet('activeProjectId', 'p1')
+    storageSet('projects', [{ id: 'p1', path: '/remote/project', sshHost: 'dev' }])
+    setWorkspaceRootForTest('/remote/project')
+
+    setApprovalHandler(async () => {
+      assert.fail('an SSH workspace must never prompt for an ACP package install')
+    })
+
+    const result = await runAcpAutoSetup(new AbortController().signal)
+
+    assert.deepEqual(result, {
+      installed: [],
+      upgraded: [],
+      registered: [],
+      modelsDetected: [],
+      failed: [],
+    })
+    assert.deepEqual(listAcpAgents(), [])
+  })
 })
 
 const claude: KnownAcpAgent = {

@@ -530,6 +530,79 @@ export function renderModelTable(
   host.append(section)
 }
 
+/**
+ * Classifier calls for a period: one row per connection and model, with the
+ * calls that reported tokens. Classifiers have no catalog rate, so there is no
+ * cost column and nothing here counts toward the cloud or local totals. Labels
+ * are the user's own text; they are set with `textContent`, never as HTML.
+ * Exported for unit tests.
+ */
+export function renderClassifierTable(
+  host: HTMLElement,
+  rows: UsagePeriodSummary['classifiers'],
+  allTime: boolean,
+): void {
+  const section = document.createElement('div')
+  section.className = 'usage-model-group usage-classifier-group'
+  const heading = document.createElement('h4')
+  heading.textContent = 'Classifiers'
+  section.append(heading)
+  if (allTime || !rows || rows.length === 0) {
+    const empty = document.createElement('p')
+    empty.className = 'usage-empty'
+    empty.textContent = allTime
+      ? 'Classifier calls are listed for the day, month and 90-day windows only.'
+      : 'No classifier usage in this period.'
+    section.append(empty)
+    host.append(section)
+    return
+  }
+  const table = document.createElement('table')
+  table.className = 'usage-table usage-classifier-table'
+  const columns = document.createElement('colgroup')
+  for (const className of [
+    'usage-col-model',
+    'usage-col-model',
+    'usage-col-num',
+    'usage-col-num',
+    'usage-col-num',
+  ]) {
+    const col = document.createElement('col')
+    col.className = className
+    columns.append(col)
+  }
+  const head = document.createElement('thead')
+  const headRow = document.createElement('tr')
+  for (const label of ['Classifier', 'Model', 'Calls', 'Input', 'Output']) {
+    const th = document.createElement('th')
+    th.scope = 'col'
+    th.textContent = label
+    headRow.append(th)
+  }
+  head.append(headRow)
+  const body = document.createElement('tbody')
+  for (const row of rows) {
+    const tr = document.createElement('tr')
+    tr.dataset['provider'] = row.provider
+    const provider = document.createElement('td')
+    provider.textContent = row.provider
+    const model = document.createElement('td')
+    const code = document.createElement('code')
+    code.textContent = row.model
+    model.append(code)
+    const cells = [row.calls, row.inputTokens, row.outputTokens].map((value) => {
+      const td = document.createElement('td')
+      td.textContent = formatTokenCount(value)
+      return td
+    })
+    tr.append(provider, model, ...cells)
+    body.append(tr)
+  }
+  table.append(columns, head, body)
+  section.append(table)
+  host.append(section)
+}
+
 function renderPeriodSummary(
   host: HTMLElement,
   summary: UsagePeriodSummary,
@@ -587,6 +660,7 @@ function renderPeriodSummary(
     summary.localModels,
     'No local model usage in this period.',
   )
+  renderClassifierTable(host, summary.classifiers, period === 'allTime')
 }
 
 export function createUsageSection(

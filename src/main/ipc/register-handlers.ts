@@ -1,3 +1,4 @@
+import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
@@ -24,6 +25,7 @@ import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
   backgroundClassifierId,
+  getClassifierProfile,
   listClassifierProfiles,
   saveClassifierProfile,
   removeClassifierProfile,
@@ -32,6 +34,7 @@ import {
   setScreeningClassifier,
   testClassifierProfile,
 } from '../services/classifiers/classifier-service.ts'
+import { recordClassifierResultUsage } from '../services/classifiers/classifier-usage.ts'
 import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
@@ -43,7 +46,7 @@ import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boun
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
-import { showMobileCompanion } from '../windows/mobile-desktop.ts'
+import { getMobileCompanionStatus, showMobileCompanion } from '../windows/mobile-desktop.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
 import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
@@ -99,6 +102,8 @@ import {
   zPrComposerCreateRequest,
   mainWindowNavigationSchema,
 } from './ipc-guards.ts'
+import { resolveHookTestTarget } from './hook-test-target.ts'
+import type { HooksListResult } from '@shared/types/hooks.ts'
 import {
   inspectThreadCheckoutAttachment,
   inspectThreadCheckoutRoot,
@@ -186,7 +191,7 @@ import {
   type ThreadDeletionRuntime,
 } from '../services/thread-deletion.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
-import { archiveStoredThread } from '../services/thread-archiving.ts'
+import { archiveStoredThread, type ThreadArchivingRuntime } from '../services/thread-archiving.ts'
 import {
   getElectronAppVersion,
   getElectronBuildCommit,
@@ -473,6 +478,7 @@ import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import {
   lookupPrThreadRelationships,
   lookupThreadPrRelationships,
+  lookupThreadBacklinks,
 } from '../services/thread-store.ts'
 
 import {
@@ -595,21 +601,30 @@ export function registerAllHandlers(
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
   threadHistoryEditRuntime: ThreadHistoryEditRuntime,
+  threadArchivingRuntime: ThreadArchivingRuntime,
 ): void {
   ipcMain.handle('mobile:manage', async (event) => {
     assertMainFrameSender(event, win)
     await showMobileCompanion(win)
   })
 
+  // Read once: Electron throws on `win.webContents` after the boot window is
+  // closed, and a second main window can outlive it.
+  const primaryWebContentsId = win.webContents.id
+  ipcMain.handle('mobile:status', async (event) => {
+    assertMainFrameSender(event, win)
+    return await getMobileCompanionStatus()
+  })
+
   const processManagerSnapshot = createProcessManagerSampler(
     () => app.getAppMetrics(),
     processManagerLabels,
-    (appPids) => readOwnedProcessRows(win.webContents.id, appPids),
+    (appPids) => readOwnedProcessRows(primaryWebContentsId, appPids),
   )
   const reloadMcpForWorkspace = (): void => {
     void reloadMcpServers(registry)
       .then((statuses) => {
-        if (!win.isDestroyed()) win.webContents.send('mcp:status-changed', statuses)
+        broadcastToAppWindows('mcp:status-changed', statuses)
       })
       .catch((err: unknown) => {
         console.error('[mcp] workspace reload failed:', err)
@@ -663,15 +678,16 @@ export function registerAllHandlers(
     }
   })
 
-  ipcMain.handle('process-manager:snapshot', (event) => {
+  ipcMain.handle('process-manager:snapshot', async (event) => {
     assertMainFrameSender(event, win)
-    return processManagerSnapshot()
+    const snapshot = await processManagerSnapshot()
+    return { ...snapshot, network: networkActivity.snapshot() }
   })
 
   ipcMain.handle('process-manager:stop-background', (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    if (event.sender !== win.webContents) {
-      throw new IpcValidationError('Only the main window can stop a background task')
+    if (!getMainWindowForWebContents(event.sender)) {
+      throw new IpcValidationError('Only a main window can stop a background task')
     }
     const [id, projectId, threadId] = parseIpcArgs(
       z.tuple([z.string().min(1).max(128), zProjectId, zThreadId]),
@@ -792,7 +808,9 @@ export function registerAllHandlers(
     if (
       !contents ||
       contents.isDestroyed() ||
-      contents.hostWebContents !== win.webContents ||
+      // The guest must belong to the window asking: the main window, a second
+      // main window, or the pane pop-out — never another window's tab.
+      contents.hostWebContents !== event.sender ||
       !partition ||
       !isVisibleBrowserSessionPartition(partition)
     ) {
@@ -803,12 +821,12 @@ export function registerAllHandlers(
 
   ipcMain.handle('browser:share-page-text', async (event, rawId: unknown) => {
     const share = await captureBrowserPageText(interactiveBrowserContents(event, rawId))
-    if (!win.isDestroyed()) win.webContents.send('browser:share-text', share)
+    if (!event.sender.isDestroyed()) event.sender.send('browser:share-text', share)
   })
 
   ipcMain.handle('browser:share-screenshot', async (event, rawId: unknown) => {
     const share = await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
-    if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
+    if (!event.sender.isDestroyed()) event.sender.send('browser:share-image', share)
   })
 
   ipcMain.handle('browser:capture-screenshot', async (event, rawId: unknown) => {
@@ -930,6 +948,19 @@ export function registerAllHandlers(
     // models (e.g. a new Opus release) appear on its next open without blocking
     // boot or requiring a manual "Detect models".
     revalidateStaleAcpModels()
+    // Register any already-installed ACP presets so a detected agent (e.g.
+    // `claude`, `codex` on PATH) lands in the model picker without the user
+    // having to open Settings → ACP agents first. Fire-and-forget for the same
+    // reason as above; registering a preset with no package to install never
+    // shows an approval dialog, so this stays silent in the common case. Skipped
+    // under the e2e harness: specs seed `registeredAcpAgents` explicitly, and
+    // this would otherwise pick up whatever ACP CLIs happen to be on the
+    // developer's own PATH.
+    if (process.env['COPSE_E2E'] !== '1') {
+      void runAcpAutoSetup(new AbortController().signal).catch((err: unknown) => {
+        console.warn('[acp] auto-setup on workspace open failed:', err)
+      })
+    }
     return canonical
   })
 
@@ -1383,9 +1414,13 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     return removeClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
-  ipcMain.handle('classifiers:test', (event, raw: unknown) => {
+  ipcMain.handle('classifiers:test', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
-    return testClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+    const id = parseIpcArgs(keyProviderSchema.max(53), [raw])
+    const result = await testClassifierProfile(id)
+    // The sample is a real call: tokens a provider reports for it count like any other.
+    recordClassifierResultUsage(getClassifierProfile(id).label, result)
+    return result
   })
   ipcMain.handle('classifiers:screening', (event) => {
     assertMainFrameSender(event, win)
@@ -1419,6 +1454,10 @@ export function registerAllHandlers(
   ipcMain.handle('local-classifiers:stop', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     return localClassifiers().stop(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:uninstall', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().uninstall(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
   ipcMain.handle('local-classifiers:connect', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
@@ -2035,9 +2074,9 @@ export function registerAllHandlers(
   )
   ipcMain.handle(
     'threads:archive',
-    (event, projectId: unknown, threadId: unknown, discard: unknown) => {
+    (event, projectId: unknown, threadId: unknown, discard: unknown, stop: unknown) => {
       assertMainFrameSender(event, win)
-      const [pid, tid, discardChanges] = parseIpcArgs(
+      const [pid, tid, discardChanges, stopProcesses] = parseIpcArgs(
         z.tuple([
           zProjectId,
           zThreadId,
@@ -2045,10 +2084,11 @@ export function registerAllHandlers(
             .string()
             .regex(/^[a-f0-9]{64}$/)
             .nullable(),
+          z.boolean(),
         ]),
-        [projectId, threadId, discard],
+        [projectId, threadId, discard, stop],
       )
-      return archiveStoredThread(pid, tid, discardChanges, threadHistoryEditRuntime)
+      return archiveStoredThread(pid, tid, discardChanges, stopProcesses, threadArchivingRuntime)
     },
   )
   ipcMain.handle('threads:delete', (event, projectId: unknown, threadId: unknown) => {
@@ -2056,6 +2096,19 @@ export function registerAllHandlers(
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return deleteThreadResourcesAndStore(pid, tid, threadDeletionRuntime)
   })
+  // Active threads that link to a URL or another thread: an indexed read of
+  // recorded thread metadata that never touches a transcript.
+  ipcMain.handle(
+    'threads:backlinks',
+    (event, projectId: unknown, kind: unknown, target: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, linkKind, linkTarget] = parseIpcArgs(
+        z.tuple([zProjectId, z.enum(['url', 'thread']), z.string().min(1).max(2048)]),
+        [projectId, kind, target],
+      )
+      return lookupThreadBacklinks(pid, linkKind, linkTarget)
+    },
+  )
   // Seed a freshly created fork's provider-format history from the thread it was
   // branched off. The renderer owns the visible transcript copy; this is the
   // half it cannot do, since `agent-history.json` never leaves the main process.
@@ -2327,7 +2380,7 @@ export function registerAllHandlers(
   })
   ipcMain.handle('cursor-plugins:list', () => listCursorPlugins())
   ipcMain.handle('bundled-skill-plugins:list', () => listBundledSkillPlugins())
-  ipcMain.handle('hooks:list', async () => {
+  async function listDiscoveredHooks(): Promise<HooksListResult> {
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
     const [cursor, claude, copse] = await Promise.all([
@@ -2339,25 +2392,21 @@ export function registerAllHandlers(
       hooks: [...cursor.hooks, ...claude.hooks, ...copse.hooks],
       warnings: [...cursor.warnings, ...claude.warnings, ...copse.warnings],
     }
-  })
+  }
+  ipcMain.handle('hooks:list', () => listDiscoveredHooks())
   ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
     assertMainFrameSender(event, win)
     // G2 dry-run tester: run one discovered hook once against a synthetic
     // payload and report stdin/stdout/stderr/exit/duration. `dryRunHook` is a
     // side-effect-free probe — it never records the spine, propagates session
-    // env, or applies the outcome (see dry-run.ts). Validate the request shape
-    // so a compromised renderer cannot pass an arbitrary command through here.
+    // env, or applies the outcome (see dry-run.ts). The renderer only names
+    // the hook: what is spawned (command, cwd, sandbox escape) comes from
+    // re-running discovery here, so a compromised renderer cannot run an
+    // arbitrary command or turn the sandbox off.
     const parsed = parseIpcArgs(zHookTestRequest, [rawReq])
-    // Rebuild explicitly so an omitted `sandbox` stays omitted (not `undefined`)
-    // under exactOptionalPropertyTypes.
-    return dryRunHook({
-      family: parsed.family,
-      event: parsed.event,
-      command: parsed.command,
-      source: parsed.source,
-      scope: parsed.scope,
-      ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
-    })
+    const target = resolveHookTestTarget(parsed, (await listDiscoveredHooks()).hooks)
+    if (!target) throw new IpcValidationError('Hook test rejected: not a discovered hook')
+    return dryRunHook(target)
   })
   // Read one recorded hook execution back out of a thread's spine so the
   // hook-card inspector can show what the hook was handed and what it returned.
@@ -2414,7 +2463,7 @@ export function registerAllHandlers(
     await initSkillsRegistry()
     registerSkillTools(registry)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return result
   })
   ipcMain.handle(
@@ -2430,7 +2479,7 @@ export function registerAllHandlers(
       await initSkillsRegistry()
       registerSkillTools(registry)
       const statuses = await reloadMcpServers(registry)
-      win.webContents.send('mcp:status-changed', statuses)
+      broadcastToAppWindows('mcp:status-changed', statuses)
       return result
     },
   )
@@ -2448,7 +2497,7 @@ export function registerAllHandlers(
     await initSkillsRegistry()
     registerSkillTools(registry)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return result
   })
   ipcMain.handle('supervisor:list', async (event, rawProjectId: unknown) => {
@@ -2526,7 +2575,7 @@ export function registerAllHandlers(
       await initSkillsRegistry()
       registerSkillTools(registry)
       const statuses = await reloadMcpServers(registry)
-      win.webContents.send('mcp:status-changed', statuses)
+      broadcastToAppWindows('mcp:status-changed', statuses)
     }
     // Toggling the review plugin adds/removes its `review_changes` tool on the
     // live registry so the atomic plugin-disable also drops the tool from the
@@ -2590,7 +2639,7 @@ export function registerAllHandlers(
     // `render_html_artefact` tool must connect or disconnect with the toggle —
     // the same live reload the Apple Development toggle does below.
     const bundledMcpStatuses = await reloadMcpServersForPluginToggle(registry, id)
-    if (bundledMcpStatuses) win.webContents.send('mcp:status-changed', bundledMcpStatuses)
+    if (bundledMcpStatuses) broadcastToAppWindows('mcp:status-changed', bundledMcpStatuses)
     if (id === AUTOMATIONS_PLUGIN_ID) {
       getTaskSupervisor().syncCronTasks()
       await getAutomationService().sync()
@@ -2599,7 +2648,7 @@ export function registerAllHandlers(
     if (id === APPLE_DEVELOPMENT_PLUGIN_ID) {
       syncAppleDevelopmentTools(registry)
       const statuses = await reloadMcpServers(registry)
-      win.webContents.send('mcp:status-changed', statuses)
+      broadcastToAppWindows('mcp:status-changed', statuses)
       if (!enabled) {
         const activeProjectId = getActiveProjectId()
         if (activeProjectId) await getAppleDevelopmentService().cancelProject(activeProjectId)
@@ -2623,7 +2672,7 @@ export function registerAllHandlers(
       await getPluginService().setSetting(id, key, value)
       if (id === MCP_UI_CANVAS_PLUGIN_ID && key === ANIMATED_EXPLAINERS_SETTING_ID) {
         const statuses = await reloadMcpServersForPluginToggle(registry, id)
-        if (statuses) win.webContents.send('mcp:status-changed', statuses)
+        if (statuses) broadcastToAppWindows('mcp:status-changed', statuses)
       }
       return { plugins: getPluginService().list() }
     },
@@ -2825,7 +2874,7 @@ export function registerAllHandlers(
         enrolled,
       )
       const statuses = await reloadMcpServers(registry)
-      win.webContents.send('mcp:status-changed', statuses)
+      broadcastToAppWindows('mcp:status-changed', statuses)
       return state
     },
   )
@@ -3403,7 +3452,18 @@ export function registerAllHandlers(
   ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'context',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     createPanePopoutWindow(parsed, seed)
@@ -3412,7 +3472,18 @@ export function registerAllHandlers(
   ipcMain.handle('panes:take-popout-seed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'context',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     return takePopoutSeed(parsed)
@@ -3449,7 +3520,7 @@ export function registerAllHandlers(
   ipcMain.handle('mcp:reload', async (event) => {
     assertMainFrameSender(event, win)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
   })
   ipcMain.handle('mcp:set-enabled', async (event, name: unknown, enabled: unknown) => {
@@ -3460,13 +3531,13 @@ export function registerAllHandlers(
     ])
     await setMcpServerUserEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
   })
   // Status changes the registry makes on its own (a sign-in refused while a
   // server was connected) reach Settings the same way a reload's do.
   onMcpStatusesChanged((statuses) => {
-    if (!win.isDestroyed()) win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
   })
   // One browser sign-in per server at a time; starting another cancels the first.
   const mcpSignIns = new Map<string, AbortController>()
@@ -3493,7 +3564,7 @@ export function registerAllHandlers(
       if (mcpSignIns.get(parsedName) === controller) mcpSignIns.delete(parsedName)
     }
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
   })
   ipcMain.handle('mcp:cancel-sign-in', (event, name: unknown) => {
@@ -3506,7 +3577,7 @@ export function registerAllHandlers(
     const parsedName = parseIpcArgs(zMcpServerName, [name])
     await signOutMcpServer(mcpSignInTargetUrl(parsedName))
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
   })
   ipcMain.handle('mcp:list-curated', (event) => {
@@ -3525,7 +3596,7 @@ export function registerAllHandlers(
     ])
     await setCuratedServerEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return getCuratedServerStatuses(statuses)
   })
   ipcMain.handle('workspace:is-trusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
@@ -3537,7 +3608,7 @@ export function registerAllHandlers(
     // Spawning project MCP servers is the code-execution sink, so trusting a workspace
     // is a privileged action — only the main frame may request it (issue #100).
     const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
   })
 
@@ -3572,6 +3643,7 @@ export function registerAllHandlers(
       type: z.string().min(1).max(128),
       collapseDetails: z.boolean().optional(),
       approveOnceLabel: z.string().max(500).optional(),
+      approveLabel: z.string().max(500).optional(),
     })
 
     ipcMain.handle('test:setMockScenario', (event, id: unknown, raw: unknown, scope: unknown) => {

@@ -41,16 +41,22 @@ export function expandScratchPath(template: string): string[] {
  *
  * A literal entry matches itself and its subtree. A glob entry (`/tmp/claude-*`,
  * which the seatbelt uses to cover Claude Code's sibling `-cwd` bookkeeping
- * files) matches by the prefix before the star — the same single-segment reach
- * ASRT gives it. Globs shallower than {@link MIN_SCRATCH_SEGMENTS} match nothing,
- * so a malformed `/*` in user settings cannot waive the whole filesystem.
+ * files) matches the way ASRT compiles an allow glob: each `*` spans one path
+ * segment (`[^/]*`) and the match is exact, with no subtree — otherwise the
+ * classifier would waive a prompt the seatbelt then denies. Globs shallower than
+ * {@link MIN_SCRATCH_SEGMENTS} match nothing, so a malformed `/*` in user
+ * settings cannot waive the whole filesystem.
  */
 export function matchesScratchEntry(entry: string, absPath: string): boolean {
   const star = entry.indexOf('*')
   if (star === -1) return absPath === entry || absPath.startsWith(`${entry}/`)
   const prefix = entry.slice(0, star)
   if (prefix.split('/').filter(Boolean).length < MIN_SCRATCH_SEGMENTS) return false
-  return absPath.startsWith(prefix)
+  const pattern = entry
+    .split('*')
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('[^/]*')
+  return new RegExp(`^${pattern}$`).test(absPath)
 }
 
 /**

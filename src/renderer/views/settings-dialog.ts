@@ -366,6 +366,19 @@ async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<
   }
 }
 
+/**
+ * Show a scannable QR for Mobile Companion's current URL inline in Settings,
+ * next to the native "Set up or manage…" flow. The server generates the QR
+ * (via `qrcode`) from the same URL already shown as text, so this adds no new
+ * trust claim — it only saves typing the address into the phone's browser.
+ */
+async function mountMobileCompanionQr(overlay: HTMLElement, api: ApiClient): Promise<void> {
+  const status = await api.mobile.status()
+  qsRequired(overlay, '#mobile-companion-qr-image').innerHTML = status.qrSvg ?? ''
+  qsRequired(overlay, '#mobile-companion-qr-url').textContent = status.url ?? ''
+  qsRequired(overlay, '#mobile-companion-qr').hidden = !status.url || !status.qrSvg
+}
+
 /** Parse a `number`-kind field's form value, clamping to a non-negative integer. */
 function parseNonNegativeInt(value: string, fallback: number): number {
   const n = Number.parseInt(value, 10)
@@ -1553,6 +1566,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
                   Set up or manage…
                 </button>
+              </div>
+              <div id="mobile-companion-qr" class="mobile-companion-qr" hidden>
+                <div id="mobile-companion-qr-image" class="mobile-companion-qr-image" aria-hidden="true"></div>
+                <div class="mobile-companion-qr-text">
+                  <p class="field-hint">Scan with your phone's camera to open Copse.</p>
+                  <code id="mobile-companion-qr-url" class="mobile-companion-qr-url"></code>
+                </div>
               </div>
             </fieldset>
 
@@ -3676,6 +3696,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     input.dataset['pluginId'] = pluginId
     input.dataset['settingKey'] = field.id
 
+    // What an emptied number field reverts to: the last value it persisted.
+    let lastNumberValue = input.value
     // Persist on change so the manifest schema is the source of truth — no
     // Save-button plumbing needed, mirroring the MCP per-server toggle.
     input.addEventListener('change', () => {
@@ -3686,6 +3708,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         }
         value = input.checked
       } else if (field.kind === 'number') {
+        // An emptied number field is not 0 (`Number('')`): put the stored value back.
+        if (input.value.trim() === '' || !Number.isFinite(Number(input.value))) {
+          input.value = lastNumberValue
+          return
+        }
+        lastNumberValue = input.value
         value = Number(input.value)
       }
       void api.plugins.setSetting(pluginId, field.id, value).catch(() => {
@@ -4711,6 +4739,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   overlay.addEventListener('settings-open', () => {
+    void mountMobileCompanionQr(overlay, api).catch((error: unknown) => {
+      qsRequired(overlay, '#mobile-companion-qr').hidden = true
+      console.error('[settings] Could not load Mobile Companion status:', error)
+    })
     appearanceBaseline = currentAppearance()
     appearanceCommitted = false
     resetDirtyState()
@@ -4965,7 +4997,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : DEFAULT_THEME_PREFERENCE
       // `theme` is the concrete value panes render; `system` resolves against the OS.
       const theme = resolveTheme(themePreference)
-      const fontSize = parseInt(formDataString(data, 'fontSize'), 10)
+      // An emptied field is not a size; keep the current one rather than send NaN.
+      const fontSizeRaw = parseInt(formDataString(data, 'fontSize'), 10)
+      const fontSize = Number.isFinite(fontSizeRaw) ? fontSizeRaw : store.getState().fontSize
       const uiScaleField = data.get('uiScale')
       const uiScaleRaw = typeof uiScaleField === 'string' ? parseFloat(uiScaleField) : Number.NaN
       const uiScale = Number.isFinite(uiScaleRaw)

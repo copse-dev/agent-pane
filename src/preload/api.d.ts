@@ -181,6 +181,7 @@ export interface ApiClient {
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
     manage: () => Promise<void>
+    status: () => Promise<import('@shared/types/mobile-companion.ts').MobileCompanionStatus>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void
@@ -367,6 +368,7 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
@@ -626,11 +628,16 @@ export interface ApiClient {
       to: string,
     ) => Promise<import('@shared/types').ModelSelectionEvent>
     delete: (projectId: string, threadId: string) => Promise<void>
-    /** Remove a chat's worktree and archive it; discard requires user confirmation. */
+    /**
+     * Remove a chat's worktree and archive it. Discarding files requires the
+     * fingerprint the user confirmed; stopping a live agent, terminals and
+     * background processes requires `stopProcesses`, set only after the user agreed.
+     */
     archive: (
       projectId: string,
       threadId: string,
       confirmation: string | null,
+      stopProcesses: boolean,
     ) => Promise<import('@shared/threads/archive-thread.ts').ThreadArchiveResult>
     /**
      * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,
@@ -652,6 +659,12 @@ export interface ApiClient {
       targetThreadId: string,
       throughMessageId?: string,
     ) => Promise<import('@shared/types').ForkedHistoryResult>
+    /** Active threads that link to a URL or another thread (recorded links only). */
+    backlinks: (
+      projectId: string,
+      kind: 'url' | 'thread',
+      target: string,
+    ) => Promise<import('@shared/threads/thread-links.ts').ThreadBacklink[]>
     historySnapshot: (
       projectId: string,
       threadId: string,
@@ -1467,8 +1480,18 @@ export interface ApiClient {
   }
 }
 
+/**
+ * Local, synchronous file helpers from the preload — not IPC, so not part of
+ * `ApiClient`'s channel protocol. Absent outside Electron (browser tier, demo).
+ */
+export type FilePathBridge = {
+  /** The on-disk path of a dropped or picked `File`; '' when it has none. */
+  pathForFile: (file: File) => string
+}
+
 declare global {
   interface Window {
     api: ApiClient
+    copseFiles?: FilePathBridge
   }
 }

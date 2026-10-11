@@ -50,8 +50,10 @@ function fixture(
   provider: LLMProvider
   wire: Buffer[]
   maxima: number[]
+  served: Promise<void>[]
 } {
   const maxima: number[] = []
+  const served: Promise<void>[] = []
   const host = new HostInference({
     provider: async (maximum): Promise<LLMProvider> => {
       maxima.push(maximum)
@@ -75,7 +77,11 @@ function fixture(
   })
   const broker = new EgressBroker({
     rules: [parseEgressRule(HOST_INFERENCE_TARGET)],
-    inference: (stream): Promise<void> => host.serve(stream),
+    inference: (stream): Promise<void> => {
+      const serving = host.serve(stream)
+      served.push(serving)
+      return serving
+    },
   })
   broker.attach(toHost, toGuest)
   const link = new EgressLink(toGuest, toHost)
@@ -85,7 +91,7 @@ function fixture(
     toGuest.destroy()
     toHost.destroy()
   })
-  return { host, broker, link, provider: buildHostInferenceProvider(link), wire, maxima }
+  return { host, broker, link, provider: buildHostInferenceProvider(link), wire, maxima, served }
 }
 async function collect(
   provider: LLMProvider,
@@ -303,6 +309,107 @@ describe('run-scoped host inference', () => {
     controller.abort()
     await assert.rejects(first)
     await assert.rejects(collect(f.provider))
+  })
+  it('waits for a cancelled stream to release the slot instead of refusing the recovery request', async (t) => {
+    let calls = 0
+    let started: () => void = () => {}
+    const first = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const provider: LLMProvider = {
+      async *stream(_m, _t, signal) {
+        calls += 1
+        if (calls === 1) {
+          started()
+          assert.ok(signal)
+          await new Promise<void>((resolve) => {
+            signal.addEventListener(
+              'abort',
+              () => {
+                resolve()
+              },
+              { once: true },
+            )
+          })
+          // The provider is slow to stop generating after the cancel.
+          await new Promise((resolve) => setTimeout(resolve, 150))
+          signal.throwIfAborted()
+          yield { type: 'done' }
+          return
+        }
+        yield { type: 'text', text: 'recovered' }
+        yield { type: 'done', stopReason: 'end_turn' }
+      },
+    }
+    const f = fixture(t, provider),
+      controller = new AbortController()
+    const cancelled = collect(f.provider, controller.signal)
+    await first
+    controller.abort()
+    await assert.rejects(cancelled)
+    // Sent at once, while the cancelled request still holds the slot.
+    const chunks = await collect(f.provider)
+    assert.equal(calls, 2)
+    assert.ok(chunks.some((chunk) => chunk.type === 'text' && chunk.text === 'recovered'))
+  })
+  it('stops waiting for a cancelled predecessor as soon as the waiting request is stopped', async (t) => {
+    let started: () => void = () => {}
+    const first = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let letGo: () => void = () => {}
+    const stuck = new Promise<void>((resolve) => {
+      letGo = resolve
+    })
+    t.after(() => {
+      letGo()
+    })
+    let calls = 0
+    const provider: LLMProvider = {
+      async *stream(_m, _t, signal) {
+        calls += 1
+        started()
+        assert.ok(signal)
+        await new Promise<void>((resolve) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              resolve()
+            },
+            { once: true },
+          )
+        })
+        // The cancelled provider does not finish stopping while the test runs, so the slot
+        // stays held and the recovery request has to wait.
+        await stuck
+        yield { type: 'done' }
+      },
+    }
+    const f = fixture(t, provider),
+      controller = new AbortController()
+    const cancelled = collect(f.provider, controller.signal)
+    await first
+    controller.abort()
+    await assert.rejects(cancelled)
+    const waiting = collect(f.provider).catch(() => [])
+    for (let tries = 0; f.served.length < 2 && tries < 200; tries++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    const recovery = f.served[1]
+    assert.ok(recovery, 'the recovery request reached the host')
+    f.host.stop()
+    let window: NodeJS.Timeout | undefined
+    const outcome = await Promise.race([
+      recovery.then(() => 'settled'),
+      new Promise<string>((resolve) => {
+        window = setTimeout(() => {
+          resolve('still waiting')
+        }, 2_000)
+      }),
+    ])
+    clearTimeout(window)
+    assert.equal(outcome, 'settled')
+    await waiting
+    assert.equal(calls, 1)
   })
   it('keeps the wall-clock budget while a guest stalls before sending its request', async (t) => {
     const f = fixture(t, echo, { wallClockMs: 30 })
