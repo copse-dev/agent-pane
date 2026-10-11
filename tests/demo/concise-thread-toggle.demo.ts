@@ -115,8 +115,9 @@ describe('concise thread view toggling', () => {
 
   it('keeps each opened turn open independently', async () => {
     await openScenario()
+    // Every one of the five turns hid a call (each answer carries an audit call).
     const footers = await $$('.concise-turn-footer')
-    expect(footers).toHaveLength(3)
+    expect(footers).toHaveLength(5)
     await footers[0]?.$('button').click()
     await footers[2]?.$('button').click()
     await expect(footers[0]?.$('button')).toHaveAttribute('aria-expanded', 'true')
