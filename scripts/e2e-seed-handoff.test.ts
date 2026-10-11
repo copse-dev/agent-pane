@@ -39,6 +39,37 @@ it('restores the pending fixture after an old app overwrites config, then preser
   }
 })
 
+it('restores seeded settings after shutdown and consumes onboarding fixtures only once', () => {
+  const root = mkdtempSync(join(tmpdir(), 'copse-e2e-settings-seed-'))
+  const settings = join(root, 'settings.json')
+  const pending = join(root, '.e2e-pending-settings.json')
+  const launcher = resolve('tests/e2e/electron-shell/apply-seed-config.cjs')
+  const launch = (): Buffer =>
+    execFileSync(process.execPath, [
+      '-e',
+      'require(process.argv[1]).applyPendingSeedConfig(process.argv[2])',
+      launcher,
+      root,
+    ])
+  try {
+    for (const onboardingCompleted of [true, false]) {
+      const seeded = JSON.stringify({ onboardingCompleted, theme: 'dark' })
+      writeFileSync(pending, seeded)
+      // The outgoing app saves the opposite onboarding state on shutdown.
+      writeFileSync(settings, JSON.stringify({ onboardingCompleted: !onboardingCompleted }))
+      launch()
+      assert.equal(readFileSync(settings, 'utf8'), seeded)
+      assert.equal(existsSync(pending), false)
+      const updated = JSON.stringify({ onboardingCompleted: true, theme: 'light' })
+      writeFileSync(settings, updated)
+      launch()
+      assert.equal(readFileSync(settings, 'utf8'), updated)
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 it('resets only reseeded projections after shutdown and preserves them on ordinary relaunch', async () => {
   const root = mkdtempSync(join(tmpdir(), 'copse-e2e-index-seed-'))
   const workspace = join(root, 'custom-workspace')
