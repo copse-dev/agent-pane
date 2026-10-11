@@ -690,10 +690,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (!sameThreadChangeSummary(previous?.summary ?? null, summary)) {
           changed = true
         }
-        // The cleanup filter treats a never-checked thread as a match; once its
-        // first summary lands the filter must re-evaluate it even when the
-        // visible label (null -> null) stayed the same.
-        if (needsCleanupOnly && !previous) changed = true
+        // Unknown and expired summaries keep a row visible while refreshing.
+        // Re-evaluate even when the refreshed summary is still clean.
+        if (needsCleanupOnly && (!previous || Date.now() - previous.at > THREAD_CHANGE_TTL_MS)) {
+          changed = true
+        }
         threadChangeCache.set(key, { summary, at: Date.now() })
       }
       // Only an unmounted pane must not redraw from a late answer.
@@ -933,6 +934,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // window regains focus or becomes visible, which is when someone looks again.
   function recheckStaleThreadChanges(): void {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    // Re-admit hidden rows with expired clean summaries before refreshing.
+    // Their absence from threadChangeRendered must not make clean state permanent.
+    if (needsCleanupOnly) render()
     const now = Date.now()
     refreshThreadChanges(
       threadChangeRendered.filter(({ projectId, threadId }) => {
@@ -987,7 +991,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // PR lifecycle is available for SSH projects; local git summaries are not.
     if (project.sshHost) return false
     const cached = threadChangeCache.get(threadChangeKey(project.id, thread.id))
-    if (!cached) return true
+    if (!cached || Date.now() - cached.at > THREAD_CHANGE_TTL_MS) return true
     return describeThreadChanges(cached.summary) !== null
   }
 

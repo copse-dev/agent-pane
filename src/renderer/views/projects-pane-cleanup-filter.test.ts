@@ -104,6 +104,35 @@ describe('projects pane needs-cleanup filter (component)', () => {
     )
   })
 
+  it('rechecks a hidden clean thread on focus after its cached summary expires', async (t) => {
+    let now = 1_000_000
+    t.mock.method(Date, 'now', () => now)
+    const summaries: Record<string, ThreadChangeSummary | null> = { a: { dirty: false } }
+    mount([thread('a', 'Changed elsewhere')], apiWithSummaries(summaries))
+    await settle()
+    toggleNeedsCleanup()
+    assert.deepEqual(titles(), [])
+    summaries['a'] = { dirty: true }
+    now += 120_000
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    assert.deepEqual(titles(), ['Changed elsewhere'])
+  })
+
+  it('hides a rechecked thread again when its expired clean summary stays clean', async (t) => {
+    let now = 1_000_000
+    t.mock.method(Date, 'now', () => now)
+    mount([thread('a', 'Still clean')], apiWithSummaries({ a: { dirty: false } }))
+    await settle()
+    toggleNeedsCleanup()
+    assert.deepEqual(titles(), [])
+    now += 120_000
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    assert.deepEqual(titles(), [])
+    assert.equal(emptyMessage(), 'Nothing needs cleanup')
+  })
+
   it('does not request PR details beyond rendered rows when cleanup filtering is enabled', async () => {
     const base = apiWithSummaries({})
     const requested: number[] = []
