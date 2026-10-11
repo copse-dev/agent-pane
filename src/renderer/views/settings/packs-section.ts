@@ -821,6 +821,7 @@ export function createPacksSection(
     }
     input.dataset['pluginId'] = pluginId
     input.dataset['settingKey'] = field.id
+    let previousNumber = typeof field.value === 'number' ? field.value : 0
 
     // Persist on change so the manifest schema is the source of truth — no
     // Save-button plumbing needed, mirroring the MCP per-server toggle.
@@ -832,7 +833,13 @@ export function createPacksSection(
         }
         value = input.checked
       } else if (field.kind === 'number') {
-        value = Number(input.value)
+        const parsed = Number.parseFloat(input.value)
+        if (!Number.isFinite(parsed)) {
+          input.value = String(previousNumber)
+          return
+        }
+        previousNumber = parsed
+        value = parsed
       }
       void api.plugins.setSetting(pluginId, field.id, value).catch(() => {
         // Best-effort: on failure the on-screen value stays; next reload
