@@ -31,6 +31,8 @@ export interface SidebarThread {
   /** Marks a side chat: hidden from thread browsers, listed under its parent. */
   sideChat?: Thread['sideChat']
   automation?: Thread['automation']
+  /** The checkout an automation run left behind; the sidebar flags runs still holding one. */
+  worktree?: Thread['worktree']
   remoteAgentLink?: Thread['remoteAgentLink']
   /**
    * Whether the thread was ever run, from metadata alone (see {@link sidebarHasRun}).
@@ -134,6 +136,7 @@ export function compactSidebarThread(thread: RunSignals): SidebarThread {
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
     ...(thread.sideChat ? { sideChat: thread.sideChat } : {}),
     ...(thread.automation ? { automation: thread.automation } : {}),
+    ...(thread.worktree ? { worktree: thread.worktree } : {}),
     ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
     prRefs: sidebarPrRefs(thread),
     ...(thread.prProductions ? { prProductions: thread.prProductions } : {}),
