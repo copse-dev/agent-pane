@@ -133,6 +133,48 @@ describe('projects pane needs-cleanup filter (component)', () => {
     assert.equal(emptyMessage(), 'Nothing needs cleanup')
   })
 
+  it('keeps an expired clean thread hidden while its summary is re-read', async (t) => {
+    let now = 1_000_000
+    t.mock.method(Date, 'now', () => now)
+    let reads = 0
+    let resolveReread: ((value: Array<ThreadChangeSummary | null>) => void) | undefined
+    const base = apiWithSummaries({})
+    const api: ApiClient = {
+      ...base,
+      git: {
+        ...base.git,
+        threadChangeSummary: (): Promise<Array<ThreadChangeSummary | null>> => {
+          reads += 1
+          if (reads === 1) return Promise.resolve([{ dirty: false }])
+          return new Promise((resolve) => {
+            resolveReread = resolve
+          })
+        },
+      },
+    }
+    mount([thread('a', 'Still clean')], api)
+    await settle()
+    toggleNeedsCleanup()
+    assert.deepEqual(titles(), [])
+
+    now += 120_000
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    assert.equal(reads, 2, 'the expired hidden summary is re-read')
+    assert.deepEqual(titles(), [], 'and keeps its last answer meanwhile')
+
+    // A redraw while the re-read is pending must neither re-admit the row nor
+    // prune the summary it is hidden by.
+    toggleNeedsCleanup()
+    toggleNeedsCleanup()
+    assert.deepEqual(titles(), [])
+
+    resolveReread?.([{ dirty: false }])
+    await settle()
+    assert.deepEqual(titles(), [])
+    assert.equal(emptyMessage(), 'Nothing needs cleanup')
+  })
+
   it('does not request PR details beyond rendered rows when cleanup filtering is enabled', async () => {
     const base = apiWithSummaries({})
     const requested: number[] = []
