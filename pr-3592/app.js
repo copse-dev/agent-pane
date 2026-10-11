@@ -79722,6 +79722,89 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "sidebar-cleanup-ssh",
+        label: "Cleanup for SSH pull requests",
+        project: {
+          ...project("demo-cleanup-ssh", "Remote widgets", "/srv/widgets"),
+          sshHost: "build-host"
+        },
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          sshWorkspaceEnabled: true
+        },
+        threads: ["open", "closed"].map((state, index) => ({
+          id: `ssh-cleanup-${state}`,
+          title: state === "open" ? "Remote PR still open" : "Remote PR completed",
+          status: state === "open" ? "running" : "idle",
+          messages: [],
+          messagesLoaded: false,
+          prRefs: [
+            {
+              owner: "acme",
+              repo: "widgets",
+              number: index + 1,
+              url: `https://github.com/acme/widgets/pull/${String(index + 1)}`
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: FIXED_TIME - index,
+          updatedAt: FIXED_TIME - index
+        })),
+        pullRequests: [1, 2].map((number4) => ({
+          owner: "acme",
+          repo: "widgets",
+          number: number4,
+          url: `https://github.com/acme/widgets/pull/${String(number4)}`,
+          title: "Remote change",
+          state: number4 === 1 ? "OPEN" : "CLOSED",
+          body: "",
+          files: [],
+          checks: "success"
+        }))
+      },
+      {
+        id: "sidebar-cleanup-after-pr",
+        label: "Cleanup after merged or closed PRs",
+        project: project("demo-cleanup-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threadChanges: {
+          "cleanup-dirty": { dirty: true },
+          "cleanup-unpushed": { dirty: false, unpushed: 2 },
+          "cleanup-clean": { dirty: false }
+        },
+        threads: ["dirty", "unpushed", "clean"].map((state, index) => ({
+          id: `cleanup-${state}`,
+          title: state === "dirty" ? "New edits after merge" : state === "unpushed" ? "Unpushed follow-up" : "Finished and clean",
+          status: "idle",
+          messages: [],
+          messagesLoaded: false,
+          prRefs: [
+            {
+              owner: "acme",
+              repo: "widgets",
+              number: index + 1,
+              url: `https://github.com/acme/widgets/pull/${String(index + 1)}`
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: FIXED_TIME - index,
+          updatedAt: FIXED_TIME - index
+        })),
+        pullRequests: [1, 2, 3].map((number4) => ({
+          owner: "acme",
+          repo: "widgets",
+          number: number4,
+          url: `https://github.com/acme/widgets/pull/${String(number4)}`,
+          title: "Previous change",
+          state: number4 === 2 ? "CLOSED" : "MERGED",
+          body: "",
+          files: [],
+          checks: "success"
+        }))
+      },
+      {
         id: "sidebar-thread-changes",
         label: "Sidebar changes glyph",
         project: project("demo-sidebar-changes-project"),
@@ -87983,6 +88066,7 @@ function mountProjectsPane(root, store2, api2) {
   };
   let compactRows = false;
   let projectFilterId = null;
+  let needsCleanupOnly = false;
   const filterLabel = el("span", { class: "projects-filter-label" }, "All projects");
   const projectFilterBtn = el(
     "button",
@@ -88054,9 +88138,12 @@ function mountProjectsPane(root, store2, api2) {
     const chosen = projects.find((project2) => project2.id === projectFilterId);
     if (!chosen) projectFilterId = null;
     const projectName = chosen ? projectDisplayName(chosen) : "All projects";
-    filterLabel.textContent = projectName;
-    projectFilterBtn.classList.toggle("is-filtering", chosen !== void 0);
-    projectFilterBtn.setAttribute("aria-label", `Show: ${projectName}`);
+    filterLabel.textContent = needsCleanupOnly ? `${projectName} \xB7 Needs cleanup` : projectName;
+    projectFilterBtn.classList.toggle("is-filtering", chosen !== void 0 || needsCleanupOnly);
+    projectFilterBtn.setAttribute(
+      "aria-label",
+      needsCleanupOnly ? `Show: ${projectName}, needs cleanup only` : `Show: ${projectName}`
+    );
     sortLabel.textContent = SORT_LABELS[sidebarThreadSort];
     sortDir.textContent = sidebarThreadSortReverse ? "\u2191" : "\u2193";
   }
@@ -88087,7 +88174,17 @@ function mountProjectsPane(root, store2, api2) {
           projectFilterId = project2.id;
           render();
         }
-      }))
+      })),
+      { separator: true },
+      {
+        label: "Needs cleanup only",
+        toggle: true,
+        checked: needsCleanupOnly,
+        onSelect: () => {
+          needsCleanupOnly = !needsCleanupOnly;
+          render();
+        }
+      }
     ]);
   });
   sortBtn.addEventListener("click", () => {
@@ -88220,7 +88317,11 @@ function mountProjectsPane(root, store2, api2) {
         const key = threadChangeKey(ref.projectId, ref.threadId);
         threadChangeInFlight.delete(key);
         const summary = results[i2] ?? null;
-        if (!sameThreadChangeSummary(threadChangeCache.get(key)?.summary ?? null, summary)) {
+        const previous = threadChangeCache.get(key);
+        if (!sameThreadChangeSummary(previous?.summary ?? null, summary)) {
+          changed = true;
+        }
+        if (needsCleanupOnly && (!previous || Date.now() - previous.at > THREAD_CHANGE_TTL_MS)) {
           changed = true;
         }
         threadChangeCache.set(key, { summary, at: Date.now() });
@@ -88401,6 +88502,7 @@ function mountProjectsPane(root, store2, api2) {
   }
   function recheckStaleThreadChanges() {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    if (needsCleanupOnly) render();
     const now = Date.now();
     refreshThreadChanges(
       threadChangeRendered.filter(({ projectId, threadId }) => {
@@ -88427,6 +88529,18 @@ function mountProjectsPane(root, store2, api2) {
     ensurePrLifecycles(refs);
     const states = refs.map((ref) => cachedPrLifecycle(githubPrKey(ref)) ?? "unknown");
     return summarizeThreadPrStatus(states, refs);
+  }
+  function threadNeedsCleanup(project2, thread) {
+    if (sidebarPrRefs(thread).some((ref) => {
+      const state = cachedPrLifecycle(githubPrKey(ref)) ?? "unknown";
+      return state === "open" || state === "unknown";
+    }))
+      return true;
+    if (thread.status === "running") return false;
+    if (project2.sshHost) return false;
+    const cached2 = threadChangeCache.get(threadChangeKey(project2.id, thread.id));
+    if (!cached2 || Date.now() - cached2.at > THREAD_CHANGE_TTL_MS) return true;
+    return describeThreadChanges(cached2.summary) !== null;
   }
   function renderMissingNotice(project2) {
     const wrap = el("div", { class: "project-missing-notice" });
@@ -88995,13 +89109,14 @@ function mountProjectsPane(root, store2, api2) {
             prRollup.kind === "open" && conflictsForThread(thread)
           )
         );
-      } else if (thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
+      }
+      if ((!prRollup || needsCleanupOnly && prRollup.kind !== "open") && thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
         const key = threadChangeKey(project2.id, thread.id);
         threadChangeSeen.push({ projectId: project2.id, threadId: thread.id });
         threadChangeSeenKeys.add(key);
         const cached2 = threadChangeCache.get(key);
         const changesLabel = describeThreadChanges(cached2?.summary ?? null);
-        if (changesLabel) {
+        if (changesLabel && !prRollup) {
           chatRow.classList.add("has-changes-status");
           chatRow.append(chatChangesStatus(changesLabel));
         }
@@ -89433,7 +89548,9 @@ function mountProjectsPane(root, store2, api2) {
         (t2) => filterText(t2.title || "New Thread").includes(threadFilter) || contentFilter.matches.has(t2.id) || residentRequestMatches(t2.messages ?? [], threadFilter)
       ) : sidebarThreads;
       const conversationThreads = orderSidebarThreads(
-        matchingThreads.filter((thread) => thread.automation === void 0),
+        matchingThreads.filter(
+          (thread) => thread.automation === void 0 && (!needsCleanupOnly || threadNeedsCleanup(project2, thread))
+        ),
         // A filter's matches stay newest first; the chosen order is for the browse list.
         isFiltering ? "activity" : store2.getState().sidebarThreadSort,
         !isFiltering && store2.getState().sidebarThreadSortReverse
@@ -89482,8 +89599,16 @@ function mountProjectsPane(root, store2, api2) {
         );
       } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
+      } else if (isFiltering && !contentFilter.waiting && conversationThreads.length === 0) {
+        chats.append(el("div", { class: "sidebar-empty" }, "No matching threads need cleanup"));
       } else if (!isFiltering && visibleThreads.length === 0) {
-        chats.append(el("div", { class: "sidebar-empty" }, "No threads yet"));
+        chats.append(
+          el(
+            "div",
+            { class: "sidebar-empty" },
+            needsCleanupOnly ? "Nothing needs cleanup" : "No threads yet"
+          )
+        );
       }
       for (const thread of visibleThreads) {
         chats.append(renderThreadRow(project2, thread));
@@ -89524,14 +89649,16 @@ function mountProjectsPane(root, store2, api2) {
         if (project2.missing) continue;
         owners.set(project2.id, project2);
         for (const thread of getSidebarThreads(store2, project2.id)) {
-          if (thread.automation === void 0) rows.push({ projectId: project2.id, thread });
+          if (thread.automation === void 0 && (!needsCleanupOnly || threadNeedsCleanup(project2, thread))) {
+            rows.push({ projectId: project2.id, thread });
+          }
         }
       }
       const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
       const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse);
       const sections = mode === "status" ? groupRowsByStatus(ordered, isThreadAwaitingAttention) : [{ id: "all", label: "", rows: ordered }];
       const withThreads = new Set(ordered.map((row2) => row2.projectId));
-      const emptyProjectRows = Array.from(owners.values()).filter((project2) => !withThreads.has(project2.id)).map((project2) => {
+      const emptyProjectRows = needsCleanupOnly ? [] : Array.from(owners.values()).filter((project2) => !withThreads.has(project2.id)).map((project2) => {
         const nameRow = el(
           "button",
           { class: "project-row", title: project2.path },
@@ -89547,7 +89674,14 @@ function mountProjectsPane(root, store2, api2) {
         );
       });
       if (ordered.length === 0) {
-        return [el("div", { class: "sidebar-empty" }, "No threads yet"), ...emptyProjectRows];
+        return [
+          el(
+            "div",
+            { class: "sidebar-empty" },
+            needsCleanupOnly ? "Nothing needs cleanup" : "No threads yet"
+          ),
+          ...emptyProjectRows
+        ];
       }
       return sections.map((section2) => {
         const block = el("div", { class: "thread-section", "data-section-id": section2.id });
