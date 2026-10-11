@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -61,7 +61,7 @@ describe('manual ACP catalog entry', function () {
       { mode: 0o755 },
     )
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-acp-catalog-entry', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-acp-catalog-entry', {
       windowBounds: { width: 1280, height: 800 },
       registeredAcpAgents: [],
     })
