@@ -957,6 +957,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     threads: {
+      storageSize: () => resolved({ bytes: 24_576, truncated: false }),
       archive: (_projectId, threadId) => {
         const archivedAt = Date.now()
         const thread = threads.find((candidate) => candidate.id === threadId)

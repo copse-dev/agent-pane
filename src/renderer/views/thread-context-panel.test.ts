@@ -186,3 +186,96 @@ test('the mounted pane renders the active thread, indexes sections, and starts a
   )
   dispose()
 })
+
+test('storage combines saved files with the owned checkout and archive uses the guarded flow', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const id = createThread(store)
+  store.setState({
+    threads: store.getState().threads.map((t) => ({
+      ...t,
+      worktree: {
+        path: '/checkout',
+        branch: 'topic',
+        baseBranch: 'main',
+        baseCommit: 'abc',
+        createdAt: 1,
+        seededFromDirtyProject: false,
+      },
+    })),
+  })
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    threads: {
+      ...base.threads,
+      storageSize: async (): ReturnType<typeof base.threads.storageSize> => ({
+        bytes: 1024,
+        truncated: false,
+      }),
+    },
+    worktrees: {
+      ...base.worktrees,
+      size: async (): ReturnType<typeof base.worktrees.size> => ({
+        path: '/checkout',
+        bytes: 2048,
+        fileCount: 1,
+        truncated: true,
+      }),
+    },
+  }
+  const viewer = document.createElement('div')
+  const requests: string[][] = []
+  store.on('thread_archive_requested', (...args) => requests.push(args))
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  assert.equal(viewer.querySelector('[data-context-storage-size]')?.textContent, 'Calculating…')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-context-storage-size]')?.textContent, 'At least 3.0 KB')
+  viewer.querySelector<HTMLElement>('[data-action="archive-thread"]')?.click()
+  assert.deepEqual(requests, [['p', id]])
+  assert.equal(store.getState().threads[0]?.archivedAt, undefined)
+  dispose()
+})
+
+test('storage ignores a previous thread response and reports lookup failure', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const first = createThread(store)
+  let finish: (value: { bytes: number; truncated: boolean }) => void = () => {}
+  const pending = new Promise<{ bytes: number; truncated: boolean }>((resolve) => {
+    finish = resolve
+  })
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    threads: {
+      ...base.threads,
+      storageSize: async (
+        _project: string,
+        id: string,
+      ): ReturnType<typeof base.threads.storageSize> => {
+        if (id === first) return pending
+        throw new Error('Disk unavailable')
+      },
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  createThread(store)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-context-storage-size]')?.textContent, 'Unavailable')
+  finish({ bytes: 1024, truncated: false })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-context-storage-size]')?.textContent, 'Unavailable')
+  dispose()
+})
