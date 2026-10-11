@@ -639,7 +639,7 @@ describe('VNC viewer', function () {
     )
     assert.equal(await $('.vnc-setup-fields').isDisplayed(), false)
     assert.equal(await $('.vnc-connect-btn').isDisplayed(), false)
-    assert.equal(await $('.vnc-view-only-note').isDisplayed(), false)
+    assert.equal(await $('.vnc-view-only-note').isExisting(), false)
     assert.equal(await $('.vnc-disconnect-btn').getText(), 'Disconnect')
     const controlButton = $('.vnc-control-btn')
     assert.equal(await controlButton.isDisplayed(), true)
@@ -857,6 +857,42 @@ describe('VNC viewer', function () {
         timeout: 20_000,
         timeoutMsg: 'expected the nearby discovery retry to finish with an empty result',
       },
+    )
+
+    await $(`${retryControls} .vnc-add-ssh-btn`).click()
+    const sshForm = $(`${retryControls} .vnc-ssh-host-form`)
+    await sshForm.waitForDisplayed()
+    assert.equal(await $(`${retryControls} .vnc-device-list`).isDisplayed(), false)
+    await browser.execute(() => {
+      const body = document.querySelector<HTMLElement>(
+        '.vnc-controls-panel:not([hidden]) .vnc-controls-body',
+      )
+      if (body) body.scrollTop = 0
+    })
+    await saveElementScreenshot('#pane-files', 'vnc-viewer-add-ssh-machine.png')
+    await $(`${retryControls} [aria-label="SSH host label"]`).setValue('Build Mac')
+    assert.equal(await $(`${retryControls} [aria-label="SSH host id"]`).getValue(), 'build-mac')
+    await $(`${retryControls} [aria-label="SSH hostname"]`).setValue('localhost')
+    await $(`${retryControls} [aria-label="SSH user"]`).setValue('builder')
+    await $(`${retryControls} [aria-label="SSH identity file"]`).setValue('~/.ssh/id_ed25519')
+    await $(`${retryControls} .vnc-ssh-host-form button[type="submit"]`).click()
+    await $(
+      `${retryControls} .vnc-device-header[data-machine="ssh:build-mac"][aria-expanded="true"]`,
+    ).waitForDisplayed({ timeout: 20_000 })
+    const savedSshHosts = await browser.execute(async () =>
+      window.api.settings.get('sshWorkspaceHosts'),
+    )
+    assert.ok(Array.isArray(savedSshHosts))
+    assert.ok(
+      savedSshHosts.some((item: unknown) => {
+        if (typeof item !== 'object' || item === null) return false
+        return Object.hasOwn(item, 'id') && item.id === 'build-mac'
+      }),
+    )
+    assert.equal(await $(`${retryControls} .vnc-network-warning`).isDisplayed(), false)
+    assert.match(
+      await $(`${retryControls} .vnc-credential-hint`).getText(),
+      /SSH secures the connection/,
     )
 
     await assertNoErrorToasts('VNC viewer')
