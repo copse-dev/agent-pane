@@ -95,4 +95,4 @@
 // v56 versions threads:archive stopProcesses and blocked-running live-work reports.
 // v57 versions approval effect, boundary, and grant-scope details.
 // v58 integrates living plans and roadmap document editing.
-export const API_PROTOCOL_VERSION = 58 as const
+export const API_PROTOCOL_VERSION = 59 as const
