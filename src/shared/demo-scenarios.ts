@@ -2987,6 +2987,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   {
     id: 'thread-context',
+    changeStats: { additions: 42, deletions: 7 },
     label: 'The thread Context panel',
     project: project('demo-thread-context', 'Widgets', '/demo/widgets'),
     settings: {
