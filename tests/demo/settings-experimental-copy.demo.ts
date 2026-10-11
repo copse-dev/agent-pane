@@ -36,6 +36,10 @@ describe('browser-hosted Experimental settings copy', () => {
     await expect(qr).toBeDisplayed()
     await expect(qr.$('.mobile-companion-qr-image svg')).toExist()
     await expect(qr.$('.mobile-companion-qr-url')).toHaveText('https://192.168.1.42:42773')
+    const network = fieldset.$('select[name="mobileCompanionAddress"]')
+    await expect(network).toHaveValue('192.168.1.42')
+    await expect(network.$('option:checked')).toHaveText('Wi-Fi — 192.168.1.42')
+    await expect(network).toBeDisabled()
 
     await fieldset.scrollIntoView()
     await saveElementScreenshot(MOBILE_FIELDSET, 'settings-mobile-companion.png')
