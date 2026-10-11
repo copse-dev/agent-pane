@@ -95,6 +95,16 @@ const CMD_POS = String.raw`(?:^|[\n|;&(])\s*`
 const REASON_LOCAL_EXECUTABLE: ScopeReason =
   'executes an in-workspace file directly (contents opaque to analysis)'
 
+// Handing a file or URL to the OS opener launches a host app outside the sandbox.
+// Shared between the regex entries and the token layer, which also sees the
+// opener behind a wrapper (`nohup open …`) the command-position regex misses.
+const REASON_OPEN: ScopeReason = 'launches a host app/file outside the sandbox (open)'
+const REASON_XDG_OPEN: ScopeReason = 'launches a host app/file outside the sandbox (xdg-open)'
+const HOST_OPENERS: ReadonlyMap<string, ScopeReason> = new Map([
+  ['open', REASON_OPEN],
+  ['xdg-open', REASON_XDG_OPEN],
+])
+
 // Commands that clearly reach outside the workspace or network.
 //
 // `ambiguous: true` marks fuzzy "may reach" matchers — short/overloaded command
@@ -210,9 +220,9 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
   // it is hard-external (always prompt), not ambiguous. (#581)
   {
     re: new RegExp(`${CMD_POS}open\\b`, 'i'),
-    reason: 'launches a host app/file outside the sandbox (open)',
+    reason: REASON_OPEN,
   },
-  { re: /\bxdg-open\b/i, reason: 'launches a host app/file outside the sandbox (xdg-open)' },
+  { re: /\bxdg-open\b/i, reason: REASON_XDG_OPEN },
   {
     // Direct execution of a workspace-relative file starting with `./` or `../`.
     // Relative paths with a slash but no leading dot (`bin/tool`) are caught by the
@@ -496,6 +506,11 @@ function tokenBasedExternalReasons(command: string): {
     }
     const exe = commandName(exe0)
     const args = argv.slice(1)
+    const opener = HOST_OPENERS.get(exe)
+    if (opener) {
+      addReason(opener)
+      hasHard = true
+    }
     if (isHostDependentBuildDriver(exe, args)) {
       addReason(REASON_BUILD_DRIVER)
     }
