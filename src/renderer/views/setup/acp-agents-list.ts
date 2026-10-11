@@ -99,6 +99,9 @@ function logoTile(id: string, title: string): HTMLElement {
   return tile
 }
 
+const WATCH_INTERVAL_MS = 3000
+const WATCH_MAX_TICKS = 40
+
 export interface AcpAgentsList {
   root: HTMLElement
   refresh: () => Promise<void>
@@ -212,6 +215,7 @@ export function createAcpAgentsList(api: ApiClient): AcpAgentsList {
     b.addEventListener('click', () => {
       void navigator.clipboard.writeText(command)
       b.textContent = 'Copied'
+      watchForChanges()
     })
     return b
   }
@@ -272,20 +276,14 @@ export function createAcpAgentsList(api: ApiClient): AcpAgentsList {
     menu.append(el('div', { class: 'acp-row' }, custom))
   }
 
-  async function refresh(): Promise<void> {
-    try {
-      configured = parseAcpAgentConfigs(await api.settings.get('registeredAcpAgents'))
-    } catch {
-      configured = []
-    }
+  /** Device scan + sign-in check, without repainting. */
+  async function scanDevice(): Promise<void> {
     try {
       const found = await api.acp.detectAgents()
       detected = new Map(found.map((d) => [d.id, d]))
     } catch {
       detected = new Map()
     }
-    loaded = true
-    render()
     const ids = KNOWN_ACP_AGENTS.filter((k) => detected.get(k.id)?.installed).map((k) => k.id)
     try {
       const statuses = ids.length ? await api.acp.authStatus(ids) : []
@@ -293,9 +291,62 @@ export function createAcpAgentsList(api: ApiClient): AcpAgentsList {
     } catch {
       auth = new Map()
     }
+  }
+
+  function signature(): string {
+    return JSON.stringify([
+      [...detected.values()].map((d) => [d.id, d.installed]),
+      [...auth.entries()],
+    ])
+  }
+
+  async function refresh(): Promise<void> {
+    try {
+      configured = parseAcpAgentConfigs(await api.settings.get('registeredAcpAgents'))
+    } catch {
+      configured = []
+    }
+    await scanDevice()
+    loaded = true
     render()
     void panel.reload()
   }
+
+  /**
+   * Re-scan quietly and repaint only when something changed, so a copied
+   * command's "Copied" label and an open Options form are not disturbed.
+   */
+  async function quietRescan(): Promise<void> {
+    const before = signature()
+    await scanDevice()
+    if (signature() !== before) render()
+  }
+
+  // After the user copies an install or sign-in command, notice when they have
+  // run it: poll briefly, and also re-check whenever the window regains focus.
+  let watchTimer: ReturnType<typeof setInterval> | undefined
+  function watchForChanges(): void {
+    if (watchTimer) clearInterval(watchTimer)
+    let ticks = 0
+    watchTimer = setInterval(() => {
+      ticks += 1
+      if (!root.isConnected || ticks > WATCH_MAX_TICKS) {
+        clearInterval(watchTimer)
+        watchTimer = undefined
+        return
+      }
+      void quietRescan()
+    }, WATCH_INTERVAL_MS)
+  }
+  const onFocus = (): void => {
+    // The dialog is rebuilt on every open; a listener for a gone dialog retires itself.
+    if (!root.isConnected) {
+      window.removeEventListener('focus', onFocus)
+      return
+    }
+    if (loaded) void quietRescan()
+  }
+  window.addEventListener('focus', onFocus)
 
   return { root, refresh }
 }
