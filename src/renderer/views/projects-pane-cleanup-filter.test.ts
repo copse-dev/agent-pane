@@ -175,6 +175,29 @@ describe('projects pane needs-cleanup filter (component)', () => {
     assert.equal(emptyMessage(), 'Nothing needs cleanup')
   })
 
+  it('rechecks every expired hidden thread on focus, beyond one refresh batch', async (t) => {
+    let now = 1_000_000
+    t.mock.method(Date, 'now', () => now)
+    const ids = Array.from({ length: 61 }, (_, index) => `thread-${String(index)}`)
+    const summaries: Record<string, ThreadChangeSummary | null> = Object.fromEntries(
+      ids.map((id) => [id, { dirty: false }]),
+    )
+    mount(
+      ids.map((id) => thread(id, id)),
+      apiWithSummaries(summaries),
+    )
+    await settle()
+    toggleNeedsCleanup()
+    await settle()
+    assert.deepEqual(titles(), [], 'every thread classified clean')
+
+    summaries['thread-60'] = { dirty: true }
+    now += 120_000
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    assert.deepEqual(titles(), ['thread-60'])
+  })
+
   it('does not request PR details beyond rendered rows when cleanup filtering is enabled', async () => {
     const base = apiWithSummaries({})
     const requested: number[] = []

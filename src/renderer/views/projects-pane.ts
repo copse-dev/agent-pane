@@ -687,9 +687,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     refs: Array<{ projectId: string; threadId: string }>,
     opts: { fresh?: boolean } = {},
   ): void {
-    const batch = refs
-      .filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId)))
-      .slice(0, THREAD_CHANGE_MAX_PER_PASS)
+    const pending = refs.filter(
+      (ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId)),
+    )
+    const batch = pending.slice(0, THREAD_CHANGE_MAX_PER_PASS)
     if (batch.length === 0) return
     const generation = threadChangeGeneration
     for (const ref of batch) threadChangeInFlight.add(threadChangeKey(ref.projectId, ref.threadId))
@@ -709,7 +710,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         threadChangeCache.set(key, { summary, at: Date.now() })
       }
       // Only an unmounted pane must not redraw from a late answer.
-      if (changed && generation === threadChangeGeneration) render(true)
+      if (generation !== threadChangeGeneration) return
+      if (changed) render(true)
+      // An unchanged batch redraws nothing, so nothing else would re-request the
+      // rest of an oversized request; read whatever of it is still stale.
+      const now = Date.now()
+      const rest = pending.slice(batch.length).filter(({ projectId, threadId }) => {
+        const cached = threadChangeCache.get(threadChangeKey(projectId, threadId))
+        return !cached || now - cached.at > THREAD_CHANGE_TTL_MS
+      })
+      refreshThreadChanges(rest, opts)
     }
     void api.git.threadChangeSummary(batch, opts).then(settle, () => {
       settle([])
