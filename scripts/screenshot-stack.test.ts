@@ -318,6 +318,33 @@ const workflowSchema = z.object({
   ),
 })
 describe('stack workflow integration', () => {
+  it('reconciles removed declarations when their event is replaced by another pending run', () => {
+    const workflow = workflowSchema.parse(
+      load(readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')),
+    )
+    const script = workflow.jobs['reconcile']?.steps.find(
+      (step) => step.name === 'Reconcile live screenshot stacks',
+    )?.with?.['script']
+    assert.equal(typeof script, 'string')
+    assert.ok(typeof script === 'string')
+    const start = script.indexOf('const selected =')
+    const end = script.indexOf('for (const pr of selected)', start)
+    assert.ok(start >= 0 && end > start)
+    const removed = pull(3, BASE, '')
+    const foreign = {
+      ...pull(4, BASE),
+      head: { sha: BASE, repo: { full_name: 'someone/fork' } },
+    }
+    const selected: unknown = new Script(
+      `${script.slice(start, end)}\nselected.map(pr => pr.number)`,
+    ).runInNewContext({
+      open: [pull(1, LOWER), removed, foreign],
+      owner: 'copse-dev',
+      repo: 'agent-pane',
+      context: { payload: { pull_request: { number: 1 } } },
+    })
+    assert.equal(JSON.stringify(selected), '[1,3]')
+  })
   it('forces combined coverage before the screenshot-only shortcut and preserves source-event evidence', () => {
     const ci = readFileSync('.github/workflows/ci.yml', 'utf8')
     const workflow = workflowSchema.parse(load(ci))
