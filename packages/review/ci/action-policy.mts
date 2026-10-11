@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { load as loadYaml } from 'js-yaml'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
-import type { FetchLike } from '../src/forge-review.ts'
+import { ForgePublicationSkippedError, type FetchLike } from '../src/forge-review.ts'
 
 const sha = z.string().regex(/^[0-9a-f]{40}$/)
 const requestSchema = z.object({
@@ -84,17 +84,20 @@ export function actionPublishingFetch(
         headers: { Authorization: `Bearer ${readToken}`, Accept: 'application/vnd.github+json' },
       })
       const pull = safeJsonParse(await response.text(), decodeWithSchema(currentPullSchema))
-      const labels = pull?.labels.map((label) => label.name) ?? []
+      if (response.status !== 200 || pull === null) {
+        throw new Error('Copse did not publish: GitHub could not attest the current PR')
+      }
+      const labels = pull.labels.map((label) => label.name)
       if (
-        response.status !== 200 ||
-        pull === null ||
         pull.state !== 'open' ||
         pull.head.sha !== request.head ||
         pull.base.sha !== request.base ||
         labels.includes('copse-review-skip') ||
         (pull.draft && !labels.includes('copse-review'))
       ) {
-        throw new Error('Copse did not publish: the PR changed, closed, or opted out during review')
+        throw new ForgePublicationSkippedError(
+          'Copse did not publish: the PR changed, closed, or opted out during review',
+        )
       }
     }
     return fetchImpl(url, init)

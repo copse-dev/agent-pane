@@ -11,6 +11,7 @@ import { decodeFindings } from './finding.ts'
 import { createEphemeralRunnerBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
 import { REVIEW_CONFIG_FILENAME } from './project-commands.ts'
+import { actionPublishingFetch } from '../ci/action-policy.mts'
 import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
 
 const CHECK_SCRIPT = `
@@ -90,6 +91,66 @@ async function run(
 }
 
 describe('copse-review CLI', () => {
+  it('finishes successfully when the PR closes before publishing findings', async () => {
+    const repo = await fixture({ test: { exit: 1 } })
+    const calls: string[] = []
+    let err = ''
+    const code = await main(
+      [
+        '--base',
+        'main',
+        '--allow-unisolated',
+        '--no-model',
+        '--no-verify',
+        '--post-review',
+        'github',
+        '--repo',
+        'copse-dev/fixture',
+        '--pr',
+        '7',
+      ],
+      {
+        stdout: () => {},
+        stderr: (text) => {
+          err += text
+        },
+        env: { PATH: process.env['PATH'], GITHUB_TOKEN: 'test-token' },
+        cwd: repo.root,
+        fetch: actionPublishingFetch(
+          {
+            repository: 'copse-dev/fixture',
+            pr: 7,
+            head: repo.git('rev-parse', 'HEAD'),
+            base: repo.git('rev-parse', 'main'),
+          },
+          'read-token',
+          async (url, init) => {
+            calls.push(init.method)
+            return {
+              status: 200,
+              text: async (): Promise<string> =>
+                JSON.stringify(
+                  url.endsWith('/pulls/7')
+                    ? {
+                        state: 'closed',
+                        head: { sha: repo.git('rev-parse', 'HEAD') },
+                        base: { sha: repo.git('rev-parse', 'main') },
+                        draft: false,
+                        labels: [],
+                      }
+                    : [],
+                ),
+            }
+          },
+        ),
+      },
+    )
+    assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
+    assert.match(err, /publication skipped:.*closed/)
+    assert.ok(calls.length > 0)
+    assert.ok(calls.every((method) => method === 'GET'))
+  })
+
   it('prints usage and rejects unknown flags with the usage exit code', async () => {
     const repo = await fixture({})
     const help = await run(repo, ['--help'])
@@ -876,6 +937,64 @@ describe('copse-review CLI', () => {
     const patched: unknown = JSON.parse(calls[1]?.body ?? '')
     assert.ok(typeof patched === 'object' && patched !== null)
     assert.equal(Reflect.get(patched, 'body'), `Author text.\n\n${out.trimEnd()}`)
+
+    // The same completed summary is a successful no-op if the PR merged while it ran.
+    const skippedCalls: string[] = []
+    const skippedCode = await main(
+      [
+        '--base',
+        'main',
+        '--head',
+        'refs/pull/7/head',
+        '--foreign',
+        '--summary-only',
+        '--provider',
+        'mock',
+        '--mock-script',
+        script,
+        '--post-summary',
+        'github',
+        '--repo',
+        'copse-dev/fixture',
+        '--pr',
+        '7',
+      ],
+      {
+        stdout: () => {},
+        stderr: (text) => {
+          err += text
+        },
+        env: { PATH: process.env['PATH'], GITHUB_TOKEN: 'ghs_test' },
+        cwd: repo.root,
+        fetch: actionPublishingFetch(
+          {
+            repository: 'copse-dev/fixture',
+            pr: 7,
+            head: contributed,
+            base: repo.git('rev-parse', 'main'),
+          },
+          'read-token',
+          async (_url, init) => {
+            skippedCalls.push(init.method)
+            return {
+              status: 200,
+              text: async (): Promise<string> =>
+                JSON.stringify({
+                  body: 'Author text.',
+                  state: 'closed',
+                  head: { sha: contributed },
+                  base: { sha: repo.git('rev-parse', 'main') },
+                  draft: false,
+                  labels: [],
+                }),
+            }
+          },
+        ),
+      },
+    )
+    assert.equal(skippedCode, HEADLESS_EXIT.SUCCESS, err)
+    assert.match(err, /left the description.*closed/)
+    assert.deepEqual(skippedCalls, ['GET', 'GET'])
   })
 
   it('posts the review first, then a summary whose risk the findings raise', async () => {

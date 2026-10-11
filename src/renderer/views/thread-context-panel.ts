@@ -1,3 +1,4 @@
+import { formatByteSize } from '@shared/file-bytes.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { gitBranchIcon, gitPullRequestIcon, externalLinkIcon, plusIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -332,6 +333,51 @@ export function mountThreadContextPane(
   let mentionedIn: ThreadContextModel['mentionedIn'] = []
   let mentionedFor: string | null = null
   let token = 0
+  let storageToken = 0
+  let storageKey = ''
+  let storageText = 'Calculating…'
+  let disposed = false
+
+  function activeStorageKey(): string {
+    const state = store.getState()
+    const thread = getActiveThread(store)
+    return JSON.stringify([
+      state.activeProjectId,
+      thread?.id,
+      thread?.worktree?.path,
+      thread?.worktree?.retiredAt,
+    ])
+  }
+
+  async function refreshStorage(): Promise<void> {
+    const thread = getActiveThread(store)
+    const projectId = store.getState().activeProjectId
+    if (!thread || !projectId) return
+    const mine = ++storageToken
+    const key = activeStorageKey()
+    storageKey = key
+    storageText = 'Calculating…'
+    const update = (): void => {
+      const slot = viewerRoot.querySelector('[data-context-storage-size]')
+      if (slot) slot.textContent = storageText
+    }
+    update()
+    try {
+      const [saved, checkout] = await Promise.all([
+        api.threads.storageSize(projectId, thread.id),
+        thread.worktree && thread.worktree.retiredAt === undefined
+          ? api.worktrees.size(projectId, thread.worktree.path)
+          : Promise.resolve({ bytes: 0, truncated: false }),
+      ])
+      if (disposed || mine !== storageToken || key !== activeStorageKey()) return
+      storageText = `${saved.truncated || checkout.truncated ? 'At least ' : ''}${formatByteSize(saved.bytes + checkout.bytes)}`
+    } catch (error) {
+      if (disposed || mine !== storageToken || key !== activeStorageKey()) return
+      console.error('[context] storage lookup failed:', error)
+      storageText = 'Unavailable'
+    }
+    update()
+  }
 
   const handlers: ThreadContextHandlers = {
     openThread: (threadId) => {
@@ -374,7 +420,44 @@ export function mountThreadContextPane(
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : [],
     })
-    viewerRoot.append(renderThreadContext(model, handlers))
+    const content = renderThreadContext(model, handlers)
+    const archive = el(
+      'button',
+      {
+        type: 'button',
+        class: 'thread-context-action',
+        'data-action': 'archive-thread',
+        disabled: thread.archivedAt !== undefined,
+      },
+      'Archive thread',
+    )
+    archive.addEventListener('click', () => {
+      if (project) store.emit('thread_archive_requested', project.id, thread.id)
+    })
+    content.prepend(
+      el(
+        'section',
+        { class: 'thread-context-section', 'data-context-section': 'storage' },
+        el('h5', {}, 'Storage'),
+        el(
+          'div',
+          { class: 'thread-context-row' },
+          el('span', { class: 'thread-context-main' }, 'Retained on disk'),
+          el(
+            'span',
+            { 'data-context-storage-size': '' },
+            storageKey === activeStorageKey() ? storageText : 'Calculating…',
+          ),
+        ),
+        el(
+          'p',
+          { class: 'thread-context-empty' },
+          'Saved thread files and its dedicated worktree. Shared project files are excluded.',
+        ),
+        el('div', { class: 'thread-context-section-actions' }, archive),
+      ),
+    )
+    viewerRoot.append(content)
     for (const kind of CONTEXT_SECTIONS) {
       const jump = el(
         'button',
@@ -393,6 +476,7 @@ export function mountThreadContextPane(
 
   /** Backlinks come from the index; ignore an answer for a thread since closed. */
   async function refreshMentions(): Promise<void> {
+    void refreshStorage()
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
     if (!thread || !projectId) return
@@ -403,7 +487,7 @@ export function mountThreadContextPane(
     } catch (error) {
       console.error('[context] backlink lookup failed:', error)
     }
-    if (mine !== token || getActiveThread(store)?.id !== thread.id) return
+    if (disposed || mine !== token || getActiveThread(store)?.id !== thread.id) return
     mentionedIn = rows
     mentionedFor = thread.id
     if (contextModeActive(store)) render()
@@ -425,6 +509,7 @@ export function mountThreadContextPane(
       const active = getActiveThread(store)?.id ?? null
       render()
       if (active !== mentionedFor) void refreshMentions()
+      else if (storageKey !== activeStorageKey()) void refreshStorage()
     }),
     store.on('message_done', () => {
       if (!contextModeActive(store)) return
@@ -433,7 +518,13 @@ export function mountThreadContextPane(
     }),
     store.on('workspace_changed', () => {
       mentionedFor = null
-      if (contextModeActive(store)) render()
+      storageKey = ''
+      token++
+      storageToken++
+      if (contextModeActive(store)) {
+        render()
+        void refreshMentions()
+      }
     }),
   ]
   if (contextModeActive(store)) {
@@ -441,6 +532,9 @@ export function mountThreadContextPane(
     void refreshMentions()
   }
   return () => {
+    disposed = true
+    token++
+    storageToken++
     for (const off of offs) off()
   }
 }

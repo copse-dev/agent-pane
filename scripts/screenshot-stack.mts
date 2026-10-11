@@ -2,6 +2,8 @@
 import { createHash } from 'node:crypto'
 import { safeJsonParse } from './lib/safe-json.mts'
 
+class StackValidationError extends Error {}
+
 const PREFIX = '<!-- copse-screenshot-stack:'
 const BOT = 41898282
 const SHA = /^[0-9a-f]{40}$/
@@ -61,14 +63,14 @@ export function parseScreenshotStack(body: unknown): Declaration | null {
   const matches = [...body.matchAll(/<!-- copse-screenshot-stack: ([^\n]+) -->/g)]
   const payload = matches[0]?.[1]
   if (matches.length !== 1 || body.split(PREFIX).length !== 2 || !payload) {
-    throw new Error('Expected exactly one screenshot stack declaration')
+    throw new StackValidationError('Expected exactly one screenshot stack declaration')
   }
   const tokens = payload.split(' ')
   const tipToken = tokens.pop()
   const tipMatch = /^tip=#([1-9][0-9]*)$/.exec(tipToken ?? '')
   const tip = Number(tipMatch?.[1])
   if (!Number.isSafeInteger(tip) || tip <= 0 || tokens.length < 1 || tokens.length > 19) {
-    throw new Error('A screenshot stack needs 1–19 pinned lower PRs and one tip')
+    throw new StackValidationError('A screenshot stack needs 1–19 pinned lower PRs and one tip')
   }
   const seen = new Set([tip])
   const members = tokens.map((token) => {
@@ -76,7 +78,9 @@ export function parseScreenshotStack(body: unknown): Declaration | null {
     const number = Number(match?.[1])
     const sha = match?.[2]
     if (!Number.isSafeInteger(number) || number <= 0 || !sha || seen.has(number)) {
-      throw new Error('Screenshot stack members must be unique PRs pinned to full SHAs')
+      throw new StackValidationError(
+        'Screenshot stack members must be unique PRs pinned to full SHAs',
+      )
     }
     seen.add(number)
     return { number, sha }
@@ -105,19 +109,20 @@ async function statuses(
       per_page: 100,
       page,
     })
-    if (!Array.isArray(data)) throw new Error('Screenshot stack statuses unavailable')
+    if (!Array.isArray(data))
+      throw new StackValidationError('Screenshot stack statuses unavailable')
     for (const status of data) {
       const context = field(status, 'context')
       const id = field(status, 'id')
       if (typeof context !== 'string' || typeof id !== 'number' || !Number.isSafeInteger(id)) {
-        throw new Error('Invalid screenshot stack status')
+        throw new StackValidationError('Invalid screenshot stack status')
       }
       const previous = field(latest.get(context), 'id')
       if (typeof previous !== 'number' || id > previous) latest.set(context, status)
     }
     if (data.length < 100) return latest
   }
-  throw new Error('Screenshot stack status pagination limit exceeded')
+  throw new StackValidationError('Screenshot stack status pagination limit exceeded')
 }
 
 function successful(status: unknown): boolean {
@@ -132,7 +137,7 @@ function sourceHead(pr: unknown, input: Input): string {
     typeof sha !== 'string' ||
     !SHA.test(sha)
   )
-    throw new Error('Stack PR must have a same-repository head')
+    throw new StackValidationError('Stack PR must have a same-repository head')
   return sha
 }
 
@@ -160,7 +165,9 @@ export async function verifyScreenshotStack(
     lower &&
     !declaration.members.some((member) => member.number === input.number && member.sha === head)
   ) {
-    throw new Error('Current PR head is not pinned in its screenshot stack')
+    throw new StackValidationError(
+      `PR #${String(input.number)} head moved; update its stack pin and rerun tip CI`,
+    )
   }
   const tip = lower ? await get(declaration.tip) : current
   const tipHead = sourceHead(tip, input)
@@ -169,7 +176,9 @@ export async function verifyScreenshotStack(
     field(tip, 'draft') !== false ||
     parseScreenshotStack(field(tip, 'body'))?.text !== declaration.text
   ) {
-    throw new Error('Screenshot stack tip must be open, ready, and declare the same stack')
+    throw new StackValidationError(
+      'Screenshot stack tip must be open, ready, and declare the same stack',
+    )
   }
   let previous: string | undefined
   for (const member of declaration.members) {
@@ -179,8 +188,8 @@ export async function verifyScreenshotStack(
       (field(pr, 'state') !== 'open' && field(pr, 'merged') !== true) ||
       parseScreenshotStack(field(pr, 'body'))?.text !== declaration.text
     ) {
-      throw new Error(
-        `Screenshot stack PR #${String(member.number)} changed or is not in the declared stack`,
+      throw new StackValidationError(
+        `PR #${String(member.number)} head or declaration changed; update stack pins and rerun tip CI`,
       )
     }
     if (previous) await ancestor(previous, member.sha)
@@ -197,7 +206,9 @@ export async function verifyScreenshotStack(
       (field(data, 'status') !== 'ahead' && field(data, 'status') !== 'identical') ||
       field(field(data, 'merge_base_commit'), 'sha') !== base
     ) {
-      throw new Error('Screenshot stack revisions are not an ordered ancestor chain of the tip')
+      throw new StackValidationError(
+        'Screenshot stack revisions are not an ordered ancestor chain of the tip',
+      )
     }
   }
   const latest = await statuses(github, input, tipHead)
@@ -222,7 +233,7 @@ export async function verifyScreenshotStack(
       (member.number === declaration.tip &&
         (field(live, 'state') !== 'open' || field(live, 'draft') !== false))
     ) {
-      throw new Error('Screenshot stack changed during validation')
+      throw new StackValidationError('Screenshot stack changed during validation')
     }
   }
   return { declaration, head, tipHead, lower, approved }
@@ -251,7 +262,7 @@ export async function attestScreenshotStack(
       : null
   })
   if (manifestText.length > 4096 || !manifest || manifest.head !== expectedHead) {
-    throw new Error('Invalid screenshot stack coverage manifest')
+    throw new StackValidationError('Invalid screenshot stack coverage manifest')
   }
   const stack = await verifyScreenshotStack(github, input)
   if (
@@ -260,7 +271,7 @@ export async function attestScreenshotStack(
     stack.head !== expectedHead ||
     stack.declaration.text !== manifest.declaration
   ) {
-    throw new Error('Coverage manifest does not match the live screenshot stack tip')
+    throw new StackValidationError('Coverage manifest does not match the live screenshot stack tip')
   }
   await github.rest.repos.createCommitStatus({
     owner: input.owner,
@@ -311,16 +322,30 @@ export async function reconcileScreenshotStack(github: StackGitHub, input: Input
       return
     }
     const stack = await verifyScreenshotStack(github, input)
-    if (!stack) throw new Error('Screenshot stack disappeared')
-    if (!stack.lower) return // The tip retains its normal accept/decline review.
+    if (!stack) throw new StackValidationError('Screenshot stack disappeared')
+    if (!stack.lower) {
+      // A setup error may have been written while declarations were being edited.
+      // Once valid, clear it without replacing an explicit visual decision.
+      if (typeof old === 'string' && old.startsWith('Stack ')) {
+        await write(
+          'pending',
+          'Stack ready; waiting for combined CI and explicit tip screenshot review',
+        )
+      }
+      return
+    }
     await write(
       stack.approved ? 'success' : 'pending',
       stack.approved
         ? `Stack deferred to approved tip #${String(declaration.tip)} at ${stack.tipHead.slice(0, 12)}`
         : `Stack waiting for covered screenshot approval on tip #${String(declaration.tip)}`,
     )
-  } catch {
-    await write('error', 'Stack invalid or changed; update declarations and rerun tip CI')
+  } catch (error) {
+    const reason =
+      error instanceof StackValidationError
+        ? error.message
+        : 'Validation unavailable; retry stack gates or check workflow logs'
+    await write('error', `Stack blocked: ${reason}`.slice(0, 140))
   }
   async function write(state: 'pending' | 'success' | 'error', description: string): Promise<void> {
     await github.rest.repos.createCommitStatus({
