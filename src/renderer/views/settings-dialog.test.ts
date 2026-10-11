@@ -204,26 +204,24 @@ describe('Mobile Companion QR refresh', () => {
       url: null,
       qrSvg: null,
     }
-    const api = createPendingApi({ 'mobile.status': async () => status })
+    const base = createFakeApi()
+    const api: ApiClient = { ...base, mobile: { ...base.mobile, status: async () => status } }
     mountSettingsDialog(createStore(), api)
     const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
     shimModal(dialog)
     openSettingsDialog('experimental')
-    await Promise.resolve()
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, true)
     closeSettingsDialog()
     status = { enabled: true, url: 'https://example.test:42773', qrSvg: '<svg></svg>' }
     openSettingsDialog('experimental')
-    await Promise.resolve()
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, false)
     assert.equal(qsRequired(dialog, '#mobile-companion-qr-url').textContent, status.url)
     closeSettingsDialog()
     status = { enabled: false, url: null, qrSvg: null }
     openSettingsDialog('experimental')
-    await Promise.resolve()
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, true)
     assert.equal(qsRequired(dialog, '#mobile-companion-qr-image').innerHTML, '')
     closeSettingsDialog()
@@ -235,23 +233,23 @@ it('refreshes machines only while their settings section remains open and mounte
   document.body.innerHTML = ''
   let calls = 0
   const base = createFakeApi()
-  mountSettingsDialog(
-    createStore(),
-    createPendingApi({
-      'machines.state': async () => {
+  mountSettingsDialog(createStore(), {
+    ...base,
+    machines: {
+      ...base.machines,
+      state: async () => {
         calls += 1
         return base.machines.state()
       },
-    }),
-  )
+    },
+  })
   const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
   shimModal(dialog)
   const settle = async (): Promise<void> => {
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
   }
   openSettingsDialog()
+  await settle()
   t.mock.timers.tick(9000)
   assert.equal(calls, 0)
   qsRequired<HTMLButtonElement>(dialog, 'button[data-section="ssh"]').click()
@@ -410,19 +408,23 @@ describe('appearance live preview', () => {
 
   it('keeps the current font size when the field is emptied instead of sending NaN', async () => {
     const base = createFakeApi()
-    const settingWrites: [string, unknown][] = []
+    const settingWrites: unknown[] = []
     const api: ApiClient = {
       ...base,
       settings: {
         ...base.settings,
-        set: async (name, value) => {
-          settingWrites.push([name, value])
+        update: async (changes) => {
+          settingWrites.push(changes)
         },
       },
     }
     const store = createStore()
     store.setState({ fontSize: 16 })
     mountSettingsDialog(store, api)
+    const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+    shimModal(dialog)
+    openSettingsDialog('appearance')
+    await new Promise((resolve) => setTimeout(resolve, 0))
     const form = qsRequired<HTMLFormElement>(document, '.settings-content')
     const fontSize = qsRequired<HTMLInputElement>(form, 'input[name="fontSize"]')
     fontSize.value = ''
@@ -430,7 +432,7 @@ describe('appearance live preview', () => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    assert.deepEqual(settingWrites, [['fontSize', 16]])
+    assert.deepEqual(settingWrites, [{ fontSize: 16 }])
     assert.equal(store.getState().fontSize, 16)
   })
 })
