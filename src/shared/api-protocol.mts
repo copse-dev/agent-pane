@@ -96,4 +96,5 @@
 // v57 versions approval effect, boundary, and grant-scope details.
 // v58 integrates explicit local terminal creation targets.
 // v59 integrates machine classifier wire changes.
-export const API_PROTOCOL_VERSION = 59 as const
+// v60 integrates container storage maintenance results.
+export const API_PROTOCOL_VERSION = 60 as const
