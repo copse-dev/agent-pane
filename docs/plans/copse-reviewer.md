@@ -1544,3 +1544,53 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
   corpus in [`benchmarks/review-risk/`](../../benchmarks/review-risk/README.md). Its first
   results (2026-09-27, posted ratings only) and a proposed rubric are there; the rubric is
   unchanged until a model A/B supports it.
+
+### October 10: comment-requested container follow-ups
+
+The review-only pipeline shipped in #2849 and automatic same-repository reviews restored in
+#3604 did not implement a comment-to-edit loop. `copse-follow-up.yml` adds a separate
+**PR conversation comment** entry point on the default branch:
+
+- `@copse-review fix comments` collects the discussion, submitted reviews and inline review
+  comments, then asks the existing hardened thread container to address actionable feedback.
+- `@copse-review fix <specific instructions>` scopes the edits more narrowly; subsequent lines
+  can supply details.
+- `@copse-review rebase` carries both the exact PR head and current base commit into the guest,
+  where the agent rebases and resolves conflicts. An unfinished Git operation cannot be exported.
+
+Each comment starts a fresh bounded run using the current PR head and discussion. It does not
+resume a model session. Inline review replies, issue comments outside PRs, edited commands,
+quoted mentions, fork PRs and non-owner requests do not trigger supported follow-ups. The existing
+protected profile remains owner-only: repository ID 1274237362, actor/comment author/PR author
+338988, the same owner as rerunning actor, and current repository write permission. `copse-review-skip` prevents edits. An explicit
+command is sufficient on a draft PR. Commands do not change automatic review behavior.
+
+The workflow installs and executes trusted default-branch tooling only. PR code, dependency
+installation and checks run inside the existing hardened container. Provider inference stays on
+the host. GitHub credentials never enter the guest. The default registry/release egress allowlist
+supports public dependencies; dependencies needing authentication remain unavailable there.
+Runs have a 35-minute, 500,000-token and 100-step budget.
+
+Publishing is a separate host step, after container teardown. It requires a completed, contained,
+clean-start run, no pending approvals, successful carry-out and no secret-canary/cleanup failure.
+The host checks the original comment again and refuses changed/deleted commands, closed or
+retargeted PRs, changed head/base SHAs and newly opted-out PRs. Fixes must descend from the
+captured head; rebases must include the captured base. Workflow/action changes are not published.
+All pushes use an explicit expected-head lease; only a rebase may rewrite history. No commits
+means no push. The Actions job summary links a published commit; failures remain visible in the
+Actions run. Posting another command retries against the latest head.
+
+Deployment requires this workflow on the default branch, the existing `copse-review-models`
+environment and provider configuration (`COPSE_REVIEW_API_KEY`, or `SCW_GENERATIVE_API_KEY`
+with `SCW_DEFAULT_PROJECT_ID`; `COPSE_REVIEW_MODEL` and the OpenAI-compatible
+`COPSE_REVIEW_BASE_URL`/`SCW_GENERATIVE_API_URL`). The CLI uses the OpenAI-compatible API;
+a non-compatible reviewer provider needs a compatible endpoint for this workflow. The
+`RELEASE_APP_ID`/`RELEASE_APP_PRIVATE_KEY` installation must additionally grant **Contents:
+read and write** and **Pull requests: read** for this repository. PR conversation comments
+are covered by the pull-request permission. Its token is
+minted only after the guest stops. App-token pushes start normal PR CI; a workflow-token fallback
+would suppress CI and is intentionally absent. Existing environment approval rules still apply.
+
+Validation must cover authorization and reruns, context collection, concurrent head/base changes,
+failed/partial runs, divergent-base carry-in, conflict completion, and lease-protected publication.
+A live paid-model Actions run remains a deployment check; unit coverage does not establish it.
