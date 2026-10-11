@@ -1537,8 +1537,14 @@ export async function ensureShellCommandPermitted(
   // generic external-command reason list. Only when the install is the *sole*
   // flagged signal (one reason) — compound or registry-redirected commands keep
   // the full reason list so extra risks (curl, custom registry, …) stay visible.
+  // In the sandbox a runner alone is allowed, so a lone destructive reason
+  // (`rm -f x && npx wdio`) is the real cause and must not be relabelled.
   const install = detectPackageInstall(command)
-  if (install.isInstall && effectiveReasons.length === 1) {
+  if (
+    install.isInstall &&
+    effectiveReasons.length === 1 &&
+    dangerousInSandboxReasons(command).length === 0
+  ) {
     const safeInstall = getSetting<boolean>('safeInstallEnabled', true)
     const { approved } = await requestApproval(
       install.isEphemeralRunner
