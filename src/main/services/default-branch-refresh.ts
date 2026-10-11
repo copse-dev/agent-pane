@@ -34,6 +34,9 @@ export async function refreshAllDefaultBranches(): Promise<void> {
 /** Startup and hourly upkeep; errors are swallowed per project, never fatal to app startup. */
 export function startDefaultBranchRefresh(): void {
   void refreshAllDefaultBranches()
-  const timer = setInterval(() => void refreshAllDefaultBranches(), DEFAULT_BRANCH_REFRESH_INTERVAL_MS)
+  const timer = setInterval(
+    () => void refreshAllDefaultBranches(),
+    DEFAULT_BRANCH_REFRESH_INTERVAL_MS,
+  )
   timer.unref()
 }
