@@ -87294,7 +87294,9 @@ function namingMessages(thread) {
   );
 }
 function promptWords(message2) {
-  return stripPastePlaceholders(message2.content);
+  const stripped = stripPastePlaceholders(message2.content);
+  if (stripped) return stripped;
+  return (message2.attachments ?? []).filter((a3) => a3.kind === "paste" && a3.content).map((a3) => a3.content).join("\n\n").trim();
 }
 function namingInput(userMessages) {
   const first = userMessages[0];
