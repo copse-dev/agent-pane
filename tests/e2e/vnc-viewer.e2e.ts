@@ -651,6 +651,12 @@ describe('VNC viewer', function () {
     assert.equal(await shareButton.getText(), 'Share screenshot')
     assert.equal(await annotateButton.isDisplayed(), true)
     assert.equal(await annotateButton.getAttribute('aria-pressed'), 'false')
+    const captureOverflow = await browser.execute(() =>
+      [...document.querySelectorAll('.vnc-capture-actions > button:not([hidden])')]
+        .filter((button) => button.scrollWidth > button.clientWidth + 1)
+        .map((button) => button.textContent),
+    )
+    assert.deepEqual(captureOverflow, [], 'Desktop capture action labels must remain readable')
     assert.equal(await $('.vnc-controls-host .pane-header-title').isDisplayed(), true)
     assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'localhost')
 
