@@ -18,6 +18,7 @@ exposePerfBridge()
 const api: ApiClient = {
   mobile: {
     manage: () => ipcRenderer.invoke('mobile:manage'),
+    status: () => ipcRenderer.invoke('mobile:status'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
