@@ -14,8 +14,7 @@ function deps(over: Partial<AcpAuthProbeDeps> = {}): AcpAuthProbeDeps {
 
 describe('probeAcpAuth', () => {
   it('reads Claude from `claude auth status`', async () => {
-    const run = (stdout: string): AcpAuthProbeDeps =>
-      deps({ exec: () => Promise.resolve(stdout) })
+    const run = (stdout: string): AcpAuthProbeDeps => deps({ exec: () => Promise.resolve(stdout) })
     assert.equal(await probeAcpAuth('claude-acp', run('{"loggedIn":true}')), 'signed-in')
     assert.equal(await probeAcpAuth('claude-acp', run('{"loggedIn":false}')), 'signed-out')
     assert.equal(await probeAcpAuth('claude-acp', run('{"other":1}')), 'unknown')

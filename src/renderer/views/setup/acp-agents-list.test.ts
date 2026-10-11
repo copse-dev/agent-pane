@@ -45,7 +45,12 @@ describe('listedAgents', () => {
   })
 
   it('keeps an added agent listed even when it is not on PATH', () => {
-    const added: AcpAgentConfig = { id: 'cursor', title: 'Cursor', command: 'cursor', enabled: true }
+    const added: AcpAgentConfig = {
+      id: 'cursor',
+      title: 'Cursor',
+      command: 'cursor',
+      enabled: true,
+    }
     const detected = new Map([seen(cursor, false)])
     assert.deepEqual(
       listedAgents([cursor], detected, [added], new Map()).map((r) => r.id),
