@@ -54985,18 +54985,35 @@ var init_thread_proposal = __esm({
   }
 });
 
+// src/shared/tools/copse-tool-call.ts
+function matchesCopseToolName(name, tool) {
+  return name === tool || new RegExp(`^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+${tool}(?![a-z0-9_])`, "i").test(name);
+}
+function isCopseToolCall(call, tool) {
+  return [call.name, call.programmaticName].some(
+    (name) => typeof name === "string" && matchesCopseToolName(name, tool)
+  );
+}
+var init_copse_tool_call = __esm({
+  "src/shared/tools/copse-tool-call.ts"() {
+  }
+});
+
 // src/shared/threads/thread-proposal.ts
+function isThreadProposalCall(call) {
+  return isCopseToolCall(call, THREAD_PROPOSAL_TOOL);
+}
 var init_thread_proposal2 = __esm({
   "src/shared/threads/thread-proposal.ts"() {
+    init_thread_proposal();
+    init_copse_tool_call();
     init_thread_proposal();
   }
 });
 
 // src/shared/threads/reviewer-input.ts
 function isReviewerInputCall(call) {
-  return [call.name, call.programmaticName].some(
-    (name) => name === REVIEWER_INPUT_TOOL || typeof name === "string" && /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+request_review_input(?![a-z0-9_])/i.test(name)
-  );
+  return isCopseToolCall(call, REVIEWER_INPUT_TOOL);
 }
 function parseReviewerInputCall(call, messageId) {
   if (!isReviewerInputCall(call) || call.status !== "done" || !isRecord(call.args)) return null;
@@ -55044,6 +55061,7 @@ var REVIEWER_INPUT_TOOL;
 var init_reviewer_input = __esm({
   "src/shared/threads/reviewer-input.ts"() {
     init_unknown_value3();
+    init_copse_tool_call();
     REVIEWER_INPUT_TOOL = "request_review_input";
   }
 });
@@ -56394,7 +56412,7 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   const regular = [];
   for (const tc2 of toolCalls) {
     if (tc2.subagent) subagents.push(tc2);
-    else if (tc2.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(tc2)) proposals.push(tc2);
+    else if (isThreadProposalCall(tc2) || isReviewerInputCall(tc2)) proposals.push(tc2);
     else regular.push(tc2);
   }
   const result = [];
@@ -71270,7 +71288,7 @@ function mountSettingsDialog(store2, api2) {
           searchInput.value = "";
           applySearch("");
         }
-        sourcesSection.invalidate();
+        sourcesSection2.invalidate();
         showSection(id);
         if (id === "classifiers") void classifiersSection.refresh();
         if (id === "usage") void usageSection.refresh();
@@ -71292,7 +71310,7 @@ function mountSettingsDialog(store2, api2) {
       }
     });
   });
-  const sourcesSection = createSourcesSection({
+  const sourcesSection2 = createSourcesSection({
     root: overlay,
     api: api2,
     onTrusted: (statuses2) => {
@@ -71302,7 +71320,7 @@ function mountSettingsDialog(store2, api2) {
       renderNavSubheadings(activeSection);
     }
   });
-  const refreshSources = sourcesSection.refresh;
+  const refreshSources = sourcesSection2.refresh;
   function applyWorkspaceTrusted(statuses2) {
     renderMcpServers(statuses2);
     void refreshSources();
@@ -73533,7 +73551,7 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     })();
   });
   overlay.addEventListener("close", () => {
-    sourcesSection.invalidate();
+    sourcesSection2.invalidate();
     if (!appearanceCommitted && appearanceBaseline) applyAppearancePreview(appearanceBaseline);
     appearanceBaseline = null;
     resetDirtyState();
@@ -80075,6 +80093,7 @@ var init_demo_scenarios = __esm({
       },
       {
         id: "thread-context",
+        changeStats: { additions: 42, deletions: 7 },
         label: "The thread Context panel",
         project: project("demo-thread-context", "Widgets", "/demo/widgets"),
         settings: {
@@ -87276,7 +87295,9 @@ function namingMessages(thread) {
   );
 }
 function promptWords(message2) {
-  return stripPastePlaceholders(message2.content);
+  const stripped = stripPastePlaceholders(message2.content);
+  if (stripped) return stripped;
+  return (message2.attachments ?? []).filter((a3) => a3.kind === "paste" && a3.content).map((a3) => a3.content).join("\n\n").trim();
 }
 function namingInput(userMessages) {
   const first = userMessages[0];
@@ -97124,9 +97145,6 @@ var init_thread_proposal_card = __esm({
 });
 
 // src/renderer/views/thread-proposal-tool-card.ts
-function isThreadProposalCall(tc2) {
-  return tc2.name === THREAD_PROPOSAL_TOOL;
-}
 function cardState(store2, sourceThreadId, proposalId) {
   const decisions = getThreadById(store2, sourceThreadId)?.threadProposals;
   const status = threadProposalStatus(decisions, proposalId);
@@ -120061,6 +120079,7 @@ function mountRightPanelLayout(store2) {
     const mode = store2.getState().rightPanelMode;
     const isExplorer = mode === "explorer";
     const isContext = mode === "context";
+    document.getElementById("pane-files")?.classList.toggle("is-context-panel", isContext);
     const isSideChat = mode === "side-chat";
     const isTerminal = mode === "terminal";
     const isChanges = mode === "changes";
@@ -120069,6 +120088,8 @@ function mountRightPanelLayout(store2) {
     const isRoadmap = mode === "roadmap";
     const isBrowser = mode === "browser";
     const isVnc = mode === "vnc";
+    const sidebar = document.getElementById("right-sidebar");
+    if (sidebar) sidebar.hidden = isContext;
     const treeHost = document.getElementById("file-tree-host");
     const contextHost = document.getElementById("context-host");
     const sideChatHost = document.getElementById("side-chat-host");
@@ -120110,7 +120131,7 @@ function mountRightPanelLayout(store2) {
     if (roadmapViewer) roadmapViewer.hidden = !isRoadmap;
     if (browserViewer) browserViewer.hidden = !isBrowser;
     if (vncViewer) vncViewer.hidden = !isVnc;
-    if (treeResizer) treeResizer.hidden = !store2.getState().filesPaneOpen;
+    if (treeResizer) treeResizer.hidden = isContext || !store2.getState().filesPaneOpen;
   }
   function syncMaximized() {
     const maximized = isRightPanelMaximized(store2);
@@ -133971,6 +133992,7 @@ function deriveThreadContext(input2) {
   }
   return {
     threadId: thread.id,
+    title: thread.title,
     ...sideOf ? { sideOf } : {},
     repos,
     links,
@@ -133988,18 +134010,6 @@ var init_thread_context_model = __esm({
 });
 
 // src/renderer/views/thread-context-panel.ts
-function sectionCount(model, section2) {
-  switch (section2) {
-    case "repos":
-      return model.repos.length;
-    case "side-chats":
-      return model.sideChats.filter((row2) => !row2.archived).length;
-    case "links":
-      return model.links.length + model.mentionedIn.length;
-    case "subagents":
-      return model.subagents.length;
-  }
-}
 function section(kind, ...children) {
   return el(
     "section",
@@ -134018,22 +134028,22 @@ function reposSection(model) {
   if (model.repos.length === 0) return section("repos", emptyNote("No repository for this thread."));
   return section(
     "repos",
+    el("div", { class: "thread-context-label" }, "Folders"),
     ...model.repos.map(
       (repo) => el(
         "div",
-        { class: "thread-context-row thread-context-repo", "data-repo-path": repo.path },
+        {
+          class: "thread-context-row thread-context-repo",
+          "data-repo-path": repo.path,
+          title: [repo.path, repo.branch].filter(Boolean).join(" \xB7 ")
+        },
         gitBranchIcon("ui-icon ui-icon-sm"),
         el(
           "span",
           { class: "thread-context-main" },
-          el("span", { class: "thread-context-title" }, repo.name),
-          el("span", { class: "thread-context-sub" }, repo.path)
+          el("span", { class: "thread-context-title" }, repo.name)
         ),
-        repo.branch !== void 0 ? el(
-          "span",
-          { class: "thread-context-chip", "data-checkout": repo.checkout },
-          repo.branch
-        ) : ""
+        el("span", { class: "thread-context-meta" }, "Primary")
       )
     )
   );
@@ -134105,20 +134115,15 @@ function sideChatsSection(model, handlers3) {
   );
 }
 function linksSection(model, handlers3) {
-  const groups = [
-    { label: "Pull requests", kind: "pr" },
-    { label: "Threads", kind: "thread" },
-    { label: "Web", kind: "url" }
-  ];
+  const groups = ["pr", "thread"];
   const children = [];
   for (const group of groups) {
-    const rows = model.links.filter((link) => link.kind === group.kind);
+    const rows = model.links.filter((link) => link.kind === group);
     if (rows.length === 0) continue;
     children.push(
       el(
         "div",
-        { class: "thread-context-group", "data-link-group": group.kind },
-        el("h6", {}, group.label),
+        { class: "thread-context-group", "data-link-group": group },
         ...rows.map((link) => {
           const button = rowButton(
             {
@@ -134126,7 +134131,8 @@ function linksSection(model, handlers3) {
               "data-unresolved": link.unresolved ? "true" : void 0
             },
             link.kind === "pr" ? gitPullRequestIcon("ui-icon ui-icon-sm") : link.kind === "url" ? externalLinkIcon("ui-icon ui-icon-sm") : "",
-            el("span", { class: "thread-context-title" }, link.label)
+            el("span", { class: "thread-context-title", title: link.label }, link.label),
+            el("span", { class: "thread-context-chip" }, link.kind === "pr" ? "PR" : "Thread")
           );
           button.addEventListener("click", () => {
             if (link.kind === "pr" && link.pr) handlers3.openPr(link.pr);
@@ -134165,29 +134171,54 @@ function linksSection(model, handlers3) {
 }
 function subagentsSection(model) {
   if (model.subagents.length === 0) return section("subagents", emptyNote("No subagents."));
-  return section(
+  const result = section(
     "subagents",
     ...model.subagents.map(
       (agent) => el(
         "div",
         { class: "thread-context-row", "data-subagent-id": agent.id, "data-status": agent.status },
+        el("span", { class: "thread-context-status-dot", "aria-hidden": "true" }),
         el(
           "span",
           { class: "thread-context-main" },
-          el("span", { class: "thread-context-title" }, agent.prompt || agent.kind),
-          el(
-            "span",
-            { class: "thread-context-sub" },
-            [agent.kind, agent.model].filter(Boolean).join(" \xB7 ")
-          )
+          el("span", { class: "thread-context-title" }, agent.kind),
+          el("span", { class: "thread-context-sub" }, agent.prompt)
         ),
-        el("span", { class: "thread-context-chip", "data-status": agent.status }, agent.status)
+        el(
+          "span",
+          { class: "thread-context-meta", title: agent.model ?? agent.status },
+          [agent.status, agent.model].filter(Boolean).join(" \xB7 ")
+        )
       )
     )
+  );
+  const summary = ["running", "done", "error"].flatMap((status) => {
+    const count = model.subagents.filter((agent) => agent.status === status).length;
+    return count ? [`${String(count)} ${status}`] : [];
+  }).join(" \xB7 ");
+  result.querySelector("h5")?.append(el("span", { class: "thread-context-count" }, summary));
+  return result;
+}
+function sourcesSection(model, handlers3) {
+  const sources3 = model.links.filter((link) => link.kind === "url");
+  return section(
+    "sources",
+    ...sources3.length ? sources3.map((link) => {
+      const row2 = rowButton(
+        { "data-link-key": link.key, title: link.target },
+        externalLinkIcon("ui-icon ui-icon-sm"),
+        el("span", { class: "thread-context-title" }, link.label)
+      );
+      row2.addEventListener("click", () => {
+        handlers3.openUrl(link.target);
+      });
+      return row2;
+    }) : [emptyNote("No sources yet.")]
   );
 }
 function renderThreadContext(model, handlers3) {
   const host = el("div", { class: "thread-context", "aria-label": "Thread context" });
+  if (model.title) host.append(el("div", { class: "thread-context-thread-title" }, model.title));
   if (model.sideOf) {
     const back = el(
       "button",
@@ -134213,10 +134244,11 @@ function renderThreadContext(model, handlers3) {
     );
   }
   host.append(
+    subagentsSection(model),
     reposSection(model),
-    sideChatsSection(model, handlers3),
     linksSection(model, handlers3),
-    subagentsSection(model)
+    sourcesSection(model, handlers3),
+    sideChatsSection(model, handlers3)
   );
   return host;
 }
@@ -134225,23 +134257,34 @@ function contextModeActive(store2) {
   return filesPaneOpen && rightPanelMode === "context";
 }
 function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
+  const close = el(
+    "button",
+    { type: "button", class: "thread-context-close", "aria-label": "Close context" },
+    closeIcon("ui-icon ui-icon-sm")
+  );
+  close.addEventListener("click", () => {
+    toggleFilesPane(store2);
+  });
   listRoot.append(
     el(
       "div",
       { class: "pane-header" },
       el("span", { class: "pane-header-title" }, "Context"),
       panePopoutButton(store2, api2, "context", "context"),
-      paneMaximizeButton(store2, "context")
+      paneMaximizeButton(store2, "context"),
+      close
     )
   );
-  const index = el("div", { class: "git-changes-list thread-context-index" });
-  listRoot.append(index);
   let mentionedIn = [];
   let mentionedFor = null;
   let token = 0;
   let storageToken = 0;
   let storageKey = "";
   let storageText = "Calculating\u2026";
+  let changesToken = 0;
+  let changesKey = "";
+  let changesText = "Calculating\u2026";
+  let changeStats = null;
   let disposed = false;
   function activeStorageKey() {
     const state = store2.getState();
@@ -134253,7 +134296,42 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       thread?.worktree?.retiredAt
     ]);
   }
+  function changesContent() {
+    if (changesKey !== activeStorageKey()) return ["Calculating\u2026"];
+    if (!changeStats) return [changesText];
+    return [
+      el("span", { class: "git-change-status-added" }, `+${String(changeStats.additions)}`),
+      " ",
+      el("span", { class: "git-change-status-deleted" }, `\u2212${String(changeStats.deletions)}`)
+    ];
+  }
+  async function refreshChanges() {
+    const thread = getActiveThread(store2);
+    const projectId = store2.getState().activeProjectId;
+    if (!thread || !projectId) return;
+    const mine = ++changesToken;
+    const key = activeStorageKey();
+    changesKey = key;
+    changesText = "Calculating\u2026";
+    changeStats = null;
+    const update = () => {
+      const slot = viewerRoot.querySelector("[data-context-change-stats]");
+      if (slot) slot.replaceChildren(...changesContent());
+    };
+    update();
+    try {
+      const stats = await api2.git.changeStats(projectId, thread.id);
+      if (disposed || mine !== changesToken || key !== activeStorageKey()) return;
+      changeStats = stats ?? { additions: 0, deletions: 0 };
+    } catch (error62) {
+      if (disposed || mine !== changesToken || key !== activeStorageKey()) return;
+      console.error("[context] change totals lookup failed:", error62);
+      changesText = "Unavailable";
+    }
+    update();
+  }
   async function refreshStorage() {
+    void refreshChanges();
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (!thread || !projectId) return;
@@ -134308,7 +134386,6 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     const state = store2.getState();
     const thread = getActiveThread(store2);
     clear(viewerRoot);
-    clear(index);
     if (!thread) {
       viewerRoot.append(emptyNote("Open a thread to see its context."));
       return;
@@ -134334,7 +134411,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     archive.addEventListener("click", () => {
       if (project2) store2.emit("thread_archive_requested", project2.id, thread.id);
     });
-    content.prepend(
+    content.querySelector('[data-context-section="repos"]')?.after(
       el(
         "section",
         { class: "thread-context-section", "data-context-section": "storage" },
@@ -134350,6 +134427,19 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
           )
         ),
         el(
+          "div",
+          { class: "thread-context-row" },
+          el("span", { class: "thread-context-main" }, "Changes"),
+          el(
+            "span",
+            {
+              "data-context-change-stats": "",
+              title: "Lines added and removed in this checkout"
+            },
+            ...changesContent()
+          )
+        ),
+        el(
           "p",
           { class: "thread-context-empty" },
           "Saved thread files and its dedicated worktree. Shared project files are excluded."
@@ -134358,18 +134448,6 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       )
     );
     viewerRoot.append(content);
-    for (const kind of CONTEXT_SECTIONS) {
-      const jump = el(
-        "button",
-        { type: "button", class: "git-change-row thread-context-index-row", "data-index": kind },
-        el("span", { class: "thread-context-title" }, SECTION_TITLES[kind]),
-        el("span", { class: "thread-context-count" }, String(sectionCount(model, kind)))
-      );
-      jump.addEventListener("click", () => {
-        viewerRoot.querySelector(`[data-context-section="${kind}"]`)?.scrollIntoView({ block: "start" });
-      });
-      index.append(jump);
-    }
   }
   async function refreshMentions() {
     void refreshStorage();
@@ -134414,6 +134492,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     store2.on("workspace_changed", () => {
       mentionedFor = null;
       storageKey = "";
+      changesKey = "";
+      changesToken++;
       token++;
       storageToken++;
       if (contextModeActive(store2)) {
@@ -134430,10 +134510,11 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     disposed = true;
     token++;
     storageToken++;
+    changesToken++;
     for (const off of offs) off();
   };
 }
-var CONTEXT_SECTIONS, SECTION_TITLES;
+var SECTION_TITLES;
 var init_thread_context_panel = __esm({
   "src/renderer/views/thread-context-panel.ts"() {
     init_file_bytes();
@@ -134445,12 +134526,12 @@ var init_thread_context_panel = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_thread_context_model();
-    CONTEXT_SECTIONS = ["repos", "side-chats", "links", "subagents"];
     SECTION_TITLES = {
-      repos: "Repos",
+      repos: "Access",
       "side-chats": "Side chats",
-      links: "Links and references",
-      subagents: "Subagents"
+      links: "Links & references",
+      subagents: "Subagents",
+      sources: "Sources"
     };
   }
 });
@@ -153527,6 +153608,144 @@ var init_desktop_viewer = __esm({
   }
 });
 
+// src/renderer/views/vnc-ssh-host-form.ts
+function createVncSshHostForm(api2, onSaved, onClose) {
+  const id = el("input", { type: "text", "aria-label": "SSH host id", placeholder: "my-server" });
+  const label = el("input", {
+    type: "text",
+    "aria-label": "SSH host label",
+    placeholder: "Production"
+  });
+  const host = el("input", {
+    type: "text",
+    "aria-label": "SSH hostname",
+    placeholder: "example.com or ~/.ssh/config alias"
+  });
+  const user = el("input", { type: "text", "aria-label": "SSH user", placeholder: "ubuntu" });
+  const port = el("input", {
+    type: "text",
+    inputmode: "numeric",
+    "aria-label": "SSH port",
+    placeholder: "22"
+  });
+  const identityFile = el("input", {
+    type: "text",
+    "aria-label": "SSH identity file",
+    placeholder: "~/.ssh/id_ed25519"
+  });
+  const status = el("p", { class: "vnc-ssh-host-status", role: "status" });
+  const save = el("button", { type: "submit", class: "ui-btn ui-btn-primary" }, "Save SSH machine");
+  const cancel = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Cancel");
+  const importButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost" },
+    "Import SSH config"
+  );
+  const root = el(
+    "form",
+    { class: "vnc-ssh-host-form", hidden: true, "aria-label": "Add SSH machine" },
+    el("p", { class: "vnc-ssh-host-hint" }, "Use an SSH key to secure the desktop connection."),
+    el("label", { class: "vnc-field-label" }, "Id", id),
+    el("label", { class: "vnc-field-label" }, "Label", label),
+    el("label", { class: "vnc-field-label" }, "Host", host),
+    el("label", { class: "vnc-field-label" }, "User", user),
+    el("label", { class: "vnc-field-label" }, "Port", port),
+    el("label", { class: "vnc-field-label" }, "Identity file", identityFile),
+    status,
+    el("div", { class: "vnc-ssh-host-actions" }, importButton, cancel, save)
+  );
+  let idTouched = false;
+  label.addEventListener("input", () => {
+    if (!idTouched) id.value = slugifyHostId(label.value);
+  });
+  id.addEventListener("input", () => {
+    idTouched = true;
+  });
+  function close() {
+    root.hidden = true;
+    status.textContent = "";
+    onClose();
+  }
+  function open2() {
+    root.reset();
+    idTouched = false;
+    status.textContent = "";
+    root.hidden = false;
+    label.focus();
+  }
+  function busy(value) {
+    save.disabled = value;
+    importButton.disabled = value;
+    cancel.disabled = value;
+  }
+  cancel.addEventListener("click", close);
+  root.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const parsed2 = parseSshHostDraft({
+      id: id.value,
+      label: label.value,
+      host: host.value,
+      user: user.value,
+      port: port.value,
+      identityFile: identityFile.value,
+      forwardAgent: false
+    });
+    if (!parsed2.ok) {
+      setInlineStatus(status, "error", parsed2.error);
+      return;
+    }
+    void (async () => {
+      busy(true);
+      try {
+        const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
+        if (existing.some((item) => item.id === parsed2.host.id)) {
+          setInlineStatus(status, "error", "A machine with this id already exists.");
+          return;
+        }
+        await api2.settings.set("sshWorkspaceHosts", upsertHost(existing, parsed2.host));
+        close();
+        await onSaved(parsed2.host.id);
+      } catch (error62) {
+        setInlineStatus(status, "error", ipcErrorMessage(error62, "Could not save the SSH machine."));
+      } finally {
+        busy(false);
+      }
+    })();
+  });
+  importButton.addEventListener("click", () => {
+    void (async () => {
+      busy(true);
+      try {
+        const aliases = await api2.sshWorkspace.listConfigAliases();
+        if (aliases.length === 0) {
+          setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
+          return;
+        }
+        const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
+        const imported = importSshConfigHosts(existing, aliases);
+        await api2.settings.set("sshWorkspaceHosts", imported.hosts);
+        if (imported.firstAliasHostId) {
+          close();
+          await onSaved(imported.firstAliasHostId);
+        }
+      } catch (error62) {
+        setInlineStatus(status, "error", ipcErrorMessage(error62, "Could not import SSH config."));
+      } finally {
+        busy(false);
+      }
+    })();
+  });
+  return { root, open: open2, close };
+}
+var init_vnc_ssh_host_form = __esm({
+  "src/renderer/views/vnc-ssh-host-form.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_ipc_error_message();
+    init_ssh_host_helpers();
+  }
+});
+
 // src/renderer/views/vnc-pane.ts
 function vncModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
@@ -153584,6 +153803,22 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     role: "list",
     "aria-label": "Desktop devices"
   });
+  const addSshButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary vnc-add-ssh-btn" },
+    "Add SSH machine"
+  );
+  const sshHostForm = createVncSshHostForm(
+    api2,
+    async (hostId) => {
+      await refreshSshHosts(sshMachineValue(hostId));
+      await discoverSelectedMachine();
+    },
+    () => {
+      addSshButton.hidden = false;
+      deviceList.hidden = false;
+    }
+  );
   const nearbyButton = el(
     "button",
     {
@@ -153657,6 +153892,17 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     },
     "Control desktop"
   );
+  const shareButton = el(
+    "button",
+    { type: "button", class: "ui-btn vnc-share-btn", hidden: true },
+    "Share screenshot"
+  );
+  const annotateButton = el(
+    "button",
+    { type: "button", class: "ui-btn vnc-annotate-btn", "aria-pressed": "false", hidden: true },
+    "Annotate"
+  );
+  const captureActions = el("div", { class: "vnc-capture-actions" }, shareButton, annotateButton);
   const homeButton = el(
     "button",
     { type: "button", class: "ui-btn vnc-home-btn", hidden: true },
@@ -153864,15 +154110,12 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     { class: "vnc-setup-fields" },
     devicesHeading,
     nearbyFeedback,
+    addSshButton,
+    sshHostForm.root,
     deviceList,
     machineSelect
   );
   const form = el("div", { class: "vnc-connect-form" }, setupFields, authPanel);
-  const note = el(
-    "p",
-    { class: "vnc-view-only-note" },
-    "Desktop connections start in view-only mode. Turn on control after connecting."
-  );
   const controlsBody = el(
     "div",
     { class: "vnc-controls-body" },
@@ -153880,15 +154123,16 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     status,
     forgetLoginButton,
     controlButton,
+    captureActions,
     deviceNavigation,
-    disconnectButton,
-    note
+    disconnectButton
   );
   controlsRoot.append(controlsBody);
   const screen = el("div", { class: "vnc-screen", "aria-label": "Remote desktop" });
   const empty = el("div", { class: "panel-empty vnc-empty" }, CHOOSE_MACHINE_TEXT);
   viewerRoot.append(screen, empty);
   let rfb = null;
+  let annotation = null;
   let channel = null;
   let connectGeneration = 0;
   let discoveryGeneration = 0;
@@ -153959,6 +154203,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     setupCredentials.hidden = selectedHasSavedPassword;
     connectButton.textContent = selectedHasSavedPassword ? "Connect" : "Sign in & connect";
     setupCredentialHint.textContent = secureCredentialStorage ? "Your login is stored securely after a successful connection." : "Your login is used for this connection only.";
+    if (machineSelect.value.startsWith(SSH_MACHINE_PREFIX)) {
+      setupCredentialHint.textContent = "SSH secures the connection. Enter a desktop login only if screen sharing requires one.";
+    }
     if (!selectedHasSavedPassword) return;
     savedLoginCopy.replaceChildren(
       selectedSavedUsername ? el("span", {}, "Signed in as ", el("strong", {}, selectedSavedUsername)) : el("span", {}, "Saved login")
@@ -154016,11 +154263,12 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     connectButton.hidden = active2;
     disconnectButton.hidden = !active2;
     controlButton.hidden = !connected;
+    shareButton.hidden = !connected;
+    annotateButton.hidden = !connected;
     homeButton.hidden = !connected || simulatorSessionId === null;
     const android = selectedSimulator()?.platform === "android";
     backButton.hidden = !connected || !android;
     overviewButton.hidden = !connected || !android;
-    note.hidden = active2 || isSimulatorMachine(machineSelect.value);
     disconnectButton.textContent = connected ? "Disconnect" : "Cancel";
     portInput.disabled = active2;
     addressInput.disabled = active2;
@@ -154080,6 +154328,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   function setControlEnabled(enabled) {
     if (!rfb && !simulatorView || !connectedAtLeastOnce) return;
+    if (enabled) annotation?.deactivate();
     controlEnabled = enabled;
     if (rfb) rfb.viewOnly = !enabled;
     simulatorView?.setControlEnabled(enabled);
@@ -154107,6 +154356,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     targetInput.value = "";
   }
   function clearViewer(title, kind = "idle", detail = "") {
+    annotation?.dispose();
+    annotation = null;
+    annotateButton.setAttribute("aria-pressed", "false");
     rfb = null;
     channel = null;
     activeTarget = null;
@@ -154352,10 +154604,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       discoveryGeneration++;
       renderDiscoveredPorts([]);
       empty.textContent = `Connect to view ${selectedSimulator()?.name ?? "this Simulator"}.`;
-      note.hidden = true;
     } else if (!channel) {
       empty.textContent = CHOOSE_MACHINE_TEXT;
-      note.hidden = false;
     }
     const nearby = selectedNearbyServer();
     if (nearby) {
@@ -154876,6 +155126,39 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       showToast("Could not capture the desktop screenshot.", { variant: "error" });
     }
   }
+  function captureScreenForAnnotation() {
+    const canvas = screen.querySelector("canvas");
+    if (!connectedAtLeastOnce || !canvas || canvas.width === 0 || canvas.height === 0) return null;
+    const host = screen.getBoundingClientRect();
+    const frame = canvas.getBoundingClientRect();
+    const capture = document.createElement("canvas");
+    capture.width = Math.max(1, Math.round(host.width));
+    capture.height = Math.max(1, Math.round(host.height));
+    const context = capture.getContext("2d");
+    if (!context) return null;
+    context.drawImage(
+      canvas,
+      frame.left - host.left,
+      frame.top - host.top,
+      frame.width,
+      frame.height
+    );
+    return capture.toDataURL("image/png");
+  }
+  shareButton.addEventListener("click", shareCurrentScreen);
+  annotateButton.addEventListener("click", () => {
+    if (!connectedAtLeastOnce) return;
+    if (controlEnabled) setControlEnabled(false);
+    annotation ??= mountAnnotationLayer(screen, {
+      label: connectedMachineName ?? "desktop",
+      captureBase: () => Promise.resolve(captureScreenForAnnotation()),
+      onSend: (payload) => attachAnnotation(payload, connectedMachineName ?? "desktop"),
+      onDeactivate: () => {
+        annotateButton.setAttribute("aria-pressed", "false");
+      }
+    });
+    annotateButton.setAttribute("aria-pressed", String(annotation.toggle()));
+  });
   const onScreenContextMenu = (event) => {
     const canvas = screen.querySelector("canvas");
     if (!connectedAtLeastOnce || !canvas) return;
@@ -154918,6 +155201,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     void loadMachines().finally(() => {
       refreshDevicesButton.disabled = false;
     });
+  });
+  addSshButton.addEventListener("click", () => {
+    sshHostForm.open();
+    addSshButton.hidden = true;
+    deviceList.hidden = true;
   });
   authenticateButton.addEventListener("click", submitCredentials);
   const forgetLogin = () => {
@@ -155041,6 +155329,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       void showSimulatorFromAgent(udid, presentation);
     },
     cleanup: () => {
+      annotation?.dispose();
+      annotation = null;
       connectGeneration++;
       discoveryGeneration++;
       nearbyGeneration++;
@@ -155261,6 +155551,8 @@ var init_vnc_pane = __esm({
   async "src/renderer/views/vnc-pane.ts"() {
     await init_rfb();
     init_prompt_attachments();
+    init_attach_annotation();
+    init_annotation_layer();
     init_context_menu();
     init_helpers();
     init_icons();
@@ -155273,6 +155565,7 @@ var init_vnc_pane = __esm({
     init_simulator_desktop_view();
     init_panels();
     init_desktop_viewer();
+    init_vnc_ssh_host_form();
     CHOOSE_MACHINE_TEXT = "Choose a device, enter an address, or select a saved SSH machine.";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
