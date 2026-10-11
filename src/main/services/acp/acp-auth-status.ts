@@ -90,7 +90,7 @@ function defaultDeps(env: Readonly<Record<string, string | undefined>>): AcpAuth
       () => true,
       () => false,
     ),
-  exec: async (command, args) => {
+  exec: async (command, args): Promise<string> => {
     const { stdout } = await run(command, args, { timeout: 6000, maxBuffer: 1024 * 1024 })
     return stdout
   },
