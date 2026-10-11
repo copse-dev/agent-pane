@@ -560,6 +560,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    threadPrompts: {
+      onPrompt: () => () => {},
+      reply: async () => {},
+      revokeAccess: async () => {},
+    },
     mobile: {
       manage: async () => {},
       status: () => resolved(MOBILE_COMPANION_DEMO_STATUS),

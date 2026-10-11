@@ -15,6 +15,7 @@ import {
   browserApprovalDetails,
   providerApprovalDetails,
   webApprovalDetails,
+  threadAccessApproval,
 } from './approval-copy.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
@@ -3301,6 +3302,13 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
   ...SITE_TOUR_SCENARIOS,
+  ...(['read', 'send'] as const).map((access) =>
+    approvalRiskScenario(`approval-thread-${access}`, {
+      id: `thread-${access}`,
+      type: 'mcp',
+      ...threadAccessApproval(access),
+    }),
+  ),
   approvalRiskScenario('approval-web-url', {
     id: 'web-url',
     title: 'Allow web origin?',

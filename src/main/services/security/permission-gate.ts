@@ -14,6 +14,8 @@ import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { getWorkspaceRoot } from '../workspace.ts'
+import { getChatStoreRoot } from '../workspace.ts'
+import { ensureThreadAccess, needsOtherThreadRead } from './thread-access.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import {
   getActiveExecutionTarget,
@@ -1271,6 +1273,25 @@ export async function ensureShellCommandPermitted(
   refuseCheckoutDetachingCommand(command, opts)
   const forceAsk = opts.toolPolicy === 'ask'
   const runThread = getActiveRunThread()
+  // Plain reads of the chat store ask for the narrow conversation permission
+  // before any outside-project grant or auto-run route can cover them.
+  const readAnalysis = analyzeReadOutsideProject(
+    command,
+    opts.executionRoot ?? getAgentExecutionRoot(),
+  )
+  if (
+    readAnalysis.eligible &&
+    runThread &&
+    !spawnRunsOnSshTarget(opts.executionRoot ?? getAgentExecutionRoot())
+  ) {
+    const chatRoot = await getChatStoreRoot()
+    if (
+      chatRoot &&
+      readAnalysis.resolvedTargets.some((path) => needsOtherThreadRead(path, chatRoot))
+    ) {
+      if (!(await ensureThreadAccess('read', opts.signal))) return false
+    }
+  }
   // An unattended run inside an attested container answers by blast radius
   // (`docs/plans/thread-in-container.md`): contained effects run, outward
   // effects queue for review, host escapes are refused. Nothing below applies —

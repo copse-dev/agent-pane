@@ -1574,6 +1574,25 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       })
       const openThreadMenu = (x: number, y: number): void => {
         showContextMenu(x, y, [
+          {
+            label: 'Conversation access…',
+            onSelect: (): void => {
+              showContextMenu(x, y, [
+                {
+                  label: 'Revoke reading other threads',
+                  onSelect: (): void => {
+                    void api.threadPrompts.revokeAccess(thread.id, 'read')
+                  },
+                },
+                {
+                  label: 'Revoke sending to other threads',
+                  onSelect: (): void => {
+                    void api.threadPrompts.revokeAccess(thread.id, 'send')
+                  },
+                },
+              ])
+            },
+          },
           ...(canMutate
             ? [
                 ...(allowRename

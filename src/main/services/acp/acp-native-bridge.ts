@@ -126,6 +126,8 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Model-proposed threads. The ACP agent can offer the work, but the
   // renderer card remains the approval boundary that actually starts it.
   'propose_thread',
+  'list_threads',
+  'send_thread_prompt',
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',

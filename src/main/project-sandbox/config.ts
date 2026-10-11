@@ -20,6 +20,7 @@ import {
   type InternalWorkspaceRootRegistration,
 } from '../services/workspace.ts'
 import { activeThreadReadRoots } from '../services/security/thread-read-roots.ts'
+import { threadChatReadRoot } from '../services/security/thread-access.ts'
 import {
   WEB_ALLOWED_ORIGINS_SETTING,
   sandboxAllowedDomainsFromOrigins,
@@ -1040,7 +1041,8 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // lives under $HOME, so `denyRead: [homedir()]` would block it without this
   // more-specific allow. NOT added to allowWrite — the sandbox denies chat-store
   // writes too, matching the workspace-only path guards.
-  const chatStore = getChatStoreRootSync()
+  const chatStoreRoot = getChatStoreRootSync()
+  const chatStore = chatStoreRoot ? threadChatReadRoot(chatStoreRoot) : null
   // Linux read binds shadow writable descendants. The store contains scratch
   // and may also contain the active checkout; those retain their own grants.
   const chatStoreRead = chatStore
