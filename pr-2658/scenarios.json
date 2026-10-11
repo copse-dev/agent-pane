@@ -152,12 +152,24 @@
     "label": "Sidebar thread sort"
   },
   {
+    "id": "sidebar-cleanup-ssh",
+    "label": "Cleanup for SSH pull requests"
+  },
+  {
+    "id": "sidebar-cleanup-after-pr",
+    "label": "Cleanup after merged or closed PRs"
+  },
+  {
     "id": "sidebar-thread-changes",
     "label": "Sidebar changes glyph"
   },
   {
     "id": "activity-home",
     "label": "Activity home on a new thread"
+  },
+  {
+    "id": "activity-home-many-projects",
+    "label": "Activity home listing twelve projects"
   },
   {
     "id": "activity-home-project-filter",
@@ -180,6 +192,18 @@
     "label": "PR producing and related threads"
   },
   {
+    "id": "side-chats",
+    "label": "Side chats beside the main thread"
+  },
+  {
+    "id": "thread-context",
+    "label": "The thread Context panel"
+  },
+  {
+    "id": "side-chat-approval",
+    "label": "A side chat asks for approval over its parent thread"
+  },
+  {
     "id": "chat-layout-styling",
     "label": "Chat layout styling"
   },
@@ -198,6 +222,14 @@
   {
     "id": "concise-thread-full",
     "label": "Full thread view for a model below the concise gate"
+  },
+  {
+    "id": "openai-host-pr",
+    "label": "OpenAI host PR creation result"
+  },
+  {
+    "id": "openai-cancellation-recovery",
+    "label": "OpenAI confirmed cancellation with interrupted recovery"
   },
   {
     "id": "concise-thread-working",
@@ -238,5 +270,17 @@
   {
     "id": "site-mcp-permissions",
     "label": "Copse.dev tour: per-tool MCP permissions"
+  },
+  {
+    "id": "approval-web-url",
+    "label": "Allow web origin?"
+  },
+  {
+    "id": "approval-browser-url",
+    "label": "Allow browser navigation?"
+  },
+  {
+    "id": "approval-provider-url",
+    "label": "Allow model provider host?"
   }
 ]
