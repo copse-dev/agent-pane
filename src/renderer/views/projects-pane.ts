@@ -738,16 +738,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const threadChangeKey = (projectId: string, threadId: string): string =>
     `${projectId}\0${threadId}`
 
-  // Rows drawn by the latest render, so an idle sidebar can re-check them.
+  // Rows the latest render drew, or hid under the cleanup filter because their
+  // last summary was clean, so an idle sidebar can re-check them.
   let threadChangeRendered: Array<{ projectId: string; threadId: string }> = []
 
   function refreshThreadChanges(
     refs: Array<{ projectId: string; threadId: string }>,
     opts: { fresh?: boolean } = {},
   ): void {
-    const batch = refs
-      .filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId)))
-      .slice(0, THREAD_CHANGE_MAX_PER_PASS)
+    const pending = refs.filter(
+      (ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId)),
+    )
+    const batch = pending.slice(0, THREAD_CHANGE_MAX_PER_PASS)
     if (batch.length === 0) return
     const generation = threadChangeGeneration
     for (const ref of batch) threadChangeInFlight.add(threadChangeKey(ref.projectId, ref.threadId))
@@ -761,15 +763,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (!sameThreadChangeSummary(previous?.summary ?? null, summary)) {
           changed = true
         }
-        // Unknown and expired summaries keep a row visible while refreshing.
-        // Re-evaluate even when the refreshed summary is still clean.
-        if (needsCleanupOnly && (!previous || Date.now() - previous.at > THREAD_CHANGE_TTL_MS)) {
-          changed = true
-        }
+        // A never-read summary keeps its row visible under the cleanup filter,
+        // so its first answer must redraw even when it is clean.
+        if (needsCleanupOnly && !previous) changed = true
         threadChangeCache.set(key, { summary, at: Date.now() })
       }
       // Only an unmounted pane must not redraw from a late answer.
-      if (changed && generation === threadChangeGeneration) render(true)
+      if (generation !== threadChangeGeneration) return
+      if (changed) render(true)
+      // An unchanged batch redraws nothing, so nothing else would re-request the
+      // rest of an oversized request; read whatever of it is still stale.
+      const now = Date.now()
+      const rest = pending.slice(batch.length).filter(({ projectId, threadId }) => {
+        const cached = threadChangeCache.get(threadChangeKey(projectId, threadId))
+        return !cached || now - cached.at > THREAD_CHANGE_TTL_MS
+      })
+      refreshThreadChanges(rest, opts)
     }
     void api.git.threadChangeSummary(batch, opts).then(settle, () => {
       settle([])
@@ -1005,9 +1014,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // window regains focus or becomes visible, which is when someone looks again.
   function recheckStaleThreadChanges(): void {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-    // Re-admit hidden rows with expired clean summaries before refreshing.
-    // Their absence from threadChangeRendered must not make clean state permanent.
-    if (needsCleanupOnly) render()
     const now = Date.now()
     refreshThreadChanges(
       threadChangeRendered.filter(({ projectId, threadId }) => {
@@ -1046,6 +1052,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
    * fetched yet counts as matching, not excluded — otherwise toggling the
    * filter on would hide everything until each row happened to scroll into
    * view and backfill (see the IntersectionObserver-gated fetches below).
+   * An expired change summary keeps its last answer while it is re-read:
+   * treating it as unknown made every clean thread blink back in each TTL.
    */
   function threadNeedsCleanup(project: Project, thread: SidebarThread): boolean {
     // Filtering runs before pagination. Only rendered rows may start lookups.
@@ -1062,7 +1070,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // PR lifecycle is available for SSH projects; local git summaries are not.
     if (project.sshHost) return false
     const cached = threadChangeCache.get(threadChangeKey(project.id, thread.id))
-    if (!cached || Date.now() - cached.at > THREAD_CHANGE_TTL_MS) return true
+    if (!cached) return true
     return describeThreadChanges(cached.summary) !== null
   }
 
@@ -1543,6 +1551,21 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const threadChangeWanted: Array<{ projectId: string; threadId: string }> = []
     const threadChangeSeen: Array<{ projectId: string; threadId: string }> = []
     const threadChangeSeenKeys = new Set<string>()
+    // The cleanup filter's predicate. A thread it hides for a clean summary is
+    // never drawn, so track it here as the row would: keep its summary from
+    // being pruned and re-read it once expired, or it could never come back.
+    const matchesCleanupFilter = (project: Project, thread: SidebarThread): boolean => {
+      if (threadNeedsCleanup(project, thread)) return true
+      const key = threadChangeKey(project.id, thread.id)
+      const cached = threadChangeCache.get(key)
+      if (cached && thread.status !== 'running' && !project.sshHost) {
+        const ref = { projectId: project.id, threadId: thread.id }
+        threadChangeSeen.push(ref)
+        threadChangeSeenKeys.add(key)
+        if (Date.now() - cached.at > THREAD_CHANGE_TTL_MS) threadChangeWanted.push(ref)
+      }
+      return false
+    }
     syncFilterControls()
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
       store.getState()
@@ -2375,7 +2398,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         matchingThreads.filter(
           (thread) =>
             thread.automation === undefined &&
-            (!needsCleanupOnly || threadNeedsCleanup(project, thread)),
+            (!needsCleanupOnly || matchesCleanupFilter(project, thread)),
         ),
         // A filter's matches stay newest first; the chosen order is for the browse list.
         isFiltering ? 'activity' : store.getState().sidebarThreadSort,
@@ -2503,7 +2526,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         for (const thread of getSidebarThreads(store, project.id)) {
           if (
             thread.automation === undefined &&
-            (!needsCleanupOnly || threadNeedsCleanup(project, thread))
+            (!needsCleanupOnly || matchesCleanupFilter(project, thread))
           ) {
             rows.push({ projectId: project.id, thread })
           }
