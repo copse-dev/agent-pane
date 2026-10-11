@@ -1,5 +1,5 @@
-import { lstat, mkdir, readFile, readdir, rm } from 'node:fs/promises'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { runCommand, type CommandResult } from './exec/command-runner.ts'
 import { changedPaths } from './git-status-paths.ts'
 import {
@@ -30,6 +30,9 @@ import {
 
 /** Pins the commit population checked out, so removal can tell it from the thread's own commits. */
 const POPULATED_BASE_REF = 'refs/copse/submodule-base'
+/** The tags a module repository was cloned with, as `<refname> <objectname>` lines. */
+const SOURCE_TAGS_FILE = 'copse-source-tags'
+const SOURCE_TAG_FORMAT = '--format=%(refname) %(objectname)'
 /** Nested submodules are followed this deep, matching no real repository's needs. */
 const MAX_DEPTH = 8
 /** Clone and checkout of a large submodule are bounded by its size, not by a probe budget. */
@@ -85,6 +88,23 @@ async function isRepositoryDir(path: string): Promise<boolean> {
     lstatOrNull(join(path, 'objects')),
   ])
   return Boolean(head?.isFile() && objects?.isDirectory())
+}
+
+/**
+ * Whether `path`, or its nearest existing ancestor, resolves inside `boundary`
+ * once every symlink on the way is followed. `lstat` on the leaf alone cannot
+ * see an ancestor the agent has replaced with a link out of the checkout.
+ */
+async function resolvesInside(path: string, boundary: string): Promise<boolean> {
+  const root = await realpath(boundary)
+  for (let probe = path; ; probe = dirname(probe)) {
+    try {
+      const rel = relative(root, await realpath(probe))
+      return rel === '' || (!isAbsolute(rel) && rel.split(sep)[0] !== '..')
+    } catch (error) {
+      if (ownErrorCode(error) !== 'ENOENT' || dirname(probe) === probe) return false
+    }
+  }
 }
 
 async function isEmptyDirectory(path: string): Promise<boolean> {
@@ -176,6 +196,8 @@ interface PopulateLevel {
   label: string
   /** Where this level's own submodules keep their repositories. */
   moduleDir: string
+  /** The thread checkout's administration directory, which every module repository stays inside. */
+  adminDir: string
   /** The project's repository for the same level, whose `modules/` is the clone source. */
   sourceModuleDir: string
   treeish: string
@@ -220,6 +242,16 @@ async function populateLevel(
     }
     const target = join(level.workTree, path)
     const gitDir = join(level.moduleDir, 'modules', name)
+    // The agent can replace any directory in its checkout or its own
+    // administration directory with a symlink; follow them before writing.
+    const contained = async (): Promise<boolean> =>
+      (await resolvesInside(target, level.checkout)) &&
+      (await resolvesInside(gitDir, level.adminDir))
+    if (!(await contained())) {
+      console.warn(`[worktree] Not populating submodule ${label}: it resolves outside the checkout`)
+      report.skipped.push(label)
+      continue
+    }
     // Only an empty, unpopulated directory is populated, so the cleanup below
     // can never delete anything population did not itself create.
     if (!(await isEmptyDirectory(target)) || (await lstatOrNull(gitDir))) {
@@ -228,6 +260,7 @@ async function populateLevel(
     }
     try {
       await mkdir(dirname(gitDir), { recursive: true })
+      if (!(await contained())) throw new Error('submodule paths moved outside the checkout')
       const steps: [string, string[]][] = [
         [
           level.workTree,
@@ -265,6 +298,16 @@ async function populateLevel(
       if (upstream.code === 0 && url) {
         await runGit(level.checkout, target, ['config', 'remote.origin.url', url], 'write')
       }
+      // The tags the clone starts with are the project's. Record them, so a
+      // tag the thread adds later is told apart and its commit kept.
+      const tags = await runGit(
+        level.checkout,
+        target,
+        ['for-each-ref', SOURCE_TAG_FORMAT, 'refs/tags'],
+        'read',
+      )
+      if (tags.code !== 0) throw new Error(tags.stderr.trim() || 'cannot list cloned tags')
+      await writeFile(join(gitDir, SOURCE_TAGS_FILE), tags.stdout)
     } catch (error) {
       console.warn(`[worktree] Could not populate submodule ${label}: ${String(error)}`)
       // Leave the ordinary uninitialised state, not a half-made repository
@@ -282,6 +325,7 @@ async function populateLevel(
         workTree: target,
         label,
         moduleDir: gitDir,
+        adminDir: level.adminDir,
         sourceModuleDir: source,
         treeish: 'HEAD',
       },
@@ -316,6 +360,7 @@ export async function populateWorktreeSubmodules(
         workTree: checkout,
         label: '',
         moduleDir: gitDir,
+        adminDir: gitDir,
         sourceModuleDir: commonGitDir,
         treeish: options.treeish ?? 'HEAD',
         ...(options.only ? { only: new Set(options.only) } : {}),
@@ -362,24 +407,43 @@ async function moduleRepositories(dir: string, prefix = '', depth = 0): Promise<
 
 /** HEAD and branch tips that nothing outside the thread's private module repository holds. */
 async function unpreservedTips(checkout: string, repository: string): Promise<string[] | null> {
-  const [head, branches] = await Promise.all([
+  const [head, refs, recorded] = await Promise.all([
     runGit(checkout, repository, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], 'read'),
-    runGit(checkout, repository, ['for-each-ref', '--format=%(objectname)', 'refs/heads'], 'read'),
+    runGit(
+      checkout,
+      repository,
+      [
+        'for-each-ref',
+        '--format=%(refname)%00%(objectname)%00%(objecttype)%00%(*objectname)%00%(*objecttype)',
+        'refs/heads',
+        'refs/tags',
+      ],
+      'read',
+    ),
+    readFile(join(repository, SOURCE_TAGS_FILE), 'utf8').catch((error: unknown) => {
+      if (ownErrorCode(error) === 'ENOENT') return ''
+      throw error
+    }),
   ])
-  if (branches.code !== 0) return null
-  const tips = new Set(
-    [head.code === 0 ? head.stdout : '', branches.stdout]
-      .join('\n')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean),
-  )
+  if (refs.code !== 0) return null
+  const cloned = new Set(recorded.split('\n').filter(Boolean))
+  const tips = new Set<string>()
+  if (head.code === 0 && head.stdout.trim()) tips.add(head.stdout.trim())
+  for (const line of refs.stdout.split('\n')) {
+    const [ref, object, type, peeled, peeledType] = line.split('\0')
+    if (!ref || !object) continue
+    // A tag the project already had came with the clone; any other tag is
+    // the thread's, and may be the only ref keeping its commit.
+    if (ref.startsWith('refs/tags/') && cloned.has(`${ref} ${object}`)) continue
+    if (type === 'commit') tips.add(object)
+    else if (peeledType === 'commit' && peeled) tips.add(peeled)
+  }
   const unpreserved: string[] = []
   for (const tip of [...tips].sort()) {
     // Reachable from the commit population copied out of the project
     // (`refs/copse`) or from a remote-tracking ref (the project's branches at
     // clone time, or upstream once fetched or pushed to): the commit exists
-    // outside this clone. A tag does not count; one made here dies with it.
+    // outside this clone. A tag never holds one; it is deleted with the clone.
     const holder = await runGit(
       checkout,
       repository,

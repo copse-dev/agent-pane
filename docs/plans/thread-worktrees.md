@@ -413,9 +413,11 @@ edits inside the project's own submodules do not carry over.
   module repositories. Retire, park, orphan pruning, Settings removal and archival
   therefore also treat as material: changed and untracked files inside each populated
   submodule (and ignored ones wherever the superproject's own check counts them; archival
-  and fresh-per-run automations treat them as regenerable), and any module repository whose HEAD or
-  branch tip is not contained by the commit population checked out
-  (`refs/copse/submodule-base`) or a remote-tracking ref. Superproject status runs with
+  and fresh-per-run automations treat them as regenerable), and any module repository whose HEAD, branch
+  tip or thread-made tag (one the clone did not start with) is not contained by the commit
+  population checked out (`refs/copse/submodule-base`) or a remote-tracking ref.
+  Population refuses a submodule whose checkout or repository path resolves, through any
+  symlink, outside the thread checkout or its administration directory. Superproject status runs with
   `--ignore-submodules=none`, so a `.gitmodules` `ignore` setting cannot hide changes.
   Git refuses to remove a checkout holding submodule repositories without `--force`; the
   manager re-runs Git's own clean check first and forces only past that refusal.

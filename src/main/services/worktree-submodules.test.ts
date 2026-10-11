@@ -1,7 +1,17 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
@@ -199,6 +209,59 @@ describe('thread worktree submodules', () => {
     // Once upstream holds it (as a push records it), nothing is lost.
     git(lib, ['update-ref', 'refs/remotes/origin/work', 'work'])
     assert.equal((await retireThreadWorktree(input(repo, worktree))).status, 'removed')
+  })
+
+  it('keeps a commit only a thread-made tag holds, but not one the project tagged', async () => {
+    const { repo } = await setup()
+    // A project tag on a commit no branch holds any more: it came with the
+    // clone, so it is the project's to keep, not the thread's.
+    const projectLib = join(repo, 'vendor', 'lib')
+    const projectBase = git(projectLib, ['rev-parse', 'HEAD'])
+    git(projectLib, ['switch', '-q', '-c', 'side'])
+    await commitFiles(projectLib, { 'side.txt': 'side\n' }, 'side')
+    git(projectLib, ['tag', '-a', 'v-side', '-m', 'side release'])
+    git(projectLib, ['switch', '-q', '--detach', projectBase])
+    git(projectLib, ['branch', '-q', '-D', 'side'])
+    assert.equal((await retireThreadWorktree(input(repo, await allocate(repo)))).status, 'removed')
+
+    const worktree = await allocate(repo, 'thread-2')
+    const lib = join(worktree.path, 'vendor', 'lib')
+    git(lib, ['switch', '-q', '-c', 'work'])
+    await commitFiles(lib, { 'lib.txt': 'tagged\n' }, 'thread work')
+    git(lib, ['tag', '-a', 'v-thread', '-m', 'thread release'])
+    git(lib, ['switch', '-q', '--detach', projectBase])
+    git(lib, ['branch', '-q', '-D', 'work'])
+    assert.deepEqual(await retireThreadWorktree(input(repo, worktree, 'thread-2')), {
+      status: 'blocked-dirty',
+      paths: ['vendor/lib'],
+    })
+  })
+
+  it('never populates through a symlink out of the checkout or its admin directory', async () => {
+    const { temp, repo } = await setup()
+    const worktree = await allocateEmpty(repo)
+    const outside = join(temp, 'outside')
+    await mkdir(join(outside, 'lib'), { recursive: true })
+    await mkdir(join(outside, 'optional'))
+    await rm(join(worktree.path, 'vendor'), { recursive: true })
+    await symlink(outside, join(worktree.path, 'vendor'))
+
+    const viaCheckout = await populateWorktreeSubmodules(worktree.path)
+    assert.deepEqual(viaCheckout.populated, [])
+    assert.deepEqual(await readdir(join(outside, 'lib')), [])
+
+    // The agent also owns its administration directory.
+    await rm(join(worktree.path, 'vendor'))
+    await mkdir(join(worktree.path, 'vendor', 'lib'), { recursive: true })
+    const admin = git(worktree.path, ['rev-parse', '--absolute-git-dir'])
+    const outsideModules = join(temp, 'outside-modules')
+    await mkdir(outsideModules)
+    await symlink(outsideModules, join(admin, 'modules'))
+
+    const viaAdmin = await populateWorktreeSubmodules(worktree.path, { only: ['vendor/lib'] })
+    assert.deepEqual(viaAdmin.populated, [])
+    assert.deepEqual(await readdir(outsideModules), [])
+    assert.deepEqual(await readdir(join(worktree.path, 'vendor', 'lib')), [])
   })
 
   it('retains ignored files inside a submodule unless told they are disposable', async () => {
