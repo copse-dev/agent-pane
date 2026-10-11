@@ -5,6 +5,7 @@ import {
   seedE2eThreePaneLayout,
   seedE2eViewport,
   seedPrPanelChatFixture,
+  seedStableWorkspace,
 } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
@@ -15,7 +16,7 @@ describe('PR comments and checks', () => {
     this.timeout(120_000)
     writeE2eEnv({ COPSE_PANEL_MOCK_GH: '1', COPSE_PANEL_MOCK_GH_STATUS: 'ready' })
     resetUserData()
-    seedPrPanelChatFixture(process.cwd())
+    seedPrPanelChatFixture(seedStableWorkspace())
     seedE2eViewport()
     seedE2eThreePaneLayout()
     await browser.reloadSession()
