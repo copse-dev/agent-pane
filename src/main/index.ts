@@ -152,6 +152,7 @@ import { getContainerRunService } from './services/container-runtime/container-r
 import { recordContainerRunTurn } from './services/container-runtime/container-run-history.ts'
 import { recordUserReview } from './services/review/review-history.ts'
 import { AgentDispatcher } from './services/agent-dispatcher.ts'
+import { setAgentInitiatedTurnAuthority } from './services/acp/agent-initiated-turn.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
@@ -641,6 +642,7 @@ app
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
+    setAgentInitiatedTurnAuthority(agentDispatcher)
     registerAllHandlers(
       win,
       registry,
