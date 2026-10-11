@@ -111,8 +111,15 @@ export function createAcpAgentsList(api: ApiClient): AcpAgentsList {
   let openId = ''
   let menuOpen = false
   let loaded = false
+  // Auto-setup can install adapters, so it waits for the user to open an agent.
+  let autoSetupRun = false
 
-  const panel = createAcpAgentsSection(api, { embedded: true, onChanged: () => render() })
+  const panel = createAcpAgentsSection(api, {
+    embedded: true,
+    onChanged: () => {
+      render()
+    },
+  })
   const list = el('div', { class: 'acp-list', 'data-testid': 'acp-agents-list' })
   const addToggle = el(
     'button',
@@ -164,6 +171,10 @@ export function createAcpAgentsList(api: ApiClient): AcpAgentsList {
       openId = open ? '' : model.id
       menuOpen = false
       render()
+      if (openId && !autoSetupRun) {
+        autoSetupRun = true
+        void panel.refresh().then(() => refresh())
+      }
     })
     const action = model.signInCommand
       ? copyButton('Copy sign-in command', model.signInCommand, 'ui-btn ui-btn-primary')
@@ -221,7 +232,11 @@ export function createAcpAgentsList(api: ApiClient): AcpAgentsList {
           'div',
           { class: 'acp-row-text' },
           el('div', { class: 'acp-row-name' }, el('strong', {}, known.title)),
-          el('div', { class: 'acp-row-desc' }, 'Run the install command in a terminal, then Re-scan.'),
+          el(
+            'div',
+            { class: 'acp-row-desc' },
+            'Run the install command in a terminal, then Re-scan.',
+          ),
         ),
         action,
       ),
