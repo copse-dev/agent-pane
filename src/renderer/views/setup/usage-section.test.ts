@@ -23,7 +23,11 @@ function claudeUnavailable(reason: string): ProviderPlanResult {
 describe('claudeReasonNeedsLogin', () => {
   it('matches sign-in / credential reasons a re-login would fix', () => {
     assert.equal(
-      claudeReasonNeedsLogin('Claude credentials were rejected. Re-run `claude /login`.'),
+      claudeReasonNeedsLogin('No Claude OAuth token (sign in with `claude auth login`)'),
+      true,
+    )
+    assert.equal(
+      claudeReasonNeedsLogin('Claude credentials were rejected. Re-run `claude auth login`.'),
       true,
     )
     assert.equal(
@@ -31,7 +35,7 @@ describe('claudeReasonNeedsLogin', () => {
       true,
     )
     assert.equal(
-      claudeReasonNeedsLogin('No Claude OAuth token (sign in with `claude /login`)'),
+      claudeReasonNeedsLogin('No Claude OAuth token (sign in with `claude auth login`)'),
       true,
     )
   })
@@ -63,7 +67,7 @@ describe('renderPlanProvider sign-in button', () => {
     let clicked = 0
     renderPlanProvider(
       host,
-      claudeUnavailable('Claude credentials were rejected. Re-run `claude /login`.'),
+      claudeUnavailable('Claude credentials were rejected. Re-run `claude auth login`.'),
       {
         claude: () => {
           clicked += 1
@@ -77,9 +81,10 @@ describe('renderPlanProvider sign-in button', () => {
     // in the hint and in the button's plain-text tooltip alike.
     const hint = host.querySelector('.usage-plan-status')
     assert.ok(hint)
-    assert.equal(hint.querySelector('code')?.textContent, 'claude /login')
+    assert.equal(hint.querySelector('code')?.textContent, 'claude auth login')
     assert.doesNotMatch(hint.textContent, /`/)
     assert.doesNotMatch(btn.title, /`/)
+    assert.equal(btn.title, 'Open a terminal and run claude auth login')
     btn.click()
     assert.equal(clicked, 1)
   })
@@ -102,7 +107,7 @@ describe('renderPlanProvider sign-in button', () => {
     const host = document.createElement('div')
     renderPlanProvider(
       host,
-      claudeUnavailable('Claude credentials were rejected. Re-run `claude /login`.'),
+      claudeUnavailable('Claude credentials were rejected. Re-run `claude auth login`.'),
       {},
     )
     assert.equal(host.querySelector('.usage-plan-signin-btn'), null)
@@ -246,11 +251,16 @@ describe('renderPlanProvider credit windows', () => {
 })
 
 describe('createPlanSignInHandler', () => {
-  it('closes settings and requests `claude /login` in a terminal', () => {
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
-    const commands: string[] = []
-    store.on('request_terminal_command', (cmd) => {
-      commands.push(cmd)
+  it('closes settings and requests `claude auth login` in a terminal', () => {
+    const store = createStore({
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+      activeProjectId: 'ssh-project',
+      workspaceRoot: '/remote/project',
+    })
+    const commands: { command: string; executionTarget?: 'local' }[] = []
+    store.on('request_terminal_command', (cmd, options) => {
+      commands.push({ command: cmd, ...options })
     })
     let closed = 0
     const handler = createPlanSignInHandler(store, 'claude', () => {
@@ -258,7 +268,7 @@ describe('createPlanSignInHandler', () => {
     })
     assert.ok(handler)
     handler()
-    assert.deepEqual(commands, ['claude /login'])
+    assert.deepEqual(commands, [{ command: 'claude auth login', executionTarget: 'local' }])
     assert.equal(closed, 1)
   })
 
