@@ -53,6 +53,7 @@ describe('roadmap resolution check failure', () => {
     await $('.roadmap-row').waitForDisplayed({ timeout: 20_000 })
     await $('.roadmap-row').click()
 
+    await $('.roadmap-details > summary').click()
     const errorBox = $('.roadmap-review-result.is-error')
     await errorBox.waitForDisplayed({ timeout: 30_000 })
     assert.equal(

@@ -1,3 +1,6 @@
+import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '../safe-json.ts'
+
 /** Knowledge-note type used for roadmap items. */
 export const ROADMAP_TYPE = 'Roadmap'
 
@@ -18,3 +21,12 @@ export function roadmapTitleFromPrompt(prompt: string): string {
 export const ROADMAP_STATUSES = ['ready', 'blocked', 'conflicts', 'done', 'archived'] as const
 
 export type RoadmapStatus = (typeof ROADMAP_STATUSES)[number]
+
+const threadHistorySchema = z.array(z.string().min(1).max(128))
+
+/** Latest attempt first, including legacy notes that only have a `thread` field. */
+export function roadmapThreadIds(fields: Readonly<Record<string, string>>): string[] {
+  const history = fields['threadHistory']
+  const previous = history ? safeJsonParse(history, decodeWithSchema(threadHistorySchema)) : null
+  return [...new Set([...(fields['thread'] ? [fields['thread']] : []), ...(previous ?? [])])]
+}

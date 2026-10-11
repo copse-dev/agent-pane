@@ -234,6 +234,7 @@ describe('shared UI polish', () => {
     await $('.roadmap-new-btn').waitForDisplayed({ timeout: 10_000 })
     await $('.roadmap-new-btn').click()
     await expect($('.roadmap-form')).toBeDisplayed()
+    await $('.roadmap-details > summary').click()
 
     const layout = await browser.execute(() => {
       const paneChat = document.getElementById('pane-chat')
@@ -243,11 +244,14 @@ describe('shared UI polish', () => {
       const prompt = document.querySelector<HTMLElement>('.roadmap-prompt-input')
       const notes = document.querySelector<HTMLElement>('.roadmap-notes-input')
       const issue = document.querySelector<HTMLElement>('.roadmap-issue-input')
-      const labels = [...document.querySelectorAll<HTMLElement>('.roadmap-form > .memories-label')]
+      const labels = [
+        ...document.querySelectorAll<HTMLElement>('.roadmap-detail-fields > .memories-label'),
+      ]
       const label = (text: string): HTMLElement | undefined =>
         labels.find((candidate) => candidate.textContent === text)
       const notesLabel = label('Notes')
       const issueLabel = label('Issue')
+      const categoryLabel = label('Category')
       if (
         !paneChat ||
         !projects ||
@@ -257,7 +261,8 @@ describe('shared UI polish', () => {
         !notes ||
         !issue ||
         !notesLabel ||
-        !issueLabel
+        !issueLabel ||
+        !categoryLabel
       ) {
         return null
       }
@@ -270,8 +275,8 @@ describe('shared UI polish', () => {
         viewerTopColor: style(viewer).borderTopColor,
         projectsTopWidth: style(projects).borderTopWidth,
         sidebarTopWidth: style(sidebar).borderTopWidth,
-        notesGroupGap: rect(notesLabel).top - rect(prompt).bottom,
-        issueGroupGap: rect(issueLabel).top - rect(notes).bottom,
+        notesGroupGap: rect(issueLabel).top - rect(notes).bottom,
+        issueGroupGap: rect(categoryLabel).top - rect(issue).bottom,
         notesMarginTop: style(notesLabel).marginTop,
         issueMarginTop: style(issueLabel).marginTop,
       }
@@ -283,7 +288,7 @@ describe('shared UI polish', () => {
     assert.equal(layout.chatTopColor, layout.viewerTopColor)
     assert.equal(Number.parseFloat(layout.projectsTopWidth), 0)
     assert.equal(Number.parseFloat(layout.sidebarTopWidth), 0)
-    assert.ok(Number.parseFloat(layout.notesMarginTop) > 0)
+    assert.ok(layout.notesGroupGap > 0)
     assert.equal(layout.notesMarginTop, layout.issueMarginTop)
     assert.ok(Math.abs(layout.notesGroupGap - layout.issueGroupGap) <= 1)
     await saveAppScreenshot('pane-rules-and-roadmap-spacing.png')
