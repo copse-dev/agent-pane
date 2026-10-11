@@ -54490,11 +54490,14 @@ function createAppearanceSection(form, store2, markDirty) {
       if (radio) radio.checked = true;
     },
     collect(data, dirty) {
+      const fontSize = Number.parseFloat(formDataString(data, "fontSize"));
+      const uiScale = Number.parseFloat(formDataString(data, "uiScale"));
+      const state = store2.getState();
       const theme = data.get("theme"), panel = data.get("rightPanelPosition"), icon = data.get("appIconVariant");
       return {
         ...dirty.has("theme") && isThemePreference(theme) ? { theme } : {},
-        ...dirty.has("fontSize") ? { fontSize: Number(formDataString(data, "fontSize")) } : {},
-        ...dirty.has("uiScale") ? { uiScale: clampUiScale(Number(formDataString(data, "uiScale"))) } : {},
+        ...dirty.has("fontSize") ? { fontSize: Number.isFinite(fontSize) ? fontSize : state.fontSize } : {},
+        ...dirty.has("uiScale") ? { uiScale: clampUiScale(Number.isFinite(uiScale) ? uiScale : state.uiScale) } : {},
         ...dirty.has("autoPortraitRightPanel") ? { autoPortraitRightPanel: data.has("autoPortraitRightPanel") } : {},
         ...dirty.has("rightPanelPosition") && isRightPanelPosition(panel) ? { rightPanelPosition: panel } : {},
         ...dirty.has("uiAccentColor") ? { uiAccentColor: formDataString(data, "uiAccentColor") } : {},
@@ -72929,6 +72932,7 @@ function createPacksSection(overlay, api2, store2, getActiveSection, onNavigate,
     }
     input2.dataset["pluginId"] = pluginId;
     input2.dataset["settingKey"] = field.id;
+    let previousNumber = typeof field.value === "number" ? field.value : 0;
     input2.addEventListener("change", () => {
       let value = input2.value;
       if (field.kind === "boolean") {
@@ -72937,7 +72941,13 @@ function createPacksSection(overlay, api2, store2, getActiveSection, onNavigate,
         }
         value = input2.checked;
       } else if (field.kind === "number") {
-        value = Number(input2.value);
+        const parsed2 = Number.parseFloat(input2.value);
+        if (!Number.isFinite(parsed2)) {
+          input2.value = String(previousNumber);
+          return;
+        }
+        previousNumber = parsed2;
+        value = parsed2;
       }
       void api2.plugins.setSetting(pluginId, field.id, value).catch(() => {
       });
