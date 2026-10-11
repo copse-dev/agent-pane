@@ -20,6 +20,7 @@ import { renderReviewContext, type ReviewContext } from './context.ts'
 import {
   ERROR_EXCERPT_CHARS,
   ForgeReviewError,
+  ForgePublicationSkippedError,
   forgeHeaders,
   inertMarkdown,
   pullRequestUrl,
@@ -319,6 +320,7 @@ export async function postSummary(
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       })
     } catch (err) {
+      if (err instanceof ForgeReviewError) throw err
       throw new ForgeReviewError(0, `could not reach ${url}: ${errorMessage(err)}`)
     }
     const text = await response.text()
@@ -347,6 +349,13 @@ export async function postSummary(
   }
   const next = upsertSummaryBlock(pull.body, block)
   if (next === pull.body) return { updated: false, reason: 'the summary is unchanged' }
-  await request('PATCH', { body: next })
+  try {
+    await request('PATCH', { body: next })
+  } catch (err) {
+    if (err instanceof ForgePublicationSkippedError) {
+      return { updated: false, reason: err.message }
+    }
+    throw err
+  }
   return { updated: true }
 }
