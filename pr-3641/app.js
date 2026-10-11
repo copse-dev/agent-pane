@@ -75087,7 +75087,7 @@ function mountAnnotationLayer(host, options) {
     sendBtn = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-primary annotation-send", disabled: true },
-      "Send to agent"
+      options.actionLabel ?? "Send to agent"
     );
     sendBtn.addEventListener("click", () => {
       if (sending) return;
@@ -75431,7 +75431,14 @@ function annotatableImage(item, closePreview) {
     annotation ??= mountAnnotationLayer(frame, {
       label: imageTitle(item),
       captureBase,
+      ...item.onUpdate ? { actionLabel: "Update" } : {},
       onSend: (payload) => {
+        if (item.onUpdate) {
+          if (!payload.png || !payload.captured) return false;
+          const updated = item.onUpdate(payload.png);
+          if (updated) closePreview();
+          return updated;
+        }
         const attached = attachAnnotation(payload, imageTitle(item));
         if (attached) closePreview();
         return attached;
@@ -75607,9 +75614,12 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     if (session.isActive()) viewer.focus({ preventScroll: true });
   });
 }
-function openSingleImage(src, alt, returnFocus2) {
+function openSingleImage(src, alt, returnFocus2, onUpdate) {
   let session = null;
-  const entry = annotatableImage({ src, alt }, () => session?.close());
+  const entry = annotatableImage(
+    { src, alt, ...onUpdate ? { onUpdate } : {} },
+    () => session?.close()
+  );
   const content = el("div", { class: "image-expand-single" }, entry.frame, entry.button);
   session = openAttachmentPreview({
     kind: "image",
@@ -75623,9 +75633,9 @@ function openSingleImage(src, alt, returnFocus2) {
     }
   });
 }
-function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
+function openImageExpand(src, alt = "Expanded attachment", returnFocus2, onUpdate) {
   if (!src) return;
-  openSingleImage(src, alt, returnFocus2);
+  openSingleImage(src, alt, returnFocus2, onUpdate);
 }
 function openImageGallery(items, initialIndex = 0, returnFocus2) {
   const usableItems = [];
@@ -75643,7 +75653,7 @@ function openImageGallery(items, initialIndex = 0, returnFocus2) {
   }
   openImageGalleryViewer(usableItems, usableIndex, returnFocus2);
 }
-function attachImageExpand(img, alt, gallery, galleryIndex) {
+function attachImageExpand(img, alt, gallery, galleryIndex, onUpdate) {
   if (img.dataset["imageExpand"] === "true") return;
   img.dataset["imageExpand"] = "true";
   attachImageCopyMenu(img);
@@ -75668,7 +75678,7 @@ function attachImageExpand(img, alt, gallery, galleryIndex) {
       openImageGallery(gallery, galleryIndex ?? 0, focusTarget);
       return;
     }
-    openImageExpand(src, label, focusTarget);
+    openImageExpand(src, label, focusTarget, onUpdate);
   };
   img.addEventListener("click", (event) => {
     event.preventDefault();
@@ -118073,7 +118083,14 @@ ${description}
     thumb.src = dataUrl;
     thumb.width = 40;
     thumb.height = 40;
-    attachImageExpand(thumb, "Attached image");
+    attachImageExpand(thumb, "Attached image", void 0, void 0, (png) => {
+      if (!attachedImages.includes(entry)) return false;
+      entry.dataUrl = png;
+      entry.mimeType = "image/png";
+      thumb.src = png;
+      scheduleContextEstimate();
+      return true;
+    });
     const remove = document.createElement("button");
     remove.append(closeIcon("ui-icon ui-icon-sm"));
     remove.addEventListener("click", () => {
