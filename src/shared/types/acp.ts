@@ -222,6 +222,18 @@ export interface AcpAgentProbe {
   configOptions?: AcpConfigOption[]
 }
 
+/**
+ * Whether the user is signed in to the CLI behind an agent. `unknown` means the
+ * check could not tell (missing CLI, no such check), and is not "signed out".
+ */
+export type AcpAuthState = 'signed-in' | 'signed-out' | 'unknown'
+
+export interface AcpAuthStatus {
+  /** Catalog id of the agent (canonical, e.g. `claude-acp`). */
+  id: string
+  state: AcpAuthState
+}
+
 /** Outcome of the one-shot ACP preset auto-setup (install/register/detect). */
 export interface AcpAutoSetupResult {
   /** Preset ids whose npm adapter was installed via Socket Firewall. */

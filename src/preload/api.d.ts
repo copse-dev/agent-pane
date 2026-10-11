@@ -113,7 +113,7 @@ import type {
   StoredExtraProvider,
 } from '@copse/llm/extra-providers.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
-import type { AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
+import type { AcpAgentProbe, AcpAuthStatus, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import type { ExternalEditorList } from '@shared/types/editors.ts'
 import type {
   PreparedThreadCheckout,
@@ -861,6 +861,11 @@ export interface ApiClient {
      * when the agent exposes none of that kind (issue #607).
      */
     probeAgent: (agentId: string) => Promise<AcpAgentProbe>
+    /**
+     * Whether each named agent's CLI is signed in, without running a turn.
+     * `unknown` when the check cannot tell; agents are matched by catalog id.
+     */
+    authStatus: (ids: string[]) => Promise<AcpAuthStatus[]>
     /**
      * "Just works" setup for the curated presets (Claude, Cursor): detect
      * clients, Socket-Firewall-install missing npm adapters, register + detect

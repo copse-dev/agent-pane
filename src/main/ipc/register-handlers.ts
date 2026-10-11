@@ -216,6 +216,7 @@ import {
   type ThreadHistoryEditRuntime,
 } from '../services/thread-history-edit.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
+import { detectAcpAuthStatus } from '../services/acp/acp-auth-status.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   listExternalEditors,
@@ -3390,6 +3391,11 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     if (typeof agentId !== 'string') throw new Error('acp:probe-agent requires an agent id')
     return probeAcpAgentForSettings(agentId)
+  })
+  ipcMain.handle('acp:auth-status', (event, ids: unknown) => {
+    assertMainFrameSender(event, win)
+    const [agentIds] = parseIpcArgs(z.tuple([z.array(z.string()).max(32)]), [ids])
+    return detectAcpAuthStatus(agentIds)
   })
   ipcMain.handle('acp:auto-setup', (event) => {
     assertMainFrameSender(event, win)

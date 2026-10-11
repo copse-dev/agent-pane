@@ -1133,6 +1133,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     acp: {
       detectAgents: emptyArray,
       probeAgent: unsupported,
+      authStatus: emptyArray,
       autoSetup: () =>
         resolved({
           installed: [],
