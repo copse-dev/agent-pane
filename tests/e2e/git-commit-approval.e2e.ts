@@ -15,7 +15,12 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import { getCopseUserDataDir, waitForAgentIdle } from './helpers.ts'
-import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import {
+  E2E_SETTINGS_BASELINE,
+  resetUserData,
+  seedEmptyProject,
+  writeSeedConfig,
+} from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { submitComposer } from './helpers/composer.ts'
 
@@ -54,6 +59,7 @@ describe('git commit approval', () => {
     writeFileSync(
       join(getCopseUserDataDir(), 'settings.json'),
       JSON.stringify({
+        ...E2E_SETTINGS_BASELINE,
         onboardingCompleted: true,
         theme: 'dark',
         uiTintStrength: 'off',

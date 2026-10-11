@@ -13,6 +13,7 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import { PRODUCT_ANNOUNCEMENTS } from '../../../src/renderer/product-announcements.ts'
 import { USAGE_EVENTS_DIR, type UsageEvent } from '../../../src/shared/usage/usage-event.ts'
 import {
   supervisedTaskMetaSchema,
@@ -321,6 +322,22 @@ export function readSeededSettings(): Record<string, unknown> {
   return JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')) as Record<string, unknown>
 }
 
+/**
+ * Settings every seeded profile starts from, for specs that write
+ * `settings.json` themselves instead of calling {@link writeSettings}.
+ * Concise threads is on by default, but most specs assert on the tool cards and
+ * reasoning it hides for models above its gate, so seed the user's opt-out with
+ * its migration marker set (launch would otherwise clear it); a spec that wants
+ * the concise view passes `conciseThreadsEnabled: true`. Every seeded profile is
+ * an existing user, so the shipped announcements' modal is acknowledged to keep
+ * it off screens that are about something else.
+ */
+export const E2E_SETTINGS_BASELINE = {
+  conciseThreadsEnabled: false,
+  conciseThreadsDefaultMigrated: true,
+  acknowledgedProductAnnouncements: PRODUCT_ANNOUNCEMENTS.map((entry) => entry.id),
+} as const
+
 export function writeSettings(settings: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   // Pin appearance so reference screenshots are deterministic. Most fixtures
@@ -333,6 +350,7 @@ export function writeSettings(settings: Record<string, unknown>): void {
       theme: 'dark',
       uiTintStrength: 'off',
       localServerUrl: E2E_UNREACHABLE_LM_STUDIO_URL,
+      ...E2E_SETTINGS_BASELINE,
       ...settings,
     }),
     'utf8',
