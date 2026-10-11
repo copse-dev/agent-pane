@@ -129048,6 +129048,31 @@ ${output2}` : "Terminal output: (none)"
     tab.container.addEventListener("mousedown", () => {
       if (activeTabId === tab.id) focusTab(tab);
     });
+    tab.container.addEventListener("contextmenu", (e3) => {
+      e3.preventDefault();
+      e3.stopPropagation();
+      showContextMenu(e3.clientX, e3.clientY, [
+        {
+          label: "Copy",
+          disabled: !tab.term.hasSelection(),
+          onSelect: () => {
+            void navigator.clipboard.writeText(tab.term.getSelection());
+          }
+        },
+        {
+          label: "Paste",
+          disabled: !tab.sessionId,
+          onSelect: () => {
+            void navigator.clipboard.readText().then((text2) => {
+              if (text2 && tab.sessionId) {
+                tab.term.paste(text2);
+                focusTab(tab);
+              }
+            });
+          }
+        }
+      ]);
+    });
   }
   function currentThreadId() {
     return store2.getState().activeThreadId;
