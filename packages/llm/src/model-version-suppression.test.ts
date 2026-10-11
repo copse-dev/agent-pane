@@ -71,17 +71,17 @@ describe('model-version-suppression', () => {
 
       const opusSuppressed = suppressed.filter((m) => m.family === 'claude-opus')
       assert.strictEqual(opusSuppressed.length, 2) // 4.8 and 5 are suppressed
-      assert.deepStrictEqual(
-        opusSuppressed.map((m) => m.model).sort(),
-        ['claude-opus-4-8', 'claude-opus-5'],
-      )
+      assert.deepStrictEqual(opusSuppressed.map((m) => m.model).sort(), [
+        'claude-opus-4-8',
+        'claude-opus-5',
+      ])
 
       const sonnetSuppressed = suppressed.filter((m) => m.family === 'claude-sonnet')
       assert.strictEqual(sonnetSuppressed.length, 2) // 4.6 and 5 are suppressed
-      assert.deepStrictEqual(
-        sonnetSuppressed.map((m) => m.model).sort(),
-        ['claude-sonnet-4-6', 'claude-sonnet-5'],
-      )
+      assert.deepStrictEqual(sonnetSuppressed.map((m) => m.model).sort(), [
+        'claude-sonnet-4-6',
+        'claude-sonnet-5',
+      ])
 
       const gpt5Suppressed = suppressed.filter((m) => m.family === 'gpt-5')
       assert.ok(gpt5Suppressed.length > 0) // All GPT-5.x except 5.6 are suppressed
