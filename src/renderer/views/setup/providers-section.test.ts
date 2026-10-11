@@ -4,7 +4,9 @@ import assert from 'node:assert/strict'
 import type { ApiClient, ExtraProvider, StoredExtraProvider } from '../../../preload/api.d.ts'
 import type { AcpAgentConfig, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
+import { parseAcpAgentConfigs } from '@shared/acp.ts'
 import { createProvidersPanel } from './providers-section.ts'
+import { fetchModelOptions } from '../model-options.ts'
 import { el } from '../../dom/helpers.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 
@@ -127,6 +129,42 @@ describe('providers panel', () => {
 
     clickChip(panel.root, 'anthropic')
     assert.ok(capabilityTitles(panel.root).length > 0)
+  })
+
+  it('adds manual Copilot through Settings and exposes its default in the model picker', async () => {
+    const api = stubApi(state)
+    const panel = createProvidersPanel(api)
+    document.body.append(panel.root)
+    await panel.refresh()
+    clickChip(panel.root, 'github-copilot-cli')
+    await flush()
+
+    const note = panel.root.querySelector('.acp-known-agent-note')
+    assert.match(note?.textContent ?? '', /Manual setup/)
+    assert.match(note?.textContent ?? '', /BYOK is billed by your model provider/)
+    const add = panel.root.querySelector<HTMLButtonElement>('.provider-save')
+    assert.ok(add)
+    assert.equal(add.textContent, 'Add to my agents')
+    add.click()
+    await flush()
+
+    const saved = parseAcpAgentConfigs(state.settings['registeredAcpAgents'])
+    assert.equal(saved.length, 1)
+    const copilot = saved[0]
+    assert.ok(copilot)
+    assert.equal(copilot.id, 'github-copilot-cli')
+    assert.equal(copilot.command, 'copilot')
+    assert.deepEqual(copilot.args, ['--acp', '--stdio'])
+    assert.deepEqual(copilot.env, { COPILOT_GITHUB_TOKEN: '' })
+    assert.equal(state.autoSetupCalls, 0)
+    state.agents = saved
+    const options = await fetchModelOptions(api, '')
+    assert.ok(
+      options.some(
+        (option) =>
+          option.value === 'acp:github-copilot-cli' && option.label === 'GitHub Copilot CLI',
+      ),
+    )
   })
 
   it('gives a provider one chip covering its cloud agent and its device agent', async () => {
@@ -388,7 +426,7 @@ describe('providers panel', () => {
     assert.equal(inForm(), true)
   })
 
-  it('holds auto-setup back until the user picks a provider that has an agent', async () => {
+  it('holds auto-setup back until the user picks a curated preset, even after a manual agent', async () => {
     const panel = createProvidersPanel(stubApi(state), {})
     document.body.append(panel.root)
     await panel.refresh()
@@ -402,6 +440,13 @@ describe('providers panel', () => {
     clickChip(panel.root, 'openrouter')
     await flush()
     assert.equal(state.autoSetupCalls, 0)
+
+    // A manual catalog entry must not offer unrelated installs/upgrades. A later
+    // preset selection still runs setup, even though the device was scanned.
+    clickChip(panel.root, 'github-copilot-cli')
+    await flush()
+    assert.equal(state.autoSetupCalls, 0)
+    assert.ok(state.detectCalls > 0)
 
     clickChip(panel.root, 'anthropic')
     await flush()

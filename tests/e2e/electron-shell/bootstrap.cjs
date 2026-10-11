@@ -105,4 +105,8 @@ if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_GIT_COMMITTED_BARRIER
   )
 }
 
+if (process.env.COPSE_E2E_ACP_REGISTRY_FIXTURE) {
+  require('./acp-registry-fixture.cjs').install(process.env.COPSE_E2E_ACP_REGISTRY_FIXTURE)
+}
+
 require('../../../dist/main/index.js')
