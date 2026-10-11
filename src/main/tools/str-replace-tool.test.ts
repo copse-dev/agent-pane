@@ -8,6 +8,7 @@ import { normalizeToolExecuteResult } from '@shared/types'
 import { strReplaceTool } from './str-replace-tool.ts'
 import { clearStagedDiffsForTest, getStagedDiffEntry } from '../services/diff-queue.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
+import { runWithAgentRunExploreMode } from '../services/agent-run-explore-mode.ts'
 
 async function runStrReplace(args: {
   path: string
@@ -56,7 +57,29 @@ describe('strReplaceTool', () => {
       replace_all: false,
     })
     assert.match(out, /not found/)
+    // Outside explore mode the parent holds read_file, so name it (#1433).
+    assert.match(out, /Call read_file on f\.ts/)
   })
+
+  ownedIt(
+    'names explore, not the withheld read_file, when old_string is missing in explore mode',
+    async () => {
+      // In explore mode read_file is delegated to the subagent and withheld from
+      // the parent, so the remedy must be one the model can actually call.
+      await writeFile(join(tempRoot, 'f.ts'), 'a', 'utf-8')
+      const out = await runWithAgentRunExploreMode(true, () =>
+        runStrReplace({
+          path: 'f.ts',
+          old_string: 'missing',
+          new_string: 'b',
+          replace_all: false,
+        }),
+      )
+      assert.match(out, /not found/)
+      assert.match(out, /call explore again on f\.ts/)
+      assert.doesNotMatch(out, /read_file/)
+    },
+  )
 
   ownedIt('names read_file as the remedy, not another explore call (#1433)', async () => {
     // explore returns a prose summary with approximate line numbers, so a
