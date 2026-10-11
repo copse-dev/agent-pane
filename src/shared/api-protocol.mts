@@ -96,4 +96,4 @@
 // v57 versions approval effect, boundary, and grant-scope details.
 // v58 integrates the device-bound vault wire changes.
 // v59 integrates Send now abort causes.
-export const API_PROTOCOL_VERSION = 59 as const
+export const API_PROTOCOL_VERSION = 60 as const
