@@ -392,6 +392,51 @@ async function refreshInlineDecision() {
   }
 }
 
+function renderMessages(list) {
+  if (!list.length) {
+    messages.replaceChildren(
+      element('p', 'empty', 'A running response appears after it is saved on the desktop.'),
+    )
+    return
+  }
+  // Patch existing cards by index instead of rebuilding the whole list: a full
+  // replaceChildren on every poll tears down the nodes the browser anchors
+  // scroll position to, which is what made scrolling jitter and stall while a
+  // reply streamed in.
+  if (![...messages.children].every((child) => child.classList.contains('message')))
+    messages.replaceChildren()
+  list.forEach((message, index) => {
+    let card = messages.children[index]
+    if (!card) {
+      card = element('article', 'message')
+      messages.append(card)
+    }
+    let role = card.querySelector('.message-role')
+    if (!role) {
+      role = element('div', 'message-role')
+      card.prepend(role)
+    }
+    role.textContent = message.role
+    let summary = card.querySelector('.message-summary')
+    if (message.summary) {
+      if (!summary) {
+        summary = element('div', 'message-summary')
+        role.after(summary)
+      }
+      summary.textContent = message.summary
+    } else if (summary) {
+      summary.remove()
+    }
+    let content = card.querySelector('.message-content')
+    if (!content) {
+      content = element('div', 'message-content')
+      card.append(content)
+    }
+    renderMessageContent(content, message, index)
+  })
+  while (messages.children.length > list.length) messages.lastChild.remove()
+}
+
 async function refreshThread() {
   const row = selected
   if (!token || !row) return
@@ -425,21 +470,7 @@ async function refreshThread() {
     const signature = JSON.stringify(data.messages)
     if (signature === messageSignature) return revealPrompt()
     messageSignature = signature
-    messages.replaceChildren(
-      ...data.messages.map((message, index) => {
-        const card = element('article', 'message')
-        card.append(element('div', 'message-role', message.role))
-        if (message.summary) card.append(element('div', 'message-summary', message.summary))
-        const content = element('div', 'message-content')
-        renderMessageContent(content, message, index)
-        card.append(content)
-        return card
-      }),
-    )
-    if (!data.messages.length)
-      messages.append(
-        element('p', 'empty', 'A running response appears after it is saved on the desktop.'),
-      )
+    renderMessages(data.messages)
     if (document.activeElement === messageInput) revealComposer()
     revealPrompt()
   } catch (cause) {
