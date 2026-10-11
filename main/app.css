@@ -210,7 +210,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --group-header-font-weight: 600;
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
 .streaming-markdown {
   & .stream-pending {
     white-space: pre-wrap;
@@ -271,6 +271,11 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   & table {
     max-width: 100%;
   }
+  & .table-wrapper {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
   & .mermaid-diagram svg {
     display: block;
     max-width: 100%;
@@ -281,7 +286,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   }
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
 .streaming-markdown {
   line-height: var(--sm-line-height, 1.55);
   word-break: break-word;
@@ -464,6 +469,10 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
     white-space: normal;
     overflow-x: auto;
     overflow-y: hidden;
+  }
+  & .table-wrapper:focus-visible {
+    outline: 2px solid var(--sm-accent, #007acc);
+    outline-offset: 2px;
   }
   & th,
   & td {
