@@ -374,7 +374,10 @@ already done by slices 3 and 6, so what is left is what a screenshot of each arr
 - **Already done:** the side panel at a narrow chat pane (stacked card, project tiles shrink to
   one-line pills, Approve stays above the composer, `activity-home.demo.ts`), the light theme, the
   context ring ([#3407](https://github.com/copse-dev/agent-pane/pull/3407),
-  [#3515](https://github.com/copse-dev/agent-pane/pull/3515)). The ring was **not** re-read against the prototype's `combined-usage` workshop in this pass; it is the one slice 7 item still unchecked (see [Intentionally left](#intentionally-left)).
+  [#3515](https://github.com/copse-dev/agent-pane/pull/3515)). Re-read against the prototype's
+  `combined-usage` workshop on 2026-10-11 (see [Intentionally left](#intentionally-left)): geometry and
+  colour match; four wording/layout differences remain and one section (Classifiers) is mid-flight
+  on [#3413](https://github.com/copse-dev/agent-pane/pull/3413), none a regression.
 - **Built here, found by screenshots of the new arrangements** (`activity-home-panels.demo.ts`):
   - Under the portrait chrome (bottom panel) the composer sits above the mode strip, but the home
     reserved room for the composer only, so the caption and the card's foot ran under it by about
@@ -431,7 +434,37 @@ buttons (Memories, Roadmap) differ for that reason alone.
 - **Bottom panel height.** The card is short beside a bottom panel. Fixing it means resizing or
   collapsing the card against the panel, which is a product decision, not polish.
 - **Thread drag** between projects, as decided.
-- **Context ring against the prototype** (the plan's last item): not re-checked.
+- **Context ring against the prototype** (the plan's last item). Re-checked 2026-10-11: the
+  prototype's `combined-usage` workshop (`prototypes/combined-usage/index.html`) and the shipped
+  ring (`src/renderer/views/context-wheel.ts`, `footer-usage-popover.ts`) were driven through the
+  same mid-thread and subagents-plus-classifiers states, dark and light, via the browser demo tier
+  (`npx wdio run wdio.demo.conf.ts`) and compared against the committed `footer-usage-tooltip.png`
+  / `context-wheel-*.png` Electron references. Geometry and colour are a faithful port: the ring
+  (r=6 in a 16x16 viewbox, 14px), the 8px swatches, the 6px status dots, the segment palette
+  (`#6aa3ff`/`#4fd1c5`/`#b794f4`/`#f6ad55`/`#a0aec0`/`#68d391`) and the 80%/95% warn/danger
+  thresholds are pixel- and hex-identical in both, in both themes. Four differences remain, read as
+  independent wording drift rather than regressions, so left as is pending a design decision:
+  - No mode chip. The prototype's header carries a trailing "Regular" / "ACP · \<agent\>" pill; the
+    shipped header is plain text, and the ACP source instead appears as a note line lower in the
+    popover.
+  - No stacked bar. The prototype draws a thin proportional `.stackbar` under the header before the
+    segment rows; the shipped popover goes straight from the header into the rows.
+  - Three segment labels changed since the prototype was frozen: "MCP" → "MCP tools", "History" →
+    "Conversation", "Latest message" → "Your message" (`CONTEXT_SEGMENT_LABELS` in
+    `packages/agent/src/context-breakdown.ts`).
+  - The Usage row does not right-align its token total opposite the "Usage" label the way the
+    prototype's two-ended flex row does; the shipped version is one left-aligned string ("Usage ·
+    17.7k tokens").
+
+  The prototype's **Classifiers** section (shell-guard / prompt-injection verdicts, calls, latency)
+  is not in `FooterUsageTooltipModel` on `main` yet, but it is not an unaddressed gap: open PR
+  [#3413](https://github.com/copse-dev/agent-pane/pull/3413) (stacked on #3407) already adds it —
+  recording per-call verdict/latency/tokens on the decision log, a `usage:get-thread-classifier-use`
+  IPC channel, and a Classifiers row set beneath Usage in the popover, with its own
+  `classifier-use-hover.e2e.ts` and screenshot. It was blocked on review/merge as of 2026-10-11, not
+  abandoned or unscoped. No code changed here; screenshots were taken for design review, not
+  committed.
+
 - **Real-keyboard and Chromium layout cost** from [Validation findings](#validation-findings) are
   still unmeasured.
 
