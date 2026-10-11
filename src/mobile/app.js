@@ -26,6 +26,7 @@ let sessionId = null
 let access = 'read'
 let runId = null
 let refreshing = false
+let refreshPending = false
 let sending = false
 let decisionSignature = ''
 let inlineDecisionSignature = ''
@@ -154,7 +155,11 @@ function renderGroups(rows) {
 }
 
 async function refresh() {
-  if (!token || selected || refreshing) return
+  if (!token || selected) return
+  if (refreshing) {
+    refreshPending = true
+    return
+  }
   refreshing = true
   try {
     const data = await api('/api/activity')
@@ -187,6 +192,10 @@ async function refresh() {
     fail(cause.message)
   } finally {
     refreshing = false
+    if (refreshPending) {
+      refreshPending = false
+      void refresh()
+    }
   }
 }
 
@@ -374,6 +383,7 @@ async function refreshInlineDecision() {
       inlineDecision.hidden = true
       inlineDecision.replaceChildren()
       renderGroups(lastActivityRows)
+      await refresh()
       return
     }
     renderInlineDecision(data, row)
