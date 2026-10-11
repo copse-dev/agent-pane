@@ -108,6 +108,7 @@ describe('settings model routing placement', function () {
 
     await chatModelPicker.$('.model-picker-trigger').click()
     for (const value of [
+      'auto:match-prompt',
       'auto:best-value',
       'auto:best-intellect',
       'auto:cheapest',
