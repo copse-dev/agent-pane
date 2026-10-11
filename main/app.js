@@ -65264,14 +65264,10 @@ function markThreadUnread(store2, threadId, at3 = Date.now()) {
   store2.emit("threads_changed");
 }
 function markThreadRead(store2, threadId) {
-  const { threads } = store2.getState();
-  if (!threads.some((thread) => thread.id === threadId && thread.unreadAt !== void 0)) return;
-  store2.setState({
-    threads: threads.map((thread) => {
-      if (thread.id !== threadId || thread.unreadAt === void 0) return thread;
-      const { unreadAt: _read, ...readThread } = thread;
-      return readThread;
-    })
+  if (getThreadById(store2, threadId)?.unreadAt === void 0) return;
+  patchThreadAnywhere(store2, threadId, (thread) => {
+    const { unreadAt: _read, ...readThread } = thread;
+    return readThread;
   });
   store2.emit("threads_changed");
 }
@@ -65640,12 +65636,10 @@ function updateContextSnapshot(store2, threadId, snapshot) {
   store2.emit("context_updated", threadId);
 }
 function clearContextSnapshot(store2, threadId) {
-  const threads = store2.getState().threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     const { contextSnapshot: _removed, ...rest } = t2;
     return rest;
   });
-  store2.setState({ threads });
   store2.emit("context_updated", threadId);
 }
 function setThreadTodos(store2, threadId, todos) {
@@ -65665,17 +65659,13 @@ function setMessageReview(store2, threadId, messageId, review) {
   store2.emit("review_changed", threadId, messageId);
 }
 function setMessageTurnOutcome(store2, threadId, messageId, turnOutcome) {
-  const threads = store2.getState().threads.map((thread) => {
-    if (thread.id !== threadId) return thread;
-    return {
-      ...thread,
-      messages: thread.messages.map(
-        (message2) => message2.id === messageId ? { ...message2, turnOutcome } : message2
-      ),
-      updatedAt: Date.now()
-    };
-  });
-  store2.setState({ threads });
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    messages: thread.messages.map(
+      (message2) => message2.id === messageId ? { ...message2, turnOutcome } : message2
+    ),
+    updatedAt: Date.now()
+  }));
   store2.emit("threads_changed");
 }
 function setThreadComparison(store2, threadId, comparison) {
@@ -65745,16 +65735,13 @@ function setReviewFindingDismissed(store2, threadId, findingId, dismissed, messa
   store2.emit("review_report_changed", threadId, messageId);
 }
 function setQueuePaused(store2, threadId, paused) {
-  const { threads } = store2.getState();
-  const thread = threads.find((t2) => t2.id === threadId);
+  const thread = getThreadById(store2, threadId);
   if (!thread || Boolean(thread.queuePaused) === paused) return;
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     if (paused) return { ...t2, queuePaused: true, updatedAt: Date.now() };
     const { queuePaused: _removed, ...rest } = t2;
     return { ...rest, updatedAt: Date.now() };
   });
-  store2.setState({ threads: updated });
   store2.emit("threads_changed");
 }
 function setThreadStatus(store2, threadId, status) {
@@ -66001,9 +65988,16 @@ function metaSig(meta3) {
   return JSON.stringify(meta3);
 }
 function metaPatch(prev, next) {
-  const patch = { ...next };
-  for (const key of Object.keys(prev)) {
-    if (!Object.hasOwn(next, key)) patch[key] = void 0;
+  const before = { ...prev };
+  const after = { ...next };
+  const patch = {};
+  for (const key of Object.keys(after)) {
+    if (!Object.hasOwn(before, key) || JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+      patch[key] = after[key];
+    }
+  }
+  for (const key of Object.keys(before)) {
+    if (!Object.hasOwn(after, key)) patch[key] = void 0;
   }
   return patch;
 }
