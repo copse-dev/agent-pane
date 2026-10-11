@@ -668,6 +668,20 @@ describe('tool-display', () => {
     assert.equal(items[1].label, 'Proposed a thread')
   })
 
+  it('keeps an ACP-bridged proposed thread outside the turn rollup too', () => {
+    // ACP agents report the raw MCP name (`mcp__copse__propose_thread`), not
+    // the bare tool name; the rollup check has to see through that the same
+    // way the card lookup does.
+    const items = buildToolCallDisplayItems([
+      tc('2', 'read_file'),
+      tc('4', 'mcp__copse__propose_thread'),
+    ])
+    assert.equal(items.length, 2)
+    assert.equal(items[1]?.type, 'individual')
+    assert.equal(items[1].toolCall.id, '4')
+    assert.equal(items[1].label, 'Proposed a thread')
+  })
+
   it('aggregateToolStatus prefers running over done', () => {
     assert.equal(
       aggregateToolStatus([tc('1', 'read_file', 'done'), tc('2', 'read_file', 'running')]),
