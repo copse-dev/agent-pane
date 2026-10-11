@@ -3,7 +3,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 const EXPERIMENTAL = '.settings-section[data-section="experimental"]'
-const MOBILE_FIELDSET = `${EXPERIMENTAL} fieldset:has(#mobile-companion-manage)`
+const MOBILE_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="mobileCompanionEnabled"])`
 const VNC_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="vncEnabled"])`
 const DEVELOPER_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="developerMode"])`
 const CONCISE_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="conciseThreadsEnabled"])`
@@ -19,23 +19,23 @@ describe('browser-hosted Experimental settings copy', () => {
     await $(EXPERIMENTAL).waitForDisplayed()
   })
 
-  it('puts Mobile Companion setup and network guidance in Settings', async () => {
+  it('puts Mobile Companion setup and network guidance in Settings, not a modal', async () => {
     const fieldset = $(MOBILE_FIELDSET)
     await expect(fieldset).toBeDisplayed()
-    await expect(fieldset.$('#mobile-companion-manage')).toHaveText('Set up or manage…')
+    await expect(fieldset.$('input[name="mobileCompanionEnabled"]')).toExist()
+    assert.equal(await fieldset.$('#mobile-companion-manage').isExisting(), false)
     const hint = await fieldset.$('.field-hint').getText()
     assert.match(hint, /same local network/)
     assert.match(hint, /must stay awake/)
     assert.doesNotMatch(hint, /\bsecure(?:ly)?\b/i)
 
-    // The demo fixture reports Mobile Companion as enabled and running, so the
-    // pairing QR — a scannable copy of the same URL already shown as text —
-    // renders inline rather than requiring a trip through the native "Set up
-    // or manage…" dialog.
-    const qr = $('#mobile-companion-qr')
+    // The settings-footer scenario reports Mobile Companion as already enabled
+    // and running, so the pairing QR — a scannable copy of the same URL
+    // already shown as text — renders inline.
+    const qr = fieldset.$('#mobile-companion-qr')
     await expect(qr).toBeDisplayed()
-    await expect(qr.$('#mobile-companion-qr-image svg')).toExist()
-    await expect(qr.$('#mobile-companion-qr-url')).toHaveText('https://192.168.1.42:42773')
+    await expect(qr.$('.mobile-companion-qr-image svg')).toExist()
+    await expect(qr.$('.mobile-companion-qr-url')).toHaveText('https://192.168.1.42:42773')
 
     await fieldset.scrollIntoView()
     await saveElementScreenshot(MOBILE_FIELDSET, 'settings-mobile-companion.png')

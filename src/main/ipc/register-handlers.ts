@@ -46,7 +46,14 @@ import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boun
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
-import { getMobileCompanionStatus, showMobileCompanion } from '../windows/mobile-desktop.ts'
+import {
+  disableMobileCompanion,
+  enableMobileCompanion,
+  getMobileCompanionState,
+  respondToMobilePairing,
+  revokeMobileDevice,
+  setMobileDeviceAccess,
+} from '../services/mobile/mobile-companion-service.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
 import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
@@ -604,18 +611,48 @@ export function registerAllHandlers(
   threadHistoryEditRuntime: ThreadHistoryEditRuntime,
   threadArchivingRuntime: ThreadArchivingRuntime,
 ): void {
-  ipcMain.handle('mobile:manage', async (event) => {
+  const mobileAddressSchema = z.string().regex(/^(?:\d{1,3}\.){3}\d{1,3}$/)
+  const mobileDeviceAccessPairSchema = z.tuple([z.uuid(), z.enum(['read', 'control'])])
+  const mobileDeviceIdSchema = z.uuid()
+  const mobilePairingDecisionSchema = z.enum(['read', 'control', 'deny'])
+
+  ipcMain.handle('mobile:get-state', (event) => {
     assertMainFrameSender(event, win)
-    await showMobileCompanion(win)
+    return getMobileCompanionState()
+  })
+  ipcMain.handle('mobile:enable', async (event, rawAddress: unknown) => {
+    assertMainFrameSender(event, win)
+    const address = parseIpcArgs(mobileAddressSchema, [rawAddress])
+    await enableMobileCompanion(address)
+  })
+  ipcMain.handle('mobile:disable', async (event) => {
+    assertMainFrameSender(event, win)
+    await disableMobileCompanion()
+  })
+  ipcMain.handle('mobile:set-device-access', (event, ...args) => {
+    assertMainFrameSender(event, win)
+    const [id, access] = parseIpcArgs(mobileDeviceAccessPairSchema, args)
+    setMobileDeviceAccess(id, access)
+  })
+  ipcMain.handle('mobile:revoke-device', (event, rawId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(mobileDeviceIdSchema, [rawId])
+    revokeMobileDevice(id)
+  })
+  ipcMain.handle('mobile:respond-pairing', (event, rawDecision: unknown) => {
+    assertMainFrameSender(event, win)
+    const decision = parseIpcArgs(mobilePairingDecisionSchema, [rawDecision])
+    respondToMobilePairing(decision)
+  })
+  ipcMain.handle('mobile:reveal-certificate', (event) => {
+    assertMainFrameSender(event, win)
+    const path = getMobileCompanionState().rootCertificatePath
+    if (path) shell.showItemInFolder(path)
   })
 
   // Read once: Electron throws on `win.webContents` after the boot window is
   // closed, and a second main window can outlive it.
   const primaryWebContentsId = win.webContents.id
-  ipcMain.handle('mobile:status', async (event) => {
-    assertMainFrameSender(event, win)
-    return await getMobileCompanionStatus()
-  })
 
   const processManagerSnapshot = createProcessManagerSampler(
     () => app.getAppMetrics(),
