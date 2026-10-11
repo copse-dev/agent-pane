@@ -154,6 +154,15 @@ export function mountGitChangesPane(
 ): () => void {
   const listHeader = el('div', { class: 'pane-header git-changes-header' })
   const headerTitle = el('span', { class: 'pane-header-title' }, 'Changes')
+  // A pop-out keeps its own `activeThreadId` seeded once at open time
+  // (`applyPopoutSeed`) and is never re-seeded when the parent window switches
+  // threads, so it can go on showing a different thread's committed changes
+  // indefinitely with nothing distinguishing it from the thread currently in
+  // view. Label the pop-out with the thread it's actually showing so stale
+  // content is never mistaken for the active one.
+  const isPopoutWindow = document.documentElement.hasAttribute('data-popout-mode')
+  const headerOwner = el('span', { class: 'pane-header-owner git-changes-header-owner' })
+  headerOwner.hidden = true
   const bulkActions = el('div', { class: 'git-changes-bulk-actions' })
   const acceptAllBtn = el('button', { type: 'button', class: 'git-changes-bulk-btn' }, 'Accept all')
   const rejectAllBtn = el('button', { type: 'button', class: 'git-changes-bulk-btn' }, 'Reject all')
@@ -186,12 +195,29 @@ export function mountGitChangesPane(
   reviewBtn.hidden = true
   listHeader.append(
     headerTitle,
+    headerOwner,
     bulkActions,
     reviewBtn,
     panePopoutButton(store, api, 'changes', 'changes'),
     paneMaximizeButton(store, 'changes'),
     refreshBtn,
   )
+  function syncOwnerLabel(): void {
+    if (!isPopoutWindow) return
+    const { threads, activeThreadId } = store.getState()
+    const thread = threads.find((candidate) => candidate.id === activeThreadId)
+    if (!thread) {
+      headerOwner.hidden = true
+      return
+    }
+    const branch = thread.worktree?.branch ?? thread.gitBranch
+    const label = branch
+      ? `${thread.title || 'Untitled thread'} · ${branch}`
+      : thread.title || 'Untitled thread'
+    headerOwner.textContent = label
+    headerOwner.title = label
+    headerOwner.hidden = false
+  }
   function syncReviewButton(): void {
     const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
     reviewBtn.disabled = thread === undefined || thread.status === 'running'
@@ -214,6 +240,7 @@ export function mountGitChangesPane(
   })
   syncReviewGate()
   syncReviewButton()
+  syncOwnerLabel()
 
   // "Restore pre-session changes": surfaces the session's refs/copse/backups/*
   // snapshot so a user can one-click revert the paths Copse auto-applied over
@@ -380,6 +407,7 @@ export function mountGitChangesPane(
     renderRestoreBanner()
     clearViewer()
     renderList()
+    syncOwnerLabel()
     if (loaded && changesModeActive(store)) void syncSelection()
     return true
   }
