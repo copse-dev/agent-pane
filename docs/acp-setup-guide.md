@@ -26,7 +26,7 @@ For the architecture (how Copse acts as the ACP _client_), see
      HTTP on a port. Any validator that scans `lsof` for a listening port and
      POSTs to `http://localhost:PORT` will never connect — the agent opens no
      socket.
-  2. **Wrong token type.** A `claude /login` / `claude setup-token` value is an
+  2. **Wrong token type.** A `claude auth login` / `claude setup-token` value is an
      **OAuth token** (`sk-ant-oat01-…`). It is **not** an API key and cannot be
      passed as `ANTHROPIC_API_KEY` (that header expects `sk-ant-api…`).
 
@@ -59,7 +59,7 @@ The Zed adapter advertises `authMethods: [claude-login]` — it reuses the same
 credentials the `claude` CLI stores. If you already have it installed:
 
 ```sh
-claude /login   # only if not already logged in
+claude auth login   # only if not already logged in
 ```
 
 Then add it in Copse: **Settings → ACP agents → Claude Code → Add to my agents**.

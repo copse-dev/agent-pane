@@ -73,13 +73,13 @@ export interface KnownAcpAgent {
    * that the agent actually advertises this mode, so a stale value is harmless.
    */
   sandboxedPermissionMode?: string
-  /** Shell command that authenticates the agent / mints a token (e.g. `claude setup-token`). */
+  /** Shell command that authenticates the agent / mints a token (e.g. `claude auth login`). */
   setup?: string
   /**
    * Shell command that refreshes an *existing but expired* sign-in. Distinct from
-   * {@link setup}: minting a fresh long-lived token (`claude setup-token`) is the
-   * first-run path, while an expired OAuth session is fixed by signing in again
-   * (`claude /login`). Falls back to {@link setup} when absent — see
+   * {@link setup}: some agents mint a fresh token on first run and sign in again
+   * when an OAuth session lapses (Claude does both with `claude auth login`).
+   * Falls back to {@link setup} when absent — see
    * `acpReauthCommand`.
    */
   reauth?: string
@@ -192,7 +192,7 @@ export const RETIRED_ACP_AGENTS: readonly RetiredAcpAgent[] = [
     },
     sandboxedPermissionMode: 'acceptEdits',
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
-    note: "Zed's adapter for Claude Code. Sign in with `claude /login` or set `ANTHROPIC_API_KEY`.",
+    note: "Zed's adapter for Claude Code. Sign in with `claude auth login` or set `ANTHROPIC_API_KEY`.",
   },
 ]
 
@@ -281,8 +281,8 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*', '/tmp/claude'],
     },
     sandboxedPermissionMode: 'acceptEdits',
-    setup: 'claude setup-token',
-    reauth: 'claude /login',
+    setup: 'claude auth login',
+    reauth: 'claude auth login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
     note: 'Runs Claude Code through its agent SDK. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`).',
   },
