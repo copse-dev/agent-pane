@@ -75227,7 +75227,9 @@ function mountSettingsDialog(store2, api2) {
               clearInterval(machineRefreshTimer);
               return;
             }
-            void machinesSection.refresh().catch((error62) => console.error("[settings] Machine refresh failed:", error62));
+            void machinesSection.refresh().catch((error62) => {
+              console.error("[settings] Machine refresh failed:", error62);
+            });
           }, 3e3);
         },
         deactivate: () => {
