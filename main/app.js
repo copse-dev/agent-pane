@@ -53016,9 +53016,18 @@ function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
   renderClassifierTable(host, summary.classifiers, period === "allTime");
 }
 function createUsageSection(api2, store2, onRequestClose) {
+  let pendingSignInProvider = null;
+  const onSignIn = (provider) => {
+    const handler = createPlanSignInHandler(store2, provider, onRequestClose);
+    if (!handler) return void 0;
+    return () => {
+      pendingSignInProvider = provider;
+      handler();
+    };
+  };
   const handleSignIn = {
-    claude: createPlanSignInHandler(store2, "claude", onRequestClose) ?? void 0,
-    codex: createPlanSignInHandler(store2, "codex", onRequestClose) ?? void 0
+    claude: onSignIn("claude"),
+    codex: onSignIn("codex")
   };
   const root = document.createElement("div");
   root.className = "usage-section-root";
@@ -53150,9 +53159,14 @@ function createUsageSection(api2, store2, onRequestClose) {
       renderPlanSection(planEl, null, null, handleSignIn);
     }
     try {
-      const snapshot = await api2.usage.getPlanUsage();
+      const snapshot = await api2.usage.getPlanUsage(pendingSignInProvider !== null);
       cachedPlanSnapshot = snapshot;
       renderPlanSection(planEl, snapshot, null, handleSignIn);
+      if (pendingSignInProvider && snapshot.providers.some(
+        (provider) => provider.provider === pendingSignInProvider && provider.status === "ok"
+      )) {
+        pendingSignInProvider = null;
+      }
     } catch (err2) {
       const message2 = err2 instanceof Error ? err2.message : "Failed to load subscription plan usage.";
       renderPlanSection(planEl, null, message2, handleSignIn);
@@ -70572,11 +70586,11 @@ function mountSettingsDialog(store2, api2) {
               <legend>Concise threads</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="conciseThreadsEnabled" />
-                Show only the results of turns from highly capable models
+                Hide tool details and reasoning from highly capable models
               </label>
               <p class="field-hint">
                 For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning, and the
                 tool errors the model recovers from stay hidden; while it works, you see what it
                 is doing now. Other models always show the full thread.
               </p>
@@ -77213,7 +77227,7 @@ function conciseMultiTurnMessages(model) {
           id: `concise-multi-steps-${String(n2)}`,
           role: "assistant",
           model,
-          content: "Checking the code.",
+          content: "",
           toolCalls: [
             {
               id: `concise-multi-read-${String(n2)}`,
@@ -77264,7 +77278,15 @@ function conciseMultiTurnMessages(model) {
         role: "assistant",
         model,
         content,
-        toolCalls: [],
+        toolCalls: [
+          {
+            id: `concise-multi-audit-${String(n2)}-${String(i2)}`,
+            name: "sandbox_network_audit",
+            args: {},
+            status: "done",
+            result: "Audit complete."
+          }
+        ],
         createdAt: at3 + 3 + i2
       }))
     ];
