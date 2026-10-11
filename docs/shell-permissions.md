@@ -35,6 +35,7 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | Deferral mode                    | Session-only, thread-scoped; approval requests queue instead of blocking. Changes prompt handling, not authorization.                                                                                                                                   |
 | Unattended container             | Explicitly armed run on an attested disposable guest. Contained shell effects allow, outward effects defer or deny, host escapes deny; budgets required. Experimental, off by default, mutually exclusive with Guarded YOLO.                            |
 | ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default.                                                                          |
+| Agent managed thread mode        | Opt-in per thread for external coding agents. Copse does not apply its process sandbox and selects the agent-advertised Auto/Default session mode when available. The agent's permission requests are presented without Copse's shell classifier, remembered grants, or edit auto-approval. Copse's native-tool bridge remains available and every bridged call still uses the ordinary Copse tool gate. |
 
 ## Per-tool permission settings
 
