@@ -16,7 +16,7 @@ const PATCH = [
 export const BRIDGED_TOOL_SCENARIOS: readonly DemoScenario[] = [
   {
     id: 'bridged-tools',
-    label: 'ACP patch file links and shell task output',
+    label: 'Patch file links and command output',
     project: { id: 'demo-bridge-project', name: 'Bridge tools', path: '/demo/bridge' },
     settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off', model: MODEL },
     threads: [
@@ -56,7 +56,7 @@ export const BRIDGED_TOOL_SCENARIOS: readonly DemoScenario[] = [
     ],
     trace: {
       id: 'bridge-shell-trace',
-      label: 'Wrapped shell task without an ACP kind',
+      label: 'Run greeting tests',
       prompt: 'Run the greeting tests.',
       steps: [
         {
@@ -85,7 +85,7 @@ export const BRIDGED_TOOL_SCENARIOS: readonly DemoScenario[] = [
   },
   {
     id: 'bridged-tools-concise',
-    label: 'Concise ACP shell activity without an execute kind',
+    label: 'Running command in concise view',
     project: { id: 'demo-bridge-concise-project', name: 'Bridge tools', path: '/demo/bridge' },
     settings: {
       onboardingCompleted: true,
