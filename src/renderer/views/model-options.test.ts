@@ -263,7 +263,7 @@ describe('fetchModelOptions visibility', () => {
           title: 'Claude Code',
           command: 'claude-agent-acp',
           enabled: true,
-          availableModels: [{ value: 'sonnet', label: 'Claude Sonnet 4.6' }],
+          availableModels: [{ value: 'sonnet', label: 'Claude Sonnet 5.5' }],
         },
       ],
       planUsage: {
@@ -287,7 +287,7 @@ describe('fetchModelOptions visibility', () => {
       options.find((option) => option.value === 'acp:claude-acp#sonnet')?.coverage,
       'plan',
     )
-    assert.equal(options.find((option) => option.value === 'claude-sonnet-4-6')?.coverage, 'paid')
+    assert.equal(options.find((option) => option.value === 'claude-sonnet-5-5')?.coverage, 'paid')
     assert.equal(
       options.find((option) => option.value === 'lmstudio:qwen-local')?.coverage,
       'local',
@@ -718,13 +718,13 @@ describe('fetchModelOptions visibility', () => {
     )
   })
 
-  it('lists Sonnet 5.5 before the retained Sonnet 5 and 4.6 cloud options', async () => {
+  it('offers the latest Sonnet version and suppresses older cloud options', async () => {
     const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
     const cloud = options.filter((o) => o.group === 'Cloud models')
     const values = cloud.map((o) => o.value)
     assert.ok(values.includes('claude-sonnet-5-5'))
-    assert.ok(values.indexOf('claude-sonnet-5-5') < values.indexOf('claude-sonnet-5'))
-    assert.ok(values.indexOf('claude-sonnet-5') < values.indexOf('claude-sonnet-4-6'))
+    assert.ok(!values.includes('claude-sonnet-5'))
+    assert.ok(!values.includes('claude-sonnet-4-6'))
     assert.match(
       cloud.find((o) => o.value === 'claude-sonnet-5-5')?.label ?? '',
       /^Claude Sonnet 5\.5\b/,
@@ -852,7 +852,8 @@ describe('fetchModelOptions visibility', () => {
       id,
       'fixture must have a display name distinct from its id',
     )
-    assert.equal(current.label, `${modelDisplayLabel(id)} (no key)`)
+    assert.equal(current.label, `${modelDisplayLabel(id)} (no key) (newer version available)`)
+    assert.equal(current.disabled, true)
   })
 
   it('adds an intellect hint to a remote-agent model that resolves to a measurement', async () => {
@@ -990,15 +991,11 @@ describe('fetchModelOptions visibility', () => {
       mockApi({ available: { anthropic: true, openai: true, 'openai:gpt-6-astra': true } }),
       '',
     )
-    // Opus 5 joins the frontier at the same $9/MTok as Opus 4.8 but higher
-    // intellect, so the frontier flag rides on 5 and 4.8 becomes dominated.
-    const opus5 = options.find((o) => o.value === 'claude-opus-5')
+    const opus5 = options.find((o) => o.value === 'claude-opus-5-5')
     assert.ok(opus5)
-    assert.equal(opus5.label, `Claude Opus 5: ${currentCloudIntellectHint('claude-opus-5')}`)
+    assert.equal(opus5.label, `Claude Opus 5.5: ${currentCloudIntellectHint('claude-opus-5-5')}`)
     const opus = options.find((o) => o.value === 'claude-opus-4-8')
-    assert.ok(opus)
-    assert.equal(opus.label, `Claude Opus 4.8: ${currentCloudIntellectHint('claude-opus-4-8')}`)
-    assert.doesNotMatch(opus.label, /frontier/)
+    assert.equal(opus, undefined)
     const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
     assert.ok(haiku)
     assert.equal(haiku.label, `Claude Haiku 4.5: ${currentCloudIntellectHint('claude-haiku-4-5')}`)
@@ -1007,7 +1004,7 @@ describe('fetchModelOptions visibility', () => {
     assert.equal(gpt4o.label, `GPT-4o: ${currentCloudIntellectHint('gpt-4o')}`)
   })
 
-  it('only shows GPT-6 Astra when the OpenAI account advertises it', async () => {
+  it('retains an advertised older GPT-6 Astra selection with its version warning', async () => {
     const unavailable = await fetchModelOptions(mockApi({ available: { openai: true } }), '')
     assert.equal(
       unavailable.some((option) => option.value === 'gpt-6-astra'),
@@ -1016,12 +1013,17 @@ describe('fetchModelOptions visibility', () => {
 
     const available = await fetchModelOptions(
       mockApi({ available: { openai: true, 'openai:gpt-6-astra': true } }),
-      '',
+      'gpt-6-astra',
     )
     assert.equal(
       available.some((option) => option.value === 'gpt-6-astra'),
       true,
     )
+    const astra = available.find((option) => option.value === 'gpt-6-astra')
+    assert.ok(astra)
+    assert.equal(astra.disabled, true)
+    assert.match(astra.label, /newer version available/)
+    assert.doesNotMatch(astra.label, /no key/)
   })
 
   it('keeps the current selection selectable even with no key', async () => {
