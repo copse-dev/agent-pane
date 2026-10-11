@@ -164,6 +164,16 @@ describe('model-proposed thread card', () => {
     unmount()
   })
 
+  it('renders the card for an ACP-bridged call reported as the raw MCP name', () => {
+    // ACP agents report `mcp__copse__propose_thread`, not the bare tool name;
+    // the card lookup has to see through the prefix the same way the label
+    // already does, or this falls back to a plain tool-call disclosure.
+    const { root, unmount } = mount([proposalCall({ name: 'mcp__copse__propose_thread' })])
+    const proposal = card(root)
+    assert.equal(proposal.dataset['proposalStatus'], 'pending')
+    unmount()
+  })
+
   it('leads with the human-readable description and folds the prompt away', () => {
     const { root, unmount } = mount()
     const proposal = card(root)
