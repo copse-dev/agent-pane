@@ -49,17 +49,19 @@ describe('titlebar branch status', () => {
     const root = document.createElement('div')
     document.body.append(root)
     let branchReads = 0
+    let remoteReads = 0
     const base = createFakeApi()
     const api: ApiClient = {
       ...base,
       git: {
         ...base['git'],
-        branchStatus: async (): ReturnType<ApiClient['git']['branchStatus']> => {
+        branchStatus: async () => {
+          remoteReads += 1
+          return { currentBranch: null, pr: null }
+        },
+        currentBranch: async () => {
           branchReads += 1
-          return {
-            currentBranch: store.getState().activeThreadId === 'thread-1' ? 'main' : 'feature/two',
-            pr: null,
-          }
+          return store.getState().activeThreadId === 'thread-1' ? 'main' : 'feature/two'
         },
       },
     }
@@ -83,6 +85,7 @@ describe('titlebar branch status', () => {
       store.setState({ activeThreadId: 'thread-2' })
       store.emit('threads_changed')
       await settle()
+      assert.equal(remoteReads, 0, 'titlebar background refreshes never query PR status')
       assert.equal(branchReads, 3, 'a visible thread switch does not wait for the debounce')
       assert.equal(root.querySelector('.workspace-branch')?.textContent, 'feature/two')
     } finally {
