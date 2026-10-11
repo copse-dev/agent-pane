@@ -82,6 +82,36 @@ describe('Coding agents list in Settings', () => {
     assert.ok(geometry, 'name and chip must both render')
     assert.ok(Math.abs(geometry.nameMid - geometry.chipMid) <= 4, 'chip is on the name row')
 
+    // Nothing in a row overlaps the next thing, and no row scrolls sideways.
+    const collisions = await browser.execute(() => {
+      const out: string[] = []
+      for (const row of document.querySelectorAll('.acp-row')) {
+        if (row.scrollWidth > row.clientWidth)
+          out.push(`${row.getAttribute('data-agent')}: overflow`)
+        const parts = [
+          '.acp-logo',
+          '.acp-row-name strong',
+          '.acp-row-chip',
+          '.acp-row-head > button',
+        ].flatMap((sel) => {
+          const el = row.querySelector(sel)
+          return el ? [{ sel, r: el.getBoundingClientRect() }] : []
+        })
+        for (const [i, a] of parts.entries()) {
+          for (const b of parts.slice(i + 1)) {
+            const apart =
+              a.r.right <= b.r.left + 0.5 ||
+              b.r.right <= a.r.left + 0.5 ||
+              a.r.bottom <= b.r.top + 0.5 ||
+              b.r.bottom <= a.r.top + 0.5
+            if (!apart) out.push(`${row.getAttribute('data-agent')}: ${a.sel} overlaps ${b.sel}`)
+          }
+        }
+      }
+      return out
+    })
+    assert.deepEqual(collisions, [], 'row parts must not overlap or overflow')
+
     await $('[data-testid="acp-add-toggle"]').click()
     for (const id of ['claude-acp', 'gemini', 'cursor']) {
       await expect($(`.acp-add-row[data-agent="${id}"]`)).toBeDisplayed()
