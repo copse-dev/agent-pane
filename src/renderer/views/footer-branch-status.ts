@@ -400,8 +400,11 @@ export function mountFooterBranchStatus(
    * running (including one waiting on an approval) or main reports background
    * work still attached to the checkout.
    */
-  function agentCanTouchCheckout(current: DetachedAttachment | null): boolean {
-    return getActiveThread()?.status === 'running' || current?.agentBusy === true
+  function agentCanTouchCheckout(current: RecoveryAttachment | null): boolean {
+    return (
+      getActiveThread()?.status === 'running' ||
+      (current?.state === 'detached' && current.agentBusy === true)
+    )
   }
 
   /** The detached state, only while it still describes the active thread. */
