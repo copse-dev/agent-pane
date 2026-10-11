@@ -12,6 +12,9 @@
  * a real repository without a guest.
  */
 
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 export type GitRunner = (cwd: string, args: string[]) => string
 
 /** The branch the host fetches from the carry-out bundle. */
@@ -29,6 +32,17 @@ export function bundleCarryOut(
   base: string,
   bundlePath: string,
 ): string[] {
+  for (const state of [
+    'rebase-merge',
+    'rebase-apply',
+    'MERGE_HEAD',
+    'CHERRY_PICK_HEAD',
+    'REVERT_HEAD',
+  ]) {
+    if (existsSync(resolve(workspace, git(workspace, ['rev-parse', '--git-path', state])))) {
+      throw new Error(`Cannot export an unfinished Git operation: ${state}`)
+    }
+  }
   const status = git(workspace, ['status', '--porcelain'])
   if (status.length > 0) {
     git(workspace, ['add', '-A'])

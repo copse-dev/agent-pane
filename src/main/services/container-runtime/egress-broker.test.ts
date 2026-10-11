@@ -4,6 +4,7 @@ import dns from 'node:dns'
 import { syncBuiltinESMExports } from 'node:module'
 import { createServer, type Server } from 'node:net'
 import { PassThrough } from 'node:stream'
+import { networkActivity } from '../diagnostics/network-activity.ts'
 import { EgressBroker } from './egress-broker.ts'
 import { EgressLink, type MuxStream } from './egress-link.ts'
 import { parseEgressRule } from './egress-rules.ts'
@@ -100,7 +101,18 @@ describe('EgressBroker', () => {
   it('relays bytes both ways for an admitted target and logs the connection', async () => {
     const answer = await ask(guest, `model.copse.internal:${String(origin.port)}`, 'hello')
     assert.ok('stream' in answer, `refused: ${'refused' in answer ? answer.refused : ''}`)
+    const row = networkActivity
+      .snapshot()
+      .rows.find((entry) => entry.target === `model.copse.internal:${String(origin.port)}`)
+    assert.equal(row?.status, 'active')
+    assert.equal(row.bytesSent, 5)
+    assert.equal(row.bytesReceived, 5)
     answer.stream.destroy()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(
+      networkActivity.snapshot().rows.find((entry) => entry.id === row.id)?.status,
+      'closed',
+    )
     assert.equal(answer.reply, 'HELLO')
     const connectEntry = broker
       .log()
@@ -125,6 +137,9 @@ describe('EgressBroker', () => {
     const refused = broker.log().find((e) => e.event === 'refused')
     assert.ok(refused)
     assert.equal(refused.origin, `github.com:${String(origin.port)}`)
+    const activity = networkActivity.snapshot().rows.find((row) => row.target === refused.origin)
+    assert.equal(activity?.status, 'blocked')
+    assert.equal(activity.bytesSent, 0)
   })
 
   it('refuses the bare suffix of a wildcard and a sibling domain', async () => {
