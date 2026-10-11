@@ -1813,7 +1813,10 @@ export function registerAllHandlers(
     const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), rawArgs)
     return getThreadClassifierUse(projectId, threadId)
   })
-  ipcMain.handle('usage:get-plan-usage', async () => loadPlanUsageSnapshotAndSample())
+  ipcMain.handle('usage:get-plan-usage', async (_event, force: unknown) => {
+    const refresh = parseIpcArgs(z.boolean().optional(), [force])
+    return loadPlanUsageSnapshotAndSample({ force: refresh === true })
+  })
   ipcMain.handle('usage:get-plan-worth-it', () => getPlanWorthItPayload())
   ipcMain.handle('usage:set-claude-plan-monthly-fee', async (event, fee: unknown) => {
     assertMainFrameSender(event, win)

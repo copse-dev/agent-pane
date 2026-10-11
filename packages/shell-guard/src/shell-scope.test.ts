@@ -548,6 +548,25 @@ PY`,
     assert.ok(xdg.reasons.some((x) => /xdg-open/.test(x)))
   })
 
+  it('sees an opener behind a pass-through wrapper', () => {
+    // The command-position regex stops at the wrapper, so `nohup open …` read as
+    // a contained command and auto-ran while bare `open` prompted.
+    for (const cmd of [
+      'nohup open https://attacker.example',
+      'nice open -a Calculator',
+      'env FOO=1 open ./report.html',
+      'timeout 5 open ./report.html',
+      'nohup xdg-open https://attacker.example',
+    ]) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
+      assert.ok(
+        r.reasons.some((x) => /outside the sandbox \((?:xdg-)?open\)/.test(x)),
+        cmd,
+      )
+    }
+  })
+
   it('does not treat `open` inside another command word as a launch', () => {
     // `npm run open` invokes a script named open, not the `open` binary.
     const r = analyzeShellCommand('npm run open', root)

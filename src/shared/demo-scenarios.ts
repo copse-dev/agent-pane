@@ -534,7 +534,7 @@ function conciseMultiTurnMessages(model: string): Thread['messages'] {
               id: `concise-multi-steps-${String(n)}`,
               role: 'assistant' as const,
               model,
-              content: 'Checking the code.',
+              content: '',
               toolCalls: [
                 {
                   id: `concise-multi-read-${String(n)}`,
@@ -588,7 +588,15 @@ function conciseMultiTurnMessages(model: string): Thread['messages'] {
         role: 'assistant' as const,
         model,
         content,
-        toolCalls: [],
+        toolCalls: [
+          {
+            id: `concise-multi-audit-${String(n)}-${String(i)}`,
+            name: 'sandbox_network_audit',
+            args: {},
+            status: 'done' as const,
+            result: 'Audit complete.',
+          },
+        ],
         createdAt: at + 3 + i,
       })),
     ]
@@ -1578,7 +1586,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'node .tmp/dep-candidates.mjs',
         bodyAdvice:
-          "The project sandbox would block this command:\n• Runs a script file from the project, so Copse can't tell what it does",
+          "The project sandbox would block this command:\n• Runs a script file from the project, so Copse can't tell what it does\n\nThis runs with your user account’s access to files and the network, beyond the project sandbox.",
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
@@ -1587,7 +1595,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'mkdir -p node_modules && ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild',
         bodyAdvice:
-          'The project sandbox would block this command:\n• Reaches outside the project with a ../ path',
+          'The project sandbox would block this command:\n• Reaches outside the project with a ../ path\n\nThis runs with your user account’s access to files and the network, beyond the project sandbox.',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
@@ -1596,7 +1604,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild',
         bodyAdvice:
-          'The project sandbox would block this command:\n• Reaches outside the project with a ../ path',
+          'The project sandbox would block this command:\n• Reaches outside the project with a ../ path\n\nThis runs with your user account’s access to files and the network, beyond the project sandbox.',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },

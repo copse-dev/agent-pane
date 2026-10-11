@@ -39,8 +39,10 @@ export function recordPlanUsageSample(snapshot: PlanUsageSnapshot, now = Date.no
  * Fetch live plan usage, append a history sample, and return the snapshot.
  * Failures still resolve (bridge never throws); sampling is best-effort.
  */
-export async function loadPlanUsageSnapshotAndSample(): Promise<PlanUsageSnapshot> {
-  const snapshot = await loadPlanUsageSnapshot()
+export async function loadPlanUsageSnapshotAndSample(options?: {
+  force?: boolean
+}): Promise<PlanUsageSnapshot> {
+  const snapshot = await loadPlanUsageSnapshot(options)
   try {
     recordPlanUsageSample(snapshot)
   } catch {
