@@ -4075,6 +4075,40 @@ describe('input bar footer classifier use', () => {
     assert.deepEqual(asked, ['thread-1', 'thread-2', 'thread-2'])
   })
 
+  it('asks once more when the hover opens during a read it did not start', async () => {
+    const release: Array<(use: typeof classifierUse | { calls: number; rows: [] }) => void> = []
+    const { host } = mountWith(
+      () =>
+        new Promise((resolve) => {
+          release.push(resolve)
+        }),
+    )
+    await settle()
+    assert.equal(release.length, 1, 'the mount read is pending')
+
+    // The pending read began before whatever the shadow check records next, so
+    // a hover during it must not rely on that answer alone.
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    wheel.dispatchEvent(new Event('focusin'))
+    assert.equal(release.length, 1, 'no second read while the first is pending')
+
+    release[0]?.({ calls: 0, rows: [] })
+    await settle()
+    assert.equal(release.length, 2, 'one follow-up read after it settles')
+
+    // That follow-up was started by the hover, so another hover event adds nothing.
+    wheel.dispatchEvent(new Event('mouseenter'))
+    release[1]?.(classifierUse)
+    await settle()
+    assert.equal(release.length, 2)
+    assert.match(
+      host.querySelector('.context-wheel-popover')?.textContent ?? '',
+      /Classifiers · 2 calls/,
+    )
+  })
+
   it('shows no classifier section when the thread asked none', async () => {
     const { host } = mountWith(async () => ({ calls: 0, rows: [] }))
     await settle()

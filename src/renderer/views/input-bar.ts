@@ -1547,6 +1547,11 @@ export function mountInputBar(
   let classifierUseOwner: string | null = null
   let classifierUseSeq = 0
   let classifierUseInFlight = false
+  // Whether the pending read was started by the hover itself. One that was not
+  // can have missed a call recorded since, so a hover during it asks again once
+  // it settles; one that was already covers what the hover wants.
+  let classifierUseInFlightForced = false
+  let classifierUseRereadQueued = false
 
   function refreshClassifierUse(thread: Thread | undefined, force = false): void {
     const projectId = store.getState().activeProjectId
@@ -1557,11 +1562,16 @@ export function mountInputBar(
       classifierUseSeq++
       // Whatever was pending is superseded and will not clear the flag itself.
       classifierUseInFlight = false
+      classifierUseRereadQueued = false
       return
     }
     const last = thread.messages.at(-1)
     const key = `${projectId}:${thread.id}:${thread.status}:${String(thread.messages.length)}:${String(last?.toolCalls.length ?? 0)}`
-    if (force ? classifierUseInFlight : key === classifierUseKey) return
+    if (force && classifierUseInFlight) {
+      if (!classifierUseInFlightForced) classifierUseRereadQueued = true
+      return
+    }
+    if (!force && key === classifierUseKey) return
     // Another thread's figures must not show while this one's are in flight.
     const owner = `${projectId}:${thread.id}`
     if (owner !== classifierUseOwner) classifierUse = null
@@ -1569,23 +1579,33 @@ export function mountInputBar(
     classifierUseKey = key
     const seq = ++classifierUseSeq
     classifierUseInFlight = true
+    classifierUseInFlightForced = force
+    classifierUseRereadQueued = false
+    // A hover that arrived during this read asks once more, after it has painted.
+    const settle = (): void => {
+      classifierUseInFlight = false
+      if (!classifierUseRereadQueued) return
+      classifierUseRereadQueued = false
+      refreshClassifierUse(getActiveThread(store), true)
+    }
     api.usage.getThreadClassifierUse(projectId, thread.id).then(
       (use) => {
         // A newer fetch (or a thread switch) has superseded this answer, and the
         // flag now belongs to that newer fetch.
         if (seq !== classifierUseSeq) return
-        classifierUseInFlight = false
         // A re-read that finds the same figures must not repaint: a repaint drops
         // the wheel's tabindex, which blurs it and closes a keyboard-opened hover.
         // A thread that asked no classifier shows nothing, the same as before the
         // answer arrived, so that answer needs no repaint either.
         const next = use.calls > 0 ? use : null
-        if (JSON.stringify(next) === JSON.stringify(classifierUse)) return
-        classifierUse = next
-        updateFooter()
+        if (JSON.stringify(next) !== JSON.stringify(classifierUse)) {
+          classifierUse = next
+          updateFooter()
+        }
+        settle()
       },
       () => {
-        if (seq === classifierUseSeq) classifierUseInFlight = false
+        if (seq === classifierUseSeq) settle()
       },
     )
   }
