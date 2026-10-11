@@ -108,8 +108,8 @@ describe('browser-hosted Activity home', () => {
     expect(probe.captionBottom).toBeLessThanOrEqual(probe.inputTop + 1)
     expect(probe.inputTop - probe.bodyBottom).toBeLessThanOrEqual(56)
     expect(probe.panePaddingBottom).toBe('0px')
-    // Docked, the composer keeps its own 1px border (the idle, centred one has none).
-    expect(probe.composerBorder).toBe('1px')
+    // Both docked and idle composers use the same borderless card surface.
+    expect(probe.composerBorder).toBe('0px')
     expect(probe.overflowsSideways).toBe(false)
     expect(probe.conversationDisplay).toBe('none')
     // Opening the screen must leave the caret in the composer, not in the list.

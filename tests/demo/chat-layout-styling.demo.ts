@@ -121,7 +121,7 @@ describe('browser-hosted chat layout styling', () => {
     await saveAppScreenshot('chat-layout-gradient-empty.png')
   })
 
-  it('centres the composer, ringed by its shadow, when the Activity home has nothing to list', async () => {
+  it('centres the borderless composer, lifted by its shadow, when the Activity home has nothing to list', async () => {
     // Prior test already opened a blank thread; ensure we stay on that surface
     // without a full remount (another navigation was the flake surface). This
     // scenario has nothing running or waiting, so the home steps aside.
@@ -151,12 +151,12 @@ describe('browser-hosted chat layout styling', () => {
     expect(layout).not.toBeNull()
     if (!layout) throw new Error('Missing Activity home or #input-bar')
     expect(layout.homeDisplay).toBe('none')
-    // Centred, its ring is the shadow, so the docked border is cleared.
+    // The centred card shares the docked composer's borderless surface and drop shadow.
     expect(layout.borderTop).toBe('0px')
     expect(layout.borderRight).toBe('0px')
     expect(layout.borderBottom).toBe('0px')
     expect(layout.borderLeft).toBe('0px')
-    expect(layout.boxShadow).toMatch(/0px 0px 0px 1px/)
+    expect(layout.boxShadow).toMatch(/0px 12px 48px 0px/)
     expect(Math.abs(layout.barMid - layout.paneMid)).toBeLessThanOrEqual(2)
     await saveAppScreenshot('chat-layout-activity-home.png')
   })
