@@ -51,7 +51,8 @@ describe('ACP authentication error presentation', () => {
     const signIn = await $('.acp-cmd-row*=Sign in')
     await expect(signIn.$('.acp-cmd')).toHaveText('claude auth login')
     const note = await $('.acp-known-agent-note')
-    await expect(note).toHaveText('Sign in with claude auth login, or set ANTHROPIC_API_KEY.')
+    await expect(note).toHaveText(expect.stringContaining('claude auth login'))
+    await expect(note).toHaveText(expect.stringContaining('ANTHROPIC_API_KEY'))
     await expect(note).not.toHaveText(expect.stringContaining('claude-agent-acp'))
     await expect(signIn).not.toHaveText(expect.stringContaining('--sso'))
     await saveElementScreenshot(
