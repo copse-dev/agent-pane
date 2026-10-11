@@ -92,6 +92,18 @@
     "label": "Inline thread reference chip geometry"
   },
   {
+    "id": "vault-setup",
+    "label": "Saved-secret encryption: migration pending"
+  },
+  {
+    "id": "vault-locked",
+    "label": "Saved-secret encryption: locked"
+  },
+  {
+    "id": "vault-verified",
+    "label": "Saved-secret encryption: verified"
+  },
+  {
     "id": "settings-footer",
     "label": "Settings scroll + sticky footer geometry"
   },
@@ -138,6 +150,14 @@
   {
     "id": "sidebar-thread-sort",
     "label": "Sidebar thread sort"
+  },
+  {
+    "id": "sidebar-cleanup-ssh",
+    "label": "Cleanup for SSH pull requests"
+  },
+  {
+    "id": "sidebar-cleanup-after-pr",
+    "label": "Cleanup after merged or closed PRs"
   },
   {
     "id": "sidebar-thread-changes",
