@@ -92,6 +92,18 @@
     "label": "Inline thread reference chip geometry"
   },
   {
+    "id": "vault-setup",
+    "label": "Saved-secret encryption: migration pending"
+  },
+  {
+    "id": "vault-locked",
+    "label": "Saved-secret encryption: locked"
+  },
+  {
+    "id": "vault-verified",
+    "label": "Saved-secret encryption: verified"
+  },
+  {
     "id": "settings-footer",
     "label": "Settings scroll + sticky footer geometry"
   },
@@ -140,6 +152,14 @@
     "label": "Sidebar thread sort"
   },
   {
+    "id": "sidebar-cleanup-ssh",
+    "label": "Cleanup for SSH pull requests"
+  },
+  {
+    "id": "sidebar-cleanup-after-pr",
+    "label": "Cleanup after merged or closed PRs"
+  },
+  {
     "id": "sidebar-thread-changes",
     "label": "Sidebar changes glyph"
   },
@@ -170,6 +190,18 @@
   {
     "id": "pr-relations",
     "label": "PR producing and related threads"
+  },
+  {
+    "id": "side-chats",
+    "label": "Side chats beside the main thread"
+  },
+  {
+    "id": "thread-context",
+    "label": "The thread Context panel"
+  },
+  {
+    "id": "side-chat-approval",
+    "label": "A side chat asks for approval over its parent thread"
   },
   {
     "id": "chat-layout-styling",
@@ -238,5 +270,17 @@
   {
     "id": "site-mcp-permissions",
     "label": "Copse.dev tour: per-tool MCP permissions"
+  },
+  {
+    "id": "approval-web-url",
+    "label": "Allow web origin?"
+  },
+  {
+    "id": "approval-browser-url",
+    "label": "Allow browser navigation?"
+  },
+  {
+    "id": "approval-provider-url",
+    "label": "Allow model provider host?"
   }
 ]
