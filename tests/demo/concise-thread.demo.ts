@@ -37,7 +37,7 @@ async function transcriptState(): Promise<TranscriptState> {
 }
 
 describe('concise thread view', () => {
-  it('shows only the screenshot and summary for a model above the gate', async () => {
+  it('keeps all assistant text and output while hiding tools and reasoning', async () => {
     await browser.url('/?scenario=concise-thread')
     await $('.msg-concise').waitForExist()
     await $('.tool-result-preview-image').waitForDisplayed()
@@ -46,8 +46,10 @@ describe('concise thread view', () => {
     expect(state.toolCards).toBe(0)
     expect(state.reasoning).toBe(0)
     expect(state.screenshots).toBe(1)
-    expect(state.texts).toHaveLength(1)
-    expect(state.texts[0]).toContain('Save now stays pinned')
+    expect(state.texts).toHaveLength(3)
+    expect(state.texts[0]).toContain('Let me look')
+    expect(state.texts[1]).toContain('Capturing the narrow layout')
+    expect(state.texts[2]).toContain('Save now stays pinned')
     // A process-only bubble with no output must take no room: it once survived
     // as an empty 16px band that stretched the gap under the prompt.
     const emptyBubbles = await browser.execute(
@@ -64,6 +66,21 @@ describe('concise thread view', () => {
     await browser.url('/?scenario=concise-thread-multi')
     await $('.msg-concise').waitForExist()
     await $('.tool-result-preview-image').waitForDisplayed()
+
+    const state = await transcriptState()
+    expect(state.toolCards).toBe(0)
+    expect(state.reasoning).toBe(0)
+    // Every answer carries an audit call, just like ACP's completed replies.
+    // Later assistant messages, including across user boundaries, must not hide it.
+    for (const answer of [
+      'Save now stays pinned',
+      'The footer was absolutely positioned',
+      'I switched it to a grid',
+      'Renamed',
+      'No. Nothing else needs changing.',
+      'Here is the 480px layout',
+    ])
+      expect(state.texts.some((text) => text.startsWith(answer))).toBe(true)
 
     const layout = await browser.execute(() => {
       const visible = (node: Element): node is HTMLElement =>
@@ -184,7 +201,7 @@ describe('concise thread view', () => {
     expect(state.texts.length).toBeGreaterThan(1)
   })
 
-  it('shows just the spinner and the current item while the model works', async () => {
+  it('keeps assistant text visible alongside activity while tools run', async () => {
     await browser.url('/?scenario=concise-thread-working')
     await $('.msg-concise-working').waitForExist()
     const activity = $('.agent-activity')
@@ -194,7 +211,7 @@ describe('concise thread view', () => {
     const state = await transcriptState()
     expect(state.toolCards).toBe(0)
     expect(state.reasoning).toBe(0)
-    expect(state.texts).toEqual([])
+    expect(state.texts).toEqual(['Let me look at how the settings form lays out its footer.'])
     await saveAppScreenshot('concise-thread-working.png')
   })
 })

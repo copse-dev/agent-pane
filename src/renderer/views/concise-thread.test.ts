@@ -5,7 +5,6 @@ import type { Message, Thread, ToolCall, TurnOutcome } from '@shared/types'
 import {
   conciseActivityLabel,
   conciseTurnSummaries,
-  hasLaterAssistantInTurn,
   isConciseCollapsedMessage,
   isConciseMessage,
   isConciseThread,
@@ -335,43 +334,40 @@ describe('concise turn summaries', () => {
 })
 
 describe('collapsed concise bubbles', () => {
-  const steps = message({ id: 'a1', model: CAPABLE, toolCalls: [tool()] })
+  const toolOnly = message({ id: 'a1', model: CAPABLE, content: '', toolCalls: [tool()] })
   const summary = message({ id: 'a2', model: CAPABLE })
 
-  it('collapses a process-only bubble once a later assistant bubble exists', () => {
-    assert.equal(isConciseCollapsedMessage([steps, summary], 0, true), true)
-    assert.equal(isConciseCollapsedMessage([steps, summary], 1, true), false)
+  it('collapses a bubble with no text and no produced output', () => {
+    assert.equal(isConciseCollapsedMessage([toolOnly, summary], 0, true), true)
+    assert.equal(isConciseCollapsedMessage([toolOnly], 0, true), true)
+    assert.equal(isConciseCollapsedMessage([toolOnly, summary], 1, true), false)
+  })
+
+  it('never collapses prose, whatever tools ran or whatever message follows', () => {
+    const narration = message({ id: 'a1', model: CAPABLE, toolCalls: [tool()] })
+    const running = message({ id: 'a1', model: CAPABLE, toolCalls: [tool({ status: 'running' })] })
+    const nextPrompt = message({ id: 'u2', role: 'user', content: 'Again' })
+    assert.equal(isConciseCollapsedMessage([narration, summary], 0, true), false)
+    assert.equal(isConciseCollapsedMessage([running], 0, true), false)
+    assert.equal(isConciseCollapsedMessage([narration, nextPrompt, summary], 0, true), false)
   })
 
   it('keeps a bubble that carries a thread proposal or reviewer-input card', () => {
     for (const name of ['propose_thread', 'request_review_input']) {
-      const offer = message({ id: 'a1', model: CAPABLE, toolCalls: [tool({ name })] })
+      const offer = message({
+        id: 'a1',
+        model: CAPABLE,
+        content: '',
+        toolCalls: [tool({ name })],
+      })
       assert.equal(isConciseCollapsedMessage([offer, summary], 0, true), false, name)
     }
-  })
-
-  it('stops looking for a later bubble at the next user prompt', () => {
-    const earlier = message({ id: 'a1', model: CAPABLE, toolCalls: [tool()] })
-    const nextPrompt = message({ id: 'u2', role: 'user', content: 'Again' })
-    const nextReply = message({ id: 'a2', model: CAPABLE })
-    const thread = [earlier, nextPrompt, nextReply]
-    assert.equal(hasLaterAssistantInTurn(thread, 0), false)
-    assert.equal(isConciseCollapsedMessage(thread, 0, true), false)
-    assert.equal(hasLaterAssistantInTurn([earlier, nextReply], 0), true)
-  })
-
-  it('keeps the turn’s last bubble even when it has tool calls, until a later one arrives', () => {
-    assert.equal(isConciseCollapsedMessage([steps], 0, true), false)
-  })
-
-  it('collapses a bubble with a tool running, since its text is narration', () => {
-    const running = message({ model: CAPABLE, toolCalls: [tool({ status: 'running' })] })
-    assert.equal(isConciseCollapsedMessage([running], 0, true), true)
   })
 
   it('keeps a bubble that produced a screenshot, and a failed turn’s text', () => {
     const shot = message({
       model: CAPABLE,
+      content: '',
       toolCalls: [
         tool({
           images: [{ dataUrl: 'data:image/png;base64,AA', name: 's.png', kind: 'screenshot' }],
@@ -384,8 +380,8 @@ describe('collapsed concise bubbles', () => {
   })
 
   it('collapses nothing with the view off or for a model below the gate', () => {
-    assert.equal(isConciseCollapsedMessage([steps, summary], 0, false), false)
-    const modest = message({ model: MODEST, toolCalls: [tool()] })
+    assert.equal(isConciseCollapsedMessage([toolOnly, summary], 0, false), false)
+    const modest = message({ model: MODEST, content: '', toolCalls: [tool()] })
     assert.equal(isConciseCollapsedMessage([modest, summary], 0, true), false)
   })
 })

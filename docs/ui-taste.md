@@ -980,8 +980,9 @@ Specs: `src/shared/tools/tool-display.test.ts`, `src/renderer/views/tool-display
 ## Concise threads: hide the process, never the way back
 
 For a model above the intellect gate (`views/concise-thread.ts`) the transcript shows what the
-turn _produced_ — screenshots, evidence, canvas previews and the closing summary — and hides tool
-cards, reasoning and recovered tool errors. On by default; Settings → Appearance → Concise threads
+turn _said and produced_ — every assistant message, screenshots, evidence and canvas previews (see
+[Concise thread content](#concise-thread-content)) — and hides tool cards, reasoning and recovered
+tool errors. On by default; Settings → Appearance → Concise threads
 turns it off. Hiding is only acceptable while these hold:
 
 - **Every abridged turn has an exit.** A finished turn carries a quiet footer under it (`Show steps ›
@@ -992,7 +993,8 @@ turns it off. Hiding is only acceptable while these hold:
   you." lived on a tool card, so the footer repeats it; the edit total is the one fact about hidden
   work a reader needs unasked. Failed turns keep their text and recovery card (the model never saw
   that error, so it cannot have handled it).
-- **A process-only bubble takes no room**, including the turn's last one when it has no text. Chrome
+- **A bubble with no user-facing content takes no room**, including the turn's last one when it has
+  no text; prose is never hidden because a tool ran or a later message arrived. Chrome
   that belongs to a bubble (the model label, the agent marker) is placed on the next bubble that is
   _painted_, or a mid-thread model switch would be invisible.
 - **Toggling holds the reader's place.** Opening keeps the turn's prompt where it is so the steps
@@ -1594,3 +1596,12 @@ is approved for browsing. Data URL prototypes have no network access. Ordinary p
 including user-opened local development servers, retain their server's CSP. Bundle
 prototype assets locally; see [browser network policy](browser-network-policy.md) for
 the boundary and tests.
+
+### Concise thread content
+
+Concise view hides tool cards, reasoning and terminal references for eligible models, while
+keeping every assistant message visible, including progress text and answers that carry audit
+calls. Starting a tool, completing a turn or adding a later user/assistant message must not remove
+previously visible prose. Only bubbles with no user-facing content collapse. Produced images,
+visual evidence, canvas previews and user-input cards remain visible. Expanding a turn restores
+its ordinary tool and reasoning disclosures; full view is unchanged.

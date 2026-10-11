@@ -8,6 +8,7 @@ import { load } from 'js-yaml'
 import { z } from 'zod'
 import {
   command,
+  decode,
   authorize,
   assertCurrent,
   publicationRef,
@@ -19,6 +20,8 @@ import {
   OWNER_LOGIN,
   type FollowUpRequest,
 } from './lib/copse-follow-up.mts'
+
+import { verificationSchema } from './lib/copse-thread-resolution.mts'
 
 const owner = { id: OWNER_ID, login: OWNER_LOGIN, type: 'User' }
 const repository = { id: REPOSITORY_ID, full_name: REPOSITORY, default_branch: 'main' }
@@ -281,7 +284,44 @@ it('runs the actual prepare and publish entry against a scripted GitHub API and 
       head: { ...pull.head, sha: head },
       base: { ...pull.base, sha: base },
     }
+    const reviewBot = { __typename: 'Bot', login: 'copse-release-bot' }
     const routes = {
+      graphql: {
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: [
+                  {
+                    id: 'thread-1',
+                    isResolved: false,
+                    isOutdated: true,
+                    path: 'README.md',
+                    line: null,
+                    originalLine: 1,
+                    comments: {
+                      pageInfo: { hasNextPage: false },
+                      nodes: [
+                        {
+                          id: 'finding-1',
+                          body: 'Fix the value',
+                          updatedAt: 'now',
+                          author: reviewBot,
+                          pullRequestReview: {
+                            author: reviewBot,
+                            body: `<!-- copse-review:${head} -->`,
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        },
+      },
       'collaborators/jonathanKingston/permission': { permission: 'admin' },
       'pulls/123': livePull,
       'git/ref/heads/main': {
@@ -315,9 +355,25 @@ it('runs the actual prepare and publish entry against a scripted GitHub API and 
     const preload = join(root, 'api.mjs')
     writeFileSync(
       preload,
-      `import { readFileSync } from 'node:fs';
+      `import { readFileSync, writeFileSync } from 'node:fs';
 globalThis.fetch = async (url, options) => {
   if (options.headers.Authorization !== 'Bearer test-token') throw new Error('missing authentication');
+  if (String(url) === 'https://api.github.com/graphql') {
+    const routes = JSON.parse(readFileSync(${JSON.stringify(apiFile)}, 'utf8'));
+    const request = JSON.parse(options.body);
+    const thread = routes.graphql.data.repository.pullRequest.reviewThreads.nodes[0];
+    if (request.query.includes('addPullRequestReviewThreadReply')) {
+      thread.comments.nodes.push({id: 'receipt', body: request.variables.body, updatedAt: 'later', author: {__typename:'Bot',login:'copse-release-bot'}, pullRequestReview:null});
+      writeFileSync(${JSON.stringify(apiFile)}, JSON.stringify(routes));
+      return new Response(JSON.stringify({data:{addPullRequestReviewThreadReply:{comment:{id:'receipt'}}}}));
+    }
+    if (request.query.includes('resolveReviewThread')) {
+      thread.isResolved = true;
+      writeFileSync(${JSON.stringify(apiFile)}, JSON.stringify(routes));
+      return new Response(JSON.stringify({data:{resolveReviewThread:{thread:{id:'thread-1',isResolved:true}}}}));
+    }
+    return new Response(JSON.stringify(routes.graphql));
+  }
   const prefix = 'https://api.github.com/repos/copse-dev/agent-pane/';
   if (!String(url).startsWith(prefix)) throw new Error('unexpected API origin');
   const routes = JSON.parse(readFileSync(${JSON.stringify(apiFile)}, 'utf8'));
@@ -341,7 +397,8 @@ process.exit(result.status ?? 1);
       output = join(root, 'output'),
       summary = join(root, 'summary')
     writeFileSync(eventPath, JSON.stringify(event))
-    const run = (mode: string): string =>
+    let expectedHead = head
+    const run = (mode: string, runDir = join(root, 'run')): string =>
       execFileSync(process.execPath, ['--import', preload, 'scripts/copse-follow-up.mts', mode], {
         cwd: process.cwd(),
         encoding: 'utf8',
@@ -350,7 +407,8 @@ process.exit(result.status ?? 1);
           ...process.env,
           PATH: `${bin}:${process.env['PATH'] ?? ''}`,
           GH_TOKEN: 'test-token',
-          FOLLOW_UP_DIR: join(root, 'run'),
+          FOLLOW_UP_DIR: runDir,
+          EXPECTED_HEAD: expectedHead,
           GITHUB_EVENT_PATH: eventPath,
           GITHUB_EVENT_NAME: 'issue_comment',
           GITHUB_WORKFLOW_REF: `${REPOSITORY}/.github/workflows/copse-follow-up.yml@refs/heads/main`,
@@ -407,6 +465,63 @@ process.exit(result.status ?? 1);
     run('publish')
     assert.equal(git(['rev-parse', 'feature'], remote), commit)
     assert.ok(readFileSync(summary, 'utf8').includes(commit))
+    // Run the real verification entry points with a separate captured checkout.
+    expectedHead = commit
+    routes['pulls/123'].head.sha = commit
+    writeFileSync(apiFile, JSON.stringify(routes))
+    const verifyDir = join(root, 'verification')
+    run('prepare-verification', verifyDir)
+    const verification = decode(
+      readFileSync(join(verifyDir, 'verification.json'), 'utf8'),
+      verificationSchema,
+    )
+    assert.equal(verification.request.head, commit)
+    const verifyWorkspace = join(verifyDir, 'workspace')
+    assert.equal(git(['rev-parse', 'HEAD'], verifyWorkspace), commit)
+    writeFileSync(
+      join(verifyWorkspace, verification.outputPath),
+      JSON.stringify({
+        head: commit,
+        findings: [
+          {
+            threadId: 'thread-1',
+            verdict: 'addressed',
+            explanation: 'The reviewed value is fixed.',
+            evidence: [{ path: 'README.md', line: 1, quote: 'fixed' }],
+            checks: [
+              { command: 'test value', result: 'passed', summary: 'Expected value confirmed.' },
+            ],
+          },
+        ],
+      }),
+    )
+    git(['config', 'user.name', 'verifier'], verifyWorkspace)
+    git(['config', 'user.email', 'verifier@example.test'], verifyWorkspace)
+    git(['add', '-A'], verifyWorkspace)
+    git(['commit', '-qm', 'verifier verdict'], verifyWorkspace)
+    git(['update-ref', 'refs/copse/runs/verify', 'HEAD'], verifyWorkspace)
+    writeFileSync(
+      join(verifyDir, 'report.json'),
+      JSON.stringify({
+        carryIn: { sha: commit, dirty: false },
+        carryOut: { ref: 'refs/copse/runs/verify', error: null },
+        containerExit: 0,
+        cleanupError: null,
+        teardown: 'removed',
+        secretCanary: { present: false },
+        result: {
+          stopReason: 'completed',
+          promptsAttempted: 0,
+          deferrals: [],
+          containment: { declared: true },
+        },
+      }),
+    )
+    run('validate-verification', verifyDir)
+    assert.match(readFileSync(output, 'utf8'), /has_findings=true/)
+    run('resolve-threads', verifyDir)
+    assert.match(readFileSync(summary, 'utf8'), /Resolved 1 verified Copse thread/)
+    assert.equal(git(['rev-parse', 'feature'], remote), commit) // Verdict never gets pushed.
     // A deleted command must stop publication, including on a retry.
     writeFileSync(apiFile, JSON.stringify({ 'pulls/123': livePull }))
     assert.throws(() => run('publish'))

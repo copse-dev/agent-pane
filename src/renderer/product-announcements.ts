@@ -22,7 +22,7 @@ export const PRODUCT_ANNOUNCEMENTS: readonly ProductAnnouncement[] = [
     id: 'concise-threads-default-v1',
     title: 'Concise threads are now on',
     message:
-      'For highly capable models, threads now show results and the closing summary. Tool calls and reasoning are hidden while a turn runs and once it finishes.',
+      'For highly capable models, threads now keep every message and screenshot visible. Tool calls and reasoning are hidden while a turn runs and once it finishes.',
     detail:
       'Use Show steps under any turn to see everything, or turn this off in Settings → Appearance.',
     settingsAction: { label: 'Appearance settings', section: 'appearance' },

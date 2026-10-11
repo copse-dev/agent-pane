@@ -139,9 +139,7 @@ import {
   isConciseThread,
   syncConciseMessageClasses,
   conciseTurnSummaries,
-  hasLaterAssistantInTurn,
   isConciseCollapsedMessage,
-  isConciseStepsMessage,
   type ConciseTurnSummary,
 } from './concise-thread.ts'
 import {
@@ -3770,7 +3768,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // selector deliberately checks the live DOM, so a retained subagent card or
     // a canvas preview added later makes the bubble visible again automatically.
     msgEl.classList.toggle('msg-tool-run-member', isRunMember)
-    // Tool calls arriving mid-stream turn a concise bubble's text into narration.
+    // Refresh compact tool activity without changing assistant text visibility.
     const message = activeThread?.messages.find((m) => m.id === msgId)
     if (message) syncConciseMessageClasses(msgEl, message, conciseEnabledFor(activeThread, msgId))
 
@@ -4510,19 +4508,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const thread = getActiveThread(store)
     const enabled = store.getState().conciseThreadsEnabled
     const liveTurn = thread?.status === 'running' ? liveTurnStartId(thread.messages) : null
-    // A steps bubble followed by another in its own turn is narration; the
-    // stylesheet can't stop a sibling search at the next prompt, so say it here.
-    if (thread) {
-      for (const [index, msg] of thread.messages.entries()) {
-        const msgEl = list.querySelector<HTMLElement>(`:scope > [data-message-id="${msg.id}"]`)
-        msgEl?.classList.toggle(
-          'msg-concise-mid',
-          conciseEnabledFor(thread, msg.id) &&
-            isConciseStepsMessage(msg) &&
-            hasLaterAssistantInTurn(thread.messages, index),
-        )
-      }
-    }
     const wanted = new Map<string, { summary: ConciseTurnSummary; anchor: HTMLElement }>()
     if (thread && enabled) {
       for (const summary of conciseTurnSummaries(thread.messages)) {

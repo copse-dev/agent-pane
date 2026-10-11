@@ -1,8 +1,6 @@
-// Concise thread view (prototype): a model capable enough to be trusted with its
-// own process shows only what it produced — screenshots, visual evidence, canvas
-// previews and its closing summary — while its tool calls, reasoning, narration
-// and the tool errors it recovers from stay out of the transcript. While it
-// works, the activity row (spinner + the one current item) is the whole story.
+// Concise thread view keeps all assistant text and produced output visible.
+// Tool cards, reasoning and terminal references stay hidden; the activity row
+// reports live work. Tool-only bubbles collapse without hiding adjacent prose.
 //
 // The gate is the model's Artificial Analysis Intelligence Index on the
 // canonical scale, resolved per assistant message so a thread that switches
@@ -55,9 +53,8 @@ export function isConciseMessage(msg: Pick<Message, 'role' | 'model' | 'requeste
 }
 
 /**
- * Whether a concise message carries tool calls, so its text narrates steps
- * unless it is the turn's last bubble (the stylesheet decides that from the DOM,
- * which stays right as later bubbles arrive). A failed turn keeps its text.
+ * Whether a concise message carries tool steps. This class records activity;
+ * it must not determine whether the message's text is visible.
  */
 export function isConciseStepsMessage(
   msg: Pick<Message, 'role' | 'model' | 'requestedModel' | 'toolCalls' | 'turnOutcome'>,
@@ -66,9 +63,8 @@ export function isConciseStepsMessage(
 }
 
 /**
- * Whether a concise message is process rather than product: a tool is running
- * in it, so its text is narration rather than the summary, and everything but
- * its produced output is hidden. A failed turn keeps its text.
+ * Whether a concise message has an active tool. Assistant text remains visible
+ * throughout tool execution.
  */
 export function isConciseWorkingMessage(
   msg: Pick<Message, 'role' | 'model' | 'requestedModel' | 'toolCalls' | 'turnOutcome'>,
@@ -97,30 +93,17 @@ export function turnStartId(
   return null
 }
 
-/**
- * Whether another assistant bubble follows message `index` in the same turn: the
- * next user prompt ends the search, so a finished turn's last bubble is not made
- * intermediate by the turns after it.
- */
-export function hasLaterAssistantInTurn(messages: readonly Message[], index: number): boolean {
-  for (let i = index + 1; i < messages.length; i++) {
-    const role = messages[i]?.role
-    if (role === 'user') return false
-    if (role === 'assistant') return true
-  }
-  return false
-}
-
 /** Offers to the user stay painted in the concise view, so they are not hidden work. */
 function isOfferCall(toolCall: ToolCall): boolean {
   return toolCall.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(toolCall)
 }
 
 /**
- * Whether the concise view collapses message `index` to nothing: process-only,
- * with no text, screenshots or other produced output to show. Mirrors the
- * stylesheet's rule, from data, so chrome that belongs to a bubble (the model
- * label, the agent marker) can move to the next bubble that is actually painted.
+ * Whether the concise view collapses message `index` to nothing: it has no
+ * text, screenshots or other produced output to show. Mirrors the stylesheet's
+ * rule, from data, so chrome that belongs to a bubble (the model label, the
+ * agent marker) can move to the next bubble that is actually painted. Assistant
+ * text is never hidden, whatever tools ran or whatever message follows.
  */
 export function isConciseCollapsedMessage(
   messages: readonly Message[],
@@ -129,11 +112,9 @@ export function isConciseCollapsedMessage(
 ): boolean {
   const msg = messages[index]
   if (!enabled || !msg || !isConciseMessage(msg)) return false
-  const process =
-    isConciseWorkingMessage(msg) ||
-    (isConciseStepsMessage(msg) && hasLaterAssistantInTurn(messages, index))
-  if (!process) return false
   const producesOutput =
+    msg.content.trim() !== '' ||
+    (msg.contentBlocks?.length ?? 0) > 0 ||
     (msg.visualEvidence?.length ?? 0) > 0 ||
     (msg.canvasArtefacts?.length ?? 0) > 0 ||
     msg.toolCalls.some((toolCall) => (toolCall.images?.length ?? 0) > 0 || isOfferCall(toolCall))

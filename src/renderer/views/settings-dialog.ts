@@ -1393,14 +1393,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <legend>Concise threads</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="conciseThreadsEnabled" aria-describedby="concise-threads-hint" />
-                Show only the results of turns from highly capable models
+                Hide tool details and reasoning from highly capable models
               </label>
               <p class="field-hint" id="concise-threads-hint">
                 For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
-                tool errors the model recovers from stay hidden, and every finished turn has a
-                Show steps button to open it in full; while a model works, you see what it is
-                doing now. Turn off to always show the full thread. Other models always show the
+                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning,
+                and the tool errors the model recovers from stay hidden, and every finished turn
+                has a Show steps button to open it in full; while a model works, you see what it
+                is doing now. Turn off to always show the full thread. Other models always show the
                 full thread.
               </p>
             </fieldset>

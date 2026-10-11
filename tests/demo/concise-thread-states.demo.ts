@@ -84,8 +84,9 @@ describe('concise thread view states', () => {
       'Interrupted when you sent a new message.Show steps1 tool call',
       'Show steps1 tool call+4−2',
     ])
-    // The cut-off turn paints nothing of its own; the follow-up's summary is the answer.
+    // The cut-off turn paints nothing of its own; every message of the follow-up stays.
     expect(painted(all, 'assistant').map((row) => row.text)).toEqual([
+      expect.stringContaining('Editing the stylesheet.'),
       expect.stringContaining('Save is pinned with a grid footer'),
     ])
     await saveAppScreenshot('concise-state-interrupted-by-message.png')
@@ -97,9 +98,10 @@ describe('concise thread view states', () => {
 
     const all = await rows()
     expect(painted(all, 'assistant').map((row) => row.text)).toEqual([
+      expect.stringContaining('Reading the form.'),
       expect.stringContaining('Save now stays pinned at every width.'),
     ])
-    expect(painted(all, 'assistant')[0]?.cards).toBe(0)
+    expect(painted(all, 'assistant').map((row) => row.cards)).toEqual([0, 0])
     expect(painted(all, 'footer')[0]?.text).toBe('Show steps2 tool calls+4−2')
     await saveAppScreenshot('concise-state-default-on.png')
   })
@@ -128,7 +130,11 @@ describe('concise thread view states', () => {
 
     await expect($('#approval-dialog .approval-heading')).toHaveText('Run outside sandbox?')
     const all = await rows()
-    expect(painted(all, 'assistant')).toHaveLength(0)
+    // The running bubble keeps its prose; only its tool card is hidden.
+    expect(painted(all, 'assistant').map((row) => row.text)).toEqual([
+      expect.stringContaining('Installing first.'),
+    ])
+    expect(painted(all, 'assistant')[0]?.cards).toBe(0)
     expect(painted(all, 'footer')).toHaveLength(0)
     await expect($('.agent-activity-label')).toHaveText('Running pnpm install…')
     await saveAppScreenshot('concise-state-approval.png')
@@ -142,7 +148,9 @@ describe('concise thread view states', () => {
     expect(await $('#ask-user-dialog').getText()).toContain(
       'Which migration order should the schema bump use?',
     )
-    expect(painted(await rows(), 'assistant')).toHaveLength(0)
+    expect(painted(await rows(), 'assistant').map((row) => row.text)).toEqual([
+      expect.stringContaining('Reading the migrations.'),
+    ])
     await saveAppScreenshot('concise-state-question.png')
   })
 
@@ -152,7 +160,7 @@ describe('concise thread view states', () => {
     await footer.waitForDisplayed()
 
     const closed = await rows()
-    expect(painted(closed, 'assistant').map((row) => row.cards)).toEqual([0])
+    expect(painted(closed, 'assistant').map((row) => row.cards)).toEqual([0, 0])
     expect(await $$('.tool-card-subagent').filter((card) => card.isDisplayed())).toHaveLength(0)
     await saveAppScreenshot('concise-state-subagent.png')
 
@@ -166,7 +174,9 @@ describe('concise thread view states', () => {
     await $('.agent-activity').waitForDisplayed()
 
     await expect($('.agent-activity-label')).toHaveText('Exploring files…')
-    expect(painted(await rows(), 'assistant')).toHaveLength(0)
+    expect(painted(await rows(), 'assistant').map((row) => row.text)).toEqual([
+      expect.stringContaining('Delegating the search.'),
+    ])
     expect(painted(await rows(), 'footer')).toHaveLength(0)
     await saveAppScreenshot('concise-state-subagent-running.png')
   })
@@ -177,7 +187,7 @@ describe('concise thread view states', () => {
     await footer.waitForDisplayed()
 
     const closed = await rows()
-    expect(painted(closed, 'assistant').map((row) => row.cards)).toEqual([0])
+    expect(painted(closed, 'assistant').map((row) => row.cards)).toEqual([0, 0])
     expect(painted(closed, 'footer')[0]?.text).toBe('Show steps3 tool calls+5−3')
     await saveAppScreenshot('concise-state-long-output.png')
 
@@ -231,6 +241,7 @@ describe('concise thread view states', () => {
     expect(prompt?.text).toContain('Pasted text')
     await expect($('.msg-user img')).toBeDisplayed()
     expect(painted(await rows(), 'assistant').map((row) => row.text)).toEqual([
+      expect.stringContaining('Comparing the footer with the screenshot.'),
       expect.stringContaining('The footer now matches your screenshot.'),
     ])
     await saveAppScreenshot('concise-state-attachments.png')
@@ -250,6 +261,7 @@ describe('concise thread view states', () => {
       'assistant:0',
       'user:0',
       'assistant:0',
+      'assistant:0',
       'footer:0',
     ])
     await saveAppScreenshot('concise-state-resumed.png')
@@ -265,23 +277,25 @@ describe('concise thread view states', () => {
       .map((row) => `${row.kind}:${String(row.cards)}`)
     expect(summary).toEqual([
       'user:0',
-      'assistant:0', // Opus: concise
+      'assistant:0', // Opus: concise, prose kept
+      'assistant:0',
       'footer:0',
       'user:0',
       'assistant:1', // Haiku, below the gate: full, with its card
       'assistant:0',
       'user:0',
       'assistant:0', // Opus again: concise
+      'assistant:0',
       'footer:0',
     ])
     // Each segment's model label sits on a bubble that is painted, so the user
-    // can see where the model changed even though the work bubbles are hidden.
+    // can see where the model changed.
     const labels = await browser.execute(() =>
       [...document.querySelectorAll('.messages-list .msg-assistant')]
         .filter((node) => node instanceof HTMLElement && node.checkVisibility())
         .map((node) => node.querySelector('.message-model')?.textContent?.trim() ?? ''),
     )
-    expect(labels).toEqual(['Claude Opus 5.5', 'Claude Haiku 4.5', '', 'Claude Opus 5.5'])
+    expect(labels).toEqual(['Claude Opus 5.5', '', 'Claude Haiku 4.5', '', 'Claude Opus 5.5', ''])
     await saveAppScreenshot('concise-state-model-switch.png')
   })
 })
