@@ -21,9 +21,14 @@ export function createTerminalWebLinkHandler(
 ): ILinkHandler {
   return {
     activate: (_event, uri): void => {
-      void confirmOpen(uri).then((confirmed) => {
-        if (confirmed) void shell.openExternal(uri)
-      })
+      if (!/^https?:\/\//.test(uri)) return
+      void confirmOpen(uri)
+        .then(async (confirmed) => {
+          if (confirmed) await shell.openExternal(uri)
+        })
+        .catch((error: unknown) => {
+          console.warn('Could not open terminal link', error)
+        })
     },
   }
 }

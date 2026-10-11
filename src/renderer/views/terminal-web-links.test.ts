@@ -53,4 +53,22 @@ describe('terminal web links', () => {
 
     assert.deepEqual(seen, ['https://example.com/path'])
   })
+  it('ignores unsupported OSC 8 schemes before asking or dispatching IPC', async () => {
+    const seen: string[] = []
+    const handler = createTerminalWebLinkHandler(
+      { openExternal: async (url) => void seen.push(url) },
+      async (url) => {
+        seen.push(url)
+        return true
+      },
+    )
+    for (const uri of ['mailto:user@example.com', 'file:///tmp/readme', 'javascript:alert(1)']) {
+      handler.activate(new MouseEvent('click'), uri, {
+        start: { x: 0, y: 0 },
+        end: { x: 0, y: 0 },
+      })
+    }
+    await Promise.resolve()
+    assert.deepEqual(seen, [])
+  })
 })
