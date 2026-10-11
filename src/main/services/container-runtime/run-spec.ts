@@ -40,6 +40,10 @@ export const threadContainerRunSpecSchema = z.object({
   workspace: z.string().min(1),
   carryInRef: z.string().min(1),
   carryInBase: z.string().min(1),
+  rebaseOnto: z
+    .string()
+    .regex(/^[a-f0-9]{40}$/)
+    .optional(),
   originUrl: z.string().nullable().default(null),
   maxSteps: z.number().int().positive().nullable(),
 })
