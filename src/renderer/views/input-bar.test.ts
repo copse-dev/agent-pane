@@ -3049,6 +3049,9 @@ describe('input bar attachment previews', () => {
     const expanded = dialog.querySelector<HTMLImageElement>('.image-expand-image')
     assert.ok(expanded)
     assert.equal(expanded.src, PNG)
+    dialog.querySelector<HTMLButtonElement>('.image-expand-annotate')?.click()
+    assert.equal(dialog.querySelector('.annotation-send')?.textContent, 'Update')
+    assert.equal(host.querySelectorAll('.image-chip').length, 1)
     dialog.close()
   })
 
