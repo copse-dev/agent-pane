@@ -1642,7 +1642,7 @@ describe('input bar model recents', () => {
     const newest: Thread = {
       ...thread(),
       id: 'thread-newest',
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5-5',
       updatedAt: 3,
     }
     const older: Thread = {
@@ -1654,7 +1654,7 @@ describe('input bar model recents', () => {
     const duplicate: Thread = {
       ...thread(),
       id: 'thread-duplicate',
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5-5',
       updatedAt: 0,
     }
     const store = createStore({
@@ -1676,7 +1676,7 @@ describe('input bar model recents', () => {
     const recentLabels = [...host.querySelectorAll<HTMLElement>('.model-picker-option')].map(
       (option) => option.textContent.split(': ')[0],
     )
-    assert.deepEqual(recentLabels, ['GPT-5.6 Sol', 'Claude Opus 4.8', 'Claude Haiku 4.5'])
+    assert.deepEqual(recentLabels, ['GPT-5.6 Sol', 'Claude Opus 5.5', 'Claude Haiku 4.5'])
   })
 
   it('records a user-attributed event when the footer picker commits a model', async () => {
