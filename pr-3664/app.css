@@ -1447,7 +1447,7 @@ copse-ui-field input[type=password],
   white-space: nowrap;
 }
 .chats-list .chat-row .chat-thread-owner {
-  flex: 0 0 auto;
+  flex: 1 0 auto;
   max-width: 45%;
 }
 .automation-fold-row {
@@ -1594,6 +1594,13 @@ copse-ui-field input[type=password],
   margin-left: 4px;
   color: var(--text-primary);
   animation: chat-attention-pulse 1.8s ease-in-out infinite;
+}
+.chats-list .chat-row .chat-attention-bell {
+  margin-left: auto;
+}
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-pr-status,
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-changes-status {
+  margin-left: auto;
 }
 .project-row .chat-attention-bell {
   margin-left: auto;
