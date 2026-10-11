@@ -392,6 +392,26 @@
   width: 100%;
 }
 
+.vnc-capture-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.vnc-capture-actions:has(> button:not([hidden])) > button {
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+}
+
+.vnc-capture-actions:not(:has(> button:not([hidden]))) {
+  display: none;
+}
+
+.vnc-annotate-btn[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .vnc-discovery-retry {
   align-self: flex-start;
   margin-top: calc(var(--spacing-sm) * -1);
@@ -694,6 +714,7 @@
 }
 
 .vnc-screen {
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
