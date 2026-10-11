@@ -1410,6 +1410,15 @@ copse-ui-field input[type=password],
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.automation-schedule-held {
+  flex: none;
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--warning, currentColor);
+  border-radius: var(--radius-sm);
+  color: var(--warning, var(--text-secondary));
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
 .automation-schedule-count {
   margin-left: auto;
   color: var(--text-muted);
@@ -1439,8 +1448,15 @@ copse-ui-field input[type=password],
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
 }
-.chats-list .chat-row .chat-thread-owner {
+.automation-row-unrun-badge {
   flex: 0 0 auto;
+  margin-left: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.chats-list .chat-row .chat-thread-owner {
+  flex: 1 0 auto;
   max-width: 45%;
 }
 .automation-fold-row {
@@ -1587,6 +1603,13 @@ copse-ui-field input[type=password],
   margin-left: 4px;
   color: var(--text-primary);
   animation: chat-attention-pulse 1.8s ease-in-out infinite;
+}
+.chats-list .chat-row .chat-attention-bell {
+  margin-left: auto;
+}
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-pr-status,
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-changes-status {
+  margin-left: auto;
 }
 .project-row .chat-attention-bell {
   margin-left: auto;
@@ -18060,6 +18083,7 @@ h3 {
   --accent-color: #f3bd4d !important;
   --text-on-accent: #2d2208 !important;
   --warning: #e4aa20;
+  --text-on-warning: #2d2208;
   --highlight-current-bg: #f3bd4d;
   --highlight-current-text: #2d2208;
 }
