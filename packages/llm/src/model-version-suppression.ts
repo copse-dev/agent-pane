@@ -22,7 +22,9 @@ function parseClaudeModel(id: string): ModelVersion | null {
   const match = id.match(/^claude-(opus|sonnet|fable|haiku)(?:-(\d+(?:-\d+)*))?/)
   if (!match) return null
 
-  const family = `claude-${match[1]}`
+  const familyName = match[1]
+  if (familyName === undefined) return null
+  const family = `claude-${familyName}`
   const versionStr = match[2] ?? '0'
   const version = versionStr.split('-').map(Number)
 
@@ -34,13 +36,14 @@ function parseGptModel(id: string): ModelVersion | null {
   const match = id.match(/^gpt-([\d.]+)(?:-(sol|terra|luna|mini|nano|astra))?/)
   if (!match) return null
 
-  const versionStr = match[1]!
+  const versionStr = match[1]
+  if (versionStr === undefined) return null
   // Convert "5.6" → [5, 6], "6.1" → [6, 1], "5" → [5]
   const parts = versionStr.split('.').map(Number)
   const version = parts
   const variant = match[2]
   // Group by major version only (5.0, 5.6, 6.1 all → gpt-5 or gpt-6)
-  const majorVersion = parts[0]
+  const majorVersion = parts[0] ?? 0
   const family = `gpt-${majorVersion}`
 
   return {
