@@ -170,6 +170,13 @@ ghost lightbox showing the cleared image’s alt (“Expanded attachment”) and
 (same idea as `[hidden]` in `base.css`). Put flex layout on an inner shell when you
 can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }`.
 
+## Section tabs
+
+Use flat, square-edged section tabs with a straight active underline, matching
+`.pr-detail-section` and `.process-manager-tab`. Do not use rounded or pill-shaped
+buttons for this navigation, or draw an inset underline around rounded corners.
+Keep `.ui-btn` off section tabs so its button radius cannot curve the indicator.
+
 ## UI kit primitives (buttons, fields, action rows)
 
 Background task rows use a native disclosure for failure reasons and execution details.
@@ -1559,3 +1566,12 @@ is approved for browsing. Data URL prototypes have no network access. Ordinary p
 including user-opened local development servers, retain their server's CSP. Bundle
 prototype assets locally; see [browser network policy](browser-network-policy.md) for
 the boundary and tests.
+
+### Concise thread content
+
+Concise view hides tool cards, reasoning and terminal references for eligible models, while
+keeping every assistant message visible, including progress text and answers that carry audit
+calls. Starting a tool, completing a turn or adding a later user/assistant message must not remove
+previously visible prose. Only bubbles with no user-facing content collapse. Produced images,
+visual evidence, canvas previews and user-input cards remain visible. Expanding a turn restores
+its ordinary tool and reasoning disclosures; full view is unchanged.

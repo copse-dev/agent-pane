@@ -1368,6 +1368,13 @@
           2
         ]
       },
+      "mobile:status": {
+        "api": "mobile.status",
+        "args": [
+          0,
+          0
+        ]
+      },
       "model-cards:resolve": {
         "api": "modelCards.resolve",
         "args": [
@@ -2229,6 +2236,13 @@
           5
         ]
       },
+      "threads:storage-size": {
+        "api": "threads.storageSize",
+        "args": [
+          2,
+          2
+        ]
+      },
       "threads:undo-history-edit": {
         "api": "threads.undoHistoryEdit",
         "args": [
@@ -2275,7 +2289,7 @@
         "api": "usage.getPlanUsage",
         "args": [
           0,
-          0
+          1
         ]
       },
       "usage:get-plan-worth-it": {

@@ -539,6 +539,7 @@ function partitionArgs(
 function classifyMixedGitSubcommand(
   subcommand: string,
   args: readonly string[],
+  configuredRemotes: ReadonlySet<string>,
 ): AutoApprovalTier | null {
   const positional = args.filter((token) => !isFlag(token))
   const flags = args.filter(isFlag).map(flagName)
@@ -568,7 +569,12 @@ function classifyMixedGitSubcommand(
       // Only the read forms: bare, `-v`, `get-url <name>`, `show <name>`.
       if (positional.length === 0) return 'read'
       const verb = positional[0] ?? ''
-      if (verb !== 'get-url' && verb !== 'show') return null
+      // `show` contacts the remote, and git takes a name it does not know as a
+      // URL (`git@attacker:repo`), so like `fetch` it must name a configured one.
+      if (verb === 'show') {
+        return positional.slice(1).every((name) => configuredRemotes.has(name)) ? 'read' : null
+      }
+      if (verb !== 'get-url') return null
       return positional.slice(1).every(isPlainRefToken) ? 'read' : null
     }
     case 'stash': {
@@ -698,7 +704,7 @@ function classifyGitSegment(
     return { tier: 'read', reason: `git ${subcommand} reads repository state` }
   }
   if (GIT_MIXED_SUBCOMMANDS.has(subcommand)) {
-    const tier = classifyMixedGitSubcommand(subcommand, args)
+    const tier = classifyMixedGitSubcommand(subcommand, args, context.configuredRemotes)
     return tier
       ? { tier, reason: `git ${subcommand} (${tier})` }
       : { tier: null, reason: `git ${subcommand} form not recognised: ${segment}` }

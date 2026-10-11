@@ -294,6 +294,23 @@ describe('Guarded YOLO shell harm gate', () => {
     }
   })
 
+  it("expands ~name to that user's home instead of a project-relative name", () => {
+    // `~tester/` is this user's home; left unexpanded it resolved inside the
+    // workspace and the home-root deny never saw it.
+    assert.equal(action('rm -rf ~tester/'), 'deny')
+    assert.equal(action('rm -rf ~tester'), 'deny')
+    assert.equal(action('cat ~tester/.ssh/id_rsa'), 'deny')
+    assert.equal(action('cat ~tester/.env'), 'deny')
+    // Not caught by the secret-filename check, so this one was allowed outright.
+    assert.equal(action('cat ~tester/.aws/config'), 'deny')
+    assert.equal(action('ls -la ~tester'), 'deny')
+    // `~+` is `$PWD`, the workspace root here, so it is denied exactly as `.` is.
+    assert.equal(action('rm -rf ~+/'), 'deny')
+    assert.equal(action('rm -rf ~+'), 'deny')
+    // `~-` is `$OLDPWD`, which no static reading knows: still a prompt, never allowed.
+    assert.equal(action('rm -rf ~-/'), 'prompt')
+  })
+
   it('denies catastrophic commands hidden in compounds, substitutions, and interpreters', () => {
     for (const command of [
       'echo ready && rm -rf /',
@@ -418,6 +435,12 @@ describe('Guarded YOLO shell harm gate', () => {
     assert.equal(action(': > /Users/tester/.ssh/id_rsa'), 'prompt')
     assert.equal(action('echo x >> /Users/tester/.bashrc'), 'prompt')
     assert.equal(action('tee /etc/hosts < /dev/null'), 'prompt')
+    // The clobber, both-streams and csh-style operators write exactly as `>`
+    // does, so they meet the same answers rather than reading as no write.
+    for (const operator of ['>|', '&>', '>&']) {
+      assert.equal(action(`echo '' ${operator} /etc/hosts`), 'prompt', operator)
+      assert.equal(action(`echo '' ${operator} /etc/passwd`), 'deny', operator)
+    }
     // In-workspace and /tmp writes are ordinary build output.
     assert.equal(action('echo built > dist/marker.txt'), 'allow')
     assert.equal(action('echo line >> logs/app.log'), 'allow')

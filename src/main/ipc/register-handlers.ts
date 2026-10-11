@@ -1,3 +1,4 @@
+import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
@@ -45,7 +46,7 @@ import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boun
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
-import { showMobileCompanion } from '../windows/mobile-desktop.ts'
+import { getMobileCompanionStatus, showMobileCompanion } from '../windows/mobile-desktop.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
 import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
@@ -175,6 +176,7 @@ import {
 } from '../windows/create-main-window.ts'
 import { browserPaneSessionSchema, decodeBrowserPaneSession } from '../windows/main-window-state.ts'
 import {
+  measureThreadStorage,
   backfillThreadPrRefs,
   loadProjectThreadMetas,
   loadThreadMessages,
@@ -610,6 +612,11 @@ export function registerAllHandlers(
   // Read once: Electron throws on `win.webContents` after the boot window is
   // closed, and a second main window can outlive it.
   const primaryWebContentsId = win.webContents.id
+  ipcMain.handle('mobile:status', async (event) => {
+    assertMainFrameSender(event, win)
+    return await getMobileCompanionStatus()
+  })
+
   const processManagerSnapshot = createProcessManagerSampler(
     () => app.getAppMetrics(),
     processManagerLabels,
@@ -672,9 +679,10 @@ export function registerAllHandlers(
     }
   })
 
-  ipcMain.handle('process-manager:snapshot', (event) => {
+  ipcMain.handle('process-manager:snapshot', async (event) => {
     assertMainFrameSender(event, win)
-    return processManagerSnapshot()
+    const snapshot = await processManagerSnapshot()
+    return { ...snapshot, network: networkActivity.snapshot() }
   })
 
   ipcMain.handle('process-manager:stop-background', (event, ...rawArgs) => {
@@ -1798,7 +1806,10 @@ export function registerAllHandlers(
     setAutomationAppIconMode(enabled, mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
   ipcMain.handle('usage:get-summary', () => getUsageSummary())
-  ipcMain.handle('usage:get-plan-usage', async () => loadPlanUsageSnapshotAndSample())
+  ipcMain.handle('usage:get-plan-usage', async (_event, force: unknown) => {
+    const refresh = parseIpcArgs(z.boolean().optional(), [force])
+    return loadPlanUsageSnapshotAndSample({ force: refresh === true })
+  })
   ipcMain.handle('usage:get-plan-worth-it', () => getPlanWorthItPayload())
   ipcMain.handle('usage:set-claude-plan-monthly-fee', async (event, fee: unknown) => {
     assertMainFrameSender(event, win)
@@ -1948,6 +1959,11 @@ export function registerAllHandlers(
       return getContainerRunService().adopt(pid, tid, rid)
     },
   )
+  ipcMain.handle('threads:storage-size', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return measureThreadStorage(pid, tid)
+  })
   ipcMain.handle('threads:load-project', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])

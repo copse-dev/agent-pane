@@ -2453,6 +2453,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   document.addEventListener('visibilitychange', recheckStaleThreadChanges)
 
   const unsubs = [
+    store.on('thread_archive_requested', (projectId, threadId) => {
+      void archiveProjectThread(projectId, threadId)
+    }),
     unsubWorkingTree,
     store.on('projects_changed', render),
     // Streaming and hydration must not restart the disk scan. Resident human
