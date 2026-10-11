@@ -119,7 +119,7 @@ describe('thread + terminal rename / archive', () => {
     await saveElementScreenshot('#pane-projects', 'thread-archived-sidebar.png')
   })
 
-  it('terminal tab right-click offers Rename and Archive; double-click renames', async function () {
+  it('terminal content offers Copy and Paste; tab menu still renames and archives', async function () {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
@@ -143,6 +143,36 @@ describe('thread + terminal rename / archive', () => {
     }
 
     await $('.terminals-tab').waitForExist({ timeout: 30_000 })
+
+    const terminalSurface = await $('.terminals-tab-panel.is-active .xterm-screen')
+    await terminalSurface.waitForDisplayed({ timeout: 10_000 })
+    await terminalSurface.click({ button: 'right' })
+    const terminalMenu = await $('.context-menu')
+    await terminalMenu.waitForDisplayed({ timeout: 5_000 })
+    expect(
+      await browser.execute(() =>
+        Array.from(document.querySelectorAll('.context-menu-item')).map((item) => ({
+          label: item.textContent ?? '',
+          disabled: item instanceof HTMLButtonElement && item.disabled,
+        })),
+      ),
+    ).toEqual([
+      { label: 'Copy', disabled: true },
+      { label: 'Paste', disabled: false },
+    ])
+    await saveElementScreenshot('.context-menu', 'terminal-content-context-menu.png')
+    await browser.keys('Escape')
+    await browser.execute(async () => {
+      await navigator.clipboard.writeText('echo cmenu42')
+    })
+    expect(await browser.execute(async () => navigator.clipboard.readText())).toBe('echo cmenu42')
+    await terminalSurface.click({ button: 'right' })
+    await $('.context-menu-item*=Paste').click()
+    await browser.waitUntil(async () => (await terminalSurface.getText()).includes('cmenu42'), {
+      timeout: 10_000,
+      timeoutMsg: 'expected pasted command at the shell prompt',
+    })
+    await browser.keys('Enter')
 
     // Second shell so Archive does not auto-spawn a replacement mid-assert.
     await $('.terminals-new-btn').click()

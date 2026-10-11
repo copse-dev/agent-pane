@@ -18,6 +18,7 @@ import type {
   GhPrSummary,
   PrActionResult,
 } from '@shared/types/git.ts'
+import { branchPrCache } from '../branch-pr-cache.ts'
 import { AsyncTtlCache } from '../../async-ttl-cache.ts'
 import type { GhIssuePage, GitHubBackend, PrRef } from './backend.ts'
 
@@ -41,6 +42,7 @@ const wrappers: Array<{ clear(): void }> = []
 
 /** Drop every method-level slot. Manual refresh calls this so the next read is live. */
 export function invalidateGitHubReadCache(): void {
+  branchPrCache.invalidate()
   for (const wrapper of wrappers) wrapper.clear()
 }
 
@@ -144,6 +146,7 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
       // create changed nothing; keep the lists so a retry loop cannot burn
       // rate budget on refetches.
       if (result.ok) {
+        branchPrCache.invalidate()
         workspacePrs.clear()
         myPrs.clear()
       }
@@ -152,24 +155,28 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
 
     async rerunFailedRuns(ref) {
       const result = await inner.rerunFailedRuns(ref)
+      if (result.ok) branchPrCache.invalidate()
       invalidatePr(ref)
       return result
     },
 
     async approvePr(ref) {
       const result: PrActionResult = await inner.approvePr(ref)
+      if (result.ok) branchPrCache.invalidate()
       invalidatePr(ref)
       return result
     },
 
     async markPrReady(ref) {
       const result = await inner.markPrReady(ref)
+      if (result.ok) branchPrCache.invalidate()
       invalidatePr(ref)
       return result
     },
 
     async enableAutoMerge(ref) {
       const result = await inner.enableAutoMerge(ref)
+      if (result.ok) branchPrCache.invalidate()
       invalidatePr(ref)
       return result
     },
