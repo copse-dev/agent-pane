@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { Message, Thread } from './thread-types.ts'
 import {
   buildSideChatThread,
+  excerptText,
   sideChatsOf,
   unreadSideChatParents,
   withoutSideChats,
@@ -51,6 +52,21 @@ describe('side chats', () => {
     assert.ok(side)
     assert.equal(side.model, 'acp:claude-acp#sonnet')
     assert.equal(side.title, 'Why does the mermaid spec flake?')
+  })
+
+  it('titles from a markdown reply as plain text, not raw source', () => {
+    const withLink = thread('parent2', {
+      messages: [
+        message(
+          'm1',
+          '[PR #3595](https://github.com/copse-dev/agent-pane/pull/3595) is loaded at commit abc123',
+          'assistant',
+        ),
+      ],
+    })
+    const side = buildSideChatThread(withLink, { anchorMessageId: 'm1' })
+    assert.ok(side)
+    assert.equal(side.title, 'PR #3595 is loaded at commit abc123')
   })
 
   it('refuses an unknown anchor and refuses chains of side chats', () => {
@@ -112,5 +128,25 @@ describe('side chats', () => {
       withoutSideChats([parent, orphan]).map((item) => item.id),
       ['parent', 'orphan'],
     )
+  })
+})
+
+describe('excerptText', () => {
+  it('strips links, emphasis, code spans and headers to plain text', () => {
+    assert.equal(
+      excerptText('[PR #3595](https://example.com/pull/3595) is loaded'),
+      'PR #3595 is loaded',
+    )
+    assert.equal(excerptText('**bold** and _italic_ and `code`'), 'bold and italic and code')
+    assert.equal(excerptText('## A heading'), 'A heading')
+    assert.equal(excerptText('plain text, nothing to strip'), 'plain text, nothing to strip')
+  })
+
+  it('takes only the first line and truncates past 80 characters', () => {
+    assert.equal(excerptText('First line\nSecond line'), 'First line')
+    const long = 'x'.repeat(100)
+    const result = excerptText(long)
+    assert.equal(result.length, 80)
+    assert.ok(result.endsWith('…'))
   })
 })
