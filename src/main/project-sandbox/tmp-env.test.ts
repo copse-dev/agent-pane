@@ -14,6 +14,7 @@ describe('sandbox temporary files', () => {
     assert.equal(env['TMP'], '/workspace/scratch')
     assert.equal(env['TEMP'], '/workspace/scratch')
     assert.equal(env['TMPPREFIX'], join('/workspace/scratch', 'zsh'))
+    assert.equal(env['CLAUDE_CODE_TMPDIR'], '/workspace/scratch')
     assert.equal(env['PATH'], '/bin')
     assert.deepEqual(original, { TMPDIR: '/old', TMPPREFIX: '/old/zsh', PATH: '/bin' })
   })

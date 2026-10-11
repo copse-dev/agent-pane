@@ -12,6 +12,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { installTerminalFileLinks, type TerminalFileLinks } from './terminal-file-links.ts'
+import { createTerminalWebLinkHandler } from './terminal-web-links.ts'
 import { planScope, tabsForScope } from './scoped-tabs.ts'
 import { at } from '@shared/array-utils.ts'
 import { readXtermScrollback } from '../terminal/xterm-scrollback.ts'
@@ -159,6 +160,7 @@ export function mountTerminalsPane(
       fontSize: scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: xtermThemeFromTokens(readEditorThemeTokens()),
+      linkHandler: createTerminalWebLinkHandler(api.shell),
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
@@ -377,13 +379,16 @@ export function mountTerminalsPane(
     }
   }
 
-  function focusTab(tab: TerminalTab): void {
+  function focusTab(tab: TerminalTab, opts?: { grabFocus?: boolean }): void {
     openTerminalSurface(tab)
     fitTab(tab)
-    tab.term.focus()
+    if (opts?.grabFocus ?? true) tab.term.focus()
   }
 
-  function setActiveTab(tabId: string): void {
+  // `focus: false` restores/activates a tab (e.g. on a thread switch) without
+  // stealing keyboard focus away from whatever the user was already using
+  // (typically the chat composer).
+  function setActiveTab(tabId: string, opts?: { focus?: boolean }): void {
     if (activeTabId === tabId) return
     activeTabId = tabId
     for (const tab of tabs.values()) {
@@ -397,7 +402,7 @@ export function mountTerminalsPane(
       void ensureSession(tab)
       requestAnimationFrame(() => {
         fitTab(tab)
-        focusTab(tab)
+        focusTab(tab, { grabFocus: opts?.focus ?? true })
       })
     }
   }
@@ -421,6 +426,31 @@ export function mountTerminalsPane(
     tab.container.addEventListener('mousedown', () => {
       if (activeTabId === tab.id) focusTab(tab)
     })
+    tab.container.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(e.clientX, e.clientY, [
+        {
+          label: 'Copy',
+          disabled: !tab.term.hasSelection(),
+          onSelect: (): void => {
+            void navigator.clipboard.writeText(tab.term.getSelection())
+          },
+        },
+        {
+          label: 'Paste',
+          disabled: !tab.sessionId,
+          onSelect: (): void => {
+            void navigator.clipboard.readText().then((text) => {
+              if (text && tab.sessionId) {
+                tab.term.paste(text)
+                focusTab(tab)
+              }
+            })
+          },
+        },
+      ])
+    })
   }
 
   function currentThreadId(): string | null {
@@ -443,6 +473,7 @@ export function mountTerminalsPane(
 
   function addTab(options?: {
     activate?: boolean
+    focus?: boolean
     initialInput?: string
     label?: string
     codeBlockRun?: CodeBlockRunRequest
@@ -571,7 +602,7 @@ export function mountTerminalsPane(
 
     const visible = scopeId === currentThreadId()
     setTabVisible(tab, visible)
-    if (visible && (options?.activate !== false || !activeTabId)) setActiveTab(id)
+    if (visible && (options?.activate !== false || !activeTabId)) setActiveTab(id, options)
     if (visible && terminalModeActive(store)) void ensureSession(tab)
     return id
   }
@@ -616,10 +647,10 @@ export function mountTerminalsPane(
     if (activeTabId && !visible.some((t) => t.id === activeTabId)) activeTabId = null
 
     if (needsNew) {
-      if (terminalModeActive(store)) addTab()
+      if (terminalModeActive(store)) addTab({ focus: false })
       return
     }
-    if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id)
+    if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id, { focus: false })
     const tab = activeTabId ? tabs.get(activeTabId) : null
     if (tab && terminalModeActive(store)) {
       resizeObserver.observe(tab.container)
@@ -627,7 +658,6 @@ export function mountTerminalsPane(
       void ensureSession(tab)
       requestAnimationFrame(() => {
         fitTab(tab)
-        focusTab(tab)
       })
     }
   }
