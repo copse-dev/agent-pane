@@ -240,7 +240,7 @@ describe('combined stack review gates', () => {
   })
   it('does not publish raw API errors as a declaration problem', async () => {
     const f = fixture()
-    f.github.rest.repos.compareCommitsWithBasehead = async () => {
+    f.github.rest.repos.compareCommitsWithBasehead = async (): Promise<never> => {
       throw new Error('private response details')
     }
     await reconcileScreenshotStack(f.github, input)
