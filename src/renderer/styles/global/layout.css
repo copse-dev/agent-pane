@@ -1294,6 +1294,14 @@
   font-weight: 600;
   color: var(--text-secondary);
 }
+.git-changes-header-owner {
+  font-size: var(--font-size-2xs);
+  color: var(--text-tertiary, var(--text-secondary));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
 .git-changes-bulk-actions {
   display: flex;
   gap: var(--spacing-xs);
