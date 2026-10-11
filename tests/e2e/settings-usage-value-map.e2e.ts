@@ -101,18 +101,24 @@ describe('settings usage model value map cost axis', () => {
       '$/task pill width must not change when selected',
     )
     const taskChartText = await chart.getText()
-    assert.match(taskChartText, /AA cost per Intelligence Index task/)
+    assert.match(taskChartText, /AA cost per intelligence index task/)
     // Subscription-backed Codex models remain plan routes on the task axis.
     assert.match(taskChartText, /GPT-6 Astra \(~\) · plan/)
     assert.equal(await taskBtn.getAttribute('aria-pressed'), 'true')
     assert.equal(await fieldset.$('details.frontier-unpriced-list').isExisting(), false)
 
     await prepareE2eScreenshot()
-    await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-task.png')
+    // Keep the pointer outside the chart while capture framing scrolls it.
+    // The full fieldset is taller than the Settings scrollport; capture the
+    // plot itself so its heading and explanatory footer are not cut in half.
+    await $('.settings-nav').moveTo()
+    await expect($('.frontier-tooltip')).not.toBeDisplayed()
+    await saveElementScreenshot('.frontier-controls', 'settings-usage-value-map-task-controls.png')
+    await saveElementScreenshot('.frontier-chart', 'settings-usage-value-map-task.png')
 
     const discoverBtn = fieldset.$('button.frontier-discover')
     await expect(discoverBtn).toBeDisplayed()
-    const discoverLabels = await discoverBtn.$$('.frontier-discover-label')
+    const discoverLabels = await discoverBtn.$$('.frontier-discover-label').getElements()
     assert.equal(discoverLabels.length, 2)
     const inactiveDiscoverLabel = discoverLabels[0]
     const activeDiscoverLabel = discoverLabels[1]

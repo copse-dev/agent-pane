@@ -525,7 +525,7 @@ describe('renderPlanWorthItSection', () => {
     renderPlanWorthItSection(
       host,
       payload('insufficient_history', {
-        reason: 'Need a couple of completed weekly windows',
+        reason: 'Need a couple of completed weekly windows — reopen Usage after resets.',
         monthlyFeeUsd: null,
         apiEquivalentBurnPerWeek: null,
         completedWeeklyCount: 0,
@@ -538,6 +538,8 @@ describe('renderPlanWorthItSection', () => {
       'insufficient_history',
     )
     assert.match(host.querySelector('.usage-worth-reason')?.textContent ?? '', /completed weekly/)
+    assert.match(host.querySelector('.usage-worth-reason')?.textContent ?? '', /· reopen Usage/)
+    assert.doesNotMatch(host.querySelector('.usage-worth-reason')?.textContent ?? '', /—/)
   })
 })
 
