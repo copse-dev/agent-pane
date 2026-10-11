@@ -633,16 +633,16 @@ function cleanEnum(obj) {
 }
 function base64ToUint8Array(base643) {
   const binaryString = atob(base643);
-  const bytes = new Uint8Array(binaryString.length);
+  const bytes2 = new Uint8Array(binaryString.length);
   for (let i2 = 0; i2 < binaryString.length; i2++) {
-    bytes[i2] = binaryString.charCodeAt(i2);
+    bytes2[i2] = binaryString.charCodeAt(i2);
   }
-  return bytes;
+  return bytes2;
 }
-function uint8ArrayToBase64(bytes) {
+function uint8ArrayToBase64(bytes2) {
   let binaryString = "";
-  for (let i2 = 0; i2 < bytes.length; i2++) {
-    binaryString += String.fromCharCode(bytes[i2]);
+  for (let i2 = 0; i2 < bytes2.length; i2++) {
+    binaryString += String.fromCharCode(bytes2[i2]);
   }
   return btoa(binaryString);
 }
@@ -651,22 +651,22 @@ function base64urlToUint8Array(base64url3) {
   const padding = "=".repeat((4 - base643.length % 4) % 4);
   return base64ToUint8Array(base643 + padding);
 }
-function uint8ArrayToBase64url(bytes) {
-  return uint8ArrayToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+function uint8ArrayToBase64url(bytes2) {
+  return uint8ArrayToBase64(bytes2).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 function hexToUint8Array(hex3) {
   const cleanHex = hex3.replace(/^0x/, "");
   if (cleanHex.length % 2 !== 0) {
     throw new Error("Invalid hex string length");
   }
-  const bytes = new Uint8Array(cleanHex.length / 2);
+  const bytes2 = new Uint8Array(cleanHex.length / 2);
   for (let i2 = 0; i2 < cleanHex.length; i2 += 2) {
-    bytes[i2 / 2] = Number.parseInt(cleanHex.slice(i2, i2 + 2), 16);
+    bytes2[i2 / 2] = Number.parseInt(cleanHex.slice(i2, i2 + 2), 16);
   }
-  return bytes;
+  return bytes2;
 }
-function uint8ArrayToHex(bytes) {
-  return Array.from(bytes).map((b4) => b4.toString(16).padStart(2, "0")).join("");
+function uint8ArrayToHex(bytes2) {
+  return Array.from(bytes2).map((b4) => b4.toString(16).padStart(2, "0")).join("");
 }
 function members(proto, table) {
   for (const key in table) {
@@ -20798,12 +20798,12 @@ function fileExtension(name) {
   const dot = name.lastIndexOf(".");
   return dot < 0 ? "" : name.slice(dot).toLowerCase();
 }
-function formatByteSize(bytes) {
-  if (!Number.isFinite(bytes) || bytes < 0) return "unknown size";
-  if (bytes < 1024) return `${String(Math.round(bytes))} B`;
+function formatByteSize(bytes2) {
+  if (!Number.isFinite(bytes2) || bytes2 < 0) return "unknown size";
+  if (bytes2 < 1024) return `${String(Math.round(bytes2))} B`;
   const units = ["KB", "MB", "GB"];
   const render = (value2) => value2 < 9.95 ? value2.toFixed(1) : Math.round(value2).toString();
-  let value = bytes / 1024;
+  let value = bytes2 / 1024;
   let unit = 0;
   while (Number(render(value)) >= 1024 && unit < units.length - 1) {
     value /= 1024;
@@ -21934,8 +21934,8 @@ function createSourcesSection({
       session.setStatus(errorMessage(error62));
     });
   }
-  function applyWorkspaceTrusted(statuses) {
-    onTrusted(statuses);
+  function applyWorkspaceTrusted(statuses2) {
+    onTrusted(statuses2);
     void refreshSources();
   }
   async function trustWorkspaceFromBadge(button) {
@@ -21954,7 +21954,7 @@ function createSourcesSection({
     const statusEl = qsRequired(root, "#sources-reload-status");
     statusEl.textContent = "Trusting workspace\u2026";
     const pending = api2.workspace.setTrusted(true).then(
-      (statuses) => ({ statuses }),
+      (statuses2) => ({ statuses: statuses2 }),
       (error62) => ({ error: error62 })
     );
     await refreshSources();
@@ -48626,10 +48626,10 @@ var init_context_window_advice = __esm({
 });
 
 // src/renderer/views/setup/lm-studio-section.ts
-function formatBytes(bytes) {
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`;
-  return `${String(bytes)} B`;
+function formatBytes(bytes2) {
+  if (bytes2 >= 1e9) return `${(bytes2 / 1e9).toFixed(1)} GB`;
+  if (bytes2 >= 1e6) return `${(bytes2 / 1e6).toFixed(0)} MB`;
+  return `${String(bytes2)} B`;
 }
 function formatDownloadEta(gb) {
   if (gb >= 20) return "30\u201360 minutes on a fast connection";
@@ -69134,6 +69134,12 @@ async function loadSimpleFields(form, api2) {
     }
   }
 }
+async function mountMobileCompanionQr(overlay, api2) {
+  const status = await api2.mobile.status();
+  qsRequired(overlay, "#mobile-companion-qr-image").innerHTML = status.qrSvg ?? "";
+  qsRequired(overlay, "#mobile-companion-qr-url").textContent = status.url ?? "";
+  qsRequired(overlay, "#mobile-companion-qr").hidden = !status.url || !status.qrSvg;
+}
 function parseNonNegativeInt(value, fallback) {
   const n2 = Number.parseInt(value, 10);
   return Number.isFinite(n2) && n2 >= 0 ? n2 : fallback;
@@ -70236,6 +70242,13 @@ function mountSettingsDialog(store2, api2) {
                   Set up or manage\u2026
                 </button>
               </div>
+              <div id="mobile-companion-qr" class="mobile-companion-qr" hidden>
+                <div id="mobile-companion-qr-image" class="mobile-companion-qr-image" aria-hidden="true"></div>
+                <div class="mobile-companion-qr-text">
+                  <p class="field-hint">Scan with your phone's camera to open Copse.</p>
+                  <code id="mobile-companion-qr-url" class="mobile-companion-qr-url"></code>
+                </div>
+              </div>
             </fieldset>
 
             <fieldset>
@@ -70770,16 +70783,16 @@ function mountSettingsDialog(store2, api2) {
   const sourcesSection = createSourcesSection({
     root: overlay,
     api: api2,
-    onTrusted: (statuses) => {
-      renderMcpServers(statuses);
+    onTrusted: (statuses2) => {
+      renderMcpServers(statuses2);
     },
     onHeadingsChanged: () => {
       renderNavSubheadings(activeSection);
     }
   });
   const refreshSources = sourcesSection.refresh;
-  function applyWorkspaceTrusted(statuses) {
-    renderMcpServers(statuses);
+  function applyWorkspaceTrusted(statuses2) {
+    renderMcpServers(statuses2);
     void refreshSources();
   }
   async function refreshLocalModelSelects() {
@@ -72359,13 +72372,13 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
   }
   function renderMcpServers(allStatuses) {
     const listEl = qsRequired(overlay, "#mcp-server-list");
-    const statuses = allStatuses.filter((s16) => !s16.curated);
-    if (statuses.length === 0) {
+    const statuses2 = allStatuses.filter((s16) => !s16.curated);
+    if (statuses2.length === 0) {
       listEl.textContent = "No servers configured.";
       return;
     }
     listEl.innerHTML = "";
-    if (statuses.some((s16) => s16.state === "untrusted")) {
+    if (statuses2.some((s16) => s16.state === "untrusted")) {
       const banner = document.createElement("div");
       banner.className = "mcp-trust-banner";
       const text2 = document.createElement("span");
@@ -72412,7 +72425,7 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
       }).catch(() => {
       });
     }
-    for (const s16 of statuses) {
+    for (const s16 of statuses2) {
       const badge = s16.state === "connected" ? inlineStatus("filled", "connected") : s16.auth === "required" ? inlineStatus("warn", "sign-in required") : s16.state === "error" ? inlineStatus("error", "error") : s16.state === "disabled" ? inlineStatus("idle", "disabled") : s16.state === "untrusted" ? inlineStatus("warn", "not trusted") : document.createTextNode("\u2026 connecting");
       const row2 = document.createElement("div");
       row2.className = `mcp-server-row mcp-state-${s16.state}`;
@@ -72477,8 +72490,8 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
       listEl.append(row2);
     }
   }
-  api2.mcp.onStatusChanged((statuses) => {
-    renderMcpServers(statuses);
+  api2.mcp.onStatusChanged((statuses2) => {
+    renderMcpServers(statuses2);
   });
   async function refreshMcpServers() {
     try {
@@ -72605,11 +72618,11 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     const statusEl = qsRequired(overlay, "#mcp-reload-status");
     statusEl.textContent = "Reloading\u2026";
     statusEl.className = "lmstudio-test-status";
-    void api2.mcp.reload().then((statuses) => {
-      renderMcpServers(statuses);
+    void api2.mcp.reload().then((statuses2) => {
+      renderMcpServers(statuses2);
       void refreshCuratedServers();
       void refreshDeclaredMcpServers();
-      const visible = statuses.filter((s16) => !s16.curated);
+      const visible = statuses2.filter((s16) => !s16.curated);
       const ok = visible.filter((s16) => s16.state === "connected").length;
       setInlineStatus(
         statusEl,
@@ -72680,6 +72693,10 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     });
   }
   overlay.addEventListener("settings-open", () => {
+    void mountMobileCompanionQr(overlay, api2).catch((error62) => {
+      qsRequired(overlay, "#mobile-companion-qr").hidden = true;
+      console.error("[settings] Could not load Mobile Companion status:", error62);
+    });
     appearanceBaseline = currentAppearance();
     appearanceCommitted = false;
     resetDirtyState();
@@ -75301,8 +75318,8 @@ function pngDataUrlToBlob(dataUrl) {
   if (!/^data:image\/png;base64,/i.test(dataUrl)) throw new Error("Not a PNG data URL");
   const comma = dataUrl.indexOf(",");
   const binary = atob(dataUrl.slice(comma + 1));
-  const bytes = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
-  return new Blob([bytes], { type: "image/png" });
+  const bytes2 = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
+  return new Blob([bytes2], { type: "image/png" });
 }
 function renderedImageToPng(image) {
   if (!image.complete || image.naturalWidth === 0 || image.naturalHeight === 0) {
@@ -79904,10 +79921,15 @@ function createDemoApi(scenario, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api2 = {
-    mobile: { manage: async () => {
-    }, onChat: () => () => {
-    }, reply: async () => {
-    } },
+    mobile: {
+      manage: async () => {
+      },
+      status: () => resolved2(MOBILE_COMPANION_DEMO_STATUS),
+      onChat: () => () => {
+      },
+      reply: async () => {
+      }
+    },
     windowState: {
       getNavigation: () => resolved2(structuredClone(navigation)),
       setNavigation: (next) => {
@@ -80936,7 +80958,7 @@ function createDemoApi(scenario, options = {}) {
   };
   return api2;
 }
-var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
+var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray, MOBILE_COMPANION_DEMO_QR_SVG, MOBILE_COMPANION_DEMO_STATUS;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
     init_thread_pr_relations2();
@@ -81214,6 +81236,12 @@ var init_demo_api = __esm({
       }
     ];
     emptyArray = () => Promise.resolve([]);
+    MOBILE_COMPANION_DEMO_QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27 27" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h27v27H0z"/><path stroke="#000000" d="M1 1.5h7m3 0h3m1 0h1m3 0h7M1 2.5h1m5 0h1m3 0h1m1 0h1m2 0h1m2 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m1 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h2m2 0h2m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m1 0h1m5 0h2m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m1 0h2m2 0h3m1 0h1m1 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h3m4 0h1M1 9.5h1m1 0h5m2 0h2m1 0h2m2 0h1m1 0h5M2 10.5h2m1 0h1m2 0h1m1 0h1m1 0h3m1 0h2m1 0h1m4 0h1M1 11.5h2m3 0h2m1 0h1m1 0h2m4 0h3m1 0h2m1 0h2M3 12.5h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m7 0h1M3 13.5h1m2 0h5m1 0h1m2 0h2m1 0h4m1 0h3M1 14.5h2m1 0h2m3 0h2m2 0h1m2 0h7m1 0h1M1 15.5h1m1 0h1m1 0h5m1 0h1m6 0h1m1 0h3m1 0h2M1 16.5h1m2 0h2m4 0h2m1 0h3m1 0h2m1 0h1m4 0h1M1 17.5h1m1 0h2m2 0h2m1 0h2m1 0h1m3 0h5m1 0h1M9 18.5h1m1 0h1m4 0h2m3 0h2M1 19.5h7m3 0h3m3 0h1m1 0h1m1 0h1m1 0h3M1 20.5h1m5 0h1m1 0h1m2 0h1m4 0h1m3 0h2m1 0h2M1 21.5h1m1 0h3m1 0h1m1 0h4m3 0h10M1 22.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m6 0h2m2 0h1M1 23.5h1m1 0h3m1 0h1m1 0h1m4 0h3m1 0h1m1 0h3m2 0h1M1 24.5h1m5 0h1m5 0h2m4 0h5m1 0h1M1 25.5h7m1 0h1m1 0h1m1 0h1m1 0h11"/></svg>';
+    MOBILE_COMPANION_DEMO_STATUS = {
+      enabled: true,
+      url: "https://192.168.1.42:42773",
+      qrSvg: MOBILE_COMPANION_DEMO_QR_SVG
+    };
   }
 });
 
@@ -90566,11 +90594,11 @@ var init_browser_url = __esm({
 
 // src/shared/canvas/artefact.ts
 function htmlDataUrl(html2) {
-  const bytes = new TextEncoder().encode(securePreviewHtml(html2));
+  const bytes2 = new TextEncoder().encode(securePreviewHtml(html2));
   let binary = "";
   const CHUNK = 32768;
-  for (let i2 = 0; i2 < bytes.length; i2 += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i2, i2 + CHUNK));
+  for (let i2 = 0; i2 < bytes2.length; i2 += CHUNK) {
+    binary += String.fromCharCode(...bytes2.subarray(i2, i2 + CHUNK));
   }
   return `data:text/html;charset=utf-8;base64,${btoa(binary)}`;
 }
@@ -93809,9 +93837,9 @@ async function openVideoExpand(api2, path, name) {
     }
   });
   try {
-    const { bytes, mimeType } = await api2.video.read(path);
+    const { bytes: bytes2, mimeType } = await api2.video.read(path);
     if (!session.isActive()) return;
-    objectUrl = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+    objectUrl = URL.createObjectURL(new Blob([bytes2], { type: mimeType }));
     video.src = objectUrl;
     session.setContent(video);
     await video.play().catch(() => void 0);
@@ -114322,8 +114350,8 @@ function downloadThreadJsonl(thread) {
   download(blob, `${threadExportBaseName(thread)}.jsonl`);
 }
 async function downloadThreadArchive(api2, projectId, thread) {
-  const { bytes } = await api2.threads.exportArchive(projectId, thread.id);
-  download(new Blob([bytes], { type: "application/zip" }), `${threadExportBaseName(thread)}.zip`);
+  const { bytes: bytes2 } = await api2.threads.exportArchive(projectId, thread.id);
+  download(new Blob([bytes2], { type: "application/zip" }), `${threadExportBaseName(thread)}.zip`);
 }
 var init_export_thread = __esm({
   "src/renderer/export-thread.ts"() {
@@ -116736,14 +116764,14 @@ function mountInputBar(root, store2, api2, opts = {}) {
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (projectId === null || !threadHasExportableContent(thread)) return;
-    const { bytes, build } = await api2.threads.exportArchive(projectId, thread.id);
+    const { bytes: bytes2, build } = await api2.threads.exportArchive(projectId, thread.id);
     const name = `${threadExportBaseName(thread)}.zip`;
     store2.emit("composer_draft_flush");
     const debugThreadId = createThread(store2, buildDebugTracePrompt(thread, name, build));
     setThreadTitle(store2, debugThreadId, debugTraceThreadTitle(thread));
     await addArchiveChip({
       name,
-      bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+      bytes: bytes2.buffer.slice(bytes2.byteOffset, bytes2.byteOffset + bytes2.byteLength)
     });
     composer.focus();
   }
@@ -118658,11 +118686,11 @@ function cssColorToHex(value) {
     scale2 = 1;
   }
   if (channels2.length !== 3) return null;
-  const bytes = channels2.map(
+  const bytes2 = channels2.map(
     (channel) => channel.endsWith("%") ? Number.parseFloat(channel) / 100 * 255 : Number.parseFloat(channel) * scale2
   );
-  if (bytes.some((byte) => !Number.isFinite(byte))) return null;
-  return `#${bytes.map(hexByte).join("")}`;
+  if (bytes2.some((byte) => !Number.isFinite(byte))) return null;
+  return `#${bytes2.map(hexByte).join("")}`;
 }
 function channels(hex3) {
   return [
@@ -128629,6 +128657,29 @@ var init_terminal_file_links = __esm({
   }
 });
 
+// src/renderer/views/terminal-web-links.ts
+function createTerminalWebLinkHandler(shell3, confirmOpen = (uri) => showConfirmDialog({
+  message: "Open this link in your browser?",
+  detail: uri,
+  confirmLabel: "Open"
+})) {
+  return {
+    activate: (_event, uri) => {
+      if (!/^https?:\/\//.test(uri)) return;
+      void confirmOpen(uri).then(async (confirmed) => {
+        if (confirmed) await shell3.openExternal(uri);
+      }).catch((error62) => {
+        console.warn("Could not open terminal link", error62);
+      });
+    }
+  };
+}
+var init_terminal_web_links = __esm({
+  "src/renderer/views/terminal-web-links.ts"() {
+    init_confirm_dialog();
+  }
+});
+
 // src/renderer/views/scoped-tabs.ts
 function tabsForScope(tabs, scopeId) {
   return [...tabs].filter((t2) => t2.scopeId === scopeId);
@@ -128783,7 +128834,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
       cursorBlink: true,
       fontSize: scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      theme: xtermThemeFromTokens(readEditorThemeTokens())
+      theme: xtermThemeFromTokens(readEditorThemeTokens()),
+      linkHandler: createTerminalWebLinkHandler(api2.shell)
     });
     const fitAddon = new o2();
     term.loadAddon(fitAddon);
@@ -128980,12 +129032,12 @@ ${output2}` : "Terminal output: (none)"
     } catch {
     }
   }
-  function focusTab(tab) {
+  function focusTab(tab, opts) {
     openTerminalSurface(tab);
     fitTab(tab);
-    tab.term.focus();
+    if (opts?.grabFocus ?? true) tab.term.focus();
   }
-  function setActiveTab(tabId) {
+  function setActiveTab(tabId, opts) {
     if (activeTabId === tabId) return;
     activeTabId = tabId;
     for (const tab2 of tabs.values()) {
@@ -128999,7 +129051,7 @@ ${output2}` : "Terminal output: (none)"
       void ensureSession(tab);
       requestAnimationFrame(() => {
         fitTab(tab);
-        focusTab(tab);
+        focusTab(tab, { grabFocus: opts?.focus ?? true });
       });
     }
   }
@@ -129019,6 +129071,31 @@ ${output2}` : "Terminal output: (none)"
     });
     tab.container.addEventListener("mousedown", () => {
       if (activeTabId === tab.id) focusTab(tab);
+    });
+    tab.container.addEventListener("contextmenu", (e3) => {
+      e3.preventDefault();
+      e3.stopPropagation();
+      showContextMenu(e3.clientX, e3.clientY, [
+        {
+          label: "Copy",
+          disabled: !tab.term.hasSelection(),
+          onSelect: () => {
+            void navigator.clipboard.writeText(tab.term.getSelection());
+          }
+        },
+        {
+          label: "Paste",
+          disabled: !tab.sessionId,
+          onSelect: () => {
+            void navigator.clipboard.readText().then((text2) => {
+              if (text2 && tab.sessionId) {
+                tab.term.paste(text2);
+                focusTab(tab);
+              }
+            });
+          }
+        }
+      ]);
     });
   }
   function currentThreadId() {
@@ -129150,7 +129227,7 @@ ${output2}` : "Terminal output: (none)"
     body.append(panel);
     const visible = scopeId === currentThreadId();
     setTabVisible(tab, visible);
-    if (visible && (options?.activate !== false || !activeTabId)) setActiveTab(id);
+    if (visible && (options?.activate !== false || !activeTabId)) setActiveTab(id, options);
     if (visible && terminalModeActive(store2)) void ensureSession(tab);
     return id;
   }
@@ -129181,10 +129258,10 @@ ${output2}` : "Terminal output: (none)"
     for (const tab2 of visible) setTabVisible(tab2, true);
     if (activeTabId && !visible.some((t2) => t2.id === activeTabId)) activeTabId = null;
     if (needsNew) {
-      if (terminalModeActive(store2)) addTab();
+      if (terminalModeActive(store2)) addTab({ focus: false });
       return;
     }
-    if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id);
+    if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id, { focus: false });
     const tab = activeTabId ? tabs.get(activeTabId) : null;
     if (tab && terminalModeActive(store2)) {
       resizeObserver.observe(tab.container);
@@ -129192,7 +129269,6 @@ ${output2}` : "Terminal output: (none)"
       void ensureSession(tab);
       requestAnimationFrame(() => {
         fitTab(tab);
-        focusTab(tab);
       });
     }
   }
@@ -129363,6 +129439,7 @@ var init_terminals_pane = __esm({
     init_pane_popout_button();
     init_selection_to_chat2();
     init_terminal_file_links();
+    init_terminal_web_links();
     init_scoped_tabs();
     init_array_utils2();
     init_xterm_scrollback();
@@ -129956,11 +130033,11 @@ var init_git_image_diff = __esm({
 });
 
 // src/renderer/views/git-changes-pane.ts
-function bytesToBase64(bytes) {
+function bytesToBase64(bytes2) {
   const chunks = [];
   const chunkSize = 32768;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)));
+  for (let offset = 0; offset < bytes2.length; offset += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes2.subarray(offset, offset + chunkSize)));
   }
   return btoa(chunks.join(""));
 }
@@ -129971,13 +130048,13 @@ function proposedImageDataUrl(path, content) {
   const dataUrlPrefix = `data:${mime};base64,`;
   if (content.startsWith(dataUrlPrefix)) return content;
   if (isRasterImagePath(path)) {
-    const bytes = new Uint8Array(content.length);
+    const bytes2 = new Uint8Array(content.length);
     for (let i2 = 0; i2 < content.length; i2++) {
       const codeUnit = content.charCodeAt(i2);
       if (codeUnit > 255) return null;
-      bytes[i2] = codeUnit;
+      bytes2[i2] = codeUnit;
     }
-    return `${dataUrlPrefix}${bytesToBase64(bytes)}`;
+    return `${dataUrlPrefix}${bytesToBase64(bytes2)}`;
   }
   return `${dataUrlPrefix}${bytesToBase64(new TextEncoder().encode(content))}`;
 }
@@ -134377,11 +134454,11 @@ function itemAttachments(item) {
   return item ? parseKnowledgeAttachments(item.fields[ATTACHMENTS_FIELD]) : [];
 }
 async function fileToDataUrl(file2) {
-  const bytes = new Uint8Array(await file2.arrayBuffer());
+  const bytes2 = new Uint8Array(await file2.arrayBuffer());
   let binary = "";
   const chunk = 32768;
-  for (let i2 = 0; i2 < bytes.length; i2 += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i2, i2 + chunk));
+  for (let i2 = 0; i2 < bytes2.length; i2 += chunk) {
+    binary += String.fromCharCode(...bytes2.subarray(i2, i2 + chunk));
   }
   return `data:${file2.type || "application/octet-stream"};base64,${btoa(binary)}`;
 }
@@ -134390,8 +134467,8 @@ function dataUrlToText(dataUrl) {
   if (comma < 0) return null;
   try {
     const binary = atob(dataUrl.slice(comma + 1));
-    const bytes = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const bytes2 = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes2);
   } catch {
     return null;
   }
@@ -146011,8 +146088,8 @@ var init_websock = __esm({
       rQpeek8() {
         return this._rQ[this._rQi];
       }
-      rQskipBytes(bytes) {
-        this._rQi += bytes;
+      rQskipBytes(bytes2) {
+        this._rQi += bytes2;
       }
       rQshift8() {
         return this._rQshift(1);
@@ -146024,9 +146101,9 @@ var init_websock = __esm({
         return this._rQshift(4);
       }
       // TODO(directxman12): test performance with these vs a DataView
-      _rQshift(bytes) {
+      _rQshift(bytes2) {
         let res = 0;
-        for (let byte = bytes - 1; byte >= 0; byte--) {
+        for (let byte = bytes2 - 1; byte >= 0; byte--) {
           res += this._rQ[this._rQi++] << byte * 8;
         }
         return res >>> 0;
@@ -146094,17 +146171,17 @@ var init_websock = __esm({
         this._sQ[this._sQlen++] = num >> 0 & 255;
       }
       sQpushString(str) {
-        let bytes = str.split("").map((chr) => chr.charCodeAt(0));
-        this.sQpushBytes(new Uint8Array(bytes));
+        let bytes2 = str.split("").map((chr) => chr.charCodeAt(0));
+        this.sQpushBytes(new Uint8Array(bytes2));
       }
-      sQpushBytes(bytes) {
-        for (let offset = 0; offset < bytes.length; ) {
+      sQpushBytes(bytes2) {
+        for (let offset = 0; offset < bytes2.length; ) {
           this._sQensureSpace(1);
           let chunkSize = this._sQbufferSize - this._sQlen;
-          if (chunkSize > bytes.length - offset) {
-            chunkSize = bytes.length - offset;
+          if (chunkSize > bytes2.length - offset) {
+            chunkSize = bytes2.length - offset;
           }
-          this._sQ.set(bytes.subarray(offset, offset + chunkSize), this._sQlen);
+          this._sQ.set(bytes2.subarray(offset, offset + chunkSize), this._sQlen);
           this._sQlen += chunkSize;
           offset += chunkSize;
         }
@@ -146115,8 +146192,8 @@ var init_websock = __esm({
           this._sQlen = 0;
         }
       }
-      _sQensureSpace(bytes) {
-        if (this._sQbufferSize - this._sQlen < bytes) {
+      _sQensureSpace(bytes2) {
+        if (this._sQbufferSize - this._sQlen < bytes2) {
           this.flush();
         }
       }
@@ -147818,9 +147895,9 @@ var init_dh = __esm({
         ), this._keyBytes);
       }
       deriveBits(algorithm, length) {
-        const bytes = Math.ceil(length / 8);
+        const bytes2 = Math.ceil(length / 8);
         const pkey = new Uint8Array(algorithm.public);
-        const len = bytes > this._keyBytes ? bytes : this._keyBytes;
+        const len = bytes2 > this._keyBytes ? bytes2 : this._keyBytes;
         const secret = modPow(u8ArrayToBigInt(pkey), this._privateKeyBigInt, this._pBigInt);
         return bigIntToU8Array(secret, len).slice(0, len);
       }
@@ -148406,8 +148483,8 @@ var init_hextile = __esm({
           this._tiles = this._totalTiles;
         }
         while (this._tiles > 0) {
-          let bytes = 1;
-          if (sock.rQwait("HEXTILE", bytes)) {
+          let bytes2 = 1;
+          if (sock.rQwait("HEXTILE", bytes2)) {
             return false;
           }
           let subencoding = sock.rQpeek8();
@@ -148422,28 +148499,28 @@ var init_hextile = __esm({
           const tw = Math.min(16, x2 + width - tx);
           const th = Math.min(16, y2 + height - ty);
           if (subencoding & 1) {
-            bytes += tw * th * 4;
+            bytes2 += tw * th * 4;
           } else {
             if (subencoding & 2) {
-              bytes += 4;
+              bytes2 += 4;
             }
             if (subencoding & 4) {
-              bytes += 4;
+              bytes2 += 4;
             }
             if (subencoding & 8) {
-              bytes++;
-              if (sock.rQwait("HEXTILE", bytes)) {
+              bytes2++;
+              if (sock.rQwait("HEXTILE", bytes2)) {
                 return false;
               }
-              let subrects = sock.rQpeekBytes(bytes).at(-1);
+              let subrects = sock.rQpeekBytes(bytes2).at(-1);
               if (subencoding & 16) {
-                bytes += subrects * (4 + 2);
+                bytes2 += subrects * (4 + 2);
               } else {
-                bytes += subrects * 2;
+                bytes2 += subrects * 2;
               }
             }
           }
-          if (sock.rQwait("HEXTILE", bytes)) {
+          if (sock.rQwait("HEXTILE", bytes2)) {
             return false;
           }
           sock.rQshift8();
@@ -151778,8 +151855,8 @@ var init_rfb = __esm({
         const h3 = this._FBU.height;
         const pixelslength = w2 * h3 * 4;
         const masklength = Math.ceil(w2 / 8) * h3;
-        let bytes = pixelslength + masklength;
-        if (this._sock.rQwait("cursor encoding", bytes)) {
+        let bytes2 = pixelslength + masklength;
+        if (this._sock.rQwait("cursor encoding", bytes2)) {
           return false;
         }
         const pixels = this._sock.rQshiftBytes(pixelslength);
@@ -151829,8 +151906,8 @@ var init_rfb = __esm({
           return false;
         }
         const numberOfScreens = this._sock.rQpeek8();
-        let bytes = 4 + numberOfScreens * 16;
-        if (this._sock.rQwait("ExtendedDesktopSize", bytes)) {
+        let bytes2 = 4 + numberOfScreens * 16;
+        if (this._sock.rQwait("ExtendedDesktopSize", bytes2)) {
           return false;
         }
         const firstUpdate = !this._supportsSetDesktopSize;
@@ -152294,8 +152371,8 @@ var init_vnc_channel = __esm({
       }
       send(data) {
         if (this.readyState !== WebSocket.OPEN) throw new Error("VNC channel is not open");
-        const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-        this.api.vnc.send(this.connectionId, Uint8Array.from(bytes));
+        const bytes2 = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+        this.api.vnc.send(this.connectionId, Uint8Array.from(bytes2));
       }
       close() {
         if (this.readyState === WebSocket.CLOSING || this.readyState === WebSocket.CLOSED) {
@@ -152306,9 +152383,9 @@ var init_vnc_channel = __esm({
           this.fail(error62 instanceof Error ? error62.message : String(error62));
         });
       }
-      receive(bytes) {
+      receive(bytes2) {
         if (this.readyState !== WebSocket.OPEN) return;
-        const copy = Uint8Array.from(bytes);
+        const copy = Uint8Array.from(bytes2);
         this.onmessage?.({ data: copy.buffer });
       }
       handleStatus(event) {
@@ -154202,8 +154279,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       if (event.key === "Enter") submitCredentials();
     });
   }
-  const stopData = api2.vnc.onData((connectionId, bytes) => {
-    if (channel?.connectionId === connectionId) channel.receive(bytes);
+  const stopData = api2.vnc.onData((connectionId, bytes2) => {
+    if (channel?.connectionId === connectionId) channel.receive(bytes2);
   });
   const stopStatus = api2.vnc.onStatus((event) => {
     if (channel?.connectionId === event.id && event.status === "error" && pendingDisconnectStatus === null) {
@@ -156161,6 +156238,129 @@ var init_command_palette = __esm({
   }
 });
 
+// src/renderer/views/network-activity-view.ts
+function bytes(value) {
+  if (value === null) return "\u2014";
+  if (value < 1024) return `${String(value)} B`;
+  return `${(value / 1024 ** (value < 1024 * 1024 ? 1 : 2)).toFixed(1)} ${value < 1024 * 1024 ? "KiB" : "MiB"}`;
+}
+function createNetworkActivityView(threadLabel2) {
+  const search = el("input", {
+    type: "search",
+    class: "network-activity-search",
+    placeholder: "Filter activity or destination\u2026",
+    "aria-label": "Filter network activity"
+  });
+  const activeOnly = el("input", { type: "checkbox" });
+  const body = el("tbody");
+  const summary = el("p", { class: "network-activity-summary", role: "status" });
+  const empty = el("p", { class: "network-activity-empty" });
+  const table = el(
+    "table",
+    { class: "network-activity-table" },
+    el(
+      "thead",
+      {},
+      el(
+        "tr",
+        {},
+        ...["Activity", "Destination", "Thread", "Status", "Elapsed", "Sent", "Received"].map(
+          (label) => el("th", { scope: "col" }, label)
+        )
+      )
+    ),
+    body
+  );
+  const element = el(
+    "section",
+    { class: "network-activity-panel", "aria-label": "Network activity" },
+    el(
+      "div",
+      { class: "network-activity-toolbar" },
+      search,
+      el("label", {}, activeOnly, " Active only")
+    ),
+    el("div", { class: "process-manager-scroll" }, table, empty),
+    summary,
+    el(
+      "p",
+      { class: "network-activity-coverage" },
+      "Command activity, container connections, and sandbox blocks. HTTPS request paths and status codes are not captured."
+    )
+  );
+  let current;
+  let now = 0;
+  function render(snapshot, sampledAt) {
+    current = snapshot;
+    now = sampledAt;
+    const query = search.value.trim().toLowerCase();
+    const rows = (snapshot?.rows ?? []).filter(
+      (row2) => (!activeOnly.checked || row2.endedAt === null) && `${row2.label} ${row2.target ?? ""} ${threadLabel2(row2.threadId)} ${statuses[row2.status]}`.toLowerCase().includes(query)
+    );
+    clear(body);
+    for (const row2 of rows) {
+      const state = row2.exitCode === null ? statuses[row2.status] : `${statuses[row2.status]} (${String(row2.exitCode)})`;
+      const elapsed = Math.max(0, (row2.endedAt ?? sampledAt) - row2.startedAt);
+      const label = threadLabel2(row2.threadId);
+      body.append(
+        el(
+          "tr",
+          { "data-activity-id": String(row2.id), "data-status": row2.status },
+          el(
+            "td",
+            {},
+            el("span", { class: "network-activity-label", title: row2.label }, row2.label),
+            el(
+              "small",
+              {},
+              row2.source === "command" ? "Command" : row2.source === "container" ? "Container" : "Sandbox"
+            )
+          ),
+          el(
+            "td",
+            { title: row2.target ?? "Destination not captured for commands" },
+            row2.target ?? "\u2014"
+          ),
+          el("td", { title: label }, label),
+          el("td", {}, el("span", { class: "network-activity-state" }, state)),
+          el("td", {}, `${(elapsed / 1e3).toFixed(1)} s`),
+          el("td", {}, bytes(row2.bytesSent)),
+          el("td", {}, bytes(row2.bytesReceived))
+        )
+      );
+    }
+    table.hidden = rows.length === 0;
+    empty.hidden = rows.length > 0;
+    empty.textContent = snapshot === void 0 ? "Network activity is unavailable in this runtime." : snapshot.rows.length === 0 ? "No network activity yet. Captured commands and connections will appear here." : "No activity matches these filters.";
+    const active2 = snapshot?.rows.filter((row2) => row2.endedAt === null).length ?? 0;
+    summary.textContent = `${String(active2)} active \xB7 ${String(rows.length)} shown \xB7 Recent session activity${snapshot?.dropped ? ` \xB7 ${String(snapshot.dropped)} older entries discarded` : ""}`;
+  }
+  search.addEventListener("input", () => {
+    render(current, now);
+  });
+  activeOnly.addEventListener("change", () => {
+    render(current, now);
+  });
+  return { element, render };
+}
+var statuses;
+var init_network_activity_view = __esm({
+  "src/renderer/views/network-activity-view.ts"() {
+    init_helpers();
+    statuses = {
+      running: "Running",
+      connecting: "Connecting",
+      active: "Connected",
+      completed: "Completed",
+      closed: "Closed",
+      failed: "Failed",
+      blocked: "Blocked",
+      cancelled: "Cancelled",
+      "timed-out": "Timed out"
+    };
+  }
+});
+
 // src/renderer/views/process-manager-dialog.ts
 function sortedRows(rows, column, ascending) {
   const direction = ascending ? 1 : -1;
@@ -156252,6 +156452,38 @@ function mountProcessManagerDialog(api2, store2) {
   const status = el("p", { class: "process-manager-status", role: "status" }, "Loading processes\u2026");
   const summary = el("p", { class: "process-manager-summary", role: "status" });
   const updated = el("span", { class: "process-manager-updated", "aria-hidden": "true" });
+  const processScroll = el("div", { class: "process-manager-scroll" }, table);
+  const network = createNetworkActivityView(threadLabel2);
+  network.element.hidden = true;
+  const processesButton = el(
+    "button",
+    { type: "button", class: "process-manager-tab", "aria-pressed": "true" },
+    "Processes"
+  );
+  const networkButton = el(
+    "button",
+    { type: "button", class: "process-manager-tab", "aria-pressed": "false" },
+    "Network"
+  );
+  const footerHint = el("span", {}, "CPU is approximate; memory is physical RAM in MiB.");
+  let showingNetwork = false;
+  function showNetwork(value) {
+    showingNetwork = value;
+    dialog2.dataset["view"] = value ? "network" : "processes";
+    processScroll.hidden = value;
+    summary.hidden = value;
+    network.element.hidden = !value;
+    processesButton.setAttribute("aria-pressed", String(!value));
+    networkButton.setAttribute("aria-pressed", String(value));
+    footerHint.textContent = value ? "Updates every second \xB7 Metadata only" : "CPU is approximate; memory is physical RAM in MiB.";
+    if (current) render(current);
+  }
+  processesButton.addEventListener("click", () => {
+    showNetwork(false);
+  });
+  networkButton.addEventListener("click", () => {
+    showNetwork(true);
+  });
   dialog2.append(
     el(
       "div",
@@ -156263,18 +156495,20 @@ function mountProcessManagerDialog(api2, store2) {
           "div",
           {},
           el("h2", { id: "process-manager-title" }, "Process Manager"),
-          el("p", { class: "process-manager-subtitle" }, "Live Copse and managed task processes")
+          el("p", { class: "process-manager-subtitle" }, "Live processes and network activity")
         ),
         closeButton
       ),
-      el("div", { class: "process-manager-scroll" }, table),
-      summary,
       el(
-        "footer",
-        { class: "process-manager-footer" },
-        el("span", {}, "CPU is approximate; memory is physical RAM in MiB."),
-        updated
+        "div",
+        { class: "process-manager-tabs", role: "group", "aria-label": "Process manager view" },
+        processesButton,
+        networkButton
       ),
+      processScroll,
+      network.element,
+      summary,
+      el("footer", { class: "process-manager-footer" }, footerHint, updated),
       status
     )
   );
@@ -156396,6 +156630,7 @@ function mountProcessManagerDialog(api2, store2) {
     return entries2;
   }
   function render(snapshot) {
+    if (showingNetwork) network.render(snapshot.network, snapshot.sampledAt);
     const focusedGroup = document.activeElement instanceof HTMLElement && body.contains(document.activeElement) && document.activeElement.classList.contains("process-manager-group-toggle") ? document.activeElement.dataset["groupKey"] : void 0;
     cpuHeading.setAttribute(
       "aria-sort",
@@ -156489,7 +156724,7 @@ function mountProcessManagerDialog(api2, store2) {
     }
     updated.textContent = `Updated ${new Date(snapshot.sampledAt).toLocaleTimeString()}`;
     dialog2.dataset["sampledAt"] = String(snapshot.sampledAt);
-    status.textContent = snapshot.processes.length === 0 ? "No processes found." : "";
+    status.textContent = !showingNetwork && snapshot.processes.length === 0 ? "No processes found." : "";
   }
   function isRequestCurrent(requestGeneration) {
     return dialog2.open && requestGeneration === generation;
@@ -156536,7 +156771,8 @@ function mountProcessManagerDialog(api2, store2) {
     if (dialog2.open) return;
     current = null;
     clear(body);
-    status.textContent = "Loading processes\u2026";
+    network.render(void 0, Date.now());
+    status.textContent = "Loading activity\u2026";
     updated.textContent = "";
     open2();
     closeButton.focus({ preventScroll: true });
@@ -156546,6 +156782,7 @@ function mountProcessManagerDialog(api2, store2) {
 }
 var init_process_manager_dialog = __esm({
   "src/renderer/views/process-manager-dialog.ts"() {
+    init_network_activity_view();
     init_helpers();
     init_icons();
     init_context_menu();
