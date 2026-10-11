@@ -213,6 +213,41 @@ describe('combined stack review gates', () => {
     assert.equal(f.writes.at(-1)?.state, 'pending')
     assert.match(f.writes.at(-1)?.description ?? '', /rerun CI/)
   })
+  it('leaves ordinary PR screenshot checks untouched', async () => {
+    const f = fixture()
+    f.pulls.set(1, pull(1, LOWER, 'ordinary PR'))
+    await reconcileScreenshotStack(f.github, input)
+    assert.deepEqual(f.writes, [])
+  })
+  it('names the moved PR instead of reporting a generic invalid stack', async () => {
+    const f = fixture()
+    f.pulls.set(1, pull(1, BASE))
+    await reconcileScreenshotStack(f.github, input)
+    assert.equal(f.writes.at(-1)?.state, 'error')
+    assert.match(f.writes.at(-1)?.description ?? '', /PR #1 head moved; update its stack pin/)
+  })
+  it('clears a resolved tip setup error without granting screenshot approval', async () => {
+    const f = fixture()
+    f.statuses.set(TIP, [status('Screenshot review', 4, 'Stack invalid or changed', 'error')])
+    await reconcileScreenshotStack(f.github, tipInput)
+    assert.equal(f.writes.at(-1)?.state, 'pending')
+    assert.match(f.writes.at(-1)?.description ?? '', /waiting for combined CI/)
+  })
+  it('preserves an explicit tip decision during reconciliation', async () => {
+    const f = fixture()
+    await reconcileScreenshotStack(f.github, tipInput)
+    assert.deepEqual(f.writes, [])
+  })
+  it('does not publish raw API errors as a declaration problem', async () => {
+    const f = fixture()
+    f.github.rest.repos.compareCommitsWithBasehead = async () => {
+      throw new Error('private response details')
+    }
+    await reconcileScreenshotStack(f.github, input)
+    assert.equal(f.writes.at(-1)?.state, 'error')
+    assert.match(f.writes.at(-1)?.description ?? '', /Validation unavailable/)
+    assert.doesNotMatch(f.writes.at(-1)?.description ?? '', /private response/)
+  })
   it('reports invalid live stacks as errors without granting success', async () => {
     const f = fixture()
     f.diverge()
