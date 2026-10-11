@@ -14,12 +14,15 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('roadmap review reattach', () => {
   let workspaceRoot: string
+  let workspaceParent: string
   let knowledgeDir: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-review-reattach-'))
+    workspaceParent = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-review-reattach-'))
+    workspaceRoot = join(workspaceParent, 'roadmap-review')
+    mkdirSync(workspaceRoot)
     knowledgeDir = seedRoadmapNotes('e2e-roadmap-review-reattach', [
       {
         id: 'e2e-roadmap-review-reattach-a',
@@ -43,7 +46,7 @@ describe('roadmap review reattach', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(workspaceParent, { recursive: true, force: true })
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 

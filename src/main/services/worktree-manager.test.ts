@@ -17,6 +17,7 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises'
+import { createServer, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { SandboxManager, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
@@ -32,6 +33,7 @@ import {
   adoptThreadWorktree,
   allocateThreadWorktree,
   canAdoptThreadWorktree,
+  changedPaths,
   expectedThreadWorktreePath,
   inspectManagedThreadWorktreePath,
   inspectThreadWorktreeAttachment,
@@ -137,6 +139,13 @@ describe('parseWorktreePorcelain', () => {
         prunable: null,
       },
     ])
+  })
+})
+
+describe('changedPaths', () => {
+  it('takes the field after a rename as its source even when it looks like a status entry', () => {
+    const raw = ['R  intro.md', '01 intro.md', ' M other.txt', ''].join('\0')
+    assert.deepEqual(changedPaths(raw), ['intro.md', '01 intro.md', 'other.txt'])
   })
 })
 
@@ -922,6 +931,48 @@ describe('worktree manager', () => {
       'should base off the fetched remote tip, not the stale local branch',
     )
     assert.equal(await readFile(join(worktree.path, 'from-remote.txt'), 'utf-8'), 'newer commit\n')
+  })
+
+  it('falls back to the local default branch when the best-effort fetch times out', async () => {
+    const { repo } = await setup()
+    // A remote that accepts the connection and never answers, as an offline or
+    // captive network does, so `git fetch` runs into its 60 s timeout.
+    const sockets: Socket[] = []
+    let fetchStarted: () => void = () => {}
+    const started = new Promise<void>((resolve) => {
+      fetchStarted = resolve
+    })
+    const server = createServer((socket) => {
+      sockets.push(socket)
+      fetchStarted()
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    assert.ok(address && typeof address === 'object')
+    const head = git(repo, ['rev-parse', 'main']).trim()
+    git(repo, ['remote', 'add', 'origin', `http://127.0.0.1:${String(address.port)}/repo.git`])
+    git(repo, ['update-ref', 'refs/remotes/origin/main', head])
+    git(repo, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'])
+
+    mock.timers.enable({ apis: ['setTimeout'] })
+    try {
+      const allocation = allocateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-offline-fetch',
+        projectRoot: repo,
+        prompt: 'Work offline',
+        baseBranch: 'main',
+      })
+      await started
+      // The fetch is the only command in flight once the remote is contacted.
+      mock.timers.tick(60_000)
+      const worktree = await allocation
+      assert.equal(worktree.baseCommit, head)
+    } finally {
+      mock.timers.reset()
+      for (const socket of sockets) socket.destroy()
+      server.close()
+    }
   })
 
   it('serializes concurrent allocations and suffixes branch collisions deterministically', async () => {
