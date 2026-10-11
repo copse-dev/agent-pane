@@ -345,6 +345,39 @@ dialog.settings-overlay::backdrop {
 .settings-action-row:last-child {
   margin-bottom: 0;
 }
+/* The QR always needs a white card behind it — its black/white contrast is
+   what a camera scans, so it must not inherit the dark-theme surface color. */
+.mobile-companion-qr {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  margin-bottom: calc(var(--spacing-xl) + var(--spacing-md));
+}
+.mobile-companion-qr-image {
+  flex-shrink: 0;
+  width: 96px;
+  height: 96px;
+  padding: var(--spacing-sm);
+  background: var(--qr-background);
+  border-radius: var(--radius-sm);
+}
+.mobile-companion-qr-image svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.mobile-companion-qr-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+.mobile-companion-qr-url {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  overflow-wrap: break-word;
+}
 .settings-buttons {
   display: flex;
   gap: var(--spacing-md);
