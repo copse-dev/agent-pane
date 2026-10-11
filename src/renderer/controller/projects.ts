@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, Thread } from '@shared/types'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import { unreadSideChatParents, withoutSideChats } from '@shared/threads/side-chat.ts'
 import {
   createThread,
   markThreadRead,
@@ -12,6 +13,7 @@ import {
 import {
   loadThreads,
   flushProjectThreads,
+  holdNavigation,
   saveNavigation,
   saveProjects,
   serializedSet,
@@ -141,6 +143,16 @@ interface PendingSwitch {
 }
 let pendingSwitch: PendingSwitch | null = null
 
+/**
+ * Forget the in-flight switch and lift its hold on persisted navigation (see
+ * {@link holdNavigation}), so a write that puts the outgoing project back — a
+ * cancel, an abort — is not dropped.
+ */
+function clearPendingSwitch(): void {
+  pendingSwitch = null
+  holdNavigation(null)
+}
+
 type ActivationWaiter = { resolve: () => void; reject: (err: Error) => void; unsub?: () => void }
 const activationWaiters = new Map<string, ActivationWaiter>()
 
@@ -162,7 +174,8 @@ function settleActivationWaiter(projectId: string, error?: Error): void {
  * never mounts.
  */
 function endSwitch(gen: number, projectId: string): void {
-  if (pendingSwitch?.gen === gen) pendingSwitch = null
+  if (pendingSwitch?.gen !== gen) return
+  clearPendingSwitch()
   settleActivationWaiter(projectId)
 }
 
@@ -170,7 +183,7 @@ function endSwitch(gen: number, projectId: string): void {
 function supersedePendingSwitch(): void {
   if (!pendingSwitch) return
   const superseded = pendingSwitch
-  pendingSwitch = null
+  clearPendingSwitch()
   settleActivationWaiter(superseded.projectId)
 }
 
@@ -178,7 +191,42 @@ export function getSidebarThreads(store: AppStore, projectId: string): SidebarTh
   const { activeProjectId, threads } = store.getState()
   const list = projectId === activeProjectId ? threads : (threadCache.get(projectId) ?? [])
   // Archived threads stay in the project store / on disk but leave the sidebar.
-  return list.filter((t) => t.archivedAt == null)
+  // Side chats are hidden by default too: they are listed beside their parent in
+  // the Side chat panel, and an unread one rolls up to the parent's row dot.
+  return withoutSideChats(list).filter((t) => t.archivedAt == null)
+}
+
+const sideChatUnreadCache = new WeakMap<object, Set<string>>()
+
+/**
+ * Threads of the active project with an unread side chat. Other projects' lists
+ * are compacted sidebar rows, which carry the link but are not scanned here.
+ */
+export function getSideChatUnreadParents(store: AppStore, projectId: string): Set<string> {
+  const { activeProjectId, threads } = store.getState()
+  if (projectId !== activeProjectId) return new Set()
+  const cached = sideChatUnreadCache.get(threads)
+  if (cached) return cached
+  const parents = unreadSideChatParents(threads)
+  sideChatUnreadCache.set(threads, parents)
+  return parents
+}
+
+/**
+ * The thread that answers for `threadId` when it needs the user: a side chat's
+ * parent, because the side chat itself is hidden from the sidebar and is never
+ * the active thread. An ordinary thread, and a side chat whose parent is not in
+ * the same project list (so it is listed itself), answer for themselves.
+ * Background projects are resolved from their cached sidebar rows.
+ */
+export function attentionThreadId(store: AppStore, threadId: string): string {
+  for (const list of [store.getState().threads, ...threadCache.values()]) {
+    const thread = list.find((t) => t.id === threadId)
+    if (!thread) continue
+    const parentId = thread.sideChat?.parentThreadId
+    return parentId !== undefined && list.some((t) => t.id === parentId) ? parentId : threadId
+  }
+  return threadId
 }
 
 /** An archive completed after the user switched to another project. */
@@ -223,6 +271,10 @@ export function isProjectSwitchInFlight(store: AppStore, projectId: string): boo
   // that window as in-flight too, so the sidebar shows "Loading…" instead of
   // an empty thread list while a large project's threads load in the background.
   return activeProjectId === projectId && !workspaceRoot
+}
+
+function isListedProject(store: AppStore, projectId: string): boolean {
+  return store.getState().projects.some((project) => project.id === projectId)
 }
 
 function cacheThreads(projectId: string, threads: Thread[]): void {
@@ -273,7 +325,9 @@ export async function preloadSidebarThreads(store: AppStore, api: ApiClient): Pr
 export function attachProjectThreadCache(store: AppStore): () => void {
   return store.on('threads_changed', () => {
     const { activeProjectId, threads } = store.getState()
-    if (activeProjectId) cacheThreads(activeProjectId, threads)
+    if (activeProjectId && isListedProject(store, activeProjectId)) {
+      cacheThreads(activeProjectId, threads)
+    }
   })
 }
 
@@ -320,7 +374,7 @@ function setWorkspaceInOrder(
 function cancelPendingSwitch(store: AppStore, api: ApiClient): void {
   const cancelled = pendingSwitch
   if (!cancelled) return
-  pendingSwitch = null
+  clearPendingSwitch()
   switchGeneration += 1
   settleActivationWaiter(cancelled.projectId)
   // Nothing to undo — and no IPC round trip to spend — if it never got that far.
@@ -343,7 +397,7 @@ function abortProjectActivation(
   error: Error,
 ): void {
   if (gen !== switchGeneration) return
-  if (pendingSwitch?.gen === gen) pendingSwitch = null
+  if (pendingSwitch?.gen === gen) clearPendingSwitch()
   settleActivationWaiter(id, error)
   const revertExpanded = outgoingId ?? store.getState().activeProjectId
   if (revertExpanded) {
@@ -531,8 +585,15 @@ async function finishActivate(
       : Promise.resolve()
   // Record the move before dispatching it: a cancel landing while these are in
   // flight has to know main and config were pointed at `id`, and put them back
-  // (see cancelPendingSwitch).
-  if (pendingSwitch?.gen === gen) pendingSwitch.dispatched = true
+  // (see cancelPendingSwitch). From here until the switch applies, the store
+  // still names the outgoing project, so hold persisted navigation on `id`:
+  // otherwise an autosave flush puts the outgoing project back, and the
+  // project-scoped reads that refresh on `workspace_changed` (the roadmap pane)
+  // list the previous project's data.
+  if (pendingSwitch?.gen === gen) {
+    pendingSwitch.dispatched = true
+    holdNavigation(id)
+  }
   const projectsAtDispatch = store.getState().projects
   const persistSelection = saveProjects(api, projectsAtDispatch, id, pendingThreadId)
   const endWorkspace = perfBegin('switch:workspace-set')
@@ -547,7 +608,9 @@ async function finishActivate(
 
   if (!opened) {
     // Quarantine rather than delete: flag the project missing and stay on the
-    // project the user was already viewing (issue #997).
+    // project the user was already viewing (issue #997) — which means persisting
+    // that project again, so lift the hold first.
+    holdNavigation(null)
     await markProjectMissing(store, api, id)
     endActivate({ outcome: 'missing' })
     abortProjectActivation(
@@ -676,12 +739,14 @@ function activate(
       restarts: pendingSwitch?.projectId === id,
     })
   }
-  supersedePendingSwitch()
+  cancelPendingSwitch(store, api)
   const gen = ++switchGeneration
   pendingSwitch = { gen, projectId: id, dispatched: false }
   const outgoingId = activeProjectId
   const outgoingThreads = threads
-  if (outgoingId) {
+  // An outgoing project that was just removed (removeProject switching away
+  // from it) must not be cached back in or have its view state recorded.
+  if (outgoingId && isListedProject(store, outgoingId)) {
     cacheThreads(outgoingId, outgoingThreads)
     // Snapshot the outgoing project's panel visibility so switching back restores it.
     recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store.getState()))
@@ -697,7 +762,34 @@ function activate(
     outgoingId,
     outgoingThreads,
     pendingThreadId,
-  )
+  ).catch(async (error: unknown) => {
+    if (gen !== switchGeneration) {
+      endSwitch(gen, id)
+      return
+    }
+    // A failed load leaves the outgoing project in the store, even though main
+    // and navigation already name the target. Queue restoration before another
+    // switch can dispatch, then notify waiters only once those writes settle.
+    holdNavigation(null)
+    const state = store.getState()
+    const active = state.projects.find((project) => project.id === state.activeProjectId)
+    const root = active?.path ?? state.workspaceRoot
+    await Promise.all([
+      root ? setWorkspaceInOrder(api, root, active?.sshHost) : Promise.resolve(),
+      saveNavigation(api, state.activeProjectId, state.activeThreadId),
+    ]).catch((restoreError: unknown) => {
+      console.warn('[projects] could not restore navigation after a failed switch:', restoreError)
+    })
+    const failure = error instanceof Error ? error : new Error(String(error))
+    if (gen === switchGeneration) {
+      abortProjectActivation(store, id, gen, state.activeProjectId, failure)
+    } else {
+      endSwitch(gen, id)
+    }
+    // activate is also fire-and-forget from sidebar clicks: do not create an
+    // unhandled rejection. Awaiting callers receive the error through their waiter.
+    console.warn('[projects] project activation failed:', failure)
+  })
 }
 
 export function switchProject(
@@ -1108,7 +1200,7 @@ export async function recoverOrphanProject(
 /** Test hook — reset module-level switch state. */
 export function resetProjectSwitchStateForTest(): void {
   switchGeneration = 0
-  pendingSwitch = null
+  clearPendingSwitch()
   workspaceChain = Promise.resolve()
   threadCache.clear()
   liveCacheProjectId = null

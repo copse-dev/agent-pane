@@ -93,6 +93,19 @@ describe('analyzeReadOutsideProject — ineligible commands', () => {
     ineligible('sudo cat /etc/shadow', /changes how the command runs|credential file/)
     ineligible('env PATH=/evil cat ~/.gitconfig', /changes how the command runs/)
     ineligible('xargs cat < ~/list', /changes how the command runs|writes to/)
+    // Behind a transparent wrapper the environment change is still there.
+    ineligible('nohup env HOME=/root cat /opt/notes.txt', /runs through `env`/)
+    ineligible('nice xargs cat < ~/list', /runs through `xargs`/)
+    ineligible('nohup sudo cat /opt/notes.txt', /runs through `sudo`/)
+  })
+
+  it("refuses another user's home rather than reading it as a project path", () => {
+    // `~dev/…` is not `./~dev/…`: resolved against the project it read as a file
+    // inside it, and the credential checks never saw the real path.
+    ineligible('cat ~dev/.ssh/id_rsa', /home directory that cannot be resolved/)
+    ineligible('cat ~alice/notes.txt', /home directory that cannot be resolved/)
+    ineligible('cat < ~alice/notes.txt', /home directory that cannot be resolved/)
+    ineligible('ls ~+/x', /home directory that cannot be resolved/)
   })
 
   it('rejects a printf -v assignment that can replace the later reader', () => {
@@ -221,7 +234,8 @@ describe('read-outside prompt copy', () => {
     assert.equal(parts.command, 'ls -la ~/.copse/workspace')
     assert.match(parts.bodyAdvice ?? '', /~\/\.copse/)
     assert.equal(parts.bodyAdvice, 'The agent wants to read ~/.copse/workspace.')
-    assert.match(parts.bodyFooter ?? '', /rest of the thread/)
+    assert.match(parts.bodyFooter ?? '', /rest of this chat/)
+    assert.match(parts.bodyFooter ?? '', /other paths outside the project too/)
     assert.match(parts.bodyFooter ?? '', /credential/)
   })
 
@@ -276,6 +290,14 @@ describe('analyzeReadOutsideProject — cd and sed', () => {
     for (const command of ['cd /work/other && cat .env', 'cd ~/.ssh && cat id_rsa', 'cd ~ && ls']) {
       assert.equal(analyze(command).eligible, false, command)
     }
+  })
+
+  it('resolves each operand against the directory in effect when it runs', () => {
+    // The lexer-fallback repeat of `cat notes.txt` was resolved after the `cd`,
+    // adding /opt/data/notes.txt — a file the command never opens.
+    const analysis = analyze('cat notes.txt && cd /opt/data && cat x.txt')
+    assert.equal(analysis.eligible, true, analysis.blockers.join('; '))
+    assert.deepEqual(analysis.resolvedTargets, ['/opt/data/x.txt'])
   })
 
   it('refuses a cd it cannot follow', () => {

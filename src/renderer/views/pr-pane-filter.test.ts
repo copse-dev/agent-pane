@@ -435,7 +435,8 @@ describe('pr pane filter (issue #2482)', () => {
         await settle()
         listRoot.querySelector<HTMLElement>('.pr-list-row')?.click()
         await settle()
-        assert.match(viewerRoot.textContent, /No recorded producing thread/)
+        assert.equal(viewerRoot.querySelector('[data-relationship-group="produced"]'), null)
+        assert.ok(viewerRoot.querySelector('[data-relationship-group="related"]'))
         rows = [
           {
             threadId: 'producer',

@@ -79,6 +79,12 @@ const STREAM_RECONNECT_BASE_DELAY_MS = 1_000
 const STREAM_RECONNECT_MAX_DELAY_MS = 30_000
 const STREAM_WAIT_DEADLINE_MS = 2 * 60 * 60 * 1_000
 const STREAM_POLL_INTERVAL_MS = 15_000
+/**
+ * Silence after which an open run stream counts as dropped. A half-open socket
+ * delivers neither data nor an error, so without this the turn waits forever;
+ * the reconnect path (resume from Last-Event-ID, else Get A Run) takes over.
+ */
+export const REMOTE_STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1_000
 
 type StreamAttemptOutcome = 'received-result' | 'stream-dropped'
 
@@ -929,8 +935,20 @@ async function streamRemoteRunAttempt(input: {
   }
   if (!response.body) throw new Error('Remote agent stream response did not include a body')
 
+  const guarded = idleGuardedBody(response.body, REMOTE_STREAM_IDLE_TIMEOUT_MS)
+  try {
+    return await readRemoteRunEvents(guarded.body, input)
+  } finally {
+    guarded.dispose()
+  }
+}
+
+async function readRemoteRunEvents(
+  body: ReadableStream<Uint8Array>,
+  input: Parameters<typeof streamRemoteRunAttempt>[0],
+): Promise<StreamAttemptOutcome> {
   let sawTerminal = false
-  for await (const event of parseSseStream(response.body)) {
+  for await (const event of parseSseStream(body)) {
     if (input.signal.aborted) throw new DOMException('Aborted', 'AbortError')
     if (event.id) {
       input.onEventId(event.id)
@@ -948,6 +966,47 @@ async function streamRemoteRunAttempt(input: {
   return sawTerminal || isTerminalRunStatus(input.state.terminalStatus)
     ? 'received-result'
     : 'stream-dropped'
+}
+
+/**
+ * `body`, erroring once no bytes arrive for `idleMs`. Erroring the pipe also
+ * cancels the response body, which releases the dead connection.
+ */
+function idleGuardedBody(
+  body: ReadableStream<Uint8Array>,
+  idleMs: number,
+): { body: ReadableStream<Uint8Array>; dispose: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let goIdle = (): void => {}
+  const arm = (): void => {
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      goIdle()
+    }, idleMs)
+  }
+  const guard = new TransformStream<Uint8Array, Uint8Array>({
+    start(controller): void {
+      goIdle = (): void => {
+        controller.error(
+          new Error(`Remote agent stream sent nothing for ${String(idleMs / 1000)}s`),
+        )
+      }
+      arm()
+    },
+    transform(chunk, controller): void {
+      arm()
+      controller.enqueue(chunk)
+    },
+    flush(): void {
+      clearTimeout(timer)
+    },
+  })
+  return {
+    body: body.pipeThrough(guard),
+    dispose: (): void => {
+      clearTimeout(timer)
+    },
+  }
 }
 
 class RemoteAgentInvalidLastEventIdError extends Error {
@@ -1041,14 +1100,23 @@ async function streamRemoteRun(input: {
           Math.min(STREAM_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())),
           input.signal,
         )
-        const run = await fetchCursorRun({
-          fetchImpl: input.fetchImpl,
-          baseUrl: input.baseUrl,
-          apiKey: input.apiKey,
-          agentId: input.agentId,
-          runId: input.runId,
-          signal: input.signal,
-        })
+        let run: CursorRunResponse
+        try {
+          run = await fetchCursorRun({
+            fetchImpl: input.fetchImpl,
+            baseUrl: input.baseUrl,
+            apiKey: input.apiKey,
+            agentId: input.agentId,
+            runId: input.runId,
+            signal: input.signal,
+          })
+        } catch (err) {
+          // One failed poll (a 502, a dropped connection) says nothing about the
+          // run, which keeps going server-side; poll again until the deadline.
+          if (isAbortError(err)) throw err
+          console.warn('[remote-agent] polling the run failed, retrying:', err)
+          continue
+        }
         if (isTerminalRunStatus(run.status)) {
           applyCursorRunSnapshot(run, state, input.onChunk)
           return state

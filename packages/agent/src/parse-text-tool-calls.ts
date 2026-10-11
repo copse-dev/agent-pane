@@ -127,24 +127,35 @@ export function coerceStringlyTypedToolArgs(
   return out
 }
 
+/**
+ * Types a recovered call's args from the tool's schema. `args` are exactly as
+ * written in the text — every value a string — so the callback decides which
+ * ones are numbers or booleans: `"3000"` stays a string for a string field
+ * (`str_replace`'s `old_string`) and becomes 3000 for a number field. Returns
+ * null to drop the call.
+ */
 export type CoerceToolArgsFn = (
   name: string,
   args: Record<string, unknown>,
 ) => Record<string, unknown> | null
+
+/** Without a schema-aware callback, fall back to coercing every value that looks typed. */
+function coerceArgs(
+  name: string,
+  args: Record<string, unknown>,
+  coerceToolArgs: CoerceToolArgsFn | undefined,
+): Record<string, unknown> | null {
+  return coerceToolArgs ? coerceToolArgs(name, args) : coerceStringlyTypedToolArgs(args)
+}
 
 function parseFunctionsInBlock(inner: string, coerceToolArgs?: CoerceToolArgsFn): ToolCallChunk[] {
   const toolCalls: ToolCallChunk[] = []
   for (const match of inner.matchAll(FUNCTION_RE)) {
     const name = normalizeToolName(match[1] ?? '')
     if (!name) continue
-    const coerced = coerceStringlyTypedToolArgs(parseParameters(match[2] ?? ''))
-    const args = coerceToolArgs ? coerceToolArgs(name, coerced) : coerced
-    if (coerceToolArgs && args === null) continue
-    toolCalls.push({
-      id: globalThis.crypto.randomUUID(),
-      name,
-      args: args ?? coerced,
-    })
+    const args = coerceArgs(name, parseParameters(match[2] ?? ''), coerceToolArgs)
+    if (args === null) continue
+    toolCalls.push({ id: globalThis.crypto.randomUUID(), name, args })
   }
   return toolCalls
 }
@@ -277,14 +288,9 @@ function parseInvokeBlocks(
       sliceOriginalInner(contentText, match.index, match[0].length, INVOKE_INNER_RE) ??
       match[2] ??
       ''
-    const coerced = coerceStringlyTypedToolArgs(parseInvokeParameters(body))
-    const args = coerceToolArgs ? coerceToolArgs(name, coerced) : coerced
-    if (coerceToolArgs && args === null) continue
-    toolCalls.push({
-      id: globalThis.crypto.randomUUID(),
-      name,
-      args: args ?? coerced,
-    })
+    const args = coerceArgs(name, parseInvokeParameters(body), coerceToolArgs)
+    if (args === null) continue
+    toolCalls.push({ id: globalThis.crypto.randomUUID(), name, args })
   }
   return { toolCalls, sawInvoke }
 }

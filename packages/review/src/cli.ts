@@ -32,6 +32,7 @@ import {
   isForge,
   postForgeReview,
   FORGES,
+  ForgePublicationSkippedError,
   type FetchLike,
   type Forge,
   type ForgeTarget,
@@ -904,8 +905,12 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
           )
         }
       } catch (err) {
-        postError = errorMessage(err)
-        io.stderr(`copse-review: the review could not be posted: ${postError}\n`)
+        if (err instanceof ForgePublicationSkippedError) {
+          io.stderr(`copse-review: publication skipped: ${err.message}\n`)
+        } else {
+          postError = errorMessage(err)
+          io.stderr(`copse-review: the review could not be posted: ${postError}\n`)
+        }
       }
     }
 

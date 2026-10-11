@@ -14,6 +14,7 @@ import { getSetting, setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { clearSshWorkspaceFsCacheForTest, SshWorkspaceFs } from './ssh-workspace-fs.ts'
 import { WorkspaceFileTooLargeError } from './workspace-fs.ts'
+import { COMMAND_OUTPUT_MAX_BYTES, truncateCommandOutput } from '../exec/subprocess-output-cap.ts'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import type { SshExecOptions } from '../ssh-workspace/transport.ts'
 
@@ -37,7 +38,11 @@ describe('SshWorkspaceFs', () => {
       () =>
         new FakeSshTransport([
           { when: /test -e/, code: 0 },
-          { when: /cat .*\/hello\.txt/, stdout: 'remote hello\n' },
+          {
+            when: /hello\.txt/,
+            stdout: 'remote hello\n',
+            fileBytes: Buffer.from('remote hello\n'),
+          },
           {
             when: /base64 -d/,
             code: 0,
@@ -82,6 +87,77 @@ describe('SshWorkspaceFs', () => {
     const text = await fs.readFile('/home/me/project/hello.txt', 'utf-8')
     assert.equal(text, 'remote hello\n')
     await getSshConnectionManager().disconnect('dev')
+  })
+
+  it('reads a text file past the command-output cap in full', async () => {
+    // The exec path caps stdout at COMMAND_OUTPUT_MAX_BYTES and splices a
+    // marker into the middle; persisting that string would destroy the file.
+    const path = '/home/me/project/big.ts'
+    const full = `${'const line = "é"\n'.repeat(12_000)}// end\n`
+    assert.ok(Buffer.byteLength(full) > COMMAND_OUTPUT_MAX_BYTES)
+    const transport = new FakeSshTransport([
+      {
+        when: /big\.ts/,
+        stdout: truncateCommandOutput(full),
+        fileBytes: Buffer.from(full, 'utf-8'),
+      },
+    ])
+    setSshTransportFactory(() => transport)
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+
+    assert.equal(await fs.readFile(path, 'utf-8'), full)
+    // Text reads must not be served from the binary cache: a later read after a write sees new bytes.
+    assert.equal(await fs.readFile(path, 'utf-8'), full)
+    assert.equal(transport.calls.filter((call) => call.kind === 'fetch').length, 2)
+  })
+
+  it('reports a missing remote text file as ENOENT', async () => {
+    const transport = new FakeSshTransport([{ when: /test -e/, code: 1 }])
+    setSshTransportFactory(() => transport)
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+
+    await assert.rejects(() => fs.readFile('/home/me/project/missing.ts', 'utf-8'), {
+      code: 'ENOENT',
+    })
+  })
+
+  it('does not report a file missing when the existence probe itself fails', async (t) => {
+    // ssh exits 255 for its own failures (connection reset, auth), never `test -e`.
+    const transport = new FakeSshTransport([
+      { when: /test -e/, code: 255, stderr: 'Connection reset by peer' },
+    ])
+    t.mock.method(transport, 'fetchFile', async () => {
+      await Promise.resolve()
+      throw new Error('Connection reset by peer')
+    })
+    setSshTransportFactory(() => transport)
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+
+    await assert.rejects(
+      () => fs.readFile('/home/me/project/src/app.ts', 'utf-8'),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message === 'Connection reset by peer' &&
+        !Object.hasOwn(error, 'code'),
+    )
+  })
+
+  it('surfaces a failed transfer of an existing file instead of reporting it missing', async (t) => {
+    const transport = new FakeSshTransport([{ when: /test -e/, code: 0 }])
+    t.mock.method(transport, 'fetchFile', async () => {
+      await Promise.resolve()
+      throw new Error('cat: locked.ts: Permission denied')
+    })
+    setSshTransportFactory(() => transport)
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+
+    await assert.rejects(
+      () => fs.readFile('/home/me/project/locked.ts', 'utf-8'),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message === 'cat: locked.ts: Permission denied' &&
+        !Object.hasOwn(error, 'code'),
+    )
   })
 
   it('streams binary bytes past the command cap and caches the pull', async () => {

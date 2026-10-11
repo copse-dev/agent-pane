@@ -86,7 +86,8 @@ function argsOf(toolCall: ToolCall): ContainerRunToolArgs | null {
     model,
     runtimeId: typeof runtimeId === 'string' ? runtimeId : null,
     ref: typeof ref === 'string' ? ref : null,
-    credential: credential === 'key' || credential === 'login' ? credential : 'none',
+    credential:
+      credential === 'key' || credential === 'login' || credential === 'host' ? credential : 'none',
     continuedFrom: typeof continuedFrom === 'string' ? continuedFrom : null,
     report: typeof report === 'string' ? report : null,
     ...(settings.success ? { settings: settings.data } : {}),

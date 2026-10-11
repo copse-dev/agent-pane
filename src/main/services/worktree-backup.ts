@@ -10,6 +10,7 @@ import {
   type ThreadExecutionOwner,
 } from './thread-execution-context.ts'
 import { getAgentExecutionRoot } from './execution-root.ts'
+import { noteWorktreeWrite } from './worktree-writers.ts'
 
 export type { SessionBackup }
 
@@ -135,7 +136,12 @@ export async function restoreSessionBackup(owner?: ThreadExecutionOwner): Promis
   // A pre-restore snapshot makes this destructive step reversible: the agent's
   // version of the reverted paths stays recoverable from git even after restore.
   await createWorktreeBackup('pre-restore snapshot', state.root).catch(() => null)
-  return restoreWorktreeBackup(backup.ref, backup.paths, state.root)
+  try {
+    return await restoreWorktreeBackup(backup.ref, backup.paths, state.root)
+  } finally {
+    // The restore rewrites paths behind the diff queue's ownership records.
+    noteWorktreeWrite()
+  }
 }
 
 /**
@@ -149,6 +155,9 @@ export function resetSessionBackup(owner?: ThreadExecutionOwner): void {
   // Replace the whole turn state so a backup already in flight for the prior
   // turn can finish for its caller without publishing into the new turn.
   replaceState(resolvedOwner, { root: getAgentExecutionRoot(), current: null, inFlight: null })
+  // The user had the floor since the last turn, so the diff queue's remembered
+  // clean sweep no longer describes the tree this turn's restore point protects.
+  noteWorktreeWrite()
 }
 
 /** @internal test helper */

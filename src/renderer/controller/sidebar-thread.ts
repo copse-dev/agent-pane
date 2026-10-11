@@ -28,6 +28,8 @@ export interface SidebarThread {
   status: Thread['status']
   unreadAt?: number
   archivedAt?: number
+  /** Marks a side chat: hidden from thread browsers, listed under its parent. */
+  sideChat?: Thread['sideChat']
   automation?: Thread['automation']
   remoteAgentLink?: Thread['remoteAgentLink']
   /**
@@ -130,6 +132,7 @@ export function compactSidebarThread(thread: RunSignals): SidebarThread {
     everRan: lastPromptAt !== undefined || sidebarHasRun(thread),
     ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
+    ...(thread.sideChat ? { sideChat: thread.sideChat } : {}),
     ...(thread.automation ? { automation: thread.automation } : {}),
     ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
     prRefs: sidebarPrRefs(thread),

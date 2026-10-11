@@ -214,6 +214,36 @@ describe('resolveCommandRouting', () => {
     )
   })
 
+  it('defers when any segment redirects output into a file', () => {
+    // The shell opens the target itself and, once routed, does so unsandboxed:
+    // trusting `xcodebuild` must not let it append to any file on the machine.
+    for (const command of [
+      'xcodebuild -version >> ~/.ssh/authorized_keys',
+      'xcodebuild -version > /etc/hosts',
+      'xcodebuild -version >| ~/.zshrc',
+      'xcodebuild -version &> ~/.zshrc',
+      'xcodebuild -version >& ~/.zshrc',
+      'xcodebuild build > build.log',
+      'echo hi > notes.txt && xcodebuild build',
+    ]) {
+      assert.equal(
+        resolveCommandRouting(command, root, trust('xcodebuild')).outcome,
+        'defer',
+        command,
+      )
+    }
+  })
+
+  it('still allows output discarded to /dev/null or merged into another stream', () => {
+    for (const command of ['xcodebuild build 2>/dev/null', 'xcodebuild build 2>&1']) {
+      assert.equal(
+        resolveCommandRouting(command, root, trust('xcodebuild')).outcome,
+        'allow',
+        command,
+      )
+    }
+  })
+
   it('allows multiple trusted commands together', () => {
     const r = resolveCommandRouting(
       'pod install && xcodebuild build',

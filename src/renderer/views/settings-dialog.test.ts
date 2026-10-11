@@ -159,6 +159,40 @@ describe('settings dialog (native <dialog>)', () => {
   })
 })
 
+describe('Mobile Companion QR refresh', () => {
+  it('refreshes on reopen after enabling and clears the QR after stopping', async () => {
+    document.body.replaceChildren()
+    let status: Awaited<ReturnType<ApiClient['mobile']['status']>> = {
+      enabled: false,
+      url: null,
+      qrSvg: null,
+    }
+    const api = createPendingApi({ 'mobile.status': async () => status })
+    mountSettingsDialog(createStore(), api)
+    const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+    shimModal(dialog)
+    openSettingsDialog('experimental')
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, true)
+    closeSettingsDialog()
+    status = { enabled: true, url: 'https://example.test:42773', qrSvg: '<svg></svg>' }
+    openSettingsDialog('experimental')
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, false)
+    assert.equal(qsRequired(dialog, '#mobile-companion-qr-url').textContent, status.url)
+    closeSettingsDialog()
+    status = { enabled: false, url: null, qrSvg: null }
+    openSettingsDialog('experimental')
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, true)
+    assert.equal(qsRequired(dialog, '#mobile-companion-qr-image').innerHTML, '')
+    closeSettingsDialog()
+  })
+})
+
 describe('accent colour', () => {
   it('applies the hue and chooses readable text for light and dark accents', () => {
     applyUiAccent('#2A9D8F')
@@ -279,6 +313,32 @@ describe('appearance live preview', () => {
     assert.deepEqual(settingWrites, [['theme', 'light']])
     assert.equal(securityWrites, 0)
     assert.equal(iconApplies, 0)
+  })
+
+  it('keeps the current font size when the field is emptied instead of sending NaN', async () => {
+    const base = createFakeApi()
+    const settingWrites: [string, unknown][] = []
+    const api: ApiClient = {
+      ...base,
+      settings: {
+        ...base.settings,
+        set: async (name, value) => {
+          settingWrites.push([name, value])
+        },
+      },
+    }
+    const store = createStore()
+    store.setState({ fontSize: 16 })
+    mountSettingsDialog(store, api)
+    const form = qsRequired<HTMLFormElement>(document, '.settings-content')
+    const fontSize = qsRequired<HTMLInputElement>(form, 'input[name="fontSize"]')
+    fontSize.value = ''
+    fontSize.dispatchEvent(new Event('change', { bubbles: true }))
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.deepEqual(settingWrites, [['fontSize', 16]])
+    assert.equal(store.getState().fontSize, 16)
   })
 })
 

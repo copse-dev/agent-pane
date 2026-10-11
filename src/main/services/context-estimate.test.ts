@@ -7,6 +7,7 @@ import { estimateContextBreakdown } from './context-estimate.ts'
 import { createRegistry, registerSkillTools } from './registry-bootstrap.ts'
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
+import { CLASSIFIER_PRESETS } from '@copse/llm/classifiers/presets.ts'
 import { refreshSkillsRegistry } from './skills/skills-registry.ts'
 import { setSetting } from './storage/settings.test-shim.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
@@ -137,5 +138,47 @@ description: Bundled skill for tests
       priorMessages: [],
     })
     assert.equal(skillsTokens(breakdown), 0)
+  })
+
+  it('counts classify_text only once a classifier is configured, and counts its results as conversation', async () => {
+    const registry = createRegistry()
+    const input = { draftText: '', invokedSkills: [], imageCount: 0, priorMessages: [] }
+    await setSetting('classifierProviders', { version: 1, profiles: [] })
+    const without = await estimateContextBreakdown(registry, input)
+
+    const kev = CLASSIFIER_PRESETS.find((profile) => profile.id === 'kev')
+    assert.ok(kev)
+    await setSetting('classifierProviders', { version: 1, profiles: [kev] })
+    const offered = await estimateContextBreakdown(registry, input)
+    assert.ok(
+      toolsTokens(offered) > toolsTokens(without) + 100,
+      `the offered tool's schema should add to Tools (${String(toolsTokens(without))} -> ${String(toolsTokens(offered))})`,
+    )
+
+    // A classifier result in the thread is part of the conversation the next send carries.
+    const result = JSON.stringify({
+      classifier: 'kev',
+      model: 'kev-4b',
+      elapsedMs: 41,
+      type: 'choice',
+      choice: 'bug',
+      probabilities: { bug: 0.7, question: 0.3 },
+    })
+    const withResult = await estimateContextBreakdown(registry, {
+      ...input,
+      priorMessages: [
+        {
+          role: 'assistant',
+          content: [{ id: 't1', name: 'classify_text', args: { classifier: 'kev' } }],
+        },
+        { role: 'tool', toolResults: [{ toolCallId: 't1', result }] },
+      ],
+    })
+    const history = (b: typeof withResult): number =>
+      b.segments.find((segment) => segment.key === 'history')?.tokens ?? 0
+    assert.equal(history(offered), 0)
+    assert.ok(history(withResult) >= Math.floor(result.length / CHARS_PER_TOKEN))
+    assert.ok(withResult.totalTokens > offered.totalTokens)
+    await setSetting('classifierProviders', { version: 1, profiles: [] })
   })
 })

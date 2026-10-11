@@ -1280,6 +1280,49 @@ describe('runAgentLoop', () => {
     assert.equal(executeCount, 1)
   })
 
+  it('re-runs a read after an edit instead of refusing it as a duplicate', async () => {
+    const executed: string[] = []
+    const readArgs = { path: 'a.ts', start_line: 1, end_line: 5 }
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          { type: 'tool_call', toolCall: { id: '1', name: 'read_file', args: readArgs } },
+          { type: 'done' },
+        ],
+        [
+          {
+            type: 'tool_call',
+            toolCall: {
+              id: '2',
+              name: 'str_replace',
+              args: { path: 'a.ts', old_string: 'x', new_string: 'y' },
+            },
+          },
+          { type: 'done' },
+        ],
+        [
+          { type: 'tool_call', toolCall: { id: '3', name: 'read_file', args: readArgs } },
+          { type: 'done' },
+        ],
+        [
+          { type: 'tool_call', toolCall: { id: '4', name: 'read_file', args: readArgs } },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'Done.' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'edit' }],
+      tools: [],
+      onChunk: () => {},
+      executeTool: async (name) => {
+        executed.push(name)
+        return 'ok'
+      },
+    })
+    // The read after the edit runs; repeating it with nothing in between is
+    // still a duplicate.
+    assert.deepEqual(executed, ['read_file', 'str_replace', 'read_file'])
+  })
+
   it('recovers embedded Cursor-style text tool calls', async () => {
     let executedName = ''
     const embedded = `Checking lint.
@@ -1815,6 +1858,37 @@ src/renderer/views/projects-pane.ts
     assert.ok(
       chunks.some((c) => c.type === 'text' && c.text.includes('task plan still has open items')),
     )
+  })
+
+  it('leaves no unanswered closeout nudges in history once the LLM-call budget is spent', async () => {
+    // The step budget ends the main loop with one LLM call left: the first
+    // closeout turn spends it, and later attempts have no call to answer them.
+    const messages: LLMMessage[] = [{ role: 'user', content: 'big task' }]
+    let closeoutTurns = 0
+    await runAgentLoop({
+      provider: {
+        async *stream(history) {
+          if (history.length > 1) {
+            closeoutTurns++
+            yield { type: 'text', text: 'closing out' }
+          }
+          yield { type: 'done' }
+        },
+      },
+      messages,
+      tools: [{ name: 'update_todos', description: 'x', parameters: {} }],
+      maxSteps: 1,
+      maxLlmCalls: 2,
+      getOpenTodos: () => [{ id: '1', content: 'Pending step', status: 'pending' }],
+      onChunk: () => {},
+      executeTool: async () => '',
+    })
+    assert.equal(closeoutTurns, 1)
+    const nudges = messages.filter(
+      (m) => m.role === 'user' && typeof m.content === 'string' && m.content !== 'big task',
+    )
+    assert.equal(nudges.length, closeoutTurns, 'only the nudge a call answered is in history')
+    assert.notEqual(messages.at(-1)?.role, 'user', 'no dangling nudge ends the history')
   })
 
   it('closeout is tightened by the shared continuation budget (decision 5)', async () => {

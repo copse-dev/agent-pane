@@ -4,6 +4,13 @@
 .ask-user-title {
   margin-bottom: var(--spacing-md);
 }
+/* Which side chat is asking, when the prompt surfaces over its parent thread. */
+.ask-user-origin {
+  margin: calc(-1 * var(--spacing-sm)) 0 var(--spacing-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
 .ask-user-field {
   display: flex;
   flex-direction: column;

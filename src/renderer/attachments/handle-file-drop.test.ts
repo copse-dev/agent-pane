@@ -113,6 +113,40 @@ describe('attaching dropped files', () => {
     assert.equal(recorded.videos.length, 0)
   })
 
+  it("asks the preload for an OS-dropped file's disk path (File.path is gone since Electron 32)", async () => {
+    const paths = new Map<File, string>()
+    const inWorkspace = fakeFile('notes.md', 'text/markdown')
+    const outside = fakeFile('todo.txt', 'text/plain')
+    paths.set(inWorkspace, '/repo/docs/notes.md')
+    paths.set(outside, '/home/me/todo.txt')
+    window.copseFiles = { pathForFile: (file): string => paths.get(file) ?? '' }
+    try {
+      const { handlers, recorded } = recordingHandlers()
+      const reads: string[] = []
+      const readApi: FileDropApi = {
+        fs: {
+          readFile: async (_projectId, _threadId, path): Promise<string> => {
+            reads.push(path)
+            return 'from workspace'
+          },
+          readImage: (): Promise<string> => Promise.resolve(''),
+        },
+      }
+      await attachFiles([inWorkspace], handlers, readApi, '/repo', {
+        projectId: 'p',
+        threadId: 't',
+      })
+      await attachFiles([outside], handlers, readApi, null)
+      assert.deepEqual(reads, ['/repo/docs/notes.md'])
+      assert.deepEqual(
+        recorded.files.map((file) => file.path),
+        ['docs/notes.md', '/home/me/todo.txt'],
+      )
+    } finally {
+      delete window.copseFiles
+    }
+  })
+
   it('references a workspace video by path rather than reading it as text', async () => {
     const { handlers, recorded } = recordingHandlers()
     await handleFileDrop(workspacePathDrop('/repo/docs/demo.mp4'), handlers, api, '/repo')

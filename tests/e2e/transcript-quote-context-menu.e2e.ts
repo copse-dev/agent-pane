@@ -332,6 +332,7 @@ describe('transcript selection: quote into the reply', () => {
     expect(expanded.inputHeight).toBeGreaterThan(30)
     expect(expanded.inputHeight).toBeGreaterThanOrEqual(expanded.scrollHeight - 2)
     await saveAppScreenshot('transcript-quote-selection-reply-expanded.png')
+    // A draft keeps the reply open; dismiss it so later drags start from a clean selection.
     await browser.keys('Escape')
     await popup.waitForDisplayed({ reverse: true, timeout: 5_000 })
   })

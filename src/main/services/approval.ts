@@ -105,6 +105,8 @@ export interface ApprovalRequest {
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'review-spend'
   allowRemember?: boolean
   rememberLabel?: string
+  /** Action label for one request. Batches retain a neutral count label. */
+  approveLabel?: string
   /**
    * Hide the body behind a "Show details" disclosure, so the prompt leads with
    * the decision rather than the command. Honoured only for a single-request
@@ -201,6 +203,7 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     type: req.type,
     allowRemember: req.allowRemember ?? false,
     rememberLabel: req.rememberLabel ?? '',
+    approveLabel: req.approveLabel ?? '',
     collapseDetails: req.collapseDetails ?? false,
     approveOnceLabel: req.approveOnceLabel ?? '',
     // Part of the key so two prompts that read alike but are *about* different

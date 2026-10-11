@@ -4,6 +4,7 @@ import {
   CODE_INTERPRETERS,
   TRUST_TRANSPARENT_WRAPPERS,
   printfAssignsShellVariable,
+  shellRedirects,
 } from './shell-argv.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 
@@ -23,6 +24,8 @@ import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts
  *
  *  - the command has no command substitution, subshell grouping, or backticks
  *    (they can hide arbitrary tools);
+ *  - no segment redirects output into a file (other than `/dev/null`) — the
+ *    shell opens that file itself, outside anything the trusted binary implies;
  *  - it triggers none of the destructive-in-sandbox patterns (`rm -rf`, fork
  *    bombs, pipe-to-interpreter, …) on the whole command;
  *  - EVERY top-level segment (split on `&&`/`||`/`;`/`|`/`&`) is either
@@ -321,6 +324,13 @@ export function resolveCommandRouting(
         outcome: 'defer',
         reasons: [`environment assignment before the command: ${assignment}`],
       }
+    }
+    // The shell, not the trusted binary, opens a redirect target, and once routed
+    // it does so unsandboxed: `xcodebuild -version >> ~/.ssh/authorized_keys`
+    // would append to any file. Only discarding output is let through.
+    const written = shellRedirects(segment).find((redirect) => redirect.target !== '/dev/null')
+    if (written) {
+      return { outcome: 'defer', reasons: [`redirect writes to ${written.target}`] }
     }
     const head = commandHead(segment)
     if (head && trusted.has(head) && !NON_TRUSTABLE_COMMANDS.has(head)) {

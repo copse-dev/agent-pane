@@ -180,6 +180,44 @@ describe('footer branch status', () => {
       assert.equal(button.textContent, 'Continue rebase')
     })
 
+    it('keeps recovery hidden while background work still holds the checkout', async () => {
+      const store = detachedStore()
+      const requests: CodeBlockRunRequest[] = []
+      store.on('code_block_run_requested', (request) => {
+        requests.push(request)
+      })
+      const reattachCalls: string[] = []
+      const host = mountDetached(
+        {
+          branchStatus: async () => ({ currentBranch: null, pr: null }),
+          worktreeAttachment: async () => ({
+            state: 'detached',
+            branch: 'copse/thread-branch',
+            recovery: null,
+            uncommittedPick: null,
+            agentBusy: true,
+          }),
+          reattachWorktree: async (projectId, threadId) => {
+            reattachCalls.push(`${projectId}/${threadId}`)
+            throw new Error('unreachable')
+          },
+        },
+        store,
+      )
+      await settle()
+
+      // The thread reads idle, but main reports a task still attached.
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.hidden, true)
+      button.click()
+      await settle()
+      assert.deepEqual(requests, [])
+      assert.deepEqual(reattachCalls, [])
+      const trigger = qsRequired(host, '.footer-branch-status')
+      assert.equal(trigger.classList.contains('is-detached'), true)
+      assert.match(trigger.title, /Recovery is offered once the agent stops working in it/)
+    })
+
     it('offers a reattach that puts the checkout back on its branch', async () => {
       let attached = false
       const reattachCalls: string[] = []

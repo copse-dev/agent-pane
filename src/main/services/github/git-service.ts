@@ -745,6 +745,11 @@ export async function restoreWorktreeBackup(
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root)))
     return false
   if (paths.length === 0) return true
+  // A missing snapshot (pruned, or never written) must abort before anything is
+  // touched: every per-path restore below would fail, and treating those
+  // failures as "absent from the snapshot" would delete the user's files.
+  const snapshot = await runGitRead(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], root)
+  if (snapshot.code !== 0) return false
   // Restore one path at a time so a single path git cannot match (a pre-session
   // deletion the agent left absent, which the snapshot also lacks — nothing to
   // recover) never aborts recovery of the paths that DO have work to restore.
@@ -755,11 +760,18 @@ export async function restoreWorktreeBackup(
       root,
     )
     // A matched path either reverts to the snapshot or, when absent from it, is
-    // deleted from the worktree — both are code 0. A non-zero code means git had
-    // nothing to match (the path is in neither the snapshot nor the index): the
-    // snapshot is the pre-session truth, so drop any agent-created file left at
-    // that path best-effort rather than reporting a failed restore.
+    // deleted from the worktree — both are code 0. A non-zero code is either git
+    // having nothing to match (the path is in neither the snapshot nor the
+    // index) or a real failure such as a held `index.lock`. Only when the
+    // snapshot positively lacks the path — the pre-session truth — drop any
+    // agent-created file left there; any other failure keeps the file and
+    // reports the restore as incomplete.
     if (code === 0) continue
+    const listed = await runGitRead(['ls-tree', '--name-only', ref, '--', path], root)
+    if (listed.code !== 0 || listed.stdout.trim() !== '') {
+      ok = false
+      continue
+    }
     try {
       await getActiveWorkspaceFs().rm(await resolvePathWithinRoot(path, root), { force: true })
     } catch {

@@ -1,6 +1,7 @@
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
+import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import {
   armPerfTrace,
   flushPerfTrace,
@@ -579,6 +580,7 @@ app
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
     startStorageMaintenance()
+    startDefaultBranchRefresh()
     // P5: boot the plugin service before `createRegistry()` so persisted
     // `pluginDisabled` state is applied to the shared registry before
     // `syncReviewTools` reads it — otherwise the fallback fresh
@@ -667,9 +669,23 @@ app
           agentDispatcher.forgetHistory(projectId, threadId)
         },
       },
+      {
+        begin: (projectId, threadId) => agentDispatcher.beginThreadHistoryEdit(projectId, threadId),
+        end: (projectId, threadId) => {
+          agentDispatcher.endThreadHistoryEdit(projectId, threadId)
+        },
+        isAgentActive: (projectId, threadId) => agentDispatcher.isActive(projectId, threadId),
+        stopAgent: async (projectId, threadId) => {
+          abortAgent(threadId)
+          await agentDispatcher.waitForIdle(projectId, threadId)
+        },
+      },
     )
     getAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+    })
+    getAutomationService().onHealthChange((health) => {
+      if (!win.isDestroyed()) win.webContents.send('automations:scheduler-health', health)
     })
     getBranchCiAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)

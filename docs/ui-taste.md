@@ -170,6 +170,13 @@ ghost lightbox showing the cleared image’s alt (“Expanded attachment”) and
 (same idea as `[hidden]` in `base.css`). Put flex layout on an inner shell when you
 can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }`.
 
+## Section tabs
+
+Use flat, square-edged section tabs with a straight active underline, matching
+`.pr-detail-section` and `.process-manager-tab`. Do not use rounded or pill-shaped
+buttons for this navigation, or draw an inset underline around rounded corners.
+Keep `.ui-btn` off section tabs so its button radius cannot curve the indicator.
+
 ## UI kit primitives (buttons, fields, action rows)
 
 Background task rows use a native disclosure for failure reasons and execution details.
@@ -832,6 +839,36 @@ every 30s and follows working-tree events for the active thread only. Specs:
 [`thread-change-summary.test.ts`](../src/main/services/github/thread-change-summary.test.ts),
 [`projects-pane-thread-changes.test.ts`](../src/renderer/views/projects-pane-thread-changes.test.ts),
 [`tests/demo/sidebar-thread-changes.demo.ts`](../tests/demo/sidebar-thread-changes.demo.ts).
+
+## Align trailing row icons
+
+When a list repeats the same row shape, a trailing status icon (PR status, changes glyph,
+attention bell) must land in the same column on every row — not trail the preceding label at a
+distance that drifts with the label's or title's length. `justify-content: space-between` alone
+does not guarantee this once a row has more than two flex items: it splits the row's slack across
+_every_ gap between them, so the icon's distance from its neighbour — and from the row's trailing
+edge — changes with however much spare width that particular row happens to have.
+
+- Give the item that should absorb the row's slack an actual `flex-grow`, not just a size that
+  happens to fit (the cross-project owner label `· workspace` in `.chats-list`, `flex: 1 0 auto`
+  capped with `max-width` rather than frozen at `flex: 0 0 auto`). Growth is invisible when the
+  label's own text is shorter than its box — it just leaves blank space before the next
+  item — so this alone pushes a single trailing icon flush to the row's edge on every row.
+  Weighted `flex-shrink` cannot do this job; see "Decide which label gives way first" above for
+  the matching truncation-order problem.
+- A hard cap on that grower (`max-width`) can still leave slack stranded past it once a row is
+  wide enough or the label short enough. Give the first trailing icon after the label
+  `margin-left: auto` as the fallback claimant, scoped to only the icon closest to the label
+  (`.chat-row:not(:has(.chat-attention-bell)) .chat-pr-status`) — a second icon on the same row
+  (a bell _and_ a PR glyph) must not also grab a share of the slack, or it pulls itself apart
+  from the one ahead of it instead of sitting flush beside it.
+- When more than one icon type can appear in the same slot, order them (in markup and in which one
+  is allowed to claim the slack) so the one that appears most often anchors the trailing edge and
+  the rarer ones sit inward — that is what keeps the column still when an optional icon comes and
+  goes, not just when a title does.
+
+Spec: [`sidebar-thread-sort.demo.ts`](../tests/demo/sidebar-thread-sort.demo.ts)
+(`expectChangesGlyphsAligned`).
 
 ## SSH chrome — plain text, no decorative emoji
 
@@ -1505,9 +1542,14 @@ than the card. Differences from the overlay are listed under each point below.
   conversation does, so the caption and the card are never under the composer. When every group
   is folded the detail is hidden and the list takes the whole card. Spec:
   `tests/demo/activity-home-panels.demo.ts`.
-- **Project strip (new-thread screen).** All projects, then the projects that need you, most
-  waiting first, plus the chosen one; a tile filters the list. Requests tied to no thread belong
-  to no project and show only under All projects.
+- **Project strip (new-thread screen).** All projects, then every project in the sidebar (minus
+  ones whose folder is missing), by attention: most waiting first, then those with runs working,
+  then the rest by name. Each tile says "N need you" or "All clear" and, when there are any, "N
+  working"; a tile filters the list, and a filtered project that is removed falls back to All
+  projects. A lone project adds no tile, since it would repeat All projects. The strip scrolls
+  sideways with an edge fade and scrolls the chosen tile into view. Projects not opened this
+  session have no thread data yet and read "All clear". Requests tied to no thread belong to no
+  project and show only under All projects.
 - **Nothing moves under a click.** The panel has a fixed height, re-renders are throttled,
   selection and focus are restored to the same row, and Approve pauses whenever a request it
   has not shown yet takes the detail pane or the waiting list changes. Unchanged rows are the
@@ -1565,3 +1607,12 @@ is approved for browsing. Data URL prototypes have no network access. Ordinary p
 including user-opened local development servers, retain their server's CSP. Bundle
 prototype assets locally; see [browser network policy](browser-network-policy.md) for
 the boundary and tests.
+
+### Concise thread content
+
+Concise view hides tool cards, reasoning and terminal references for eligible models, while
+keeping every assistant message visible, including progress text and answers that carry audit
+calls. Starting a tool, completing a turn or adding a later user/assistant message must not remove
+previously visible prose. Only bubbles with no user-facing content collapse. Produced images,
+visual evidence, canvas previews and user-input cards remain visible. Expanding a turn restores
+its ordinary tool and reasoning disclosures; full view is unchanged.

@@ -72,6 +72,7 @@ export class OpenAIProvider implements LLMProvider {
   constructor(
     model: string,
     opts: {
+      fetch?: typeof globalThis.fetch
       baseURL?: string
       apiKey?: string
       includeUsage?: boolean
@@ -120,6 +121,7 @@ export class OpenAIProvider implements LLMProvider {
       // retries enabled would multiply that outer budget — most importantly,
       // one routing-policy replay could become six HTTP requests for a 503.
       maxRetries: 0,
+      ...(opts.fetch ? { fetch: opts.fetch } : {}),
     })
   }
 
@@ -305,7 +307,7 @@ export class OpenAIProvider implements LLMProvider {
 
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
-              const idx = tc.index
+              const idx = toolCallSlot(toolCallBuilders, tc)
               let builder = toolCallBuilders.get(idx)
               if (!builder) {
                 builder = {
@@ -359,6 +361,28 @@ export class OpenAIProvider implements LLMProvider {
       { ...(signal ? { signal } : {}) },
     )
   }
+}
+
+/**
+ * The builder slot for a streamed tool-call delta. OpenAI always sends
+ * `index`, but some compatible servers omit it; keying every call on
+ * `undefined` then merged parallel calls into one builder with concatenated
+ * argument JSON. Without an index, a new `id` opens a new slot, a known `id`
+ * reuses its slot, and an id-less fragment continues the latest call.
+ */
+function toolCallSlot(
+  builders: ReadonlyMap<number, { id: string }>,
+  tc: { index?: number; id?: string },
+): number {
+  const index: unknown = tc.index
+  if (typeof index === 'number') return index
+  const slots = [...builders.keys()]
+  const latest = slots.length > 0 ? Math.max(...slots) : -1
+  if (!tc.id) return Math.max(latest, 0)
+  for (const [slot, builder] of builders) {
+    if (builder.id === tc.id) return slot
+  }
+  return latest + 1
 }
 
 /**

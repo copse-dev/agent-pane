@@ -3537,6 +3537,132 @@ describe('input bar two-step stop', () => {
   })
 })
 
+describe('input bar two-step stop guards', () => {
+  async function mountRunning(): Promise<{
+    host: HTMLElement
+    stopBtn: HTMLButtonElement
+    inputBar: ReturnType<typeof mountInputBar>
+    aborts: () => number
+  }> {
+    let aborts = 0
+    const runningThread = { ...thread(), status: 'running' as const }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeThreadId: runningThread.id,
+      threads: [runningThread],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const inputBar = mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onAbort: async () => {
+          aborts += 1
+        },
+      }),
+    )
+    await settle()
+    const stopBtn = host.querySelector<HTMLButtonElement>('.stop-btn')
+    assert.ok(stopBtn)
+    return { host, stopBtn, inputBar, aborts: () => aborts }
+  }
+
+  it('ignores Escape and Enter typed into another editor, such as the terminal', async () => {
+    const { stopBtn, inputBar, aborts } = await mountRunning()
+    const terminalInput = document.createElement('textarea')
+    document.body.append(terminalInput)
+
+    // vim's `Esc :wq Enter` in the terminal.
+    assert.equal(inputBar.handleStopShortcut('Escape', terminalInput), false)
+    assert.equal(stopBtn.classList.contains('stop-pending'), false)
+    assert.equal(inputBar.handleStopShortcut('Enter', terminalInput), false)
+    assert.equal(aborts(), 0)
+    inputBar.unmount()
+    terminalInput.remove()
+  })
+
+  it('disarms when another key is typed between Escape and Enter', async () => {
+    const { stopBtn, inputBar, aborts } = await mountRunning()
+
+    assert.equal(inputBar.handleStopShortcut('Escape', document.body), true)
+    assert.equal(stopBtn.classList.contains('stop-pending'), true)
+    document.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: ':', bubbles: true }))
+    assert.equal(stopBtn.classList.contains('stop-pending'), false)
+    assert.equal(inputBar.handleStopShortcut('Enter', document.body), false)
+    assert.equal(aborts(), 0)
+    inputBar.unmount()
+  })
+
+  it('lets an armed stop lapse instead of waiting for Enter forever', async (t) => {
+    const { stopBtn, inputBar, aborts } = await mountRunning()
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+
+    assert.equal(inputBar.handleStopShortcut('Escape', document.body), true)
+    t.mock.timers.tick(3_000)
+    assert.equal(stopBtn.classList.contains('stop-pending'), false)
+    assert.equal(inputBar.handleStopShortcut('Enter', document.body), false)
+    assert.equal(aborts(), 0)
+    t.mock.timers.reset()
+    inputBar.unmount()
+  })
+})
+
+describe('input bar document image paste', () => {
+  // Counts reads of the pasted image: the composer reads it only when it takes
+  // the paste. (The read itself yields no file — happy-dom has no FileReader.)
+  function imagePaste(reads: { count: number }): Event {
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        items: [
+          {
+            type: 'image/png',
+            getAsFile: (): null => {
+              reads.count += 1
+              return null
+            },
+          },
+        ],
+        getData: () => '',
+      },
+    })
+    return event
+  }
+
+  it('takes an image pasted onto the transcript but not one pasted into another editor', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const inputBar = mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    // A settings field, Monaco, or the terminal's helper textarea.
+    const otherEditor = document.createElement('textarea')
+    document.body.append(otherEditor)
+    const foreignReads = { count: 0 }
+    const foreign = imagePaste(foreignReads)
+    otherEditor.dispatchEvent(foreign)
+    assert.equal(foreign.defaultPrevented, false)
+    assert.equal(foreignReads.count, 0)
+
+    const transcriptReads = { count: 0 }
+    const transcript = imagePaste(transcriptReads)
+    document.body.dispatchEvent(transcript)
+    assert.equal(transcript.defaultPrevented, true)
+    // Earlier specs leave their input bars mounted, so count any read.
+    assert.ok(transcriptReads.count > 0)
+
+    inputBar.unmount()
+    otherEditor.remove()
+  })
+})
+
 describe('input bar skill invocation', () => {
   it('invokes /checkup even when the skills cache was primed empty', async () => {
     let runs = 0

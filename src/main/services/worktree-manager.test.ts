@@ -17,6 +17,7 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises'
+import { createServer, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { SandboxManager, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
@@ -29,7 +30,10 @@ import {
   getInternalWorkspaceRootRegistration,
 } from './workspace.ts'
 import {
+  adoptThreadWorktree,
   allocateThreadWorktree,
+  canAdoptThreadWorktree,
+  changedPaths,
   expectedThreadWorktreePath,
   inspectManagedThreadWorktreePath,
   inspectThreadWorktreeAttachment,
@@ -51,6 +55,7 @@ import {
   ThreadWorktreeDetachedError,
   validateThreadWorktree,
   validateThreadWorktreeRecovery,
+  type AdoptThreadWorktreeResult,
   type DeletedThreadWorktreeResult,
 } from './worktree-manager.ts'
 
@@ -137,6 +142,13 @@ describe('parseWorktreePorcelain', () => {
   })
 })
 
+describe('changedPaths', () => {
+  it('takes the field after a rename as its source even when it looks like a status entry', () => {
+    const raw = ['R  intro.md', '01 intro.md', ' M other.txt', ''].join('\0')
+    assert.deepEqual(changedPaths(raw), ['intro.md', '01 intro.md', 'other.txt'])
+  })
+})
+
 describe('worktree manager', () => {
   const cleanups: string[] = []
   let previousRoot: string | undefined
@@ -196,6 +208,166 @@ describe('worktree manager', () => {
     } else {
       await assert.rejects(lstat(join(worktree.path, 'node_modules')))
     }
+  })
+
+  describe('adopting a finished checkout for the next run', () => {
+    async function oldCheckout(repo: string): Promise<ThreadWorktree> {
+      await writeFile(join(repo, '.gitignore'), 'out.log\n')
+      git(repo, ['add', '.gitignore'])
+      git(repo, ['commit', '-q', '-m', 'ignore build output'])
+      return allocateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-old',
+        projectRoot: repo,
+        prompt: 'First run',
+        baseBranch: 'main',
+      })
+    }
+    const adopt = (
+      repo: string,
+      from: ThreadWorktree,
+      baseBranch = 'main',
+    ): Promise<AdoptThreadWorktreeResult> =>
+      adoptThreadWorktree({
+        projectId: 'project-1',
+        projectRoot: repo,
+        fromThreadId: 'thread-old',
+        toThreadId: 'thread-new',
+        from,
+        baseBranch,
+      })
+
+    it('moves a clean checkout to the next thread as a fresh one, wiping earlier output', async () => {
+      const { repo } = await setup()
+      const old = await oldCheckout(repo)
+      await writeFile(join(old.path, 'out.log'), 'leftover from the first run\n')
+      await writeFile(join(repo, 'README.md'), 'moved on\n')
+      git(repo, ['commit', '-q', '-am', 'main moved'])
+      const tip = git(repo, ['rev-parse', 'HEAD']).trim()
+
+      assert.equal(
+        await canAdoptThreadWorktree({
+          projectId: 'project-1',
+          projectRoot: repo,
+          fromThreadId: 'thread-old',
+          from: old,
+          baseBranch: 'main',
+        }),
+        true,
+      )
+      const result = await adopt(repo, old)
+      assert.equal(result.status, 'adopted')
+
+      const expected = expectedThreadWorktreePath('project-1', 'thread-new')
+      assert.equal(sameWorktreePath(result.worktree.path, expected), true)
+      assert.equal(result.worktree.branch, old.branch)
+      assert.equal(result.worktree.baseCommit, tip)
+      assert.equal(result.worktree.seededFromDirtyProject, false)
+      await assert.rejects(lstat(old.path), 'the old path no longer exists')
+      assert.equal(git(result.worktree.path, ['rev-parse', 'HEAD']).trim(), tip)
+      assert.equal(await readFile(join(result.worktree.path, 'README.md'), 'utf8'), 'moved on\n')
+      await assert.rejects(lstat(join(result.worktree.path, 'out.log')), 'no output carries over')
+      assert.equal(git(result.worktree.path, ['status', '--porcelain']).trim(), '')
+
+      const registered = (await listProjectWorktrees(repo)).map((record) => record.path)
+      assert.equal(registered.filter((path) => sameWorktreePath(path, expected)).length, 1)
+      assert.equal(
+        registered.some((path) => {
+          try {
+            return sameWorktreePath(path, old.path)
+          } catch {
+            return false
+          }
+        }),
+        false,
+      )
+      const validated = await validateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-new',
+        projectRoot: repo,
+        worktree: result.worktree,
+      })
+      assert.equal(validated.branch, old.branch)
+      assert.deepEqual(await readThreadWorktreeRecoveryMetadata(repo, old.branch), {
+        baseBranch: 'main',
+        baseCommit: tip,
+        createdAt: result.worktree.createdAt,
+        seededFromDirtyProject: false,
+      })
+    })
+
+    it('refuses, and leaves the checkout alone, when anything could be lost', async () => {
+      const { repo } = await setup()
+      const old = await oldCheckout(repo)
+      const untouched = async (): Promise<void> => {
+        assert.ok(await lstat(old.path))
+        assert.equal(git(old.path, ['rev-parse', '--abbrev-ref', 'HEAD']).trim(), old.branch)
+      }
+
+      await writeFile(join(old.path, 'README.md'), 'edited\n')
+      assert.deepEqual(await adopt(repo, old), { status: 'ineligible', reason: 'dirty' })
+      assert.equal(await readFile(join(old.path, 'README.md'), 'utf8'), 'edited\n')
+      git(old.path, ['checkout', '--', 'README.md'])
+
+      await writeFile(join(old.path, 'notes.txt'), 'scratch\n')
+      assert.deepEqual(await adopt(repo, old), { status: 'ineligible', reason: 'dirty' })
+      assert.equal(await readFile(join(old.path, 'notes.txt'), 'utf8'), 'scratch\n')
+
+      git(old.path, ['add', 'notes.txt'])
+      git(old.path, ['commit', '-q', '-m', 'work worth keeping'])
+      assert.deepEqual(await adopt(repo, old), { status: 'ineligible', reason: 'unmerged' })
+      await untouched()
+      assert.equal(
+        await canAdoptThreadWorktree({
+          projectId: 'project-1',
+          projectRoot: repo,
+          fromThreadId: 'thread-old',
+          from: old,
+          baseBranch: 'main',
+        }),
+        false,
+      )
+    })
+
+    it('refuses a different base, a pull-request checkout, a retired one, and a dirty project', async () => {
+      const { repo } = await setup()
+      const old = await oldCheckout(repo)
+      assert.deepEqual(await adopt(repo, old, 'develop'), {
+        status: 'ineligible',
+        reason: 'base-changed',
+      })
+      assert.deepEqual(
+        await adopt(repo, { ...old, pullRequestUrl: 'https://github.com/o/r/pull/1' }),
+        { status: 'ineligible', reason: 'unavailable' },
+      )
+      assert.deepEqual(await adopt(repo, { ...old, retiredAt: 1 }), {
+        status: 'ineligible',
+        reason: 'unavailable',
+      })
+      // A fresh allocation would seed the project's uncommitted edits; adoption cannot.
+      await writeFile(join(repo, 'README.md'), 'project edit\n')
+      assert.deepEqual(await adopt(repo, old), { status: 'ineligible', reason: 'dirty' })
+      assert.ok(await lstat(old.path))
+    })
+
+    it('will not adopt into its own thread or over an existing checkout', async () => {
+      const { repo } = await setup()
+      const old = await oldCheckout(repo)
+      await assert.rejects(
+        adoptThreadWorktree({
+          projectId: 'project-1',
+          projectRoot: repo,
+          fromThreadId: 'thread-old',
+          toThreadId: 'thread-old',
+          from: old,
+          baseBranch: 'main',
+        }),
+        /cannot adopt its own/,
+      )
+      await mkdir(expectedThreadWorktreePath('project-1', 'thread-new'), { recursive: true })
+      assert.deepEqual(await adopt(repo, old), { status: 'ineligible', reason: 'unavailable' })
+      assert.ok(await lstat(old.path))
+    })
   })
 
   it('allocates, lists, validates, and safely retires a clean linked checkout', async () => {
@@ -759,6 +931,48 @@ describe('worktree manager', () => {
       'should base off the fetched remote tip, not the stale local branch',
     )
     assert.equal(await readFile(join(worktree.path, 'from-remote.txt'), 'utf-8'), 'newer commit\n')
+  })
+
+  it('falls back to the local default branch when the best-effort fetch times out', async () => {
+    const { repo } = await setup()
+    // A remote that accepts the connection and never answers, as an offline or
+    // captive network does, so `git fetch` runs into its 60 s timeout.
+    const sockets: Socket[] = []
+    let fetchStarted: () => void = () => {}
+    const started = new Promise<void>((resolve) => {
+      fetchStarted = resolve
+    })
+    const server = createServer((socket) => {
+      sockets.push(socket)
+      fetchStarted()
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    assert.ok(address && typeof address === 'object')
+    const head = git(repo, ['rev-parse', 'main']).trim()
+    git(repo, ['remote', 'add', 'origin', `http://127.0.0.1:${String(address.port)}/repo.git`])
+    git(repo, ['update-ref', 'refs/remotes/origin/main', head])
+    git(repo, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'])
+
+    mock.timers.enable({ apis: ['setTimeout'] })
+    try {
+      const allocation = allocateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-offline-fetch',
+        projectRoot: repo,
+        prompt: 'Work offline',
+        baseBranch: 'main',
+      })
+      await started
+      // The fetch is the only command in flight once the remote is contacted.
+      mock.timers.tick(60_000)
+      const worktree = await allocation
+      assert.equal(worktree.baseCommit, head)
+    } finally {
+      mock.timers.reset()
+      for (const socket of sockets) socket.destroy()
+      server.close()
+    }
   })
 
   it('serializes concurrent allocations and suffixes branch collisions deterministically', async () => {

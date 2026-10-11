@@ -82,3 +82,11 @@ paths = [
   '''^benchmarks/shell-scope/results/2026-09-22/semif-dev\.jsonl$''',
   '''^benchmarks/shell-scope/results/2026-09-22/semif-holdout\.jsonl$''',
 ]
+
+[[allowlists]]
+# Generated only for the local model.example TLS transport fixture. This key
+# authenticates no provider or account; the test needs a matching certificate
+# while leaving TLS identity verification enabled. Other rules still scan it.
+description = "Inert CLI provider TLS fixture key"
+targetRules = ["private-key"]
+paths = ['''^tests/fixtures/cli-provider-transport/model\.key$''']

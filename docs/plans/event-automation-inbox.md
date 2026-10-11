@@ -104,3 +104,13 @@ failed preparation and terminal-state preservation.
 `task-supervisor-idempotency.test.ts` covers concurrent enqueue, archived identity,
 conflicting input and corrupt/missing identity records. These are invisible
 main-process changes, so no renderer visual eval is required.
+
+## Update (2026-10-07)
+
+`EventInboxAdapter` gained optional `additionalRoutes`: one registered adapter may authenticate
+several (source, event type) pairs. The primary pair is unchanged, and every route still
+requires the adapter's connection id and the delivery/binding agreement checked by
+`bindingMismatch`; the host `resolve` is the only producer of bindings. The GitHub adapter uses
+this for pull-request and issue-label deliveries. Receipts are listed back to the manager as
+delivery history (`started` / `waiting` / `filtered` / `held`) — see
+[Event-driven automations](event-driven-automations.md#status-update-2026-10-07).

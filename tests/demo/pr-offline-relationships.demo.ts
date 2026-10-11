@@ -24,13 +24,9 @@ describe('Local PR relationships without GitHub details', () => {
       await browser.url(`/pr-offline-relationships-fixture.html?mode=${mode}`)
       await $('.pr-list-row').waitForClickable()
       await $('.pr-list-row').click()
-      await expect($('.pr-thread-group[data-relationship-group="produced"]')).toHaveText(
-        'Producing threads\nNo recorded producing thread.',
-      )
+      await expect($('.pr-thread-group[data-relationship-group="produced"]')).not.toExist()
       await $('#record-production').click()
-      await expect($('.pr-thread-link[data-thread-id="producer"]')).toHaveText(
-        'Implement widget\nCreated PR',
-      )
+      await expect($('.pr-thread-link[data-thread-id="producer"]')).toHaveText('Implement widget')
       await expect($$('.pr-thread-link[data-relationship="related"]')).toBeElementsArrayOfSize(1)
       await expect($('.pr-viewer-title')).toHaveText('#42 acme/widgets')
       await expect($('.panel-empty')).toHaveText(

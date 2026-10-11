@@ -2,12 +2,15 @@ import '../../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
-import type { ProviderPlanResult } from '@copse/plan-usage'
+import { createFakeApi } from '../../fake-api.test-support.ts'
+import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
 import type { PlanWorthItPayload } from '@shared/usage/plan-worth-it.ts'
 import type { ModelUsageBreakdown } from '@shared/usage/aggregate-usage.ts'
 import {
   claudeReasonNeedsLogin,
+  createUsageSection,
   createPlanSignInHandler,
+  renderClassifierTable,
   renderModelTable,
   renderPlanProvider,
   renderPlanWorthItSection,
@@ -280,6 +283,56 @@ describe('createPlanSignInHandler', () => {
   })
 })
 
+describe('usage refresh after sign-in', () => {
+  it('forces a fresh plan read on return until Claude becomes available', async () => {
+    const base = createFakeApi()
+    const store = createStore()
+    const forced: boolean[] = []
+    let claude: ProviderPlanResult = claudeUnavailable('Claude’s access token has expired.')
+    const api = {
+      ...base,
+      usage: {
+        ...base.usage,
+        getPlanUsage: async (force?: boolean): Promise<PlanUsageSnapshot> => {
+          forced.push(force === true)
+          return { checkedAt: new Date().toISOString(), providers: [claude] }
+        },
+      },
+    }
+    const section = createUsageSection(api, store)
+    await section.refresh()
+    const signIn = section.root.querySelector<HTMLButtonElement>('.usage-plan-signin-btn')
+    assert.ok(signIn)
+    signIn.click()
+
+    forced.length = 0
+    await section.refresh()
+    assert.ok(forced.includes(true), 'returning after sign-in must bypass the plan cache')
+    assert.equal(
+      section.root.querySelector('.usage-plan-provider')?.getAttribute('data-status'),
+      'unavailable',
+    )
+
+    claude = {
+      status: 'ok',
+      provider: 'claude',
+      usage: { provider: 'claude', plan: 'Pro', windows: [], checkedAt: new Date().toISOString() },
+    }
+    forced.length = 0
+    await section.refresh()
+    assert.ok(forced.includes(true), 'keep checking until the login succeeds')
+    assert.equal(
+      section.root.querySelector('.usage-plan-provider')?.getAttribute('data-status'),
+      'ok',
+    )
+
+    forced.length = 0
+    await section.refresh()
+    assert.equal(forced.includes(true), false, 'ordinary reads remain cached after recovery')
+    section.detach()
+  })
+})
+
 describe('renderModelTable alignment', () => {
   function row(model: string, over: Partial<ModelUsageBreakdown> = {}): ModelUsageBreakdown {
     return {
@@ -475,5 +528,49 @@ describe('renderPlanWorthItSection', () => {
       'insufficient_history',
     )
     assert.match(host.querySelector('.usage-worth-reason')?.textContent ?? '', /completed weekly/)
+  })
+})
+
+describe('renderClassifierTable', () => {
+  const rows = [
+    { provider: 'Kev (local)', model: 'kev-4b', inputTokens: 12_400, outputTokens: 310, calls: 42 },
+    {
+      provider: '<img src=x onerror=alert(1)>',
+      model: '<b>m</b>',
+      inputTokens: 5,
+      outputTokens: 1,
+      calls: 1,
+    },
+  ]
+
+  it('lists each connection and model with calls and tokens, and no cost column', () => {
+    const host = document.createElement('div')
+    renderClassifierTable(host, rows, false)
+    assert.equal(host.querySelector('h4')?.textContent, 'Classifiers')
+    const headers = [...host.querySelectorAll('th')].map((th) => th.textContent)
+    assert.deepEqual(headers, ['Classifier', 'Model', 'Calls', 'Input', 'Output'])
+    const first = [...(host.querySelector('tbody tr')?.querySelectorAll('td') ?? [])].map(
+      (td) => td.textContent,
+    )
+    assert.deepEqual(first, ['Kev (local)', 'kev-4b', '42', '12.4k', '310'])
+  })
+
+  it('shows a connection label as text, never as markup', () => {
+    const host = document.createElement('div')
+    renderClassifierTable(host, rows, false)
+    assert.equal(host.querySelector('img'), null)
+    assert.equal(host.querySelector('b'), null)
+    assert.match(host.textContent, /<img src=x onerror=alert\(1\)>/)
+  })
+
+  it('says so when a window has no classifier calls, and explains All time', () => {
+    const empty = document.createElement('div')
+    renderClassifierTable(empty, [], false)
+    assert.equal(empty.querySelector('table'), null)
+    assert.match(empty.textContent, /No classifier usage in this period/)
+    const allTime = document.createElement('div')
+    renderClassifierTable(allTime, rows, true)
+    assert.equal(allTime.querySelector('table'), null)
+    assert.match(allTime.textContent, /day, month and 90-day windows only/)
   })
 })

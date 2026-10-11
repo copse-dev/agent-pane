@@ -187,11 +187,14 @@ async function waitForCopiedToastToClear(): Promise<void> {
 }
 
 describe('Screenshot click-to-expand', () => {
+  let temporaryRoot = ''
   let workspaceRoot = ''
 
   before(async function () {
     this.timeout(120_000)
-    workspaceRoot = mkdtempSync(join(tmpdir(), PROJECT_WORKSPACE_PREFIX))
+    temporaryRoot = mkdtempSync(join(tmpdir(), PROJECT_WORKSPACE_PREFIX))
+    workspaceRoot = join(temporaryRoot, 'image-expand')
+    mkdirSync(workspaceRoot)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedGalleryThread(workspaceRoot)
@@ -201,7 +204,7 @@ describe('Screenshot click-to-expand', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (temporaryRoot) rmSync(temporaryRoot, { recursive: true, force: true })
   })
 
   it('expands a thread-panel attachment in a modal', async () => {

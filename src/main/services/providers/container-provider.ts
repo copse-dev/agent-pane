@@ -14,6 +14,7 @@ import {
 import type { ContainerModelVerdict } from '@shared/types/container-run.ts'
 import { getAcpAgent } from '../acp/acp-agent-registry.ts'
 import { normalizeHostname } from '@copse/llm/credential-url.ts'
+import { withCredentialOutputRedaction } from '@copse/llm/credential-output-provider.ts'
 import { HOST_LOCAL_ALIAS } from '../container-runtime/egress-rules.ts'
 import { acpHarnessForContainer } from '../container-runtime/guest-acp-agent.ts'
 import type { ThreadContainerAcpHarness } from '../container-runtime/thread-container.ts'
@@ -23,42 +24,28 @@ import {
   providerNeedsKey,
   type ProviderDescription,
 } from './provider-description.ts'
-import { apiKeyForDescription, describeProvider } from './provider-selection.ts'
+import {
+  apiKeyForDescription,
+  describeProvider,
+  resolveTurnParameters,
+  buildResolvedProvider,
+  buildResolvedChatGptPlanProvider,
+} from './provider-selection.ts'
+import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
+import { getChatGptPlanService } from './chatgpt-plan-service.ts'
+import type { LLMProvider } from '@copse/llm/wire-types.ts'
+import { HOST_INFERENCE_TARGET } from '../container-runtime/host-inference-wire.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
 
-/**
- * How a container run reaches the model for a given product model id
- * (`docs/plans/thread-in-container.md`). The guest has no network; the host
- * brokers exactly one origin for the model, so this must name it up front.
- *
- * Two shapes:
- * - `provider`: the desktop's own resolution of the model (`describeProvider`:
- *   protocol, endpoint, tuned parameters, privacy and transport settings),
- *   carried into the guest, which builds the same client from it. The one
- *   difference is the endpoint's name when it is a server on the desktop's
- *   loopback, which the guest cannot reach by that address.
- * - `acp`: the guest runs an external agent baked into the image, under its
- *   vendor's API key, and the allowlist is the agent's catalogue domains
- *   (`docs/plans/thread-in-container.md`, "Agent models in the guest").
- *
- * `apiKey` is returned to the caller, which hands it to the run through an
- * environment variable and never writes it anywhere. `egress` is the rules the
- * broker admits for it: one origin for a provider, a vendor's domains for an
- * agent.
- */
+/** Built-in providers authenticate and infer on the host. External ACP agents remain in the guest. */
 export type ContainerProviderPlan =
   | {
-      mode: 'provider'
-      /** The selection as the user made it, for the record and the usage ledger. */
+      mode: 'host-inference'
       model: string
-      /** The desktop's resolution, as the guest should dial it; see {@link guestFacingEndpoint}. */
-      provider: ProviderDescription
-      /** What the desktop would trim history against for this model. */
+      hostInference: (maxOutputTokens: number, runId: string) => Promise<LLMProvider>
       contextWindow: number
-      apiKey: string | null
+      apiKey: null
       egress: string[]
-      /** Guest-facing host → where the broker dials it, for a host-local endpoint. */
-      egressResolve?: Record<string, string>
     }
   | {
       mode: 'acp'
@@ -133,6 +120,7 @@ export class ContainerModelUnavailable extends Error {
 export interface ContainerProviderOptions {
   /** Carry the agent's desktop sign-in into the run (decision A1′); never the default. */
   useAgentLogin?: boolean
+  threadId?: string
 }
 
 /**
@@ -161,6 +149,37 @@ export async function resolveContainerProvider(
   options: ContainerProviderOptions = {},
 ): Promise<ContainerProviderPlan> {
   assertModelMakerAllowed(model)
+  const chatGpt = parseChatGptPlanModel(model)
+  if (chatGpt) {
+    const service = getChatGptPlanService()
+    const params = resolveTurnParameters(model)
+    const account = service.status().accounts.find((entry) => entry.clientId === chatGpt.clientId)
+    if (!account?.connected || !account.planEnabled)
+      throw new ContainerModelUnavailable(
+        'Reconnect this ChatGPT account in Settings → Providers → OpenAI.',
+        'ChatGPT sign-in required',
+      )
+    return {
+      mode: 'host-inference',
+      model,
+      apiKey: null,
+      egress: [HOST_INFERENCE_TARGET],
+      contextWindow: await resolveContextWindow(model),
+      hostInference: (maxOutputTokens, runId) =>
+        Promise.resolve(
+          buildResolvedChatGptPlanProvider(
+            service,
+            chatGpt,
+            model,
+            {
+              ...params,
+              maxOutputTokens: Math.min(maxOutputTokens, params.maxOutputTokens ?? maxOutputTokens),
+            },
+            `${options.threadId ?? 'container'}:${runId}`,
+          ),
+        ),
+    }
+  }
   const acp = parseAcpModelSelection(model)
   if (acp) return resolveAcpHarness(model, acp.id, options)
   // Agent-backed selections are the common way to land here, and the reason is
@@ -187,15 +206,34 @@ export async function resolveContainerProvider(
   if (apiKey === null && providerNeedsKey(description)) {
     throw new Error(`${providerLabel(description)} is not configured; add an API key in Settings.`)
   }
-  const facing = guestFacingEndpoint(providerEndpointUrl(description))
+  // Validate reserved aliases, but never send a provider endpoint or key to the guest.
+  guestFacingEndpoint(providerEndpointUrl(description))
   return {
-    mode: 'provider',
+    mode: 'host-inference',
     model,
-    provider: forGuest(description, facing.url),
     contextWindow: await resolveContextWindow(model),
-    apiKey,
-    egress: facing.egress,
-    ...(facing.egressResolve ? { egressResolve: facing.egressResolve } : {}),
+    apiKey: null,
+    egress: [HOST_INFERENCE_TARGET],
+    hostInference: (maxOutputTokens, runId): Promise<LLMProvider> =>
+      Promise.resolve(
+        withCredentialOutputRedaction(
+          buildResolvedProvider(
+            {
+              ...description,
+              params: {
+                ...description.params,
+                maxOutputTokens: Math.min(
+                  maxOutputTokens,
+                  description.params.maxOutputTokens ?? maxOutputTokens,
+                ),
+              },
+            },
+            apiKey,
+            `${options.threadId ?? 'container'}:${runId}`,
+          ),
+          apiKey ? [apiKey] : [],
+        ),
+      ),
   }
 }
 
@@ -211,34 +249,6 @@ function providerLabel(description: ProviderDescription): string {
       return description.label
     case 'lm-studio':
       return 'LM Studio'
-  }
-}
-
-/**
- * The description as the guest builds from it. LM Studio's own transport is a
- * WebSocket the guest proxy cannot carry, so in the guest LM Studio is what
- * it also is: an OpenAI-compatible endpoint. An endpoint on the desktop's
- * loopback is renamed to the alias the broker resolves.
- */
-function forGuest(description: ProviderDescription, url: string): ProviderDescription {
-  switch (description.kind) {
-    case 'lm-studio':
-      return {
-        kind: 'openai-compatible',
-        model: description.model,
-        apiKeySlug: description.apiKeySlug,
-        url,
-        label: 'LM Studio',
-        local: true,
-        includeUsage: true,
-        apiStyle: null,
-        extraBody: null,
-        params: description.params,
-      }
-    case 'openai-compatible':
-      return { ...description, url }
-    default:
-      return description
   }
 }
 
