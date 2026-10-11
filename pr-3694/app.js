@@ -88093,7 +88093,10 @@ function mountProjectsPane(root, store2, api2) {
   const threadChangeKey = (projectId, threadId) => `${projectId}\0${threadId}`;
   let threadChangeRendered = [];
   function refreshThreadChanges(refs, opts = {}) {
-    const batch = refs.filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId))).slice(0, THREAD_CHANGE_MAX_PER_PASS);
+    const pending = refs.filter(
+      (ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId))
+    );
+    const batch = pending.slice(0, THREAD_CHANGE_MAX_PER_PASS);
     if (batch.length === 0) return;
     const generation = threadChangeGeneration;
     for (const ref of batch) threadChangeInFlight.add(threadChangeKey(ref.projectId, ref.threadId));
@@ -88110,7 +88113,14 @@ function mountProjectsPane(root, store2, api2) {
         if (needsCleanupOnly && !previous) changed = true;
         threadChangeCache.set(key, { summary, at: Date.now() });
       }
-      if (changed && generation === threadChangeGeneration) render(true);
+      if (generation !== threadChangeGeneration) return;
+      if (changed) render(true);
+      const now = Date.now();
+      const rest = pending.slice(batch.length).filter(({ projectId, threadId }) => {
+        const cached2 = threadChangeCache.get(threadChangeKey(projectId, threadId));
+        return !cached2 || now - cached2.at > THREAD_CHANGE_TTL_MS;
+      });
+      refreshThreadChanges(rest, opts);
     };
     void api2.git.threadChangeSummary(batch, opts).then(settle2, () => {
       settle2([]);
