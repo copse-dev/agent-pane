@@ -121,20 +121,23 @@ describe('acpAgentSandboxOverlay', () => {
   it('re-allows the agent home dirs for read and write on top of the workspace rules', () => {
     const overlay = acpAgentSandboxOverlay(workspace, sandbox)
     const base = workspaceSandboxOverlay(workspace)
+    const fs = overlay.filesystem
+    assert.ok(fs)
+    assert.ok(fs.allowRead)
     const claudeDir = join(homedir(), '.claude')
-    for (const list of [overlay.filesystem?.allowRead, overlay.filesystem?.allowWrite]) {
+    for (const list of [fs.allowRead, fs.allowWrite]) {
       assert.ok(list, 'overlay must define allowRead/allowWrite')
       assert.ok(list.includes(claudeDir))
       assert.ok(list.includes(`${claudeDir}/**`))
       assert.ok(list.includes(join(homedir(), '.claude.json')))
     }
-    assert.ok(overlay.filesystem?.allowRead?.includes(homedir()))
-    assert.ok(!overlay.filesystem?.allowRead?.includes(`${homedir()}/**`))
-    assert.ok(!overlay.filesystem?.allowWrite.includes(homedir()))
+    assert.equal(fs.allowRead.includes(homedir()), process.platform !== 'linux')
+    assert.ok(!fs.allowRead.includes(`${homedir()}/**`))
+    assert.ok(!fs.allowWrite.includes(homedir()))
     // Base workspace rules survive: home still deny-read, workspace still writable.
-    assert.deepEqual(overlay.filesystem?.denyRead, base.filesystem?.denyRead)
+    assert.deepEqual(fs.denyRead, base.filesystem?.denyRead)
     for (const path of base.filesystem?.allowWrite ?? []) {
-      assert.ok(overlay.filesystem?.allowWrite.includes(path))
+      assert.ok(fs.allowWrite.includes(path))
     }
   })
 

@@ -5,8 +5,6 @@ import { $, browser } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedRemoteAgentModelsFixture } from './helpers/seed-config.ts'
 
-const CURSOR_FIXTURE_PORT = 51236
-
 const MODELS_PAYLOAD = {
   items: [
     {
@@ -38,8 +36,10 @@ async function startCursorModelsServer(): Promise<{
   })
   const apiBase = await new Promise<string>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(CURSOR_FIXTURE_PORT, '127.0.0.1', () => {
-      resolve(`http://127.0.0.1:${CURSOR_FIXTURE_PORT}`)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      assert.ok(address && typeof address !== 'string')
+      resolve(`http://127.0.0.1:${String(address.port)}`)
     })
   })
   return {
