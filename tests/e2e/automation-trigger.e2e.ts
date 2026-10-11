@@ -257,6 +257,12 @@ describe('cron automation trigger', function () {
       tintStrength: 'strong',
     })
 
+    // Test control owns the appearance before any scheduled thread starts.
+    assert.equal(
+      await browser.execute(() => document.documentElement.hasAttribute('data-automation-active')),
+      true,
+    )
+
     // Only now open the schedule's project, so its scheduled run starts
     // against the scenario above rather than the mock's unscripted fallback.
     const scheduleProject = $('.project-row*=workspace')
@@ -359,7 +365,7 @@ describe('cron automation trigger', function () {
       () => browser.execute(() => document.documentElement.hasAttribute('data-automation-active')),
       {
         timeout: 10_000,
-        timeoutMsg: 'a running scheduled thread never enabled automation appearance mode',
+        timeoutMsg: 'the test-controlled app did not enable automation appearance mode',
       },
     )
     assert.equal(await browser.execute(() => document.documentElement.dataset['theme']), 'dark')
@@ -400,13 +406,13 @@ describe('cron automation trigger', function () {
     )
     assert.equal(await $('.prompt-input').getText(), '')
     await browser.waitUntil(
-      () => browser.execute(() => !document.documentElement.hasAttribute('data-automation-active')),
+      () => browser.execute(() => document.documentElement.hasAttribute('data-automation-active')),
       {
         timeout: 10_000,
-        timeoutMsg: 'automation appearance mode did not restore after the scheduled run settled',
+        timeoutMsg: 'test automation appearance ended when the scheduled run settled',
       },
     )
-    assert.deepEqual((await editorSurfacePaint([])).token, [0, 46, 43])
+    assert.deepEqual((await editorSurfacePaint([])).token, [45, 39, 26])
 
     const restoreFinalRunTime = await pinTextForCapture(
       '.automation-schedule-runs',

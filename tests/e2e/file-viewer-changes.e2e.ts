@@ -229,6 +229,10 @@ describe('file viewer Changes view', () => {
   for (const theme of ['dark', 'light'] as const) {
     it(`paints the editor and diff from --bg-base under Strong + Copse (${theme})`, async function () {
       this.timeout(90_000)
+      // Exercise the user's Copse tint without the test-session amber override.
+      await browser.execute(() =>
+        document.documentElement.removeAttribute('data-automation-active'),
+      )
       await applyAppearanceViaSettings({
         theme,
         tintColor: COPSE_TINT_COLOR,

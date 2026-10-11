@@ -108,6 +108,13 @@ describe('custom interface colours', () => {
   })
 
   it('uses the requested defaults and supports stronger interface tinting', async () => {
+    // Test-controlled windows deliberately use amber. Verify that marker, then
+    // remove its presentation override to exercise normal user colour settings.
+    expect(
+      await browser.execute(() => document.documentElement.hasAttribute('data-automation-active')),
+    ).toBe(true)
+    expect((await accentSnapshot())?.accentColor).toBe('#f3bd4d')
+    await browser.execute(() => document.documentElement.removeAttribute('data-automation-active'))
     const defaults = await accentSnapshot()
     expect(defaults).not.toBeNull()
     expect(defaults?.accentColor).toBe('#ff93d0')

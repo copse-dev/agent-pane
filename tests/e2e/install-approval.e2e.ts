@@ -25,6 +25,9 @@ describe('package install approval', () => {
 
   it('shows a clean, install-specific approval dialog', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    // This spec measures the saved custom accent, beneath the transient
+    // test-session palette. Keep its exact colour and contrast assertions.
+    await browser.execute(() => document.documentElement.removeAttribute('data-automation-active'))
 
     const scenario = await installMockScenario({
       title: 'Install project dependencies',
