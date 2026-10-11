@@ -217,6 +217,21 @@ function carryIn(spec: Spec, runDir: string): void {
     bundle,
     `${spec.carryInRef}:refs/heads/work`,
   ])
+  if (spec.rebaseOnto) {
+    git(spec.workspace, [
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      bundle,
+      `${spec.carryInRef}-base:refs/copse/rebase-base`,
+    ])
+  }
+  if (
+    spec.rebaseOnto &&
+    git(spec.workspace, ['rev-parse', 'refs/copse/rebase-base']) !== spec.rebaseOnto
+  ) {
+    throw new Error('rebase base mismatch')
+  }
   git(spec.workspace, ['checkout', '--quiet', 'work'])
   // The desktop checkout's origin, by address only: nothing here can reach
   // it, and a push is refused before git would try (decision A3).

@@ -29,7 +29,8 @@ name: Publish screenshot candidates
 #
 # `workflow_run` is deliberately used instead of adding a
 # write token to the job that executes pull-request code. Nothing from the
-# checkout is ever executed here; the candidate PNGs are validated as data.
+# candidate checkout is ever executed here; the PNGs are validated as data.
+# Stack policy is loaded separately from the immutable trusted workflow SHA.
 on:
   workflow_run:
     workflows: [CI]
@@ -128,6 +129,10 @@ jobs:
               run_id: runId,
               per_page: 100,
             });
+            const coverage = artifacts.filter((artifact) =>
+              artifact.name === `screenshot-stack-coverage-${runId}` && !artifact.expired);
+            if (coverage.length > 1) throw new Error('Ambiguous screenshot stack coverage artifact');
+            if (coverage.length === 1) core.setOutput('stack-artifact-id', String(coverage[0].id));
             const matches = artifacts.filter(
               (artifact) => artifact.name === artifactName && !artifact.expired,
             );
@@ -849,11 +854,84 @@ jobs:
               });
             }
 
+      - name: Load trusted screenshot stack policy
+        if: success() && steps.discover.outputs.stack-artifact-id != ''
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: screenshot-stack-policy
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/screenshot-stack.mts
+            scripts/lib/safe-json.mts
+          sparse-checkout-cone-mode: false
+
+      - name: Download screenshot stack coverage request
+        if: success() && steps.discover.outputs.stack-artifact-id != ''
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.discover.outputs.stack-artifact-id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/screenshot-stack-coverage
+
+      - name: Attest combined screenshot stack coverage
+        if: success() && steps.discover.outputs.stack-artifact-id != ''
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ steps.discover.outputs.parent-number }}
+          HEAD_SHA: ${{ steps.discover.outputs.head-sha }}
+          MANIFEST_PATH: ${{ runner.temp }}/screenshot-stack-coverage/screenshot-stack-coverage.json
+          COMPARE_COMMIT: ${{ steps.compare.outputs.commit }}
+        with:
+          script: |
+            const { readFile, lstat } = await import('node:fs/promises');
+            const { attestScreenshotStack } = await import(
+              `${process.env.GITHUB_WORKSPACE}/screenshot-stack-policy/scripts/screenshot-stack.mts`);
+            const stat = await lstat(process.env.MANIFEST_PATH);
+            if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096)
+              throw new Error('Invalid screenshot stack coverage manifest file');
+            const coverage = await attestScreenshotStack(github, {
+              ...context.repo, number: Number(process.env.PR_NUMBER),
+            }, process.env.HEAD_SHA, await readFile(process.env.MANIFEST_PATH, 'utf8'));
+            // Include PNGs already committed in lower layers, which may not
+            // appear among newly rendered candidates. Both endpoints are pinned.
+            const after = /^[0-9a-f]{40}$/.test(process.env.COMPARE_COMMIT || '')
+              ? process.env.COMPARE_COMMIT : process.env.HEAD_SHA;
+            if (coverage.needsReview) {
+              const name = 'screenshots-need-review';
+              try { await github.rest.issues.getLabel({ ...context.repo, name }); }
+              catch (error) {
+                if (error.status !== 404) throw error;
+                try { await github.rest.issues.createLabel({
+                  ...context.repo, name, color: 'FBCA04', description: 'Changed screenshot candidates await a review decision',
+                }); } catch (createError) { if (createError.status !== 422) throw createError; }
+              }
+              await github.rest.issues.addLabels({
+                ...context.repo, issue_number: Number(process.env.PR_NUMBER), labels: [name],
+              });
+            }
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo, issue_number: Number(process.env.PR_NUMBER), per_page: 100,
+            });
+            const marker = '<!-- copse-screenshot-stack-evidence -->';
+            const body = `${marker}\n### Combined stack screenshot review\n\n` +
+              `[Compare the whole stack, including committed reference images](https://github.com/${context.repo.owner}/${context.repo.repo}/compare/${coverage.base}...${after})\n\n` +
+              `Coverage: \`${process.env.HEAD_SHA}\`. Lower PRs wait for this tip's screenshot decision; their other checks remain required.\n\n` +
+              (coverage.needsReview
+                ? '**Review required:** inspect the combined image changes, including references committed in lower PRs. Use the normal accept/selection controls, or `decline-screenshots` if no baseline updates are needed.'
+                : 'The explicit screenshot decision for this head is recorded.');
+            const existing = comments.find((comment) => comment.user?.id === 41898282 && comment.body?.includes(marker));
+            if (existing) await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ ...context.repo, issue_number: Number(process.env.PR_NUMBER), body });
+
       # Fail the gate closed: a head whose evidence could not be validated or
       # linked must not look reviewable, and a missing status reads as "waiting"
       # rather than broken. `decline-screenshots` can still override it.
       - name: Fail the screenshot review closed
-        if: failure() && steps.discover.outputs.gate-sha != '' && steps.gate.outcome != 'success'
+        if: failure() && steps.discover.outputs.gate-sha != ''
         uses: actions/github-script@v9
         env:
           GATE_SHA: ${{ steps.discover.outputs.gate-sha }}
