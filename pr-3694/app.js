@@ -54881,11 +54881,12 @@ var init_branch_ci_editor = __esm({
 });
 
 // src/renderer/views/automation-retained-worktrees.ts
+function describeRetainedWorktree(run2, name = run2.title) {
+  const paths = run2.paths?.length ? ` (${run2.paths.join(", ")})` : "";
+  return `\u201C${name}\u201D ${REASON_LABEL[run2.reason]}${paths}`;
+}
 function describeRetainedWorktrees(retained) {
-  return retained.map((run2) => {
-    const paths = run2.paths?.length ? ` (${run2.paths.join(", ")})` : "";
-    return `\u201C${run2.title}\u201D ${REASON_LABEL[run2.reason]}${paths}`;
-  }).join("; ");
+  return retained.map((run2) => describeRetainedWorktree(run2)).join("; ");
 }
 var REASON_LABEL;
 var init_automation_retained_worktrees = __esm({
@@ -54985,18 +54986,35 @@ var init_thread_proposal = __esm({
   }
 });
 
+// src/shared/tools/copse-tool-call.ts
+function matchesCopseToolName(name, tool) {
+  return name === tool || new RegExp(`^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+${tool}(?![a-z0-9_])`, "i").test(name);
+}
+function isCopseToolCall(call, tool) {
+  return [call.name, call.programmaticName].some(
+    (name) => typeof name === "string" && matchesCopseToolName(name, tool)
+  );
+}
+var init_copse_tool_call = __esm({
+  "src/shared/tools/copse-tool-call.ts"() {
+  }
+});
+
 // src/shared/threads/thread-proposal.ts
+function isThreadProposalCall(call) {
+  return isCopseToolCall(call, THREAD_PROPOSAL_TOOL);
+}
 var init_thread_proposal2 = __esm({
   "src/shared/threads/thread-proposal.ts"() {
+    init_thread_proposal();
+    init_copse_tool_call();
     init_thread_proposal();
   }
 });
 
 // src/shared/threads/reviewer-input.ts
 function isReviewerInputCall(call) {
-  return [call.name, call.programmaticName].some(
-    (name) => name === REVIEWER_INPUT_TOOL || typeof name === "string" && /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+request_review_input(?![a-z0-9_])/i.test(name)
-  );
+  return isCopseToolCall(call, REVIEWER_INPUT_TOOL);
 }
 function parseReviewerInputCall(call, messageId) {
   if (!isReviewerInputCall(call) || call.status !== "done" || !isRecord(call.args)) return null;
@@ -55044,6 +55062,7 @@ var REVIEWER_INPUT_TOOL;
 var init_reviewer_input = __esm({
   "src/shared/threads/reviewer-input.ts"() {
     init_unknown_value3();
+    init_copse_tool_call();
     REVIEWER_INPUT_TOOL = "request_review_input";
   }
 });
@@ -56394,7 +56413,7 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   const regular = [];
   for (const tc2 of toolCalls) {
     if (tc2.subagent) subagents.push(tc2);
-    else if (tc2.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(tc2)) proposals.push(tc2);
+    else if (isThreadProposalCall(tc2) || isReviewerInputCall(tc2)) proposals.push(tc2);
     else regular.push(tc2);
   }
   const result = [];
@@ -57685,18 +57704,28 @@ function sidebarLastPromptAt(thread) {
   }
   return void 0;
 }
+function sidebarHasRun(thread) {
+  if (thread.lastPromptAt !== void 0) return true;
+  if (thread.everRan !== void 0) return thread.everRan;
+  if (thread.workingBrief !== void 0 || thread.autoTitleCount !== void 0) return true;
+  return (thread.usage?.inputTokens ?? 0) + (thread.usage?.outputTokens ?? 0) > 0;
+}
 function compactSidebarThread(thread) {
   const lastPromptAt = sidebarLastPromptAt(thread);
   return {
     id: thread.id,
     title: thread.title,
     ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
+    ...thread.updatedAt !== void 0 ? { updatedAt: thread.updatedAt } : {},
     ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
     status: thread.status,
+    // A prompt found in the loaded transcript counts too, matching the `lastPromptAt` kept above.
+    everRan: lastPromptAt !== void 0 || sidebarHasRun(thread),
     ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
     ...thread.sideChat ? { sideChat: thread.sideChat } : {},
     ...thread.automation ? { automation: thread.automation } : {},
+    ...thread.worktree ? { worktree: thread.worktree } : {},
     ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {},
     prRefs: sidebarPrRefs(thread),
     ...thread.prProductions ? { prProductions: thread.prProductions } : {}
@@ -58348,8 +58377,8 @@ function supersedePendingSwitch() {
 }
 function getSidebarThreads(store2, projectId) {
   const { activeProjectId, threads } = store2.getState();
-  const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
-  return withoutSideChats(list).filter((t2) => t2.archivedAt == null);
+  const list = projectId === activeProjectId ? withoutSideChats(threads) : withoutSideChats(threadCache.get(projectId) ?? []);
+  return list.filter((t2) => t2.archivedAt == null);
 }
 function getSideChatUnreadParents(store2, projectId) {
   const { activeProjectId, threads } = store2.getState();
@@ -79934,6 +79963,49 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home-read-history",
+        label: "Activity home listing threads that finished before launch",
+        project: project("demo-activity-history-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the empty active one. Everything else is idle, read, and
+        // finished before this launch, so only the persisted write time puts it in
+        // Recently finished. Times follow the real clock because the recency window
+        // does; the last thread is older than the window and must stay out.
+        threads: [
+          {
+            id: "demo-activity-history-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          ...[
+            ["refactor", "Refactor auth", "idle", 36e5 * 2],
+            ["flaky", "Fix the flaky sandbox test", "error", 36e5 * 30],
+            ["copy", "Update onboarding copy", "idle", 36e5 * 24 * 4],
+            // Legacy-shaped: written before lastPromptAt existed, so it only has usage.
+            ["legacy", "Port the settings page", "idle", 36e5 * 24 * 2],
+            ["ancient", "Rename the config keys", "idle", 36e5 * 24 * 30]
+          ].map(([slug2, title, status, ago], index) => ({
+            id: `demo-activity-history-${slug2}`,
+            title,
+            status,
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 1200, outputTokens: 300 },
+            createdAt: Date.now() - ago - 6e4,
+            updatedAt: Date.now() - ago,
+            ...slug2 === "legacy" ? {} : { lastPromptAt: Date.now() - ago - 3e4 - index }
+          }))
+        ]
+      },
+      {
         id: "activity-home-empty",
         label: "Activity home with nothing to list",
         project: project("demo-activity-home-empty-project"),
@@ -81158,7 +81230,7 @@ function createDemoApi(scenario, options = {}) {
       fetchProviderModels: () => resolved2({ ok: false, models: [], error: "Unavailable in demo" }),
       refreshHuggingFaceModels: () => resolved2({ ok: false, count: 0, error: "Unavailable in demo" })
     },
-    appIcon: { apply: resolvedVoid, setAutomationMode: resolvedVoid },
+    appIcon: { apply: resolvedVoid },
     about: {
       getInfo: () => resolved2({ version: "demo", report: null }),
       openLicenseFile: resolvedVoid
@@ -81365,6 +81437,7 @@ function createDemoApi(scenario, options = {}) {
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      cleanupRuns: unsupported,
       listBranchCi: emptyArray,
       upsertBranchCi: unsupported,
       removeBranchCi: unsupported,
@@ -84350,6 +84423,23 @@ var init_automation_dialog = __esm({
   }
 });
 
+// src/renderer/controller/automation-held-runs.ts
+function heldAutomationRuns(runs) {
+  return runs.filter(
+    (run2) => run2.status !== "running" && run2.worktree !== void 0 && run2.worktree.retiredAt === void 0
+  );
+}
+function heldRunsLabel(count) {
+  return `${String(count)} held`;
+}
+function heldRunsTooltip(count) {
+  return `${String(count)} finished run${count === 1 ? " still holds" : "s still hold"} a worktree. Right-click for Clean up finished runs.`;
+}
+var init_automation_held_runs = __esm({
+  "src/renderer/controller/automation-held-runs.ts"() {
+  }
+});
+
 // packages/thread-store/src/fork-thread.ts
 function forkThreadTitle(title) {
   const base = title.trim() || "New Thread";
@@ -84760,7 +84850,14 @@ function questionWant(questions) {
   const extra = questions.length > 1 ? ` (+${String(questions.length - 1)} more)` : "";
   return `${truncateText(first, WANT_MAX_CHARS - extra.length)}${extra}`;
 }
+function persistedEndedAt(thread, now) {
+  const at3 = thread.settledAt;
+  if (at3 === void 0) return void 0;
+  const age = now - at3;
+  return age <= RECENT_WINDOW_MS && age >= -FUTURE_SKEW_MS ? at3 : void 0;
+}
 function deriveActivity(input2) {
+  const now = input2.now ?? Date.now();
   const byId = new Map(input2.threads.map((thread) => [thread.id, thread]));
   const needsYou = [
     ...input2.approvals.map((req) => ({
@@ -84830,7 +84927,7 @@ function deriveActivity(input2) {
       );
     } else {
       const recentStartFailure = thread.schedule && thread.failure?.startFailed && thread.failure.at > (input2.now ?? 0) - 864e5 ? thread.failure.at : void 0;
-      const endedAt = run2?.endedAt ?? thread.unreadAt ?? recentStartFailure;
+      const endedAt = run2?.endedAt ?? thread.unreadAt ?? recentStartFailure ?? persistedEndedAt(thread, now);
       if (endedAt === void 0) continue;
       if (thread.status === "error") {
         const row2 = threadRow(thread, "failed", "Ended with an error", endedAt);
@@ -84905,6 +85002,9 @@ function foldScheduleRuns(recent, scheduleOf) {
   folds.sort((a3, b4) => a3.state === b4.state ? 0 : a3.state === "failed" ? -1 : 1);
   return { folds, rest: recent.filter((row2) => !folded.has(row2)) };
 }
+function settledAtOf(thread) {
+  return thread.updatedAt !== void 0 && sidebarHasRun(thread) ? { settledAt: thread.updatedAt } : {};
+}
 function failureField(automation) {
   const failure2 = automation.failure;
   if (!failure2) return {};
@@ -84928,6 +85028,7 @@ function collectActivityThreads(store2) {
         title: thread.title,
         status: thread.status,
         ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
+        ...settledAtOf(thread),
         projectId: project2.id,
         projectName,
         ...thread.automation ? {
@@ -84949,6 +85050,7 @@ function collectActivityThreads(store2) {
       title: carried.thread.title,
       status: carried.thread.status,
       ...carried.thread.unreadAt !== void 0 ? { unreadAt: carried.thread.unreadAt } : {},
+      ...settledAtOf(carried.thread),
       projectId: project2.id,
       projectName: projectDisplayName(project2),
       ...carried.thread.automation ? {
@@ -85004,13 +85106,16 @@ function formatAgeLong(elapsedMs) {
   if (elapsedMs < DAY) return unit(Math.floor(elapsedMs / HOUR), "hour");
   return unit(Math.floor(elapsedMs / DAY), "day");
 }
-var RECENT_ROW_LIMIT, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
+var RECENT_ROW_LIMIT, RECENT_WINDOW_MS, FUTURE_SKEW_MS, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
     init_types();
     init_automation_failure();
     init_projects();
+    init_sidebar_thread();
     RECENT_ROW_LIMIT = 10;
+    RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1e3;
+    FUTURE_SKEW_MS = 24 * 60 * 60 * 1e3;
     SCHEDULE_FOLD_AT = 2;
     WANT_MAX_CHARS = 140;
     UNTITLED_THREAD = "New thread";
@@ -87276,7 +87381,9 @@ function namingMessages(thread) {
   );
 }
 function promptWords(message2) {
-  return stripPastePlaceholders(message2.content);
+  const stripped = stripPastePlaceholders(message2.content);
+  if (stripped) return stripped;
+  return (message2.attachments ?? []).filter((a3) => a3.kind === "paste" && a3.content).map((a3) => a3.content).join("\n\n").trim();
 }
 function namingInput(userMessages) {
   const first = userMessages[0];
@@ -87763,7 +87870,42 @@ function startRunNow(api2, target) {
     );
   });
 }
-function automationMenuEntries(api2, target, openSetup) {
+function runWhenLabel(triggeredAt) {
+  return triggeredAt ? new Date(triggeredAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "Unknown time";
+}
+async function cleanUpScheduleRuns(store2, api2, target) {
+  try {
+    const result = await api2.automations.cleanupRuns(target.project.id, target.scheduleId);
+    const freed = result.released.length;
+    const freedText = `${String(freed)} worktree${freed === 1 ? "" : "s"}`;
+    if (result.retained.length === 0) {
+      showToast(
+        freed === 0 ? `Nothing to clean up for \u201C${target.scheduleName}\u201D.` : `Freed ${freedText} for \u201C${target.scheduleName}\u201D.`
+      );
+      return;
+    }
+    const known = new Map(getSidebarThreads(store2, target.project.id).map((t2) => [t2.id, t2]));
+    const lines = result.retained.map((run2) => {
+      const when = runWhenLabel(known.get(run2.threadId)?.automation?.triggeredAt);
+      return `\u2022 ${describeRetainedWorktree(run2, `${run2.title} \xB7 ${when}`)}`;
+    });
+    const first = result.retained[0];
+    const opened = await showConfirmDialog({
+      message: `${String(result.retained.length)} run${result.retained.length === 1 ? "" : "s"} of \u201C${target.scheduleName}\u201D still hold${result.retained.length === 1 ? "s" : ""} a worktree`,
+      detail: `${freed > 0 ? `Freed ${freedText}. ` : ""}These need a decision from you, so they were left alone:
+${lines.join("\n")}`,
+      confirmLabel: result.retained.length === 1 ? "Open run" : "Open first run",
+      cancelLabel: "Close"
+    });
+    if (opened && first) switchProjectThread(store2, api2, target.project.id, first.threadId);
+  } catch (error62) {
+    showErrorToast(
+      `Could not clean up \u201C${target.scheduleName}\u201D`,
+      ipcErrorMessage(error62, "The cleanup could not finish")
+    );
+  }
+}
+function automationMenuEntries(api2, target, openSetup, cleanUp) {
   const eventAutomation = getCachedEventAutomations(target.project.id).some(
     (definition) => definition.id === target.scheduleId
   );
@@ -87778,6 +87920,7 @@ function automationMenuEntries(api2, target, openSetup) {
   return [
     { heading: target.scheduleName },
     ...runEntries,
+    ...cleanUp ? [{ label: "Clean up finished runs\u2026", onSelect: cleanUp }] : [],
     {
       label: "Automation setup\u2026",
       onSelect: openSetup
@@ -88859,6 +89002,18 @@ function mountProjectsPane(root, store2, api2) {
                 });
               }
             },
+            ...heldAutomationRuns([thread]).length > 0 ? [
+              {
+                label: "Clean up finished runs\u2026",
+                onSelect: () => {
+                  void cleanUpScheduleRuns(store2, api2, {
+                    project: project2,
+                    scheduleName: thread.automation?.scheduleName ?? thread.title,
+                    scheduleId
+                  });
+                }
+              }
+            ] : [],
             {
               label: "Automation setup\u2026",
               onSelect: () => {
@@ -89122,6 +89277,21 @@ function mountProjectsPane(root, store2, api2) {
             projectSuffix,
             el("span", { class: "automation-schedule-count" }, `${String(runs.length)} runs`)
           );
+          const heldRuns = heldAutomationRuns(runs);
+          if (heldRuns.length > 0) {
+            scheduleToggle.querySelector(".automation-schedule-count")?.before(
+              el(
+                "span",
+                {
+                  class: "automation-schedule-held",
+                  role: "img",
+                  "aria-label": heldRunsTooltip(heldRuns.length),
+                  title: heldRunsTooltip(heldRuns.length)
+                },
+                heldRunsLabel(heldRuns.length)
+              )
+            );
+          }
           if (runs.some((thread) => thread.status === "running")) {
             const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
             status.setAttribute("role", "img");
@@ -89162,7 +89332,10 @@ function mountProjectsPane(root, store2, api2) {
                 },
                 () => {
                   openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
-                }
+                },
+                heldRuns.length > 0 ? () => {
+                  void cleanUpScheduleRuns(store2, api2, { project: project2, scheduleName, scheduleId });
+                } : void 0
               )
             );
           });
@@ -89749,6 +89922,8 @@ var init_projects_pane = __esm({
     init_ipc_error_message();
     init_confirm_dialog();
     init_toast();
+    init_automation_held_runs();
+    init_automation_retained_worktrees();
     init_fork_thread3();
     init_thread_filter();
     init_thread_sort();
@@ -97143,9 +97318,6 @@ var init_thread_proposal_card = __esm({
 });
 
 // src/renderer/views/thread-proposal-tool-card.ts
-function isThreadProposalCall(tc2) {
-  return tc2.name === THREAD_PROPOSAL_TOOL;
-}
 function cardState(store2, sourceThreadId, proposalId) {
   const decisions = getThreadById(store2, sourceThreadId)?.threadProposals;
   const status = threadProposalStatus(decisions, proposalId);
@@ -158536,39 +158708,10 @@ var init_agent = __esm({
 });
 
 // src/renderer/controller/automation-appearance.ts
-function hasRunningAutomation(threads, backgroundThreads) {
-  return [...threads, ...backgroundThreads.map(({ thread }) => thread)].some(
-    (thread) => thread.automation !== void 0 && thread.status === "running"
-  );
-}
-function attachAutomationAppearance(store2, api2, root = document.documentElement) {
-  let active2 = null;
-  const sync = () => {
-    const state = store2.getState();
-    const next = hasRunningAutomation(state.threads, state.backgroundThreads);
-    if (next === active2) return;
-    active2 = next;
-    root.toggleAttribute(AUTOMATION_ACTIVE_ATTRIBUTE, next);
-    void api2.setAutomationMode(next).catch((error62) => {
-      console.error("[automations] Failed to apply transient appearance:", error62);
-    });
-  };
-  const unsubs = [
-    store2.on("thread_status_changed", sync),
-    store2.on("threads_changed", sync),
-    store2.on("workspace_changed", sync)
-  ];
-  sync();
+function attachAutomationAppearance(testAutomation, root = document.documentElement) {
+  root.toggleAttribute(AUTOMATION_ACTIVE_ATTRIBUTE, testAutomation);
   return () => {
-    unsubs.forEach((unsubscribe) => {
-      unsubscribe();
-    });
     root.removeAttribute(AUTOMATION_ACTIVE_ATTRIBUTE);
-    if (active2 === true) {
-      void api2.setAutomationMode(false).catch((error62) => {
-        console.error("[automations] Failed to restore the native app icon:", error62);
-      });
-    }
   };
 }
 var AUTOMATION_ACTIVE_ATTRIBUTE;
@@ -169007,6 +169150,7 @@ async function boot() {
   const mobileReady = new Promise((resolve) => {
     mobileRestored = resolve;
   });
+  attachAutomationAppearance(Object.hasOwn(window, "__copseE2e"));
   if (!popoutMode) {
     startAgentController(store, api);
     attachAutosave(store, api);
@@ -169017,7 +169161,6 @@ async function boot() {
       openSettings: openModelSettings
     });
     attachAutomationController(store, api);
-    attachAutomationAppearance(store, api.appIcon);
     attachPrPanelFollow(store, api);
     startExternalCursorAgentSync(store, api);
   } else {

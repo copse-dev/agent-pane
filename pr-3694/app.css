@@ -1410,6 +1410,15 @@ copse-ui-field input[type=password],
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.automation-schedule-held {
+  flex: none;
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--warning, currentColor);
+  border-radius: var(--radius-sm);
+  color: var(--warning, var(--text-secondary));
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
 .automation-schedule-count {
   margin-left: auto;
   color: var(--text-muted);
@@ -18074,6 +18083,7 @@ h3 {
   --accent-color: #f3bd4d !important;
   --text-on-accent: #2d2208 !important;
   --warning: #e4aa20;
+  --text-on-warning: #2d2208;
   --highlight-current-bg: #f3bd4d;
   --highlight-current-text: #2d2208;
 }
