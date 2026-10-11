@@ -2,6 +2,15 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import {
+  eligibleThread,
+  listThreads,
+  verificationPrompt,
+  verificationSchema,
+  verifiedFindings,
+  resolveVerified,
+} from './lib/copse-thread-resolution.mts'
 import { z } from 'zod'
 import { wrapExternalContent } from '@copse/agent/external-content.ts'
 import {
@@ -42,6 +51,16 @@ async function api(path: string): Promise<string> {
     signal: AbortSignal.timeout(30_000),
   })
   if (!response.ok) throw new Error(`GitHub ${String(response.status)} for ${path}`)
+  return response.text()
+}
+async function graphql(query: string, variables: Record<string, unknown>): Promise<string> {
+  const response = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!response.ok) throw new Error(`GitHub GraphQL ${String(response.status)}`)
   return response.text()
 }
 async function current(): Promise<FollowUpRequest> {
@@ -85,18 +104,22 @@ function git(args: string[]): string {
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     },
-  ).trim()
+  ).replace(/\r?\n$/, '')
 }
-const requestPath = join(root, 'request.json')
-const request = await current()
-if (process.argv[2] === 'prepare') {
+function prepareWorkspace(request: FollowUpRequest): void {
   mkdirSync(workspace, { recursive: true })
-  writeFileSync(requestPath, JSON.stringify(request), { mode: 0o600 })
   git(['init', '--quiet'])
   git(['remote', 'add', 'origin', `https://github.com/${REPOSITORY}.git`])
   git(['fetch', '--no-tags', 'origin', request.head, request.base])
   git(['checkout', '--detach', request.head])
   if (git(['status', '--porcelain'])) throw new Error('Expected a clean PR checkout')
+}
+const verificationPath = join(root, 'verification.json')
+const requestPath = join(root, 'request.json')
+const request = await current()
+if (process.argv[2] === 'prepare') {
+  prepareWorkspace(request)
+  writeFileSync(requestPath, JSON.stringify(request), { mode: 0o600 })
   const item = z.object({
     id: z.number().optional(),
     in_reply_to_id: z.number().optional(),
@@ -145,6 +168,7 @@ if (process.argv[2] === 'prepare') {
   const expected = decode(readFileSync(requestPath, 'utf8'), requestSchema)
   assertCurrent(expected, request)
   const ref = publicationRef(readFileSync(join(root, 'report.json'), 'utf8'), request)
+  let publishedHead = request.head
   if (!ref) {
     appendFileSync(
       required('GITHUB_STEP_SUMMARY'),
@@ -154,11 +178,62 @@ if (process.argv[2] === 'prepare') {
     const commit = validatePublication(request, ref, git)
     assertCurrent(request, await current())
     git(pushArgs(request, commit))
+    publishedHead = commit
     appendFileSync(
       required('GITHUB_STEP_SUMMARY'),
       `Pushed [${commit.slice(0, 12)}](https://github.com/${REPOSITORY}/commit/${commit}) to PR #${String(request.pr)}.\n`,
     )
   }
+  appendFileSync(required('GITHUB_OUTPUT'), `head=${publishedHead}\nmode=${request.mode}\n`)
+} else if (process.argv[2] === 'prepare-verification') {
+  if (request.mode !== 'fix' || request.head !== required('EXPECTED_HEAD'))
+    throw new Error('Verification requires the exact published fix head')
+  const threads = (await listThreads(graphql, request.pr)).filter(eligibleThread).slice(0, 20)
+  appendFileSync(required('GITHUB_OUTPUT'), `has_threads=${String(threads.length > 0)}\n`)
+  if (threads.length > 0) {
+    prepareWorkspace(request)
+    const verification = {
+      request,
+      threads,
+      outputPath: `copse-review-verdict-${randomUUID()}.json`,
+    }
+    if (git(['ls-tree', request.head, '--', verification.outputPath]))
+      throw new Error('Verification output path already exists')
+    writeFileSync(verificationPath, JSON.stringify(verification), { mode: 0o600 })
+    writeFileSync(join(root, 'prompt.txt'), verificationPrompt(verification), { mode: 0o600 })
+  }
+} else if (['validate-verification', 'resolve-threads'].includes(process.argv[2] ?? '')) {
+  const verification = decode(readFileSync(verificationPath, 'utf8'), verificationSchema)
+  assertCurrent(verification.request, request)
+  if (request.mode !== 'fix' || request.head !== required('EXPECTED_HEAD'))
+    throw new Error('Verification requires the exact published fix head')
+  const findings = verifiedFindings(
+    verification,
+    readFileSync(join(root, 'report.json'), 'utf8'),
+    git,
+  )
+  if (process.argv[2] === 'validate-verification') {
+    appendFileSync(required('GITHUB_OUTPUT'), `has_findings=${String(findings.length > 0)}\n`)
+    appendFileSync(
+      required('GITHUB_STEP_SUMMARY'),
+      `Independent verification at ${request.head}: ${String(findings.length)} addressed Copse thread(s); others remain open.\n`,
+    )
+  } else {
+    const resolved = await resolveVerified({
+      verification,
+      findings,
+      graphql,
+      assertCurrent: async () => {
+        assertCurrent(verification.request, await current())
+      },
+    })
+    appendFileSync(
+      required('GITHUB_STEP_SUMMARY'),
+      `Resolved ${String(resolved.length)} verified Copse thread(s) at ${request.head}.\n`,
+    )
+  }
 } else {
-  throw new Error('Expected prepare or publish')
+  throw new Error(
+    'Expected prepare, publish, prepare-verification, validate-verification or resolve-threads',
+  )
 }
