@@ -516,7 +516,14 @@ export function mountThreadContextPane(
             'div',
             { class: 'thread-context-row' },
             el('span', { class: 'thread-context-main' }, 'Changes'),
-            el('span', { 'data-context-change-stats': '', title: 'Lines added and removed in this checkout' }, ...changesContent()),
+            el(
+              'span',
+              {
+                'data-context-change-stats': '',
+                title: 'Lines added and removed in this checkout',
+              },
+              ...changesContent(),
+            ),
           ),
           el(
             'p',
@@ -525,7 +532,6 @@ export function mountThreadContextPane(
           ),
           el('div', { class: 'thread-context-section-actions' }, archive),
         ),
-
       )
     viewerRoot.append(content)
   }
