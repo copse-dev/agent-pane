@@ -80601,6 +80601,7 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     threads: {
+      storageSize: () => resolved2({ bytes: 24576, truncated: false }),
       archive: (_projectId, threadId) => {
         const archivedAt = Date.now();
         const thread = threads.find((candidate) => candidate.id === threadId);
@@ -81890,6 +81891,7 @@ function createStore(initial) {
     browser_url_requested: /* @__PURE__ */ new Set(),
     browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
     pr_open_requested: /* @__PURE__ */ new Set(),
+    thread_archive_requested: /* @__PURE__ */ new Set(),
     side_chat_open_requested: /* @__PURE__ */ new Set(),
     canvas_artefact_requested: /* @__PURE__ */ new Set(),
     canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
@@ -89244,6 +89246,9 @@ function mountProjectsPane(root, store2, api2) {
   window.addEventListener("focus", recheckStaleThreadChanges);
   document.addEventListener("visibilitychange", recheckStaleThreadChanges);
   const unsubs = [
+    store2.on("thread_archive_requested", (projectId, threadId) => {
+      void archiveProjectThread(projectId, threadId);
+    }),
     unsubWorkingTree,
     store2.on("projects_changed", render),
     // Streaming and hydration must not restart the disk scan. Resident human
@@ -133944,6 +133949,47 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   let mentionedIn = [];
   let mentionedFor = null;
   let token = 0;
+  let storageToken = 0;
+  let storageKey = "";
+  let storageText = "Calculating\u2026";
+  let disposed = false;
+  function activeStorageKey() {
+    const state = store2.getState();
+    const thread = getActiveThread(store2);
+    return JSON.stringify([
+      state.activeProjectId,
+      thread?.id,
+      thread?.worktree?.path,
+      thread?.worktree?.retiredAt
+    ]);
+  }
+  async function refreshStorage() {
+    const thread = getActiveThread(store2);
+    const projectId = store2.getState().activeProjectId;
+    if (!thread || !projectId) return;
+    const mine = ++storageToken;
+    const key = activeStorageKey();
+    storageKey = key;
+    storageText = "Calculating\u2026";
+    const update = () => {
+      const slot = viewerRoot.querySelector("[data-context-storage-size]");
+      if (slot) slot.textContent = storageText;
+    };
+    update();
+    try {
+      const [saved, checkout] = await Promise.all([
+        api2.threads.storageSize(projectId, thread.id),
+        thread.worktree && thread.worktree.retiredAt === void 0 ? api2.worktrees.size(projectId, thread.worktree.path) : Promise.resolve({ bytes: 0, truncated: false })
+      ]);
+      if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
+      storageText = `${saved.truncated || checkout.truncated ? "At least " : ""}${formatByteSize(saved.bytes + checkout.bytes)}`;
+    } catch (error62) {
+      if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
+      console.error("[context] storage lookup failed:", error62);
+      storageText = "Unavailable";
+    }
+    update();
+  }
   const handlers3 = {
     openThread: (threadId) => {
       switchThread(store2, threadId);
@@ -133984,7 +134030,44 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : []
     });
-    viewerRoot.append(renderThreadContext(model, handlers3));
+    const content = renderThreadContext(model, handlers3);
+    const archive = el(
+      "button",
+      {
+        type: "button",
+        class: "thread-context-action",
+        "data-action": "archive-thread",
+        disabled: thread.archivedAt !== void 0
+      },
+      "Archive thread"
+    );
+    archive.addEventListener("click", () => {
+      if (project2) store2.emit("thread_archive_requested", project2.id, thread.id);
+    });
+    content.prepend(
+      el(
+        "section",
+        { class: "thread-context-section", "data-context-section": "storage" },
+        el("h5", {}, "Storage"),
+        el(
+          "div",
+          { class: "thread-context-row" },
+          el("span", { class: "thread-context-main" }, "Retained on disk"),
+          el(
+            "span",
+            { "data-context-storage-size": "" },
+            storageKey === activeStorageKey() ? storageText : "Calculating\u2026"
+          )
+        ),
+        el(
+          "p",
+          { class: "thread-context-empty" },
+          "Saved thread files and its dedicated worktree. Shared project files are excluded."
+        ),
+        el("div", { class: "thread-context-section-actions" }, archive)
+      )
+    );
+    viewerRoot.append(content);
     for (const kind of CONTEXT_SECTIONS) {
       const jump = el(
         "button",
@@ -133999,6 +134082,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     }
   }
   async function refreshMentions() {
+    void refreshStorage();
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (!thread || !projectId) return;
@@ -134009,7 +134093,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     } catch (error62) {
       console.error("[context] backlink lookup failed:", error62);
     }
-    if (mine !== token || getActiveThread(store2)?.id !== thread.id) return;
+    if (disposed || mine !== token || getActiveThread(store2)?.id !== thread.id) return;
     mentionedIn = rows;
     mentionedFor = thread.id;
     if (contextModeActive(store2)) render();
@@ -134030,6 +134114,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       const active2 = getActiveThread(store2)?.id ?? null;
       render();
       if (active2 !== mentionedFor) void refreshMentions();
+      else if (storageKey !== activeStorageKey()) void refreshStorage();
     }),
     store2.on("message_done", () => {
       if (!contextModeActive(store2)) return;
@@ -134038,7 +134123,13 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     }),
     store2.on("workspace_changed", () => {
       mentionedFor = null;
-      if (contextModeActive(store2)) render();
+      storageKey = "";
+      token++;
+      storageToken++;
+      if (contextModeActive(store2)) {
+        render();
+        void refreshMentions();
+      }
     })
   ];
   if (contextModeActive(store2)) {
@@ -134046,12 +134137,16 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     void refreshMentions();
   }
   return () => {
+    disposed = true;
+    token++;
+    storageToken++;
     for (const off of offs) off();
   };
 }
 var CONTEXT_SECTIONS, SECTION_TITLES;
 var init_thread_context_panel = __esm({
   "src/renderer/views/thread-context-panel.ts"() {
+    init_file_bytes();
     init_helpers();
     init_icons();
     init_thread_helpers();
