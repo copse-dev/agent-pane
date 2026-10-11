@@ -14,7 +14,8 @@ permissions: {}
 
 concurrency:
   group: screenshot-stack-policy
-  queue: max
+  # Every run reconciles current state. Keep only the newest waiting run;
+  # preserve the active run so a burst of edits cannot interrupt its writes.
   cancel-in-progress: false
 
 jobs:
@@ -48,10 +49,10 @@ jobs:
             const open = await github.paginate(github.rest.pulls.list, {
               owner, repo, state: 'open', per_page: 100,
             });
-            const trigger = context.payload.pull_request?.number;
+            // Include PRs whose declaration was removed: their triggering run
+            // may have been replaced by a newer pending reconciliation.
             const selected = open.filter((pr) =>
-              pr.head.repo?.full_name === `${owner}/${repo}` &&
-              (pr.number === trigger || pr.body?.includes('<!-- copse-screenshot-stack:')));
+              pr.head.repo?.full_name === `${owner}/${repo}`);
             for (const pr of selected) {
               await reconcileScreenshotStack(github, { owner, repo, number: pr.number });
               const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
