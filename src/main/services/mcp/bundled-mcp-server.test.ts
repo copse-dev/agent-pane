@@ -13,6 +13,10 @@ import {
 } from './bundled-mcp-server.ts'
 import { extractUiResources } from './mcp-schema.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from '../thread-execution-context.ts'
 
 describe('bundled MCP servers', () => {
   let servers: BundledMcpServer[] = []
@@ -105,6 +109,40 @@ describe('bundled MCP servers', () => {
     } finally {
       restore()
       await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('renders a file from the thread worktree, not the shared checkout (#1724)', async () => {
+    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
+    assert.ok(canvas, 'canvas server should be present')
+    const sharedRoot = await mkdtemp(join(tmpdir(), 'agent-pane-canvas-shared-'))
+    const worktreeRoot = await mkdtemp(join(tmpdir(), 'agent-pane-canvas-worktree-'))
+    const restoreWorkspace = setWorkspaceRootForTest(sharedRoot)
+    const context: ThreadExecutionContext = {
+      projectId: 'project-a',
+      threadId: 'thread-a',
+      projectRoot: sharedRoot,
+      root: worktreeRoot,
+      checkoutMode: 'worktree',
+      branch: 'agent/demo',
+    }
+    try {
+      // Only the worktree has the file; the shared checkout does not.
+      await writeFile(join(worktreeRoot, 'prototype.html'), '<!doctype html><h1>From Worktree</h1>')
+      const result = await runWithThreadExecutionContext(context, () =>
+        canvas.client.callTool({
+          name: 'render_html_artefact',
+          arguments: { path: 'prototype.html' },
+        }),
+      )
+      assert.notEqual(result.isError, true, JSON.stringify(result))
+      const [resource] = extractUiResources(result.content)
+      assert.ok(resource, 'expected one UI resource')
+      assert.match(resource.text, /<h1>From Worktree<\/h1>/)
+    } finally {
+      restoreWorkspace()
+      await rm(sharedRoot, { recursive: true, force: true })
+      await rm(worktreeRoot, { recursive: true, force: true })
     }
   })
 
