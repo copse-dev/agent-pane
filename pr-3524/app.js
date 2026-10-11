@@ -633,16 +633,16 @@ function cleanEnum(obj) {
 }
 function base64ToUint8Array(base643) {
   const binaryString = atob(base643);
-  const bytes = new Uint8Array(binaryString.length);
+  const bytes2 = new Uint8Array(binaryString.length);
   for (let i2 = 0; i2 < binaryString.length; i2++) {
-    bytes[i2] = binaryString.charCodeAt(i2);
+    bytes2[i2] = binaryString.charCodeAt(i2);
   }
-  return bytes;
+  return bytes2;
 }
-function uint8ArrayToBase64(bytes) {
+function uint8ArrayToBase64(bytes2) {
   let binaryString = "";
-  for (let i2 = 0; i2 < bytes.length; i2++) {
-    binaryString += String.fromCharCode(bytes[i2]);
+  for (let i2 = 0; i2 < bytes2.length; i2++) {
+    binaryString += String.fromCharCode(bytes2[i2]);
   }
   return btoa(binaryString);
 }
@@ -651,22 +651,22 @@ function base64urlToUint8Array(base64url3) {
   const padding = "=".repeat((4 - base643.length % 4) % 4);
   return base64ToUint8Array(base643 + padding);
 }
-function uint8ArrayToBase64url(bytes) {
-  return uint8ArrayToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+function uint8ArrayToBase64url(bytes2) {
+  return uint8ArrayToBase64(bytes2).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 function hexToUint8Array(hex3) {
   const cleanHex = hex3.replace(/^0x/, "");
   if (cleanHex.length % 2 !== 0) {
     throw new Error("Invalid hex string length");
   }
-  const bytes = new Uint8Array(cleanHex.length / 2);
+  const bytes2 = new Uint8Array(cleanHex.length / 2);
   for (let i2 = 0; i2 < cleanHex.length; i2 += 2) {
-    bytes[i2 / 2] = Number.parseInt(cleanHex.slice(i2, i2 + 2), 16);
+    bytes2[i2 / 2] = Number.parseInt(cleanHex.slice(i2, i2 + 2), 16);
   }
-  return bytes;
+  return bytes2;
 }
-function uint8ArrayToHex(bytes) {
-  return Array.from(bytes).map((b4) => b4.toString(16).padStart(2, "0")).join("");
+function uint8ArrayToHex(bytes2) {
+  return Array.from(bytes2).map((b4) => b4.toString(16).padStart(2, "0")).join("");
 }
 function members(proto, table) {
   for (const key in table) {
@@ -20793,490 +20793,7 @@ var init_product_announcement_dialog = __esm({
   }
 });
 
-// src/renderer/views/dialog-shell.ts
-function createOverlayDialog(opts) {
-  const dialog2 = document.createElement("dialog");
-  dialog2.id = opts.id;
-  if (opts.className) dialog2.className = opts.className;
-  document.body.append(dialog2);
-  return {
-    dialog: dialog2,
-    open: () => {
-      if (!dialog2.open) dialog2.showModal();
-    },
-    close: () => {
-      if (dialog2.open) dialog2.close();
-    },
-    isOpen: () => dialog2.open
-  };
-}
-function isAnyDialogOpen() {
-  return document.querySelector("dialog[open]") !== null;
-}
-var init_dialog_shell = __esm({
-  "src/renderer/views/dialog-shell.ts"() {
-  }
-});
-
-// src/renderer/dom/outline-icon.ts
-function outlineIcon(label, paths, className) {
-  const svg2 = document.createElementNS(SVG_NS, "svg");
-  svg2.setAttribute("class", className);
-  svg2.setAttribute("viewBox", "0 0 24 24");
-  svg2.setAttribute("width", ICON_SIZE);
-  svg2.setAttribute("height", ICON_SIZE);
-  svg2.setAttribute("aria-hidden", "true");
-  svg2.setAttribute("focusable", "false");
-  svg2.setAttribute("data-icon", label);
-  svg2.setAttribute("fill", "none");
-  svg2.setAttribute("stroke", "currentColor");
-  svg2.setAttribute("stroke-width", "1.75");
-  svg2.setAttribute("stroke-linecap", "round");
-  svg2.setAttribute("stroke-linejoin", "round");
-  for (const d3 of paths) {
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", d3);
-    svg2.append(path);
-  }
-  return svg2;
-}
-var SVG_NS, ICON_SIZE;
-var init_outline_icon = __esm({
-  "src/renderer/dom/outline-icon.ts"() {
-    SVG_NS = "http://www.w3.org/2000/svg";
-    ICON_SIZE = "16";
-  }
-});
-
-// src/renderer/dom/icons.ts
-function playIcon(className = DEFAULT) {
-  return outlineIcon("play", ["m6 3 14 9-14 9V3Z"], className);
-}
-function chevronRightIcon(className = DEFAULT) {
-  return outlineIcon("chevron-right", ["m9 18 6-6-6-6"], className);
-}
-function chevronDownIcon(className = DEFAULT) {
-  return outlineIcon("chevron-down", ["m6 9 6 6 6-6"], className);
-}
-function clockIcon(className = DEFAULT) {
-  return outlineIcon(
-    "clock",
-    ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z", "M12 6v6l4 2"],
-    className
-  );
-}
-function chevronUpIcon(className = DEFAULT) {
-  return outlineIcon("chevron-up", ["m18 15-6-6-6 6"], className);
-}
-function arrowLeftIcon(className = DEFAULT) {
-  return outlineIcon("arrow-left", ["M19 12H5", "m12 19-7-7 7-7"], className);
-}
-function arrowRightIcon(className = DEFAULT) {
-  return outlineIcon("arrow-right", ["M5 12h14", "m12 5 7 7-7 7"], className);
-}
-function arrowDownIcon(className = DEFAULT) {
-  return outlineIcon("arrow-down", ["M12 5v14", "m19 12-7 7-7-7"], className);
-}
-function refreshIcon(className = DEFAULT) {
-  return outlineIcon(
-    "refresh",
-    [
-      "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
-      "M21 3v5h-5",
-      "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
-      "M8 16H3v5"
-    ],
-    className
-  );
-}
-function externalLinkIcon(className = DEFAULT) {
-  return outlineIcon(
-    "external-link",
-    ["M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"],
-    className
-  );
-}
-function closeIcon(className = DEFAULT) {
-  return outlineIcon("close", ["M18 6 6 18", "m6 6 12 12"], className);
-}
-function plusIcon(className = DEFAULT) {
-  return outlineIcon("plus", ["M5 12h14", "M12 5v14"], className);
-}
-function monitorIcon(className = DEFAULT) {
-  return outlineIcon(
-    "monitor",
-    [
-      "M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
-      "M8 21h8",
-      "M12 17v4"
-    ],
-    className
-  );
-}
-function downloadIcon(className = DEFAULT) {
-  return outlineIcon(
-    "download",
-    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
-    className
-  );
-}
-function uploadIcon(className = DEFAULT) {
-  return outlineIcon(
-    "upload",
-    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m17 8-5-5-5 5", "M12 3v12"],
-    className
-  );
-}
-function maximizeIcon(className = DEFAULT) {
-  return outlineIcon("maximize", ["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"], className);
-}
-function minimizeIcon(className = DEFAULT) {
-  return outlineIcon("minimize", ["M4 14h6v6", "M20 10h-6V4", "M14 10l7-7", "M3 21l7-7"], className);
-}
-function moreHorizontalIcon(className = DEFAULT) {
-  return outlineIcon("more-horizontal", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
-}
-function moreVerticalIcon(className = DEFAULT) {
-  return outlineIcon("more-vertical", ["M12 5h.01", "M12 12h.01", "M12 19h.01"], className);
-}
-function runningStatusIcon(className = DEFAULT) {
-  return outlineIcon("running-status", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
-}
-function checkIcon(className = DEFAULT) {
-  return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
-}
-function shieldIcon(className = DEFAULT) {
-  return outlineIcon(
-    "shield",
-    [
-      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
-    ],
-    className
-  );
-}
-function bellIcon(className = DEFAULT) {
-  return outlineIcon(
-    "bell",
-    [
-      "M10.27 21a2 2 0 0 0 3.46 0",
-      "M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"
-    ],
-    className
-  );
-}
-function messageQuestionIcon(className = DEFAULT) {
-  return outlineIcon(
-    "message-circle-question",
-    ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
-    className
-  );
-}
-function banIcon(className = DEFAULT) {
-  return outlineIcon(
-    "ban",
-    ["M4.93 4.93a10 10 0 1 0 14.14 14.14A10 10 0 0 0 4.93 4.93Z", "m4.93 4.93 14.14 14.14"],
-    className
-  );
-}
-function dotIcon(className = DEFAULT) {
-  return outlineIcon("dot", ["M12 12h.01"], `${className} ui-icon-dot`);
-}
-function circleIcon(className = DEFAULT) {
-  return outlineIcon("circle", ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"], className);
-}
-function spinnerIcon(className = DEFAULT) {
-  return outlineIcon("loader-circle", ["M21 12a9 9 0 1 1-6.219-8.56"], className);
-}
-function minusIcon(className = DEFAULT) {
-  return outlineIcon("minus", ["M5 12h14"], className);
-}
-function warningIcon(className = DEFAULT) {
-  return outlineIcon(
-    "triangle-alert",
-    [
-      "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z",
-      "M12 9v4",
-      "M12 17h.01"
-    ],
-    className
-  );
-}
-function searchIcon(className = DEFAULT) {
-  return outlineIcon(
-    "search",
-    ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "m21 21-4.35-4.35"],
-    className
-  );
-}
-function fileTextIcon(className = DEFAULT) {
-  return outlineIcon(
-    "file-text",
-    [
-      "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z",
-      "M14 2v6h6",
-      "M8 13h8",
-      "M8 17h8"
-    ],
-    className
-  );
-}
-function imageIcon(className = DEFAULT) {
-  return outlineIcon(
-    "image",
-    [
-      "M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8.3",
-      "m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21",
-      "M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7",
-      "M9 9h.01"
-    ],
-    className
-  );
-}
-function sparkleIcon(className = DEFAULT) {
-  return outlineIcon(
-    "sparkle",
-    [
-      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
-    ],
-    className
-  );
-}
-function zapIcon(className = DEFAULT) {
-  return outlineIcon(
-    "zap",
-    [
-      "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
-    ],
-    className
-  );
-}
-function gitBranchIcon(className = DEFAULT) {
-  return outlineIcon(
-    "git-branch",
-    [
-      "M6 3v12",
-      "M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
-      "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
-      "M15 6a9 9 0 0 0-9 9"
-    ],
-    className
-  );
-}
-function gitPullRequestIcon(className = DEFAULT, conflicts = false) {
-  return outlineIcon(
-    "git-pull-request",
-    [
-      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      conflicts ? "M3 3l6 6m0-6L3 9" : "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M13 6h3a2 2 0 0 1 2 2v7",
-      "M6 9v12"
-    ],
-    className
-  );
-}
-function gitMergeIcon(className = DEFAULT) {
-  return outlineIcon(
-    "git-merge",
-    [
-      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M6 21V9a9 9 0 0 0 9 9"
-    ],
-    className
-  );
-}
-function penLineIcon(className = DEFAULT) {
-  return outlineIcon(
-    "pen-line",
-    [
-      "M12 20h9",
-      "M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"
-    ],
-    className
-  );
-}
-function slashIcon(className = DEFAULT) {
-  return outlineIcon("slash", ["M20 4 4 20"], className);
-}
-function arrowUpRightIcon(className = DEFAULT) {
-  return outlineIcon("arrow-up-right", ["M7 7h10v10", "M7 17 17 7"], className);
-}
-function squareIcon(className = DEFAULT) {
-  return outlineIcon(
-    "square",
-    ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"],
-    className
-  );
-}
-function eraserIcon(className = DEFAULT) {
-  return outlineIcon(
-    "eraser",
-    [
-      "m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21",
-      "M22 21H7",
-      "m5 11 9 9"
-    ],
-    className
-  );
-}
-function undoIcon(className = DEFAULT) {
-  return outlineIcon(
-    "undo",
-    ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"],
-    className
-  );
-}
-function trashIcon(className = DEFAULT) {
-  return outlineIcon(
-    "trash",
-    [
-      "M3 6h18",
-      "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
-      "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-    ],
-    className
-  );
-}
-function historyIcon(className = DEFAULT) {
-  return outlineIcon("history", ["M3 12a9 9 0 1 0 3-6.7L3 8", "M3 3v5h5", "M12 7v5l3 2"], className);
-}
-var DEFAULT;
-var init_icons = __esm({
-  "src/renderer/dom/icons.ts"() {
-    init_outline_icon();
-    DEFAULT = "ui-icon";
-  }
-});
-
-// packages/std/src/errors.ts
-function errorMessage(err2) {
-  return err2 instanceof Error ? err2.message : String(err2);
-}
-var init_errors3 = __esm({
-  "packages/std/src/errors.ts"() {
-  }
-});
-
-// src/shared/errors.ts
-var init_errors4 = __esm({
-  "src/shared/errors.ts"() {
-    init_errors3();
-  }
-});
-
-// packages/llm/src/classifiers/presets.ts
-function classifierCredentialId(id) {
-  if (!/^[a-z0-9-]{1,53}$/.test(id)) throw new Error("Invalid classifier profile ID");
-  return `${CLASSIFIER_CREDENTIAL_PREFIX}${id}`;
-}
-function classifierEndpointKey(baseUrl) {
-  return new URL(baseUrl).href.replace(/\/+$/, "");
-}
-var CLASSIFIER_PRESETS, CLASSIFIER_CREDENTIAL_PREFIX;
-var init_presets = __esm({
-  "packages/llm/src/classifiers/presets.ts"() {
-    CLASSIFIER_PRESETS = [
-      {
-        id: "typesafe",
-        label: "TypeSafe / Jev",
-        model: "jev-latest",
-        timeoutMs: 6e4,
-        connection: {
-          type: "http",
-          protocol: "systemone",
-          baseUrl: "https://api.typesafe.ai/v1",
-          auth: "bearer",
-          apiKeyEnv: "TYPESAFE_API_KEY"
-        }
-      },
-      {
-        id: "liquid",
-        label: "Liquid / d1",
-        model: "d1:free",
-        timeoutMs: 6e4,
-        connection: {
-          type: "http",
-          protocol: "systemone",
-          baseUrl: "https://api.liquid.ai/decisions/v1",
-          auth: "bearer",
-          apiKeyEnv: "LIQUID_API_KEY"
-        }
-      },
-      {
-        id: "kev",
-        label: "Kev (local)",
-        model: "kev-latest",
-        timeoutMs: 12e4,
-        connection: {
-          type: "http",
-          protocol: "systemone",
-          baseUrl: "http://127.0.0.1:8009/v1",
-          auth: "none"
-        }
-      },
-      {
-        id: "winnow",
-        label: "Winnow-12B (local)",
-        model: "jev-latest",
-        timeoutMs: 6e4,
-        connection: {
-          type: "http",
-          protocol: "systemone",
-          baseUrl: "http://127.0.0.1:8091/v1",
-          auth: "none"
-        }
-      },
-      {
-        id: "semif",
-        label: "SemIf (local)",
-        model: "Qwen/Qwen3.5-4B",
-        timeoutMs: 3e5,
-        connection: {
-          type: "semif",
-          executable: "semif-score",
-          backend: "torch",
-          revision: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
-          mode: "direct",
-          device: "auto"
-        }
-      },
-      {
-        id: "featherless",
-        label: "Featherless / Simple Jev",
-        model: "featherless-ai/gemma-4-26B-A4B-classifier",
-        timeoutMs: 6e4,
-        connection: {
-          type: "http",
-          protocol: "featherless",
-          baseUrl: "https://api.featherless.ai/v1",
-          auth: "bearer",
-          apiKeyEnv: "FEATHERLESS_API_KEY"
-        }
-      }
-    ];
-    CLASSIFIER_CREDENTIAL_PREFIX = "classifier-";
-  }
-});
-
-// src/renderer/dom/disclosure-summary.ts
-function disclosureSummary(label) {
-  return el(
-    "summary",
-    { class: "settings-disclosure-summary" },
-    el("span", {}, label),
-    // `ui-icon` carries `fill: none; stroke: currentColor`; without it the path
-    // renders as a solid triangle (see the plugin fold in settings-dialog.ts).
-    chevronDownIcon("ui-icon settings-disclosure-chevron")
-  );
-}
-var init_disclosure_summary = __esm({
-  "src/renderer/dom/disclosure-summary.ts"() {
-    init_helpers();
-    init_icons();
-  }
-});
-
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -21300,14 +20817,14 @@ function withConfig(config2, fn2) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -21347,7 +20864,7 @@ function decodeHtmlEntities(text2) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -21638,7 +21155,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s16, from) {
   let i2 = from;
   while (i2 < s16.length && s16[i2] !== "`")
@@ -21719,12 +21236,12 @@ function renderInlineCode(text2) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -21800,7 +21317,7 @@ function canonicalizeEscapedPunctuation(text2) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -21821,7 +21338,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -22099,7 +21616,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -22108,7 +21625,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i2 = 0; i2 < line.length; i2++) {
@@ -22258,7 +21775,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -22269,17 +21786,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text2) {
   return text2.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -22375,7 +21892,7 @@ function decodeSafeMarkdownEntities(text2) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -22411,7 +21928,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter) {
   const [open2, close] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close))
@@ -22506,7 +22023,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -22520,7 +22037,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -22656,7 +22173,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -22667,17 +22184,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m2 = line.match(ORDERED_LIST_MARKER_RE);
   if (!m2?.[1])
@@ -23444,7 +22961,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -23461,7 +22978,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -23482,7 +22999,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -23495,7 +23012,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -23521,7 +23038,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -23573,14 +23090,20 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
-function resolveLanguage(lang) {
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
+function lookup(table, key) {
+  return Object.hasOwn(table, key) ? table[key] : void 0;
+}
+function resolveLanguage(lang, highlighter) {
   const key = lang.trim().toLowerCase();
   if (!key)
     return null;
-  const resolved3 = LANG_ALIASES[key] ?? key;
-  if (resolved3 === "plaintext")
+  const canonical2 = lookup(LANG_SYNONYMS, key) ?? key;
+  if (canonical2 === "plaintext")
     return null;
+  if (highlighter?.supports?.(canonical2))
+    return canonical2;
+  const resolved3 = lookup(LANG_FALLBACKS, canonical2) ?? canonical2;
   return KNOWN_LANGUAGES.has(resolved3) ? resolved3 : null;
 }
 function highlightFenceCode(code, lang) {
@@ -23589,7 +23112,7 @@ function highlightFenceCode(code, lang) {
   if (code.trim() === "")
     return escapeHtml(code);
   const highlighter = activeConfig().codeHighlighter;
-  const language = resolveLanguage(lang);
+  const language = resolveLanguage(lang, highlighter);
   if (!highlighter)
     return escapeHtml(code);
   if (language)
@@ -23599,13 +23122,13 @@ function highlightFenceCode(code, lang) {
   return escapeHtml(code);
 }
 function fenceCodeClass(lang) {
-  const language = resolveLanguage(lang);
+  const language = resolveLanguage(lang, activeConfig().codeHighlighter);
   const label = language ?? (lang.trim() ? lang.trim().toLowerCase() : "text");
   return `hljs lang-${escapeHtml(label)}`;
 }
-var KNOWN_LANGUAGES, LANG_ALIASES;
+var KNOWN_LANGUAGES, LANG_SYNONYMS, LANG_FALLBACKS;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -23623,11 +23146,9 @@ var init_highlight = __esm({
       "go",
       "sql"
     ]);
-    LANG_ALIASES = {
+    LANG_SYNONYMS = {
       ts: "typescript",
-      tsx: "typescript",
       js: "javascript",
-      jsx: "javascript",
       mjs: "javascript",
       cjs: "javascript",
       sh: "bash",
@@ -23635,16 +23156,20 @@ var init_highlight = __esm({
       py: "python",
       yml: "yaml",
       md: "markdown",
-      html: "xml",
-      htm: "xml",
       rs: "rust",
       text: "plaintext",
       plaintext: "plaintext"
     };
+    LANG_FALLBACKS = {
+      tsx: "typescript",
+      jsx: "javascript",
+      html: "xml",
+      htm: "xml"
+    };
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -23666,13 +23191,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -23705,7 +23230,7 @@ function restoreRawImages(text2, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -23715,17 +23240,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -23778,13 +23303,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -23987,7 +23512,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -24016,7 +23541,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -24035,7 +23560,7 @@ function restoreInlinePassHtml(text2) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -24054,7 +23579,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -24252,7 +23777,7 @@ function mathHoldStart(s16, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -24263,7 +23788,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -24358,12 +23883,12 @@ function strikethroughHoldStart(s16, mask) {
   return cut;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -24660,7 +24185,7 @@ function renderEmphasisOutsideInlineHtml(text2, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -24677,7 +24202,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -24727,7 +24252,7 @@ function renderAngleAutolinks(text2) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -24737,7 +24262,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t2, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -24956,7 +24481,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -24976,7 +24501,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text2) {
   return text2.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -25072,7 +24597,7 @@ function renderProseBlock(text2, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -25082,13 +24607,74 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
-function renderFencedBlock(lang, code) {
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/table-wrapper.js
+function resolveTableWrapper() {
+  const value = activeConfig().tableWrapper;
+  if (!value)
+    return null;
+  const options = value === true ? {} : value;
+  return { className: options.className || "table-wrapper", label: options.label ?? "Table" };
+}
+function wrapTableHtml(tableHtml) {
+  const wrapper = resolveTableWrapper();
+  if (!wrapper)
+    return tableHtml;
+  return `<div class="${escapeHtml(wrapper.className)}" role="region" aria-label="${escapeHtml(wrapper.label)}" tabindex="0">${tableHtml}</div>`;
+}
+function createTableWrapperElement(wrapper) {
+  const div = document.createElement("div");
+  div.setAttribute("class", wrapper.className);
+  div.setAttribute("role", "region");
+  div.setAttribute("aria-label", wrapper.label);
+  div.setAttribute("tabindex", "0");
+  return div;
+}
+function withTableWrapperGate(config2, hostAttr = []) {
+  const wrapper = resolveTableWrapper();
+  if (!wrapper)
+    return config2;
+  const strip = ["role", "tabindex"].filter((name) => !hostAttr.includes(name));
+  const gate = config2.onElement;
+  return {
+    ...config2,
+    allowedAttr: [...config2.allowedAttr, ...strip],
+    onElement(node2, tagName) {
+      if (tagName === "div" && node2.getAttribute("class") === wrapper.className && node2.childElementCount === 1 && node2.firstElementChild?.tagName === "TABLE") {
+        node2.setAttribute("role", "region");
+        node2.setAttribute("aria-label", wrapper.label);
+        node2.setAttribute("tabindex", "0");
+      } else {
+        for (const name of strip)
+          node2.removeAttribute?.(name);
+      }
+      gate?.(node2, tagName);
+    }
+  };
+}
+var init_table_wrapper = __esm({
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/table-wrapper.js"() {
+    init_config();
+    init_escape();
+  }
+});
+
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+function renderFencedBlock(lang, code, forming = false) {
   const handler = getFenceHandler(lang);
-  if (handler)
-    return handler.render(code, lang);
+  if (handler) {
+    return forming && handler.forming ? handler.forming.html(code, lang) : handler.render(code, lang);
+  }
   const body = highlightFenceCode(code, lang);
-  return `<pre><code class="${fenceCodeClass(lang)}">${body}</code></pre>`;
+  const cls = forming ? ` class="${FORMING_FENCE_PRE_CLASS}"` : "";
+  return `<pre${cls}><code class="${fenceCodeClass(lang)}">${body}</code></pre>`;
+}
+function onlyWhitespaceAfter(source, from) {
+  for (let i2 = from; i2 < source.length; i2++) {
+    const c3 = source.charCodeAt(i2);
+    if (c3 !== 32 && c3 !== 10 && c3 !== 9 && c3 !== 13)
+      return false;
+  }
+  return true;
 }
 function renderIndentedCode(slice) {
   const lines = dropTrailingNewline(slice).split("\n");
@@ -25143,7 +24729,7 @@ function dedentListItemContent(slice) {
   });
   return dedented.join("\n");
 }
-function renderListItemContent(slice, listLoose, linkRefs) {
+function renderListItemContent(slice, listLoose, linkRefs, formingTail = false) {
   let inner = dedentListItemContent(slice);
   if (inner.trim() === "")
     return { html: "", task: null, suppressed: false };
@@ -25152,7 +24738,8 @@ function renderListItemContent(slice, listLoose, linkRefs) {
     inner = task.rest;
   const html2 = renderBlocks(inner, tokenizeBlocks(inner), {
     linkRefs,
-    tightParagraphs: !listLoose
+    tightParagraphs: !listLoose,
+    formingTail
   });
   const suppressed = html2 === "" && task === null && stripHtmlComments(inner).trim() === "";
   return { html: html2, task, suppressed };
@@ -25194,6 +24781,10 @@ function alignAttr(align) {
   return align ? ` align="${align}"` : "";
 }
 function renderTable(slice, linkRefs) {
+  const table = renderTableElement(slice, linkRefs);
+  return table && wrapTableHtml(table);
+}
+function renderTableElement(slice, linkRefs) {
   const lines = dropTrailingNewline(slice).split("\n").filter((l2) => l2.trim() !== "");
   const header = lines[0];
   if (!header)
@@ -25239,20 +24830,20 @@ function stripAlertMarker(innerSource) {
   return rest === "" ? afterMarker : `${afterMarker}
 ${rest}`;
 }
-function renderBlockquote(slice, linkRefs) {
-  const firstLine = slice.split("\n")[0] ?? "";
-  const alertType = alertTypeFromMarker(stripBlockquoteMarker(firstLine));
+function renderBlockquote(slice, linkRefs, formingTail = false) {
+  const firstLine2 = slice.split("\n")[0] ?? "";
+  const alertType = alertTypeFromMarker(stripBlockquoteMarker(firstLine2));
   const innerSource = stripBlockquoteSource(slice);
   if (alertType) {
     const body = stripAlertMarker(innerSource);
     const title = `<p class="markdown-alert-title">${alertTitle(alertType)}</p>`;
     const content = body.trim() === "" ? "" : `
-${renderBlocksFromSource(body, linkRefs)}`;
+${renderBlocksFromSource(body, linkRefs, formingTail)}`;
     return `<blockquote class="${alertBlockquoteClass(alertType)}">${title}${content}</blockquote>`;
   }
   if (innerSource.trim() === "")
     return "<blockquote></blockquote>";
-  return `<blockquote>${renderBlocksFromSource(innerSource, linkRefs)}</blockquote>`;
+  return `<blockquote>${renderBlocksFromSource(innerSource, linkRefs, formingTail)}</blockquote>`;
 }
 function isOrderedListSlice(slice) {
   const first = slice.split("\n").find((l2) => l2.trim() !== "") ?? "";
@@ -25343,8 +24934,8 @@ function scanListGroup(source, tokens, start) {
   }
   return { sig, itemTokens, loose, next: i2 };
 }
-function renderListItemsSlice(source, itemTokens, loose, linkRefs) {
-  const items = itemTokens.map((t2) => renderListItemContent(source.slice(t2.start, t2.end), loose, linkRefs));
+function renderListItemsSlice(source, itemTokens, loose, linkRefs, formingTail = false) {
+  const items = itemTokens.map((t2) => renderListItemContent(source.slice(t2.start, t2.end), loose, linkRefs, formingTail && onlyWhitespaceAfter(source, t2.end)));
   return {
     itemsHtml: items.map(renderListItem).join(""),
     anyTask: items.some((it) => it.task !== null)
@@ -25359,25 +24950,26 @@ function listGroupOpenTag(sig, anyTask) {
 function listGroupCloseTag(sig) {
   return sig.ordered ? "</ol>" : "</ul>";
 }
-function collectListGroup(source, tokens, start, linkRefs) {
+function collectListGroup(source, tokens, start, linkRefs, formingTail) {
   const scan = scanListGroup(source, tokens, start);
-  const { itemsHtml, anyTask } = renderListItemsSlice(source, scan.itemTokens, scan.loose, linkRefs);
+  const { itemsHtml, anyTask } = renderListItemsSlice(source, scan.itemTokens, scan.loose, linkRefs, formingTail);
   return {
     html: `${listGroupOpenTag(scan.sig, anyTask)}${itemsHtml}${listGroupCloseTag(scan.sig)}`,
     next: scan.next
   };
 }
-function collectBlockquoteGroup(source, tokens, start, linkRefs) {
+function collectBlockquoteGroup(source, tokens, start, linkRefs, formingTail) {
   const token = tokens[start];
   if (!token || token.kind !== "blockquote")
     return { html: "", next: start + 1 };
   return {
-    html: renderBlockquote(source.slice(token.start, token.end), linkRefs),
+    html: renderBlockquote(source.slice(token.start, token.end), linkRefs, formingTail && onlyWhitespaceAfter(source, token.end)),
     next: start + 1
   };
 }
-function renderSingleBlock(source, token, linkRefs, tightParagraphs, htmlFromIndent, indentedCode) {
+function renderSingleBlock(source, token, linkRefs, tightParagraphs, htmlFromIndent, indentedCode, formingTail) {
   const slice = source.slice(token.start, token.end);
+  const forming = formingTail && token.status !== "complete" && onlyWhitespaceAfter(source, token.end);
   switch (token.kind) {
     case "indented_code":
       if (!indentedCode) {
@@ -25389,13 +24981,14 @@ function renderSingleBlock(source, token, linkRefs, tightParagraphs, htmlFromInd
       return renderIndentedCode(slice);
     case "fence": {
       const { lang, code } = parseFenceSlice(slice);
-      return renderFencedBlock(lang, code);
+      return renderFencedBlock(lang, code, forming);
     }
     // Display math (#70): `$$ … $$` / `\[ … \]` emits the same inert pending
     // scaffolding as a ```math fence; `hydratePendingMath` upgrades it after
     // the sink sanitizer (the mermaid two-phase shape).
-    case "math_block":
-      return mathBlockHtml(parseMathBlockSlice(slice).trim());
+    case "math_block": {
+      return mathBlockHtml(parseMathBlockSlice(slice).trim(), forming ? FORMING_FENCE_PRE_CLASS : "");
+    }
     case "atx_heading":
       return renderAtxHeading(slice, linkRefs);
     case "setext_heading":
@@ -25429,6 +25022,7 @@ function renderBlocksToParts(source, tokens, options = {}) {
   const tightParagraphs = options.tightParagraphs ?? false;
   const htmlFromIndent = options.htmlFromIndent ?? false;
   const indentedCode = options.indentedCode ?? true;
+  const formingTail = options.formingTail ?? false;
   if (blockNestingDepth >= MAX_BLOCK_NESTING_DEPTH) {
     const literal2 = escapeHtml(dropTrailingNewline(source));
     if (literal2.trim() === "")
@@ -25437,12 +25031,12 @@ function renderBlocksToParts(source, tokens, options = {}) {
   }
   blockNestingDepth++;
   try {
-    return renderBlockParts(source, tokens, linkRefs, tightParagraphs, htmlFromIndent, indentedCode);
+    return renderBlockParts(source, tokens, linkRefs, tightParagraphs, htmlFromIndent, indentedCode, formingTail);
   } finally {
     blockNestingDepth--;
   }
 }
-function renderBlockParts(source, tokens, linkRefs, tightParagraphs, htmlFromIndent, indentedCode) {
+function renderBlockParts(source, tokens, linkRefs, tightParagraphs, htmlFromIndent, indentedCode, formingTail) {
   const parts = [];
   let i2 = 0;
   while (i2 < tokens.length) {
@@ -25454,7 +25048,7 @@ function renderBlockParts(source, tokens, linkRefs, tightParagraphs, htmlFromInd
       continue;
     }
     if (token.kind === "list_item") {
-      const group = collectListGroup(source, tokens, i2, linkRefs);
+      const group = collectListGroup(source, tokens, i2, linkRefs, formingTail);
       const end = tokens[group.next - 1]?.end ?? token.end;
       if (group.html)
         parts.push({ start: token.start, end, html: group.html });
@@ -25462,7 +25056,7 @@ function renderBlockParts(source, tokens, linkRefs, tightParagraphs, htmlFromInd
       continue;
     }
     if (token.kind === "blockquote") {
-      const group = collectBlockquoteGroup(source, tokens, i2, linkRefs);
+      const group = collectBlockquoteGroup(source, tokens, i2, linkRefs, formingTail);
       const end = tokens[group.next - 1]?.end ?? token.end;
       if (group.html)
         parts.push({ start: token.start, end, html: group.html });
@@ -25479,7 +25073,7 @@ function renderBlockParts(source, tokens, linkRefs, tightParagraphs, htmlFromInd
       i2 += 2;
       continue;
     }
-    const html2 = renderSingleBlock(source, token, linkRefs, tightParagraphs, htmlFromIndent, indentedCode);
+    const html2 = renderSingleBlock(source, token, linkRefs, tightParagraphs, htmlFromIndent, indentedCode, formingTail);
     if (html2)
       parts.push({ start: token.start, end: token.end, html: html2 });
     i2++;
@@ -25493,8 +25087,8 @@ function renderBlocks(source, tokens, options = {}) {
     htmls[i2] = parts[i2]?.html ?? "";
   return htmls.join("\n");
 }
-function renderBlocksFromSource(source, linkRefs = /* @__PURE__ */ new Map()) {
-  return renderBlocks(source, tokenizeBlocks(source), { linkRefs });
+function renderBlocksFromSource(source, linkRefs = /* @__PURE__ */ new Map(), formingTail = false) {
+  return renderBlocks(source, tokenizeBlocks(source), { linkRefs, formingTail });
 }
 function appendFootnoteBackref(bodyHtml, backref) {
   if (bodyHtml === "")
@@ -25531,7 +25125,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -25541,6 +25135,7 @@ var init_render_blocks = __esm({
     init_indented_html();
     init_math_block();
     init_render_prose_inline();
+    init_table_wrapper();
     MAX_BLOCK_NESTING_DEPTH = 100;
     blockNestingDepth = 0;
     stripBlockquoteLine = stripBlockquoteMarker;
@@ -25549,7 +25144,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -25649,7 +25244,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -25657,16 +25252,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -25713,7 +25308,7 @@ function sanitizeIntoElement(target, html2, config2) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -25737,7 +25332,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -25786,7 +25381,7 @@ function buildSanitizerConfig() {
   const extension = activeConfig().sanitizeExtension;
   const allowedTags = extension?.allowedTags ? [...ALLOWED_TAGS, ...extension.allowedTags] : ALLOWED_TAGS;
   const allowedAttr = extension?.allowedAttr ? [...ALLOWED_ATTR, ...extension.allowedAttr] : ALLOWED_ATTR;
-  return { allowedTags, allowedAttr, onElement: gateElement };
+  return withTableWrapperGate({ allowedTags, allowedAttr, onElement: gateElement }, extension?.allowedAttr);
 }
 function asSanitizedHtml(html2) {
   return html2;
@@ -25806,10 +25401,11 @@ function sanitizeRenderedMarkdownInto(target, html2) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
+    init_table_wrapper();
     ALLOWED_TAGS = [
       "a",
       "p",
@@ -25888,9 +25484,12 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
 function topLevelRenderOpts() {
   return { htmlFromIndent: true, indentedCode: activeConfig().indentedCode !== false };
+}
+function committedRenderOpts(formingTail) {
+  return { ...topLevelRenderOpts(), formingTail };
 }
 function scopedConfig(options) {
   const { tokens, ...config2 } = options;
@@ -25899,13 +25498,13 @@ function scopedConfig(options) {
 function renderMarkdown(raw, options = {}) {
   return withConfig(scopedConfig(options), () => sanitizeRenderedMarkdown(renderMarkdownCore(raw, options)));
 }
-function renderMarkdownUnsafe(raw, options = {}) {
-  return withConfig(scopedConfig(options), () => renderMarkdownCore(raw, options));
+function renderCommittedMarkdownUnsafe(raw, tokens, formingTail) {
+  return renderMarkdownCore(raw, { tokens }, formingTail);
 }
-function renderMarkdownCore(raw, options) {
+function renderMarkdownCore(raw, options, formingTail = false) {
   const tokens = options.tokens ?? tokenizeBlocks(raw);
   const linkRefs = collectLinkReferenceDefinitions(raw, tokens);
-  const renderOpts = { linkRefs, ...topLevelRenderOpts() };
+  const renderOpts = { linkRefs, ...committedRenderOpts(formingTail) };
   const footnoteDefs = collectFootnoteDefinitions(raw, tokens);
   if (footnoteDefs.size === 0)
     return renderBlocks(raw, tokens, renderOpts);
@@ -25914,17 +25513,17 @@ function renderMarkdownCore(raw, options) {
   setActiveFootnoteContext(footnotes);
   try {
     const body = renderBlocks(raw, tokens, renderOpts);
-    const section = renderFootnoteSection(footnotes, linkRefs);
-    if (section === "")
+    const section2 = renderFootnoteSection(footnotes, linkRefs);
+    if (section2 === "")
       return body;
-    return body === "" ? section : `${body}
-${section}`;
+    return body === "" ? section2 : `${body}
+${section2}`;
   } finally {
     setActiveFootnoteContext(previousFootnotes);
   }
 }
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
@@ -25933,7 +25532,7 @@ var init_renderer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text2) {
   if (!text2.includes("["))
     return text2;
@@ -26107,7 +25706,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -26121,7 +25720,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -26235,15 +25834,31 @@ function splitForStreamingCore(content, blocks) {
     pending: content.slice(holdStart)
   };
 }
+function committedTailContinues(complete, blocks) {
+  const len = complete.length;
+  if (len === 0)
+    return false;
+  let continues = true;
+  for (let i2 = blocks.length - 1; i2 >= 0; i2--) {
+    const token = blocks[i2];
+    if (!token || token.end <= len)
+      break;
+    if (token.start < len)
+      return true;
+    if (token.kind !== "blank")
+      continues = false;
+  }
+  return continues;
+}
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -26295,7 +25910,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -26480,7 +26095,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -26509,11 +26124,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -26562,13 +26177,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -26612,13 +26227,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text2) {
   return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -26659,11 +26274,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -26713,14 +26328,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -26756,16 +26371,17 @@ function syncFormingTableDom(container, source) {
     container.replaceChildren();
     return;
   }
-  const existing = firstDirectChild(container, "TABLE", FORMING_TABLE_CLASS);
+  const parent = formingTableParent(container);
+  const existing = firstDirectChild(parent, "TABLE", FORMING_TABLE_CLASS);
   let table;
   if (existing instanceof Element && existing.tagName === "TABLE") {
     table = existing;
   } else {
-    container.replaceChildren();
+    parent.replaceChildren();
     table = document.createElement("table");
     table.className = FORMING_TABLE_CLASS;
     table.append(document.createElement("thead"), document.createElement("tbody"));
-    container.appendChild(table);
+    parent.appendChild(table);
   }
   const thead = table.tHead ?? table.createTHead();
   const tbody = table.tBodies[0] ?? table.createTBody();
@@ -26794,6 +26410,17 @@ function syncFormingTableDom(container, source) {
     }
     syncRowCells(row2, splitTableRow(line), "td");
   }
+}
+function formingTableParent(container) {
+  const wrapper = resolveTableWrapper();
+  if (!wrapper)
+    return container;
+  const first = container.firstElementChild;
+  if (first?.getAttribute("class") === wrapper.className)
+    return first;
+  const div = createTableWrapperElement(wrapper);
+  container.replaceChildren(div);
+  return div;
 }
 function syncPendingTableRowDom(table, pendingRow) {
   const cells = splitTableRow(pendingRow);
@@ -26826,28 +26453,21 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
     init_render_pending_line();
     init_sanitize();
     init_html_sink();
+    init_table_wrapper();
     FORMING_TABLE_CLASS = "stream-table-forming";
     PENDING_ROW_CLASS = "stream-pending-row";
     SEPARATOR_ROW_CLASS = "stream-table-separator-pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
-function renderFormingFenceInner(lang, code) {
-  const handler = getFenceHandler(lang);
-  if (handler) {
-    return handler.forming ? handler.forming.html(code, lang) : handler.render(code, lang);
-  }
-  const body = highlightFenceCode(code, lang);
-  return `<pre class="${FORMING_FENCE_PRE_CLASS}"><code class="${fenceCodeClass(lang)}">${body}</code></pre>`;
-}
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function syncFormingFenceDom(container, source) {
   const parsed2 = parseOpenFenceContent(source);
   if (!parsed2) {
@@ -26861,7 +26481,7 @@ function syncFormingFenceDom(container, source) {
       handler.forming.sync(container, code, lang);
       return;
     }
-    setSanitizedHtml(container, renderFormingFenceInner(lang, code));
+    setSanitizedHtml(container, renderFencedBlock(lang, code, true));
     return;
   }
   let pre = firstDirectChild(container, "PRE", FORMING_FENCE_PRE_CLASS);
@@ -26884,27 +26504,28 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
     init_highlight();
+    init_render_blocks();
     init_html_sink();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a3, b4) {
   const aAttrs = a3.attributes;
   const bAttrs = b4.attributes;
@@ -26920,11 +26541,26 @@ function attributesEqual(a3, b4) {
   }
   return true;
 }
+function isFormingPromotion(node2, next) {
+  const cls = node2.getAttribute("class");
+  if (!cls)
+    return false;
+  const rest = ` ${cls} `.replace(` ${FORMING_FENCE_PRE_CLASS} `, " ").trim();
+  if (rest === cls || next.getAttribute("class") !== (rest || null))
+    return false;
+  if (node2.attributes.length !== next.attributes.length + (rest ? 0 : 1))
+    return false;
+  for (const attr of Array.from(next.attributes)) {
+    if (attr.name !== "class" && node2.getAttribute(attr.name) !== attr.value)
+      return false;
+  }
+  return true;
+}
 function canReuse(node2, next) {
   if (node2.nodeType !== next.nodeType)
     return false;
   if (node2.nodeType === ELEMENT_NODE) {
-    return node2.tagName === next.tagName && attributesEqual(node2, next);
+    return node2.tagName === next.tagName && (attributesEqual(node2, next) || isFormingPromotion(node2, next));
   }
   if (node2.nodeType === TEXT_NODE)
     return true;
@@ -26945,6 +26581,7 @@ function morphChildren(parent, template, offset = 0, trimTrailing = true) {
     }
     if (canReuse(current, next)) {
       if (current.nodeType === ELEMENT_NODE) {
+        syncAttributes(current, next);
         morphChildren(current, next);
       } else if (current.nodeType === TEXT_NODE || current.nodeType === COMMENT_NODE) {
         if (current.data !== next.data) {
@@ -27006,7 +26643,8 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+    init_fence_handlers();
     init_html_sink();
     TEXT_NODE = 3;
     ELEMENT_NODE = 1;
@@ -27014,7 +26652,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -27199,12 +26837,13 @@ function detailsBalance(html2) {
   const closes = html2.match(DETAILS_CLOSE_RE)?.length ?? 0;
   return opens - closes;
 }
-var INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
+var INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, MAY_HOLD_FENCE_RE, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
+    init_fence_handlers();
     init_html_policy();
     init_link_references();
     init_sanitize();
@@ -27213,6 +26852,7 @@ var init_streaming_frozen_tail = __esm({
     init_streaming_dom_morph();
     INTRA_LIST_MIN_ITEMS = 4;
     MAX_LINK_REF_PATCH_PARTS = 8;
+    MAY_HOLD_FENCE_RE = /```|~~~|\$\$|\\\[/;
     BENIGN_BALANCED_TAGS = ["b", "i", "u", "s", "del", "ins", "sub", "sup", "kbd", "mark"];
     VOID_HTML_TAGS = /* @__PURE__ */ new Set([
       "area",
@@ -27384,6 +27024,10 @@ var init_streaming_frozen_tail = __esm({
        * advance zeroes it, so direct callers keep today's full check.
        */
       prefixVerifiedUpTo = 0;
+      /** This commit's `formingTail` (see {@link update}); every render here uses it. */
+      formingTail = false;
+      /** Whether {@link formingTail} differs from the previous commit's. */
+      formingTailChanged = false;
       /**
        * Drop the DOM-trust memo after out-of-band mutation of committed nodes —
        * math/diagram hydration rewrites scaffold elements in place, which the
@@ -27553,7 +27197,7 @@ var init_streaming_frozen_tail = __esm({
           const to = lowerBound(tokens, part.end);
           const rendered = renderBlocksToParts(complete, tokens.slice(from, to), {
             linkRefs,
-            ...topLevelRenderOpts()
+            ...committedRenderOpts(this.formingTail)
           });
           if (rendered.length !== 1)
             return false;
@@ -27689,8 +27333,8 @@ var init_streaming_frozen_tail = __esm({
       }
       /**
        * Reconcile `completedEl` so it serializes byte-identically to
-       * `sanitizeRenderedMarkdown(renderMarkdownUnsafe(complete))`, freezing the settled
-       * prefix and re-rendering only the tail group. `tokens` must be
+       * `sanitizeRenderedMarkdown(renderCommittedMarkdownUnsafe(complete, tokens, formingTail))`,
+       * freezing the settled prefix and re-rendering only the tail group. `tokens` must be
        * `tokenizeBlocks(complete)` (threaded from the caller, Layer 1), and
        * `providedLinkRefs` / `providedFootnoteDefs`, when given, must equal
        * `collectLinkReferenceDefinitions(complete)` /
@@ -27705,8 +27349,14 @@ var init_streaming_frozen_tail = __esm({
        * event stream carries the append-only proof, so the per-update prefix
        * decision degrades to a fallback trigger (ADR 0004 Phase 2). Without it
        * (direct callers, tests) every commit keeps today's full check.
+       *
+       * `formingTail` is the caller's `committedTailContinues(complete, blocks)`:
+       * when set, a fence still open at the end of `complete` (nested in the
+       * trailing list item / blockquote) renders in its forming shape.
        */
-      update(completedEl, complete, tokens, providedLinkRefs, providedFootnoteDefs, advance) {
+      update(completedEl, complete, tokens, providedLinkRefs, providedFootnoteDefs, advance, formingTail = false) {
+        this.formingTailChanged = formingTail !== this.formingTail;
+        this.formingTail = formingTail;
         if (complete === "") {
           if (completedEl.childNodes.length > 0)
             completedEl.replaceChildren();
@@ -27778,10 +27428,15 @@ var init_streaming_frozen_tail = __esm({
         };
         const memo2 = this.tailMemo;
         const deltaRenderTokens = filterRenderTokens(deltaTokens);
-        if (memo2 !== null && this.openFrames.length === 0 && deltaRenderTokens.length > 0 && memo2.root === completedEl && memo2.atNodeCount === this.frozenNodeCount && memo2.lead === (this.frozenHasHtml ? "\n" : "") && memo2.linkRefKey === linkRefKey && sameRenderTokens(memo2.renderTokens, deltaRenderTokens) && complete.startsWith(memo2.srcText, memo2.srcStart) && !hasUnfreezableRawHtml(memo2.rawHtml)) {
+        if (memo2 !== null && this.openFrames.length === 0 && deltaRenderTokens.length > 0 && memo2.root === completedEl && memo2.atNodeCount === this.frozenNodeCount && memo2.lead === (this.frozenHasHtml ? "\n" : "") && memo2.linkRefKey === linkRefKey && sameRenderTokens(memo2.renderTokens, deltaRenderTokens) && complete.startsWith(memo2.srcText, memo2.srcStart) && !hasUnfreezableRawHtml(memo2.rawHtml) && // A nested fence that was still forming at the last commit rendered its
+        // forming shape; now that later content follows, the same tokens over the
+        // same bytes render it closed (by its container), so the memoized render
+        // is not what a fresh render would produce. (A literal class name in code
+        // text only declines the adoption: slower, never different.)
+        !memo2.rawHtml.includes(FORMING_FENCE_PRE_CLASS)) {
           const tailParts = renderBlocksToParts(complete, tailTokens, {
             linkRefs,
-            ...topLevelRenderOpts()
+            ...committedRenderOpts(this.formingTail)
           });
           const tailHtml = tailParts.map((p2) => p2.html).join("\n");
           this.renderedChars += tailHtml.length;
@@ -27797,8 +27452,14 @@ var init_streaming_frozen_tail = __esm({
           this.frozenDetailsBalance += detailsBalance(memo2.rawHtml);
           this.committedHasOpenDetails = this.frozenDetailsBalance > 0 || hasOpenDetailsElement(tailHtml);
         } else {
-          const deltaParts = deltaTokens.length ? renderBlocksToParts(complete, deltaTokens, { linkRefs, ...topLevelRenderOpts() }) : [];
-          const tailParts = tailTokens.length ? renderBlocksToParts(complete, tailTokens, { linkRefs, ...topLevelRenderOpts() }) : [];
+          const deltaParts = deltaTokens.length ? renderBlocksToParts(complete, deltaTokens, {
+            linkRefs,
+            ...committedRenderOpts(this.formingTail)
+          }) : [];
+          const tailParts = tailTokens.length ? renderBlocksToParts(complete, tailTokens, {
+            linkRefs,
+            ...committedRenderOpts(this.formingTail)
+          }) : [];
           const deltaHtml = deltaParts.map((p2) => p2.html).join("\n");
           const tailHtml = tailParts.map((p2) => p2.html).join("\n");
           if (this.openFrames.length > 0 && this.frameCloseAppeared(deltaHtml, tailHtml)) {
@@ -28117,10 +27778,10 @@ var init_streaming_frozen_tail = __esm({
         const freezeCount = ended ? unfrozenItems.length : Math.max(0, unfrozenItems.length - 1);
         const deltaItems = unfrozenItems.slice(0, freezeCount);
         const tailItems = unfrozenItems.slice(freezeCount);
-        const delta = renderListItemsSlice(complete, deltaItems, this.listLoose, linkRefs);
+        const delta = renderListItemsSlice(complete, deltaItems, this.listLoose, linkRefs, this.formingTail);
         if (delta.itemsHtml !== "" && hasUnfreezableRawHtml(delta.itemsHtml))
           return "fallback";
-        const tail = renderListItemsSlice(complete, tailItems, this.listLoose, linkRefs);
+        const tail = renderListItemsSlice(complete, tailItems, this.listLoose, linkRefs, this.formingTail);
         this.renderedChars += delta.itemsHtml.length + tail.itemsHtml.length;
         const hasTask = this.listHasTask || delta.anyTask || tail.anyTask;
         const open2 = listGroupOpenTag(sig, hasTask);
@@ -28188,7 +27849,10 @@ var init_streaming_frozen_tail = __esm({
         const previous = getActiveFootnoteContext();
         setActiveFootnoteContext(ctx);
         try {
-          const parts = renderBlocksToParts(complete, tokens, { linkRefs, ...topLevelRenderOpts() });
+          const parts = renderBlocksToParts(complete, tokens, {
+            linkRefs,
+            ...committedRenderOpts(this.formingTail)
+          });
           const items = renderFootnoteSectionItems(ctx, linkRefs);
           return { parts, items, ctx };
         } finally {
@@ -28228,9 +27892,9 @@ var init_streaming_frozen_tail = __esm({
       fnRebuild(completedEl, complete, tokens, linkRefs, linkRefKey, footnoteDefs) {
         const { parts, items, ctx } = this.renderFootnoteFrame(complete, tokens, linkRefs, footnoteDefs);
         const body = parts.map((p2) => p2.html).join("\n");
-        const section = wrapFootnoteSection(items, ctx.idPrefix);
-        const rawHtml = section === "" ? body : body === "" ? section : `${body}
-${section}`;
+        const section2 = wrapFootnoteSection(items, ctx.idPrefix);
+        const rawHtml = section2 === "" ? body : body === "" ? section2 : `${body}
+${section2}`;
         this.committedHasOpenDetails = hasOpenDetailsElement(rawHtml);
         const html2 = sanitizeRenderedMarkdown(rawHtml);
         this.renderedChars += html2.length;
@@ -28247,9 +27911,9 @@ ${section}`;
         this.lastLinkRefs = linkRefs;
         this.frozenLabelCandidates.clear();
         const els = Array.from(completedEl.children);
-        const expected = parts.length + (section === "" ? 0 : 1);
-        const sectionOl = section === "" ? null : els[els.length - 1]?.querySelector("ol") ?? null;
-        if (els.length !== expected || section !== "" && !sectionOl) {
+        const expected = parts.length + (section2 === "" ? 0 : 1);
+        const sectionOl = section2 === "" ? null : els[els.length - 1]?.querySelector("ol") ?? null;
+        if (els.length !== expected || section2 !== "" && !sectionOl) {
           this.resetFootnoteState();
           this.fnGaveUp = true;
           return;
@@ -28313,6 +27977,10 @@ ${section}`;
         const persisted = this.fnCtx;
         if (!persisted)
           return "skip";
+        const last = this.fnBodyParts.at(-1);
+        if (last && (last.html.includes(FORMING_FENCE_PRE_CLASS) || this.formingTailChanged && MAY_HOLD_FENCE_RE.test(complete.slice(last.start, last.end)))) {
+          return "skip";
+        }
         for (const token of tokens) {
           if (token.end <= this.fnBodyEnd)
             continue;
@@ -28350,7 +28018,7 @@ ${section}`;
             const partTokens = tokens.filter((t2) => t2.start >= cached2.start && t2.end <= cached2.end);
             const html2 = renderBlocksToParts(complete, partTokens, {
               linkRefs,
-              ...topLevelRenderOpts()
+              ...committedRenderOpts(this.formingTail)
             }).map((p2) => p2.html).join("\n");
             if (html2 !== "" && hasUnfreezableRawHtml(html2))
               return "rebuild";
@@ -28418,7 +28086,7 @@ ${section}`;
         return true;
       }
       fullMorph(completedEl, complete, tokens, linkRefKey, linkRefs) {
-        const rawHtml = renderMarkdownUnsafe(complete, { tokens });
+        const rawHtml = renderCommittedMarkdownUnsafe(complete, tokens, this.formingTail);
         this.committedHasOpenDetails = hasOpenDetailsElement(rawHtml);
         const html2 = sanitizeRenderedMarkdown(rawHtml);
         this.renderedChars += html2.length;
@@ -28442,19 +28110,19 @@ ${section}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
 }
 function tailContentElement(completedEl) {
-  const section = trailingFootnotesSection(completedEl);
-  return section ? section.previousElementSibling : completedEl.lastElementChild;
+  const section2 = trailingFootnotesSection(completedEl);
+  return section2 ? section2.previousElementSibling : completedEl.lastElementChild;
 }
 function appendPendingTail(completedEl, el3) {
-  const section = trailingFootnotesSection(completedEl);
-  if (section)
-    completedEl.insertBefore(el3, section);
+  const section2 = trailingFootnotesSection(completedEl);
+  if (section2)
+    completedEl.insertBefore(el3, section2);
   else
     completedEl.append(el3);
 }
@@ -28884,7 +28552,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -28911,6 +28579,14 @@ var init_streaming = __esm({
       formingEl = null;
       pendingEl = null;
       lastComplete = "";
+      /** The text of the last `update()`/`finish()` — what a bare `finish()` finalizes. */
+      lastContent = "";
+      /**
+       * `committedTailContinues` at the last commit. It can flip while `complete`
+       * stays put (the held tail ends the trailing container), which changes how a
+       * nested open fence renders, so a flip re-runs the commit path.
+       */
+      lastFormingTail = false;
       /** `tokenizeBlocks(lastComplete)` — cached so pending-only frames stay O(tail). */
       committedTokens = [];
       /** Whether `lastComplete` contains `|` — cached for the same reason. */
@@ -28975,8 +28651,40 @@ var init_streaming = __esm({
       }
       /** Render `content` (the full message text so far) into the host incrementally. */
       update(content) {
+        this.lastContent = content;
         withConfig(this.config, () => {
           this.updateWithPolicy(content);
+        });
+      }
+      /**
+       * End the stream: `content` (default: the text of the last {@link update}) is
+       * the final text. Mid-stream the renderer holds back what a later character
+       * could still change — a trailing `~~old` / `**bold` run, the last table row,
+       * list item or paragraph line — and shows an unclosed fence, `$$` block or
+       * table as forming scaffolding. At end of stream nothing more can arrive, so
+       * `finish()` commits the whole text: afterwards `.stream-complete` holds the
+       * at-rest render of `content` as a complete document — what `renderMarkdown`
+       * renders for `content` with its last line ended (an unclosed fence becomes
+       * a finished code block, held text is released) — and the forming and
+       * pending elements are empty and hidden.
+       *
+       * "With its last line ended": `renderMarkdown(content)` itself parses an
+       * unterminated last line provisionally in three shapes — a setext underline
+       * after a multi-line paragraph (`a\nb\n=`), a delimiter row whose column
+       * count doesn't match its header, and an invalid link reference definition —
+       * where the terminated render is the CommonMark one. For any `content` ending
+       * in a newline, and for every other shape, the two are identical.
+       *
+       * Calling {@link update} afterwards resumes streaming from whatever text it
+       * is given, exactly like any other update (including one that rewrites the
+       * content), so a host that finished too early, or reuses the renderer for a
+       * regenerated message, needs no reset. `finish()` is idempotent; call
+       * {@link hydrate} after it as after an update.
+       */
+      finish(content = this.lastContent) {
+        this.lastContent = content;
+        withConfig(this.config, () => {
+          this.finishWithPolicy(content);
         });
       }
       /**
@@ -29016,23 +28724,9 @@ var init_streaming = __esm({
         const split = splitForStreamingFrom(content, this.contentScanner.tokenize(content));
         const { complete, pending, openListItemFirstLine: openListItemFirstLine2, blocks } = split;
         const { completedEl, formingEl, pendingEl } = this.ensureNodes();
-        if (complete !== this.lastComplete) {
-          clearBlockPendingDom(completedEl, [
-            "continuation",
-            "paragraph-continuation",
-            "list-items",
-            "direct-blocks"
-          ]);
-          if (this.pendingRowTable) {
-            removePendingTableRow(this.pendingRowTable);
-            this.pendingRowTable = null;
-          }
-          const advance = this.completeScanner.advance(complete);
-          this.committedTokens = advance.tokens;
-          this.committedHasPipe = complete.includes("|");
-          this.frozenTail.update(completedEl, complete, this.committedTokens, this.completeScanner.linkRefs(complete), this.completeScanner.footnoteDefs(complete), advance);
-          this.lastComplete = complete;
-          this.pendingFast = null;
+        const formingTail = committedTailContinues(complete, blocks);
+        if (complete !== this.lastComplete || formingTail !== this.lastFormingTail) {
+          this.commit(completedEl, complete, formingTail);
         }
         if (this.frozenTail.committedHasOpenDetails) {
           clearFormingDom(formingEl);
@@ -29085,6 +28779,83 @@ var init_streaming = __esm({
             "direct-blocks"
           ]);
           syncInlinePendingDom(pendingEl, pendingInner, pendingVisible);
+        }
+      }
+      /**
+       * End-of-stream frame (see {@link finish}): the whole text becomes the
+       * committed prefix. "Is this construct closed?" has a definite answer once
+       * nothing more can arrive, and the committed renderer already is the at-rest
+       * renderer (the frozen tail reconciles to
+       * `sanitize(renderMarkdownUnsafe(complete))`), so no end-of-stream variant of
+       * the split or of any pending shape is needed.
+       *
+       * The commit is line-terminated: a final line without a newline gets one.
+       * Every mid-stream `complete` ends at a line boundary, and the frozen tail
+       * relies on it — it renders settled token groups separately, and an
+       * unterminated last line tokenizes provisionally (`Title\n---` as paragraph
+       * + ambiguous break; a footnote definition that a later update extends in
+       * place), which would freeze or split blocks the terminated text renders
+       * differently. End of input ends the last line in CommonMark, so this is
+       * the same document (`renderMarkdown` of an unterminated last line differs
+       * in three provisional shapes; see streaming-finish.test.ts).
+       *
+       * Going through the ordinary commit keeps the frozen-tail invariants as they
+       * are: finishing the last update's text is an append-only extension of the
+       * last commit (the scanner's `verifiedUpTo` contract holds), and a later
+       * update that retreats `complete` behind it, or rewrites it, is the same
+       * rewrite a regenerated message produces — caught by the scanner's prefix
+       * check and the frozen tail's prefix/straddle guards.
+       */
+      finishWithPolicy(content) {
+        const { completedEl, formingEl, pendingEl } = this.ensureNodes();
+        const complete = content === "" || content.endsWith("\n") ? content : `${content}
+`;
+        if (complete !== this.lastComplete || this.lastFormingTail) {
+          this.commit(completedEl, complete, false);
+        } else {
+          this.sweepPendingTail(completedEl);
+        }
+        clearFormingDom(formingEl);
+        formingEl.hidden = true;
+        syncInlinePendingDom(pendingEl, "", false);
+        this.pendingFast = null;
+      }
+      /**
+       * Commit `complete` as the new committed prefix: sweep the pending tail, then
+       * reconcile `completedEl` to the full render of `complete` through the
+       * frozen-tail renderer.
+       */
+      commit(completedEl, complete, formingTail) {
+        this.sweepPendingTail(completedEl);
+        const advance = this.completeScanner.advance(complete);
+        this.committedTokens = advance.tokens;
+        this.committedHasPipe = complete.includes("|");
+        this.frozenTail.update(completedEl, complete, this.committedTokens, this.completeScanner.linkRefs(complete), this.completeScanner.footnoteDefs(complete), advance, formingTail);
+        this.lastComplete = complete;
+        this.lastFormingTail = formingTail;
+        this.pendingFast = null;
+      }
+      /**
+       * Sweep the pending-tail artifacts attached since the last commit — a
+       * pending block element, a pending `<li>` (and its wrapper) inside the
+       * trailing list, a continuation span inside the trailing `<p>`/open `<li>`,
+       * the pending table row. The commit morphs used to absorb them as ordinary
+       * diff noise; the frozen-tail DOM memos (ADR 0004 Phase 2) instead require
+       * the committed subtree to be exactly what the last commit left, so they go
+       * before any commit (they are rebuilt from `pending` afterwards either way —
+       * at most one kind exists at a time, each sync clears the others). O(tail),
+       * and byte-equivalent to the old morph-side removal.
+       */
+      sweepPendingTail(completedEl) {
+        clearBlockPendingDom(completedEl, [
+          "continuation",
+          "paragraph-continuation",
+          "list-items",
+          "direct-blocks"
+        ]);
+        if (this.pendingRowTable) {
+          removePendingTableRow(this.pendingRowTable);
+          this.pendingRowTable = null;
         }
       }
       syncCommittedTableRow(complete, pending, completeTokens) {
@@ -29142,6 +28913,7 @@ var init_streaming = __esm({
         this.formingEl = formingEl;
         this.pendingEl = pendingEl;
         this.lastComplete = "";
+        this.lastFormingTail = false;
         this.committedTokens = [];
         this.committedHasPipe = false;
         this.pendingFast = null;
@@ -29152,9 +28924,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -29180,6 +28952,336 @@ var init_inline_markdown = __esm({
   "src/renderer/markdown/inline-markdown.ts"() {
     init_dist();
     PHRASING_TAGS = /* @__PURE__ */ new Set(["CODE", "EM", "STRONG", "S", "DEL"]);
+  }
+});
+
+// src/renderer/dom/outline-icon.ts
+function outlineIcon(label, paths, className) {
+  const svg2 = document.createElementNS(SVG_NS, "svg");
+  svg2.setAttribute("class", className);
+  svg2.setAttribute("viewBox", "0 0 24 24");
+  svg2.setAttribute("width", ICON_SIZE);
+  svg2.setAttribute("height", ICON_SIZE);
+  svg2.setAttribute("aria-hidden", "true");
+  svg2.setAttribute("focusable", "false");
+  svg2.setAttribute("data-icon", label);
+  svg2.setAttribute("fill", "none");
+  svg2.setAttribute("stroke", "currentColor");
+  svg2.setAttribute("stroke-width", "1.75");
+  svg2.setAttribute("stroke-linecap", "round");
+  svg2.setAttribute("stroke-linejoin", "round");
+  for (const d3 of paths) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d3);
+    svg2.append(path);
+  }
+  return svg2;
+}
+var SVG_NS, ICON_SIZE;
+var init_outline_icon = __esm({
+  "src/renderer/dom/outline-icon.ts"() {
+    SVG_NS = "http://www.w3.org/2000/svg";
+    ICON_SIZE = "16";
+  }
+});
+
+// src/renderer/dom/icons.ts
+function playIcon(className = DEFAULT) {
+  return outlineIcon("play", ["m6 3 14 9-14 9V3Z"], className);
+}
+function chevronRightIcon(className = DEFAULT) {
+  return outlineIcon("chevron-right", ["m9 18 6-6-6-6"], className);
+}
+function chevronDownIcon(className = DEFAULT) {
+  return outlineIcon("chevron-down", ["m6 9 6 6 6-6"], className);
+}
+function clockIcon(className = DEFAULT) {
+  return outlineIcon(
+    "clock",
+    ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z", "M12 6v6l4 2"],
+    className
+  );
+}
+function chevronUpIcon(className = DEFAULT) {
+  return outlineIcon("chevron-up", ["m18 15-6-6-6 6"], className);
+}
+function arrowLeftIcon(className = DEFAULT) {
+  return outlineIcon("arrow-left", ["M19 12H5", "m12 19-7-7 7-7"], className);
+}
+function arrowRightIcon(className = DEFAULT) {
+  return outlineIcon("arrow-right", ["M5 12h14", "m12 5 7 7-7 7"], className);
+}
+function arrowDownIcon(className = DEFAULT) {
+  return outlineIcon("arrow-down", ["M12 5v14", "m19 12-7 7-7-7"], className);
+}
+function refreshIcon(className = DEFAULT) {
+  return outlineIcon(
+    "refresh",
+    [
+      "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
+      "M21 3v5h-5",
+      "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
+      "M8 16H3v5"
+    ],
+    className
+  );
+}
+function externalLinkIcon(className = DEFAULT) {
+  return outlineIcon(
+    "external-link",
+    ["M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"],
+    className
+  );
+}
+function closeIcon(className = DEFAULT) {
+  return outlineIcon("close", ["M18 6 6 18", "m6 6 12 12"], className);
+}
+function plusIcon(className = DEFAULT) {
+  return outlineIcon("plus", ["M5 12h14", "M12 5v14"], className);
+}
+function monitorIcon(className = DEFAULT) {
+  return outlineIcon(
+    "monitor",
+    [
+      "M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
+      "M8 21h8",
+      "M12 17v4"
+    ],
+    className
+  );
+}
+function downloadIcon(className = DEFAULT) {
+  return outlineIcon(
+    "download",
+    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
+    className
+  );
+}
+function uploadIcon(className = DEFAULT) {
+  return outlineIcon(
+    "upload",
+    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m17 8-5-5-5 5", "M12 3v12"],
+    className
+  );
+}
+function maximizeIcon(className = DEFAULT) {
+  return outlineIcon("maximize", ["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"], className);
+}
+function minimizeIcon(className = DEFAULT) {
+  return outlineIcon("minimize", ["M4 14h6v6", "M20 10h-6V4", "M14 10l7-7", "M3 21l7-7"], className);
+}
+function moreHorizontalIcon(className = DEFAULT) {
+  return outlineIcon("more-horizontal", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
+}
+function moreVerticalIcon(className = DEFAULT) {
+  return outlineIcon("more-vertical", ["M12 5h.01", "M12 12h.01", "M12 19h.01"], className);
+}
+function runningStatusIcon(className = DEFAULT) {
+  return outlineIcon("running-status", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
+}
+function checkIcon(className = DEFAULT) {
+  return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
+}
+function shieldIcon(className = DEFAULT) {
+  return outlineIcon(
+    "shield",
+    [
+      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+    ],
+    className
+  );
+}
+function bellIcon(className = DEFAULT) {
+  return outlineIcon(
+    "bell",
+    [
+      "M10.27 21a2 2 0 0 0 3.46 0",
+      "M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"
+    ],
+    className
+  );
+}
+function messageQuestionIcon(className = DEFAULT) {
+  return outlineIcon(
+    "message-circle-question",
+    ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
+    className
+  );
+}
+function banIcon(className = DEFAULT) {
+  return outlineIcon(
+    "ban",
+    ["M4.93 4.93a10 10 0 1 0 14.14 14.14A10 10 0 0 0 4.93 4.93Z", "m4.93 4.93 14.14 14.14"],
+    className
+  );
+}
+function dotIcon(className = DEFAULT) {
+  return outlineIcon("dot", ["M12 12h.01"], `${className} ui-icon-dot`);
+}
+function circleIcon(className = DEFAULT) {
+  return outlineIcon("circle", ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"], className);
+}
+function spinnerIcon(className = DEFAULT) {
+  return outlineIcon("loader-circle", ["M21 12a9 9 0 1 1-6.219-8.56"], className);
+}
+function minusIcon(className = DEFAULT) {
+  return outlineIcon("minus", ["M5 12h14"], className);
+}
+function warningIcon(className = DEFAULT) {
+  return outlineIcon(
+    "triangle-alert",
+    [
+      "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z",
+      "M12 9v4",
+      "M12 17h.01"
+    ],
+    className
+  );
+}
+function searchIcon(className = DEFAULT) {
+  return outlineIcon(
+    "search",
+    ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "m21 21-4.35-4.35"],
+    className
+  );
+}
+function fileTextIcon(className = DEFAULT) {
+  return outlineIcon(
+    "file-text",
+    [
+      "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z",
+      "M14 2v6h6",
+      "M8 13h8",
+      "M8 17h8"
+    ],
+    className
+  );
+}
+function imageIcon(className = DEFAULT) {
+  return outlineIcon(
+    "image",
+    [
+      "M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8.3",
+      "m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21",
+      "M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7",
+      "M9 9h.01"
+    ],
+    className
+  );
+}
+function sparkleIcon(className = DEFAULT) {
+  return outlineIcon(
+    "sparkle",
+    [
+      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
+    ],
+    className
+  );
+}
+function zapIcon(className = DEFAULT) {
+  return outlineIcon(
+    "zap",
+    [
+      "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
+    ],
+    className
+  );
+}
+function gitBranchIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-branch",
+    [
+      "M6 3v12",
+      "M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M15 6a9 9 0 0 0-9 9"
+    ],
+    className
+  );
+}
+function gitPullRequestIcon(className = DEFAULT, conflicts = false) {
+  return outlineIcon(
+    "git-pull-request",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      conflicts ? "M3 3l6 6m0-6L3 9" : "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M13 6h3a2 2 0 0 1 2 2v7",
+      "M6 9v12"
+    ],
+    className
+  );
+}
+function gitMergeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-merge",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 21V9a9 9 0 0 0 9 9"
+    ],
+    className
+  );
+}
+function penLineIcon(className = DEFAULT) {
+  return outlineIcon(
+    "pen-line",
+    [
+      "M12 20h9",
+      "M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"
+    ],
+    className
+  );
+}
+function slashIcon(className = DEFAULT) {
+  return outlineIcon("slash", ["M20 4 4 20"], className);
+}
+function arrowUpRightIcon(className = DEFAULT) {
+  return outlineIcon("arrow-up-right", ["M7 7h10v10", "M7 17 17 7"], className);
+}
+function squareIcon(className = DEFAULT) {
+  return outlineIcon(
+    "square",
+    ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"],
+    className
+  );
+}
+function eraserIcon(className = DEFAULT) {
+  return outlineIcon(
+    "eraser",
+    [
+      "m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21",
+      "M22 21H7",
+      "m5 11 9 9"
+    ],
+    className
+  );
+}
+function undoIcon(className = DEFAULT) {
+  return outlineIcon(
+    "undo",
+    ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"],
+    className
+  );
+}
+function trashIcon(className = DEFAULT) {
+  return outlineIcon(
+    "trash",
+    [
+      "M3 6h18",
+      "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
+      "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+    ],
+    className
+  );
+}
+function historyIcon(className = DEFAULT) {
+  return outlineIcon("history", ["M3 12a9 9 0 1 0 3-6.7L3 8", "M3 3v5h5", "M12 7v5l3 2"], className);
+}
+var DEFAULT;
+var init_icons = __esm({
+  "src/renderer/dom/icons.ts"() {
+    init_outline_icon();
+    DEFAULT = "ui-icon";
   }
 });
 
@@ -29226,14 +29328,511 @@ var init_inline_status = __esm({
   }
 });
 
+// src/renderer/views/setup/machines-section.ts
+function createMachinesSection(api2) {
+  const status = el("div", { class: "machine-status", role: "status" });
+  const sharingFeedback = el("div", { class: "machine-sharing-feedback", role: "status" });
+  const list = el("div", { class: "machine-list" });
+  const invitationInput = el("textarea", {
+    name: "machineInvitation",
+    rows: "3",
+    placeholder: "copse-machine1-\u2026",
+    spellcheck: "false"
+  });
+  const pair = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary machine-pair" },
+    "Connect machine"
+  );
+  const enabled = el("input", { type: "checkbox", name: "machineSharingEnabled" });
+  const address = el("select", { name: "machineSharingAddress" });
+  const port = el("input", {
+    type: "number",
+    name: "machineSharingPort",
+    min: "0",
+    max: "65535",
+    value: "4319"
+  });
+  const models = el("div", { class: "machine-share-models" });
+  const apply3 = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary machine-sharing-save" },
+    "Apply sharing settings"
+  );
+  const invite = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary machine-invite", disabled: true },
+    "Create pairing invitation"
+  );
+  const code = el("textarea", {
+    name: "machineSharingInvitation",
+    rows: "3",
+    readonly: true,
+    hidden: true,
+    "aria-label": "Pairing invitation for this machine"
+  });
+  const hostingStatus = el("p", { class: "field-hint machine-sharing-status" });
+  const clients = el("div", { class: "machine-client-list" });
+  const secure = el("p", { class: "field-hint machine-secure-storage" });
+  const featureHint = el(
+    "p",
+    { class: "field-hint machine-feature-hint" },
+    "Remote System One models are off. Enable them in Settings \u2192 Experimental to connect Copse computers. SSH settings are available below."
+  );
+  const sharingControls = el(
+    "div",
+    { class: "machine-sharing-controls", hidden: true },
+    el("label", { class: "checkbox-label" }, enabled, " Share models on my network"),
+    el("label", {}, "Network", address),
+    el("label", {}, "Port", port),
+    models,
+    el("div", { class: "provider-actions" }, apply3, invite),
+    code,
+    el(
+      "p",
+      { class: "field-hint" },
+      "Invitations expire after ten minutes and connect one client. Create a new invitation for each client."
+    )
+  );
+  const sharing = el(
+    "fieldset",
+    { class: "machine-sharing-section", hidden: true },
+    el("legend", {}, "Share models from this machine"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Allow paired Copse clients to call the local System One connections you select below. Copse must stay open and this computer must stay awake."
+    ),
+    sharingControls,
+    hostingStatus,
+    clients,
+    sharingFeedback
+  );
+  const pairControls = el(
+    "div",
+    { class: "machine-pair-controls", hidden: true },
+    el("label", {}, "Pairing invitation", invitationInput),
+    el("div", { class: "provider-actions" }, pair),
+    secure
+  );
+  const paired = el(
+    "fieldset",
+    { hidden: true },
+    el("legend", {}, "Paired Copse machines"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Use System One models on another computer on the same network. Open Copse there, share a local model, and paste its invitation here. SSH is not required."
+    ),
+    list,
+    pairControls,
+    status
+  );
+  const root = el("div", { class: "machines-settings" }, featureHint, paired, sharing);
+  let state;
+  let initialized = false;
+  let busy = false;
+  let refreshing = false;
+  let rendered = "";
+  let sharingRendered = "";
+  const selectedModels = /* @__PURE__ */ new Map();
+  function show2(next, resetSharing = false) {
+    state = next;
+    featureHint.hidden = next.featureEnabled;
+    pairControls.hidden = !next.featureEnabled;
+    sharingControls.hidden = !next.featureEnabled;
+    paired.hidden = !next.featureEnabled && !next.machines.length;
+    sharing.hidden = !next.featureEnabled && !next.clients.length;
+    if (!next.featureEnabled) {
+      code.hidden = true;
+      code.value = "";
+    }
+    pair.disabled = busy || !next.featureEnabled || !next.secureStorage;
+    apply3.disabled = busy || !next.featureEnabled || !next.secureStorage && enabled.checked;
+    invite.disabled = busy || !next.featureEnabled || !next.sharing.listening;
+    secure.textContent = next.secureStorage ? "Pairing credentials are encrypted on this computer." : "Unlock the system keyring to pair machines or enable sharing.";
+    hostingStatus.textContent = !next.featureEnabled ? "Remote System One models are off." : next.sharing.listening ? `Sharing on ${next.sharing.address}:${String(next.sharing.port)}` : next.sharing.error ?? "Model sharing is off.";
+    if (!initialized || resetSharing) {
+      enabled.checked = next.sharing.enabled;
+      clear(address);
+      for (const item of next.addresses)
+        address.append(el("option", { value: item.address }, item.label));
+      if (!next.addresses.some((item) => item.address === next.sharing.address))
+        address.append(
+          el("option", { value: next.sharing.address }, `${next.sharing.address} (unavailable)`)
+        );
+      address.value = initialized || next.sharing.enabled ? next.sharing.address : next.addresses.find((entry) => entry.address !== "127.0.0.1")?.address ?? next.sharing.address;
+      port.value = String(next.sharing.port);
+      initialized = true;
+    }
+    const modelKey = JSON.stringify(next.shareableModels);
+    if (sharingRendered !== modelKey || resetSharing) {
+      sharingRendered = modelKey;
+      clear(models);
+      if (!next.shareableModels.length)
+        models.append(
+          el(
+            "p",
+            { class: "field-hint" },
+            "Add a local System One connection in Settings \u2192 Classifiers first."
+          )
+        );
+      for (const model of next.shareableModels) {
+        const input2 = el("input", {
+          type: "checkbox",
+          name: "machineSharedProfile",
+          value: model.id
+        });
+        input2.checked = next.sharing.profileIds.includes(model.id);
+        models.append(
+          el("label", { class: "checkbox-label" }, input2, ` ${model.label} \xB7 ${model.model}`)
+        );
+      }
+    }
+    const key = JSON.stringify([next.featureEnabled, next.machines, next.clients]);
+    if (rendered === key) return;
+    rendered = key;
+    clear(list);
+    if (!next.machines.length)
+      list.append(el("p", { class: "field-hint" }, "No paired machines yet."));
+    for (const machine of next.machines) {
+      const choose = el("select", {
+        "aria-label": `Model on ${machine.name}`,
+        disabled: machine.status !== "connected"
+      });
+      for (const model of machine.models)
+        choose.append(el("option", { value: model.id }, `${model.label} \xB7 ${model.model}`));
+      choose.value = selectedModels.get(machine.id) ?? machine.models[0]?.id ?? "";
+      choose.addEventListener("change", () => selectedModels.set(machine.id, choose.value));
+      const use = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary machine-use-model",
+          hidden: !next.featureEnabled,
+          disabled: machine.status !== "connected" || !machine.models.length
+        },
+        "Use this model"
+      );
+      const remove = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary machine-remove" },
+        "Disconnect"
+      );
+      const row2 = el(
+        "div",
+        { class: "machine-row", "data-machine-id": machine.id },
+        el("h4", {}, machine.name),
+        el(
+          "p",
+          { class: "field-hint machine-connection-status" },
+          `${machine.address} \xB7 ${machine.detail}`
+        ),
+        el("label", { hidden: !next.featureEnabled }, "Shared model", choose),
+        el("div", { class: "provider-actions" }, use, remove)
+      );
+      use.addEventListener("click", () => {
+        void action(async () => {
+          const model = machine.models.find((entry) => entry.id === choose.value);
+          if (!model) throw new Error("Choose a shared model first.");
+          const configured = await api2.classifiers.list();
+          const existing = configured.find(
+            ({ profile }) => profile.connection.type === "machine" && profile.connection.machineId === machine.id && profile.connection.profileId === model.id
+          );
+          await api2.classifiers.save({
+            id: existing?.profile.id ?? `machine-${crypto.randomUUID()}`,
+            label: `${machine.name} \xB7 ${model.label}`.slice(0, 120),
+            model: model.model,
+            timeoutMs: model.timeoutMs,
+            connection: { type: "machine", machineId: machine.id, profileId: model.id }
+          });
+          setInlineStatus(
+            status,
+            "ok",
+            "Model connection saved. Open Classifiers to test it or select it for safety screening."
+          );
+        });
+      });
+      remove.addEventListener("click", () => {
+        void action(async () => {
+          show2(await api2.machines.remove(machine.id));
+          setInlineStatus(
+            status,
+            "ok",
+            "Machine disconnected. Its saved model connections will report unavailable until you pair it again."
+          );
+        });
+      });
+      list.append(row2);
+    }
+    clear(clients);
+    for (const client of next.clients) {
+      const revoke = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary machine-revoke" },
+        "Revoke access"
+      );
+      revoke.addEventListener("click", () => {
+        void action(async () => {
+          show2(await api2.machines.revoke(client.id));
+          code.hidden = true;
+          code.value = "";
+          setInlineStatus(sharingFeedback, "ok", `Access revoked for ${client.name}.`);
+        }, sharingFeedback);
+      });
+      clients.append(
+        el("div", { class: "machine-client-row" }, el("span", {}, client.name), revoke)
+      );
+    }
+  }
+  async function action(run2, feedback = status) {
+    if (busy) return;
+    busy = true;
+    for (const control of root.querySelectorAll("button")) control.disabled = true;
+    try {
+      await run2();
+    } catch (error62) {
+      setInlineStatus(
+        feedback,
+        "error",
+        error62 instanceof Error ? error62.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "") : "Machine request failed."
+      );
+    } finally {
+      busy = false;
+      rendered = "";
+      if (state) show2(state);
+    }
+  }
+  pair.addEventListener("click", () => {
+    void action(async () => {
+      show2(await api2.machines.pair(invitationInput.value.trim()));
+      invitationInput.value = "";
+      setInlineStatus(status, "ok", "Machine connected. Choose a shared model below its name.");
+    });
+  });
+  enabled.addEventListener("change", () => {
+    apply3.disabled = busy || !state?.featureEnabled || !state.secureStorage && enabled.checked;
+  });
+  apply3.addEventListener("click", () => {
+    void action(async () => {
+      const profileIds = Array.from(models.querySelectorAll("input:checked")).map(
+        (input2) => input2.value
+      );
+      show2(
+        await api2.machines.share({
+          enabled: enabled.checked,
+          address: address.value,
+          port: Number(port.value),
+          profileIds
+        }),
+        true
+      );
+      code.hidden = true;
+      code.value = "";
+      setInlineStatus(
+        sharingFeedback,
+        "ok",
+        enabled.checked ? "Sharing enabled for the selected models." : "Sharing stopped."
+      );
+    }, sharingFeedback);
+  });
+  invite.addEventListener("click", () => {
+    void action(async () => {
+      code.value = await api2.machines.invitation();
+      code.hidden = false;
+      code.select();
+      setInlineStatus(
+        sharingFeedback,
+        "ok",
+        "Copy this invitation to the other computer. It expires in ten minutes."
+      );
+    }, sharingFeedback);
+  });
+  async function refresh() {
+    if (refreshing || busy) return;
+    refreshing = true;
+    try {
+      show2(await api2.machines.state());
+    } catch (error62) {
+      setInlineStatus(
+        status,
+        "error",
+        error62 instanceof Error ? error62.message : "Could not load machines."
+      );
+    } finally {
+      refreshing = false;
+    }
+  }
+  return { root, refresh };
+}
+var init_machines_section = __esm({
+  "src/renderer/views/setup/machines-section.ts"() {
+    init_helpers();
+    init_inline_status();
+  }
+});
+
+// src/renderer/views/dialog-shell.ts
+function createOverlayDialog(opts) {
+  const dialog2 = document.createElement("dialog");
+  dialog2.id = opts.id;
+  if (opts.className) dialog2.className = opts.className;
+  document.body.append(dialog2);
+  return {
+    dialog: dialog2,
+    open: () => {
+      if (!dialog2.open) dialog2.showModal();
+    },
+    close: () => {
+      if (dialog2.open) dialog2.close();
+    },
+    isOpen: () => dialog2.open
+  };
+}
+function isAnyDialogOpen() {
+  return document.querySelector("dialog[open]") !== null;
+}
+var init_dialog_shell = __esm({
+  "src/renderer/views/dialog-shell.ts"() {
+  }
+});
+
+// packages/std/src/errors.ts
+function errorMessage(err2) {
+  return err2 instanceof Error ? err2.message : String(err2);
+}
+var init_errors3 = __esm({
+  "packages/std/src/errors.ts"() {
+  }
+});
+
+// src/shared/errors.ts
+var init_errors4 = __esm({
+  "src/shared/errors.ts"() {
+    init_errors3();
+  }
+});
+
+// packages/llm/src/classifiers/presets.ts
+function classifierCredentialId(id) {
+  if (!/^[a-z0-9-]{1,53}$/.test(id)) throw new Error("Invalid classifier profile ID");
+  return `${CLASSIFIER_CREDENTIAL_PREFIX}${id}`;
+}
+function classifierEndpointKey(baseUrl) {
+  return new URL(baseUrl).href.replace(/\/+$/, "");
+}
+var CLASSIFIER_PRESETS, CLASSIFIER_CREDENTIAL_PREFIX;
+var init_presets = __esm({
+  "packages/llm/src/classifiers/presets.ts"() {
+    CLASSIFIER_PRESETS = [
+      {
+        id: "typesafe",
+        label: "TypeSafe / Jev",
+        model: "jev-latest",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://api.typesafe.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "TYPESAFE_API_KEY"
+        }
+      },
+      {
+        id: "liquid",
+        label: "Liquid / d1",
+        model: "d1:free",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://api.liquid.ai/decisions/v1",
+          auth: "bearer",
+          apiKeyEnv: "LIQUID_API_KEY"
+        }
+      },
+      {
+        id: "kev",
+        label: "Kev (local)",
+        model: "kev-latest",
+        timeoutMs: 12e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "http://127.0.0.1:8009/v1",
+          auth: "none"
+        }
+      },
+      {
+        id: "winnow",
+        label: "Winnow-12B (local)",
+        model: "jev-latest",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "http://127.0.0.1:8091/v1",
+          auth: "none"
+        }
+      },
+      {
+        id: "semif",
+        label: "SemIf (local)",
+        model: "Qwen/Qwen3.5-4B",
+        timeoutMs: 3e5,
+        connection: {
+          type: "semif",
+          executable: "semif-score",
+          backend: "torch",
+          revision: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+          mode: "direct",
+          device: "auto"
+        }
+      },
+      {
+        id: "featherless",
+        label: "Featherless / Simple Jev",
+        model: "featherless-ai/gemma-4-26B-A4B-classifier",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "featherless",
+          baseUrl: "https://api.featherless.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "FEATHERLESS_API_KEY"
+        }
+      }
+    ];
+    CLASSIFIER_CREDENTIAL_PREFIX = "classifier-";
+  }
+});
+
+// src/renderer/dom/disclosure-summary.ts
+function disclosureSummary(label) {
+  return el(
+    "summary",
+    { class: "settings-disclosure-summary" },
+    el("span", {}, label),
+    // `ui-icon` carries `fill: none; stroke: currentColor`; without it the path
+    // renders as a solid triangle (see the plugin fold in settings-dialog.ts).
+    chevronDownIcon("ui-icon settings-disclosure-chevron")
+  );
+}
+var init_disclosure_summary = __esm({
+  "src/renderer/dom/disclosure-summary.ts"() {
+    init_helpers();
+    init_icons();
+  }
+});
+
 // src/renderer/views/confirm-dialog.ts
 function mountConfirmDialog() {
   document.getElementById("confirm-dialog")?.remove();
   showConfirmDialogImpl = null;
-  const messageEl = el("h3", { class: "confirm-dialog-message" });
+  const messageEl2 = el("h3", { class: "confirm-dialog-message" });
   const detailEl = el("p", { class: "confirm-dialog-detail" });
   const buttonsEl = uiActions({ className: "confirm-dialog-buttons" });
-  const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl, detailEl, buttonsEl);
+  const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl2, detailEl, buttonsEl);
   document.body.append(dialog2);
   const queue = [];
   let active2 = null;
@@ -29264,7 +29863,7 @@ function mountConfirmDialog() {
   }
   function renderActive() {
     if (!active2) return;
-    messageEl.textContent = active2.message;
+    messageEl2.textContent = active2.message;
     if (active2.detail) {
       detailEl.replaceChildren(active2.detail);
       detailEl.hidden = false;
@@ -29602,6 +30201,14 @@ function createClassifiersSection(api2) {
     });
     if (approved) await localAction(() => api2.localClassifiers.install(server.id));
   }
+  async function confirmUninstall(server) {
+    const approved = await showConfirmDialog({
+      message: `Uninstall ${server.label}?`,
+      detail: `Copse will delete the ${server.label} checkout, environment and downloaded model files from its classifier cache (about ${String(server.downloadGb)} GB). The saved connection stays until you remove it; the shared package cache is kept.`,
+      confirmLabel: "Uninstall"
+    });
+    if (approved) await localAction(() => api2.localClassifiers.uninstall(server.id));
+  }
   function localButton(label, className, onClick) {
     const button = el(
       "button",
@@ -29634,6 +30241,9 @@ function createClassifiersSection(api2) {
         actions.append(
           localButton("Start", "classifier-local-start", () => {
             void localAction(() => api2.localClassifiers.start(server.id));
+          }),
+          localButton("Uninstall", "classifier-local-uninstall", () => {
+            void confirmUninstall(server);
           })
         );
         break;
@@ -29705,7 +30315,7 @@ function createClassifiersSection(api2) {
     clear(screening);
     screening.append(el("option", { value: "" }, "Instruct / safety model"));
     for (const { profile } of profiles) {
-      if (profile.connection.type !== "http") continue;
+      if (profile.connection.type === "semif") continue;
       screening.append(el("option", { value: profile.id }, profile.label));
     }
     screening.value = profiles.some((item) => item.profile.id === screeningId) ? screeningId ?? "" : "";
@@ -29916,7 +30526,7 @@ function createClassifiersSection(api2) {
         el("label", {}, "Authentication", auth),
         envField
       );
-    } else {
+    } else if (profile.connection.type === "semif") {
       const connection = profile.connection;
       const backend = select("Backend", connection.backend, BACKEND_CHOICES);
       const gguf = el("label", {}, "GGUF model path", input2("Gguf", connection.gguf ?? ""));
@@ -29935,6 +30545,16 @@ function createClassifiersSection(api2) {
           "span",
           { class: "field-hint" },
           "Uses your installed SemIf scorer and cached or local weights. Test does not install a runtime or download models."
+        )
+      );
+    }
+    if (profile.connection.type === "machine") {
+      model.readOnly = true;
+      form.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          "Calls use a paired Copse machine. Manage the machine and choose shared models in Settings \u2192 Machines."
         )
       );
     }
@@ -30008,7 +30628,7 @@ function createClassifiersSection(api2) {
           baseUrl: read("Url"),
           auth: read("Auth") === "none" ? "none" : "bearer",
           ...read("KeyEnv") ? { apiKeyEnv: read("KeyEnv") } : {}
-        } : {
+        } : profile.connection.type === "machine" ? profile.connection : {
           type: "semif",
           executable: read("Executable"),
           ...profile.connection.device ? { device: profile.connection.device } : {},
@@ -42987,10 +43607,30 @@ var init_acp_known_agents = __esm({
         },
         sandboxedPermissionMode: "acceptEdits",
         docsUrl: "https://www.npmjs.com/package/@zed-industries/claude-code-acp",
-        note: "Zed's adapter for Claude Code. Sign in with `claude /login` or set `ANTHROPIC_API_KEY`."
+        note: "Zed's adapter for Claude Code. Sign in with `claude auth login` or set `ANTHROPIC_API_KEY`."
       }
     ];
     KNOWN_ACP_AGENTS = [
+      {
+        id: "qwen-code",
+        title: "Qwen Code",
+        command: "qwen",
+        args: ["--acp"],
+        envHints: ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"],
+        install: "npm install -g @qwen-code/qwen-code",
+        installPackage: "@qwen-code/qwen-code",
+        autoInstall: true,
+        sandbox: {
+          // Reference traces observed only loopback calls to the local provider
+          // fixture. Keep external access closed until the user adds their endpoint.
+          allowedDomains: [],
+          homeDirs: [".qwen"]
+        },
+        setup: "qwen",
+        reauth: "qwen",
+        docsUrl: "https://github.com/copse-dev/agent-pane/blob/main/docs/acp-qwen-findings.md#hosted-endpoint-configuration",
+        note: "Run `qwen`, then `/auth` to configure a provider, or set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`. Hosted providers also need the network setup described in Documentation. Qwen OAuth\u2019s free tier has ended."
+      },
       {
         id: "gemini",
         title: "Gemini CLI",
@@ -43063,10 +43703,13 @@ var init_acp_known_agents = __esm({
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
-        setup: "claude setup-token",
-        reauth: "claude /login",
+        // setup-token only prints a token; it does not save the login this
+        // desktop setup needs. Use the dedicated login command and leave the
+        // account method to the login flow rather than forcing SSO or Console.
+        setup: "claude auth login",
+        reauth: "claude auth login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
-        note: "Runs Claude Code through its agent SDK. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`)."
+        note: "Runs Claude Code. Sign in with `claude auth login` (or `ANTHROPIC_API_KEY`)."
       },
       {
         id: "cursor",
@@ -43134,6 +43777,27 @@ var init_acp_known_agents = __esm({
         reauth: "codex login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/codex-acp",
         note: "Runs OpenAI Codex. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
+      },
+      {
+        id: "github-copilot-cli",
+        title: "GitHub Copilot CLI",
+        command: "copilot",
+        args: ["--acp", "--stdio"],
+        envHints: ["COPILOT_GITHUB_TOKEN"],
+        install: "npm install -g @github/copilot",
+        // Manual catalog entry: npm distribution alone does not qualify an agent
+        // for automatic install, registration, upgrades, or model probes.
+        sandbox: {
+          // GitHub's documented auth/API endpoints. BYOK and GHE data-residency
+          // endpoints require an explicit per-agent override; no registry grants.
+          allowedDomains: ["github.com", "api.github.com", "*.githubcopilot.com"],
+          homeDirs: [".copilot", ".cache/copilot", "Library/Caches/copilot"]
+          // No extra system scratch or keychain grant; retain Copse's own TMPDIR.
+        },
+        setup: "copilot login",
+        reauth: "copilot login",
+        docsUrl: "https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server",
+        note: "Manual setup; the coding-agent connection is in public preview. npm installation requires Node.js 22+. Sign in with `copilot login` or set `COPILOT_GITHUB_TOKEN`. GitHub-hosted models use your Copilot plan and usage limits; BYOK is billed by your model provider and needs a custom sandbox endpoint."
       }
     ];
   }
@@ -45759,7 +46423,7 @@ function remoteAgentDisplayLabel(model, catalog = []) {
   const catalogLabel = catalog.find((entry) => entry.id === selection2.model)?.label;
   return `${title} \u2014 ${catalogLabel ?? cloudModelDisplayLabel(selection2.model)}`;
 }
-var CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
+var DEFAULT_CURSOR_AGENT_BASE_URL, CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
 var init_remote_agent = __esm({
   "src/shared/remote-agent.ts"() {
     init_reserved_prefixes();
@@ -45770,6 +46434,7 @@ var init_remote_agent = __esm({
     init_unknown_value3();
     init_remote_agent_provider();
     init_remote_agent_provider();
+    DEFAULT_CURSOR_AGENT_BASE_URL = "https://api.cursor.com";
     CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
     REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
     REMOTE_AGENT_MODELS = [
@@ -46682,13 +47347,19 @@ function isAbortTimeoutMessage(message2) {
   return /aborted due to timeout|operation was aborted|aborterror|timeout/i.test(message2);
 }
 function claudeReasonNeedsLogin(reason) {
-  return /claude \/login|user:profile|rejected|access token has expired/i.test(reason);
+  return /claude (?:auth login|\/login)|user:profile|rejected|access token has expired/i.test(
+    reason
+  );
 }
 function createPlanSignInHandler(store2, provider, onRequestClose) {
   if (!store2) return null;
   return () => {
     onRequestClose?.();
-    store2.emit("request_terminal_command", provider === "claude" ? "claude /login" : "codex login");
+    store2.emit(
+      "request_terminal_command",
+      provider === "claude" ? "claude auth login" : "codex login",
+      { executionTarget: "local" }
+    );
   };
 }
 function planSignInProvider(result) {
@@ -46756,7 +47427,7 @@ function renderPlanProvider(host, result, onSignIn) {
       signIn.type = "button";
       signIn.className = "ui-btn ui-btn-primary usage-plan-signin-btn";
       signIn.textContent = signInProvider === "claude" ? "Sign in to Claude" : "Sign in to Codex";
-      signIn.title = `Open a terminal and run ${signInProvider === "claude" ? "claude /login" : "codex login"}`;
+      signIn.title = `Open a terminal and run ${signInProvider === "claude" ? "claude auth login" : "codex login"}`;
       signIn.addEventListener("click", () => {
         onProviderSignIn();
       });
@@ -46948,17 +47619,17 @@ function renderPlanWorthItSection(host, payload, error62, opts) {
   host.append(card);
 }
 function renderModelTable(host, title, rows, emptyText, accounts = []) {
-  const section = document.createElement("div");
-  section.className = "usage-model-group";
+  const section2 = document.createElement("div");
+  section2.className = "usage-model-group";
   const heading = document.createElement("h4");
   heading.textContent = title;
-  section.append(heading);
+  section2.append(heading);
   if (rows.length === 0) {
     const empty = document.createElement("p");
     empty.className = "usage-empty";
     empty.textContent = emptyText;
-    section.append(empty);
-    host.append(section);
+    section2.append(empty);
+    host.append(section2);
     return;
   }
   const table = document.createElement("table");
@@ -47015,8 +47686,67 @@ function renderModelTable(host, title, rows, emptyText, accounts = []) {
     `;
     tbody.append(tr2);
   }
-  section.append(table);
-  host.append(section);
+  section2.append(table);
+  host.append(section2);
+}
+function renderClassifierTable(host, rows, allTime) {
+  const section2 = document.createElement("div");
+  section2.className = "usage-model-group usage-classifier-group";
+  const heading = document.createElement("h4");
+  heading.textContent = "Classifiers";
+  section2.append(heading);
+  if (allTime || !rows || rows.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "usage-empty";
+    empty.textContent = allTime ? "Classifier calls are listed for the day, month and 90-day windows only." : "No classifier usage in this period.";
+    section2.append(empty);
+    host.append(section2);
+    return;
+  }
+  const table = document.createElement("table");
+  table.className = "usage-table usage-classifier-table";
+  const columns = document.createElement("colgroup");
+  for (const className of [
+    "usage-col-model",
+    "usage-col-model",
+    "usage-col-num",
+    "usage-col-num",
+    "usage-col-num"
+  ]) {
+    const col = document.createElement("col");
+    col.className = className;
+    columns.append(col);
+  }
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (const label of ["Classifier", "Model", "Calls", "Input", "Output"]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    headRow.append(th);
+  }
+  head.append(headRow);
+  const body = document.createElement("tbody");
+  for (const row2 of rows) {
+    const tr2 = document.createElement("tr");
+    tr2.dataset["provider"] = row2.provider;
+    const provider = document.createElement("td");
+    provider.textContent = row2.provider;
+    const model = document.createElement("td");
+    const code = document.createElement("code");
+    code.textContent = row2.model;
+    model.append(code);
+    const cells = [row2.calls, row2.inputTokens, row2.outputTokens].map((value) => {
+      const td = document.createElement("td");
+      td.textContent = formatTokenCount(value);
+      return td;
+    });
+    tr2.append(provider, model, ...cells);
+    body.append(tr2);
+  }
+  table.append(columns, head, body);
+  section2.append(table);
+  host.append(section2);
 }
 function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
   host.replaceChildren();
@@ -47058,11 +47788,21 @@ function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
     summary.localModels,
     "No local model usage in this period."
   );
+  renderClassifierTable(host, summary.classifiers, period === "allTime");
 }
 function createUsageSection(api2, store2, onRequestClose) {
+  let pendingSignInProvider = null;
+  const onSignIn = (provider) => {
+    const handler = createPlanSignInHandler(store2, provider, onRequestClose);
+    if (!handler) return void 0;
+    return () => {
+      pendingSignInProvider = provider;
+      handler();
+    };
+  };
   const handleSignIn = {
-    claude: createPlanSignInHandler(store2, "claude", onRequestClose) ?? void 0,
-    codex: createPlanSignInHandler(store2, "codex", onRequestClose) ?? void 0
+    claude: onSignIn("claude"),
+    codex: onSignIn("codex")
   };
   const root = document.createElement("div");
   root.className = "usage-section-root";
@@ -47195,10 +47935,15 @@ function createUsageSection(api2, store2, onRequestClose) {
       renderPlanSection(planEl, null, null, handleSignIn);
     }
     try {
-      const snapshot = await api2.usage.getPlanUsage();
+      const snapshot = await api2.usage.getPlanUsage(pendingSignInProvider !== null);
       if (signal?.aborted) return;
       cachedPlanSnapshot = snapshot;
       renderPlanSection(planEl, snapshot, null, handleSignIn);
+      if (pendingSignInProvider && snapshot.providers.some(
+        (provider) => provider.provider === pendingSignInProvider && provider.status === "ok"
+      )) {
+        pendingSignInProvider = null;
+      }
     } catch (err2) {
       if (signal?.aborted) return;
       const message2 = err2 instanceof Error ? err2.message : "Failed to load subscription plan usage.";
@@ -51107,6 +51852,167 @@ var init_custom_providers_section = __esm({
   }
 });
 
+// src/shared/acp-registry.ts
+var ACP_REGISTRY_URL;
+var init_acp_registry = __esm({
+  "src/shared/acp-registry.ts"() {
+    ACP_REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
+  }
+});
+
+// src/renderer/views/setup/acp-registry-browser.ts
+function createAcpRegistryBrowser(api2, onChoose) {
+  let listing;
+  let visibleCount = 20;
+  let loading = false;
+  const toggle = el(
+    "button",
+    {
+      type: "button",
+      class: "provider-secondary acp-registry-toggle",
+      "aria-expanded": "false"
+    },
+    "Browse agent registry"
+  );
+  const refresh = el("button", { type: "button", class: "provider-secondary" }, "Refresh registry");
+  const search = el("input", {
+    type: "search",
+    placeholder: "Search agents",
+    "aria-label": "Search agent registry"
+  });
+  const status = el("p", { class: "field-hint", role: "status" });
+  const results = el("div", { class: "acp-registry-results" });
+  const more = el(
+    "button",
+    { type: "button", class: "provider-secondary", hidden: true },
+    "Show more"
+  );
+  const content = el(
+    "div",
+    { class: "acp-registry-content", hidden: true },
+    el(
+      "p",
+      { class: "field-hint" },
+      "Community registry entries are unverified by Copse. Browsing does not install or start agents. Review the publisher\u2019s authentication, billing and platform requirements before enabling one."
+    ),
+    el("div", { class: "acp-registry-controls" }, search, refresh),
+    status,
+    results,
+    more,
+    el(
+      "a",
+      { href: ACP_REGISTRY_URL, target: "_blank", rel: "noopener noreferrer" },
+      "Registry source"
+    )
+  );
+  function renderResults() {
+    clear(results);
+    if (!listing) return;
+    const query = search.value.trim().toLowerCase();
+    const matches2 = listing.entries.filter(
+      (entry) => `${entry.title} ${entry.id} ${entry.description} ${entry.packages.join(" ")}`.toLowerCase().includes(query)
+    );
+    for (const entry of matches2.slice(0, visibleCount)) {
+      const choose = el(
+        "button",
+        { type: "button", class: "provider-secondary" },
+        "Review configuration"
+      );
+      choose.addEventListener("click", () => {
+        content.hidden = true;
+        toggle.setAttribute("aria-expanded", "false");
+        toggle.textContent = "Browse agent registry";
+        onChoose(entry);
+      });
+      const row2 = el(
+        "article",
+        { class: "acp-registry-entry", "data-registry-id": entry.id },
+        el(
+          "div",
+          { class: "acp-registry-entry-head" },
+          el("strong", {}, entry.title),
+          el("span", { class: "field-hint" }, `v${entry.version} \xB7 Unverified`)
+        ),
+        el("p", {}, entry.description),
+        el(
+          "p",
+          { class: "field-hint acp-registry-install-status" },
+          entry.installedPath ? `Executable found: ${entry.installedPath}` : entry.command ? `Executable not found on PATH: ${entry.command}` : "Installed status unknown: this entry does not identify a direct executable for this platform."
+        ),
+        ...entry.packages.map(
+          (pkg) => el("div", { class: "acp-registry-package" }, el("code", {}, pkg))
+        ),
+        ...entry.platforms.length ? [el("p", { class: "field-hint" }, `Binary targets: ${entry.platforms.join(", ")}`)] : [],
+        el(
+          "div",
+          { class: "provider-actions" },
+          choose,
+          ...entry.website ? [
+            el(
+              "a",
+              { href: entry.website, target: "_blank", rel: "noopener noreferrer" },
+              "Publisher documentation"
+            )
+          ] : []
+        )
+      );
+      results.append(row2);
+    }
+    if (!matches2.length)
+      results.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          query ? "No agents match your search." : "The registry has no usable entries."
+        )
+      );
+    more.hidden = matches2.length <= visibleCount;
+  }
+  async function load(force = false) {
+    if (loading) return;
+    loading = true;
+    refresh.disabled = true;
+    status.textContent = "Loading agent registry\u2026";
+    try {
+      listing = await api2.acp.browseRegistry(force);
+      status.textContent = `${String(listing.entries.length)} registry entries` + (listing.skipped ? ` \xB7 ${String(listing.skipped)} invalid or duplicate entries skipped` : "") + ". Executable presence does not verify compatibility.";
+      renderResults();
+    } catch (error62) {
+      status.textContent = `Could not load the agent registry. ${error62 instanceof Error ? error62.message : "Try again."}` + (listing ? " Previously loaded entries are still shown." : " Use Refresh registry to retry, or configure a custom agent below.");
+    } finally {
+      loading = false;
+      refresh.disabled = false;
+    }
+  }
+  toggle.addEventListener("click", () => {
+    content.hidden = !content.hidden;
+    toggle.setAttribute("aria-expanded", String(!content.hidden));
+    toggle.textContent = content.hidden ? "Browse agent registry" : "Hide agent registry";
+    if (!content.hidden && !listing) void load();
+  });
+  refresh.addEventListener("click", () => void load(true));
+  search.addEventListener("input", () => {
+    visibleCount = 20;
+    renderResults();
+  });
+  more.addEventListener("click", () => {
+    visibleCount += 20;
+    renderResults();
+  });
+  return el(
+    "section",
+    { class: "acp-registry-browser", "aria-label": "Agent registry" },
+    toggle,
+    content
+  );
+}
+var init_acp_registry_browser = __esm({
+  "src/renderer/views/setup/acp-registry-browser.ts"() {
+    init_acp_registry();
+    init_helpers();
+  }
+});
+
 // src/renderer/views/setup/acp-agents-section.ts
 function retentionNotice(agent) {
   const known = agent ? findAcpCatalogEntry(agent.id) : void 0;
@@ -51177,6 +52083,15 @@ function knownToConfig(known) {
     enabled: true
   };
 }
+function registryToDraft(entry) {
+  return {
+    id: `registry-${entry.id}`.slice(0, 64),
+    title: entry.title,
+    command: entry.installedPath ?? entry.command ?? "",
+    args: [...entry.args],
+    enabled: false
+  };
+}
 function validateDraft(draft, existingIds) {
   if (!ID_RE.test(draft.id)) return "Id must be a lowercase slug (a-z, 0-9, -).";
   if (existingIds.includes(draft.id)) return `An agent with id "${draft.id}" already exists.`;
@@ -51222,6 +52137,11 @@ function createAcpAgentsSection(api2, opts = {}) {
   let agents = [];
   let detectedById = /* @__PURE__ */ new Map();
   const knownById = new Map(KNOWN_ACP_AGENTS.map((k2) => [k2.id, k2]));
+  let registryDraft;
+  const registryBrowser = createAcpRegistryBrowser(api2, (entry) => {
+    registryDraft = registryToDraft(entry);
+    renderForm();
+  });
   let selected = "";
   const chipRow = el("div", { class: "provider-chips", role: "tablist" });
   const formHost = el("div", { class: "provider-form-host" });
@@ -51271,7 +52191,7 @@ function createAcpAgentsSection(api2, opts = {}) {
       scanStatus.className = "key-status err";
     }
     renderChips();
-    if (selected === "other" || !agents.some((a3) => a3.id === selected)) renderForm();
+    if (selected !== "other" && !agents.some((a3) => a3.id === selected)) renderForm();
   }
   function chipKeys() {
     const ordered = KNOWN_ACP_AGENTS.map((k2) => k2.id);
@@ -51362,14 +52282,16 @@ function createAcpAgentsSection(api2, opts = {}) {
       }
       modeSelect.value = selected2;
     };
-    if (options.initial) {
-      idInput.value = options.initial.id;
-      titleInput.value = options.initial.title;
-      commandInput.value = options.initial.command;
-      argsArea.value = formatArgsText(options.initial.args);
-      envArea.value = formatEnvText(options.initial.env);
-      enabledBox.checked = options.initial.enabled;
+    const values = options.initial ?? options.draft;
+    if (values) {
+      idInput.value = values.id;
+      titleInput.value = values.title;
+      commandInput.value = values.command;
+      argsArea.value = formatArgsText(values.args);
+      envArea.value = formatEnvText(values.env);
+      enabledBox.checked = values.enabled;
     }
+    if (options.draft) enabledBox.disabled = true;
     let detectedModels = options.initial?.availableModels ?? [];
     let detectedModelsAt = options.initial?.modelsProbedAt;
     const initialModel = options.initial?.model ?? "";
@@ -51401,9 +52323,13 @@ function createAcpAgentsSection(api2, opts = {}) {
       loadOnMount: false
     });
     void modelPicker.refresh(initialModel);
-    detectModels.disabled = !isEdit;
+    const canDetectModels = options.initial?.enabled === true;
+    detectModels.disabled = !canDetectModels;
     if (!isEdit) modelStatus.textContent = "Save the agent first, then detect its models.";
+    else if (!canDetectModels)
+      modelStatus.textContent = "Enable and save the agent first, then detect its models.";
     detectModels.addEventListener("click", () => {
+      if (!canDetectModels) return;
       const id = idInput.value.trim();
       detectModels.disabled = true;
       setInlineStatus(modelStatus, "pending", "Detecting\u2026 (starting the agent)");
@@ -51438,10 +52364,10 @@ function createAcpAgentsSection(api2, opts = {}) {
       }).catch((err2) => {
         setInlineStatus(modelStatus, "error", err2 instanceof Error ? err2.message : String(err2));
       }).finally(() => {
-        detectModels.disabled = false;
+        detectModels.disabled = !canDetectModels;
       });
     });
-    let idEdited = isEdit;
+    let idEdited = isEdit || Boolean(options.draft);
     idInput.addEventListener("input", () => {
       idEdited = true;
     });
@@ -51474,7 +52400,7 @@ function createAcpAgentsSection(api2, opts = {}) {
         ...detectedModels.length && detectedModelsAt !== void 0 ? { modelsProbedAt: detectedModelsAt } : {},
         ...permissionMode ? { permissionMode } : {},
         ...detectedModes.length ? { availablePermissionModes: detectedModes } : {},
-        enabled: enabledBox.checked
+        enabled: options.draft ? false : enabledBox.checked
       });
     });
     const fields = el(
@@ -51498,7 +52424,14 @@ function createAcpAgentsSection(api2, opts = {}) {
           "How much the agent asks before it acts. Leave this on Agent default unless you want to loosen or tighten its own prompts."
         )
       ),
-      el("label", { class: "checkbox-label" }, enabledBox, " Enabled (shown in the model picker)")
+      el("label", { class: "checkbox-label" }, enabledBox, " Enabled (shown in the model picker)"),
+      ...options.initial?.id.startsWith("registry-") ? [
+        el(
+          "p",
+          { class: "field-hint" },
+          "Unverified custom agent. Enabling authorizes Copse to start this command, including model detection. Review its arguments and publisher requirements first."
+        )
+      ] : []
     );
     const actions = el("div", { class: "provider-actions provider-form-footer" }, submit, status);
     return el("div", { class: "acp-agent-form" }, fields, actions);
@@ -51577,14 +52510,24 @@ function createAcpAgentsSection(api2, opts = {}) {
       "div",
       { class: "provider-form" },
       el("h4", { class: "provider-form-title" }, "Add a custom agent"),
+      registryBrowser,
       el(
         "p",
         { class: "field-hint" },
         "Add any agent program installed on this machine that Copse can drive. Give it a name, the command that launches it, and the arguments it needs to start in agent mode."
       ),
+      ...registryDraft ? [
+        el(
+          "p",
+          { class: "field-hint acp-registry-draft-note" },
+          "Unverified registry draft. Review the command and arguments; install and authenticate separately. Adding leaves it disabled. Selecting Enabled authorizes Copse to start this command, including model detection. Custom agents have no Copse sandbox profile unless you configure one. No registry permissions are imported."
+        )
+      ] : [],
       agentForm({
+        ...registryDraft ? { draft: registryDraft } : {},
         submitLabel: "Add agent",
         onSubmit: (draft) => {
+          registryDraft = void 0;
           selected = draft.id;
           void persist(upsertAgent(agents, draft));
         }
@@ -51680,6 +52623,7 @@ var init_acp_agents_section = __esm({
     init_inline_markdown();
     init_inline_status();
     init_model_picker();
+    init_acp_registry_browser();
     AGENT_DATA_POLICY_URLS = {
       "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
       "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
@@ -52076,8 +53020,9 @@ function createProvidersPanel(api2, opts = {}) {
     tierBlock.dataset["testid"] = "openai-service-tier-block";
     return tierBlock;
   }
-  function loadDeviceInfoOnce() {
-    if (deviceAutoSetup && providerPicked && !autoSetupRun) {
+  function loadDeviceInfoOnce(agentId) {
+    const preset = KNOWN_ACP_AGENTS.some((agent) => agent.id === agentId && agent.preset);
+    if (deviceAutoSetup && providerPicked && preset && !autoSetupRun) {
       autoSetupRun = true;
       deviceScanned = true;
       void agentsPanel.refresh();
@@ -52181,7 +53126,7 @@ function createProvidersPanel(api2, opts = {}) {
     }
     agentsPanel.select(selectedAgentId);
     children.push(agentsPanel.root);
-    loadDeviceInfoOnce();
+    loadDeviceInfoOnce(selectedAgentId);
     return block("On this machine", ...children);
   }
   function addForm() {
@@ -52385,6 +53330,7 @@ var init_providers_section = __esm({
     init_helpers();
     init_custom_providers_section();
     init_acp_agents_section();
+    init_acp_known_agents();
     init_service_tier();
     init_ui();
     init_chatgpt_plan_section();
@@ -52646,10 +53592,10 @@ var init_context_window_advice = __esm({
 });
 
 // src/renderer/views/setup/lm-studio-section.ts
-function formatBytes(bytes) {
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`;
-  return `${String(bytes)} B`;
+function formatBytes(bytes2) {
+  if (bytes2 >= 1e9) return `${(bytes2 / 1e9).toFixed(1)} GB`;
+  if (bytes2 >= 1e6) return `${(bytes2 / 1e6).toFixed(0)} MB`;
+  return `${String(bytes2)} B`;
 }
 function formatDownloadEta(gb) {
   if (gb >= 20) return "30\u201360 minutes on a fast connection";
@@ -53170,7 +54116,7 @@ function createProvidersSection(overlay, api2) {
       activeSignal = signal;
       await Promise.all([
         ...[cursorKeySection, claudeAgentKeySection].map(
-          (section) => section.refreshKeyStatus(signal)
+          (section2) => section2.refreshKeyStatus(signal)
         ),
         envKeyDetectSection.refresh(signal),
         providersPanel.refresh(snapshot, signal)
@@ -53190,12 +54136,12 @@ function createProvidersSection(overlay, api2) {
       };
     },
     markDirty(target) {
-      for (const section of [...keySections, providersPanel, lmStudioSection])
-        if (section.root.contains(target)) dirty.add(section.root);
+      for (const section2 of [...keySections, providersPanel, lmStudioSection])
+        if (section2.root.contains(target)) dirty.add(section2.root);
     },
     async saveKeys() {
-      for (const section of keySections)
-        if (dirty.has(section.root) && !await section.saveKeys()) return false;
+      for (const section2 of keySections)
+        if (dirty.has(section2.root) && !await section2.saveKeys()) return false;
       if (dirty.has(providersPanel.root) && !await providersPanel.saveKeys()) return false;
       if (dirty.has(lmStudioSection.root)) await lmStudioSection.saveApiKey();
       return true;
@@ -53203,7 +54149,7 @@ function createProvidersSection(overlay, api2) {
     reset() {
       activeSignal = void 0;
       dirty.clear();
-      for (const section of keySections) section.reset();
+      for (const section2 of keySections) section2.reset();
       providersPanel.reset();
       for (const input2 of lmStudioSection.root.querySelectorAll(
         'input[type="password"]'
@@ -53802,16 +54748,18 @@ function fileExtension(name) {
   const dot = name.lastIndexOf(".");
   return dot < 0 ? "" : name.slice(dot).toLowerCase();
 }
-function formatByteSize(bytes) {
-  if (bytes < 1024) return `${String(bytes)} B`;
+function formatByteSize(bytes2) {
+  if (!Number.isFinite(bytes2) || bytes2 < 0) return "unknown size";
+  if (bytes2 < 1024) return `${String(Math.round(bytes2))} B`;
   const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
+  const render = (value2) => value2 < 9.95 ? value2.toFixed(1) : Math.round(value2).toString();
+  let value = bytes2 / 1024;
   let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
+  while (Number(render(value)) >= 1024 && unit < units.length - 1) {
     value /= 1024;
     unit += 1;
   }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value).toString()} ${units[unit] ?? "GB"}`;
+  return `${render(value)} ${units[unit] ?? "GB"}`;
 }
 var init_file_bytes = __esm({
   "src/shared/file-bytes.ts"() {
@@ -54359,8 +55307,8 @@ function createSourcesSection({
       session.setStatus(errorMessage(error62));
     });
   }
-  function applyWorkspaceTrusted(statuses) {
-    onTrusted(statuses);
+  function applyWorkspaceTrusted(statuses2) {
+    onTrusted(statuses2);
     void refreshSources();
   }
   async function trustWorkspaceFromBadge(button) {
@@ -54381,7 +55329,7 @@ function createSourcesSection({
     const statusEl = qsRequired(root, "#sources-reload-status");
     statusEl.textContent = "Trusting workspace\u2026";
     const pending = api2.workspace.setTrusted(true).then(
-      (statuses) => ({ statuses }),
+      (statuses2) => ({ statuses: statuses2 }),
       (error62) => ({ error: error62 })
     );
     await refreshSources();
@@ -54502,11 +55450,46 @@ var init_sources_section = __esm({
   }
 });
 
+// src/shared/types/storage-cleanup.ts
+function emptyContainerStorage(error62 = null) {
+  return {
+    available: false,
+    error: error62,
+    busy: false,
+    totalBytes: 0,
+    snapshotsBytes: 0,
+    blobsBytes: 0,
+    containersBytes: 0,
+    volumesBytes: 0,
+    otherBytes: 0,
+    snapshotCount: 0,
+    unmatchedSnapshots: 0,
+    images: [],
+    builderRunning: false,
+    builderDiskBytes: 0,
+    builderCacheBytes: null,
+    builderReclaimableBytes: null
+  };
+}
+var storageAreaSchema, storageRetentionSchema, CONTAINER_STORAGE_ACTIONS, containerStorageActionSchema;
+var init_storage_cleanup = __esm({
+  "src/shared/types/storage-cleanup.ts"() {
+    init_zod();
+    storageAreaSchema = external_exports.enum(["runs", "builds"]);
+    storageRetentionSchema = external_exports.object({
+      enabled: external_exports.boolean(),
+      days: external_exports.number().int().min(1).max(365)
+    });
+    CONTAINER_STORAGE_ACTIONS = ["worker-images", "apple-images", "apple-builder"];
+    containerStorageActionSchema = external_exports.enum(CONTAINER_STORAGE_ACTIONS);
+  }
+});
+
 // src/renderer/views/storage-maintenance-panel.ts
 function createStorageMaintenancePanel(api2) {
-  const element = el("fieldset", { id: "storage-maintenance" });
+  const element = el("div", { id: "storage-maintenance", class: "settings-mount" });
   element.innerHTML = `
-    <legend>Saved runs and build data</legend>
+    <fieldset id="storage-saved-data"><legend>Saved runs and build data</legend>
     <p class="settings-fieldset-desc">Across all projects. Clean up completed container runs or temporary Apple build files. Chats, attachments, source files and shared dependencies are kept.</p>
     <div class="settings-action-row"><span>Saved container runs</span><span id="storage-runs-size">Checking\u2026</span><button type="button" class="ui-btn ui-btn-secondary" id="storage-runs-clean">Clean up\u2026</button></div>
     <p class="field-hint">Removes repository snapshots, outputs and saved state. Incomplete runs and runs with teardown errors are kept.</p>
@@ -54514,7 +55497,18 @@ function createStorageMaintenancePanel(api2) {
     <p class="field-hint">Removes Apple build outputs and package caches. They are recreated on the next build. Active runs and builds are kept.</p>
     <label class="checkbox-label"><input type="checkbox" id="storage-expiry-enabled"> Automatically clean up unused data</label>
     <label class="storage-project-field"><span>Keep unused data for</span><select id="storage-expiry-days" aria-label="Storage retention"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">365 days</option></select></label>
-    <p class="field-hint">Checked when Copse starts and once a day. Older saved run outputs will no longer be available for review or continuation.</p>
+    <p class="field-hint">Checked when Copse starts and once a day. Older saved run outputs will no longer be available for review or continuation. Old unused Copse worker images are also removed; the current local worker is kept. Broader shared cache cleanup requires confirmation; Apple garbage collection also removes orphaned snapshots and blobs when deleting a Copse image.</p>
+    </fieldset>
+    <fieldset id="storage-containers">
+      <legend>Apple container storage</legend>
+      <p class="field-hint">Shared across Copse profiles and other Apple container applications on this Mac.</p>
+      <p id="storage-containers-status" class="field-hint" role="status"></p>
+      <dl id="storage-container-breakdown"></dl>
+      <p class="field-hint">Unmatched snapshots may include Apple infrastructure images. Apple decides which cached files are unused during cleanup. Allocated disk estimates include filesystem overhead and may count APFS shared blocks more than once. Removing files inside a sparse VM disk may not immediately shrink it.</p>
+      <div class="settings-action-row"><button type="button" class="ui-btn ui-btn-secondary" id="storage-worker-images-clean">Clean unused Copse images\u2026</button><button type="button" class="ui-btn ui-btn-secondary" id="storage-apple-images-clean">Clean shared image cache\u2026</button><button type="button" class="ui-btn ui-btn-secondary" id="storage-apple-builder-clean">Clean shared builder cache\u2026</button></div>
+      <p class="field-hint">The local worker image is kept. Cleanup is paused during Copse runs and builds, and requires other containers to be removed. Shared caches can be recreated by future builds.</p>
+      <details><summary>Cached images</summary><div id="storage-container-images"></div></details>
+    </fieldset>
     <p id="storage-maintenance-status" class="field-hint" role="status" aria-live="polite"></p>`;
   const status = qsRequired(element, "#storage-maintenance-status");
   const enabled = qsRequired(element, "#storage-expiry-enabled");
@@ -54529,6 +55523,52 @@ function createStorageMaintenancePanel(api2) {
       const summary = state?.areas.find((entry) => entry.area === area);
       qsRequired(element, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
     }
+    for (const action of CONTAINER_STORAGE_ACTIONS) {
+      const container = state?.containers;
+      qsRequired(element, `#storage-${action}-clean`).disabled = working || !container?.available || container.busy || action === "worker-images" && !container.images.some((image) => image.eligible) || action === "apple-builder" && (!container.builderRunning || container.builderCacheBytes === null);
+    }
+  }
+  function renderContainers() {
+    const container = state?.containers;
+    if (!container) return;
+    qsRequired(element, "#storage-containers-status").textContent = container.error ? `Inventory unavailable: ${container.error}` : !container.available ? "Apple container is not available on this platform." : container.busy ? "Containers or builds are in use. Cleanup is paused." : "Apple container storage is ready.";
+    const breakdown = qsRequired(element, "#storage-container-breakdown");
+    breakdown.replaceChildren();
+    const rows = [
+      ["Total allocated", container.totalBytes],
+      [
+        `Unpacked snapshots (${String(container.snapshotCount)}; ${String(container.unmatchedSnapshots)} not matched to listed images)`,
+        container.snapshotsBytes
+      ],
+      ["Compressed image content", container.blobsBytes],
+      ["Builder VM disk", container.builderDiskBytes],
+      [
+        "Other container disks",
+        Math.max(0, container.containersBytes - container.builderDiskBytes)
+      ],
+      ["Workspace volumes", container.volumesBytes],
+      ["Kernels and other supporting files", container.otherBytes]
+    ];
+    for (const [label, bytes2] of rows)
+      breakdown.append(el("dt", {}, label), el("dd", {}, formatByteSize(bytes2)));
+    for (const [label, bytes2] of [
+      ["BuildKit cache (inside the builder disk)", container.builderCacheBytes],
+      ["Unused BuildKit cache", container.builderReclaimableBytes]
+    ])
+      breakdown.append(
+        el("dt", {}, label),
+        el("dd", {}, bytes2 === null ? "Not reported" : formatByteSize(bytes2))
+      );
+    const images = qsRequired(element, "#storage-container-images");
+    images.replaceChildren();
+    for (const image of container.images)
+      images.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          `${image.name}: ${formatByteSize(image.bytes)} compressed \xB7 ${formatByteSize(image.snapshotBytes)} snapshot${image.eligible ? " \xB7 extra Copse image" : ""}`
+        )
+      );
   }
   async function refresh() {
     const token = ++generation;
@@ -54537,6 +55577,7 @@ function createStorageMaintenancePanel(api2) {
       const next = await api2.storage.maintenance();
       if (token !== generation) return;
       state = next;
+      renderContainers();
       enabled.checked = next.retention.enabled;
       if (![...days.options].some((option) => Number(option.value) === next.retention.days)) {
         days.add(new Option(`${String(next.retention.days)} days`, String(next.retention.days)));
@@ -54562,6 +55603,34 @@ function createStorageMaintenancePanel(api2) {
     } catch (error62) {
       status.textContent = errorMessage(error62);
       await refresh();
+    } finally {
+      working = false;
+      controls();
+    }
+  }
+  async function cleanContainers(action) {
+    const detail = {
+      "worker-images": "Remove unused extra Copse worker images. The local worker is kept. Apple also collects orphaned snapshots and image blobs from its shared cache.",
+      "apple-images": "Remove dangling images, orphaned snapshots and image blobs from the shared Apple container cache. This can affect other applications and require images to be downloaded again. Tagged worker images are kept.",
+      "apple-builder": "Remove unused build cache from the shared Apple builder. Other applications may need to rebuild cached layers. The builder remains running and its sparse disk may retain allocated space."
+    };
+    if (!await showConfirmDialog({
+      message: "Clean Apple container storage?",
+      detail: detail[action],
+      confirmLabel: "Clean up",
+      danger: true
+    }))
+      return;
+    working = true;
+    generation++;
+    controls();
+    status.textContent = "Cleaning up\u2026";
+    try {
+      const result = await api2.storage.containerCleanup(action);
+      await refresh();
+      status.textContent = result.skipped && result.removed === 0 ? "Cleanup paused: storage is in use or images are protected." : `Apple container cleanup finished. Reported disk allocation decreased by ${formatByteSize(result.bytes)}.`;
+    } catch (error62) {
+      status.textContent = errorMessage(error62);
     } finally {
       working = false;
       controls();
@@ -54600,15 +55669,98 @@ function createStorageMaintenancePanel(api2) {
     qsRequired(element, `#storage-${area}-clean`).addEventListener("click", () => {
       void clean(area);
     });
+  for (const action of CONTAINER_STORAGE_ACTIONS)
+    qsRequired(element, `#storage-${action}-clean`).addEventListener("click", () => {
+      void cleanContainers(action);
+    });
   controls();
   return { element, refresh };
 }
 var init_storage_maintenance_panel = __esm({
   "src/renderer/views/storage-maintenance-panel.ts"() {
+    init_storage_cleanup();
     init_file_bytes();
     init_errors4();
     init_helpers();
     init_confirm_dialog();
+  }
+});
+
+// packages/thread-store/src/side-chat.ts
+function excerpt(message2) {
+  const line = message2.content.trim().split("\n", 1)[0] ?? "";
+  return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
+}
+function buildSideChatThread(parent, options) {
+  if (parent.sideChat !== void 0) return null;
+  const anchor2 = parent.messages.find((message2) => message2.id === options.anchorMessageId);
+  if (!anchor2) return null;
+  const model = options.model ?? parent.model;
+  const now = Date.now();
+  return {
+    id: globalThis.crypto.randomUUID(),
+    title: options.title ?? (excerpt(anchor2) || "Side chat"),
+    status: "idle",
+    messages: [],
+    // A fresh side chat has nothing to scan: mark both caches as scanned and empty so
+    // the index never queues it for a transcript backfill.
+    prRefs: [],
+    links: [],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    ...model !== void 0 ? { model } : {},
+    sideChat: { parentThreadId: parent.id, anchorMessageId: anchor2.id },
+    createdAt: now,
+    updatedAt: now
+  };
+}
+function toSideChatRow(thread) {
+  const link = thread.sideChat;
+  if (link === void 0) return null;
+  return {
+    id: thread.id,
+    title: thread.title,
+    ...thread.model !== void 0 ? { model: thread.model } : {},
+    anchorMessageId: link.anchorMessageId,
+    archived: thread.archivedAt != null,
+    unread: thread.unreadAt !== void 0,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt
+  };
+}
+function sideChatsOf(threads, parentId, includeArchived = false) {
+  const rows = [];
+  for (const thread of threads) {
+    if (thread.sideChat?.parentThreadId !== parentId) continue;
+    const row2 = toSideChatRow(thread);
+    if (row2 && (includeArchived || !row2.archived)) rows.push(row2);
+  }
+  return rows.sort((a3, b4) => a3.createdAt - b4.createdAt || a3.id.localeCompare(b4.id));
+}
+function withoutSideChats(threads) {
+  const ids = new Set(threads.map((thread) => thread.id));
+  return threads.filter(
+    (thread) => thread.sideChat === void 0 || !ids.has(thread.sideChat.parentThreadId)
+  );
+}
+function unreadSideChatParents(threads) {
+  const parents = /* @__PURE__ */ new Set();
+  for (const thread of threads) {
+    if (thread.sideChat && thread.unreadAt !== void 0 && thread.archivedAt == null)
+      parents.add(thread.sideChat.parentThreadId);
+  }
+  return parents;
+}
+var MAX_TITLE_LENGTH;
+var init_side_chat = __esm({
+  "packages/thread-store/src/side-chat.ts"() {
+    MAX_TITLE_LENGTH = 80;
+  }
+});
+
+// src/shared/threads/side-chat.ts
+var init_side_chat2 = __esm({
+  "src/shared/threads/side-chat.ts"() {
+    init_side_chat();
   }
 });
 
@@ -54838,18 +55990,35 @@ var init_thread_proposal = __esm({
   }
 });
 
+// src/shared/tools/copse-tool-call.ts
+function matchesCopseToolName(name, tool) {
+  return name === tool || new RegExp(`^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+${tool}(?![a-z0-9_])`, "i").test(name);
+}
+function isCopseToolCall(call, tool) {
+  return [call.name, call.programmaticName].some(
+    (name) => typeof name === "string" && matchesCopseToolName(name, tool)
+  );
+}
+var init_copse_tool_call = __esm({
+  "src/shared/tools/copse-tool-call.ts"() {
+  }
+});
+
 // src/shared/threads/thread-proposal.ts
+function isThreadProposalCall(call) {
+  return isCopseToolCall(call, THREAD_PROPOSAL_TOOL);
+}
 var init_thread_proposal2 = __esm({
   "src/shared/threads/thread-proposal.ts"() {
+    init_thread_proposal();
+    init_copse_tool_call();
     init_thread_proposal();
   }
 });
 
 // src/shared/threads/reviewer-input.ts
 function isReviewerInputCall(call) {
-  return [call.name, call.programmaticName].some(
-    (name) => name === REVIEWER_INPUT_TOOL || typeof name === "string" && /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+request_review_input(?![a-z0-9_])/i.test(name)
-  );
+  return isCopseToolCall(call, REVIEWER_INPUT_TOOL);
 }
 function parseReviewerInputCall(call, messageId) {
   if (!isReviewerInputCall(call) || call.status !== "done" || !isRecord(call.args)) return null;
@@ -54897,6 +56066,7 @@ var REVIEWER_INPUT_TOOL;
 var init_reviewer_input = __esm({
   "src/shared/threads/reviewer-input.ts"() {
     init_unknown_value3();
+    init_copse_tool_call();
     REVIEWER_INPUT_TOOL = "request_review_input";
   }
 });
@@ -55055,9 +56225,9 @@ function collectSubagentUsage(toolCalls, totals) {
 }
 function subagentRunLabel(session) {
   const kind = session.kind === "custom" && session.agentName ? session.agentName : SUBAGENT_KIND_LABEL[session.kind];
-  const firstLine = session.prompt.trim().split("\n")[0] ?? "";
-  if (!firstLine) return kind;
-  const prompt = firstLine.length > RUN_PROMPT_MAX_CHARS ? `${firstLine.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine;
+  const firstLine2 = session.prompt.trim().split("\n")[0] ?? "";
+  if (!firstLine2) return kind;
+  const prompt = firstLine2.length > RUN_PROMPT_MAX_CHARS ? `${firstLine2.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine2;
   return `${kind} \xB7 ${prompt}`;
 }
 function collectSubagentRuns(toolCalls, runs) {
@@ -55219,6 +56389,7 @@ function getActiveThread(store2) {
 }
 function isBlankThread(thread) {
   if (thread.messagesLoaded === false) return false;
+  if (thread.sideChat !== void 0) return false;
   return thread.messages.length === 0 && thread.status === "idle";
 }
 function hasUnsubmittedPrompt(thread) {
@@ -55361,37 +56532,39 @@ function markThreadUnread(store2, threadId, at3 = Date.now()) {
   store2.emit("threads_changed");
 }
 function markThreadRead(store2, threadId) {
-  const { threads } = store2.getState();
-  if (!threads.some((thread) => thread.id === threadId && thread.unreadAt !== void 0)) return;
-  store2.setState({
-    threads: threads.map((thread) => {
-      if (thread.id !== threadId || thread.unreadAt === void 0) return thread;
-      const { unreadAt: _read, ...readThread } = thread;
-      return readThread;
-    })
+  if (getThreadById(store2, threadId)?.unreadAt === void 0) return;
+  patchThreadAnywhere(store2, threadId, (thread) => {
+    const { unreadAt: _read, ...readThread } = thread;
+    return readThread;
   });
   store2.emit("threads_changed");
 }
 function deleteThread(store2, id) {
   const { threads, activeThreadId } = store2.getState();
-  const remaining = threads.filter((t2) => t2.id !== id);
+  const doomed = /* @__PURE__ */ new Set([id]);
+  for (const t2 of threads) if (t2.sideChat?.parentThreadId === id) doomed.add(t2.id);
+  const remaining = threads.filter((t2) => !doomed.has(t2.id));
   if (remaining.length === 0) {
     createThread(store2);
     store2.setState({
-      threads: store2.getState().threads.filter((t2) => t2.id !== id)
+      threads: store2.getState().threads.filter((t2) => !doomed.has(t2.id))
     });
     store2.emit("threads_changed");
     return;
   }
+  const activeDoomed = activeThreadId !== null && doomed.has(activeThreadId);
   const index = threads.findIndex((t2) => t2.id === id);
-  const newActive = activeThreadId === id ? remaining[Math.min(index, remaining.length - 1)]?.id ?? null : activeThreadId;
+  const parentId = threads.find((t2) => t2.id === id)?.sideChat?.parentThreadId;
+  const listed = remaining.filter((t2) => t2.sideChat === void 0);
+  const pool = listed.length > 0 ? listed : remaining;
+  const newActive = !activeDoomed ? activeThreadId : parentId !== void 0 && remaining.some((t2) => t2.id === parentId) ? parentId : pool[Math.min(index, pool.length - 1)]?.id ?? null;
   store2.setState({
     threads: remaining,
     activeThreadId: newActive,
-    ...activeThreadId === id ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
+    ...activeDoomed ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
   });
   store2.emit("threads_changed");
-  if (activeThreadId === id) store2.emit("panel_changed");
+  if (activeDoomed) store2.emit("panel_changed");
 }
 function archiveThread(store2, id, persisted) {
   const { threads, activeThreadId } = store2.getState();
@@ -55399,7 +56572,9 @@ function archiveThread(store2, id, persisted) {
   if (!target || isThreadArchived(target)) return;
   const now = persisted?.archivedAt ?? Date.now();
   const updated = threads.map((t2) => {
-    if (t2.id !== id) return t2;
+    if (t2.id !== id) {
+      return t2.sideChat?.parentThreadId === id && !isThreadArchived(t2) && t2.status !== "running" ? { ...t2, archivedAt: now, updatedAt: now } : t2;
+    }
     const archived = { ...t2, archivedAt: now, updatedAt: now };
     if (persisted) {
       if (persisted.worktree) {
@@ -55409,21 +56584,36 @@ function archiveThread(store2, id, persisted) {
     }
     return archived;
   });
-  const visible = updated.filter((t2) => !isThreadArchived(t2));
+  const visible = updated.filter((t2) => !isThreadArchived(t2) && t2.sideChat === void 0);
   if (visible.length === 0) {
     store2.setState({ threads: updated, activeThreadId: null });
     createThread(store2);
     return;
   }
+  const activeArchived = activeThreadId !== null && updated.some((t2) => t2.id === activeThreadId && isThreadArchived(t2));
   const index = threads.findIndex((t2) => t2.id === id);
-  const newActive = activeThreadId === id ? visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id : activeThreadId;
+  const parentId = target.sideChat?.parentThreadId;
+  const newActive = !activeArchived ? activeThreadId : parentId !== void 0 && visible.some((t2) => t2.id === parentId) ? parentId : visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id;
   store2.setState({
     threads: updated,
     activeThreadId: newActive,
-    ...activeThreadId === id ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
+    ...activeArchived ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
   });
   store2.emit("threads_changed");
-  if (activeThreadId === id) store2.emit("panel_changed");
+  if (activeArchived) store2.emit("panel_changed");
+}
+function restoreThread(store2, id) {
+  const { threads } = store2.getState();
+  const target = threads.find((t2) => t2.id === id);
+  if (!target || !isThreadArchived(target)) return;
+  store2.setState({
+    threads: threads.map((t2) => {
+      if (t2.id !== id) return t2;
+      const { archivedAt: _archivedAt, ...restored } = t2;
+      return { ...restored, updatedAt: Date.now() };
+    })
+  });
+  store2.emit("threads_changed");
 }
 function recordContextTrim(store2, threadId, record2) {
   patchThreadAnywhere(store2, threadId, (t2) => {
@@ -55494,13 +56684,28 @@ function setThreadDraftPrompt(store2, threadId, draftPrompt) {
   }
   store2.emit("thread_draft_changed", threadId);
 }
-function markAutomationStartFailed(store2, threadId) {
+function markAutomationStartFailed(store2, threadId, failure2) {
   patchThreadAnywhere(
     store2,
     threadId,
     (t2) => t2.automation ? {
       ...t2,
-      automation: { ...t2.automation, startFailedAt: Date.now() },
+      automation: {
+        ...t2.automation,
+        startFailedAt: Date.now(),
+        ...failure2 ? { failure: { ...failure2, at: Date.now() } } : {}
+      },
+      updatedAt: Date.now()
+    } : t2
+  );
+}
+function markAutomationRunFailed(store2, threadId, failure2) {
+  patchThreadAnywhere(
+    store2,
+    threadId,
+    (t2) => t2.automation ? {
+      ...t2,
+      automation: { ...t2.automation, failure: { ...failure2, at: Date.now() } },
       updatedAt: Date.now()
     } : t2
   );
@@ -55699,12 +56904,10 @@ function updateContextSnapshot(store2, threadId, snapshot) {
   store2.emit("context_updated", threadId);
 }
 function clearContextSnapshot(store2, threadId) {
-  const threads = store2.getState().threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     const { contextSnapshot: _removed, ...rest } = t2;
     return rest;
   });
-  store2.setState({ threads });
   store2.emit("context_updated", threadId);
 }
 function setThreadTodos(store2, threadId, todos) {
@@ -55724,17 +56927,13 @@ function setMessageReview(store2, threadId, messageId, review) {
   store2.emit("review_changed", threadId, messageId);
 }
 function setMessageTurnOutcome(store2, threadId, messageId, turnOutcome) {
-  const threads = store2.getState().threads.map((thread) => {
-    if (thread.id !== threadId) return thread;
-    return {
-      ...thread,
-      messages: thread.messages.map(
-        (message2) => message2.id === messageId ? { ...message2, turnOutcome } : message2
-      ),
-      updatedAt: Date.now()
-    };
-  });
-  store2.setState({ threads });
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    messages: thread.messages.map(
+      (message2) => message2.id === messageId ? { ...message2, turnOutcome } : message2
+    ),
+    updatedAt: Date.now()
+  }));
   store2.emit("threads_changed");
 }
 function setThreadComparison(store2, threadId, comparison) {
@@ -55804,16 +57003,13 @@ function setReviewFindingDismissed(store2, threadId, findingId, dismissed, messa
   store2.emit("review_report_changed", threadId, messageId);
 }
 function setQueuePaused(store2, threadId, paused) {
-  const { threads } = store2.getState();
-  const thread = threads.find((t2) => t2.id === threadId);
+  const thread = getThreadById(store2, threadId);
   if (!thread || Boolean(thread.queuePaused) === paused) return;
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     if (paused) return { ...t2, queuePaused: true, updatedAt: Date.now() };
     const { queuePaused: _removed, ...rest } = t2;
     return { ...rest, updatedAt: Date.now() };
   });
-  store2.setState({ threads: updated });
   store2.emit("threads_changed");
 }
 function setThreadStatus(store2, threadId, status) {
@@ -56041,9 +57237,12 @@ function markNavigationRestored(restored) {
   navigationRestored = true;
   lastNavigation = restored;
 }
+function holdNavigation(projectId) {
+  navigationHeldFor = projectId;
+}
 function serializedNavigation(api2, navigation) {
   if (!ownsNavigation || !navigationRestored) return Promise.resolve();
-  if (lastNavigation !== null && lastNavigation.activeProjectId === navigation.activeProjectId && lastNavigation.activeThreadId === navigation.activeThreadId) {
+  if (navigationHeldFor !== null && navigation.activeProjectId !== navigationHeldFor || lastNavigation !== null && lastNavigation.activeProjectId === navigation.activeProjectId && lastNavigation.activeThreadId === navigation.activeThreadId) {
     return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
   }
   lastNavigation = navigation;
@@ -56057,9 +57256,16 @@ function metaSig(meta3) {
   return JSON.stringify(meta3);
 }
 function metaPatch(prev, next) {
-  const patch = { ...next };
-  for (const key of Object.keys(prev)) {
-    if (!Object.hasOwn(next, key)) patch[key] = void 0;
+  const before = { ...prev };
+  const after = { ...next };
+  const patch = {};
+  for (const key of Object.keys(after)) {
+    if (!Object.hasOwn(before, key) || JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+      patch[key] = after[key];
+    }
+  }
+  for (const key of Object.keys(before)) {
+    if (!Object.hasOwn(after, key)) patch[key] = void 0;
   }
   return patch;
 }
@@ -56341,7 +57547,7 @@ function attachAutosave(store2, api2) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -56354,6 +57560,7 @@ var init_persistence = __esm({
     ownsNavigation = true;
     navigationRestored = true;
     lastNavigation = null;
+    navigationHeldFor = null;
     threadWriteKey = (projectId, threadId) => `thread:${projectId}:${threadId}`;
     persistedMeta = /* @__PURE__ */ new Map();
     AUTOSAVE_DEBOUNCE_MS = 250;
@@ -56455,6 +57662,12 @@ var init_review_reports = __esm({
   }
 });
 
+// src/shared/line-endings.ts
+var init_line_endings = __esm({
+  "src/shared/line-endings.ts"() {
+  }
+});
+
 // src/shared/patch/apply-patch.ts
 function normalizePatchPath(raw) {
   return raw.trim().replace(/^(?:\.\/)+/, "");
@@ -56502,6 +57715,7 @@ function summarizePatch(patchText) {
 var ADD, DELETE, UPDATE, MOVE;
 var init_apply_patch = __esm({
   "src/shared/patch/apply-patch.ts"() {
+    init_line_endings();
     ADD = "*** Add File: ";
     DELETE = "*** Delete File: ";
     UPDATE = "*** Update File: ";
@@ -56524,7 +57738,7 @@ function casedWord(word, leading) {
   return leading ? word.charAt(0).toUpperCase() + word.slice(1) : word;
 }
 function humanizeIdentifier(identifier) {
-  const words = identifier.replace(/([a-z0-9])([A-Z])/gu, "$1 $2").split(/[\s._-]+/u).filter(Boolean).map((word) => word.toLowerCase());
+  const words = identifier.replace(/([a-z0-9])([A-Z])/gu, "$1 $2").replace(/([A-Z])(?=[A-Z][a-z]{2})/gu, "$1 ").split(/[\s._-]+/u).filter(Boolean).map((word) => word.toLowerCase());
   if (words.length === 0) return identifier;
   const merged = [];
   for (const word of words) {
@@ -56817,7 +58031,7 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   const regular = [];
   for (const tc2 of toolCalls) {
     if (tc2.subagent) subagents.push(tc2);
-    else if (tc2.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(tc2)) proposals.push(tc2);
+    else if (isThreadProposalCall(tc2) || isReviewerInputCall(tc2)) proposals.push(tc2);
     else regular.push(tc2);
   }
   const result = [];
@@ -56912,6 +58126,7 @@ var init_tool_display = __esm({
       browser_snapshot: { running: "Taking page snapshot", done: "Took page snapshot" },
       browser_screenshot: { running: "Taking screenshot", done: "Took screenshot" },
       image_gen: { running: "Generating image", done: "Generated image" },
+      classify_text: { running: "Classifying text", done: "Classified text" },
       browser_click: { running: "Clicking element", done: "Clicked element" },
       browser_type: { running: "Typing text", done: "Typed text" },
       browser_tabs: { running: "Listing browser tabs", done: "Listed browser tabs" },
@@ -58174,6 +59389,7 @@ function compactSidebarThread(thread) {
     status: thread.status,
     ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
+    ...thread.sideChat ? { sideChat: thread.sideChat } : {},
     ...thread.automation ? { automation: thread.automation } : {},
     ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {},
     prRefs: sidebarPrRefs(thread),
@@ -58761,8 +59977,8 @@ var init_remote_folder_dialog = __esm({
 });
 
 // src/renderer/controller/projects.ts
-function formatSshProjectName(hostLabel2, remotePath) {
-  return `${hostLabel2}:${remotePath}`;
+function formatSshProjectName(hostLabel3, remotePath) {
+  return `${hostLabel3}:${remotePath}`;
 }
 function projectDisplayName(project2) {
   if (!project2.sshHost) return project2.name;
@@ -58801,6 +60017,10 @@ function paginateSidebarThreads(threads, visibleLimit, activeThreadId) {
     hasMore: visibleCount < total2
   };
 }
+function clearPendingSwitch() {
+  pendingSwitch = null;
+  holdNavigation(null);
+}
 function settleActivationWaiter(projectId, error62) {
   const waiter = activationWaiters.get(projectId);
   if (!waiter) return;
@@ -58810,19 +60030,38 @@ function settleActivationWaiter(projectId, error62) {
   else waiter.resolve();
 }
 function endSwitch(gen, projectId) {
-  if (pendingSwitch?.gen === gen) pendingSwitch = null;
+  if (pendingSwitch?.gen !== gen) return;
+  clearPendingSwitch();
   settleActivationWaiter(projectId);
 }
 function supersedePendingSwitch() {
   if (!pendingSwitch) return;
   const superseded = pendingSwitch;
-  pendingSwitch = null;
+  clearPendingSwitch();
   settleActivationWaiter(superseded.projectId);
 }
 function getSidebarThreads(store2, projectId) {
   const { activeProjectId, threads } = store2.getState();
   const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
-  return list.filter((t2) => t2.archivedAt == null);
+  return withoutSideChats(list).filter((t2) => t2.archivedAt == null);
+}
+function getSideChatUnreadParents(store2, projectId) {
+  const { activeProjectId, threads } = store2.getState();
+  if (projectId !== activeProjectId) return /* @__PURE__ */ new Set();
+  const cached2 = sideChatUnreadCache.get(threads);
+  if (cached2) return cached2;
+  const parents = unreadSideChatParents(threads);
+  sideChatUnreadCache.set(threads, parents);
+  return parents;
+}
+function attentionThreadId(store2, threadId) {
+  for (const list of [store2.getState().threads, ...threadCache.values()]) {
+    const thread = list.find((t2) => t2.id === threadId);
+    if (!thread) continue;
+    const parentId = thread.sideChat?.parentThreadId;
+    return parentId !== void 0 && list.some((t2) => t2.id === parentId) ? parentId : threadId;
+  }
+  return threadId;
 }
 function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
   const cached2 = threadCache.get(projectId);
@@ -58851,6 +60090,9 @@ function isProjectSwitchInFlight(store2, projectId) {
   if (expandedProjectId === projectId && activeProjectId !== projectId) return true;
   return activeProjectId === projectId && !workspaceRoot;
 }
+function isListedProject(store2, projectId) {
+  return store2.getState().projects.some((project2) => project2.id === projectId);
+}
 function cacheThreads(projectId, threads) {
   if (liveCacheProjectId !== null && liveCacheProjectId !== projectId) {
     const outgoing = threadCache.get(liveCacheProjectId);
@@ -58878,7 +60120,9 @@ async function preloadSidebarThreads(store2, api2) {
 function attachProjectThreadCache(store2) {
   return store2.on("threads_changed", () => {
     const { activeProjectId, threads } = store2.getState();
-    if (activeProjectId) cacheThreads(activeProjectId, threads);
+    if (activeProjectId && isListedProject(store2, activeProjectId)) {
+      cacheThreads(activeProjectId, threads);
+    }
   });
 }
 async function trySetWorkspace(api2, path, sshHost) {
@@ -58897,7 +60141,7 @@ function setWorkspaceInOrder(api2, path, sshHost) {
 function cancelPendingSwitch(store2, api2) {
   const cancelled = pendingSwitch;
   if (!cancelled) return;
-  pendingSwitch = null;
+  clearPendingSwitch();
   switchGeneration += 1;
   settleActivationWaiter(cancelled.projectId);
   if (!cancelled.dispatched) return;
@@ -58909,7 +60153,7 @@ function cancelPendingSwitch(store2, api2) {
 }
 function abortProjectActivation(store2, id, gen, outgoingId, error62) {
   if (gen !== switchGeneration) return;
-  if (pendingSwitch?.gen === gen) pendingSwitch = null;
+  if (pendingSwitch?.gen === gen) clearPendingSwitch();
   settleActivationWaiter(id, error62);
   const revertExpanded = outgoingId ?? store2.getState().activeProjectId;
   if (revertExpanded) {
@@ -59009,7 +60253,7 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
         id,
         gen,
         outgoingId,
-        new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.")
+        new Error("Enable SSH workspaces in Settings \u2192 Machines before opening a remote folder.")
       );
       return;
     }
@@ -59034,7 +60278,10 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
     }
   }
   const flushOutgoing = outgoingId && outgoingId !== id ? flushProjectThreads(api2, outgoingId, outgoingThreads) : Promise.resolve();
-  if (pendingSwitch?.gen === gen) pendingSwitch.dispatched = true;
+  if (pendingSwitch?.gen === gen) {
+    pendingSwitch.dispatched = true;
+    holdNavigation(id);
+  }
   const projectsAtDispatch = store2.getState().projects;
   const persistSelection = saveProjects(api2, projectsAtDispatch, id, pendingThreadId);
   const endWorkspace = begin("switch:workspace-set");
@@ -59047,6 +60294,7 @@ async function finishActivate(store2, api2, id, path, sshHost, gen, outgoingId, 
     return;
   }
   if (!opened) {
+    holdNavigation(null);
     await markProjectMissing(store2, api2, id);
     endActivate({ outcome: "missing" });
     abortProjectActivation(
@@ -59124,12 +60372,12 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
       restarts: pendingSwitch?.projectId === id
     });
   }
-  supersedePendingSwitch();
+  cancelPendingSwitch(store2, api2);
   const gen = ++switchGeneration;
   pendingSwitch = { gen, projectId: id, dispatched: false };
   const outgoingId = activeProjectId;
   const outgoingThreads = threads;
-  if (outgoingId) {
+  if (outgoingId && isListedProject(store2, outgoingId)) {
     cacheThreads(outgoingId, outgoingThreads);
     recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store2.getState()));
   }
@@ -59143,7 +60391,29 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
     outgoingId,
     outgoingThreads,
     pendingThreadId
-  );
+  ).catch(async (error62) => {
+    if (gen !== switchGeneration) {
+      endSwitch(gen, id);
+      return;
+    }
+    holdNavigation(null);
+    const state = store2.getState();
+    const active2 = state.projects.find((project2) => project2.id === state.activeProjectId);
+    const root = active2?.path ?? state.workspaceRoot;
+    await Promise.all([
+      root ? setWorkspaceInOrder(api2, root, active2?.sshHost) : Promise.resolve(),
+      saveNavigation(api2, state.activeProjectId, state.activeThreadId)
+    ]).catch((restoreError) => {
+      console.warn("[projects] could not restore navigation after a failed switch:", restoreError);
+    });
+    const failure2 = error62 instanceof Error ? error62 : new Error(String(error62));
+    if (gen === switchGeneration) {
+      abortProjectActivation(store2, id, gen, state.activeProjectId, failure2);
+    } else {
+      endSwitch(gen, id);
+    }
+    console.warn("[projects] project activation failed:", failure2);
+  });
 }
 function switchProject(store2, api2, id, pendingThreadId = null) {
   const proj = store2.getState().projects.find((p2) => p2.id === id);
@@ -59185,7 +60455,7 @@ async function addProjectFromPath(store2, api2, path) {
 async function addProjectFromRemotePath(store2, api2, hostId, path) {
   const enabled = await api2.settings.get("sshWorkspaceEnabled");
   if (enabled !== true) {
-    throw new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.");
+    throw new Error("Enable SSH workspaces in Settings \u2192 Machines before opening a remote folder.");
   }
   const canonical2 = await api2.sshWorkspace.registerRoot(hostId, path);
   const existing = findProjectByKey(store2.getState().projects, hostId, canonical2);
@@ -59399,9 +60669,10 @@ async function recoverOrphanProject(store2, api2, storeId, confirm2) {
   await activateAndWait(store2, api2, storeId, path);
   return true;
 }
-var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
+var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
 var init_projects = __esm({
   "src/renderer/controller/projects.ts"() {
+    init_side_chat2();
     init_thread_helpers();
     init_persistence();
     init_message_queue();
@@ -59419,6 +60690,7 @@ var init_projects = __esm({
     switchGeneration = 0;
     pendingSwitch = null;
     activationWaiters = /* @__PURE__ */ new Map();
+    sideChatUnreadCache = /* @__PURE__ */ new WeakMap();
     workspaceChain = Promise.resolve();
     NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
     KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
@@ -60090,13 +61362,13 @@ function createMcpSection(overlay, api2, onTrusted, onManagePermissions, onHeadi
   }
   function renderMcpServers(allStatuses) {
     const listEl = qsRequired(overlay, "#mcp-server-list");
-    const statuses = allStatuses.filter((s16) => !s16.curated);
-    if (statuses.length === 0) {
+    const statuses2 = allStatuses.filter((s16) => !s16.curated);
+    if (statuses2.length === 0) {
       listEl.textContent = "No servers configured.";
       return;
     }
     listEl.innerHTML = "";
-    if (statuses.some((s16) => s16.state === "untrusted")) {
+    if (statuses2.some((s16) => s16.state === "untrusted")) {
       const banner = document.createElement("div");
       banner.className = "mcp-trust-banner";
       const text2 = document.createElement("span");
@@ -60143,7 +61415,7 @@ function createMcpSection(overlay, api2, onTrusted, onManagePermissions, onHeadi
       }).catch(() => {
       });
     }
-    for (const s16 of statuses) {
+    for (const s16 of statuses2) {
       const badge = s16.state === "connected" ? inlineStatus("filled", "connected") : s16.auth === "required" ? inlineStatus("warn", "sign-in required") : s16.state === "error" ? inlineStatus("error", "error") : s16.state === "disabled" ? inlineStatus("idle", "disabled") : s16.state === "untrusted" ? inlineStatus("warn", "not trusted") : document.createTextNode("\u2026 connecting");
       const row2 = document.createElement("div");
       row2.className = `mcp-server-row mcp-state-${s16.state}`;
@@ -60205,14 +61477,14 @@ function createMcpSection(overlay, api2, onTrusted, onManagePermissions, onHeadi
       listEl.append(row2);
     }
   }
-  api2.mcp.onStatusChanged((statuses) => {
-    renderMcpServers(statuses);
+  api2.mcp.onStatusChanged((statuses2) => {
+    renderMcpServers(statuses2);
   });
   async function refreshMcpServers() {
     const request = generation;
     try {
-      const statuses = await api2.mcp.list();
-      if (request === generation) renderMcpServers(statuses);
+      const statuses2 = await api2.mcp.list();
+      if (request === generation) renderMcpServers(statuses2);
     } catch {
       if (request !== generation) return;
       renderMcpServers([]);
@@ -60253,8 +61525,8 @@ function createMcpSection(overlay, api2, onTrusted, onManagePermissions, onHeadi
   async function refreshDeclaredMcpServers() {
     const request = generation;
     try {
-      const statuses = await api2.mcp.listDeclared();
-      if (request === generation) renderDeclaredMcpServers(statuses);
+      const statuses2 = await api2.mcp.listDeclared();
+      if (request === generation) renderDeclaredMcpServers(statuses2);
     } catch {
       if (request !== generation) return;
       renderDeclaredMcpServers([]);
@@ -60332,8 +61604,8 @@ function createMcpSection(overlay, api2, onTrusted, onManagePermissions, onHeadi
   async function refreshCuratedServers() {
     const request = generation;
     try {
-      const statuses = await api2.mcp.listCurated();
-      if (request === generation) renderCuratedServers(statuses);
+      const statuses2 = await api2.mcp.listCurated();
+      if (request === generation) renderCuratedServers(statuses2);
     } catch {
       if (request !== generation) return;
       renderCuratedServers([]);
@@ -60344,12 +61616,12 @@ function createMcpSection(overlay, api2, onTrusted, onManagePermissions, onHeadi
     const statusEl = qsRequired(overlay, "#mcp-reload-status");
     statusEl.textContent = "Reloading\u2026";
     statusEl.className = "lmstudio-test-status";
-    void api2.mcp.reload().then((statuses) => {
+    void api2.mcp.reload().then((statuses2) => {
       if (request !== generation) return;
-      renderMcpServers(statuses);
+      renderMcpServers(statuses2);
       void refreshCuratedServers();
       void refreshDeclaredMcpServers();
-      const visible = statuses.filter((s16) => !s16.curated);
+      const visible = statuses2.filter((s16) => !s16.curated);
       const ok = visible.filter((s16) => s16.state === "connected").length;
       setInlineStatus(
         statusEl,
@@ -68491,8 +69763,20 @@ var init_guarded_yolo = __esm({
 function automationPermissionKey(permission) {
   return JSON.stringify([permission.kind, permission.toolName]);
 }
+var AUTOMATION_FAILURE_CODES, isAutomationFailureCode;
 var init_automations = __esm({
   "src/shared/types/automations.ts"() {
+    init_member_of2();
+    AUTOMATION_FAILURE_CODES = [
+      "approval-stalled",
+      "no-model",
+      "container-missing",
+      "auth-expired",
+      "worktree-failed",
+      "scheduler-stopped",
+      "unknown"
+    ];
+    isAutomationFailureCode = memberOf(AUTOMATION_FAILURE_CODES);
   }
 });
 
@@ -68627,23 +69911,103 @@ var init_types = __esm({
   }
 });
 
+// src/shared/automation-failure.ts
+function describeAutomationFailure(code) {
+  return DESCRIPTIONS[code];
+}
+function classifyAutomationFailureMessage(message2) {
+  if (/\b(401|unauthori[sz]ed|authentication|sign[- ]?in (expired|required)|invalid api key|api key (was )?(rejected|invalid))/i.test(
+    message2
+  ))
+    return "auth-expired";
+  if (/docker|container engine|apple container/i.test(message2) && /unavailable|not running|cannot connect|not found/i.test(message2))
+    return "container-missing";
+  if (/model.*(not found|unknown|unavailable|not configured|no longer)|no model|does not exist.*model/i.test(
+    message2
+  ))
+    return "no-model";
+  if (/worktree|checkout|isolated/i.test(message2)) return "worktree-failed";
+  return "unknown";
+}
+function isApprovalStalled(since, now) {
+  return since !== null && now - since >= AUTOMATION_APPROVAL_STALL_MS;
+}
+var DESCRIPTIONS, AUTOMATION_APPROVAL_STALL_MS;
+var init_automation_failure = __esm({
+  "src/shared/automation-failure.ts"() {
+    DESCRIPTIONS = {
+      "approval-stalled": {
+        title: "Waiting for approval",
+        remedy: "The run needs an answer nobody has given. Open it to approve or deny; or add the exact tool to the automation so it stops asking.",
+        action: "open-run",
+        actionLabel: "Open run"
+      },
+      "no-model": {
+        title: "Model unavailable",
+        remedy: "The automation\u2019s model is not configured or no longer exists. Pick another model in the automation.",
+        action: "open-automations",
+        actionLabel: "Edit automation"
+      },
+      "container-missing": {
+        title: "Container engine unavailable",
+        remedy: "Start Docker (or fix the container engine), then run again.",
+        action: "open-container-settings",
+        actionLabel: "Container settings"
+      },
+      "auth-expired": {
+        title: "Sign-in expired",
+        remedy: "The provider rejected the credentials. Sign in again or replace the API key.",
+        action: "open-provider-settings",
+        actionLabel: "Provider settings"
+      },
+      "worktree-failed": {
+        title: "Checkout could not be prepared",
+        remedy: "No isolated checkout could be created, so nothing ran. The prompt is kept as a draft in the run; resolve the cause and send it.",
+        action: "open-run",
+        actionLabel: "Open run"
+      },
+      "scheduler-stopped": {
+        title: "Scheduler stopped",
+        remedy: "Scheduled and event triggers are not firing. Copse retries automatically; if this persists, toggle the Automations plugin off and on.",
+        action: "open-automations",
+        actionLabel: "Open Automations"
+      },
+      unknown: {
+        title: "Run failed",
+        remedy: "Open the run to read the error.",
+        action: "open-run",
+        actionLabel: "Open run"
+      }
+    };
+    AUTOMATION_APPROVAL_STALL_MS = 15 * 6e4;
+  }
+});
+
 // src/renderer/views/branch-ci-editor.ts
 function mountBranchCiEditor(options) {
   const { root, heading, scheduleList, scheduleForm, projectId, api: api2, showStatus, hideStatus } = options;
   let pluginEnabled = options.pluginEnabled;
   let definitions = [];
   let editingId = null;
-  const section = el("section", { class: "automation-list automation-ci-list" });
-  const sectionHeading = el("div", { class: "plugin-settings-heading" }, "CI events");
+  const section2 = el("section", { class: "automation-list automation-ci-list" });
+  const sectionHeading = el("div", { class: "plugin-settings-heading" }, "Event automations");
   const rows = el("div", { class: "automation-list" });
-  section.append(sectionHeading, rows);
+  section2.append(sectionHeading, rows);
+  const fields = [];
+  function field(kind, node2) {
+    node2.dataset["triggerField"] = kind;
+    fields.push({ kind, node: node2 });
+    return node2;
+  }
   const form = el("form", { class: "automation-form automation-ci-form", hidden: true });
   const title = el("h4", { class: "automation-form-title" }, "New automation");
   const when = el(
     "select",
     { class: "automation-input automation-when-select" },
     el("option", { value: "schedule" }, "On a schedule"),
-    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch"),
+    el("option", { value: "github-pr-changed" }, "When a pull request changes"),
+    el("option", { value: "github-issue-labeled" }, "When an issue gets a label")
   );
   const name = el("input", {
     type: "text",
@@ -68658,6 +70022,44 @@ function mountBranchCiEditor(options) {
     required: true,
     maxlength: "200",
     placeholder: "main",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const pullRequest = el("input", {
+    type: "number",
+    class: "automation-input automation-ci-pull-request",
+    min: "1",
+    step: "1",
+    placeholder: "Any \u2014 watch the branch",
+    autocomplete: "off"
+  });
+  const checks = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-checks",
+    maxlength: "2000",
+    placeholder: "All workflows \u2014 or e.g. CI, Lint",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const baseBranch = el("input", {
+    type: "text",
+    class: "automation-input automation-pr-base",
+    maxlength: "200",
+    placeholder: "main",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const transition = el(
+    "select",
+    { class: "automation-input automation-pr-transition" },
+    el("option", { value: "ready-for-review" }, "A draft becomes ready for review"),
+    el("option", { value: "new-commits" }, "A ready pull request gets new commits")
+  );
+  const label = el("input", {
+    type: "text",
+    class: "automation-input automation-issue-label",
+    maxlength: "50",
+    placeholder: "needs-triage",
     autocomplete: "off",
     spellcheck: false
   });
@@ -68676,6 +70078,7 @@ function mountBranchCiEditor(options) {
     el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
   );
   const enabled = el("input", { type: "checkbox", class: "automation-ci-enabled" });
+  const matches2 = el("ul", { class: "automation-ci-matches", hidden: true });
   const summary = el("p", { class: "automation-hint automation-ci-summary" });
   const preview = el(
     "button",
@@ -68705,48 +70108,116 @@ function mountBranchCiEditor(options) {
     title,
     el("label", { class: "automation-label automation-trigger-label" }, "When", when),
     el("label", { class: "automation-label" }, "Name", name),
-    el("label", { class: "automation-label" }, "Branch", branch),
+    field("github-ci-failed", el("label", { class: "automation-label" }, "Branch", branch)),
+    field(
+      "github-ci-failed",
+      el("label", { class: "automation-label" }, "Pull request (optional)", pullRequest)
+    ),
+    field(
+      "github-ci-failed",
+      el("label", { class: "automation-label" }, "Only these workflows (optional)", checks)
+    ),
+    field(
+      "github-pr-changed",
+      el("label", { class: "automation-label" }, "Base branch", baseBranch)
+    ),
+    field(
+      "github-pr-changed",
+      el("label", { class: "automation-label" }, "Fires when", transition)
+    ),
+    field("github-issue-labeled", el("label", { class: "automation-label" }, "Label", label)),
     el("label", { class: "automation-label" }, "Model", model),
     el("label", { class: "automation-label" }, "Task", prompt),
     el("label", { class: "automation-label" }, "Maximum live worktrees", worktrees),
-    el("label", { class: "automation-enabled-label" }, enabled, "CI event enabled"),
+    el("label", { class: "automation-enabled-label" }, enabled, "Automation enabled"),
     summary,
+    matches2,
     el("div", { class: "automation-form-actions" }, preview, cancel, save)
   );
-  root.append(section, form);
+  root.append(section2, form);
   const modelPicker = mountModelSelectPicker(model, {
     loadOptions: (current) => fetchDynamicModelOptions(current),
     ariaLabel: "CI automation model",
     loadOnMount: false
   });
-  function updateSummary() {
-    const selected = branch.value.trim() || "this branch";
-    summary.textContent = `When CI finishes with a failure on ${selected}, investigate it. One task per run attempt on the current branch head; at most three runs per 24 hours.`;
+  function currentKind() {
+    return when.value === "github-pr-changed" || when.value === "github-issue-labeled" ? when.value : "github-ci-failed";
   }
-  branch.addEventListener("input", updateSummary);
+  function splitChecks() {
+    return checks.value.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
+  }
+  function readTrigger() {
+    const kind = currentKind();
+    if (kind === "github-pr-changed") {
+      return {
+        kind,
+        baseBranch: baseBranch.value.trim(),
+        transition: transition.value === "new-commits" ? "new-commits" : "ready-for-review"
+      };
+    }
+    if (kind === "github-issue-labeled") return { kind, label: label.value.trim() };
+    const selected = splitChecks();
+    const number4 = Number.parseInt(pullRequest.value, 10);
+    return {
+      kind,
+      ...Number.isInteger(number4) && number4 > 0 ? { pullRequest: number4 } : { branch: branch.value.trim() },
+      ...selected.length > 0 ? { checks: selected } : {}
+    };
+  }
+  function updateSummary() {
+    const kind = currentKind();
+    branch.required = kind === "github-ci-failed" && pullRequest.value.trim() === "";
+    for (const item of fields) item.node.hidden = item.kind !== kind;
+    if (kind === "github-pr-changed") {
+      const base = baseBranch.value.trim() || "the base branch";
+      summary.textContent = transition.value === "new-commits" ? `When a ready pull request into ${base} gets new commits, review them. One task per pull request head; at most three runs per 24 hours.` : `When a draft pull request into ${base} becomes ready for review, review it. One task per pull request head; at most three runs per 24 hours.`;
+      return;
+    }
+    if (kind === "github-issue-labeled") {
+      summary.textContent = `When an issue is labelled \u201C${label.value.trim() || "a label"}\u201D, triage it. Removing and re-applying the label starts a new task; at most three runs per 24 hours.`;
+      return;
+    }
+    const number4 = Number.parseInt(pullRequest.value, 10);
+    const target = Number.isInteger(number4) && number4 > 0 ? `pull request #${String(number4)}` : branch.value.trim() || "this branch";
+    const selected = splitChecks();
+    const only = selected.length > 0 ? ` (only ${selected.join(", ")})` : "";
+    summary.textContent = `When CI finishes with a failure on ${target}${only}, investigate it. One task per run attempt on the current head; at most three runs per 24 hours.`;
+  }
+  for (const input2 of [branch, pullRequest, checks, baseBranch, label]) {
+    input2.addEventListener("input", updateSummary);
+  }
+  transition.addEventListener("change", updateSummary);
   function close() {
     editingId = null;
     form.hidden = true;
     heading.hidden = false;
     scheduleList.hidden = false;
-    section.hidden = false;
+    section2.hidden = false;
+    matches2.hidden = true;
   }
   async function open2(definition, draft) {
     hideStatus();
     editingId = definition?.id ?? null;
     title.textContent = definition ? "Edit automation" : "New automation";
-    when.value = "github-ci-failed";
+    const trigger = definition?.trigger;
+    when.value = trigger?.kind ?? "github-ci-failed";
     when.disabled = Boolean(definition);
     name.value = definition?.name ?? draft?.name ?? "";
-    branch.value = definition?.trigger.branch ?? "";
+    branch.value = trigger?.kind === "github-ci-failed" ? trigger.branch : "";
+    pullRequest.value = trigger?.kind === "github-ci-failed" && trigger.pullRequest !== void 0 ? String(trigger.pullRequest) : "";
+    checks.value = trigger?.kind === "github-ci-failed" ? (trigger.checks ?? []).join(", ") : "";
+    baseBranch.value = trigger?.kind === "github-pr-changed" ? trigger.baseBranch : "";
+    transition.value = trigger?.kind === "github-pr-changed" ? trigger.transition : "ready-for-review";
+    label.value = trigger?.kind === "github-issue-labeled" ? trigger.label : "";
     prompt.value = definition?.prompt ?? draft?.prompt ?? "";
     worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
     enabled.checked = definition?.enabled ?? draft?.enabled ?? true;
+    matches2.hidden = true;
     updateSummary();
     heading.hidden = true;
     scheduleList.hidden = true;
     scheduleForm.hidden = true;
-    section.hidden = true;
+    section2.hidden = true;
     form.hidden = false;
     name.focus();
     const defaultModel = definition?.model ?? draft?.model ?? BEST_VALUE_CHAT_MODEL;
@@ -68754,16 +70225,124 @@ function mountBranchCiEditor(options) {
     const selected = available.find((item) => item.value === defaultModel && !item.disabled)?.value ?? available.find((item) => item.value && !item.disabled)?.value ?? "";
     await modelPicker.refresh(selected);
   }
+  function triggerLabel(trigger) {
+    if (trigger.kind === "github-pr-changed") {
+      return `${trigger.transition === "new-commits" ? "PR new commits" : "PR ready for review"} \xB7 ${trigger.repository} \xB7 ${trigger.baseBranch}`;
+    }
+    if (trigger.kind === "github-issue-labeled") {
+      return `Issue labelled \xB7 ${trigger.repository} \xB7 ${trigger.label}`;
+    }
+    const scope = trigger.pullRequest !== void 0 ? `PR #${String(trigger.pullRequest)}` : trigger.branch;
+    const only = trigger.checks && trigger.checks.length > 0 ? ` \xB7 ${trigger.checks.join(", ")}` : "";
+    return `Failed CI \xB7 ${trigger.repository} \xB7 ${scope}${only}`;
+  }
+  const OUTCOME_LABEL = {
+    started: "Started",
+    waiting: "Waiting",
+    filtered: "Filtered out",
+    held: "Needs attention"
+  };
+  function renderDeliveries(target, deliveries) {
+    clear(target);
+    if (deliveries.length === 0) {
+      target.append(el("p", { class: "automation-empty" }, "No deliveries yet."));
+      return;
+    }
+    const listEl = el("ul", { class: "automation-delivery-list" });
+    for (const delivery of deliveries) {
+      const item = el(
+        "li",
+        { class: "automation-delivery", "data-delivery-outcome": delivery.outcome },
+        el("span", { class: "automation-delivery-outcome" }, OUTCOME_LABEL[delivery.outcome]),
+        el("span", { class: "automation-delivery-summary" }, delivery.summary),
+        el(
+          "time",
+          {
+            class: "automation-delivery-time",
+            datetime: new Date(delivery.receivedAt).toISOString()
+          },
+          new Date(delivery.receivedAt).toLocaleString()
+        )
+      );
+      if (delivery.reason) {
+        item.append(el("span", { class: "automation-delivery-reason" }, delivery.reason));
+      }
+      if (delivery.threadId && options.onOpenRun) {
+        const threadId = delivery.threadId;
+        const open3 = el(
+          "button",
+          { type: "button", class: "ui-btn ui-btn-ghost ui-btn-compact automation-delivery-open" },
+          "Open task"
+        );
+        open3.addEventListener("click", () => options.onOpenRun?.(threadId));
+        item.append(open3);
+      }
+      listEl.append(item);
+    }
+    target.append(listEl);
+  }
+  function problemBlock(definition) {
+    const problem = definition.lastProblem;
+    if (!problem) return null;
+    const description = describeAutomationFailure(problem.code ?? "unknown");
+    const polling = problem.threadId === void 0 && (problem.code === void 0 || problem.code === "unknown");
+    const title2 = polling ? "Could not check GitHub" : description.title;
+    const remedy = polling ? "Copse retries every minute and clears this once GitHub can be read again." : description.remedy;
+    const block = el(
+      "div",
+      {
+        class: "automation-row-blocked-message automation-row-problem-message",
+        "data-failure-code": problem.code ?? "unknown",
+        role: "status"
+      },
+      el("strong", { class: "automation-problem-title" }, title2),
+      el(
+        "span",
+        { class: "automation-problem-time" },
+        ` \xB7 ${new Date(problem.at).toLocaleString()}`
+      ),
+      el("div", { class: "automation-problem-message" }, problem.message),
+      el("div", { class: "automation-problem-remedy" }, remedy)
+    );
+    const threadId = problem.threadId;
+    if (threadId && options.onOpenRun && description.action === "open-run") {
+      const open3 = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-problem-action"
+        },
+        description.actionLabel
+      );
+      open3.addEventListener("click", () => options.onOpenRun?.(threadId));
+      block.append(open3);
+    } else if (description.action === "open-automations" || description.action === "open-model-settings") {
+      const edit = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-problem-action"
+        },
+        "Edit automation"
+      );
+      edit.addEventListener("click", () => void open2(definition));
+      block.append(edit);
+    }
+    return block;
+  }
   function render() {
     clear(rows);
     if (definitions.length === 0) {
-      rows.append(el("p", { class: "automation-empty" }, "No CI events for this project yet."));
+      rows.append(
+        el("p", { class: "automation-empty" }, "No event automations for this project yet.")
+      );
       return;
     }
     for (const definition of definitions) {
       const row2 = el("article", {
-        class: `automation-row${definition.enabled ? "" : " automation-row-paused"}`,
-        "data-ci-automation-id": definition.id
+        class: `automation-row${definition.enabled ? "" : " automation-row-paused"}${definition.lastProblem ? " automation-row-blocked" : ""}`,
+        "data-ci-automation-id": definition.id,
+        "data-trigger-kind": definition.trigger.kind
       });
       const copy = el(
         "div",
@@ -68772,11 +70351,7 @@ function mountBranchCiEditor(options) {
         el(
           "div",
           { class: "automation-row-meta" },
-          el(
-            "span",
-            {},
-            `Failed CI \xB7 ${definition.trigger.repository} \xB7 ${definition.trigger.branch}`
-          ),
+          el("span", {}, triggerLabel(definition.trigger)),
           el("span", {}, modelDisplayLabel(definition.model)),
           el("span", {}, definition.enabled && pluginEnabled ? "Armed" : "Paused")
         ),
@@ -68786,6 +70361,24 @@ function mountBranchCiEditor(options) {
           definition.lastRunAt ? `Last started ${new Date(definition.lastRunAt).toLocaleString()}` : "Never run"
         )
       );
+      const problem = problemBlock(definition);
+      if (problem) copy.append(problem);
+      const history = el("details", { class: "automation-deliveries" });
+      const body = el("div", { class: "automation-deliveries-body" });
+      history.append(el("summary", {}, "Recent deliveries"), body);
+      history.addEventListener("toggle", () => {
+        if (!history.open || !projectId) return;
+        body.textContent = "Loading\u2026";
+        api2.automations.eventHistory(projectId, definition.id).then(
+          (deliveries) => {
+            renderDeliveries(body, deliveries);
+          },
+          (error62) => {
+            body.textContent = ipcErrorMessage(error62, "Could not load deliveries.");
+          }
+        );
+      });
+      copy.append(history);
       const edit = el(
         "button",
         {
@@ -68808,14 +70401,15 @@ function mountBranchCiEditor(options) {
         void showConfirmDialog({
           message: `Delete \u201C${definition.name}\u201D?`,
           detail: "Already-created tasks are kept.",
-          confirmLabel: "Delete CI event",
+          confirmLabel: "Delete automation",
           danger: true
         }).then(async (confirmed) => {
           if (!confirmed) return;
           await api2.automations.removeBranchCi(projectId, definition.id);
           await refresh();
+          await options.onChanged?.();
         }).catch((error62) => {
-          showStatus(ipcErrorMessage(error62, "Could not delete CI event."), true);
+          showStatus(ipcErrorMessage(error62, "Could not delete the automation."), true);
         });
       });
       row2.append(copy, el("div", { class: "automation-row-actions" }, edit, remove));
@@ -68828,27 +70422,36 @@ function mountBranchCiEditor(options) {
     render();
   }
   when.addEventListener("change", () => {
-    if (when.value !== "schedule" || editingId) return;
-    options.onScheduleSelected({
-      name: name.value,
-      prompt: prompt.value,
-      model: model.value || BEST_VALUE_CHAT_MODEL,
-      enabled: enabled.checked,
-      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
-    });
+    if (when.value === "schedule" && !editingId) {
+      options.onScheduleSelected({
+        name: name.value,
+        prompt: prompt.value,
+        model: model.value || BEST_VALUE_CHAT_MODEL,
+        enabled: enabled.checked,
+        maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+      });
+      return;
+    }
+    matches2.hidden = true;
+    updateSummary();
   });
   cancel.addEventListener("click", close);
   preview.addEventListener("click", () => {
-    if (!projectId || !branch.value.trim()) return;
+    if (!projectId) return;
     preview.disabled = true;
-    void api2.automations.testBranchCi(projectId, branch.value.trim()).then(
+    matches2.hidden = true;
+    void api2.automations.testBranchCi(projectId, readTrigger()).then(
       (result) => {
+        clear(matches2);
+        for (const item of result.recent) matches2.append(el("li", {}, item));
+        matches2.hidden = result.recent.length === 0;
+        const where = result.branch ? `${result.repository}/${result.branch}` : result.repository;
         showStatus(
-          result.latestFailure ? `Latest matching failure on ${result.repository}/${result.branch}: ${result.latestFailure}. Test match did not start a task.` : `No failed run on the current head of ${result.repository}/${result.branch}. Test match did not start a task.`
+          result.recent.length > 0 ? `Would have matched ${String(result.recent.length)} recent item${result.recent.length === 1 ? "" : "s"} on ${where}. Test match did not start a task.` : `Nothing recent on ${where} would match. Test match did not start a task.`
         );
       },
       (error62) => {
-        showStatus(ipcErrorMessage(error62, "Could not check recent CI runs."), true);
+        showStatus(ipcErrorMessage(error62, "Could not check recent activity."), true);
       }
     ).finally(() => {
       preview.disabled = false;
@@ -68862,7 +70465,7 @@ function mountBranchCiEditor(options) {
     const input2 = {
       ...editingId ? { id: editingId } : {},
       name: name.value,
-      branch: branch.value,
+      trigger: readTrigger(),
       prompt: prompt.value,
       model: model.value,
       enabled: enabled.checked,
@@ -68872,9 +70475,10 @@ function mountBranchCiEditor(options) {
       async () => {
         close();
         await refresh();
+        await options.onChanged?.();
       },
       (error62) => {
-        showStatus(ipcErrorMessage(error62, "Could not save CI event."), true);
+        showStatus(ipcErrorMessage(error62, "Could not save the automation."), true);
       }
     ).finally(() => {
       save.disabled = false;
@@ -68893,11 +70497,11 @@ function mountBranchCiEditor(options) {
     },
     hideForSchedule() {
       form.hidden = true;
-      section.hidden = true;
+      section2.hidden = true;
     },
     showList() {
       form.hidden = true;
-      section.hidden = false;
+      section2.hidden = false;
     },
     setPluginEnabled(value) {
       pluginEnabled = value;
@@ -68907,6 +70511,7 @@ function mountBranchCiEditor(options) {
 }
 var init_branch_ci_editor = __esm({
   "src/renderer/views/branch-ci-editor.ts"() {
+    init_automation_failure();
     init_lm_studio_defaults();
     init_helpers();
     init_ipc_error_message();
@@ -68932,6 +70537,213 @@ var init_automation_retained_worktrees = __esm({
       "unpushed-pull-request": "has a pull request branch that is not pushed",
       "in-use": "still has a terminal or background process open"
     };
+  }
+});
+
+// src/renderer/controller/automations.ts
+function getCachedAutomationSchedules(projectId) {
+  return scheduleCache.get(projectId) ?? [];
+}
+function getCachedEventAutomations(projectId) {
+  return eventAutomationCache.get(projectId) ?? [];
+}
+async function refreshAutomationSchedules(store2, api2, projectId) {
+  const [schedules, eventAutomations] = await Promise.all([
+    api2.automations.list(projectId),
+    api2.automations.listBranchCi(projectId)
+  ]);
+  scheduleCache.set(projectId, schedules);
+  eventAutomationCache.set(projectId, eventAutomations);
+  store2.emit("automation_schedules_loaded");
+  return schedules;
+}
+function startFailureDetail(error62) {
+  return ipcErrorMessage(error62, "the checkout could not be prepared");
+}
+function isPendingAutomation(thread) {
+  return thread.automation !== void 0 && thread.status === "idle" && thread.automation.startFailedAt === void 0 && Boolean(thread.draftPrompt?.trim());
+}
+function attachAutomationController(store2, api2) {
+  const starting = /* @__PURE__ */ new Set();
+  const retryTimers = /* @__PURE__ */ new Map();
+  const retrying = /* @__PURE__ */ new Set();
+  const retryPending = (threadId) => {
+    startThread(threadId).catch((error62) => {
+      console.error("[automations] Failed to retry scheduled task:", error62);
+    });
+  };
+  function retryKey(projectId, threadId) {
+    return JSON.stringify([projectId, threadId]);
+  }
+  function clearRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const timer = retryTimers.get(key);
+    if (timer !== void 0) clearTimeout(timer);
+    retryTimers.delete(key);
+    retrying.delete(key);
+  }
+  function scheduleRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const firstDenial = !retrying.has(key);
+    retrying.add(key);
+    if (!retryTimers.has(key)) {
+      const timer = setTimeout(() => {
+        retryTimers.delete(key);
+        if (store2.getState().activeProjectId === projectId) retryPending(threadId);
+      }, AUTOMATION_START_RETRY_MS);
+      retryTimers.set(key, timer);
+    }
+    return firstDenial;
+  }
+  async function startThread(threadId) {
+    const initial = getThreadById(store2, threadId);
+    const projectId = store2.getState().activeProjectId;
+    if (!projectId) return;
+    if (!initial || !isPendingAutomation(initial)) {
+      clearRetry(projectId, threadId);
+      return;
+    }
+    if (starting.has(threadId)) return;
+    const prompt = initial.draftPrompt?.trim();
+    if (!prompt) return;
+    starting.add(threadId);
+    let hydrated = false;
+    let checkoutStarted = false;
+    try {
+      await ensureThreadMessages(projectId, threadId);
+      hydrated = true;
+      if (store2.getState().activeProjectId !== projectId) return;
+      const admission = await api2.automations.canStart(projectId, threadId);
+      if (!admission.allowed) {
+        let shouldRecord = true;
+        if (admission.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            admission.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!admission.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
+      if (!initial.worktreeChoice) {
+        checkoutStarted = true;
+        const prepared = await api2.agent.prepareCheckout(
+          projectId,
+          threadId,
+          prompt,
+          "worktree",
+          initial.model
+        );
+        if (store2.getState().activeProjectId !== projectId) return;
+        applyPreparedThreadCheckout(store2, threadId, prepared);
+        checkoutStarted = false;
+      }
+      const current = getThreadById(store2, threadId);
+      if (!current || !isPendingAutomation(current)) {
+        clearRetry(projectId, threadId);
+        return;
+      }
+      const beforeDispatch = await api2.automations.canStart(projectId, threadId);
+      if (!beforeDispatch.allowed) {
+        let shouldRecord = true;
+        if (beforeDispatch.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            beforeDispatch.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!beforeDispatch.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
+      clearRetry(projectId, threadId);
+      addMessage(store2, threadId, "user", prompt);
+      setThreadDraftPrompt(store2, threadId, "");
+      startAutomationTurnTree(store2, threadId);
+      dispatchAgentRun(store2, api2, threadId, { content: prompt });
+    } catch (error62) {
+      console.error("[automations] Failed to start scheduled task:", error62);
+      if (hydrated) {
+        const message2 = startFailureDetail(error62);
+        const code = checkoutStarted ? "worktree-failed" : classifyAutomationFailureMessage(message2);
+        markAutomationStartFailed(store2, threadId, { code, message: message2 });
+        api2.automations.reportStartFailure(projectId, threadId, { code, message: message2 }).catch((reportError) => {
+          console.error("[automations] Could not report a start failure:", reportError);
+        });
+        addMessage(
+          store2,
+          threadId,
+          "error",
+          `This scheduled run could not start: ${startFailureDetail(error62)}
+
+Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause is resolved. The schedule is not held up: its next run starts normally.`
+        );
+      }
+    } finally {
+      starting.delete(threadId);
+    }
+  }
+  function startPendingForActiveProject() {
+    for (const thread of store2.getState().threads) {
+      if (isPendingAutomation(thread)) void startThread(thread.id);
+    }
+  }
+  async function receiveTrigger(event) {
+    if (store2.getState().activeProjectId !== event.projectId) return;
+    const loaded = await api2.threads.loadProject(event.projectId);
+    if (store2.getState().activeProjectId !== event.projectId) return;
+    const created = loaded.find((thread) => thread.id === event.threadId);
+    if (!created) return;
+    if (!store2.getState().threads.some((thread) => thread.id === created.id)) {
+      store2.setState({
+        threads: sortThreadsNewestFirst([created, ...store2.getState().threads])
+      });
+      store2.emit("threads_changed");
+    }
+    await startThread(created.id);
+  }
+  function refreshSchedulesForActiveProject() {
+    const projectId = store2.getState().activeProjectId;
+    if (!projectId) return;
+    void refreshAutomationSchedules(store2, api2, projectId).catch((error62) => {
+      console.error("[automations] Failed to refresh schedules:", error62);
+    });
+  }
+  const unsubscribeTrigger = api2.automations.onTriggered((event) => {
+    void receiveTrigger(event);
+  });
+  const unsubscribeWorkspace = store2.on("workspace_changed", () => {
+    startPendingForActiveProject();
+    refreshSchedulesForActiveProject();
+  });
+  startPendingForActiveProject();
+  refreshSchedulesForActiveProject();
+  return () => {
+    for (const timer of retryTimers.values()) clearTimeout(timer);
+    retryTimers.clear();
+    retrying.clear();
+    unsubscribeTrigger();
+    unsubscribeWorkspace();
+  };
+}
+var scheduleCache, eventAutomationCache, AUTOMATION_START_RETRY_MS;
+var init_automations2 = __esm({
+  "src/renderer/controller/automations.ts"() {
+    init_ipc_error_message();
+    init_automation_failure();
+    init_thread_helpers();
+    init_message_queue();
+    init_thread_hydration();
+    scheduleCache = /* @__PURE__ */ new Map();
+    eventAutomationCache = /* @__PURE__ */ new Map();
+    AUTOMATION_START_RETRY_MS = 15e3;
   }
 });
 
@@ -69011,7 +70823,7 @@ function scheduleDescription(cron) {
   const schedule = parseSimpleSchedule(cron);
   return schedule ? simpleScheduleDescription(schedule) : "Custom schedule";
 }
-function createAutomationPluginSettings(store2, api2, pluginEnabled, revealScheduleId, createNew = false, projectId = store2.getState().activeProjectId) {
+function createAutomationPluginSettings(store2, api2, pluginEnabled, revealScheduleId, createNew = false, projectId = store2.getState().activeProjectId, actions = {}) {
   const root = el("section", {
     class: "automation-plugin-settings",
     "data-plugin-detail": AUTOMATIONS_PLUGIN_ID
@@ -69045,6 +70857,11 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     hidden: true
   });
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
+  const schedulerNotice = el("div", {
+    class: "automation-scheduler-notice",
+    role: "status",
+    hidden: true
+  });
   const list = el("div", { class: "automation-list" });
   const form = el("form", { class: "automation-form", hidden: true, novalidate: true });
   const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
@@ -69193,7 +71010,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("label", { class: "automation-enabled-label" }, enabledInput, "Schedule enabled"),
     el("div", { class: "automation-form-actions" }, saveButton, cancelButton)
   );
-  root.append(heading, scope, notice, attention, status, list, form);
+  root.append(heading, scope, notice, schedulerNotice, attention, status, list, form);
   const ciEditor = mountBranchCiEditor({
     root,
     heading,
@@ -69204,7 +71021,11 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     pluginEnabled,
     showStatus,
     hideStatus,
-    onScheduleSelected: (draft) => void openForm(void 0, draft)
+    onScheduleSelected: (draft) => void openForm(void 0, draft),
+    onChanged: async () => {
+      if (projectId) await refreshAutomationSchedules(store2, api2, projectId);
+    },
+    ...actions.openRun ? { onOpenRun: actions.openRun } : {}
   });
   const modelPicker = mountModelSelectPicker(modelSelect, {
     loadOptions: (current) => fetchDynamicModelOptions(current),
@@ -69435,6 +71256,93 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     const selectedModel = options.find((option) => option.value === defaultModel && !option.disabled)?.value ?? options.find((option) => option.value && !option.disabled)?.value ?? "";
     await modelPicker.refresh(selectedModel);
   }
+  function scheduleProblem(schedule) {
+    const recorded = schedule.lastProblem;
+    if (recorded !== void 0) {
+      return {
+        at: recorded.at,
+        code: recorded.code,
+        message: recorded.message,
+        threadId: recorded.threadId,
+        kind: recorded.kind
+      };
+    }
+    const latest = store2.getState().threads.find((thread) => thread.id === schedule.lastCreatedThreadId);
+    const failure2 = latest?.automation?.failure;
+    if (!latest || !failure2 || latest.status !== "error" && latest.automation?.startFailedAt === void 0)
+      return void 0;
+    return {
+      at: failure2.at,
+      code: isAutomationFailureCode(failure2.code) ? failure2.code : "unknown",
+      message: failure2.message,
+      threadId: latest.id,
+      kind: "failed"
+    };
+  }
+  function problemElement(problem) {
+    const description = describeAutomationFailure(problem.code ?? "unknown");
+    const block = el("div", {
+      class: "automation-row-blocked-message automation-row-problem-message",
+      "data-failure-code": problem.code ?? (problem.kind === "pending-start" ? "pending-start" : "unknown"),
+      role: "status"
+    });
+    if (problem.code === void 0) {
+      block.textContent = `${problem.kind === "failed" ? "Last attempt failed" : "Last attempt skipped"} ${new Date(problem.at).toLocaleString()}: ${problem.message}`;
+    } else {
+      block.append(
+        el("strong", { class: "automation-problem-title" }, description.title),
+        el(
+          "span",
+          { class: "automation-problem-time" },
+          ` \xB7 ${new Date(problem.at).toLocaleString()}`
+        ),
+        el("div", { class: "automation-problem-message" }, problem.message),
+        el("div", { class: "automation-problem-remedy" }, description.remedy)
+      );
+    }
+    const threadId = problem.threadId;
+    if (threadId !== void 0 && actions.openRun && problem.code !== void 0 && description.action === "open-run") {
+      const openRun = actions.openRun;
+      const open2 = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-problem-action"
+        },
+        description.actionLabel
+      );
+      open2.addEventListener("click", () => {
+        openRun(threadId);
+      });
+      block.append(open2);
+    }
+    return block;
+  }
+  function showSchedulerHealth(health) {
+    if (health.state === "ok") {
+      schedulerNotice.hidden = true;
+      schedulerNotice.textContent = "";
+      return;
+    }
+    const description = describeAutomationFailure("scheduler-stopped");
+    schedulerNotice.hidden = false;
+    schedulerNotice.dataset["state"] = health.state;
+    clear(schedulerNotice);
+    schedulerNotice.append(
+      el("strong", {}, health.state === "recovering" ? "Scheduler restarting" : description.title),
+      el("div", {}, health.message ?? description.remedy),
+      el("div", { class: "automation-problem-remedy" }, description.remedy)
+    );
+  }
+  api2.automations.schedulerHealth().then(showSchedulerHealth, () => {
+  });
+  const stopWatchingHealth = api2.automations.onSchedulerHealth((health) => {
+    if (!root.isConnected) {
+      stopWatchingHealth();
+      return;
+    }
+    showSchedulerHealth(health);
+  });
   function renderList() {
     clear(list);
     const blocked = schedules.filter((schedule) => schedule.lastWorktreeLimitAt !== void 0);
@@ -69481,16 +71389,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
           )
         );
       }
-      if (schedule.lastProblem !== void 0) {
-        copy.append(
-          el(
-            "div",
-            { class: "automation-row-blocked-message automation-row-problem-message" },
-            `${schedule.lastProblem.kind === "failed" ? "Last attempt failed" : "Last attempt skipped"} ${new Date(schedule.lastProblem.at).toLocaleString()}: ${schedule.lastProblem.message}`
-          )
-        );
-      }
-      const actions = el("div", { class: "automation-row-actions" });
+      const problem = scheduleProblem(schedule);
+      if (problem !== void 0) copy.append(problemElement(problem));
+      const rowActions = el("div", { class: "automation-row-actions" });
       const edit = el(
         "button",
         { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact automation-row-btn" },
@@ -69545,8 +71446,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
           showStatus(cleanIpcError(error62), true);
         });
       });
-      actions.append(edit, run2, remove);
-      row2.append(copy, actions);
+      rowActions.append(edit, run2, remove);
+      row2.append(copy, rowActions);
       list.append(row2);
     }
   }
@@ -69570,7 +71471,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     if (!projectId) return;
     try {
       const [loadedSchedules, loadedPermissions] = await Promise.all([
-        api2.automations.list(projectId),
+        refreshAutomationSchedules(store2, api2, projectId),
         api2.automations.permissionOptions(projectId),
         ciEditor.refresh()
       ]);
@@ -69694,6 +71595,8 @@ var init_automation_plugin_settings = __esm({
     init_branch_ci_editor();
     init_ipc_error_message();
     init_automation_retained_worktrees();
+    init_automation_failure();
+    init_automations2();
     WEEKDAYS = [
       "Sunday",
       "Monday",
@@ -70432,13 +72335,13 @@ function installReviewSkillName(path, pluginId) {
   return parts.at(-2) ?? pluginId;
 }
 function installReviewSection(heading, body) {
-  const section = document.createElement("section");
-  section.className = "plugin-install-review-section";
+  const section2 = document.createElement("section");
+  section2.className = "plugin-install-review-section";
   const title = document.createElement("div");
   title.className = "plugin-install-review-heading";
   title.textContent = heading;
-  section.append(title, body);
-  return section;
+  section2.append(title, body);
+  return section2;
 }
 function createPacksSection(overlay, api2, store2, getActiveSection, onNavigate, onMcpChanged) {
   function selectControl2(form, name) {
@@ -72278,12 +74181,11 @@ var init_customise_markup = __esm({
 var storageMarkup;
 var init_storage_markup = __esm({
   "src/renderer/views/settings/storage-markup.ts"() {
-    storageMarkup = `
-          <section class="settings-section" data-section="storage">
+    storageMarkup = `<section class="settings-section" data-section="storage">
             <h3>Storage</h3>
             <p class="settings-section-desc">
               What Copse keeps on disk for each local project, and what it costs. Nothing here
-              changes how the agent behaves, it is where you go to see what has accumulated and
+              changes how the agent behaves \u2014 it is where you go to see what has accumulated and
               reclaim space.
             </p>
 
@@ -72315,8 +74217,7 @@ var init_storage_markup = __esm({
               </div>
               <span class="lmstudio-test-status" id="sources-worktrees-status" role="status" aria-live="polite"></span>
             </fieldset>
-          </section>
-`;
+          </section>`;
   }
 });
 
@@ -72512,11 +74413,11 @@ var init_ssh_markup = __esm({
   "src/renderer/views/settings/ssh-markup.ts"() {
     sshMarkup = `
           <section class="settings-section" data-section="ssh">
-            <h3>SSH</h3>
+            <h3>Machines</h3>
             <p class="settings-section-desc">
-              Work on a remote Linux machine over SSH. Commands, git, search, and files all run
-              there while Copse stays on your desktop.
+              Connect other computers to use their models, or manage SSH hosts for remote projects and agents.
             </p>
+            <div id="settings-machines-host" class="settings-mount"></div>
             <div id="settings-ssh-workspace-host" class="settings-mount"></div>
 
             <fieldset>
@@ -72578,6 +74479,19 @@ var init_experimental_markup = __esm({
             </fieldset>
 
             <fieldset>
+              <legend>Remote System One models</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="remoteSystemOneModelsEnabled" />
+                Connect Copse computers to share local models
+              </label>
+              <p class="field-hint">
+                After saving, open Machines to pair computers on the same network and choose which
+                models to share. No SSH is needed. Turning this off stops sharing and remote calls;
+                saved pairings stay available to reconnect or remove.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Mobile Companion</legend>
               <p class="field-hint">
                 Open your Copse threads from a phone on the same local network. Choose the network
@@ -72588,6 +74502,13 @@ var init_experimental_markup = __esm({
                 <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
                   Set up or manage\u2026
                 </button>
+              </div>
+              <div id="mobile-companion-qr" class="mobile-companion-qr" hidden>
+                <div id="mobile-companion-qr-image" class="mobile-companion-qr-image" aria-hidden="true"></div>
+                <div class="mobile-companion-qr-text">
+                  <p class="field-hint">Scan with your phone's camera to open Copse.</p>
+                  <code id="mobile-companion-qr-url" class="mobile-companion-qr-url"></code>
+                </div>
               </div>
             </fieldset>
 
@@ -72613,7 +74534,7 @@ var init_experimental_markup = __esm({
               </label>
               <p class="field-hint">
                 When a turn ends with one clearly valuable next move, it appears as placeholder
-                text in the message box, press Tab to accept it, or just type to ignore it.
+                text in the message box \u2014 press Tab to accept it, or just type to ignore it.
                 Uses the small-tasks model; most turns show nothing.
               </p>
             </fieldset>
@@ -72622,11 +74543,11 @@ var init_experimental_markup = __esm({
               <legend>Concise threads</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="conciseThreadsEnabled" />
-                Show only the results of turns from highly capable models
+                Hide tool details and reasoning from highly capable models
               </label>
               <p class="field-hint">
                 For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning, and the
                 tool errors the model recovers from stay hidden; while it works, you see what it
                 is doing now. Other models always show the full thread.
               </p>
@@ -72650,16 +74571,16 @@ var init_experimental_markup = __esm({
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="containerRunsEnabled" />
-                Let a thread run unattended inside a disposable Docker container
+                Let a thread run unattended inside a disposable container
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
                 snapshot of the thread's checkout with no prompts and brings its commits back for
-                you to apply. Its network reaches only its model's origin, plus, when the run
-                installs dependencies (on by default, per run), the npm registry, GitHub and
-                Electron's download hosts. Needs Docker; the first run builds the worker image. A
-                run carries one credential: the model's API key, or, if you opt in per run, your
-                Codex or Gemini sign-in copied into the container.
+                you to apply. Built-in models infer on the desktop; their keys and sign-in tokens stay there. When the run
+                installs dependencies (on by default, per run), it can reach the npm registry, GitHub and
+                Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
+                External coding agents run in the container with their selected API key, or, if you opt in
+                per run, your Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 
@@ -72693,7 +74614,7 @@ var init_experimental_markup = __esm({
                 <option value="">(loading\u2026)</option>
               </select>
               <p class="field-hint">
-                How to choose the model that carries out the delegated steps, resolved against
+                How to choose the model that carries out the delegated steps \u2014 resolved against
                 your configured providers each time a step is handed off. Prefer a rule that lands
                 cheaper and faster than your chat model.
               </p>
@@ -72725,6 +74646,7 @@ var init_experimental_markup = __esm({
           </section>
 `;
     experimentalFields = [
+      { name: "remoteSystemOneModelsEnabled", kind: "checkbox", default: false, save: true },
       { name: "vncEnabled", kind: "checkbox", default: false, save: true },
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
@@ -72780,7 +74702,7 @@ var init_registry = __esm({
       { id: "customise", label: "Customise", markup: customiseMarkup, fields: customiseFields },
       { id: "storage", label: "Storage", markup: storageMarkup, fields: [] },
       { id: "appearance", label: "Appearance", markup: appearanceMarkup, fields: appearanceFields },
-      { id: "ssh", label: "SSH", markup: sshMarkup, fields: sshFields },
+      { id: "ssh", label: "Machines", markup: sshMarkup, fields: sshFields },
       {
         id: "experimental",
         label: "Experimental",
@@ -72793,9 +74715,9 @@ var init_registry = __esm({
 });
 
 // src/renderer/views/settings/navigation.ts
-function openSettingsDialog(section) {
+function openSettingsDialog(section2) {
   if (!overlayEl || overlayEl.open) return;
-  pendingSection = section ?? null;
+  pendingSection = section2 ?? null;
   overlayEl.showModal();
   overlayEl.dispatchEvent(new Event("settings-open"));
 }
@@ -72836,10 +74758,10 @@ function consumeSettingsOpenTarget() {
 }
 function openModelSettings(target = "model") {
   pendingModelTarget = target;
-  const section = target === "orchestrationWorkerModel" ? "experimental" : target.startsWith("plugin:") || target === "advisorModel" ? "customise" : "general";
-  pendingSection = section;
+  const section2 = target === "orchestrationWorkerModel" ? "experimental" : target.startsWith("plugin:") || target === "advisorModel" ? "customise" : "general";
+  pendingSection = section2;
   if (overlayEl?.open) overlayEl.dispatchEvent(new Event("settings-reveal-model"));
-  else openSettingsDialog(section);
+  else openSettingsDialog(section2);
 }
 function revealModelSettingsControl(root, target) {
   const resolved3 = target === "advisorModel" ? "plugin:copse.advisor-strategy:advisorModel" : target;
@@ -72902,11 +74824,11 @@ function createSettingsNavigation(overlay, onVisible) {
   function renderNavSubheadings(id) {
     clearNavSubheadings();
     const navBtn = Array.from(navBtns).find((btn) => btn.dataset["section"] === id);
-    const section = Array.from(sections).find((sec) => sec.dataset["section"] === id);
-    if (!navBtn || !section) return;
+    const section2 = Array.from(sections).find((sec) => sec.dataset["section"] === id);
+    if (!navBtn || !section2) return;
     const list = document.createElement("div");
     list.className = "settings-nav-subheadings";
-    for (const block of topLevelBlocks(section)) {
+    for (const block of topLevelBlocks(section2)) {
       if (block.closest("[hidden]")) continue;
       const label = block.querySelector("legend")?.textContent.trim();
       if (!label) continue;
@@ -73016,10 +74938,10 @@ function createSettingsNavigation(overlay, onVisible) {
       searchInput.value = "";
       restoreLiftedBlocks();
       applySearch("");
-      const section = control.closest(".settings-section")?.dataset["section"];
-      if (isSettingsSection(section)) {
-        showSection(section);
-        onVisible([section]);
+      const section2 = control.closest(".settings-section")?.dataset["section"];
+      if (isSettingsSection(section2)) {
+        showSection(section2);
+        onVisible([section2]);
       }
       let ancestor = control.parentElement;
       while (ancestor && ancestor !== overlay) {
@@ -73121,12 +75043,12 @@ function mountSettingsDialog(store2, api2) {
               spellcheck="false"
             />
           </div>
-          ${SETTINGS_SECTIONS.map((section) => `<button type="button" class="settings-nav-btn" data-section="${section.id}">${section.label}</button>`).join("")}
+          ${SETTINGS_SECTIONS.map((section2) => `<button type="button" class="settings-nav-btn" data-section="${section2.id}">${section2.label}</button>`).join("")}
 
         </nav>
 
         <form class="settings-content" novalidate>
-          ${SETTINGS_SECTIONS.map((section) => section.markup).join("")}
+          ${SETTINGS_SECTIONS.map((section2) => section2.markup).join("")}
 
           <div class="settings-search-results" id="settings-search-results"></div>
 
@@ -73155,6 +75077,9 @@ function mountSettingsDialog(store2, api2) {
     }
   });
   qsRequired(overlay, "#settings-ssh-workspace-host").append(sshWorkspaceSection.root);
+  const machinesSection = createMachinesSection(api2);
+  qsRequired(overlay, "#settings-machines-host").append(machinesSection.root);
+  let machineRefreshTimer;
   const providersSection = createProvidersSection(overlay, api2);
   const toolPermissionsPanel = createToolPermissionsPanel(api2.toolPermissions);
   qsRequired(overlay, "#tool-permissions-host").append(toolPermissionsPanel.root);
@@ -73211,8 +75136,8 @@ function mountSettingsDialog(store2, api2) {
   const sources3 = createSourcesSection({
     root: overlay,
     api: api2,
-    onTrusted: (statuses) => {
-      mcp.render(statuses);
+    onTrusted: (statuses2) => {
+      mcp.render(statuses2);
     },
     onHeadingsChanged: () => {
       nav.refreshHeadings();
@@ -73221,8 +75146,8 @@ function mountSettingsDialog(store2, api2) {
   const mcp = createMcpSection(
     overlay,
     api2,
-    (statuses) => {
-      mcp.render(statuses);
+    (statuses2) => {
+      mcp.render(statuses2);
       void sources3.refresh();
     },
     () => {
@@ -73261,7 +75186,23 @@ function mountSettingsDialog(store2, api2) {
       permissions: {
         refresh: (_values, signal) => toolPermissionsPanel.refresh(signal)
       },
-      ssh: { refresh: (_values, signal) => sshWorkspaceSection.refresh(signal) },
+      ssh: {
+        refresh: async (_values, signal) => {
+          await Promise.all([sshWorkspaceSection.refresh(signal), machinesSection.refresh()]);
+          if (signal.aborted || !overlay.isConnected) return;
+          clearInterval(machineRefreshTimer);
+          machineRefreshTimer = setInterval(() => {
+            if (signal.aborted || !overlay.isConnected) {
+              clearInterval(machineRefreshTimer);
+              return;
+            }
+            void machinesSection.refresh().catch((error62) => console.error("[settings] Machine refresh failed:", error62));
+          }, 3e3);
+        },
+        deactivate: () => {
+          clearInterval(machineRefreshTimer);
+        }
+      },
       about: { refresh: (_values, signal) => aboutSection.refresh(signal) },
       customise: {
         refresh: async (_values, signal) => {
@@ -73277,6 +75218,11 @@ function mountSettingsDialog(store2, api2) {
         retainDrafts: true,
         refresh: async (values, signal) => {
           await Promise.all([modelsSection.refreshWorker(values, signal), packs.refresh(signal)]);
+          const status2 = await api2.mobile.status();
+          if (signal.aborted) return;
+          qsRequired(overlay, "#mobile-companion-qr-image").innerHTML = status2.qrSvg ?? "";
+          qsRequired(overlay, "#mobile-companion-qr-url").textContent = status2.url ?? "";
+          qsRequired(overlay, "#mobile-companion-qr").hidden = !status2.url || !status2.qrSvg;
         },
         deactivate: () => {
           packs.invalidate();
@@ -73322,8 +75268,8 @@ function mountSettingsDialog(store2, api2) {
       syncDeveloperOnlySettings();
     });
   function setLoading(loading) {
-    for (const section of overlay.querySelectorAll(".settings-section"))
-      section.inert = loading;
+    for (const section2 of overlay.querySelectorAll(".settings-section"))
+      section2.inert = loading;
     saveButton.disabled = loading;
     form.setAttribute("aria-busy", String(loading));
   }
@@ -73354,7 +75300,7 @@ function mountSettingsDialog(store2, api2) {
       const values = await api2.settings.getSnapshot();
       if (mine !== openGeneration || !isSettingsDialogOpen()) return;
       snapshot = values;
-      for (const section of SETTINGS_SECTIONS) loadSimpleFields(overlay, section.fields, values);
+      for (const section2 of SETTINGS_SECTIONS) loadSimpleFields(overlay, section2.fields, values);
       providersSection.load(values);
       modelsSection.load(values);
       appearance.load(values);
@@ -73412,8 +75358,8 @@ function mountSettingsDialog(store2, api2) {
         ...appearance.collect(data, savedDirty),
         ...sshWorkspaceSection.collect(data, savedDirty)
       };
-      for (const section of SETTINGS_SECTIONS)
-        Object.assign(changes, collectSimpleFields(section.fields, data, savedDirty));
+      for (const section2 of SETTINGS_SECTIONS)
+        Object.assign(changes, collectSimpleFields(section2.fields, data, savedDirty));
       await api2.settings.update(changes);
       appearance.commit(changes);
       const state = store2.getState();
@@ -73469,6 +75415,7 @@ function mountSettingsDialog(store2, api2) {
 }
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
+    init_machines_section();
     init_dialog_shell();
     init_helpers();
     init_icons();
@@ -73678,6 +75625,93 @@ var init_thread_pr_relations = __esm({
 var init_thread_pr_relations2 = __esm({
   "src/shared/git/thread-pr-relations.ts"() {
     init_thread_pr_relations();
+  }
+});
+
+// packages/thread-store/src/thread-links.ts
+function threadIdFromHref(href) {
+  const deep = /^copse:\/\/thread\/([a-f0-9-]+)$/i.exec(href);
+  if (deep?.[1] !== void 0) return THREAD_ID.test(deep[1]) ? deep[1].toLowerCase() : null;
+  try {
+    const url2 = new URL(href);
+    if (url2.hostname !== "copse.dev" || !url2.pathname.startsWith("/open")) return null;
+    const id = new URLSearchParams(url2.hash.slice(1)).get("thread");
+    return id !== null && THREAD_ID.test(id) ? id.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+function toLink(raw) {
+  const href = raw.replace(TRAILING_PUNCTUATION, "");
+  const threadId = threadIdFromHref(href);
+  if (threadId !== null) return { kind: "thread", target: threadId };
+  let url2;
+  try {
+    url2 = new URL(href);
+  } catch {
+    return null;
+  }
+  if (url2.protocol !== "https:" && url2.protocol !== "http:") return null;
+  if (parseGithubPrUrl(url2.href) !== null) return null;
+  url2.hash = "";
+  return { kind: "url", target: url2.href };
+}
+function extractThreadLinks(text2) {
+  const seen = /* @__PURE__ */ new Set();
+  const links = [];
+  for (const match of text2.matchAll(URL_PATTERN)) {
+    const link = toLink(match[0]);
+    if (!link) continue;
+    const key = `${link.kind}:${link.target}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push(link);
+    if (links.length >= MAX_LINKS_PER_MESSAGE) break;
+  }
+  return links;
+}
+function mergeThreadLinks(existing, found) {
+  const links = [...existing];
+  const seen = new Set(links.map((link) => `${link.kind}:${link.target}`));
+  let added = false;
+  for (const link of found) {
+    if (links.length >= MAX_LINKS_PER_THREAD) break;
+    const key = `${link.kind}:${link.target}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push(link);
+    added = true;
+  }
+  return { links, added };
+}
+function collectThreadLinks(thread) {
+  let links = [];
+  for (const message2 of thread.messages) {
+    links = mergeThreadLinks(links, extractThreadLinks(message2.content)).links;
+  }
+  return thread.id === void 0 ? links : links.filter((link) => !(link.kind === "thread" && link.target === thread.id));
+}
+function backlinksFor(threads, kind, target) {
+  return threads.filter(
+    (thread) => thread.archivedAt == null && (thread.links ?? []).some((link) => link.kind === kind && link.target === target)
+  ).map((thread) => ({ threadId: thread.id, title: thread.title })).sort((a3, b4) => a3.threadId.localeCompare(b4.threadId));
+}
+var URL_PATTERN, THREAD_ID, TRAILING_PUNCTUATION, MAX_LINKS_PER_MESSAGE, MAX_LINKS_PER_THREAD;
+var init_thread_links = __esm({
+  "packages/thread-store/src/thread-links.ts"() {
+    init_github_pr_url();
+    URL_PATTERN = /https?:\/\/[^\s<>"'`)\]]+|copse:\/\/thread\/[a-f0-9-]+/gi;
+    THREAD_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    TRAILING_PUNCTUATION = /[.,;:!?]+$/;
+    MAX_LINKS_PER_MESSAGE = 50;
+    MAX_LINKS_PER_THREAD = 200;
+  }
+});
+
+// src/shared/threads/thread-links.ts
+var init_thread_links2 = __esm({
+  "src/shared/threads/thread-links.ts"() {
+    init_thread_links();
   }
 });
 
@@ -73969,9 +76003,10 @@ var init_panels = __esm({
 
 // src/shared/fs/image-path.ts
 function imageMimeType(path) {
-  const name = path.split("/").pop()?.toLowerCase() ?? "";
-  const ext = name.split(".").pop() ?? "";
-  return IMAGE_MIME_BY_EXT[ext] ?? null;
+  const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return null;
+  return IMAGE_MIME_BY_EXT.get(name.slice(dot + 1)) ?? null;
 }
 function isImagePath(path) {
   return imageMimeType(path) !== null;
@@ -73983,17 +76018,17 @@ function isRasterImagePath(path) {
 var IMAGE_MIME_BY_EXT;
 var init_image_path = __esm({
   "src/shared/fs/image-path.ts"() {
-    IMAGE_MIME_BY_EXT = {
-      avif: "image/avif",
-      bmp: "image/bmp",
-      gif: "image/gif",
-      ico: "image/x-icon",
-      jpeg: "image/jpeg",
-      jpg: "image/jpeg",
-      png: "image/png",
-      svg: "image/svg+xml",
-      webp: "image/webp"
-    };
+    IMAGE_MIME_BY_EXT = /* @__PURE__ */ new Map([
+      ["avif", "image/avif"],
+      ["bmp", "image/bmp"],
+      ["gif", "image/gif"],
+      ["ico", "image/x-icon"],
+      ["jpeg", "image/jpeg"],
+      ["jpg", "image/jpeg"],
+      ["png", "image/png"],
+      ["svg", "image/svg+xml"],
+      ["webp", "image/webp"]
+    ]);
   }
 });
 
@@ -75529,8 +77564,8 @@ function pngDataUrlToBlob(dataUrl) {
   if (!/^data:image\/png;base64,/i.test(dataUrl)) throw new Error("Not a PNG data URL");
   const comma = dataUrl.indexOf(",");
   const binary = atob(dataUrl.slice(comma + 1));
-  const bytes = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
-  return new Blob([bytes], { type: "image/png" });
+  const bytes2 = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
+  return new Blob([bytes2], { type: "image/png" });
 }
 function renderedImageToPng(image) {
   if (!image.complete || image.naturalWidth === 0 || image.naturalHeight === 0) {
@@ -76994,6 +79029,35 @@ var init_demo_site_tour = __esm({
   }
 });
 
+// src/shared/approval-copy.ts
+function webApprovalDetails(origin, url2, allowRemember, context) {
+  return {
+    body: url2,
+    bodyAdvice: `The agent wants to contact ${origin}. The site can see the request and any data in its URL.` + (context ? `
+
+${context}` : ""),
+    bodyFooter: allowRemember ? "Allow this request once. \u201CAlways allow\u201D permits future requests to this origin, including other URLs, and is saved in Settings." : "Allow this request once. This does not add the origin to Settings."
+  };
+}
+function browserApprovalDetails(origin, url2, allowRemember) {
+  return {
+    body: url2,
+    bodyAdvice: `The agent wants to open a browser page on ${origin}. The site can see the request and any data in its URL.`,
+    bodyFooter: "Approval allows navigation to this origin for this chat\u2019s browser session." + (allowRemember ? " \u201CAlways allow\u201D also permits future requests to this origin and is saved in Settings." : "")
+  };
+}
+function providerApprovalDetails(host, baseUrl) {
+  return {
+    body: baseUrl.trim(),
+    bodyAdvice: `Your API key and prompts will be sent to ${host} at this base URL:`,
+    bodyFooter: "Approval always allows this provider host, including other base URLs on it. The grant is saved in Settings."
+  };
+}
+var init_approval_copy = __esm({
+  "src/shared/approval-copy.ts"() {
+  }
+});
+
 // src/shared/demo-scenarios.ts
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
@@ -77105,7 +79169,7 @@ function conciseMultiTurnMessages(model) {
           id: `concise-multi-steps-${String(n2)}`,
           role: "assistant",
           model,
-          content: "Checking the code.",
+          content: "",
           toolCalls: [
             {
               id: `concise-multi-read-${String(n2)}`,
@@ -77156,7 +79220,15 @@ function conciseMultiTurnMessages(model) {
         role: "assistant",
         model,
         content,
-        toolCalls: [],
+        toolCalls: [
+          {
+            id: `concise-multi-audit-${String(n2)}-${String(i2)}`,
+            name: "sandbox_network_audit",
+            args: {},
+            status: "done",
+            result: "Audit complete."
+          }
+        ],
         createdAt: at3 + 3 + i2
       }))
     ];
@@ -77215,12 +79287,35 @@ function conciseThreadScenario(id, label, model, {
     ]
   };
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, DEMO_SCENARIOS;
+function approvalRiskScenario(id, request) {
+  return {
+    id,
+    label: request.title,
+    project: project(`demo-${id}-project`),
+    settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: "Review requested access",
+        status: "idle",
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME
+      }
+    ],
+    approvalRequests: [request]
+  };
+}
+var FIXED_TIME, SIDE_CHATS_MAIN_ID, SIDE_CHATS_OTHER_ID, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, SIDE_CHATS_THREADS, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
     init_demo_site_tour();
+    init_approval_copy();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
+    SIDE_CHATS_MAIN_ID = "7b3e9a10-5c2d-4f6e-8a41-0d9c2b7e5f13";
+    SIDE_CHATS_OTHER_ID = "3c1f0a52-8b3e-4d7a-9f10-2a6b7c8d9e01";
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
     DEMO_CODEX_ACP_AGENT = {
@@ -77447,6 +79542,127 @@ var init_demo_scenarios = __esm({
         "</svg>"
       ].join("")
     )}`;
+    SIDE_CHATS_THREADS = [
+      {
+        id: SIDE_CHATS_MAIN_ID,
+        title: "Fix flaky mermaid e2e",
+        status: "idle",
+        gitBranch: "fix/mermaid-wait",
+        model: "acp:claude-acp#sonnet",
+        messages: [
+          {
+            id: "sc-user-1",
+            role: "user",
+            content: "The mermaid e2e spec fails about one run in five on CI. Any idea why?",
+            toolCalls: [],
+            createdAt: FIXED_TIME + 1e3
+          },
+          {
+            id: "sc-assistant-1",
+            role: "assistant",
+            content: [
+              "The spec asserts on the rendered svg right after navigation, but Mermaid renders",
+              "asynchronously. See https://webdriver.io/docs/api/element/waitForDisplayed and the",
+              `release thread copse://thread/${SIDE_CHATS_OTHER_ID}. Fix proposed in`,
+              "https://github.com/acme/widgets/pull/42."
+            ].join(" "),
+            toolCalls: [
+              {
+                id: "sc-explore-call",
+                name: "explore",
+                args: { query: "waitForExist usages" },
+                status: "done",
+                result: "14 matches across 3 specs.",
+                subagent: {
+                  id: "sc-explore-session",
+                  kind: "explore",
+                  status: "done",
+                  prompt: "Find every waitForExist on the mermaid selector",
+                  summary: "14 matches across 3 specs.",
+                  messages: [],
+                  model: "acp:claude-acp#haiku"
+                }
+              }
+            ],
+            createdAt: FIXED_TIME + 2e3
+          }
+        ],
+        prRefs: [
+          {
+            owner: "acme",
+            repo: "widgets",
+            number: 42,
+            url: "https://github.com/acme/widgets/pull/42"
+          }
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME + 5e3
+      },
+      {
+        id: "sc-side-1",
+        title: "waitForExist vs waitForDisplayed",
+        status: "idle",
+        model: "acp:codex-acp#fast",
+        sideChat: { parentThreadId: SIDE_CHATS_MAIN_ID, anchorMessageId: "sc-assistant-1" },
+        unreadAt: FIXED_TIME + 4e3,
+        messages: [
+          {
+            id: "sc-side1-user",
+            role: "user",
+            content: "What is the difference between waitForExist and waitForDisplayed here?",
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3100
+          },
+          {
+            id: "sc-side1-assistant",
+            role: "assistant",
+            content: "`waitForExist` only checks that the node is in the DOM. `waitForDisplayed` also needs a non-zero size and no `display: none`. Mermaid inserts an empty svg first, so the first one passes too early.",
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3900
+          }
+        ],
+        prRefs: [],
+        links: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME + 3e3,
+        updatedAt: FIXED_TIME + 4e3
+      },
+      {
+        id: "sc-side-2",
+        title: "Is this safe to merge?",
+        status: "idle",
+        model: "acp:claude-acp#sonnet",
+        sideChat: { parentThreadId: SIDE_CHATS_MAIN_ID, anchorMessageId: "sc-user-1" },
+        archivedAt: FIXED_TIME + 4500,
+        messages: [],
+        messagesLoaded: false,
+        prRefs: [],
+        links: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME + 2500,
+        updatedAt: FIXED_TIME + 4500
+      },
+      {
+        id: SIDE_CHATS_OTHER_ID,
+        title: "Release notes draft",
+        status: "idle",
+        messages: [
+          {
+            id: "sc-other-1",
+            role: "user",
+            content: `Include the mermaid fix from copse://thread/${SIDE_CHATS_MAIN_ID}.`,
+            toolCalls: [],
+            createdAt: FIXED_TIME
+          }
+        ],
+        prRefs: [],
+        links: [{ kind: "thread", target: SIDE_CHATS_MAIN_ID }],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME + 1e3
+      }
+    ];
     DEMO_SCENARIOS = [
       // The first scenario remains the marketing landing walkthrough.
       {
@@ -77622,8 +79838,8 @@ var init_demo_scenarios = __esm({
           finishedAt: FIXED_TIME + 23 * 6e4,
           prompt: "Clear the lint suppression backlog in the renderer views",
           model: "claude-sonnet-4-6",
-          egressAllowlist: ["api.anthropic.com:443"],
-          credential: "key",
+          egressAllowlist: ["inference.copse.internal:443"],
+          credential: "host",
           settings: {
             budgets: { wallClockMs: 18e4, tokenCeiling: 2e4 },
             installDependencies: false
@@ -77659,10 +79875,10 @@ var init_demo_scenarios = __esm({
               pidsLimit: 512,
               memoryLimit: "4g",
               network: "brokered",
-              egressAllowlist: ["api.anthropic.com:443"],
+              egressAllowlist: ["inference.copse.internal:443"],
               hostMounts: ["/run/copse", "/run/copse/state", "/run/copse/out"]
             },
-            egress: [{ at: FIXED_TIME, origin: "api.anthropic.com:443", event: "connect" }],
+            egress: [{ at: FIXED_TIME, origin: "inference.copse.internal:443", event: "connect" }],
             result: {
               threadId: "demo-container-thread",
               stopReason: "completed",
@@ -77722,7 +79938,7 @@ var init_demo_scenarios = __esm({
             carryIn: { sha: "9b1b901683b9f0e5b2a3c4d5e6f708192a3b4c5d", dirty: false },
             carryOut: { expected: true, ref: "refs/copse/runs/run-demo-1", error: null },
             containerExit: 0,
-            credential: "key",
+            credential: "host",
             teardown: "removed",
             cleanupError: null,
             secretCanary: { present: false, detail: "canary absent from every surface" }
@@ -78206,7 +80422,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-oracle",
             title: "Run outside sandbox?",
             body: "node .tmp/dep-candidates.mjs",
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Runs a script file from the project, so Copse can't tell what it does",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Runs a script file from the project, so Copse can't tell what it does\n\nThis runs with your user account\u2019s access to files and the network, beyond the project sandbox.",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
@@ -78214,7 +80430,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-syntax",
             title: "Run outside sandbox?",
             body: "mkdir -p node_modules && ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild",
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path\n\nThis runs with your user account\u2019s access to files and the network, beyond the project sandbox.",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
@@ -78222,7 +80438,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-test",
             title: "Run outside sandbox?",
             body: "ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild",
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path\n\nThis runs with your user account\u2019s access to files and the network, beyond the project sandbox.",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           }
@@ -78959,6 +81175,13 @@ var init_demo_scenarios = __esm({
           theme: "dark",
           uiTintStrength: "off"
         },
+        // Two rows carry a trailing changes glyph, with very different title lengths,
+        // so a grouped view's "· demo" owner labels can't hide a glyph that isn't
+        // pinned to the row's trailing edge.
+        threadChanges: {
+          "demo-sidebar-sort-b": { dirty: false, unpushed: 2 },
+          "demo-sidebar-sort-c": { dirty: true }
+        },
         // Newest-prompted first, as the store keeps them: neither creation nor title order.
         threads: [
           {
@@ -79012,6 +81235,89 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME - 5
           }
         ]
+      },
+      {
+        id: "sidebar-cleanup-ssh",
+        label: "Cleanup for SSH pull requests",
+        project: {
+          ...project("demo-cleanup-ssh", "Remote widgets", "/srv/widgets"),
+          sshHost: "build-host"
+        },
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          sshWorkspaceEnabled: true
+        },
+        threads: ["open", "closed"].map((state, index) => ({
+          id: `ssh-cleanup-${state}`,
+          title: state === "open" ? "Remote PR still open" : "Remote PR completed",
+          status: state === "open" ? "running" : "idle",
+          messages: [],
+          messagesLoaded: false,
+          prRefs: [
+            {
+              owner: "acme",
+              repo: "widgets",
+              number: index + 1,
+              url: `https://github.com/acme/widgets/pull/${String(index + 1)}`
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: FIXED_TIME - index,
+          updatedAt: FIXED_TIME - index
+        })),
+        pullRequests: [1, 2].map((number4) => ({
+          owner: "acme",
+          repo: "widgets",
+          number: number4,
+          url: `https://github.com/acme/widgets/pull/${String(number4)}`,
+          title: "Remote change",
+          state: number4 === 1 ? "OPEN" : "CLOSED",
+          body: "",
+          files: [],
+          checks: "success"
+        }))
+      },
+      {
+        id: "sidebar-cleanup-after-pr",
+        label: "Cleanup after merged or closed PRs",
+        project: project("demo-cleanup-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threadChanges: {
+          "cleanup-dirty": { dirty: true },
+          "cleanup-unpushed": { dirty: false, unpushed: 2 },
+          "cleanup-clean": { dirty: false }
+        },
+        threads: ["dirty", "unpushed", "clean"].map((state, index) => ({
+          id: `cleanup-${state}`,
+          title: state === "dirty" ? "New edits after merge" : state === "unpushed" ? "Unpushed follow-up" : "Finished and clean",
+          status: "idle",
+          messages: [],
+          messagesLoaded: false,
+          prRefs: [
+            {
+              owner: "acme",
+              repo: "widgets",
+              number: index + 1,
+              url: `https://github.com/acme/widgets/pull/${String(index + 1)}`
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: FIXED_TIME - index,
+          updatedAt: FIXED_TIME - index
+        })),
+        pullRequests: [1, 2, 3].map((number4) => ({
+          owner: "acme",
+          repo: "widgets",
+          number: number4,
+          url: `https://github.com/acme/widgets/pull/${String(number4)}`,
+          title: "Previous change",
+          state: number4 === 2 ? "CLOSED" : "MERGED",
+          body: "",
+          files: [],
+          checks: "success"
+        }))
       },
       {
         id: "sidebar-thread-changes",
@@ -79083,6 +81389,10 @@ var init_demo_scenarios = __esm({
         // The first thread is the active one and is empty, so the chat pane is the
         // Activity home. The others give it something to list: one waiting on an
         // approval, two running, one that finished while the user was elsewhere.
+        // A second project, so the strip lists projects at all (a lone one adds no card).
+        otherProjects: [
+          { project: project("demo-activity-other-docs", "docs-site", "/demo/docs"), threads: [] }
+        ],
         threads: [
           {
             id: "demo-activity-home-new",
@@ -79148,10 +81458,72 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home-many-projects",
+        label: "Activity home listing twelve projects",
+        project: project("demo-activity-many-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        // Twelve projects overflow the strip, so it scrolls with an edge fade. Only the
+        // open one has thread data, so the rest read "All clear" and sort by name.
+        otherProjects: [
+          "Atlas",
+          "Billing API",
+          "Cobalt",
+          "Docs site",
+          "Edge workers",
+          "Flight deck",
+          "Gateway",
+          "Harbor",
+          "Ingest",
+          "Jupiter",
+          "Kiln"
+        ].map((name) => ({
+          project: {
+            id: `demo-activity-many-${name.toLowerCase().replace(/\W+/g, "-")}`,
+            path: `/demo/${name}`,
+            name
+          },
+          threads: []
+        })),
+        threads: [
+          {
+            id: "demo-activity-many-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-many-refactor",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-activity-many-approval",
+            threadId: "demo-activity-many-refactor",
+            title: "Run shell command?",
+            body: "printf 'auth-check-passed\\n'",
+            type: "shell"
+          }
+        ]
+      },
+      {
         id: "activity-home-project-filter",
         label: "Activity home after a project finishes waiting",
         project: project("demo-activity-home-filter-project"),
         settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        // A second project, so the strip lists projects at all (a lone one adds no card).
+        otherProjects: [
+          { project: project("demo-activity-other-docs", "docs-site", "/demo/docs"), threads: [] }
+        ],
         threads: [
           {
             id: "demo-activity-filter-new",
@@ -79419,6 +81791,69 @@ var init_demo_scenarios = __esm({
         }))
       },
       {
+        id: "side-chats",
+        label: "Side chats beside the main thread",
+        project: project("demo-side-chats", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        threads: SIDE_CHATS_THREADS
+      },
+      {
+        id: "thread-context",
+        label: "The thread Context panel",
+        project: project("demo-thread-context", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          filesPaneOpen: true,
+          rightPanelMode: "context",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        threads: SIDE_CHATS_THREADS
+      },
+      {
+        id: "side-chat-approval",
+        label: "A side chat asks for approval over its parent thread",
+        project: project("demo-side-chat-approval", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        threads: SIDE_CHATS_THREADS,
+        approvalRequests: [
+          {
+            id: "demo-side-chat-approval-request",
+            threadId: "sc-side-1",
+            title: "Run outside sandbox?",
+            body: "pnpm exec wdio run wdio.e2e.conf.ts --spec tests/e2e/mermaid.e2e.ts",
+            bodyFooter: "Allow running it once outside the sandbox?",
+            type: "shell"
+          }
+        ]
+      },
+      {
         id: "chat-layout-styling",
         label: "Chat layout styling",
         project: project("demo-chat-layout-project"),
@@ -79643,7 +82078,41 @@ var init_demo_scenarios = __esm({
         ]
       },
       // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
-      ...SITE_TOUR_SCENARIOS
+      ...SITE_TOUR_SCENARIOS,
+      approvalRiskScenario("approval-web-url", {
+        id: "web-url",
+        title: "Allow web origin?",
+        type: "web",
+        ...webApprovalDetails(
+          "https://example.com:443",
+          "https://example.com/docs?topic=approvals",
+          true
+        ),
+        allowRemember: true,
+        rememberLabel: "Always allow https://example.com:443",
+        approveLabel: "Allow request"
+      }),
+      approvalRiskScenario("approval-browser-url", {
+        id: "browser-url",
+        title: "Allow browser navigation?",
+        type: "mcp",
+        ...browserApprovalDetails(
+          "https://example.com:443",
+          "https://example.com/docs?topic=approvals",
+          true
+        ),
+        allowRemember: true,
+        rememberLabel: "Always allow https://example.com:443",
+        approveLabel: "Allow navigation"
+      }),
+      approvalRiskScenario("approval-provider-url", {
+        id: "provider-url",
+        title: "Allow model provider host?",
+        type: "web",
+        ...providerApprovalDetails("api.example.com", "https://api.example.com/v1"),
+        allowRemember: false,
+        approveLabel: "Always allow host"
+      })
     ];
   }
 });
@@ -79796,10 +82265,15 @@ function createDemoApi(scenario, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api2 = {
-    mobile: { manage: async () => {
-    }, onChat: () => () => {
-    }, reply: async () => {
-    } },
+    mobile: {
+      manage: async () => {
+      },
+      status: () => resolved2(MOBILE_COMPANION_DEMO_STATUS),
+      onChat: () => () => {
+      },
+      reply: async () => {
+      }
+    },
     windowState: {
       getNavigation: () => resolved2(structuredClone(navigation)),
       setNavigation: (next) => {
@@ -80139,7 +82613,9 @@ function createDemoApi(scenario, options = {}) {
       reopenArtefact: () => resolved2(false)
     },
     storage: {
+      containerCleanup: () => resolved2({ removed: 0, bytes: 0, skipped: 0 }),
       maintenance: () => resolved2({
+        containers: emptyContainerStorage(),
         retention: { enabled: true, days: 30 },
         areas: [
           { area: "runs", bytes: 0, entries: 0, busy: false },
@@ -80165,6 +82641,7 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     threads: {
+      storageSize: () => resolved2({ bytes: 24576, truncated: false }),
       archive: (_projectId, threadId) => {
         const archivedAt = Date.now();
         const thread = threads.find((candidate) => candidate.id === threadId);
@@ -80241,6 +82718,7 @@ function createDemoApi(scenario, options = {}) {
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved2({ source: "empty", messageCount: 0 }),
+      backlinks: (_projectId, kind, target) => resolved2(backlinksFor(threads, kind, target)),
       historySnapshot: unsupported,
       editHistory: unsupported,
       undoHistoryEdit: unsupported,
@@ -80312,6 +82790,7 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     acp: {
+      browseRegistry: () => resolved2({ entries: [], fetchedAt: Date.now(), skipped: 0 }),
       detectAgents: emptyArray,
       probeAgent: unsupported,
       autoSetup: () => resolved2({
@@ -80342,6 +82821,29 @@ function createDemoApi(scenario, options = {}) {
       onUiScaleZoomOut: subscribe,
       onUiScaleReset: subscribe
     },
+    machines: {
+      state: () => resolved2({
+        featureEnabled: false,
+        machines: [],
+        addresses: [],
+        sharing: {
+          enabled: false,
+          address: "127.0.0.1",
+          port: 4319,
+          profileIds: [],
+          listening: false,
+          error: null
+        },
+        shareableModels: [],
+        clients: [],
+        secureStorage: false
+      }),
+      pair: unsupported,
+      remove: unsupported,
+      share: unsupported,
+      invitation: unsupported,
+      revoke: unsupported
+    },
     classifiers: {
       list: emptyArray,
       save: unsupported,
@@ -80357,6 +82859,7 @@ function createDemoApi(scenario, options = {}) {
       install: unsupported,
       start: unsupported,
       stop: unsupported,
+      uninstall: unsupported,
       connect: unsupported
     },
     chatGptPlan: {
@@ -80426,6 +82929,7 @@ function createDemoApi(scenario, options = {}) {
           totalCostUsd: 0,
           cloudModels: [],
           localModels: [],
+          classifiers: [],
           totalInputTokens: 0,
           totalOutputTokens: 0,
           hasUnpricedCloudUsage: false
@@ -80625,6 +83129,10 @@ function createDemoApi(scenario, options = {}) {
       upsertBranchCi: unsupported,
       removeBranchCi: unsupported,
       testBranchCi: unsupported,
+      eventHistory: emptyArray,
+      reportStartFailure: () => resolved2(false),
+      schedulerHealth: () => resolved2({ state: "ok", since: null, message: null }),
+      onSchedulerHealth: subscribe,
       canStart: () => resolved2({ allowed: true }),
       onTriggered: subscribe
     },
@@ -80821,10 +83329,12 @@ function createDemoApi(scenario, options = {}) {
   };
   return api2;
 }
-var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
+var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray, MOBILE_COMPANION_DEMO_QR_SVG, MOBILE_COMPANION_DEMO_STATUS;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
+    init_storage_cleanup();
     init_thread_pr_relations2();
+    init_thread_links2();
     init_automations_plugin();
     init_parse_agent_run_payload();
     init_advisor_strategy_plugin();
@@ -81098,6 +83608,12 @@ var init_demo_api = __esm({
       }
     ];
     emptyArray = () => Promise.resolve([]);
+    MOBILE_COMPANION_DEMO_QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27 27" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h27v27H0z"/><path stroke="#000000" d="M1 1.5h7m3 0h3m1 0h1m3 0h7M1 2.5h1m5 0h1m3 0h1m1 0h1m2 0h1m2 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m1 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h2m2 0h2m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m1 0h1m5 0h2m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m1 0h2m2 0h3m1 0h1m1 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h3m4 0h1M1 9.5h1m1 0h5m2 0h2m1 0h2m2 0h1m1 0h5M2 10.5h2m1 0h1m2 0h1m1 0h1m1 0h3m1 0h2m1 0h1m4 0h1M1 11.5h2m3 0h2m1 0h1m1 0h2m4 0h3m1 0h2m1 0h2M3 12.5h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m7 0h1M3 13.5h1m2 0h5m1 0h1m2 0h2m1 0h4m1 0h3M1 14.5h2m1 0h2m3 0h2m2 0h1m2 0h7m1 0h1M1 15.5h1m1 0h1m1 0h5m1 0h1m6 0h1m1 0h3m1 0h2M1 16.5h1m2 0h2m4 0h2m1 0h3m1 0h2m1 0h1m4 0h1M1 17.5h1m1 0h2m2 0h2m1 0h2m1 0h1m3 0h5m1 0h1M9 18.5h1m1 0h1m4 0h2m3 0h2M1 19.5h7m3 0h3m3 0h1m1 0h1m1 0h1m1 0h3M1 20.5h1m5 0h1m1 0h1m2 0h1m4 0h1m3 0h2m1 0h2M1 21.5h1m1 0h3m1 0h1m1 0h4m3 0h10M1 22.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m6 0h2m2 0h1M1 23.5h1m1 0h3m1 0h1m1 0h1m4 0h3m1 0h1m1 0h3m2 0h1M1 24.5h1m5 0h1m5 0h2m4 0h5m1 0h1M1 25.5h7m1 0h1m1 0h1m1 0h1m1 0h11"/></svg>';
+    MOBILE_COMPANION_DEMO_STATUS = {
+      enabled: true,
+      url: "https://192.168.1.42:42773",
+      qrSvg: MOBILE_COMPANION_DEMO_QR_SVG
+    };
   }
 });
 
@@ -81348,9 +83864,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -81439,6 +83955,8 @@ function createStore(initial) {
     browser_url_requested: /* @__PURE__ */ new Set(),
     browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
     pr_open_requested: /* @__PURE__ */ new Set(),
+    thread_archive_requested: /* @__PURE__ */ new Set(),
+    side_chat_open_requested: /* @__PURE__ */ new Set(),
     canvas_artefact_requested: /* @__PURE__ */ new Set(),
     canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
     settings_changed: /* @__PURE__ */ new Set(),
@@ -81460,7 +83978,8 @@ function createStore(initial) {
     code_block_run_requested: /* @__PURE__ */ new Set(),
     code_block_run_finished: /* @__PURE__ */ new Set(),
     attention_changed: /* @__PURE__ */ new Set(),
-    sidebar_threads_loaded: /* @__PURE__ */ new Set()
+    sidebar_threads_loaded: /* @__PURE__ */ new Set(),
+    automation_schedules_loaded: /* @__PURE__ */ new Set()
   };
   function on3(event, handler) {
     listeners[event].add(handler);
@@ -82611,6 +85130,20 @@ function panelIcon() {
     "titlebar-btn-icon"
   );
 }
+function contextIcon() {
+  return outlineIcon(
+    "context",
+    ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z", "M12 16v-4", "M12 8h.01"],
+    "titlebar-btn-icon"
+  );
+}
+function sideChatIcon() {
+  return outlineIcon(
+    "side-chat",
+    ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"],
+    "titlebar-btn-icon"
+  );
+}
 function terminalIcon() {
   return outlineIcon("terminal", ["m7 8 4 4-4 4", "M13 16h4"], "titlebar-btn-icon");
 }
@@ -82677,6 +85210,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
   const controls = el("div", { class: opts.className ?? "titlebar-panel-controls" });
   const buttons = /* @__PURE__ */ new Map();
   let changesBadge = null;
+  let sideChatBadge = null;
   const cleanups = [];
   let syncOverflow = null;
   for (const def of PANEL_CONTROL_DEFS) {
@@ -82690,6 +85224,10 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     if (def.id === "changes") {
       changesBadge = el("span", { class: "titlebar-btn-badge", hidden: true });
       children.push(changesBadge);
+    }
+    if (def.id === "side-chat") {
+      sideChatBadge = el("span", { class: "titlebar-btn-badge", hidden: true });
+      children.push(sideChatBadge);
     }
     const btn = el(
       "button",
@@ -82909,13 +85447,37 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     }
     syncOverflow?.();
   }
+  function syncSideChatBadge() {
+    if (!sideChatBadge) return;
+    const { threads, activeThreadId, filesPaneOpen, rightPanelMode } = store2.getState();
+    const active2 = threads.find((thread) => thread.id === activeThreadId);
+    const mainId = active2?.sideChat?.parentThreadId ?? active2?.id;
+    const rows = mainId === void 0 ? [] : sideChatsOf(threads, mainId);
+    const unread = rows.filter((row2) => row2.unread).length;
+    const btn = buttons.get("side-chat");
+    sideChatBadge.hidden = rows.length === 0;
+    sideChatBadge.textContent = String(rows.length);
+    btn?.classList.toggle("has-pending", unread > 0);
+    if (btn) {
+      applyGate(btn, rows.length > 0 || filesPaneOpen && rightPanelMode === "side-chat");
+      setTooltip(
+        btn,
+        rows.length === 0 ? "Open side chat" : `Open side chat \u2014 ${String(rows.length)} ${rows.length === 1 ? "chat" : "chats"}${unread > 0 ? `, ${String(unread)} unread` : ""}`
+      );
+    }
+    syncOverflow?.();
+  }
   syncPanelBtns();
   syncChangesBadge();
+  syncSideChatBadge();
   syncExperimentalBtns();
   const unsubs = [
     store2.on("files_pane_changed", syncPanelBtns),
+    store2.on("files_pane_changed", syncSideChatBadge),
     store2.on("right_panel_mode_changed", syncPanelBtns),
+    store2.on("right_panel_mode_changed", syncSideChatBadge),
     store2.on("staged_diffs_changed", syncChangesBadge),
+    store2.on("threads_changed", syncSideChatBadge),
     store2.on("settings_changed", syncExperimentalBtns)
   ];
   return {
@@ -82939,6 +85501,7 @@ var init_panel_mode_controls = __esm({
     init_outline_icon();
     init_tooltip();
     init_panels();
+    init_side_chat2();
     init_portrait_panel_bar_overflow();
     init_roadmap_plans_plugin();
     init_okf_memories_plugin();
@@ -82949,6 +85512,20 @@ var init_panel_mode_controls = __esm({
         ariaLabel: "Toggle right panel",
         label: "Panel",
         icon: panelIcon
+      },
+      {
+        id: "context",
+        mode: "context",
+        ariaLabel: "Open thread context",
+        label: "Context",
+        icon: contextIcon
+      },
+      {
+        id: "side-chat",
+        mode: "side-chat",
+        ariaLabel: "Open side chat",
+        label: "Side chat",
+        icon: sideChatIcon
       },
       {
         id: "terminal",
@@ -83076,10 +85653,10 @@ function mountKeyboardShortcutsDialog() {
   dialog2.className = "keyboard-shortcuts-overlay";
   const isMac2 = isMacPlatform();
   const grid = el("div", { class: "keyboard-shortcuts-grid" });
-  for (const section of SECTIONS) {
+  for (const section2 of SECTIONS) {
     const group = el("div", { class: "keyboard-shortcuts-group" });
-    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section.title));
-    for (const shortcut of section.shortcuts) {
+    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section2.title));
+    for (const shortcut of section2.shortcuts) {
       const keys = el("span", { class: "keyboard-shortcuts-keys" });
       shortcut.keys.forEach((token) => {
         keys.append(el("kbd", { class: "keyboard-shortcuts-key" }, keyLabel(token, isMac2)));
@@ -83270,10 +85847,9 @@ function mountTitlebar(root, store2, api2) {
       workspaceBranch.textContent = "";
       return;
     }
-    void api2.git.branchStatus(owner.projectId, owner.threadId).then(
-      (s16) => {
+    void api2.git.currentBranch(owner.projectId, owner.threadId).then(
+      (branch) => {
         if (token !== branchToken) return;
-        const branch = s16.currentBranch;
         workspaceBranch.hidden = !branch;
         workspaceBranch.textContent = branch ?? "";
         setTooltip(workspaceBranch, branch ? `On branch ${branch}` : null);
@@ -83460,7 +86036,14 @@ function openAutomationDialog(store2, api2, options = {}) {
       enabled,
       options.scheduleId,
       options.createNew,
-      projectId
+      projectId,
+      {
+        openRun: (threadId) => {
+          if (!projectId) return;
+          close();
+          switchProjectThread(store2, api2, projectId, threadId);
+        }
+      }
     );
     const toggle = el(
       "button",
@@ -83522,6 +86105,7 @@ var init_automation_dialog = __esm({
     init_helpers();
     init_icons();
     init_automation_plugin_settings();
+    init_projects();
     init_dialog_shell();
     init_settings_dialog();
   }
@@ -83538,7 +86122,7 @@ function forkThreadTitle(title) {
   return truncateTitle(`${base}${FORK_SUFFIX}`);
 }
 function truncateTitle(title) {
-  return title.length <= MAX_TITLE_LENGTH ? title : `${title.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
+  return title.length <= MAX_TITLE_LENGTH2 ? title : `${title.slice(0, MAX_TITLE_LENGTH2 - 1)}\u2026`;
 }
 function buildForkedThread(source, options = {}) {
   const excluded = options.excludeMessageIds ?? /* @__PURE__ */ new Set();
@@ -83555,14 +86139,17 @@ function buildForkedThread(source, options = {}) {
   const now = Date.now();
   const messages = slice.map((message2) => copyMessage(message2));
   const gitBranch = source.worktree === void 0 ? source.gitBranch : void 0;
+  const id = randomUUID2();
+  const links = collectThreadLinks({ id, messages });
   return {
-    id: randomUUID2(),
+    id,
     title: forkThreadTitle(source.title),
     status: "idle",
     messages,
     // References follow only the copied transcript; native production belongs
     // to the source thread and is never inherited or inferred from tool text.
     prRefs: collectThreadPrRefs({ messages }),
+    ...links.length > 0 ? { links } : {},
     // Usage is a ledger of what a thread spent. The fork has spent nothing yet;
     // the source keeps its own totals.
     usage: { inputTokens: 0, outputTokens: 0 },
@@ -83605,12 +86192,13 @@ function copyMessage(message2) {
     ...attachments !== void 0 ? { attachments: attachments.map((attachment) => ({ ...attachment })) } : {}
   };
 }
-var randomUUID2, MAX_TITLE_LENGTH, FORK_SUFFIX;
+var randomUUID2, MAX_TITLE_LENGTH2, FORK_SUFFIX;
 var init_fork_thread = __esm({
   "packages/thread-store/src/fork-thread.ts"() {
     init_thread_pr_status();
+    init_thread_links();
     randomUUID2 = () => globalThis.crypto.randomUUID();
-    MAX_TITLE_LENGTH = 120;
+    MAX_TITLE_LENGTH2 = 120;
     FORK_SUFFIX = " (fork)";
   }
 });
@@ -83842,7 +86430,7 @@ function groupRowsByStatus(rows, needsYou) {
     id,
     label,
     rows: rows.filter((row2) => sectionOf(row2) === id)
-  })).filter((section) => section.rows.length > 0);
+  })).filter((section2) => section2.rows.length > 0);
 }
 var STATUS_SECTION_LABELS;
 var init_thread_order = __esm({
@@ -83961,6 +86549,18 @@ function deriveActivity(input2) {
   ].sort((a3, b4) => (a3.since ?? 0) - (b4.since ?? 0));
   const waitingThreads = new Set(needsYou.flatMap((row2) => row2.threadId ? [row2.threadId] : []));
   const scheduleOf = new Map(input2.threads.map((thread) => [thread.id, thread.schedule]));
+  const issueFor = (code, message2) => {
+    const description = describeAutomationFailure(code);
+    return { code, title: description.title, remedy: description.remedy, message: message2 };
+  };
+  if (input2.now !== void 0) {
+    for (const row2 of needsYou) {
+      const thread = row2.threadId ? byId.get(row2.threadId) : void 0;
+      if (thread?.schedule && isApprovalStalled(row2.since, input2.now)) {
+        row2.issue = issueFor("approval-stalled", null);
+      }
+    }
+  }
   const threadRow = (thread, state, want, since) => ({
     key: `thread:${thread.id}`,
     state,
@@ -83990,11 +86590,25 @@ function deriveActivity(input2) {
         )
       );
     } else {
-      const endedAt = run2?.endedAt ?? thread.unreadAt;
+      const recentStartFailure = thread.schedule && thread.failure?.startFailed && thread.failure.at > (input2.now ?? 0) - 864e5 ? thread.failure.at : void 0;
+      const endedAt = run2?.endedAt ?? thread.unreadAt ?? recentStartFailure;
       if (endedAt === void 0) continue;
-      recent.push(
-        thread.status === "error" ? threadRow(thread, "failed", "Ended with an error", endedAt) : threadRow(thread, "finished", "Finished", endedAt)
-      );
+      if (thread.status === "error") {
+        const row2 = threadRow(thread, "failed", "Ended with an error", endedAt);
+        if (thread.schedule) {
+          const code = thread.failure?.code ?? "unknown";
+          row2.issue = issueFor(code, thread.failure?.message ?? null);
+          row2.want = row2.issue.title;
+        }
+        recent.push(row2);
+      } else if (thread.schedule && thread.failure?.startFailed) {
+        const row2 = threadRow(thread, "failed", "Could not start", endedAt);
+        row2.issue = issueFor(thread.failure.code, thread.failure.message);
+        row2.want = row2.issue.title;
+        recent.push(row2);
+      } else {
+        recent.push(threadRow(thread, "finished", "Finished", endedAt));
+      }
     }
   }
   const newestFirst = (a3, b4) => (b4.since ?? Number.NEGATIVE_INFINITY) - (a3.since ?? Number.NEGATIVE_INFINITY) || a3.threadTitle.localeCompare(b4.threadTitle);
@@ -84052,6 +86666,18 @@ function foldScheduleRuns(recent, scheduleOf) {
   folds.sort((a3, b4) => a3.state === b4.state ? 0 : a3.state === "failed" ? -1 : 1);
   return { folds, rest: recent.filter((row2) => !folded.has(row2)) };
 }
+function failureField(automation) {
+  const failure2 = automation.failure;
+  if (!failure2) return {};
+  return {
+    failure: {
+      code: isAutomationFailureCode(failure2.code) ? failure2.code : "unknown",
+      message: failure2.message,
+      at: failure2.at,
+      startFailed: automation.startFailedAt !== void 0
+    }
+  };
+}
 function collectActivityThreads(store2) {
   const { projects, backgroundThreads } = store2.getState();
   const out = /* @__PURE__ */ new Map();
@@ -84069,14 +86695,16 @@ function collectActivityThreads(store2) {
           schedule: {
             id: thread.automation.scheduleId,
             name: thread.automation.scheduleName
-          }
+          },
+          ...failureField(thread.automation)
         } : {}
       });
     }
   }
   for (const carried of backgroundThreads) {
     const project2 = projects.find((p2) => p2.id === carried.projectId);
-    if (!project2 || carried.thread.archivedAt != null) continue;
+    if (!project2 || carried.thread.archivedAt != null || carried.thread.sideChat !== void 0)
+      continue;
     out.set(carried.thread.id, {
       id: carried.thread.id,
       title: carried.thread.title,
@@ -84088,7 +86716,8 @@ function collectActivityThreads(store2) {
         schedule: {
           id: carried.thread.automation.scheduleId,
           name: carried.thread.automation.scheduleName
-        }
+        },
+        ...failureField(carried.thread.automation)
       } : {}
     });
   }
@@ -84139,6 +86768,8 @@ function formatAgeLong(elapsedMs) {
 var RECENT_ROW_LIMIT, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
+    init_types();
+    init_automation_failure();
     init_projects();
     RECENT_ROW_LIMIT = 10;
     SCHEDULE_FOLD_AT = 2;
@@ -84152,6 +86783,159 @@ var init_activity_model = __esm({
     MINUTE = 6e4;
     HOUR = 60 * MINUTE;
     DAY = 24 * HOUR;
+  }
+});
+
+// src/renderer/controller/side-chat.ts
+async function startSideChat(store2, api2, parentThreadId, options = {}) {
+  const parent = getThreadById(store2, parentThreadId);
+  if (!parent) return null;
+  const queued = queuedMessageIds(parent);
+  const sent = parent.messages.filter((m2) => !queued.has(m2.id));
+  const settled = parent.status === "running" ? sent.filter((m2) => m2.role === "user") : sent;
+  const anchorMessageId = options.anchorMessageId ?? settled.at(-1)?.id;
+  if (anchorMessageId === void 0 || queued.has(anchorMessageId)) return null;
+  const side = buildSideChatThread(parent, {
+    anchorMessageId,
+    ...options.model !== void 0 ? { model: options.model } : {}
+  });
+  if (!side) return null;
+  const openAs = options.open ?? "panel";
+  if (openAs === "thread") {
+    store2.emit("composer_draft_flush");
+    store2.setState({
+      threads: [side, ...store2.getState().threads],
+      activeThreadId: side.id,
+      openFile: null,
+      activeDiff: null,
+      stagedDiffs: []
+    });
+    store2.emit("threads_changed");
+    store2.emit("panel_changed");
+  } else {
+    store2.setState({ threads: [side, ...store2.getState().threads] });
+    store2.emit("threads_changed");
+    store2.emit("side_chat_open_requested", side.id);
+  }
+  const projectId = store2.getState().activeProjectId;
+  if (projectId) {
+    const seed = api2.threads.fork(projectId, parentThreadId, side.id, anchorMessageId).then(
+      () => void 0,
+      (error62) => {
+        console.error("[side-chat] failed to seed history from the parent:", error62);
+      }
+    );
+    pendingSeeds.set(side.id, seed);
+    try {
+      await seed;
+    } finally {
+      pendingSeeds.delete(side.id);
+    }
+  }
+  return side.id;
+}
+function sendSideChatMessage(store2, api2, sideThreadId, text2) {
+  const side = getThreadById(store2, sideThreadId);
+  const prompt = text2.trim();
+  if (!side || side.sideChat === void 0 || side.archivedAt != null || prompt === "") return null;
+  const messageId = addMessage(store2, sideThreadId, "user", prompt);
+  const payload = {
+    content: prompt,
+    invokedSkills: [],
+    priorTodos: side.todos ?? [],
+    ...side.workingBrief !== void 0 ? { workingBrief: side.workingBrief } : {}
+  };
+  const queued = { messageId, payload, createdAt: Date.now() };
+  const dispatch = () => {
+    if (getThreadById(store2, sideThreadId)?.status === "running") {
+      enqueueUserMessage(store2, sideThreadId, queued);
+    } else {
+      startHumanTurnTree(store2, sideThreadId);
+      dispatchAgentRun(store2, api2, sideThreadId, payload, queued);
+    }
+  };
+  const seed = pendingSeeds.get(sideThreadId);
+  if (seed) void seed.then(dispatch);
+  else dispatch();
+  return messageId;
+}
+async function promoteSideChat(store2, api2, sideThreadId) {
+  await pendingSeeds.get(sideThreadId);
+  const side = getThreadById(store2, sideThreadId);
+  if (!side || side.sideChat === void 0 || side.status === "running") return null;
+  const parent = getThreadById(store2, side.sideChat.parentThreadId);
+  const prefix = parent ? buildForkedThread(parent, {
+    throughMessageId: side.sideChat.anchorMessageId,
+    excludeMessageIds: queuedMessageIds(parent)
+  }) : null;
+  const own2 = buildForkedThread(side, { excludeMessageIds: queuedMessageIds(side) });
+  const base = own2 ?? prefix;
+  if (!base) {
+    const { sideChat: _link, ...detached } = side;
+    store2.setState({
+      threads: store2.getState().threads.map((t2) => t2.id === sideThreadId ? detached : t2)
+    });
+    store2.emit("threads_changed");
+    return sideThreadId;
+  }
+  const messages = [...prefix?.messages ?? [], ...own2?.messages ?? []];
+  const promoted = {
+    ...base,
+    title: side.title,
+    messages,
+    prRefs: collectThreadPrRefs({ messages }),
+    links: collectThreadLinks({ id: base.id, messages }),
+    ...side.model !== void 0 ? { model: side.model } : {}
+  };
+  store2.emit("composer_draft_flush");
+  store2.setState({
+    threads: [promoted, ...store2.getState().threads],
+    activeThreadId: promoted.id,
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: []
+  });
+  store2.emit("threads_changed");
+  store2.emit("panel_changed");
+  archiveThread(store2, sideThreadId);
+  const projectId = store2.getState().activeProjectId;
+  if (projectId) {
+    try {
+      if (own2) await api2.threads.fork(projectId, sideThreadId, promoted.id);
+      else if (parent)
+        await api2.threads.fork(projectId, parent.id, promoted.id, side.sideChat.anchorMessageId);
+    } catch (error62) {
+      console.error("[side-chat] failed to seed the promoted thread history:", error62);
+    }
+  }
+  return promoted.id;
+}
+function sideChatPromptOrigin(store2, threadIds) {
+  const titles2 = [];
+  let firstSideChatId;
+  for (const id of new Set(threadIds)) {
+    if (id === void 0 || attentionThreadId(store2, id) === id) continue;
+    firstSideChatId ??= id;
+    const title = getThreadById(store2, id)?.title ?? "";
+    titles2.push(`\u201C${title === "" ? "Side chat" : title}\u201D`);
+  }
+  if (firstSideChatId === void 0) return null;
+  return {
+    label: titles2.length === 1 ? `From the side chat ${titles2.join("")}` : `From the side chats ${titles2.join(", ")}`,
+    firstSideChatId
+  };
+}
+var pendingSeeds;
+var init_side_chat3 = __esm({
+  "src/renderer/controller/side-chat.ts"() {
+    init_thread_pr_status2();
+    init_fork_thread2();
+    init_thread_helpers();
+    init_thread_links2();
+    init_side_chat2();
+    init_projects();
+    init_message_queue();
+    pendingSeeds = /* @__PURE__ */ new Map();
   }
 });
 
@@ -84208,28 +86992,32 @@ function approvalRequestDetails(req) {
   return parts;
 }
 function mergeApprovalAdvice(values) {
-  const unique = [];
-  const seen = /* @__PURE__ */ new Set();
+  const sections = [];
+  const sectionIndexes = /* @__PURE__ */ new Map();
   for (const value of values) {
-    if (!value || seen.has(value)) continue;
-    seen.add(value);
-    unique.push(value);
+    if (!value) continue;
+    for (const section2 of value.split("\n\n")) {
+      const lines = section2.split("\n");
+      const lead = lines[0];
+      const reasons = lines.slice(1);
+      if (lead && reasons.length > 0 && reasons.every((line) => line.startsWith(REASON_BULLET))) {
+        const index = sectionIndexes.get(lead);
+        if (index !== void 0) {
+          const existing = sections[index];
+          if (existing === void 0) continue;
+          const mergedReasons = new Set(existing.split("\n").slice(1));
+          for (const reason of reasons) mergedReasons.add(reason);
+          sections[index] = [lead, ...mergedReasons].join("\n");
+          continue;
+        }
+        sectionIndexes.set(lead, sections.length);
+        sections.push(section2);
+      } else if (!sections.includes(section2)) {
+        sections.push(section2);
+      }
+    }
   }
-  if (unique.length <= 1) return unique[0];
-  const lines = unique.map((value) => value.split("\n"));
-  const sharedLead = lines[0]?.[0];
-  if (sharedLead === void 0 || !lines.every((parts) => parts[0] === sharedLead)) {
-    return unique.join("\n\n");
-  }
-  const merged = [sharedLead];
-  const seenDetails = /* @__PURE__ */ new Set();
-  for (const parts of lines) {
-    const details = parts.slice(1).join("\n");
-    if (!details || seenDetails.has(details)) continue;
-    seenDetails.add(details);
-    merged.push(details);
-  }
-  return merged.join("\n");
+  return sections.length > 0 ? sections.join("\n\n") : void 0;
 }
 function mountApprovalDialog(api2, store2, options = {}) {
   const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS;
@@ -84254,6 +87042,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     el("span", {}, "GitHub")
   );
   const heading = el("h3", { class: "approval-heading" });
+  const origin = el("p", { class: "approval-origin", hidden: "" });
   const items = el("div", { class: "approval-items" });
   const chatScrim = el("div", { class: "approval-chat-scrim", "aria-hidden": "true", hidden: "" });
   const approveOnceButton = el("button", {
@@ -84275,6 +87064,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   dialog2.append(
     githubBrand,
     heading,
+    origin,
     items,
     rememberLabel,
     turnTreeLeaseLabel,
@@ -84315,12 +87105,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
   function isShowable(req) {
     if (isWindowHidden()) return false;
     if (isSettingsDialogOpen() && !req.showWhileSettingsOpen) return false;
-    return !req.threadId || req.threadId === store2.getState().activeThreadId;
+    return !req.threadId || attentionThreadId(store2, req.threadId) === store2.getState().activeThreadId;
   }
   function syncAttention() {
     const activeThreadId = store2.getState().activeThreadId;
     const hidden = isWindowHidden();
-    const waiting = queue.map((req) => req.threadId).filter((id) => !!id && (hidden || id !== activeThreadId));
+    const waiting = queue.map((req) => req.threadId ? attentionThreadId(store2, req.threadId) : void 0).filter((id) => !!id && (hidden || id !== activeThreadId));
     setAttentionThreads(store2, "approval", waiting);
     for (const listener of [...changeListeners]) listener();
   }
@@ -84384,6 +87174,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
       }
     }
     heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
+    const asker = sideChatPromptOrigin(
+      store2,
+      batch.map((req) => req.threadId)
+    );
+    origin.hidden = asker === null;
+    origin.textContent = asker?.label ?? "";
     const isGithubApproval = batch.some((request) => request.title.includes("GitHub"));
     githubBrand.hidden = !isGithubApproval;
     dialog2.classList.toggle("approval-dialog-github", isGithubApproval);
@@ -84428,7 +87224,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         return el("div", { class: "approval-item" }, ...rowChildren);
       })
     );
-    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : "Approve";
+    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : soloRequest()?.approveLabel ?? "Approve";
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : "Reject";
     const onceLabel = approveOnceGrant();
     const showOnce = onceLabel !== "" && (!collapseDetails || detailsExpanded);
@@ -84483,6 +87279,11 @@ function mountApprovalDialog(api2, store2, options = {}) {
     rememberInput.checked = false;
     detailsExpanded = false;
     renderBatch();
+    const asker = sideChatPromptOrigin(
+      store2,
+      batch.map((req) => req.threadId)
+    );
+    if (asker) store2.emit("side_chat_open_requested", asker.firstSideChatId);
     const shouldShowModal = isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
     if (shouldShowModal) {
       dialog2.showModal();
@@ -84573,6 +87374,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       type,
       allowRemember,
       rememberLabel: rememberLabel2,
+      approveLabel,
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
@@ -84591,6 +87393,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         type,
         allowRemember,
         rememberLabel: rememberLabel2,
+        approveLabel,
         collapseDetails,
         approveOnceLabel,
         showWhileSettingsOpen,
@@ -84673,6 +87476,8 @@ var init_approval_dialog = __esm({
     init_helpers();
     init_settings_dialog();
     init_attention();
+    init_projects();
+    init_side_chat3();
     init_actions();
     APPROVAL_COALESCE_MS = 120;
     APPROVAL_SETTLE_MS = 500;
@@ -84713,6 +87518,25 @@ function createActivityView(api2, store2, sources3, deps, host) {
     "aria-labelledby": `${host.idPrefix}-detail-title`
   });
   const body = el("div", { class: "activity-panel-body" }, list, detail);
+  const notice = el("p", {
+    class: "activity-automation-notice",
+    role: "status",
+    hidden: true
+  });
+  const showSchedulerHealth = (health) => {
+    if (health.state === "ok") {
+      notice.hidden = true;
+      notice.textContent = "";
+      return;
+    }
+    const description = describeAutomationFailure("scheduler-stopped");
+    notice.hidden = false;
+    notice.dataset["state"] = health.state;
+    notice.textContent = `${description.title}: ${health.message ?? description.remedy} ${description.remedy}`;
+  };
+  api2.automations.schedulerHealth().then(showSchedulerHealth, () => {
+  });
+  api2.automations.onSchedulerHealth(showSchedulerHealth);
   const status = el("p", {
     class: "activity-panel-status",
     role: "status",
@@ -84882,6 +87706,24 @@ function createActivityView(api2, store2, sources3, deps, host) {
     node2.disabled = !canOpen(row2);
     return node2;
   }
+  function issueBlock(row2) {
+    const issue2 = row2.issue;
+    if (!issue2) return [];
+    return [
+      el(
+        "div",
+        {
+          class: "activity-issue-detail",
+          role: "group",
+          "aria-label": issue2.title,
+          "data-failure-code": issue2.code
+        },
+        el("p", { class: "activity-issue-title" }, issue2.title),
+        ...issue2.message ? [el("p", { class: "activity-issue-message" }, issue2.message)] : [],
+        el("p", { class: "activity-issue-remedy" }, issue2.remedy)
+      )
+    ];
+  }
   function detailContent(row2) {
     if (row2.state === "needs-approval" && row2.approval) {
       const request = row2.approval;
@@ -84893,6 +87735,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
             role: "region",
             "aria-label": `Approval request: ${request.title}`
           },
+          ...issueBlock(row2),
           el("p", { class: "activity-review-title" }, request.title),
           ...approvalRequestDetails(request)
         )
@@ -84927,6 +87770,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
         el("p", { class: "activity-detail-text" }, row2.want)
       ];
     }
+    if (row2.issue) return issueBlock(row2);
     return [el("p", { class: "activity-detail-text" }, row2.want)];
   }
   function detailActions(row2) {
@@ -85066,7 +87910,15 @@ function createActivityView(api2, store2, sources3, deps, host) {
       { class: "activity-row-second" },
       el("span", { class: "activity-state" }, STATE_SHORT[row2.state])
     );
-    if (row2.state !== "failed" && row2.state !== "finished") {
+    if (row2.issue) {
+      second.append(
+        el(
+          "span",
+          { class: "activity-want-text activity-issue", "data-failure-code": row2.issue.code },
+          row2.issue.title
+        )
+      );
+    } else if (row2.state !== "failed" && row2.state !== "finished") {
       second.append(
         el(
           "span",
@@ -85129,7 +87981,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       elapsed === null ? null : formatAge(elapsed),
       rowLabel(row2, at3),
       row2.fold ? [row2.fold.kind, row2.fold.runs.length, expandedFolds.has(row2.key)] : null,
-      foldRunKeys.has(row2.key)
+      foldRunKeys.has(row2.key),
+      row2.issue ? [row2.issue.code, row2.issue.message] : null
     ]);
   }
   function cachedRow(row2, at3) {
@@ -85250,22 +88103,42 @@ function createActivityView(api2, store2, sources3, deps, host) {
     stripCache.set(id, { signature, node: node2 });
     return node2;
   }
+  function listedProjects() {
+    return store2.getState().projects.filter((project2) => !project2.missing);
+  }
+  let scrolledFilter;
+  function scrollSelectedCardIntoView() {
+    const selected = strip.querySelector('[aria-pressed="true"]');
+    if (!selected) return;
+    const left = selected.offsetLeft - strip.offsetLeft;
+    const right = left + selected.offsetWidth;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (right > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = right - strip.clientWidth;
+    }
+  }
   function renderStrip(groups) {
     const stats = projectStats(groups);
-    if (projectFilter !== null && !stats.has(projectFilter)) {
-      const project2 = store2.getState().projects.find((entry) => entry.id === projectFilter);
-      if (project2) stats.set(project2.id, { name: project2.name, need: 0, working: 0 });
-    }
+    const projects = listedProjects();
     const need = groups.find((group) => group.id === "needs-you")?.total ?? 0;
     const working = groups.find((group) => group.id === "working")?.total ?? 0;
     const cards = [stripCard(null, "All projects", need, working)];
-    const shown = [...stats.entries()].filter(([id, entry]) => entry.need > 0 || id === projectFilter).sort((a3, b4) => b4[1].need - a3[1].need || a3[1].name.localeCompare(b4[1].name));
-    for (const [id, entry] of shown)
-      cards.push(stripCard(id, entry.name, entry.need, entry.working));
+    const shown = (projects.length > 1 ? projects : []).map((project2) => ({
+      id: project2.id,
+      name: project2.name,
+      need: stats.get(project2.id)?.need ?? 0,
+      working: stats.get(project2.id)?.working ?? 0
+    })).sort((a3, b4) => b4.need - a3.need || b4.working - a3.working || a3.name.localeCompare(b4.name));
+    for (const entry of shown)
+      cards.push(stripCard(entry.id, entry.name, entry.need, entry.working));
     patchChildren(strip, cards);
-    const live = /* @__PURE__ */ new Set([null, ...shown.map(([id]) => id)]);
+    const live = /* @__PURE__ */ new Set([null, ...shown.map((entry) => entry.id)]);
     for (const id of stripCache.keys()) {
       if (!live.has(id)) stripCache.delete(id);
+    }
+    if (scrolledFilter !== projectFilter) {
+      scrolledFilter = projectFilter;
+      scrollSelectedCardIntoView();
     }
   }
   function emptyState() {
@@ -85352,9 +88225,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       }
     }
     if (spot.area === "strip") {
-      const card = [...strip.querySelectorAll("[data-project-key]")].find(
-        (node2) => node2.dataset["projectKey"] === spot.projectKey
-      );
+      const cards = [...strip.querySelectorAll("[data-project-key]")];
+      const card = cards.find((node2) => node2.dataset["projectKey"] === spot.projectKey) ?? cards.find((node2) => node2.dataset["projectKey"] === JSON.stringify(null));
       card?.focus({ preventScroll: true });
       return;
     }
@@ -85400,6 +88272,13 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const focus = captureFocus();
     const previousListScrollTop = list.scrollTop;
     const listScrollAnchor = captureListScrollAnchor();
+    if (host.projectStrip && projectFilter !== null) {
+      const filterId = projectFilter;
+      const listed = listedProjects();
+      if (listed.length < 2 || !listed.some((project2) => project2.id === filterId)) {
+        projectFilter = null;
+      }
+    }
     const allThreads = collectActivityThreads(store2);
     const approvals = sources3.approvals.pending();
     const questions = sources3.questions.pending();
@@ -85411,7 +88290,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       threads: allThreads,
       approvals,
       questions,
-      runs: timings.runs
+      runs: timings.runs,
+      now: at3
     });
     let groups = everything;
     if (projectFilter !== null) {
@@ -85421,7 +88301,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
         threads: inProject,
         approvals: approvals.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
         questions: questions.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
-        runs: timings.runs
+        runs: timings.runs,
+        now: at3
       });
     }
     if (host.projectStrip) renderStrip(everything);
@@ -85593,11 +88474,12 @@ function createActivityView(api2, store2, sources3, deps, host) {
     }
     tickAges();
   }
-  return { summary, body, strip, status, show: show2, hide: hide3 };
+  return { summary, body, strip, status, notice, show: show2, hide: hide3 };
 }
 var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LONG, AGE_VERB, defaultTimer2;
 var init_activity_view = __esm({
   "src/renderer/views/activity-view.ts"() {
+    init_automation_failure();
     init_helpers();
     init_dist();
     init_inline_markdown();
@@ -85681,6 +88563,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
         view.summary,
         closeButton
       ),
+      view.notice,
       view.body,
       el(
         "footer",
@@ -86137,8 +89020,8 @@ var init_thread_title = __esm({
       [
         // Interjections only count when punctuated ("Okay," / "Sure!"), so "OK button" survives.
         String.raw`^(?:sure|okay|ok|got it|alright|certainly)(?:[,!.:;—-]|\s*$)`,
-        String.raw`^(?:here(?:'s| is| are)|let me|let's|based on)\b`,
-        String.raw`^i(?:'ll|'m|'d| will| think| would)\b`,
+        String.raw`^(?:here(?:['’]s| is| are)|let me|let['’]s|based on)\b`,
+        String.raw`^i(?:['’]ll|['’]m|['’]d| will| think| would)\b`,
         String.raw`^(?:the|this) (?:user|conversation|request)\s+(?:wants|is|asks|asked|needs|would|has|seems|appears|about)\b`
       ].join("|"),
       "i"
@@ -86154,7 +89037,9 @@ function namingMessages(thread) {
   );
 }
 function promptWords(message2) {
-  return stripPastePlaceholders(message2.content);
+  const stripped = stripPastePlaceholders(message2.content);
+  if (stripped) return stripped;
+  return (message2.attachments ?? []).filter((a3) => a3.kind === "paste" && a3.content).map((a3) => a3.content).join("\n\n").trim();
 }
 function namingInput(userMessages) {
   const first = userMessages[0];
@@ -86542,6 +89427,13 @@ var init_projects_drag = __esm({
 });
 
 // src/renderer/views/projects-pane.ts
+function describeLiveResources(running) {
+  return [
+    ...running.agent ? ["\u2022 the chat\u2019s running agent"] : [],
+    ...running.terminals ? ["\u2022 its open terminals"] : [],
+    ...running.backgroundProcesses ? ["\u2022 its background processes"] : []
+  ];
+}
 function attentionBell(label) {
   const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", "chat-attention-bell");
@@ -86635,14 +89527,20 @@ function startRunNow(api2, target) {
   });
 }
 function automationMenuEntries(api2, target, openSetup) {
-  return [
-    { heading: target.scheduleName },
+  const eventAutomation = getCachedEventAutomations(target.project.id).some(
+    (definition) => definition.id === target.scheduleId
+  );
+  const runEntries = eventAutomation ? [] : [
     {
       label: "Run now",
       onSelect: () => {
         startRunNow(api2, target);
       }
-    },
+    }
+  ];
+  return [
+    { heading: target.scheduleName },
+    ...runEntries,
     {
       label: "Automation setup\u2026",
       onSelect: openSetup
@@ -86717,6 +89615,7 @@ function mountProjectsPane(root, store2, api2) {
   };
   let compactRows = false;
   let projectFilterId = null;
+  let needsCleanupOnly = false;
   const filterLabel = el("span", { class: "projects-filter-label" }, "All projects");
   const projectFilterBtn = el(
     "button",
@@ -86788,9 +89687,12 @@ function mountProjectsPane(root, store2, api2) {
     const chosen = projects.find((project2) => project2.id === projectFilterId);
     if (!chosen) projectFilterId = null;
     const projectName = chosen ? projectDisplayName(chosen) : "All projects";
-    filterLabel.textContent = projectName;
-    projectFilterBtn.classList.toggle("is-filtering", chosen !== void 0);
-    projectFilterBtn.setAttribute("aria-label", `Show: ${projectName}`);
+    filterLabel.textContent = needsCleanupOnly ? `${projectName} \xB7 Needs cleanup` : projectName;
+    projectFilterBtn.classList.toggle("is-filtering", chosen !== void 0 || needsCleanupOnly);
+    projectFilterBtn.setAttribute(
+      "aria-label",
+      needsCleanupOnly ? `Show: ${projectName}, needs cleanup only` : `Show: ${projectName}`
+    );
     sortLabel.textContent = SORT_LABELS[sidebarThreadSort];
     sortDir.textContent = sidebarThreadSortReverse ? "\u2191" : "\u2193";
   }
@@ -86821,7 +89723,17 @@ function mountProjectsPane(root, store2, api2) {
           projectFilterId = project2.id;
           render();
         }
-      }))
+      })),
+      { separator: true },
+      {
+        label: "Needs cleanup only",
+        toggle: true,
+        checked: needsCleanupOnly,
+        onSelect: () => {
+          needsCleanupOnly = !needsCleanupOnly;
+          render();
+        }
+      }
     ]);
   });
   sortBtn.addEventListener("click", () => {
@@ -86954,7 +89866,11 @@ function mountProjectsPane(root, store2, api2) {
         const key = threadChangeKey(ref.projectId, ref.threadId);
         threadChangeInFlight.delete(key);
         const summary = results[i2] ?? null;
-        if (!sameThreadChangeSummary(threadChangeCache.get(key)?.summary ?? null, summary)) {
+        const previous = threadChangeCache.get(key);
+        if (!sameThreadChangeSummary(previous?.summary ?? null, summary)) {
+          changed = true;
+        }
+        if (needsCleanupOnly && (!previous || Date.now() - previous.at > THREAD_CHANGE_TTL_MS)) {
           changed = true;
         }
         threadChangeCache.set(key, { summary, at: Date.now() });
@@ -87011,11 +89927,37 @@ function mountProjectsPane(root, store2, api2) {
   const archivingThreads = /* @__PURE__ */ new Set();
   async function archiveProjectThread(projectId, threadId) {
     if (projectId !== store2.getState().activeProjectId || archivingThreads.has(threadId)) return;
+    const runningSideChat = store2.getState().threads.some(
+      (t2) => t2.sideChat?.parentThreadId === threadId && !isThreadArchived(t2) && t2.status === "running"
+    );
+    if (runningSideChat) {
+      showToast("Wait for this chat\u2019s side chat to finish before archiving it.", {
+        variant: "error"
+      });
+      return;
+    }
     archivingThreads.add(threadId);
     try {
       await flushProjectThreads(api2, projectId, store2.getState().threads);
       if (projectId !== store2.getState().activeProjectId) return;
-      let result = await api2.threads.archive(projectId, threadId, null);
+      let stopProcesses = false;
+      let result = await api2.threads.archive(projectId, threadId, null, stopProcesses);
+      if (result.status === "blocked-running") {
+        const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
+        const confirmed = await showConfirmDialog({
+          message: `Stop running work and archive \u201C${title}\u201D?`,
+          detail: [
+            "Archiving will stop:",
+            ...describeLiveResources(result.running),
+            "Anything still running in the chat\u2019s worktree is ended before it is removed."
+          ].join("\n"),
+          confirmLabel: "Stop and archive",
+          danger: true
+        });
+        if (!confirmed || projectId !== store2.getState().activeProjectId) return;
+        stopProcesses = true;
+        result = await api2.threads.archive(projectId, threadId, null, stopProcesses);
+      }
       let refreshed = false;
       while (result.status === "blocked-dirty") {
         const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
@@ -87034,11 +89976,11 @@ function mountProjectsPane(root, store2, api2) {
           danger: true
         });
         if (!confirmed || projectId !== store2.getState().activeProjectId) return;
-        result = await api2.threads.archive(projectId, threadId, result.fingerprint);
+        result = await api2.threads.archive(projectId, threadId, result.fingerprint, stopProcesses);
         refreshed = true;
       }
       if (result.status === "blocked-running") {
-        showToast("Stop the chat\u2019s agent, terminals and background processes before archiving.", {
+        showToast("Something started in the chat while archiving. Try again.", {
           variant: "error"
         });
         return;
@@ -87109,6 +90051,7 @@ function mountProjectsPane(root, store2, api2) {
   }
   function recheckStaleThreadChanges() {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    if (needsCleanupOnly) render();
     const now = Date.now();
     refreshThreadChanges(
       threadChangeRendered.filter(({ projectId, threadId }) => {
@@ -87135,6 +90078,18 @@ function mountProjectsPane(root, store2, api2) {
     ensurePrLifecycles(refs);
     const states = refs.map((ref) => cachedPrLifecycle(githubPrKey(ref)) ?? "unknown");
     return summarizeThreadPrStatus(states, refs);
+  }
+  function threadNeedsCleanup(project2, thread) {
+    if (sidebarPrRefs(thread).some((ref) => {
+      const state = cachedPrLifecycle(githubPrKey(ref)) ?? "unknown";
+      return state === "open" || state === "unknown";
+    }))
+      return true;
+    if (thread.status === "running") return false;
+    if (project2.sshHost) return false;
+    const cached2 = threadChangeCache.get(threadChangeKey(project2.id, thread.id));
+    if (!cached2 || Date.now() - cached2.at > THREAD_CHANGE_TTL_MS) return true;
+    return describeThreadChanges(cached2.summary) !== null;
   }
   function renderMissingNotice(project2) {
     const wrap = el("div", { class: "project-missing-notice" });
@@ -87197,8 +90152,8 @@ function mountProjectsPane(root, store2, api2) {
     return lines.join("\n");
   }
   function renderOrphansSection() {
-    const section = el("div", { class: "orphans-section" });
-    section.append(
+    const section2 = el("div", { class: "orphans-section" });
+    section2.append(
       el(
         "div",
         { class: "orphans-heading" },
@@ -87265,9 +90220,9 @@ function mountProjectsPane(root, store2, api2) {
       });
       actions.append(dismissBtn, recoverBtn);
       row2.append(actions);
-      section.append(row2);
+      section2.append(row2);
     }
-    return section;
+    return section2;
   }
   function refreshOrphansIfProjectSetChanged() {
     const nextIds = new Set(store2.getState().projects.map((project2) => project2.id));
@@ -87678,13 +90633,13 @@ function mountProjectsPane(root, store2, api2) {
       if (thread.status === "running") {
         chatRow.classList.add("is-running");
         chatRow.insertBefore(runningStatus("Agent is working"), title);
-      } else if (thread.unreadAt !== void 0 && thread.id !== activeId) {
+      } else if ((thread.unreadAt !== void 0 || getSideChatUnreadParents(store2, project2.id).has(thread.id)) && thread.id !== activeId) {
         chatRow.classList.add("is-unread");
         chatRow.insertBefore(
           el("span", {
             class: "chat-unread-dot",
             role: "img",
-            "aria-label": "Unread agent completion"
+            "aria-label": thread.unreadAt !== void 0 ? "Unread agent completion" : "Unread reply in a side chat"
           }),
           title
         );
@@ -87703,13 +90658,14 @@ function mountProjectsPane(root, store2, api2) {
             prRollup.kind === "open" && conflictsForThread(thread)
           )
         );
-      } else if (thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
+      }
+      if ((!prRollup || needsCleanupOnly && prRollup.kind !== "open") && thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
         const key = threadChangeKey(project2.id, thread.id);
         threadChangeSeen.push({ projectId: project2.id, threadId: thread.id });
         threadChangeSeenKeys.add(key);
         const cached2 = threadChangeCache.get(key);
         const changesLabel = describeThreadChanges(cached2?.summary ?? null);
-        if (changesLabel) {
+        if (changesLabel && !prRollup) {
           chatRow.classList.add("has-changes-status");
           chatRow.append(chatChangesStatus(changesLabel));
         }
@@ -87744,13 +90700,31 @@ function mountProjectsPane(root, store2, api2) {
     function renderAutomationsSection() {
       const scheduleOwners = /* @__PURE__ */ new Map();
       for (const project2 of projects) {
+        for (const schedule of getCachedAutomationSchedules(project2.id)) {
+          scheduleOwners.set(`${project2.id}\0${schedule.id}`, {
+            project: project2,
+            scheduleId: schedule.id,
+            scheduleName: schedule.name,
+            runs: []
+          });
+        }
+        for (const eventAutomation of getCachedEventAutomations(project2.id)) {
+          scheduleOwners.set(`${project2.id}\0${eventAutomation.id}`, {
+            project: project2,
+            scheduleId: eventAutomation.id,
+            scheduleName: eventAutomation.name,
+            runs: []
+          });
+        }
         for (const thread of getSidebarThreads(store2, project2.id)) {
           const scheduleId = thread.automation?.scheduleId;
           if (!scheduleId) continue;
           const scheduleKey = `${project2.id}\0${scheduleId}`;
           const owner = scheduleOwners.get(scheduleKey);
+          const scheduleName = thread.automation?.scheduleName ?? thread.title;
           if (owner) owner.runs.push(thread);
-          else scheduleOwners.set(scheduleKey, { project: project2, scheduleId, runs: [thread] });
+          else
+            scheduleOwners.set(scheduleKey, { project: project2, scheduleId, scheduleName, runs: [thread] });
         }
       }
       if (scheduleOwners.size === 0) return null;
@@ -87758,7 +90732,7 @@ function mountProjectsPane(root, store2, api2) {
       const hasActiveAutomation = allRuns.some((thread) => thread.id === activeThreadId);
       const attentionRuns = allRuns.filter((thread) => isThreadAwaitingAttention(thread.id));
       const sectionExpanded = automationsSectionExpanded || hasActiveAutomation || attentionRuns.length > 0;
-      const section = el("div", { class: "automation-threads-group" });
+      const section2 = el("div", { class: "automation-threads-group" });
       const toggle = el(
         "button",
         {
@@ -87797,7 +90771,7 @@ function mountProjectsPane(root, store2, api2) {
           }
         ]);
       });
-      section.append(
+      section2.append(
         el(
           "div",
           { class: "automation-threads-header" },
@@ -87816,19 +90790,49 @@ function mountProjectsPane(root, store2, api2) {
       );
       if (sectionExpanded) {
         const rows = el("div", { class: "automation-thread-rows" });
-        for (const { project: project2, scheduleId, runs } of scheduleOwners.values()) {
-          const firstRun = runs[0];
-          if (!firstRun) continue;
+        for (const { project: project2, scheduleId, scheduleName, runs } of scheduleOwners.values()) {
           const projectSuffix = el(
             "span",
             { class: "chat-thread-owner" },
             `\xB7 ${projectDisplayName(project2)}`
           );
+          if (runs.length === 0) {
+            const row2 = el(
+              "div",
+              { class: "chat-row is-automation is-automation-unrun" },
+              el("span", { class: "chat-title" }, scheduleName)
+            );
+            row2.append(
+              projectSuffix,
+              el("span", { class: "automation-row-unrun-badge" }, "Never run")
+            );
+            const setupBtn = automationSetupBtn(`${scheduleName} setup`, () => {
+              openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+            });
+            row2.append(setupBtn);
+            row2.addEventListener("click", () => {
+              openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+            });
+            row2.addEventListener("contextmenu", (e3) => {
+              e3.preventDefault();
+              e3.stopPropagation();
+              showContextMenu(
+                e3.clientX,
+                e3.clientY,
+                automationMenuEntries(api2, { project: project2, scheduleName, scheduleId }, () => {
+                  openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+                })
+              );
+            });
+            rows.append(row2);
+            continue;
+          }
+          const firstRun = runs[0];
+          if (!firstRun) continue;
           if (runs.length === 1) {
             const row2 = renderThreadRow(project2, firstRun);
             row2.querySelector(".chat-title")?.after(projectSuffix);
-            const scheduleName2 = firstRun.automation?.scheduleName ?? firstRun.title;
-            const setupBtn = automationSetupBtn(`${scheduleName2} setup`, () => {
+            const setupBtn = automationSetupBtn(`${scheduleName} setup`, () => {
               openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
             });
             const menuButton = row2.querySelector(".chat-menu-btn");
@@ -87842,7 +90846,6 @@ function mountProjectsPane(root, store2, api2) {
           const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
           const foldEntries = foldAutomationRuns(runs, isThreadAwaitingAttention);
           const scheduleRevealed = showingAllRuns || foldEntries.length > 0;
-          const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title;
           const scheduleGroup = el("div", {
             class: "automation-schedule-group",
             "data-schedule-id": scheduleId
@@ -87971,9 +90974,9 @@ function mountProjectsPane(root, store2, api2) {
           }
           rows.append(scheduleGroup);
         }
-        section.append(rows);
+        section2.append(rows);
       }
-      return section;
+      return section2;
     }
     function renderNewThreadButton(project2) {
       const newThreadBtn = el(
@@ -88134,14 +91137,16 @@ function mountProjectsPane(root, store2, api2) {
       }
       if (!isExpanded) return entry;
       const isFiltering = threadFilter.length > 0 && project2.id === activeProjectId;
-      const sidebarThreads = isFiltering ? sortThreadsNewestFirst(store2.getState().threads).filter(
+      const sidebarThreads = isFiltering ? withoutSideChats(sortThreadsNewestFirst(store2.getState().threads)).filter(
         (thread) => thread.archivedAt == null
       ) : getSidebarThreads(store2, project2.id);
       const matchingThreads = isFiltering ? sidebarThreads.filter(
         (t2) => filterText(t2.title || "New Thread").includes(threadFilter) || contentFilter.matches.has(t2.id) || residentRequestMatches(t2.messages ?? [], threadFilter)
       ) : sidebarThreads;
       const conversationThreads = orderSidebarThreads(
-        matchingThreads.filter((thread) => thread.automation === void 0),
+        matchingThreads.filter(
+          (thread) => thread.automation === void 0 && (!needsCleanupOnly || threadNeedsCleanup(project2, thread))
+        ),
         // A filter's matches stay newest first; the chosen order is for the browse list.
         isFiltering ? "activity" : store2.getState().sidebarThreadSort,
         !isFiltering && store2.getState().sidebarThreadSortReverse
@@ -88190,8 +91195,16 @@ function mountProjectsPane(root, store2, api2) {
         );
       } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
+      } else if (isFiltering && !contentFilter.waiting && conversationThreads.length === 0) {
+        chats.append(el("div", { class: "sidebar-empty" }, "No matching threads need cleanup"));
       } else if (!isFiltering && visibleThreads.length === 0) {
-        chats.append(el("div", { class: "sidebar-empty" }, "No threads yet"));
+        chats.append(
+          el(
+            "div",
+            { class: "sidebar-empty" },
+            needsCleanupOnly ? "Nothing needs cleanup" : "No threads yet"
+          )
+        );
       }
       for (const thread of visibleThreads) {
         chats.append(renderThreadRow(project2, thread));
@@ -88232,14 +91245,16 @@ function mountProjectsPane(root, store2, api2) {
         if (project2.missing) continue;
         owners.set(project2.id, project2);
         for (const thread of getSidebarThreads(store2, project2.id)) {
-          if (thread.automation === void 0) rows.push({ projectId: project2.id, thread });
+          if (thread.automation === void 0 && (!needsCleanupOnly || threadNeedsCleanup(project2, thread))) {
+            rows.push({ projectId: project2.id, thread });
+          }
         }
       }
       const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
       const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse);
       const sections = mode === "status" ? groupRowsByStatus(ordered, isThreadAwaitingAttention) : [{ id: "all", label: "", rows: ordered }];
       const withThreads = new Set(ordered.map((row2) => row2.projectId));
-      const emptyProjectRows = Array.from(owners.values()).filter((project2) => !withThreads.has(project2.id)).map((project2) => {
+      const emptyProjectRows = needsCleanupOnly ? [] : Array.from(owners.values()).filter((project2) => !withThreads.has(project2.id)).map((project2) => {
         const nameRow = el(
           "button",
           { class: "project-row", title: project2.path },
@@ -88255,21 +91270,28 @@ function mountProjectsPane(root, store2, api2) {
         );
       });
       if (ordered.length === 0) {
-        return [el("div", { class: "sidebar-empty" }, "No threads yet"), ...emptyProjectRows];
+        return [
+          el(
+            "div",
+            { class: "sidebar-empty" },
+            needsCleanupOnly ? "Nothing needs cleanup" : "No threads yet"
+          ),
+          ...emptyProjectRows
+        ];
       }
-      return sections.map((section) => {
-        const block = el("div", { class: "thread-section", "data-section-id": section.id });
-        if (section.label) {
-          block.append(el("div", { class: "thread-section-heading" }, section.label));
+      return sections.map((section2) => {
+        const block = el("div", { class: "thread-section", "data-section-id": section2.id });
+        if (section2.label) {
+          block.append(el("div", { class: "thread-section-heading" }, section2.label));
         }
-        const byThread = new Map(section.rows.map((row2) => [row2.thread, row2]));
-        const countKey = `section:${mode}:${section.id}`;
+        const byThread = new Map(section2.rows.map((row2) => [row2.thread, row2]));
+        const countKey = `section:${mode}:${section2.id}`;
         const limit = visibleThreadCounts.get(countKey) ?? SIDEBAR_THREADS_PAGE_SIZE;
-        const activeRow = section.rows.find(
+        const activeRow = section2.rows.find(
           (row2) => row2.projectId === activeProjectId && row2.thread.id === activeThreadId
         );
         const paged = paginateSidebarThreads(
-          section.rows.map((row2) => row2.thread),
+          section2.rows.map((row2) => row2.thread),
           limit,
           activeRow?.thread.id
         );
@@ -88395,12 +91417,16 @@ function mountProjectsPane(root, store2, api2) {
   window.addEventListener("focus", recheckStaleThreadChanges);
   document.addEventListener("visibilitychange", recheckStaleThreadChanges);
   const unsubs = [
+    store2.on("thread_archive_requested", (projectId, threadId) => {
+      void archiveProjectThread(projectId, threadId);
+    }),
     unsubWorkingTree,
     store2.on("projects_changed", render),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", render),
     store2.on("sidebar_threads_loaded", render),
+    store2.on("automation_schedules_loaded", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", () => {
@@ -88451,6 +91477,7 @@ var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS4, GROUP_MENU_ORDER;
 var init_projects_pane = __esm({
   "src/renderer/views/projects-pane.ts"() {
     init_app_run_dialog();
+    init_side_chat2();
     init_helpers();
     init_context_menu();
     init_rename_blur();
@@ -88476,6 +91503,7 @@ var init_projects_pane = __esm({
     init_activity_panel();
     init_thread_history_editor();
     init_automation_fold();
+    init_automations2();
     init_ssh_workspace_ui();
     init_thread_naming();
     init_persistence();
@@ -90027,7 +93055,8 @@ function normalizeBrowserUrl(input2) {
   const candidate = `https://${trimmed2}`;
   if (URL.canParse(candidate)) {
     const parsed2 = tryParseHttpUrl(candidate);
-    if (parsed2 && isNavigableHostname(parsed2.hostname)) return parsed2.href;
+    const hasUserinfo = parsed2 != null && (parsed2.username !== "" || parsed2.password !== "");
+    if (parsed2 && !hasUserinfo && isNavigableHostname(parsed2.hostname)) return parsed2.href;
   }
   return duckDuckGoSearchUrl(trimmed2);
 }
@@ -90053,11 +93082,11 @@ var init_browser_url = __esm({
 
 // src/shared/canvas/artefact.ts
 function htmlDataUrl(html2) {
-  const bytes = new TextEncoder().encode(securePreviewHtml(html2));
+  const bytes2 = new TextEncoder().encode(securePreviewHtml(html2));
   let binary = "";
   const CHUNK = 32768;
-  for (let i2 = 0; i2 < bytes.length; i2 += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i2, i2 + CHUNK));
+  for (let i2 = 0; i2 < bytes2.length; i2 += CHUNK) {
+    binary += String.fromCharCode(...bytes2.subarray(i2, i2 + CHUNK));
   }
   return `data:text/html;charset=utf-8;base64,${btoa(binary)}`;
 }
@@ -90638,7 +93667,7 @@ function argsOf(toolCall) {
     model,
     runtimeId: typeof runtimeId === "string" ? runtimeId : null,
     ref: typeof ref === "string" ? ref : null,
-    credential: credential === "key" || credential === "login" ? credential : "none",
+    credential: credential === "key" || credential === "login" || credential === "host" ? credential : "none",
     continuedFrom: typeof continuedFrom === "string" ? continuedFrom : null,
     report: typeof report === "string" ? report : null,
     ...settings.success ? { settings: settings.data } : {}
@@ -91158,7 +94187,7 @@ var init_table_copy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
 function parseDiagramSize(value) {
   if (typeof value !== "object" || value === null)
     return null;
@@ -91175,19 +94204,28 @@ function parseDiagramSize(value) {
     height: Math.min(height, MAX_DIAGRAM_DIMENSION)
   };
 }
-var MAX_DIAGRAM_SOURCE_LENGTH, MAX_DIAGRAM_DIMENSION;
+var MAX_DIAGRAM_SOURCE_LENGTH, MAX_DIAGRAM_DIMENSION, MAX_FONT_BYTES;
 var init_mermaid_frame_protocol = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
     MAX_DIAGRAM_SOURCE_LENGTH = 5e4;
     MAX_DIAGRAM_DIMENSION = 4096;
+    MAX_FONT_BYTES = 4 * 1024 * 1024;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
+function copyBytes(data) {
+  if (data instanceof ArrayBuffer)
+    return data.slice(0);
+  const copy = new Uint8Array(data.byteLength);
+  copy.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+  return copy.buffer;
+}
 function createMermaidFrame(source, options) {
   const element = document.createElement("iframe");
   element.className = "mermaid-frame";
-  element.title = "Mermaid diagram";
+  element.title = options.title ?? "Mermaid diagram";
+  element.style.colorScheme = "light";
   element.setAttribute("sandbox", "allow-scripts");
   element.setAttribute("referrerpolicy", "no-referrer");
   element.setAttribute("tabindex", "-1");
@@ -91240,7 +94278,14 @@ function createMermaidFrame(source, options) {
     element.onload = () => {
       element.onload = null;
       try {
-        element.contentWindow?.postMessage({ type: "render", source }, "*", [channel.port2]);
+        const font = options.font ? { family: options.font.family, data: copyBytes(options.font.data) } : void 0;
+        element.contentWindow?.postMessage({
+          type: "render",
+          source,
+          theme: options.theme,
+          fontFamily: options.fontFamily,
+          font
+        }, "*", font ? [channel.port2, font.data] : [channel.port2]);
       } catch {
         finish(null);
       }
@@ -91251,9 +94296,12 @@ function createMermaidFrame(source, options) {
   });
   return { element, ready: ready3, dispose };
 }
+var ISOLATED_DIAGRAM_ATTRIBUTE, MOUNTABLE_SELECTOR;
 var init_mermaid_isolated = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
     init_mermaid_frame_protocol();
+    ISOLATED_DIAGRAM_ATTRIBUTE = "data-isolated-diagram";
+    MOUNTABLE_SELECTOR = `.mermaid-diagram.mermaid-diagram--pending:not(.stream-fence-forming):not([${ISOLATED_DIAGRAM_ATTRIBUTE}])`;
   }
 });
 
@@ -91552,7 +94600,7 @@ var init_mermaid2 = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
 function defaultNow() {
   const perf = globalThis.performance;
   return typeof perf?.now === "function" ? perf.now() : Date.now();
@@ -91736,7 +94784,7 @@ function createInputSmoother(options) {
 }
 var DEFAULT_CHARS_PER_SECOND3, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
 var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
     DEFAULT_CHARS_PER_SECOND3 = 600;
     DEFAULT_LAG_MS = 120;
     VELOCITY_SMOOTHING_MS = 180;
@@ -92211,7 +95259,20 @@ function remoteArtifactFromHref(href) {
   const match = url2.pathname.match(/^\/v1\/agents\/([^/]+)\/artifacts\/download$/);
   const path = url2.searchParams.get("path");
   if (!match?.[1] || !path) return null;
-  return { agentId: decodeURIComponent(match[1]), path };
+  return { agentId: decodeURIComponent(match[1]), path, origin: url2.origin };
+}
+function originOf(url2) {
+  try {
+    return new URL(url2).origin;
+  } catch {
+    return null;
+  }
+}
+async function artifactServerOrigin(agentId, settings) {
+  if (agentId.startsWith("openai:")) return OPENAI_AGENTS_ORIGIN;
+  const configured = await settings?.get("remoteAgentBaseUrl");
+  const configuredOrigin = typeof configured === "string" && configured.trim() ? originOf(configured.trim()) : null;
+  return configuredOrigin ?? originOf(DEFAULT_CURSOR_AGENT_BASE_URL);
 }
 function bindBrowserLinkClicks(root, store2, api2) {
   root.classList.add("browser-links-scope");
@@ -92221,6 +95282,20 @@ function bindBrowserLinkClicks(root, store2, api2) {
       return;
     }
     openBrowserUrl(store2, href);
+  };
+  const openLink = (href) => {
+    const githubPr = parseGithubPrUrl(href);
+    if (githubPr && api2?.gh && store2.getState().openLinksInBuiltInBrowser) {
+      void api2.gh.status().then((status) => {
+        if (status.installed && status.authenticated) {
+          openPullRequest(store2, githubPr);
+          return;
+        }
+        openPlainLink(href);
+      });
+      return;
+    }
+    openPlainLink(href);
   };
   const onClick = (event) => {
     const target = event.target;
@@ -92236,7 +95311,12 @@ function bindBrowserLinkClicks(root, store2, api2) {
     event.stopPropagation();
     const artifact = remoteArtifactFromHref(href);
     if (artifact && api2) {
-      void api2.remoteAgent.downloadArtifact(artifact.agentId, artifact.path).then((url2) => {
+      void artifactServerOrigin(artifact.agentId, api2.settings).then(async (origin) => {
+        if (origin !== artifact.origin) {
+          openLink(href);
+          return;
+        }
+        const url2 = await api2.remoteAgent.downloadArtifact(artifact.agentId, artifact.path);
         if (url2) openBrowserUrl(store2, url2);
       }).catch((err2) => {
         console.warn("[remote-agent] artifact download failed:", err2);
@@ -92244,18 +95324,7 @@ function bindBrowserLinkClicks(root, store2, api2) {
       });
       return;
     }
-    const githubPr = parseGithubPrUrl(href);
-    if (githubPr && api2?.gh && store2.getState().openLinksInBuiltInBrowser) {
-      void api2.gh.status().then((status) => {
-        if (status.installed && status.authenticated) {
-          openPullRequest(store2, githubPr);
-          return;
-        }
-        openPlainLink(href);
-      });
-      return;
-    }
-    openPlainLink(href);
+    openLink(href);
   };
   const unbindPreviews = bindPrLinkPreviews(
     root,
@@ -92267,18 +95336,21 @@ function bindBrowserLinkClicks(root, store2, api2) {
     unbindPreviews();
   };
 }
+var OPENAI_AGENTS_ORIGIN;
 var init_browser_links = __esm({
   "src/renderer/markdown/browser-links.ts"() {
     init_panels();
     init_github_pr_url2();
     init_pr_link_preview();
     init_toast();
+    init_remote_agent();
+    OPENAI_AGENTS_ORIGIN = "https://api.openai.com";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -92545,7 +95617,7 @@ function splitCursorAcpTransportNoise(text2) {
 var TRAILING_RETRIABLE_ERROR_RE;
 var init_acp_cursor_transport_noise = __esm({
   "src/shared/acp-cursor-transport-noise.ts"() {
-    TRAILING_RETRIABLE_ERROR_RE = /(?:\r?\n)*Error:\s*RetriableError:\s*[^\r\n]+(?:\r?\n)*$/;
+    TRAILING_RETRIABLE_ERROR_RE = /(?:^|\n)\s*Error:[ \t]*RetriableError:[^\r\n]+\s*$/;
   }
 });
 
@@ -92575,8 +95647,10 @@ function createInlineVisualizationStreamFilter(onReference) {
       if (separator < 0) {
         if (!final && pending.length <= FRAME_START.length + MAX_OPERATOR_CHARS) return visible;
         if (final) {
-          pending = "";
-          return visible;
+          if (VISUALIZE_OPERATOR.startsWith(pending.slice(FRAME_START.length))) {
+            pending = "";
+            return visible;
+          }
         }
         visible += FRAME_START;
         pending = pending.slice(FRAME_START.length);
@@ -93270,9 +96344,9 @@ async function openVideoExpand(api2, path, name) {
     }
   });
   try {
-    const { bytes, mimeType } = await api2.video.read(path);
+    const { bytes: bytes2, mimeType } = await api2.video.read(path);
     if (!session.isActive()) return;
-    objectUrl = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+    objectUrl = URL.createObjectURL(new Blob([bytes2], { type: mimeType }));
     video.src = objectUrl;
     session.setContent(video);
     await video.play().catch(() => void 0);
@@ -93313,8 +96387,8 @@ function isTextBlockAttachment(text2) {
   return countNewlines(trimmed2) + 1 >= TEXT_BLOCK_MIN_LINES;
 }
 function textBlockLabel(content) {
-  const firstLine = content.split("\n").find((line) => line.trim() !== "")?.trim() ?? "Pasted text";
-  return firstLine.length > 48 ? `${firstLine.slice(0, 45)}\u2026` : firstLine;
+  const firstLine2 = content.split("\n").find((line) => line.trim() !== "")?.trim() ?? "Pasted text";
+  return firstLine2.length > 48 ? `${firstLine2.slice(0, 45)}\u2026` : firstLine2;
 }
 function countNewlines(s16) {
   let n2 = 0;
@@ -94805,7 +97879,7 @@ function evidenceFigure(asset, caption) {
 }
 function createVisualEvidenceSection(evidence) {
   if (evidence.length === 0) return null;
-  const section = el("div", {
+  const section2 = el("div", {
     class: "message-visual-evidence",
     "aria-label": "Visual evidence"
   });
@@ -94840,7 +97914,7 @@ function createVisualEvidenceSection(evidence) {
       },
       ...item.assets.map((asset) => evidenceFigure(asset, item.caption))
     );
-    section.append(
+    section2.append(
       el(
         "details",
         {
@@ -94854,7 +97928,7 @@ function createVisualEvidenceSection(evidence) {
       )
     );
   }
-  return section;
+  return section2;
 }
 var init_visual_evidence_card = __esm({
   "src/renderer/views/visual-evidence-card.ts"() {
@@ -95813,9 +98887,6 @@ var init_thread_proposal_card = __esm({
 });
 
 // src/renderer/views/thread-proposal-tool-card.ts
-function isThreadProposalCall(tc2) {
-  return tc2.name === THREAD_PROPOSAL_TOOL;
-}
 function cardState(store2, sourceThreadId, proposalId) {
   const decisions = getThreadById(store2, sourceThreadId)?.threadProposals;
   const status = threadProposalStatus(decisions, proposalId);
@@ -97365,8 +100436,8 @@ function syncMessageVisualEvidence(msgEl, msg) {
   const body = msgEl.querySelector(":scope > .message-body");
   if (!body) return;
   body.querySelector(":scope > .message-visual-evidence")?.remove();
-  const section = createVisualEvidenceSection(msg.visualEvidence ?? []);
-  if (section) body.append(section);
+  const section2 = createVisualEvidenceSection(msg.visualEvidence ?? []);
+  if (section2) body.append(section2);
   syncToolRunMemberVisibility(msgEl);
 }
 function createIndividualToolCard(tc2, label, api2, threadId, store2) {
@@ -98202,15 +101273,15 @@ function hookCardDetailLines(card) {
   if (card.durationMs > 0) lines.push(`Duration: ${String(card.durationMs)}ms`);
   return lines;
 }
-function createHookInspectorSection(section) {
+function createHookInspectorSection(section2) {
   const copy = el("button", {
     class: "hook-card-raw-copy",
     type: "button",
-    "aria-label": `Copy ${section.label}`
+    "aria-label": `Copy ${section2.label}`
   });
   copy.textContent = "Copy";
   copy.addEventListener("click", () => {
-    void navigator.clipboard.writeText(section.text).then(
+    void navigator.clipboard.writeText(section2.text).then(
       () => {
         copy.textContent = "Copied";
         setTimeout(() => {
@@ -98222,11 +101293,11 @@ function createHookInspectorSection(section) {
       }
     );
   });
-  const heading = el("div", { class: "hook-card-raw-label" }, section.label);
+  const heading = el("div", { class: "hook-card-raw-label" }, section2.label);
   heading.append(copy);
-  const pre = el("pre", { class: "hook-card-raw-pre", "data-format": section.format });
-  pre.textContent = section.text;
-  return el("div", { class: "hook-card-raw-section", "data-section": section.label }, heading, pre);
+  const pre = el("pre", { class: "hook-card-raw-pre", "data-format": section2.format });
+  pre.textContent = section2.text;
+  return el("div", { class: "hook-card-raw-section", "data-section": section2.label }, heading, pre);
 }
 function fillHookInspector(body, detail) {
   clear(body);
@@ -98236,8 +101307,8 @@ function fillHookInspector(body, detail) {
     for (const chip2 of chips) row2.append(el("span", { class: "hook-card-raw-chip" }, chip2));
     body.append(row2);
   }
-  for (const section of hookRunDetailSections(detail)) {
-    body.append(createHookInspectorSection(section));
+  for (const section2 of hookRunDetailSections(detail)) {
+    body.append(createHookInspectorSection(section2));
   }
   const empty = hookRunDetailEmptyReason(detail);
   if (empty !== null) body.append(el("div", { class: "hook-card-raw-status" }, empty));
@@ -99253,10 +102324,18 @@ function mountConversation(root, store2, api2) {
   list.addEventListener("scroll", handleUserScroll, { passive: true });
   const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncStickyImagePreview);
   listResizeObserver?.observe(list);
+  function nestedScrollerTakesWheelUp(target) {
+    for (let node2 = target instanceof Element ? target : null; node2 && node2 !== list; node2 = node2.parentElement) {
+      if (node2.scrollTop <= 0 || node2.scrollHeight <= node2.clientHeight) continue;
+      const { overflowY } = window.getComputedStyle(node2);
+      if (overflowY === "auto" || overflowY === "scroll") return true;
+    }
+    return false;
+  }
   list.addEventListener(
     "wheel",
     (event) => {
-      if (event.deltaY < 0) {
+      if (event.deltaY < 0 && !nestedScrollerTakesWheelUp(event.target)) {
         userScrolledUpAt = Date.now();
         pinnedToBottom = false;
         updateScrollButton();
@@ -99660,7 +102739,7 @@ function mountConversation(root, store2, api2) {
     });
     msgEl.append(body);
     if (msg.role === "assistant" && msg.content.trim()) {
-      attachCopyButton(body, msgId, store2);
+      attachReplyActions(body, threadId, msgId);
     }
     if (msg.role === "user") body.append(buildUserActions(threadId, msgId));
     return msgEl;
@@ -99683,6 +102762,7 @@ function mountConversation(root, store2, api2) {
     if (msg.reviewReport) renderMessageReviewReport(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
     renderMessageTurnRecovery(threadId, msgId);
+    attachSideChatChip(threadId, msgId);
   }
   function appendMessageEl(threadId, msgId, batched = false) {
     if (threadId !== store2.getState().activeThreadId) return;
@@ -99713,6 +102793,80 @@ function mountConversation(root, store2, api2) {
     if (!msgEl) return;
     list.insertBefore(msgEl, before);
     finalizeMessageEl(threadId, msgId);
+  }
+  function attachReplyActions(body, threadId, msgId) {
+    const sideChat = buildSideChatAction(threadId, msgId);
+    const host = sideChat ? el("div", { class: "msg-reply-actions" }, sideChat) : body;
+    attachCopyButton(host, msgId, store2);
+    if (host !== body) body.append(host);
+  }
+  function buildSideChatAction(threadId, msgId) {
+    if (getThreadById(store2, threadId)?.sideChat !== void 0) return null;
+    const button = el(
+      "button",
+      {
+        class: "msg-action msg-side-chat",
+        type: "button",
+        title: "Ask a side question about this message"
+      },
+      "Side chat"
+    );
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      void startSideChat(store2, api2, threadId, { anchorMessageId: msgId }).then((id) => {
+        if (id === null)
+          showToast("Could not start a side chat from this message.", { variant: "error" });
+      }).finally(() => button.disabled = false);
+    });
+    return button;
+  }
+  let sideChatChipSignature = "";
+  function sideChatChipFor(rows) {
+    const unread = rows.find((row2) => row2.unread);
+    const target = unread ?? rows[0];
+    const chip2 = el(
+      "button",
+      {
+        type: "button",
+        class: "msg-side-chat-chip",
+        "data-unread": unread ? "true" : void 0,
+        title: "Open the side chat"
+      },
+      unread ? el("span", { class: "msg-side-chat-chip-dot", "aria-hidden": "true" }) : "",
+      `${String(rows.length)} side ${rows.length === 1 ? "chat" : "chats"}`
+    );
+    chip2.addEventListener("click", () => {
+      if (target) store2.emit("side_chat_open_requested", target.id);
+    });
+    return chip2;
+  }
+  function anchoredSideChats(threadId, msgId) {
+    return sideChatsOf(store2.getState().threads, threadId).filter(
+      (row2) => row2.anchorMessageId === msgId
+    );
+  }
+  function attachSideChatChip(threadId, msgId) {
+    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    if (!msgEl) return;
+    for (const child of Array.from(msgEl.children)) {
+      if (child.classList.contains("msg-side-chat-chip")) child.remove();
+    }
+    const rows = anchoredSideChats(threadId, msgId);
+    if (rows.length > 0) msgEl.append(sideChatChipFor(rows));
+  }
+  function syncSideChatChips() {
+    const thread = getActiveThread(store2);
+    const rows = thread ? sideChatsOf(store2.getState().threads, thread.id) : [];
+    const signature = thread ? `${thread.id}|${rows.map((row2) => `${row2.anchorMessageId}:${row2.id}:${row2.unread ? "u" : "r"}`).join(",")}` : "";
+    if (signature === sideChatChipSignature) return;
+    sideChatChipSignature = signature;
+    list.querySelectorAll(".msg-side-chat-chip").forEach((node2) => {
+      node2.remove();
+    });
+    if (!thread) return;
+    for (const anchorId of new Set(rows.map((row2) => row2.anchorMessageId))) {
+      attachSideChatChip(thread.id, anchorId);
+    }
   }
   function buildUserActions(threadId, msgId) {
     const fork = el(
@@ -99753,7 +102907,14 @@ function mountConversation(root, store2, api2) {
     resend.addEventListener("click", () => {
       runResend(threadId);
     });
-    const actions = el("div", { class: "msg-actions" }, fork, resend);
+    const sideChat = buildSideChatAction(threadId, msgId);
+    const actions = el(
+      "div",
+      { class: "msg-actions" },
+      fork,
+      ...sideChat ? [sideChat] : [],
+      resend
+    );
     const message2 = getThreadById(store2, threadId)?.messages.find((item) => item.id === msgId);
     if ((message2?.images?.length ?? 0) > 0) {
       const imageCount = message2?.images?.length ?? 0;
@@ -100322,7 +103483,8 @@ function mountConversation(root, store2, api2) {
       if (msg?.role === "assistant" && msg.content.trim()) {
         resyncRunMembership(thread, mid);
         const body = msgEl?.querySelector(".message-body");
-        if (body && !body.querySelector(".msg-copy")) attachCopyButton(body, mid, store2);
+        if (body && thread && !body.querySelector(".msg-copy"))
+          attachReplyActions(body, thread.id, mid);
         const reasoning = body?.querySelector(":scope > .message-reasoning");
         if (reasoning && !reasoning.dataset["userToggled"]) reasoning.open = false;
       }
@@ -100339,6 +103501,7 @@ function mountConversation(root, store2, api2) {
       rebuildForThread();
       syncFromStore();
       reviewerInput.sync();
+      syncSideChatChips();
     }),
     store2.on("todos_changed", () => {
       syncTodoPanel();
@@ -100537,6 +103700,8 @@ var init_conversation = __esm({
     init_render_signature();
     init_message_queue();
     init_fork_thread3();
+    init_side_chat3();
+    init_side_chat2();
     init_resend_message();
     init_turn_recovery2();
     init_turn_recovery_card();
@@ -100617,9 +103782,9 @@ function isPopoutSeedEnvelope(seed) {
 }
 function registerPopoutSeedHandlers(mode, next) {
   handlers2.set(mode, next);
-  if (pendingSeeds.has(mode)) {
-    const seed = pendingSeeds.get(mode);
-    pendingSeeds.delete(mode);
+  if (pendingSeeds2.has(mode)) {
+    const seed = pendingSeeds2.get(mode);
+    pendingSeeds2.delete(mode);
     void next.apply(seed);
   }
   return () => {
@@ -100648,17 +103813,17 @@ async function applyPopoutSeed(mode, seed, store2) {
   }
   const handler = handlers2.get(mode);
   if (!handler) {
-    pendingSeeds.set(mode, paneSeed);
+    pendingSeeds2.set(mode, paneSeed);
     return;
   }
   await handler.apply(paneSeed);
 }
-var handlers2, pendingSeeds;
+var handlers2, pendingSeeds2;
 var init_pane_popout_seed = __esm({
   "src/renderer/popout/pane-popout-seed.ts"() {
     init_thread_helpers();
     handlers2 = /* @__PURE__ */ new Map();
-    pendingSeeds = /* @__PURE__ */ new Map();
+    pendingSeeds2 = /* @__PURE__ */ new Map();
   }
 });
 
@@ -111151,6 +114316,10 @@ var init_archive_media = __esm({
 });
 
 // src/renderer/attachments/handle-file-drop.ts
+function diskPathOf(file2) {
+  const path = window.copseFiles?.pathForFile(file2) ?? "";
+  return path === "" ? null : path;
+}
 function readAsDataUrl(blob) {
   return new Promise((res, rej) => {
     const r2 = new FileReader();
@@ -111211,7 +114380,7 @@ async function attachDroppedFile(file2, handlers3, api2, workspaceRoot, owner = 
     await handlers3.attachArchive({ name: file2.name, bytes: await file2.arrayBuffer() });
     return;
   }
-  const absPath = file2.path;
+  const absPath = diskPathOf(file2);
   if (absPath && workspaceRoot) {
     await attachWorkspacePath(absPath, handlers3, api2, workspaceRoot, owner);
     return;
@@ -112161,8 +115330,11 @@ function escapeRegExp(value) {
 function invocationTokenPattern(name) {
   return `\\/${escapeRegExp(name)}(?![a-z0-9-])`;
 }
+function inlineInvocationPattern(name) {
+  return new RegExp(`(^|\\s)${invocationTokenPattern(name)}`);
+}
 function stripInvocationToken(text2, name) {
-  return text2.replace(new RegExp(invocationTokenPattern(name)), "").replace(/\s+/g, " ").trim();
+  return text2.replace(inlineInvocationPattern(name), "$1").replace(/\s+/g, " ").trim();
 }
 function parseLeadingInvocation(text2) {
   const trimmed2 = text2.trim();
@@ -112180,8 +115352,7 @@ function resolveInvocation(text2, invocables) {
   if (!trimmed2 || invocables.length === 0) return null;
   const sorted = [...invocables].sort((a3, b4) => b4.name.length - a3.name.length);
   for (const { name, kind } of sorted) {
-    const re3 = new RegExp(`(?:^|\\s)${invocationTokenPattern(name)}`);
-    if (!re3.test(trimmed2)) continue;
+    if (!inlineInvocationPattern(name).test(trimmed2)) continue;
     return { name, kind, remainder: stripInvocationToken(trimmed2, name) };
   }
   return null;
@@ -112641,9 +115812,13 @@ function mountFooterBranchStatus(host, store2, api2) {
   }
   function renderReattach() {
     const current = activeDetached();
-    const shown = current !== null && !isPickerMode() && !wrap.hidden && getActiveThread2()?.status !== "running";
+    const visible = current !== null && !isPickerMode() && !wrap.hidden;
+    const shown = visible && !agentCanTouchCheckout(current);
     reattachButton.hidden = !shown;
-    trigger.classList.toggle("is-detached", current !== null && !isPickerMode() && !wrap.hidden);
+    trigger.classList.toggle("is-detached", visible);
+    if (visible && !shown) {
+      trigger.title = `This checkout is detached from ${current.branch}. Recovery is offered once the agent stops working in it.`;
+    }
     if (!shown) return;
     const title = detachedTitle(current);
     trigger.title = title;
@@ -112677,6 +115852,9 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattachButton.setAttribute("aria-label", `Reattach checkout to ${current.branch}`);
     reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
   }
+  function agentCanTouchCheckout(current) {
+    return getActiveThread2()?.status === "running" || current?.agentBusy === true;
+  }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
   }
@@ -112699,7 +115877,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || getActiveThread2()?.status === "running" || reattaching || activeRecoveryRunId() !== null)
+    if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
     if (current.recovery) {
       const runId = globalThis.crypto.randomUUID();
@@ -113207,22 +116385,36 @@ function createContextWheel() {
   root.append(svg2, popover);
   let popoverActive = false;
   let currentUsage = null;
-  let engaged = false;
+  let hovered = false;
+  let focused = false;
   function showPopover() {
-    engaged = true;
     if (popoverActive) popover.hidden = false;
   }
   function hidePopover() {
-    engaged = false;
     popover.hidden = true;
   }
   function restoreEngagedPopover() {
-    if (engaged && popoverActive && !root.hidden) popover.hidden = false;
+    if ((hovered || focused) && popoverActive && !root.hidden) popover.hidden = false;
   }
-  root.addEventListener("mouseenter", showPopover);
-  root.addEventListener("mouseleave", hidePopover);
-  root.addEventListener("focusin", showPopover);
-  root.addEventListener("focusout", hidePopover);
+  root.addEventListener("mousedown", (event) => {
+    if (event.target instanceof Node && !popover.contains(event.target)) event.preventDefault();
+  });
+  root.addEventListener("mouseenter", () => {
+    hovered = true;
+    showPopover();
+  });
+  root.addEventListener("mouseleave", () => {
+    hovered = false;
+    if (!focused) hidePopover();
+  });
+  root.addEventListener("focusin", () => {
+    focused = true;
+    showPopover();
+  });
+  root.addEventListener("focusout", () => {
+    focused = false;
+    if (!hovered) hidePopover();
+  });
   function clearSegments() {
     while (segGroup.firstChild) segGroup.firstChild.remove();
   }
@@ -113662,8 +116854,8 @@ function downloadThreadJsonl(thread) {
   download(blob, `${threadExportBaseName(thread)}.jsonl`);
 }
 async function downloadThreadArchive(api2, projectId, thread) {
-  const { bytes } = await api2.threads.exportArchive(projectId, thread.id);
-  download(new Blob([bytes], { type: "application/zip" }), `${threadExportBaseName(thread)}.zip`);
+  const { bytes: bytes2 } = await api2.threads.exportArchive(projectId, thread.id);
+  download(new Blob([bytes2], { type: "application/zip" }), `${threadExportBaseName(thread)}.zip`);
 }
 var init_export_thread = __esm({
   "src/renderer/export-thread.ts"() {
@@ -114999,7 +118191,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     tokens.value = String(previousSettings?.budgets.tokenCeiling ?? DEFAULT_TOKEN_CEILING);
     const egressHint = el("p", { class: "field-hint container-run-model-hint" });
     function renderEgressHint() {
-      egressHint.textContent = `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; the key is scoped to the run and blanked once the guest holds it.`;
+      egressHint.textContent = chosenModel.startsWith("acp:") ? `The agent runs in the container and receives its selected credential; network access is limited to its provider.` : `The desktop calls ${modelDisplayLabel(chosenModel)} for this run; provider keys and sign-in tokens stay on the desktop.`;
     }
     renderEgressHint();
     const loginOptIn = el("input", {
@@ -115168,7 +118360,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     rows.push(
       row2(
         "Credential",
-        typeof held === "object" ? `your desktop sign-in, copied in for the run (${held.login.map((d3) => `~/${d3}`).join(", ")})` : held === "key" ? "one API key, scoped to the run" : held === "login" ? "your desktop sign-in, copied in for the run" : "none"
+        typeof held === "object" ? `your desktop sign-in, copied in for the run (${held.login.map((d3) => `~/${d3}`).join(", ")})` : held === "key" ? "one API key, scoped to the run" : held === "login" ? "your desktop sign-in, copied in for the run" : held === "host" ? "Provider authentication held on the desktop; no keys or tokens in the container" : "none"
       )
     );
     const elapsedRow = row2("Elapsed", elapsedLabel(run2));
@@ -115601,7 +118793,94 @@ var init_container_run_control = __esm({
   }
 });
 
+// src/renderer/keyboard-shortcuts.ts
+function isTypingTarget(target) {
+  if (target === null || !("tagName" in target) || typeof target.tagName !== "string") return false;
+  const tag = target.tagName;
+  if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return true;
+  return "isContentEditable" in target && target.isContentEditable === true;
+}
+function matchNewThreadShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return false;
+  return e3.key === "n" || e3.key === "N";
+}
+function matchFindInChatShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return false;
+  return e3.key === "f" || e3.key === "F";
+}
+function matchUiScaleShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return null;
+  if (e3.key === "0" || e3.code === "Digit0" || e3.code === "Numpad0") return "reset";
+  if (e3.key === "=" || e3.key === "+" || e3.code === "Equal" || e3.code === "NumpadAdd") return "in";
+  if (e3.key === "-" || e3.key === "_" || e3.code === "Minus" || e3.code === "NumpadSubtract") {
+    return "out";
+  }
+  return null;
+}
+function matchCommandPaletteShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
+  return e3.key === "k" || e3.key === "K";
+}
+function matchActivityPanelShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
+  return e3.key === "a" || e3.key === "A";
+}
+function matchPanelShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey) return null;
+  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "toggleSidebar";
+  if (!e3.shiftKey && (e3.key === "j" || e3.key === "J")) return "togglePanel";
+  if (e3.shiftKey && (e3.key === "e" || e3.key === "E")) return { openPanel: "explorer" };
+  if (e3.shiftKey && (e3.key === "g" || e3.key === "G")) return { openPanel: "changes" };
+  if (e3.shiftKey && (e3.key === "b" || e3.key === "B")) return { openPanel: "browser" };
+  if (!e3.shiftKey && (e3.key === "`" || e3.code === "Backquote")) return { openPanel: "terminal" };
+  return null;
+}
+function handlePanelShortcut(store2, api2, action) {
+  if (action === "toggleSidebar") {
+    toggleProjectsPane(store2);
+    return;
+  }
+  if (action === "togglePanel") {
+    toggleFilesPaneWithWorkspace(store2, api2);
+    return;
+  }
+  openRightPanelWithWorkspace(store2, api2, action.openPanel);
+}
+function registerPanelKeyboardShortcuts(store2, api2) {
+  document.addEventListener("keydown", (e3) => {
+    if (isAnyDialogOpen()) return;
+    if (matchNewThreadShortcut(e3)) {
+      if (!store2.getState().workspaceRoot) return;
+      e3.preventDefault();
+      openNewThread(store2);
+      return;
+    }
+    if (isTypingTarget(e3.target)) return;
+    const action = matchPanelShortcut(e3);
+    if (!action) return;
+    e3.preventDefault();
+    handlePanelShortcut(store2, api2, action);
+  });
+}
+var init_keyboard_shortcuts = __esm({
+  "src/renderer/keyboard-shortcuts.ts"() {
+    init_thread_helpers();
+    init_panels();
+    init_dialog_shell();
+  }
+});
+
 // src/renderer/views/input-bar.ts
+function pasteBelongsElsewhere(target) {
+  if (isAnyDialogOpen() || isTypingTarget(target)) return true;
+  return target instanceof Element && target.closest(".monaco-editor, .xterm") !== null;
+}
 function mountInputBar(root, store2, api2, opts = {}) {
   const chips = el("div", { class: "attachment-chips" });
   const composer = mountComposerEditor();
@@ -115989,14 +119268,14 @@ function mountInputBar(root, store2, api2, opts = {}) {
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (projectId === null || !threadHasExportableContent(thread)) return;
-    const { bytes, build } = await api2.threads.exportArchive(projectId, thread.id);
+    const { bytes: bytes2, build } = await api2.threads.exportArchive(projectId, thread.id);
     const name = `${threadExportBaseName(thread)}.zip`;
     store2.emit("composer_draft_flush");
     const debugThreadId = createThread(store2, buildDebugTracePrompt(thread, name, build));
     setThreadTitle(store2, debugThreadId, debugTraceThreadTitle(thread));
     await addArchiveChip({
       name,
-      bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+      bytes: bytes2.buffer.slice(bytes2.byteOffset, bytes2.byteOffset + bytes2.byteLength)
     });
     composer.focus();
   }
@@ -116505,9 +119784,12 @@ ${description}
     draftAutosave.schedule();
   });
   let stopPendingThreadId = null;
+  let stopPendingTimer = null;
   function clearStopPending() {
     stopPendingThreadId = null;
     stopBtn.classList.remove("stop-pending");
+    if (stopPendingTimer !== null) clearTimeout(stopPendingTimer);
+    stopPendingTimer = null;
   }
   function updateTargetPicker() {
     if (!containerRunMounted) return;
@@ -116539,10 +119821,14 @@ ${description}
     composer.el.classList.toggle("with-stop", running);
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending();
   }
-  const handleStopShortcut2 = (key) => {
+  const handleStopShortcut2 = (key, target = null) => {
     const id = getActiveThreadId();
     const thread = getActiveThread(store2);
     if (!id || thread?.status !== "running") {
+      clearStopPending();
+      return false;
+    }
+    if (isTypingTarget(target) && !(target instanceof Node && root.contains(target))) {
       clearStopPending();
       return false;
     }
@@ -116554,10 +119840,16 @@ ${description}
     if (key === "Escape") {
       stopPendingThreadId = id;
       stopBtn.classList.add("stop-pending");
+      stopPendingTimer = setTimeout(clearStopPending, STOP_PENDING_TIMEOUT_MS);
       return true;
     }
     return false;
   };
+  const disarmStopOnOtherKey = (e3) => {
+    if (stopPendingThreadId === null || STOP_SHORTCUT_PASSTHROUGH_KEYS.has(e3.key)) return;
+    clearStopPending();
+  };
+  document.addEventListener("keydown", disarmStopOnOtherKey, true);
   function showBranchMismatch(branch) {
     mismatchBranch = branch;
     branchWarning.hidden = false;
@@ -116819,7 +120111,7 @@ ${description}
     (e3) => {
       if (e3.isComposing || stopPendingThreadId === null) return;
       if (e3.key !== "Escape" && e3.key !== "Enter") return;
-      if (handleStopShortcut2(e3.key)) {
+      if (handleStopShortcut2(e3.key, e3.target)) {
         e3.preventDefault();
         e3.stopPropagation();
       }
@@ -117381,6 +120673,7 @@ ${reply}`);
   };
   fileInput.addEventListener("change", onFileInputChange);
   const onPaste = (e3) => {
+    if (!composer.isFocused() && pasteBelongsElsewhere(e3.target)) return;
     const items = Array.from(e3.clipboardData?.items ?? []);
     const img = items.find((i2) => i2.type.startsWith("image/"));
     if (img) {
@@ -117605,6 +120898,8 @@ ${reply}`);
       unsubWorkspace();
       window.removeEventListener("copse:skills-changed", onSkillsChanged);
       document.removeEventListener("paste", onPaste);
+      document.removeEventListener("keydown", disarmStopOnOtherKey, true);
+      clearStopPending();
       document.removeEventListener("click", closeCheckoutMenu);
       observer.disconnect();
       topEdgeObserver.disconnect();
@@ -117626,7 +120921,7 @@ ${reply}`);
     }
   };
 }
-var IMAGE_DETAIL_LABELS;
+var IMAGE_DETAIL_LABELS, STOP_PENDING_TIMEOUT_MS, STOP_SHORTCUT_PASSTHROUGH_KEYS;
 var init_input_bar = __esm({
   "src/renderer/views/input-bar.ts"() {
     init_helpers();
@@ -117686,11 +120981,23 @@ var init_input_bar = __esm({
     init_estimate_cost();
     init_model_selection2();
     init_perf();
+    init_keyboard_shortcuts();
+    init_dialog_shell();
     IMAGE_DETAIL_LABELS = {
       auto: "Auto detail (provider decides)",
       low: "Low detail \u2014 cheapest, text may be unreadable",
       high: "High detail \u2014 full fidelity, most tokens"
     };
+    STOP_PENDING_TIMEOUT_MS = 3e3;
+    STOP_SHORTCUT_PASSTHROUGH_KEYS = /* @__PURE__ */ new Set([
+      "Escape",
+      "Enter",
+      "Shift",
+      "Control",
+      "Alt",
+      "Meta",
+      "CapsLock"
+    ]);
   }
 });
 
@@ -117883,11 +121190,11 @@ function cssColorToHex(value) {
     scale2 = 1;
   }
   if (channels2.length !== 3) return null;
-  const bytes = channels2.map(
+  const bytes2 = channels2.map(
     (channel) => channel.endsWith("%") ? Number.parseFloat(channel) / 100 * 255 : Number.parseFloat(channel) * scale2
   );
-  if (bytes.some((byte) => !Number.isFinite(byte))) return null;
-  return `#${bytes.map(hexByte).join("")}`;
+  if (bytes2.some((byte) => !Number.isFinite(byte))) return null;
+  return `#${bytes2.map(hexByte).join("")}`;
 }
 function channels(hex3) {
   return [
@@ -118513,6 +121820,8 @@ function mountRightPanelLayout(store2) {
   function syncLayout() {
     const mode = store2.getState().rightPanelMode;
     const isExplorer = mode === "explorer";
+    const isContext = mode === "context";
+    const isSideChat = mode === "side-chat";
     const isTerminal = mode === "terminal";
     const isChanges = mode === "changes";
     const isPrs = mode === "prs";
@@ -118521,6 +121830,8 @@ function mountRightPanelLayout(store2) {
     const isBrowser = mode === "browser";
     const isVnc = mode === "vnc";
     const treeHost = document.getElementById("file-tree-host");
+    const contextHost = document.getElementById("context-host");
+    const sideChatHost = document.getElementById("side-chat-host");
     const terminalsList = document.getElementById("terminals-list-host");
     const gitChangesHost = document.getElementById("git-changes-host");
     const prListHost = document.getElementById("pr-list-host");
@@ -118530,6 +121841,8 @@ function mountRightPanelLayout(store2) {
     const vncControlsHost = document.getElementById("vnc-controls-host");
     const treeResizer = document.getElementById("resizer-tree");
     const fileViewer = document.getElementById("file-viewer");
+    const contextViewer = document.getElementById("context-viewer-host");
+    const sideChatViewer = document.getElementById("side-chat-viewer-host");
     const terminalsViewer = document.getElementById("terminals-viewer-host");
     const gitDiffViewer = document.getElementById("git-diff-viewer-host");
     const prViewer = document.getElementById("pr-viewer-host");
@@ -118538,6 +121851,8 @@ function mountRightPanelLayout(store2) {
     const browserViewer = document.getElementById("browser-viewer-host");
     const vncViewer = document.getElementById("vnc-viewer-host");
     if (treeHost) treeHost.hidden = !isExplorer;
+    if (contextHost) contextHost.hidden = !isContext;
+    if (sideChatHost) sideChatHost.hidden = !isSideChat;
     if (terminalsList) terminalsList.hidden = !isTerminal;
     if (gitChangesHost) gitChangesHost.hidden = !isChanges;
     if (prListHost) prListHost.hidden = !isPrs;
@@ -118546,6 +121861,8 @@ function mountRightPanelLayout(store2) {
     if (browserTabsHost) browserTabsHost.hidden = !isBrowser;
     if (vncControlsHost) vncControlsHost.hidden = !isVnc;
     if (fileViewer) fileViewer.hidden = !isExplorer;
+    if (contextViewer) contextViewer.hidden = !isContext;
+    if (sideChatViewer) sideChatViewer.hidden = !isSideChat;
     if (terminalsViewer) terminalsViewer.hidden = !isTerminal;
     if (gitDiffViewer) gitDiffViewer.hidden = !isChanges;
     if (prViewer) prViewer.hidden = !isPrs;
@@ -127844,6 +131161,29 @@ var init_terminal_file_links = __esm({
   }
 });
 
+// src/renderer/views/terminal-web-links.ts
+function createTerminalWebLinkHandler(shell3, confirmOpen = (uri) => showConfirmDialog({
+  message: "Open this link in your browser?",
+  detail: uri,
+  confirmLabel: "Open"
+})) {
+  return {
+    activate: (_event, uri) => {
+      if (!/^https?:\/\//.test(uri)) return;
+      void confirmOpen(uri).then(async (confirmed) => {
+        if (confirmed) await shell3.openExternal(uri);
+      }).catch((error62) => {
+        console.warn("Could not open terminal link", error62);
+      });
+    }
+  };
+}
+var init_terminal_web_links = __esm({
+  "src/renderer/views/terminal-web-links.ts"() {
+    init_confirm_dialog();
+  }
+});
+
 // src/renderer/views/scoped-tabs.ts
 function tabsForScope(tabs, scopeId) {
   return [...tabs].filter((t2) => t2.scopeId === scopeId);
@@ -127935,7 +131275,7 @@ function terminalModeActive(store2) {
   return filesPaneOpen && rightPanelMode === "terminal";
 }
 function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
-  const section = el("section", {
+  const section2 = el("section", {
     class: "terminal-rail-section terminal-shells-section"
   });
   const listHeader = el(
@@ -127961,8 +131301,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   const tabsWrap = el("div", {
     class: "terminals-list terminal-rail-section-list"
   });
-  section.append(listHeader, tabsWrap);
-  listRoot.append(section);
+  section2.append(listHeader, tabsWrap);
+  listRoot.append(section2);
   const body = el("div", { class: "terminals-body" });
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
@@ -127998,7 +131338,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
       cursorBlink: true,
       fontSize: scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      theme: xtermThemeFromTokens(readEditorThemeTokens())
+      theme: xtermThemeFromTokens(readEditorThemeTokens()),
+      linkHandler: createTerminalWebLinkHandler(api2.shell)
     });
     const fitAddon = new o2();
     term.loadAddon(fitAddon);
@@ -128154,7 +131495,8 @@ ${output2}` : "Terminal output: (none)"
         {
           label: tab.label,
           projectId: tab.scopeProjectId,
-          threadId: tab.scopeId
+          threadId: tab.scopeId,
+          ...tab.executionTarget ? { executionTarget: tab.executionTarget } : {}
         }
       );
       tab.sessionId = created.sessionId;
@@ -128195,12 +131537,12 @@ ${output2}` : "Terminal output: (none)"
     } catch {
     }
   }
-  function focusTab(tab) {
+  function focusTab(tab, opts) {
     openTerminalSurface(tab);
     fitTab(tab);
-    tab.term.focus();
+    if (opts?.grabFocus ?? true) tab.term.focus();
   }
-  function setActiveTab(tabId) {
+  function setActiveTab(tabId, opts) {
     if (activeTabId === tabId) return;
     activeTabId = tabId;
     for (const tab2 of tabs.values()) {
@@ -128214,7 +131556,7 @@ ${output2}` : "Terminal output: (none)"
       void ensureSession(tab);
       requestAnimationFrame(() => {
         fitTab(tab);
-        focusTab(tab);
+        focusTab(tab, { grabFocus: opts?.focus ?? true });
       });
     }
   }
@@ -128234,6 +131576,31 @@ ${output2}` : "Terminal output: (none)"
     });
     tab.container.addEventListener("mousedown", () => {
       if (activeTabId === tab.id) focusTab(tab);
+    });
+    tab.container.addEventListener("contextmenu", (e3) => {
+      e3.preventDefault();
+      e3.stopPropagation();
+      showContextMenu(e3.clientX, e3.clientY, [
+        {
+          label: "Copy",
+          disabled: !tab.term.hasSelection(),
+          onSelect: () => {
+            void navigator.clipboard.writeText(tab.term.getSelection());
+          }
+        },
+        {
+          label: "Paste",
+          disabled: !tab.sessionId,
+          onSelect: () => {
+            void navigator.clipboard.readText().then((text2) => {
+              if (text2 && tab.sessionId) {
+                tab.term.paste(text2);
+                focusTab(tab);
+              }
+            });
+          }
+        }
+      ]);
     });
   }
   function currentThreadId() {
@@ -128298,7 +131665,8 @@ ${output2}` : "Terminal output: (none)"
       id,
       scopeProjectId,
       scopeId,
-      checkoutPath: currentWorktreePath(scopeId),
+      ...options?.executionTarget ? { executionTarget: options.executionTarget } : {},
+      checkoutPath: options?.executionTarget === "local" ? null : currentWorktreePath(scopeId),
       label,
       labelSpan,
       checkoutBadge,
@@ -128365,7 +131733,7 @@ ${output2}` : "Terminal output: (none)"
     body.append(panel);
     const visible = scopeId === currentThreadId();
     setTabVisible(tab, visible);
-    if (visible && (options?.activate !== false || !activeTabId)) setActiveTab(id);
+    if (visible && (options?.activate !== false || !activeTabId)) setActiveTab(id, options);
     if (visible && terminalModeActive(store2)) void ensureSession(tab);
     return id;
   }
@@ -128396,10 +131764,10 @@ ${output2}` : "Terminal output: (none)"
     for (const tab2 of visible) setTabVisible(tab2, true);
     if (activeTabId && !visible.some((t2) => t2.id === activeTabId)) activeTabId = null;
     if (needsNew) {
-      if (terminalModeActive(store2)) addTab();
+      if (terminalModeActive(store2)) addTab({ focus: false });
       return;
     }
-    if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id);
+    if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id, { focus: false });
     const tab = activeTabId ? tabs.get(activeTabId) : null;
     if (tab && terminalModeActive(store2)) {
       resizeObserver.observe(tab.container);
@@ -128407,7 +131775,6 @@ ${output2}` : "Terminal output: (none)"
       void ensureSession(tab);
       requestAnimationFrame(() => {
         fitTab(tab);
-        focusTab(tab);
       });
     }
   }
@@ -128450,11 +131817,11 @@ ${output2}` : "Terminal output: (none)"
     if (tab) fitTab(tab);
   }
   newBtn.addEventListener("click", () => addTab());
-  function runCommandInNewShell(command) {
+  function runCommandInNewShell(command, options) {
     const trimmed2 = command.trim();
     if (!trimmed2) return;
     const wasActive = terminalModeActive(store2);
-    addTab({ activate: true, initialInput: `${trimmed2}\r` });
+    addTab({ activate: true, initialInput: `${trimmed2}\r`, ...options });
     if (!wasActive) {
       store2.setState({ filesPaneOpen: true, rightPanelMode: "terminal" });
       store2.emit("files_pane_changed");
@@ -128491,7 +131858,7 @@ ${output2}` : "Terminal output: (none)"
     onScopeSwitch();
   }
   function preserveSharedShell(tab, worktreePath) {
-    if (!tab.checkoutBadge.hidden) return;
+    if (tab.executionTarget === "local" || !tab.checkoutBadge.hidden) return;
     tab.checkoutBadge.hidden = false;
     tab.term.writeln(
       "\r\n\x1B[90mThis shell remains in the shared checkout. A new shell opened in the thread worktree.\x1B[0m"
@@ -128511,7 +131878,8 @@ ${output2}` : "Terminal output: (none)"
     const worktreePath = currentWorktreePath(threadId);
     if (!worktreePath) return;
     for (const tab of tabs.values()) {
-      if (tab.scopeId !== threadId || tab.checkoutPath !== null) continue;
+      if (tab.executionTarget === "local" || tab.scopeId !== threadId || tab.checkoutPath !== null)
+        continue;
       if (!tab.sessionId) {
         if (!tab.creating) tab.checkoutPath = worktreePath;
         continue;
@@ -128578,6 +131946,7 @@ var init_terminals_pane = __esm({
     init_pane_popout_button();
     init_selection_to_chat2();
     init_terminal_file_links();
+    init_terminal_web_links();
     init_scoped_tabs();
     init_array_utils2();
     init_xterm_scrollback();
@@ -128614,7 +131983,7 @@ ${rendered}
   }
 }
 function mountAgentTasks(listRoot, viewerHost, store2, api2) {
-  const section = el("section", {
+  const section2 = el("section", {
     class: "agent-tasks-section terminal-rail-section"
   });
   const sectionHeader = el(
@@ -128625,8 +131994,8 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
   const tabList = el("div", {
     class: "agent-tasks-tablist terminal-rail-section-list"
   });
-  section.append(sectionHeader, tabList);
-  listRoot.append(section);
+  section2.append(sectionHeader, tabList);
+  listRoot.append(section2);
   const viewerParent = viewerHost.parentElement;
   const tasks = /* @__PURE__ */ new Map();
   const order = [];
@@ -128643,7 +132012,7 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     return count;
   }
   function syncSectionVisibility() {
-    section.hidden = visibleTaskCount() === 0;
+    section2.hidden = visibleTaskCount() === 0;
   }
   function showTaskView(show2) {
     viewerParent?.classList.toggle("showing-agent-task", show2);
@@ -128838,7 +132207,7 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     unsubThreads();
     unsubWorkspace();
     showTaskView(false);
-    section.remove();
+    section2.remove();
   };
 }
 var MAX_TASKS, MAX_OUTPUT_CHARS, ANSI_RE;
@@ -128861,7 +132230,7 @@ function taskLabel(handler) {
   return handler.replaceAll("_", " ");
 }
 function mountSupervisedTasks(listRoot, store2, api2) {
-  const section = el("section", {
+  const section2 = el("section", {
     class: "supervised-tasks-section terminal-rail-section",
     hidden: true
   });
@@ -128873,19 +132242,19 @@ function mountSupervisedTasks(listRoot, store2, api2) {
   const list = el("div", {
     class: "supervised-tasks-list terminal-rail-section-list"
   });
-  section.append(header, list);
-  listRoot.append(section);
+  section2.append(header, list);
+  listRoot.append(section2);
   let loadToken = 0;
   const expanded = /* @__PURE__ */ new Set();
   const feedback = el("p", { class: "supervised-task-feedback", role: "status", hidden: true });
-  section.append(feedback);
+  section2.append(feedback);
   function report(error62) {
     feedback.textContent = error62 instanceof Error ? error62.message : "Unable to update background tasks";
     feedback.hidden = false;
   }
   function render(tasks) {
     clear(list);
-    section.hidden = tasks.length === 0;
+    section2.hidden = tasks.length === 0;
     for (const task of tasks) {
       let showDetail = function(value) {
         clear(detail);
@@ -129004,7 +132373,7 @@ function mountSupervisedTasks(listRoot, store2, api2) {
   return () => {
     loadToken++;
     for (const unsubscribe of unsubs) unsubscribe();
-    section.remove();
+    section2.remove();
   };
 }
 var init_supervised_tasks = __esm({
@@ -129171,11 +132540,11 @@ var init_git_image_diff = __esm({
 });
 
 // src/renderer/views/git-changes-pane.ts
-function bytesToBase64(bytes) {
+function bytesToBase64(bytes2) {
   const chunks = [];
   const chunkSize = 32768;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)));
+  for (let offset = 0; offset < bytes2.length; offset += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes2.subarray(offset, offset + chunkSize)));
   }
   return btoa(chunks.join(""));
 }
@@ -129186,13 +132555,13 @@ function proposedImageDataUrl(path, content) {
   const dataUrlPrefix = `data:${mime};base64,`;
   if (content.startsWith(dataUrlPrefix)) return content;
   if (isRasterImagePath(path)) {
-    const bytes = new Uint8Array(content.length);
+    const bytes2 = new Uint8Array(content.length);
     for (let i2 = 0; i2 < content.length; i2++) {
       const codeUnit = content.charCodeAt(i2);
       if (codeUnit > 255) return null;
-      bytes[i2] = codeUnit;
+      bytes2[i2] = codeUnit;
     }
-    return `${dataUrlPrefix}${bytesToBase64(bytes)}`;
+    return `${dataUrlPrefix}${bytesToBase64(bytes2)}`;
   }
   return `${dataUrlPrefix}${bytesToBase64(new TextEncoder().encode(content))}`;
 }
@@ -129477,8 +132846,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   function renderProposedSection(queue) {
     if (queue.length === 0) return;
-    const section = el("div", { class: "git-changes-section git-changes-section-proposed" });
-    section.append(
+    const section2 = el("div", { class: "git-changes-section git-changes-section-proposed" });
+    section2.append(
       el("div", { class: "git-changes-section-title" }, `Proposed (${String(queue.length)})`)
     );
     for (const entry of queue) {
@@ -129494,14 +132863,14 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
         el("span", { class: "git-change-path" }, entry.path)
       );
       row2.addEventListener("click", () => void selectProposed(entry.path));
-      section.append(row2);
+      section2.append(row2);
     }
-    listBody.append(section);
+    listBody.append(section2);
   }
   function renderGitSection(title, changes, staged) {
     if (changes.length === 0) return;
-    const section = el("div", { class: "git-changes-section" });
-    section.append(
+    const section2 = el("div", { class: "git-changes-section" });
+    section2.append(
       el("div", { class: "git-changes-section-title" }, `${title} (${String(changes.length)})`)
     );
     for (const change of changes) {
@@ -129533,14 +132902,14 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       }
       row2.append(el("span", { class: "git-change-path" }, change.path));
       row2.addEventListener("click", () => void selectGitChange(change.path, staged));
-      section.append(row2);
+      section2.append(row2);
     }
-    listBody.append(section);
+    listBody.append(section2);
   }
   function renderCommittedSection(view) {
     if (view.changes.length === 0) return;
-    const section = el("div", { class: "git-changes-section git-changes-section-committed" });
-    section.append(
+    const section2 = el("div", { class: "git-changes-section git-changes-section-committed" });
+    section2.append(
       el(
         "div",
         {
@@ -129567,9 +132936,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
         el("span", { class: "git-change-path" }, change.path)
       );
       row2.addEventListener("click", () => void selectCommittedChange(change.path));
-      section.append(row2);
+      section2.append(row2);
     }
-    listBody.append(section);
+    listBody.append(section2);
   }
   function renderList() {
     const queue = store2.getState().stagedDiffs;
@@ -130288,15 +133657,28 @@ function prNewThreadDraft(pr2) {
 function prNewThreadTitle(pr2) {
   return `PR #${String(pr2.number)}: ${pr2.title}`;
 }
-function startPrDiscussThread(store2, pr2) {
+function prCheckFixDraft(pr2, check2, headSha) {
+  const details = check2.url && /^https?:\/\//i.test(check2.url) ? ` Check details: ${check2.url}.` : "";
+  return `Fix the failing check "${check2.name}" (${check2.state.toLowerCase()}) on [#${String(pr2.number)} \u2014 ${pr2.title}](${pr2.url}) at head commit ${headSha}.${details} Inspect the failure logs, identify the cause, make the fix, and run the relevant checks.`;
+}
+function startPrThread(store2, draft, title) {
   store2.emit("composer_draft_flush");
-  const threadId = createThread(store2, prNewThreadDraft(pr2));
-  const title = prNewThreadTitle(pr2);
+  const threadId = createThread(store2, draft);
   store2.setState({
     threads: store2.getState().threads.map((t2) => t2.id === threadId ? { ...t2, title } : t2)
   });
   store2.emit("threads_changed");
   return threadId;
+}
+function startPrCheckFixThread(store2, pr2, check2, headSha) {
+  return startPrThread(
+    store2,
+    prCheckFixDraft(pr2, check2, headSha),
+    `Fix PR #${String(pr2.number)}: ${check2.name}`
+  );
+}
+function startPrDiscussThread(store2, pr2) {
+  return startPrThread(store2, prNewThreadDraft(pr2), prNewThreadTitle(pr2));
 }
 var init_pr_pane_thread = __esm({
   "src/renderer/views/pr-pane-thread.ts"() {
@@ -130327,7 +133709,7 @@ function externalButton(label, url2, open2) {
   });
   return button;
 }
-function renderPrActivity(host, section, activity, open2) {
+function renderPrActivity(host, section2, activity, open2, fixCheck) {
   clear(host);
   if (!activity || activity.error) {
     host.append(
@@ -130339,7 +133721,7 @@ function renderPrActivity(host, section, activity, open2) {
     );
     return;
   }
-  if (section === "comments") {
+  if (section2 === "comments") {
     host.append(
       el(
         "p",
@@ -130427,11 +133809,11 @@ function renderPrActivity(host, section, activity, open2) {
     const checks = activity.checks.filter((check2) => checkTone(check2.state) === group.tone);
     if (!checks.length) continue;
     const collapsible = group.tone === "success" || group.tone === "unknown";
-    const section2 = collapsible ? el("details", {
+    const section3 = collapsible ? el("details", {
       class: "pr-check-group",
       open: group.tone === "success" && !needsAttention
     }) : el("section", { class: "pr-check-group" });
-    section2.append(
+    section3.append(
       el(
         collapsible ? "summary" : "h4",
         { class: "pr-check-group-heading" },
@@ -130442,7 +133824,17 @@ function renderPrActivity(host, section, activity, open2) {
     );
     for (const check2 of checks) {
       const icon = group.tone === "success" ? checkIcon() : group.tone === "failure" ? closeIcon() : group.tone === "pending" ? circleIcon() : minusIcon();
-      section2.append(
+      const fixButton = group.tone === "failure" && fixCheck ? el(
+        "button",
+        {
+          type: "button",
+          class: "pr-activity-link pr-check-fix-btn",
+          "aria-label": `Fix ${check2.name}`
+        },
+        "Fix"
+      ) : null;
+      fixButton?.addEventListener("click", () => fixCheck?.(check2, activity.headSha));
+      section3.append(
         el(
           "div",
           { class: "pr-check-row" },
@@ -130457,11 +133849,12 @@ function renderPrActivity(host, section, activity, open2) {
               readableState(check2.state)
             )
           ),
+          ...fixButton ? [fixButton] : [],
           externalButton("Details", check2.url, open2)
         )
       );
     }
-    host.append(section2);
+    host.append(section3);
   }
 }
 var init_pr_pane_activity = __esm({
@@ -130474,63 +133867,87 @@ var init_pr_pane_activity = __esm({
 });
 
 // src/renderer/views/pr-thread-relationships.ts
-function renderPrThreadRelationships(rows, openThread) {
+function threadChip(row2, kind, openThread) {
+  const kindLabel2 = row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "pr-open-thread-btn pr-thread-link",
+      "data-thread-id": row2.threadId,
+      "data-relationship": kind,
+      "aria-label": `Open thread: ${row2.title}`
+    },
+    el("span", { class: "pr-thread-title" }, row2.title),
+    ...kind === "related" ? [el("span", { class: "pr-thread-kind" }, kindLabel2)] : []
+  );
+  button.addEventListener("click", () => {
+    openThread(row2.threadId);
+  });
+  return button;
+}
+function renderPrThreadRelationships(rows, openThread, view = {}) {
   const host = el("section", {
     class: "pr-thread-relationships",
     "aria-label": "PR thread relationships"
   });
-  const groups = [
-    {
-      label: "Producing threads",
-      kind: "produced",
-      rows: rows.filter((row2) => row2.kinds.includes("produced"))
-    },
-    {
-      label: "Related threads",
-      kind: "related",
-      rows: rows.filter((row2) => !row2.kinds.includes("produced"))
-    }
-  ];
-  for (const group of groups) {
-    const section = el(
-      "div",
-      { class: "pr-thread-group", "data-relationship-group": group.kind },
-      el("h5", {}, group.label)
+  const produced = rows.filter((row2) => row2.kinds.includes("produced"));
+  const related = rows.filter((row2) => !row2.kinds.includes("produced"));
+  if (produced.length > 0) {
+    host.append(
+      el(
+        "div",
+        { class: "pr-thread-group", "data-relationship-group": "produced" },
+        el("h5", {}, "Produced by"),
+        ...produced.map((row2) => threadChip(row2, "produced", openThread))
+      )
     );
-    if (group.rows.length === 0)
-      section.append(
-        el(
-          "p",
-          { class: "pr-thread-empty" },
-          group.kind === "produced" ? "No recorded producing thread." : "No related threads recorded."
-        )
-      );
-    for (const row2 of group.rows) {
-      const label = row2.kinds.includes("produced") ? "Created PR" : row2.kinds.includes("agent-linked") ? "Agent-linked" : "Referenced PR";
-      const button = el(
-        "button",
-        {
-          type: "button",
-          class: "pr-open-thread-btn pr-thread-link",
-          "data-thread-id": row2.threadId,
-          "data-relationship": group.kind,
-          "aria-label": `Open thread: ${row2.title}`
-        },
-        el("span", { class: "pr-thread-title" }, row2.title),
-        el("span", { class: "pr-thread-kind" }, label)
-      );
-      button.addEventListener("click", () => {
-        openThread(row2.threadId);
-      });
-      section.append(button);
-    }
-    host.append(section);
   }
+  if (related.length === 0) return host;
+  if (produced.length === 0) {
+    host.append(
+      el(
+        "div",
+        { class: "pr-thread-group", "data-relationship-group": "related" },
+        el("h5", {}, "Related threads"),
+        ...related.map((row2) => threadChip(row2, "related", openThread))
+      )
+    );
+    return host;
+  }
+  let expanded = view.expanded ?? false;
+  const group = el(
+    "div",
+    {
+      class: "pr-thread-group pr-thread-group-more",
+      "data-relationship-group": "related",
+      "aria-label": "Related threads"
+    },
+    ...related.map((row2) => threadChip(row2, "related", openThread))
+  );
+  const toggle = el(
+    "button",
+    { type: "button", class: "pr-thread-toggle" },
+    el("span", {}, `${String(related.length)} related`),
+    chevronRightIcon("ui-icon ui-icon-sm")
+  );
+  const sync = () => {
+    group.hidden = !expanded;
+    toggle.setAttribute("aria-expanded", String(expanded));
+  };
+  sync();
+  toggle.addEventListener("click", () => {
+    expanded = !expanded;
+    sync();
+    view.onToggle?.(expanded);
+  });
+  host.append(toggle, group);
   return host;
 }
 var init_pr_thread_relationships = __esm({
   "src/renderer/views/pr-thread-relationships.ts"() {
     init_helpers();
+    init_icons();
   }
 });
 
@@ -130633,6 +134050,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     class: "pr-detail-sections",
     "aria-label": "Pull request sections"
   });
+  const relationshipsHost = el("div", { class: "pr-relationships-host" });
   const activityHost = el("div", { class: "pr-activity", hidden: true });
   const descriptionHost = el("div", {
     class: "pr-viewer-description message-text streaming-markdown"
@@ -130645,6 +134063,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   viewerRoot.append(
     metaHost,
     sectionsHost,
+    relationshipsHost,
     activityHost,
     descriptionHost,
     filesHost,
@@ -130653,6 +134072,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     emptyState
   );
   let activeSection = "overview";
+  const relatedExpanded = /* @__PURE__ */ new Map();
   let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
@@ -130809,6 +134229,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     clear(listBody);
     listBody.append(paneLoadingRow("Loading pull requests\u2026"));
     clear(metaHost);
+    clear(relationshipsHost);
     clear(descriptionHost);
     descriptionHost.classList.remove("pr-viewer-description-fill");
     clear(filesHost);
@@ -130827,6 +134248,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   function renderGhUnavailableViewer() {
     clear(metaHost);
     clear(sectionsHost);
+    clear(relationshipsHost);
     activityHost.hidden = true;
     clear(descriptionHost);
     descriptionHost.classList.remove("pr-viewer-description-fill");
@@ -130837,7 +134259,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     emptyState.hidden = false;
     emptyState.textContent = ghStatus?.installed ? "GitHub CLI is not authenticated" : "GitHub CLI is not available";
   }
-  function renderPrRow(pr2, section) {
+  function renderPrRow(pr2, section2) {
     const isSelected = selectedPr?.owner === pr2.owner && selectedPr.repo === pr2.repo && selectedPr.number === pr2.number;
     const ci2 = el("span", {});
     const state = knownChecks(pr2);
@@ -130864,7 +134286,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       {
         type: "button",
         class: `git-change-row pr-list-row${isSelected ? " is-selected" : ""}`,
-        "data-pr-section": section,
+        "data-pr-section": section2,
         "aria-pressed": String(isSelected)
       },
       el("span", { class: "git-change-path pr-list-title", title: titleText }, titleText),
@@ -130873,7 +134295,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         { class: "pr-list-meta" },
         el("span", { class: "pr-list-number" }, `#${String(pr2.number)}`),
         el("span", { class: "pr-list-repo", title: `${pr2.owner}/${pr2.repo}` }, pr2.repo),
-        ...section === "linked" ? [
+        ...section2 === "linked" ? [
           el(
             "span",
             {
@@ -130959,35 +134381,35 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const otherPrs = query ? otherPrsAll.filter((pr2) => prMatchesFilter(pr2, query)) : otherPrsAll;
     if (linkedPrs.length > 0) {
       ensureTitles(linkedPrs);
-      const section = el("div", { class: "git-changes-section" });
-      section.append(
+      const section2 = el("div", { class: "git-changes-section" });
+      section2.append(
         el(
           "div",
           { class: "git-changes-section-title" },
           `Related PRs \xB7 this thread (${String(linkedPrs.length)})`
         )
       );
-      for (const pr2 of linkedPrs) section.append(renderPrRow(pr2, "linked"));
-      listBody.append(section);
+      for (const pr2 of linkedPrs) section2.append(renderPrRow(pr2, "linked"));
+      listBody.append(section2);
     }
     if (repoPrs.length > 0 && ghStatus?.authenticated) {
       ensureTitles(repoPrs);
       const firstRepoPr = at(repoPrs, 0);
       const slug2 = `${firstRepoPr.owner}/${firstRepoPr.repo}`;
-      const section = el("div", { class: "git-changes-section" });
-      section.append(
+      const section2 = el("div", { class: "git-changes-section" });
+      section2.append(
         el(
           "div",
           { class: "git-changes-section-title", title: `Open pull requests in ${slug2}` },
           `${slug2} (${String(repoPrs.length)})`
         )
       );
-      for (const pr2 of repoPrs) section.append(renderPrRow(pr2, "workspace"));
-      listBody.append(section);
+      for (const pr2 of repoPrs) section2.append(renderPrRow(pr2, "workspace"));
+      listBody.append(section2);
     }
     if (ghStatus?.authenticated) {
       const title = repoPrs.length > 0 || linkedPrs.length > 0 ? "Your other open PRs" : "Your open PRs";
-      const section = el("div", { class: "git-changes-section" });
+      const section2 = el("div", { class: "git-changes-section" });
       const header = el(
         "button",
         {
@@ -131003,15 +134425,15 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         el("span", {}, title)
       );
       header.addEventListener("click", () => void toggleOther());
-      section.append(header);
+      section2.append(header);
       if (otherExpanded) {
         if (otherLoading) {
-          section.append(el("div", { class: "git-changes-empty" }, "Loading\u2026"));
+          section2.append(el("div", { class: "git-changes-empty" }, "Loading\u2026"));
         } else if (otherPrs.length > 0) {
           ensureTitles(otherPrs);
-          for (const pr2 of otherPrs) section.append(renderPrRow(pr2, "mine"));
+          for (const pr2 of otherPrs) section2.append(renderPrRow(pr2, "mine"));
         } else {
-          section.append(
+          section2.append(
             el(
               "div",
               { class: "git-changes-empty" },
@@ -131020,7 +134442,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           );
         }
       }
-      listBody.append(section);
+      listBody.append(section2);
     }
     const otherGroupShown = Boolean(ghStatus?.authenticated) && otherExpanded && !otherLoading;
     if (query && linkedPrs.length === 0 && repoPrs.length === 0 && !otherGroupShown) {
@@ -131105,17 +134527,33 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     });
     return btn;
   }
-  function renderMeta() {
-    clear(metaHost);
+  function renderRelationships() {
+    clear(relationshipsHost);
     if (!selectedPr) return;
-    const relationships = prRelationships ? renderPrThreadRelationships(prRelationships, (id) => {
-      switchThread(store2, id);
-    }) : el(
+    const prKey = githubPrKey(selectedPr);
+    const relationships = prRelationships ? renderPrThreadRelationships(
+      prRelationships,
+      (id) => {
+        switchThread(store2, id);
+      },
+      {
+        expanded: relatedExpanded.get(prKey),
+        onToggle: (expanded) => {
+          relatedExpanded.set(prKey, expanded);
+        }
+      }
+    ) : el(
       "p",
       { class: "pr-thread-empty", role: "status" },
       relationshipError ? "Thread relationships unavailable." : "Loading thread relationships\u2026"
     );
     relationships.hidden = prDetails !== null && activeSection !== "overview";
+    relationshipsHost.append(relationships);
+  }
+  function renderMeta() {
+    clear(metaHost);
+    renderRelationships();
+    if (!selectedPr) return;
     if (!prDetails) {
       metaHost.append(
         el(
@@ -131131,8 +134569,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           "div",
           { class: "pr-viewer-subtitle" },
           `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`
-        ),
-        relationships
+        )
       );
       return;
     }
@@ -131293,8 +134730,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       branch,
       badges,
       actions,
-      statusLine,
-      relationships
+      statusLine
     );
   }
   function renderDescription() {
@@ -131325,27 +134761,27 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       { key: "checks", label: "Checks" },
       { key: "files", label: "Files" }
     ];
-    for (const section of sections) {
+    for (const section2 of sections) {
       const button = el(
         "button",
         {
           type: "button",
           class: "pr-detail-section",
-          "data-section": section.key,
-          "aria-pressed": String(activeSection === section.key)
+          "data-section": section2.key,
+          "aria-pressed": String(activeSection === section2.key)
         },
-        el("span", {}, section.label)
+        el("span", {}, section2.label)
       );
       const activity = prDetails.activity;
-      const count = section.key === "files" ? prDetails.files.length : activity && !activity.error ? section.key === "comments" ? activity.comments.length : section.key === "checks" ? activity.checks.length : void 0 : void 0;
+      const count = section2.key === "files" ? prDetails.files.length : activity && !activity.error ? section2.key === "comments" ? activity.comments.length : section2.key === "checks" ? activity.checks.length : void 0 : void 0;
       if (count !== void 0) {
-        const truncated = section.key === "comments" ? activity?.commentsTruncated : section.key === "checks" ? activity?.checksTruncated : false;
+        const truncated = section2.key === "comments" ? activity?.commentsTruncated : section2.key === "checks" ? activity?.checksTruncated : false;
         button.append(
           el("span", { class: "pr-section-count" }, `${String(count)}${truncated ? "+" : ""}`)
         );
       }
       button.addEventListener("click", () => {
-        activeSection = section.key;
+        activeSection = section2.key;
         renderMeta();
         clearDiff();
         renderDescription();
@@ -131362,9 +134798,19 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       diffWrap.hidden = true;
       emptyState.hidden = true;
       activityHost.hidden = false;
-      renderPrActivity(activityHost, activeSection, prDetails.activity, (url2) => {
-        void api2.shell.openExternal(url2);
-      });
+      renderPrActivity(
+        activityHost,
+        activeSection,
+        prDetails.activity,
+        (url2) => {
+          void api2.shell.openExternal(url2);
+        },
+        (check2, headSha) => {
+          if (!prDetails) return;
+          startPrCheckFixThread(store2, prDetails, check2, headSha);
+          getPromptAttachmentHandlers()?.focusComposer?.();
+        }
+      );
     }
   }
   function renderFiles() {
@@ -132174,6 +135620,882 @@ var init_memories_pane = __esm({
   }
 });
 
+// src/renderer/views/thread-context-model.ts
+function firstLine(text2) {
+  const line = text2.trim().split("\n", 1)[0] ?? "";
+  return line.length <= 90 ? line : `${line.slice(0, 89)}\u2026`;
+}
+function prLabel(ref) {
+  return `${ref.owner}/${ref.repo}#${String(ref.number)}`;
+}
+function hostLabel(url2) {
+  try {
+    const parsed2 = new URL(url2);
+    const path = parsed2.pathname === "/" ? "" : parsed2.pathname;
+    return `${parsed2.host}${path}`;
+  } catch {
+    return url2;
+  }
+}
+function deriveThreadContext(input2) {
+  const { thread, project: project2, threads } = input2;
+  const loaded = thread.messagesLoaded !== false;
+  const repos = [];
+  if (project2) {
+    const checkout = thread.worktree ? "worktree" : "shared";
+    const branch = thread.worktree?.branch ?? thread.gitBranch;
+    repos.push({
+      name: project2.name,
+      path: project2.path,
+      ...branch !== void 0 ? { branch } : {},
+      checkout
+    });
+  }
+  const merged = mergeThreadLinks(
+    thread.links ?? [],
+    loaded ? collectThreadLinks({ id: thread.id, messages: thread.messages }) : []
+  ).links;
+  const titleById = new Map(threads.map((candidate) => [candidate.id, candidate.title]));
+  const links = [];
+  const seenPr = /* @__PURE__ */ new Set();
+  for (const pr2 of [...thread.prRefs ?? [], ...(thread.prProductions ?? []).map((p2) => p2.pr)]) {
+    const key = githubPrKey(pr2);
+    if (seenPr.has(key)) continue;
+    seenPr.add(key);
+    links.push({ kind: "pr", key: `pr:${key}`, label: prLabel(pr2), target: pr2.url, pr: pr2 });
+  }
+  for (const link of merged) {
+    if (link.kind === "thread") {
+      const title = titleById.get(link.target);
+      links.push({
+        kind: "thread",
+        key: `thread:${link.target}`,
+        label: title ?? "Thread not in this project",
+        target: link.target,
+        ...title === void 0 ? { unresolved: true } : {}
+      });
+    } else {
+      links.push({
+        kind: "url",
+        key: `url:${link.target}`,
+        label: hostLabel(link.target),
+        target: link.target
+      });
+    }
+  }
+  const subagents = [];
+  if (loaded) {
+    for (const message2 of thread.messages) {
+      for (const toolCall of message2.toolCalls) {
+        const session = toolCall.subagent;
+        if (!session) continue;
+        subagents.push({
+          id: session.id,
+          kind: session.kind,
+          status: session.status,
+          prompt: firstLine(session.prompt),
+          ...session.model !== void 0 ? { model: session.model } : {}
+        });
+      }
+    }
+  }
+  const sideChats = sideChatsOf(threads, thread.id, true).sort(
+    (a3, b4) => Number(a3.archived) - Number(b4.archived)
+  );
+  let sideOf;
+  if (thread.sideChat) {
+    const parent = threads.find((candidate) => candidate.id === thread.sideChat?.parentThreadId);
+    const anchor2 = parent?.messages.find((m2) => m2.id === thread.sideChat?.anchorMessageId);
+    sideOf = {
+      parentThreadId: thread.sideChat.parentThreadId,
+      parentTitle: parent?.title ?? "Parent thread",
+      ...anchor2 ? { anchorExcerpt: firstLine(anchor2.content) } : {}
+    };
+  }
+  return {
+    threadId: thread.id,
+    ...sideOf ? { sideOf } : {},
+    repos,
+    links,
+    mentionedIn: [...input2.mentionedIn ?? []],
+    sideChats,
+    subagents
+  };
+}
+var init_thread_context_model = __esm({
+  "src/renderer/views/thread-context-model.ts"() {
+    init_github_pr_url2();
+    init_side_chat2();
+    init_thread_links2();
+  }
+});
+
+// src/renderer/views/thread-context-panel.ts
+function sectionCount(model, section2) {
+  switch (section2) {
+    case "repos":
+      return model.repos.length;
+    case "side-chats":
+      return model.sideChats.filter((row2) => !row2.archived).length;
+    case "links":
+      return model.links.length + model.mentionedIn.length;
+    case "subagents":
+      return model.subagents.length;
+  }
+}
+function section(kind, ...children) {
+  return el(
+    "section",
+    { class: "thread-context-section", "data-context-section": kind },
+    el("h5", {}, SECTION_TITLES[kind]),
+    ...children
+  );
+}
+function emptyNote(text2) {
+  return el("p", { class: "thread-context-empty" }, text2);
+}
+function rowButton(attrs, ...children) {
+  return el("button", { type: "button", class: "thread-context-row", ...attrs }, ...children);
+}
+function reposSection(model) {
+  if (model.repos.length === 0) return section("repos", emptyNote("No repository for this thread."));
+  return section(
+    "repos",
+    ...model.repos.map(
+      (repo) => el(
+        "div",
+        { class: "thread-context-row thread-context-repo", "data-repo-path": repo.path },
+        gitBranchIcon("ui-icon ui-icon-sm"),
+        el(
+          "span",
+          { class: "thread-context-main" },
+          el("span", { class: "thread-context-title" }, repo.name),
+          el("span", { class: "thread-context-sub" }, repo.path)
+        ),
+        repo.branch !== void 0 ? el(
+          "span",
+          { class: "thread-context-chip", "data-checkout": repo.checkout },
+          repo.branch
+        ) : ""
+      )
+    )
+  );
+}
+function sideChatsSection(model, handlers3) {
+  const canStart = model.sideOf === void 0;
+  const header = el(
+    "div",
+    { class: "thread-context-section-actions" },
+    el(
+      "button",
+      {
+        type: "button",
+        class: "thread-context-action",
+        "data-action": "new-side-chat",
+        disabled: !canStart
+      },
+      plusIcon("ui-icon ui-icon-sm"),
+      "New side chat"
+    )
+  );
+  header.querySelector("button")?.addEventListener("click", handlers3.startSideChat);
+  const rows = model.sideChats.map((chat) => {
+    const open2 = rowButton(
+      {
+        "data-side-chat-id": chat.id,
+        "data-archived": chat.archived ? "true" : void 0,
+        "data-unread": chat.unread ? "true" : void 0
+      },
+      chat.unread ? el("span", {
+        class: "chat-unread-dot",
+        role: "img",
+        "aria-label": "Unread reply"
+      }) : "",
+      el(
+        "span",
+        { class: "thread-context-main" },
+        el("span", { class: "thread-context-title" }, chat.title || "Side chat"),
+        chat.model !== void 0 ? el("span", { class: "thread-context-sub" }, chat.model) : ""
+      ),
+      chat.archived ? el("span", { class: "thread-context-chip" }, "Archived") : ""
+    );
+    open2.addEventListener("click", () => {
+      handlers3.openSideChat(chat.id);
+    });
+    const toggle = el(
+      "button",
+      {
+        type: "button",
+        class: "thread-context-action thread-context-row-action",
+        "data-action": chat.archived ? "restore-side-chat" : "archive-side-chat",
+        "data-side-chat-id": chat.id,
+        "aria-label": `${chat.archived ? "Restore" : "Archive"} side chat ${chat.title}`
+      },
+      chat.archived ? "Restore" : "Archive"
+    );
+    toggle.addEventListener("click", () => {
+      if (chat.archived) handlers3.restoreSideChat(chat.id);
+      else handlers3.archiveSideChat(chat.id);
+    });
+    return el("div", { class: "thread-context-row-wrap" }, open2, toggle);
+  });
+  return section(
+    "side-chats",
+    header,
+    rows.length > 0 ? el("div", { class: "thread-context-rows" }, ...rows) : emptyNote(
+      canStart ? "None yet. Ask a side question without touching this thread." : "Side chats do not nest."
+    )
+  );
+}
+function linksSection(model, handlers3) {
+  const groups = [
+    { label: "Pull requests", kind: "pr" },
+    { label: "Threads", kind: "thread" },
+    { label: "Web", kind: "url" }
+  ];
+  const children = [];
+  for (const group of groups) {
+    const rows = model.links.filter((link) => link.kind === group.kind);
+    if (rows.length === 0) continue;
+    children.push(
+      el(
+        "div",
+        { class: "thread-context-group", "data-link-group": group.kind },
+        el("h6", {}, group.label),
+        ...rows.map((link) => {
+          const button = rowButton(
+            {
+              "data-link-key": link.key,
+              "data-unresolved": link.unresolved ? "true" : void 0
+            },
+            link.kind === "pr" ? gitPullRequestIcon("ui-icon ui-icon-sm") : link.kind === "url" ? externalLinkIcon("ui-icon ui-icon-sm") : "",
+            el("span", { class: "thread-context-title" }, link.label)
+          );
+          button.addEventListener("click", () => {
+            if (link.kind === "pr" && link.pr) handlers3.openPr(link.pr);
+            else if (link.kind === "thread" && !link.unresolved) handlers3.openThread(link.target);
+            else if (link.kind === "url") handlers3.openUrl(link.target);
+          });
+          if (link.unresolved) button.disabled = true;
+          return button;
+        })
+      )
+    );
+  }
+  if (model.mentionedIn.length > 0) {
+    children.push(
+      el(
+        "div",
+        { class: "thread-context-group", "data-link-group": "mentioned-in" },
+        el("h6", {}, "Mentioned in"),
+        ...model.mentionedIn.map((row2) => {
+          const button = rowButton(
+            { "data-thread-id": row2.threadId },
+            el("span", { class: "thread-context-title" }, row2.title || "Untitled thread")
+          );
+          button.addEventListener("click", () => {
+            handlers3.openThread(row2.threadId);
+          });
+          return button;
+        })
+      )
+    );
+  }
+  return section(
+    "links",
+    ...children.length > 0 ? children : [emptyNote("No links or references yet.")]
+  );
+}
+function subagentsSection(model) {
+  if (model.subagents.length === 0) return section("subagents", emptyNote("No subagents."));
+  return section(
+    "subagents",
+    ...model.subagents.map(
+      (agent) => el(
+        "div",
+        { class: "thread-context-row", "data-subagent-id": agent.id, "data-status": agent.status },
+        el(
+          "span",
+          { class: "thread-context-main" },
+          el("span", { class: "thread-context-title" }, agent.prompt || agent.kind),
+          el(
+            "span",
+            { class: "thread-context-sub" },
+            [agent.kind, agent.model].filter(Boolean).join(" \xB7 ")
+          )
+        ),
+        el("span", { class: "thread-context-chip", "data-status": agent.status }, agent.status)
+      )
+    )
+  );
+}
+function renderThreadContext(model, handlers3) {
+  const host = el("div", { class: "thread-context", "aria-label": "Thread context" });
+  if (model.sideOf) {
+    const back = el(
+      "button",
+      { type: "button", class: "thread-context-link", "data-action": "back-to-parent" },
+      model.sideOf.parentTitle
+    );
+    back.addEventListener("click", () => {
+      if (model.sideOf) handlers3.openThread(model.sideOf.parentThreadId);
+    });
+    host.append(
+      el(
+        "div",
+        { class: "thread-context-side-banner", "data-context": "side-of" },
+        el("span", { class: "thread-context-kicker" }, "Side chat"),
+        el("span", {}, " of "),
+        back,
+        el(
+          "p",
+          { class: "thread-context-note" },
+          model.sideOf.anchorExcerpt !== void 0 ? `Reads the main thread up to \u201C${model.sideOf.anchorExcerpt}\u201D. Read-only.` : "Reads the main thread up to where it branched. Read-only."
+        )
+      )
+    );
+  }
+  host.append(
+    reposSection(model),
+    sideChatsSection(model, handlers3),
+    linksSection(model, handlers3),
+    subagentsSection(model)
+  );
+  return host;
+}
+function contextModeActive(store2) {
+  const { filesPaneOpen, rightPanelMode } = store2.getState();
+  return filesPaneOpen && rightPanelMode === "context";
+}
+function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
+  listRoot.append(
+    el(
+      "div",
+      { class: "pane-header" },
+      el("span", { class: "pane-header-title" }, "Context"),
+      panePopoutButton(store2, api2, "context", "context"),
+      paneMaximizeButton(store2, "context")
+    )
+  );
+  const index = el("div", { class: "git-changes-list thread-context-index" });
+  listRoot.append(index);
+  let mentionedIn = [];
+  let mentionedFor = null;
+  let token = 0;
+  let storageToken = 0;
+  let storageKey = "";
+  let storageText = "Calculating\u2026";
+  let disposed = false;
+  function activeStorageKey() {
+    const state = store2.getState();
+    const thread = getActiveThread(store2);
+    return JSON.stringify([
+      state.activeProjectId,
+      thread?.id,
+      thread?.worktree?.path,
+      thread?.worktree?.retiredAt
+    ]);
+  }
+  async function refreshStorage() {
+    const thread = getActiveThread(store2);
+    const projectId = store2.getState().activeProjectId;
+    if (!thread || !projectId) return;
+    const mine = ++storageToken;
+    const key = activeStorageKey();
+    storageKey = key;
+    storageText = "Calculating\u2026";
+    const update = () => {
+      const slot = viewerRoot.querySelector("[data-context-storage-size]");
+      if (slot) slot.textContent = storageText;
+    };
+    update();
+    try {
+      const [saved, checkout] = await Promise.all([
+        api2.threads.storageSize(projectId, thread.id),
+        thread.worktree && thread.worktree.retiredAt === void 0 ? api2.worktrees.size(projectId, thread.worktree.path) : Promise.resolve({ bytes: 0, truncated: false })
+      ]);
+      if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
+      storageText = `${saved.truncated || checkout.truncated ? "At least " : ""}${formatByteSize(saved.bytes + checkout.bytes)}`;
+    } catch (error62) {
+      if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
+      console.error("[context] storage lookup failed:", error62);
+      storageText = "Unavailable";
+    }
+    update();
+  }
+  const handlers3 = {
+    openThread: (threadId) => {
+      switchThread(store2, threadId);
+    },
+    openSideChat: (threadId) => {
+      store2.emit("side_chat_open_requested", threadId);
+    },
+    openPr: (ref) => {
+      openPullRequest(store2, ref);
+    },
+    openUrl: (url2) => {
+      openBrowserUrl(store2, url2);
+    },
+    startSideChat: () => {
+      const thread = getActiveThread(store2);
+      if (thread) void startSideChat(store2, api2, thread.id);
+    },
+    archiveSideChat: (threadId) => {
+      archiveThread(store2, threadId);
+    },
+    restoreSideChat: (threadId) => {
+      restoreThread(store2, threadId);
+    }
+  };
+  function render() {
+    const state = store2.getState();
+    const thread = getActiveThread(store2);
+    clear(viewerRoot);
+    clear(index);
+    if (!thread) {
+      viewerRoot.append(emptyNote("Open a thread to see its context."));
+      return;
+    }
+    const project2 = state.projects.find((candidate) => candidate.id === state.activeProjectId);
+    const model = deriveThreadContext({
+      thread,
+      project: project2,
+      threads: state.threads,
+      mentionedIn: mentionedFor === thread.id ? mentionedIn : []
+    });
+    const content = renderThreadContext(model, handlers3);
+    const archive = el(
+      "button",
+      {
+        type: "button",
+        class: "thread-context-action",
+        "data-action": "archive-thread",
+        disabled: thread.archivedAt !== void 0
+      },
+      "Archive thread"
+    );
+    archive.addEventListener("click", () => {
+      if (project2) store2.emit("thread_archive_requested", project2.id, thread.id);
+    });
+    content.prepend(
+      el(
+        "section",
+        { class: "thread-context-section", "data-context-section": "storage" },
+        el("h5", {}, "Storage"),
+        el(
+          "div",
+          { class: "thread-context-row" },
+          el("span", { class: "thread-context-main" }, "Retained on disk"),
+          el(
+            "span",
+            { "data-context-storage-size": "" },
+            storageKey === activeStorageKey() ? storageText : "Calculating\u2026"
+          )
+        ),
+        el(
+          "p",
+          { class: "thread-context-empty" },
+          "Saved thread files and its dedicated worktree. Shared project files are excluded."
+        ),
+        el("div", { class: "thread-context-section-actions" }, archive)
+      )
+    );
+    viewerRoot.append(content);
+    for (const kind of CONTEXT_SECTIONS) {
+      const jump = el(
+        "button",
+        { type: "button", class: "git-change-row thread-context-index-row", "data-index": kind },
+        el("span", { class: "thread-context-title" }, SECTION_TITLES[kind]),
+        el("span", { class: "thread-context-count" }, String(sectionCount(model, kind)))
+      );
+      jump.addEventListener("click", () => {
+        viewerRoot.querySelector(`[data-context-section="${kind}"]`)?.scrollIntoView({ block: "start" });
+      });
+      index.append(jump);
+    }
+  }
+  async function refreshMentions() {
+    void refreshStorage();
+    const thread = getActiveThread(store2);
+    const projectId = store2.getState().activeProjectId;
+    if (!thread || !projectId) return;
+    const mine = ++token;
+    let rows = [];
+    try {
+      rows = await api2.threads.backlinks(projectId, "thread", thread.id);
+    } catch (error62) {
+      console.error("[context] backlink lookup failed:", error62);
+    }
+    if (disposed || mine !== token || getActiveThread(store2)?.id !== thread.id) return;
+    mentionedIn = rows;
+    mentionedFor = thread.id;
+    if (contextModeActive(store2)) render();
+  }
+  const offs = [
+    store2.on("right_panel_mode_changed", () => {
+      if (!contextModeActive(store2)) return;
+      render();
+      void refreshMentions();
+    }),
+    store2.on("files_pane_changed", () => {
+      if (!contextModeActive(store2)) return;
+      render();
+      void refreshMentions();
+    }),
+    store2.on("threads_changed", () => {
+      if (!contextModeActive(store2)) return;
+      const active2 = getActiveThread(store2)?.id ?? null;
+      render();
+      if (active2 !== mentionedFor) void refreshMentions();
+      else if (storageKey !== activeStorageKey()) void refreshStorage();
+    }),
+    store2.on("message_done", () => {
+      if (!contextModeActive(store2)) return;
+      render();
+      void refreshMentions();
+    }),
+    store2.on("workspace_changed", () => {
+      mentionedFor = null;
+      storageKey = "";
+      token++;
+      storageToken++;
+      if (contextModeActive(store2)) {
+        render();
+        void refreshMentions();
+      }
+    })
+  ];
+  if (contextModeActive(store2)) {
+    render();
+    void refreshMentions();
+  }
+  return () => {
+    disposed = true;
+    token++;
+    storageToken++;
+    for (const off of offs) off();
+  };
+}
+var CONTEXT_SECTIONS, SECTION_TITLES;
+var init_thread_context_panel = __esm({
+  "src/renderer/views/thread-context-panel.ts"() {
+    init_file_bytes();
+    init_helpers();
+    init_icons();
+    init_thread_helpers();
+    init_panels();
+    init_side_chat3();
+    init_pane_maximize_button();
+    init_pane_popout_button();
+    init_thread_context_model();
+    CONTEXT_SECTIONS = ["repos", "side-chats", "links", "subagents"];
+    SECTION_TITLES = {
+      repos: "Repos",
+      "side-chats": "Side chats",
+      links: "Links and references",
+      subagents: "Subagents"
+    };
+  }
+});
+
+// src/renderer/views/side-chat-panel.ts
+function resolveSideChatSelection(threads, activeThreadId, remembered) {
+  const active2 = threads.find((thread) => thread.id === activeThreadId);
+  const mainId = active2 ? active2.sideChat?.parentThreadId ?? active2.id : null;
+  if (mainId === null) return { mainId, rows: [], selectedId: null };
+  const rows = sideChatsOf(threads, mainId, true).sort(
+    (a3, b4) => Number(a3.archived) - Number(b4.archived)
+  );
+  const choice = remembered.get(mainId);
+  const chosen = rows.find((row2) => row2.id === choice && !row2.archived);
+  const selected = chosen ?? rows.find((row2) => !row2.archived) ?? rows.find((row2) => row2.id === choice);
+  const own2 = active2?.sideChat ? rows.find((row2) => row2.id === active2.id) : void 0;
+  return { mainId, rows, selectedId: (own2 ?? selected ?? rows[0])?.id ?? null };
+}
+function excerpt2(text2) {
+  const line = text2.trim().split("\n", 1)[0] ?? "";
+  return line.length <= 80 ? line : `${line.slice(0, 79)}\u2026`;
+}
+function messageEl(message2) {
+  if (message2.role === "user") {
+    return el("div", { class: "side-chat-msg is-user", "data-role": "user" }, message2.content);
+  }
+  if (message2.role === "error") {
+    return el("div", { class: "side-chat-msg is-error", "data-role": "error" }, message2.content);
+  }
+  const bubble = el("div", {
+    class: "side-chat-msg is-assistant message-text",
+    "data-role": "assistant"
+  });
+  if (message2.content.trim() !== "") bubble.innerHTML = renderMarkdown(message2.content);
+  for (const call of message2.toolCalls) {
+    bubble.append(el("div", { class: "side-chat-tool", "data-tool": call.name }, call.name));
+  }
+  return bubble;
+}
+function renderSideChat(input2) {
+  const { side, parent } = input2;
+  const archived = side.archivedAt != null;
+  const archiveBlocked = !archived && side.status === "running";
+  const anchor2 = parent?.messages.find((m2) => m2.id === side.sideChat?.anchorMessageId);
+  const header = el(
+    "div",
+    { class: "side-chat-head" },
+    el(
+      "div",
+      { class: "side-chat-head-row" },
+      el("span", { class: "side-chat-title" }, side.title || "Side chat"),
+      side.model !== void 0 ? el("span", { class: "side-chat-chip side-chat-model" }, side.model) : "",
+      el(
+        "button",
+        {
+          type: "button",
+          class: "side-chat-action",
+          "data-action": archived ? "restore-side-chat" : "archive-side-chat",
+          disabled: archiveBlocked ? true : void 0,
+          title: archiveBlocked ? "Wait for the side chat to finish before archiving" : void 0
+        },
+        archived ? "Restore" : "Archive"
+      )
+    ),
+    el(
+      "p",
+      { class: "side-chat-context", "data-side-chat-context": "" },
+      anchor2 ? `Reads the main thread up to \u201C${excerpt2(anchor2.content)}\u201D. Read-only.` : "Reads the main thread up to where it branched. Read-only."
+    )
+  );
+  header.querySelector("button")?.addEventListener("click", () => {
+    if (!archiveBlocked) input2.onArchive(archived);
+  });
+  const body = el("div", { class: "side-chat-body" });
+  if (side.messages.length === 0) {
+    body.append(
+      el(
+        "div",
+        { class: "side-chat-empty" },
+        el(
+          "p",
+          {},
+          archived ? "This side chat is archived. Restore it to ask a question." : "Ask anything about this message without touching the main thread."
+        ),
+        ...(archived ? [] : SIDE_CHAT_SUGGESTIONS).map((text2) => {
+          const button = el(
+            "button",
+            { type: "button", class: "side-chat-suggestion", "data-suggestion": "" },
+            text2
+          );
+          button.addEventListener("click", () => {
+            input2.onSuggestion(text2);
+          });
+          return button;
+        })
+      )
+    );
+  } else {
+    for (const message2 of side.messages) body.append(messageEl(message2));
+  }
+  if (side.status === "running") {
+    body.append(el("div", { class: "side-chat-typing", role: "status" }, "Copse is thinking\u2026"));
+  }
+  return { header, body };
+}
+function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
+  const remembered = /* @__PURE__ */ new Map();
+  const newButton = el(
+    "button",
+    {
+      type: "button",
+      class: "git-changes-refresh-btn side-chat-new-btn",
+      "aria-label": "New side chat",
+      "data-tooltip": "New side chat"
+    },
+    plusIcon("ui-icon ui-icon-sm")
+  );
+  listRoot.append(
+    el(
+      "div",
+      { class: "pane-header" },
+      el("span", { class: "pane-header-title" }, "Side chats"),
+      panePopoutButton(store2, api2, "side-chat", "side chat"),
+      paneMaximizeButton(store2, "side-chat"),
+      newButton
+    )
+  );
+  const list = el("div", { class: "git-changes-list side-chat-list" });
+  listRoot.append(list);
+  const headerHost = el("div", { class: "side-chat-head-host" });
+  const bodyHost = el("div", { class: "side-chat-body-host" });
+  const emptyState = el("div", { class: "panel-empty side-chat-none" });
+  const input2 = el("input", {
+    type: "text",
+    class: "side-chat-input",
+    placeholder: "Ask a side question\u2026",
+    autocomplete: "off",
+    "aria-label": "Ask a side question"
+  });
+  const send = el(
+    "button",
+    { type: "submit", class: "ui-btn ui-btn-primary side-chat-send" },
+    "Send"
+  );
+  const promote = el(
+    "button",
+    { type: "button", class: "side-chat-action", "data-action": "promote-side-chat" },
+    "Promote to thread"
+  );
+  const form = el(
+    "form",
+    { class: "side-chat-form" },
+    el("div", { class: "side-chat-form-row" }, input2, send),
+    el("div", { class: "side-chat-foot" }, promote)
+  );
+  viewerRoot.append(headerHost, bodyHost, emptyState, form);
+  let selectedId = null;
+  let frame = 0;
+  function paneVisible() {
+    const { filesPaneOpen, rightPanelMode } = store2.getState();
+    return filesPaneOpen && rightPanelMode === "side-chat";
+  }
+  function ask(text2) {
+    if (selectedId === null) return;
+    sendSideChatMessage(store2, api2, selectedId, text2);
+  }
+  function render() {
+    frame = 0;
+    if (!paneVisible()) return;
+    const { threads, activeThreadId } = store2.getState();
+    const selection2 = resolveSideChatSelection(threads, activeThreadId, remembered);
+    selectedId = selection2.selectedId;
+    if (selection2.mainId !== null && selectedId !== null)
+      remembered.set(selection2.mainId, selectedId);
+    clear(list);
+    for (const row2 of selection2.rows) {
+      const item = el(
+        "button",
+        {
+          type: "button",
+          class: `git-change-row side-chat-row${row2.id === selectedId ? " is-selected" : ""}`,
+          "data-side-chat-id": row2.id,
+          "data-archived": row2.archived ? "true" : void 0,
+          "data-unread": row2.unread ? "true" : void 0,
+          "aria-pressed": String(row2.id === selectedId)
+        },
+        row2.unread ? el("span", { class: "chat-unread-dot", role: "img", "aria-label": "Unread reply" }) : "",
+        el(
+          "span",
+          { class: "side-chat-row-main" },
+          el("span", { class: "side-chat-row-title" }, row2.title || "Side chat"),
+          row2.model !== void 0 ? el("span", { class: "side-chat-row-sub" }, row2.model) : ""
+        ),
+        row2.archived ? el("span", { class: "side-chat-chip" }, "Archived") : ""
+      );
+      item.addEventListener("click", () => {
+        if (selection2.mainId !== null) remembered.set(selection2.mainId, row2.id);
+        render();
+      });
+      list.append(item);
+    }
+    if (selection2.rows.length === 0) {
+      list.append(el("p", { class: "side-chat-list-empty" }, "No side chats yet."));
+    }
+    const side = threads.find((thread) => thread.id === selectedId);
+    clear(headerHost);
+    const bodyScroll = bodyHost;
+    const atBottom = bodyScroll.scrollHeight - bodyScroll.scrollTop - bodyScroll.clientHeight < 32 || bodyScroll.childElementCount === 0;
+    clear(bodyHost);
+    emptyState.hidden = side !== void 0;
+    form.hidden = side === void 0;
+    headerHost.hidden = side === void 0;
+    bodyHost.hidden = side === void 0;
+    if (!side) {
+      emptyState.textContent = selection2.mainId === null ? "Open a thread to start a side chat." : "Branch a question off any message without touching this thread.";
+      return;
+    }
+    const parent = threads.find((thread) => thread.id === side.sideChat?.parentThreadId);
+    const view = renderSideChat({
+      side,
+      parent,
+      onSuggestion: ask,
+      onArchive: (archived) => {
+        if (archived) restoreThread(store2, side.id);
+        else archiveThread(store2, side.id);
+      }
+    });
+    headerHost.append(view.header);
+    bodyHost.append(...Array.from(view.body.childNodes));
+    if (atBottom) bodyHost.scrollTop = bodyHost.scrollHeight;
+    input2.disabled = side.archivedAt != null;
+    send.disabled = side.archivedAt != null || side.status === "running";
+    promote.disabled = side.status === "running";
+    promote.title = promote.disabled ? "Wait for the side chat to finish before promoting" : "";
+    if (side.unreadAt !== void 0) markThreadRead(store2, side.id);
+  }
+  function schedule() {
+    if (!paneVisible() || frame !== 0) return;
+    frame = requestAnimationFrame(render);
+  }
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text2 = input2.value;
+    if (text2.trim() === "") return;
+    input2.value = "";
+    ask(text2);
+  });
+  newButton.addEventListener("click", () => {
+    const thread = getActiveThread(store2);
+    const mainId = thread?.sideChat?.parentThreadId ?? thread?.id;
+    if (mainId === void 0) return;
+    void startSideChat(store2, api2, mainId).then((id) => {
+      if (id === null) showToast("Send a message first: a side chat branches from one.");
+    });
+  });
+  promote.addEventListener("click", () => {
+    if (selectedId === null) return;
+    void promoteSideChat(store2, api2, selectedId);
+  });
+  const offs = [
+    store2.on("side_chat_open_requested", (threadId) => {
+      const side = store2.getState().threads.find((thread) => thread.id === threadId);
+      if (side?.sideChat) remembered.set(side.sideChat.parentThreadId, threadId);
+      openRightPanel(store2, "side-chat");
+      render();
+    }),
+    store2.on("right_panel_mode_changed", schedule),
+    store2.on("files_pane_changed", schedule),
+    store2.on("threads_changed", schedule),
+    store2.on("message_added", schedule),
+    store2.on("message_token", schedule),
+    store2.on("message_done", schedule),
+    store2.on("tool_call_started", schedule),
+    store2.on("thread_status_changed", schedule)
+  ];
+  schedule();
+  return () => {
+    for (const off of offs) off();
+    if (frame !== 0) cancelAnimationFrame(frame);
+  };
+}
+var SIDE_CHAT_SUGGESTIONS;
+var init_side_chat_panel = __esm({
+  "src/renderer/views/side-chat-panel.ts"() {
+    init_dist();
+    init_helpers();
+    init_icons();
+    init_thread_helpers();
+    init_side_chat2();
+    init_panels();
+    init_side_chat3();
+    init_pane_maximize_button();
+    init_pane_popout_button();
+    init_toast();
+    SIDE_CHAT_SUGGESTIONS = [
+      "Explain this in simpler terms",
+      "What alternatives did you consider?",
+      "Is this safe to merge?"
+    ];
+  }
+});
+
 // src/renderer/views/ports-section.ts
 function terminalModeActive2(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
@@ -132197,7 +136519,7 @@ function mountPortsSection(listRoot, store2, api2) {
   let refreshTail = Promise.resolve();
   let pollRunning = false;
   let pollTimer = null;
-  const section = el("section", {
+  const section2 = el("section", {
     class: "ports-section terminal-rail-section",
     hidden: true
   });
@@ -132207,8 +136529,8 @@ function mountPortsSection(listRoot, store2, api2) {
     "Ports"
   );
   const list = el("div", { class: "ports-list terminal-rail-section-list" });
-  section.append(header, list);
-  listRoot.append(section);
+  section2.append(header, list);
+  listRoot.append(section2);
   function actionButton(label, className, onClick) {
     const button = el(
       "button",
@@ -132264,7 +136586,7 @@ function mountPortsSection(listRoot, store2, api2) {
   function render() {
     clear(list);
     if (rows.length === 0) {
-      section.hidden = scanTool !== null;
+      section2.hidden = scanTool !== null;
       if (scanTool === null) {
         list.append(
           el(
@@ -132276,7 +136598,7 @@ function mountPortsSection(listRoot, store2, api2) {
       }
       return;
     }
-    section.hidden = false;
+    section2.hidden = false;
     for (const row2 of rows) {
       const key = rowKey(row2);
       const selected = key === selectedKey;
@@ -132392,7 +136714,7 @@ function mountPortsSection(listRoot, store2, api2) {
     });
     stopPolling();
     loadToken++;
-    section.remove();
+    section2.remove();
   };
 }
 var POLL_MS2;
@@ -132409,35 +136731,35 @@ var init_ports_section = __esm({
 // src/renderer/views/terminal-rail-resizer.ts
 function visibleSections(root) {
   return Array.from(root.querySelectorAll(SECTION_SELECTOR)).filter(
-    (section) => !section.hidden
+    (section2) => !section2.hidden
   );
 }
 function cssPixels(value) {
   const parsed2 = Number.parseFloat(value);
   return Number.isFinite(parsed2) ? parsed2 : 0;
 }
-function measuredRowHeight(section) {
-  const list = section.querySelector(".terminal-rail-section-list");
-  const row2 = section.querySelector("[data-terminal-rail-row]") ?? list?.firstElementChild;
+function measuredRowHeight(section2) {
+  const list = section2.querySelector(".terminal-rail-section-list");
+  const row2 = section2.querySelector("[data-terminal-rail-row]") ?? list?.firstElementChild;
   return row2?.getBoundingClientRect().height ?? 0;
 }
-function sectionMinimum(root, section) {
-  const header = section.querySelector(".terminal-rail-section-header");
-  const list = section.querySelector(".terminal-rail-section-list");
+function sectionMinimum(root, section2) {
+  const header = section2.querySelector(".terminal-rail-section-header");
+  const list = section2.querySelector(".terminal-rail-section-list");
   const listStyle = list?.ownerDocument.defaultView?.getComputedStyle(list) ?? null;
   const listPadding = listStyle ? cssPixels(listStyle.paddingTop) + cssPixels(listStyle.paddingBottom) : 0;
-  const rowHeight = measuredRowHeight(section);
+  const rowHeight = measuredRowHeight(section2);
   const twoRows = (header?.getBoundingClientRect().height ?? 0) + listPadding + rowHeight * 2;
-  return section.classList.contains("terminal-shells-section") ? Math.max(twoRows, root.clientHeight * SHELLS_MIN_RATIO) : twoRows;
+  return section2.classList.contains("terminal-shells-section") ? Math.max(twoRows, root.clientHeight * SHELLS_MIN_RATIO) : twoRows;
 }
 function syncMinimums(root) {
   if (root.clientHeight === 0) return;
-  for (const section of visibleSections(root)) {
-    section.style.minHeight = `${String(Math.ceil(sectionMinimum(root, section)))}px`;
+  for (const section2 of visibleSections(root)) {
+    section2.style.minHeight = `${String(Math.ceil(sectionMinimum(root, section2)))}px`;
   }
 }
-function previousVisibleSection(section) {
-  let candidate = section.previousElementSibling;
+function previousVisibleSection(section2) {
+  let candidate = section2.previousElementSibling;
   while (candidate) {
     if (candidate instanceof HTMLElement && candidate.classList.contains("terminal-rail-section") && !candidate.hidden) {
       return candidate;
@@ -132446,12 +136768,12 @@ function previousVisibleSection(section) {
   }
   return null;
 }
-function minimumHeight(section) {
-  return Number.parseFloat(section.style.minHeight) || 0;
+function minimumHeight(section2) {
+  return Number.parseFloat(section2.style.minHeight) || 0;
 }
 function assignCurrentWeights(root) {
-  for (const section of visibleSections(root)) {
-    section.style.flex = `${String(section.getBoundingClientRect().height)} 1 0px`;
+  for (const section2 of visibleSections(root)) {
+    section2.style.flex = `${String(section2.getBoundingClientRect().height)} 1 0px`;
   }
 }
 function resizePair(before, after, beforeStart, afterStart, delta) {
@@ -132463,38 +136785,38 @@ function resizePair(before, after, beforeStart, afterStart, delta) {
   before.style.flexGrow = String(beforeSize);
   after.style.flexGrow = String(total2 - beforeSize);
 }
-function sectionLabel(section) {
-  return section.querySelector(".terminal-rail-section-header")?.textContent.trim() ?? "section";
+function sectionLabel(section2) {
+  return section2.querySelector(".terminal-rail-section-header")?.textContent.trim() ?? "section";
 }
 function mountTerminalRailResizers(root) {
   const sections = Array.from(root.querySelectorAll(SECTION_SELECTOR));
   const handles = /* @__PURE__ */ new Map();
-  for (const section of sections.slice(1)) {
+  for (const section2 of sections.slice(1)) {
     const handle = el("div", {
       class: "terminal-rail-resizer",
       role: "separator",
       tabindex: "0",
       "aria-orientation": "horizontal"
     });
-    root.insertBefore(handle, section);
-    handles.set(section, handle);
+    root.insertBefore(handle, section2);
+    handles.set(section2, handle);
     const resizeFromStart = (direction) => {
-      const before = previousVisibleSection(section);
-      if (!before || section.hidden) return;
+      const before = previousVisibleSection(section2);
+      if (!before || section2.hidden) return;
       syncMinimums(root);
       assignCurrentWeights(root);
       resizePair(
         before,
-        section,
+        section2,
         before.getBoundingClientRect().height,
-        section.getBoundingClientRect().height,
-        direction * Math.max(1, measuredRowHeight(section))
+        section2.getBoundingClientRect().height,
+        direction * Math.max(1, measuredRowHeight(section2))
       );
     };
     handle.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
-      const before = previousVisibleSection(section);
-      if (!before || section.hidden) return;
+      const before = previousVisibleSection(section2);
+      if (!before || section2.hidden) return;
       event.preventDefault();
       handle.setPointerCapture(event.pointerId);
       handle.classList.add("is-dragging");
@@ -132502,9 +136824,9 @@ function mountTerminalRailResizers(root) {
       assignCurrentWeights(root);
       const startY = event.clientY;
       const beforeStart = before.getBoundingClientRect().height;
-      const afterStart = section.getBoundingClientRect().height;
+      const afterStart = section2.getBoundingClientRect().height;
       const onMove = (moveEvent) => {
-        resizePair(before, section, beforeStart, afterStart, moveEvent.clientY - startY);
+        resizePair(before, section2, beforeStart, afterStart, moveEvent.clientY - startY);
       };
       const onUp = () => {
         handle.classList.remove("is-dragging");
@@ -132528,14 +136850,14 @@ function mountTerminalRailResizers(root) {
   }
   const sync = () => {
     syncMinimums(root);
-    for (const [section, handle] of handles) {
-      const before = previousVisibleSection(section);
-      const hidden = section.hidden || before === null;
+    for (const [section2, handle] of handles) {
+      const before = previousVisibleSection(section2);
+      const hidden = section2.hidden || before === null;
       if (handle.hidden !== hidden) handle.hidden = hidden;
       if (before) {
         handle.setAttribute(
           "aria-label",
-          `Resize ${sectionLabel(before)} and ${sectionLabel(section)}`
+          `Resize ${sectionLabel(before)} and ${sectionLabel(section2)}`
         );
       }
     }
@@ -132729,11 +137051,11 @@ function itemAttachments(item) {
   return item ? parseKnowledgeAttachments(item.fields[ATTACHMENTS_FIELD]) : [];
 }
 async function fileToDataUrl(file2) {
-  const bytes = new Uint8Array(await file2.arrayBuffer());
+  const bytes2 = new Uint8Array(await file2.arrayBuffer());
   let binary = "";
   const chunk = 32768;
-  for (let i2 = 0; i2 < bytes.length; i2 += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i2, i2 + chunk));
+  for (let i2 = 0; i2 < bytes2.length; i2 += chunk) {
+    binary += String.fromCharCode(...bytes2.subarray(i2, i2 + chunk));
   }
   return `data:${file2.type || "application/octet-stream"};base64,${btoa(binary)}`;
 }
@@ -132742,8 +137064,8 @@ function dataUrlToText(dataUrl) {
   if (comma < 0) return null;
   try {
     const binary = atob(dataUrl.slice(comma + 1));
-    const bytes = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const bytes2 = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes2);
   } catch {
     return null;
   }
@@ -133649,27 +137971,27 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
         }
         const trackedThread = getThreadById(store2, itemThreadId(item));
         if (trackedThread) {
-          const threadChip = el("span", {
+          const threadChip2 = el("span", {
             class: "roadmap-thread-chip",
             role: "link",
             tabindex: "0",
             title: `Reopen thread "${trackedThread.title}"`,
             "aria-label": `Reopen thread "${trackedThread.title}"`
           });
-          threadChip.append(attachmentIcon("thread", "ui-icon roadmap-thread-chip-icon"));
-          threadChip.addEventListener("click", (e3) => {
+          threadChip2.append(attachmentIcon("thread", "ui-icon roadmap-thread-chip-icon"));
+          threadChip2.addEventListener("click", (e3) => {
             e3.stopPropagation();
             switchThread(store2, trackedThread.id);
             getPromptAttachmentHandlers()?.focusComposer?.();
           });
-          threadChip.addEventListener("keydown", (e3) => {
+          threadChip2.addEventListener("keydown", (e3) => {
             if (e3.key !== "Enter" && e3.key !== " ") return;
             e3.preventDefault();
             e3.stopPropagation();
             switchThread(store2, trackedThread.id);
             getPromptAttachmentHandlers()?.focusComposer?.();
           });
-          meta3.append(threadChip);
+          meta3.append(threadChip2);
         }
         const complexity = item.fields["complexity"];
         if (isRoadmapComplexity(complexity)) {
@@ -144363,8 +148685,8 @@ var init_websock = __esm({
       rQpeek8() {
         return this._rQ[this._rQi];
       }
-      rQskipBytes(bytes) {
-        this._rQi += bytes;
+      rQskipBytes(bytes2) {
+        this._rQi += bytes2;
       }
       rQshift8() {
         return this._rQshift(1);
@@ -144376,9 +148698,9 @@ var init_websock = __esm({
         return this._rQshift(4);
       }
       // TODO(directxman12): test performance with these vs a DataView
-      _rQshift(bytes) {
+      _rQshift(bytes2) {
         let res = 0;
-        for (let byte = bytes - 1; byte >= 0; byte--) {
+        for (let byte = bytes2 - 1; byte >= 0; byte--) {
           res += this._rQ[this._rQi++] << byte * 8;
         }
         return res >>> 0;
@@ -144446,17 +148768,17 @@ var init_websock = __esm({
         this._sQ[this._sQlen++] = num >> 0 & 255;
       }
       sQpushString(str) {
-        let bytes = str.split("").map((chr) => chr.charCodeAt(0));
-        this.sQpushBytes(new Uint8Array(bytes));
+        let bytes2 = str.split("").map((chr) => chr.charCodeAt(0));
+        this.sQpushBytes(new Uint8Array(bytes2));
       }
-      sQpushBytes(bytes) {
-        for (let offset = 0; offset < bytes.length; ) {
+      sQpushBytes(bytes2) {
+        for (let offset = 0; offset < bytes2.length; ) {
           this._sQensureSpace(1);
           let chunkSize = this._sQbufferSize - this._sQlen;
-          if (chunkSize > bytes.length - offset) {
-            chunkSize = bytes.length - offset;
+          if (chunkSize > bytes2.length - offset) {
+            chunkSize = bytes2.length - offset;
           }
-          this._sQ.set(bytes.subarray(offset, offset + chunkSize), this._sQlen);
+          this._sQ.set(bytes2.subarray(offset, offset + chunkSize), this._sQlen);
           this._sQlen += chunkSize;
           offset += chunkSize;
         }
@@ -144467,8 +148789,8 @@ var init_websock = __esm({
           this._sQlen = 0;
         }
       }
-      _sQensureSpace(bytes) {
-        if (this._sQbufferSize - this._sQlen < bytes) {
+      _sQensureSpace(bytes2) {
+        if (this._sQbufferSize - this._sQlen < bytes2) {
           this.flush();
         }
       }
@@ -146170,9 +150492,9 @@ var init_dh = __esm({
         ), this._keyBytes);
       }
       deriveBits(algorithm, length) {
-        const bytes = Math.ceil(length / 8);
+        const bytes2 = Math.ceil(length / 8);
         const pkey = new Uint8Array(algorithm.public);
-        const len = bytes > this._keyBytes ? bytes : this._keyBytes;
+        const len = bytes2 > this._keyBytes ? bytes2 : this._keyBytes;
         const secret = modPow(u8ArrayToBigInt(pkey), this._privateKeyBigInt, this._pBigInt);
         return bigIntToU8Array(secret, len).slice(0, len);
       }
@@ -146758,8 +151080,8 @@ var init_hextile = __esm({
           this._tiles = this._totalTiles;
         }
         while (this._tiles > 0) {
-          let bytes = 1;
-          if (sock.rQwait("HEXTILE", bytes)) {
+          let bytes2 = 1;
+          if (sock.rQwait("HEXTILE", bytes2)) {
             return false;
           }
           let subencoding = sock.rQpeek8();
@@ -146774,28 +151096,28 @@ var init_hextile = __esm({
           const tw = Math.min(16, x2 + width - tx);
           const th = Math.min(16, y2 + height - ty);
           if (subencoding & 1) {
-            bytes += tw * th * 4;
+            bytes2 += tw * th * 4;
           } else {
             if (subencoding & 2) {
-              bytes += 4;
+              bytes2 += 4;
             }
             if (subencoding & 4) {
-              bytes += 4;
+              bytes2 += 4;
             }
             if (subencoding & 8) {
-              bytes++;
-              if (sock.rQwait("HEXTILE", bytes)) {
+              bytes2++;
+              if (sock.rQwait("HEXTILE", bytes2)) {
                 return false;
               }
-              let subrects = sock.rQpeekBytes(bytes).at(-1);
+              let subrects = sock.rQpeekBytes(bytes2).at(-1);
               if (subencoding & 16) {
-                bytes += subrects * (4 + 2);
+                bytes2 += subrects * (4 + 2);
               } else {
-                bytes += subrects * 2;
+                bytes2 += subrects * 2;
               }
             }
           }
-          if (sock.rQwait("HEXTILE", bytes)) {
+          if (sock.rQwait("HEXTILE", bytes2)) {
             return false;
           }
           sock.rQshift8();
@@ -150130,8 +154452,8 @@ var init_rfb = __esm({
         const h3 = this._FBU.height;
         const pixelslength = w2 * h3 * 4;
         const masklength = Math.ceil(w2 / 8) * h3;
-        let bytes = pixelslength + masklength;
-        if (this._sock.rQwait("cursor encoding", bytes)) {
+        let bytes2 = pixelslength + masklength;
+        if (this._sock.rQwait("cursor encoding", bytes2)) {
           return false;
         }
         const pixels = this._sock.rQshiftBytes(pixelslength);
@@ -150181,8 +154503,8 @@ var init_rfb = __esm({
           return false;
         }
         const numberOfScreens = this._sock.rQpeek8();
-        let bytes = 4 + numberOfScreens * 16;
-        if (this._sock.rQwait("ExtendedDesktopSize", bytes)) {
+        let bytes2 = 4 + numberOfScreens * 16;
+        if (this._sock.rQwait("ExtendedDesktopSize", bytes2)) {
           return false;
         }
         const firstUpdate = !this._supportsSetDesktopSize;
@@ -150646,8 +154968,8 @@ var init_vnc_channel = __esm({
       }
       send(data) {
         if (this.readyState !== WebSocket.OPEN) throw new Error("VNC channel is not open");
-        const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-        this.api.vnc.send(this.connectionId, Uint8Array.from(bytes));
+        const bytes2 = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+        this.api.vnc.send(this.connectionId, Uint8Array.from(bytes2));
       }
       close() {
         if (this.readyState === WebSocket.CLOSING || this.readyState === WebSocket.CLOSED) {
@@ -150658,9 +154980,9 @@ var init_vnc_channel = __esm({
           this.fail(error62 instanceof Error ? error62.message : String(error62));
         });
       }
-      receive(bytes) {
+      receive(bytes2) {
         if (this.readyState !== WebSocket.OPEN) return;
-        const copy = Uint8Array.from(bytes);
+        const copy = Uint8Array.from(bytes2);
         this.onmessage?.({ data: copy.buffer });
       }
       handleStatus(event) {
@@ -150971,7 +155293,7 @@ function isExplicitLocalAddress(host) {
 function isSimulatorMachine(machine) {
   return machine.startsWith(SIMULATOR_MACHINE_PREFIX);
 }
-function hostLabel(host) {
+function hostLabel2(host) {
   const address = host.user ? `${host.user}@${host.host}` : host.host;
   return host.label === address ? host.label : `${host.label} \xB7 ${address}`;
 }
@@ -151691,7 +156013,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (sshHosts.length > 0) {
       const sshGroup = el("optgroup", { label: "Saved SSH machines" });
       for (const host of sshHosts) {
-        sshGroup.append(el("option", { value: sshMachineValue(host.id) }, hostLabel(host)));
+        sshGroup.append(el("option", { value: sshMachineValue(host.id) }, hostLabel2(host)));
       }
       machineSelect.append(sshGroup);
     }
@@ -152399,8 +156721,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       if (event.key === "Enter") submitCredentials();
     });
   }
-  const stopData = api2.vnc.onData((connectionId, bytes) => {
-    if (channel?.connectionId === connectionId) channel.receive(bytes);
+  const stopData = api2.vnc.onData((connectionId, bytes2) => {
+    if (channel?.connectionId === connectionId) channel.receive(bytes2);
   });
   const stopStatus = api2.vnc.onStatus((event) => {
     if (channel?.connectionId === event.id && event.status === "error" && pendingDisconnectStatus === null) {
@@ -153293,11 +157615,11 @@ function mountAskUserDialog(api2, store2) {
   let presentationTimer;
   let inputs = [];
   function isShowable(req) {
-    return !req.threadId || req.threadId === store2.getState().activeThreadId;
+    return !req.threadId || attentionThreadId(store2, req.threadId) === store2.getState().activeThreadId;
   }
   function syncAttention() {
     const activeThreadId = store2.getState().activeThreadId;
-    const waiting = queue.map((req) => req.threadId).filter((id) => !!id && id !== activeThreadId);
+    const waiting = queue.map((req) => req.threadId ? attentionThreadId(store2, req.threadId) : void 0).filter((id) => !!id && id !== activeThreadId);
     setAttentionThreads(store2, "ask", waiting);
     for (const listener of [...changeListeners]) listener();
   }
@@ -153305,7 +157627,18 @@ function mountAskUserDialog(api2, store2) {
     if (!active2) return;
     clear(form);
     inputs = [];
-    form.append(el("h3", { class: "ask-user-title" }, "The agent has a question"));
+    const asker = sideChatPromptOrigin(store2, [active2.threadId]);
+    form.append(
+      el(
+        "h3",
+        { class: "ask-user-title" },
+        asker ? "A side chat has a question" : "The agent has a question"
+      )
+    );
+    if (asker) {
+      form.append(el("p", { class: "ask-user-origin" }, asker.label));
+      store2.emit("side_chat_open_requested", asker.firstSideChatId);
+    }
     active2.questions.forEach((q2, i2) => {
       const questionId = `ask-user-question-${String(i2)}`;
       const input2 = el("textarea", {
@@ -153515,6 +157848,8 @@ var init_ask_user_dialog = __esm({
     init_dist();
     init_inline_markdown();
     init_attention();
+    init_projects();
+    init_side_chat3();
     init_dialog_shell();
   }
 });
@@ -153669,14 +158004,14 @@ var init_ssh_prompt_dialog = __esm({
 
 // src/renderer/views/update-prompt-dialog.ts
 function mountUpdatePromptDialog(api2) {
-  const messageEl = el("h3", { class: "update-prompt-message" });
+  const messageEl2 = el("h3", { class: "update-prompt-message" });
   const detailEl = el("p", { class: "update-prompt-detail" });
   const changelogEl = el("section", { class: "update-prompt-changelog" });
   const buttonsEl = uiActions({ className: "update-prompt-buttons" });
   const dialog2 = el(
     "dialog",
     { id: "update-prompt-dialog" },
-    messageEl,
+    messageEl2,
     detailEl,
     changelogEl,
     buttonsEl
@@ -153697,7 +158032,7 @@ function mountUpdatePromptDialog(api2) {
   }
   function renderActive() {
     if (!active2) return;
-    messageEl.textContent = active2.message;
+    messageEl2.textContent = active2.message;
     if (active2.detail) {
       detailEl.textContent = active2.detail;
       detailEl.hidden = false;
@@ -154180,14 +158515,14 @@ function mountCommandPalette(store2, api2) {
     const icon = el("span", { class: "command-palette-icon" }, searchIcon("ui-icon ui-icon-sm"));
     const cls = `command-palette-item command-palette-item-${entry.kind}${selected ? " selected" : ""}`;
     if (entry.kind === "thread") {
-      const prLabel = entry.hit.prRefs.map((ref) => `#${String(ref.number)}`).join(" ");
-      const tooltip = [entry.hit.title, prLabel, entry.hit.projectName].filter(Boolean).join(" \u2014 ");
+      const prLabel2 = entry.hit.prRefs.map((ref) => `#${String(ref.number)}`).join(" ");
+      const tooltip = [entry.hit.title, prLabel2, entry.hit.projectName].filter(Boolean).join(" \u2014 ");
       return el(
         "div",
         { class: cls, role: "option", title: tooltip },
         icon,
         el("span", { class: "command-palette-name" }, entry.hit.title || "New Thread"),
-        ...prLabel ? [el("span", { class: "command-palette-pr" }, prLabel)] : [],
+        ...prLabel2 ? [el("span", { class: "command-palette-pr" }, prLabel2)] : [],
         el("span", { class: "command-palette-context" }, entry.hit.projectName)
       );
     }
@@ -154204,10 +158539,10 @@ function mountCommandPalette(store2, api2) {
     empty.hidden = entries2.length > 0;
     let lastSection = null;
     entries2.forEach((entry, i2) => {
-      const section = sectionTitle(entry);
-      if (section !== lastSection) {
-        lastSection = section;
-        list.append(el("div", { class: "command-palette-section" }, section));
+      const section2 = sectionTitle(entry);
+      if (section2 !== lastSection) {
+        lastSection = section2;
+        list.append(el("div", { class: "command-palette-section" }, section2));
       }
       const row2 = rowFor(entry, i2 === selectedIdx);
       row2.addEventListener("mousedown", (e3) => {
@@ -154344,6 +158679,129 @@ var init_command_palette = __esm({
   }
 });
 
+// src/renderer/views/network-activity-view.ts
+function bytes(value) {
+  if (value === null) return "\u2014";
+  if (value < 1024) return `${String(value)} B`;
+  return `${(value / 1024 ** (value < 1024 * 1024 ? 1 : 2)).toFixed(1)} ${value < 1024 * 1024 ? "KiB" : "MiB"}`;
+}
+function createNetworkActivityView(threadLabel2) {
+  const search = el("input", {
+    type: "search",
+    class: "network-activity-search",
+    placeholder: "Filter activity or destination\u2026",
+    "aria-label": "Filter network activity"
+  });
+  const activeOnly = el("input", { type: "checkbox" });
+  const body = el("tbody");
+  const summary = el("p", { class: "network-activity-summary", role: "status" });
+  const empty = el("p", { class: "network-activity-empty" });
+  const table = el(
+    "table",
+    { class: "network-activity-table" },
+    el(
+      "thead",
+      {},
+      el(
+        "tr",
+        {},
+        ...["Activity", "Destination", "Thread", "Status", "Elapsed", "Sent", "Received"].map(
+          (label) => el("th", { scope: "col" }, label)
+        )
+      )
+    ),
+    body
+  );
+  const element = el(
+    "section",
+    { class: "network-activity-panel", "aria-label": "Network activity" },
+    el(
+      "div",
+      { class: "network-activity-toolbar" },
+      search,
+      el("label", {}, activeOnly, " Active only")
+    ),
+    el("div", { class: "process-manager-scroll" }, table, empty),
+    summary,
+    el(
+      "p",
+      { class: "network-activity-coverage" },
+      "Command activity, container connections, and sandbox blocks. HTTPS request paths and status codes are not captured."
+    )
+  );
+  let current;
+  let now = 0;
+  function render(snapshot, sampledAt) {
+    current = snapshot;
+    now = sampledAt;
+    const query = search.value.trim().toLowerCase();
+    const rows = (snapshot?.rows ?? []).filter(
+      (row2) => (!activeOnly.checked || row2.endedAt === null) && `${row2.label} ${row2.target ?? ""} ${threadLabel2(row2.threadId)} ${statuses[row2.status]}`.toLowerCase().includes(query)
+    );
+    clear(body);
+    for (const row2 of rows) {
+      const state = row2.exitCode === null ? statuses[row2.status] : `${statuses[row2.status]} (${String(row2.exitCode)})`;
+      const elapsed = Math.max(0, (row2.endedAt ?? sampledAt) - row2.startedAt);
+      const label = threadLabel2(row2.threadId);
+      body.append(
+        el(
+          "tr",
+          { "data-activity-id": String(row2.id), "data-status": row2.status },
+          el(
+            "td",
+            {},
+            el("span", { class: "network-activity-label", title: row2.label }, row2.label),
+            el(
+              "small",
+              {},
+              row2.source === "command" ? "Command" : row2.source === "container" ? "Container" : "Sandbox"
+            )
+          ),
+          el(
+            "td",
+            { title: row2.target ?? "Destination not captured for commands" },
+            row2.target ?? "\u2014"
+          ),
+          el("td", { title: label }, label),
+          el("td", {}, el("span", { class: "network-activity-state" }, state)),
+          el("td", {}, `${(elapsed / 1e3).toFixed(1)} s`),
+          el("td", {}, bytes(row2.bytesSent)),
+          el("td", {}, bytes(row2.bytesReceived))
+        )
+      );
+    }
+    table.hidden = rows.length === 0;
+    empty.hidden = rows.length > 0;
+    empty.textContent = snapshot === void 0 ? "Network activity is unavailable in this runtime." : snapshot.rows.length === 0 ? "No network activity yet. Captured commands and connections will appear here." : "No activity matches these filters.";
+    const active2 = snapshot?.rows.filter((row2) => row2.endedAt === null).length ?? 0;
+    summary.textContent = `${String(active2)} active \xB7 ${String(rows.length)} shown \xB7 Recent session activity${snapshot?.dropped ? ` \xB7 ${String(snapshot.dropped)} older entries discarded` : ""}`;
+  }
+  search.addEventListener("input", () => {
+    render(current, now);
+  });
+  activeOnly.addEventListener("change", () => {
+    render(current, now);
+  });
+  return { element, render };
+}
+var statuses;
+var init_network_activity_view = __esm({
+  "src/renderer/views/network-activity-view.ts"() {
+    init_helpers();
+    statuses = {
+      running: "Running",
+      connecting: "Connecting",
+      active: "Connected",
+      completed: "Completed",
+      closed: "Closed",
+      failed: "Failed",
+      blocked: "Blocked",
+      cancelled: "Cancelled",
+      "timed-out": "Timed out"
+    };
+  }
+});
+
 // src/renderer/views/process-manager-dialog.ts
 function sortedRows(rows, column, ascending) {
   const direction = ascending ? 1 : -1;
@@ -154435,6 +158893,38 @@ function mountProcessManagerDialog(api2, store2) {
   const status = el("p", { class: "process-manager-status", role: "status" }, "Loading processes\u2026");
   const summary = el("p", { class: "process-manager-summary", role: "status" });
   const updated = el("span", { class: "process-manager-updated", "aria-hidden": "true" });
+  const processScroll = el("div", { class: "process-manager-scroll" }, table);
+  const network = createNetworkActivityView(threadLabel2);
+  network.element.hidden = true;
+  const processesButton = el(
+    "button",
+    { type: "button", class: "process-manager-tab", "aria-pressed": "true" },
+    "Processes"
+  );
+  const networkButton = el(
+    "button",
+    { type: "button", class: "process-manager-tab", "aria-pressed": "false" },
+    "Network"
+  );
+  const footerHint = el("span", {}, "CPU is approximate; memory is physical RAM in MiB.");
+  let showingNetwork = false;
+  function showNetwork(value) {
+    showingNetwork = value;
+    dialog2.dataset["view"] = value ? "network" : "processes";
+    processScroll.hidden = value;
+    summary.hidden = value;
+    network.element.hidden = !value;
+    processesButton.setAttribute("aria-pressed", String(!value));
+    networkButton.setAttribute("aria-pressed", String(value));
+    footerHint.textContent = value ? "Updates every second \xB7 Metadata only" : "CPU is approximate; memory is physical RAM in MiB.";
+    if (current) render(current);
+  }
+  processesButton.addEventListener("click", () => {
+    showNetwork(false);
+  });
+  networkButton.addEventListener("click", () => {
+    showNetwork(true);
+  });
   dialog2.append(
     el(
       "div",
@@ -154446,18 +158936,20 @@ function mountProcessManagerDialog(api2, store2) {
           "div",
           {},
           el("h2", { id: "process-manager-title" }, "Process Manager"),
-          el("p", { class: "process-manager-subtitle" }, "Live Copse and managed task processes")
+          el("p", { class: "process-manager-subtitle" }, "Live processes and network activity")
         ),
         closeButton
       ),
-      el("div", { class: "process-manager-scroll" }, table),
-      summary,
       el(
-        "footer",
-        { class: "process-manager-footer" },
-        el("span", {}, "CPU is approximate; memory is physical RAM in MiB."),
-        updated
+        "div",
+        { class: "process-manager-tabs", role: "group", "aria-label": "Process manager view" },
+        processesButton,
+        networkButton
       ),
+      processScroll,
+      network.element,
+      summary,
+      el("footer", { class: "process-manager-footer" }, footerHint, updated),
       status
     )
   );
@@ -154579,6 +159071,7 @@ function mountProcessManagerDialog(api2, store2) {
     return entries2;
   }
   function render(snapshot) {
+    if (showingNetwork) network.render(snapshot.network, snapshot.sampledAt);
     const focusedGroup = document.activeElement instanceof HTMLElement && body.contains(document.activeElement) && document.activeElement.classList.contains("process-manager-group-toggle") ? document.activeElement.dataset["groupKey"] : void 0;
     cpuHeading.setAttribute(
       "aria-sort",
@@ -154672,7 +159165,7 @@ function mountProcessManagerDialog(api2, store2) {
     }
     updated.textContent = `Updated ${new Date(snapshot.sampledAt).toLocaleTimeString()}`;
     dialog2.dataset["sampledAt"] = String(snapshot.sampledAt);
-    status.textContent = snapshot.processes.length === 0 ? "No processes found." : "";
+    status.textContent = !showingNetwork && snapshot.processes.length === 0 ? "No processes found." : "";
   }
   function isRequestCurrent(requestGeneration) {
     return dialog2.open && requestGeneration === generation;
@@ -154719,7 +159212,8 @@ function mountProcessManagerDialog(api2, store2) {
     if (dialog2.open) return;
     current = null;
     clear(body);
-    status.textContent = "Loading processes\u2026";
+    network.render(void 0, Date.now());
+    status.textContent = "Loading activity\u2026";
     updated.textContent = "";
     open2();
     closeButton.focus({ preventScroll: true });
@@ -154729,6 +159223,7 @@ function mountProcessManagerDialog(api2, store2) {
 }
 var init_process_manager_dialog = __esm({
   "src/renderer/views/process-manager-dialog.ts"() {
+    init_network_activity_view();
     init_helpers();
     init_icons();
     init_context_menu();
@@ -154777,6 +159272,7 @@ function mountActivityHome(pane, api2, store2, sources3, deps = {}) {
   root.append(
     el("h2", { id: "activity-home-title", class: "activity-home-sr" }, "Activity"),
     view.strip,
+    view.notice,
     view.body,
     view.status,
     el("p", { class: "activity-home-caption" }, "Start a new thread")
@@ -155612,6 +160108,15 @@ function startAgentController(store2, api2) {
         const userCancelled = chunk.outcome.status === "cancelled" && chunk.outcome.source === "user";
         const outcome = userCancelled ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? "send_now" : "stop" } : chunk.outcome;
         setMessageTurnOutcome(store2, threadId, st2.msgId, outcome);
+        if (outcome.status === "failed" && outcome.error) {
+          const detail = outcome.error;
+          markAutomationRunFailed(store2, threadId, {
+            code: classifyAutomationFailureMessage(
+              `${detail.message} ${detail.code === void 0 ? "" : String(detail.code)}`
+            ),
+            message: detail.message.slice(0, 500)
+          });
+        }
         break;
       }
       case "done": {
@@ -155751,6 +160256,7 @@ function tryOpenFileFromResult(_store, _result) {
 var pendingTurn;
 var init_agent = __esm({
   "src/renderer/controller/agent.ts"() {
+    init_automation_failure();
     init_dynamic_model();
     init_thread_helpers();
     init_sync_thread_branch_after_shell();
@@ -155770,175 +160276,6 @@ var init_agent = __esm({
     init_remote_agent_stream();
     init_perf();
     pendingTurn = /* @__PURE__ */ new Map();
-  }
-});
-
-// src/renderer/controller/automations.ts
-function startFailureDetail(error62) {
-  return ipcErrorMessage(error62, "the checkout could not be prepared");
-}
-function isPendingAutomation(thread) {
-  return thread.automation !== void 0 && thread.status === "idle" && thread.automation.startFailedAt === void 0 && Boolean(thread.draftPrompt?.trim());
-}
-function attachAutomationController(store2, api2) {
-  const starting = /* @__PURE__ */ new Set();
-  const retryTimers = /* @__PURE__ */ new Map();
-  const retrying = /* @__PURE__ */ new Set();
-  const retryPending = (threadId) => {
-    startThread(threadId).catch((error62) => {
-      console.error("[automations] Failed to retry scheduled task:", error62);
-    });
-  };
-  function retryKey(projectId, threadId) {
-    return JSON.stringify([projectId, threadId]);
-  }
-  function clearRetry(projectId, threadId) {
-    const key = retryKey(projectId, threadId);
-    const timer = retryTimers.get(key);
-    if (timer !== void 0) clearTimeout(timer);
-    retryTimers.delete(key);
-    retrying.delete(key);
-  }
-  function scheduleRetry(projectId, threadId) {
-    const key = retryKey(projectId, threadId);
-    const firstDenial = !retrying.has(key);
-    retrying.add(key);
-    if (!retryTimers.has(key)) {
-      const timer = setTimeout(() => {
-        retryTimers.delete(key);
-        if (store2.getState().activeProjectId === projectId) retryPending(threadId);
-      }, AUTOMATION_START_RETRY_MS);
-      retryTimers.set(key, timer);
-    }
-    return firstDenial;
-  }
-  async function startThread(threadId) {
-    const initial = getThreadById(store2, threadId);
-    const projectId = store2.getState().activeProjectId;
-    if (!projectId) return;
-    if (!initial || !isPendingAutomation(initial)) {
-      clearRetry(projectId, threadId);
-      return;
-    }
-    if (starting.has(threadId)) return;
-    const prompt = initial.draftPrompt?.trim();
-    if (!prompt) return;
-    starting.add(threadId);
-    let hydrated = false;
-    try {
-      await ensureThreadMessages(projectId, threadId);
-      hydrated = true;
-      if (store2.getState().activeProjectId !== projectId) return;
-      const admission = await api2.automations.canStart(projectId, threadId);
-      if (!admission.allowed) {
-        let shouldRecord = true;
-        if (admission.retryable) shouldRecord = scheduleRetry(projectId, threadId);
-        else clearRetry(projectId, threadId);
-        if (shouldRecord) {
-          addMessage(
-            store2,
-            threadId,
-            "error",
-            admission.reason ?? "This automation run is no longer eligible."
-          );
-        }
-        if (!admission.retryable) setThreadDraftPrompt(store2, threadId, "");
-        return;
-      }
-      if (!initial.worktreeChoice) {
-        const prepared = await api2.agent.prepareCheckout(
-          projectId,
-          threadId,
-          prompt,
-          "worktree",
-          initial.model
-        );
-        if (store2.getState().activeProjectId !== projectId) return;
-        applyPreparedThreadCheckout(store2, threadId, prepared);
-      }
-      const current = getThreadById(store2, threadId);
-      if (!current || !isPendingAutomation(current)) {
-        clearRetry(projectId, threadId);
-        return;
-      }
-      const beforeDispatch = await api2.automations.canStart(projectId, threadId);
-      if (!beforeDispatch.allowed) {
-        let shouldRecord = true;
-        if (beforeDispatch.retryable) shouldRecord = scheduleRetry(projectId, threadId);
-        else clearRetry(projectId, threadId);
-        if (shouldRecord) {
-          addMessage(
-            store2,
-            threadId,
-            "error",
-            beforeDispatch.reason ?? "This automation run is no longer eligible."
-          );
-        }
-        if (!beforeDispatch.retryable) setThreadDraftPrompt(store2, threadId, "");
-        return;
-      }
-      clearRetry(projectId, threadId);
-      addMessage(store2, threadId, "user", prompt);
-      setThreadDraftPrompt(store2, threadId, "");
-      startAutomationTurnTree(store2, threadId);
-      dispatchAgentRun(store2, api2, threadId, { content: prompt });
-    } catch (error62) {
-      console.error("[automations] Failed to start scheduled task:", error62);
-      if (hydrated) {
-        markAutomationStartFailed(store2, threadId);
-        addMessage(
-          store2,
-          threadId,
-          "error",
-          `This scheduled run could not start: ${startFailureDetail(error62)}
-
-Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause is resolved. The schedule is not held up: its next run starts normally.`
-        );
-      }
-    } finally {
-      starting.delete(threadId);
-    }
-  }
-  function startPendingForActiveProject() {
-    for (const thread of store2.getState().threads) {
-      if (isPendingAutomation(thread)) void startThread(thread.id);
-    }
-  }
-  async function receiveTrigger(event) {
-    if (store2.getState().activeProjectId !== event.projectId) return;
-    const loaded = await api2.threads.loadProject(event.projectId);
-    if (store2.getState().activeProjectId !== event.projectId) return;
-    const created = loaded.find((thread) => thread.id === event.threadId);
-    if (!created) return;
-    if (!store2.getState().threads.some((thread) => thread.id === created.id)) {
-      store2.setState({
-        threads: sortThreadsNewestFirst([created, ...store2.getState().threads])
-      });
-      store2.emit("threads_changed");
-    }
-    await startThread(created.id);
-  }
-  const unsubscribeTrigger = api2.automations.onTriggered((event) => {
-    void receiveTrigger(event);
-  });
-  const unsubscribeWorkspace = store2.on("workspace_changed", startPendingForActiveProject);
-  startPendingForActiveProject();
-  return () => {
-    for (const timer of retryTimers.values()) clearTimeout(timer);
-    retryTimers.clear();
-    retrying.clear();
-    unsubscribeTrigger();
-    unsubscribeWorkspace();
-  };
-}
-var AUTOMATION_START_RETRY_MS;
-var init_automations2 = __esm({
-  "src/renderer/controller/automations.ts"() {
-    init_ipc_error_message();
-    init_thread_helpers();
-    init_message_queue();
-    init_thread_hydration();
-    AUTOMATION_START_RETRY_MS = 15e3;
   }
 });
 
@@ -157340,89 +161677,6 @@ function bindChatComposerLayout(store2, onActivityHome) {
 var init_chat_layout = __esm({
   "src/renderer/views/chat-layout.ts"() {
     init_thread_hydration();
-  }
-});
-
-// src/renderer/keyboard-shortcuts.ts
-function isTypingTarget(target) {
-  if (target === null || !("tagName" in target) || typeof target.tagName !== "string") return false;
-  const tag = target.tagName;
-  if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return true;
-  return "isContentEditable" in target && target.isContentEditable === true;
-}
-function matchNewThreadShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return false;
-  return e3.key === "n" || e3.key === "N";
-}
-function matchFindInChatShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return false;
-  return e3.key === "f" || e3.key === "F";
-}
-function matchUiScaleShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return null;
-  if (e3.key === "0" || e3.code === "Digit0" || e3.code === "Numpad0") return "reset";
-  if (e3.key === "=" || e3.key === "+" || e3.code === "Equal" || e3.code === "NumpadAdd") return "in";
-  if (e3.key === "-" || e3.key === "_" || e3.code === "Minus" || e3.code === "NumpadSubtract") {
-    return "out";
-  }
-  return null;
-}
-function matchCommandPaletteShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
-  return e3.key === "k" || e3.key === "K";
-}
-function matchActivityPanelShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
-  return e3.key === "a" || e3.key === "A";
-}
-function matchPanelShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey) return null;
-  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "toggleSidebar";
-  if (!e3.shiftKey && (e3.key === "j" || e3.key === "J")) return "togglePanel";
-  if (e3.shiftKey && (e3.key === "e" || e3.key === "E")) return { openPanel: "explorer" };
-  if (e3.shiftKey && (e3.key === "g" || e3.key === "G")) return { openPanel: "changes" };
-  if (e3.shiftKey && (e3.key === "b" || e3.key === "B")) return { openPanel: "browser" };
-  if (!e3.shiftKey && (e3.key === "`" || e3.code === "Backquote")) return { openPanel: "terminal" };
-  return null;
-}
-function handlePanelShortcut(store2, api2, action) {
-  if (action === "toggleSidebar") {
-    toggleProjectsPane(store2);
-    return;
-  }
-  if (action === "togglePanel") {
-    toggleFilesPaneWithWorkspace(store2, api2);
-    return;
-  }
-  openRightPanelWithWorkspace(store2, api2, action.openPanel);
-}
-function registerPanelKeyboardShortcuts(store2, api2) {
-  document.addEventListener("keydown", (e3) => {
-    if (isAnyDialogOpen()) return;
-    if (matchNewThreadShortcut(e3)) {
-      if (!store2.getState().workspaceRoot) return;
-      e3.preventDefault();
-      openNewThread(store2);
-      return;
-    }
-    if (isTypingTarget(e3.target)) return;
-    const action = matchPanelShortcut(e3);
-    if (!action) return;
-    e3.preventDefault();
-    handlePanelShortcut(store2, api2, action);
-  });
-}
-var init_keyboard_shortcuts = __esm({
-  "src/renderer/keyboard-shortcuts.ts"() {
-    init_thread_helpers();
-    init_panels();
-    init_dialog_shell();
   }
 });
 
@@ -159495,7 +163749,7 @@ var init_purify_es = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend
@@ -159519,7 +163773,7 @@ function withGate(config2, run2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
@@ -166317,7 +170571,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -166328,7 +170582,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.3.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();
@@ -166701,6 +170955,18 @@ function mountFullLayout() {
     api
   );
   mountVncPane(requireElement("vnc-controls-host"), requireElement("vnc-viewer-host"), store, api);
+  mountThreadContextPane(
+    requireElement("context-host"),
+    requireElement("context-viewer-host"),
+    store,
+    api
+  );
+  mountSideChatPane(
+    requireElement("side-chat-host"),
+    requireElement("side-chat-viewer-host"),
+    store,
+    api
+  );
   mountMemoriesPane(
     requireElement("memories-host"),
     requireElement("memories-viewer-host"),
@@ -166810,9 +171076,9 @@ function registerKeyboardShortcuts() {
         closeSettingsDialog();
         return;
       }
-      if (handleStopShortcut?.("Escape")) e3.preventDefault();
+      if (handleStopShortcut?.("Escape", e3.target)) e3.preventDefault();
     }
-    if (e3.key === "Enter" && handleStopShortcut?.("Enter")) {
+    if (e3.key === "Enter" && handleStopShortcut?.("Enter", e3.target)) {
       e3.preventDefault();
     }
     if (e3.ctrlKey && !e3.metaKey && !e3.altKey && e3.key === "Tab") {
@@ -166879,6 +171145,8 @@ var init_main = __esm({
     init_git_changes_pane();
     init_pr_pane();
     init_memories_pane();
+    init_thread_context_panel();
+    init_side_chat_panel();
     init_ports_section();
     init_terminal_rail_resizer();
     init_roadmap_pane();
@@ -166950,6 +171218,8 @@ var init_main = __esm({
     api = window.api;
     POPOUT_MODES = [
       "explorer",
+      "context",
+      "side-chat",
       "terminal",
       "changes",
       "prs",
