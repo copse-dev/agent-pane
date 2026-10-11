@@ -1,4 +1,3 @@
-import type { AutomationSchedule, Thread } from '@shared/types'
 import '../../../tests/setup-dom.ts'
 import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
 import { afterEach, describe, it } from 'node:test'
