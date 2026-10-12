@@ -358,6 +358,111 @@ describe('Pop-out header labels the thread it is showing', () => {
     assert.equal(owner.textContent, 'Debug the Changes panel · copse/debug-d2c33d')
   })
 
+  it('updates the title after a rename without changing the checkout', async () => {
+    document.documentElement.setAttribute('data-popout-mode', 'changes')
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+      threads: [threadWithBranch('thread-1', 'Old title', 'feature/changes')],
+    })
+    const { api } = makeApi({})
+    const { listRoot, viewerRoot } = mountHosts()
+    mountGitChangesPane(
+      listRoot,
+      viewerRoot,
+      store,
+      api,
+      makeMonacoStub({ createModel: 0, setModel: 0 }),
+    )
+    await settle()
+    store.setState({ threads: [threadWithBranch('thread-1', 'Renamed thread', 'feature/changes')] })
+    store.emit('threads_changed')
+    await settle()
+    const owner = listRoot.querySelector<HTMLElement>('.git-changes-header-owner')
+    assert.equal(owner?.textContent, 'Renamed thread · feature/changes')
+  })
+
+  it('refreshes a saved title on focus without changing the selected thread or its snapshot', async () => {
+    document.documentElement.setAttribute('data-popout-mode', 'changes')
+    const thread = threadWithBranch('thread-1', 'Old title', 'feature/changes')
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: thread.id,
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+      threads: [thread],
+    })
+    const base = makeApi({}).api
+    const api: ApiClient = {
+      ...base,
+      threads: {
+        ...base.threads,
+        loadProject: async () => [{ ...thread, title: 'Renamed elsewhere' }],
+      },
+    }
+    const { listRoot, viewerRoot } = mountHosts()
+    const dispose = mountGitChangesPane(
+      listRoot,
+      viewerRoot,
+      store,
+      api,
+      makeMonacoStub({ createModel: 0, setModel: 0 }),
+    )
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    assert.equal(
+      listRoot.querySelector('.git-changes-header-owner')?.textContent,
+      'Renamed elsewhere · feature/changes',
+    )
+    assert.equal(store.getState().activeThreadId, thread.id)
+    assert.equal(store.getState().threads[0]?.title, 'Old title')
+    dispose()
+  })
+
+  it('ignores a saved title that arrives after switching away from its owner', async () => {
+    document.documentElement.setAttribute('data-popout-mode', 'changes')
+    const first = threadWithBranch('thread-1', 'First', 'feature/first')
+    const second = threadWithBranch('thread-2', 'Second', 'feature/second')
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: first.id,
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+      threads: [first, second],
+    })
+    let resolveSaved: (threads: Thread[]) => void = () => {}
+    const base = makeApi({}).api
+    const api: ApiClient = {
+      ...base,
+      threads: {
+        ...base.threads,
+        loadProject: () =>
+          new Promise<Thread[]>((resolve) => {
+            resolveSaved = resolve
+          }),
+      },
+    }
+    const { listRoot, viewerRoot } = mountHosts()
+    const dispose = mountGitChangesPane(
+      listRoot,
+      viewerRoot,
+      store,
+      api,
+      makeMonacoStub({ createModel: 0, setModel: 0 }),
+    )
+    window.dispatchEvent(new Event('focus'))
+    switchThread(store, second.id)
+    resolveSaved([{ ...first, title: 'Renamed elsewhere' }])
+    await settle()
+    assert.equal(
+      listRoot.querySelector('.git-changes-header-owner')?.textContent,
+      'Second · feature/second',
+    )
+    dispose()
+  })
+
   it('relabels on an owner change, e.g. a thread switch inside the pop-out itself', async () => {
     document.documentElement.setAttribute('data-popout-mode', 'changes')
     const store = createStore({
