@@ -51,7 +51,7 @@ export function createChatGptPlanStore(): ChatGptPlanStore {
         throw new Error('Unlock secure storage to access your ChatGPT connection.')
       }
       const decoded = safeJsonParse(
-        cipher.decryptString(Buffer.from(stored, 'base64')),
+        cipher.decryptString(Buffer.from(stored, 'base64'), { store: 'chatgpt-plan', record: key }),
         decodeWithSchema(stateSchema),
       )
       if (!decoded)
@@ -65,7 +65,12 @@ export function createChatGptPlanStore(): ChatGptPlanStore {
       }
       backing.set(
         key,
-        cipher.encryptString(JSON.stringify(stateSchema.parse(state))).toString('base64'),
+        cipher
+          .encryptString(JSON.stringify(stateSchema.parse(state)), {
+            store: 'chatgpt-plan',
+            record: key,
+          })
+          .toString('base64'),
       )
     },
   }

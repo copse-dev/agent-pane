@@ -43,6 +43,7 @@ import { acpConfigCategory, acpConfigCategoryLabel } from '@shared/acp.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
+import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import {
@@ -848,6 +849,11 @@ export interface OpenAcpSession {
     resolve: (response: AcpTurnStop) => void
     reject: (err: unknown) => void
   } | null
+  /**
+   * Set by the session's owner to bind the thread for turns the agent starts on
+   * its own (see agent-initiated-turn.ts). The update pump drives it.
+   */
+  agentInitiated?: AgentInitiatedTurnLease
   /** True once the connection closed or the agent process died. */
   isClosed: () => boolean
   /**
@@ -1062,6 +1068,32 @@ async function spawnTransport(
  * - A rejected queue means the connection closed (pump exits). Prompt responses
  *   settle turns directly, after their request resolves.
  */
+/**
+ * Output that means the agent is working, as opposed to state replacements
+ * (session info, commands, mode, usage) it pushes whenever it likes.
+ */
+export function isAgentWorkUpdate(update: SessionUpdate): boolean {
+  return (
+    update.sessionUpdate === 'agent_message_chunk' ||
+    update.sessionUpdate === 'agent_thought_chunk' ||
+    update.sessionUpdate === 'tool_call' ||
+    update.sessionUpdate === 'tool_call_update' ||
+    update.sessionUpdate === 'plan'
+  )
+}
+
+/**
+ * Claude's adapter stamps the final `usage_update` of every turn with where the
+ * turn came from (`human` for a prompt, `task-notification` for a background
+ * task re-entering the model). It is the only end-of-turn signal a self-started
+ * turn gets, since no prompt response closes it.
+ */
+export function endsSelfStartedTurn(update: SessionUpdate): boolean {
+  if (update.sessionUpdate !== 'usage_update') return false
+  const origin = isRecord(update._meta) ? update._meta['_claude/origin'] : undefined
+  return isRecord(origin) && typeof origin['kind'] === 'string' && origin['kind'] !== 'human'
+}
+
 function startAcpUpdatePump(open: OpenAcpSession): void {
   void (async (): Promise<void> => {
     for (;;) {
@@ -1076,6 +1108,11 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
       noteAcpSessionActivity(open, update)
       refreshAcpSessionState(open, update)
       if (open.suppressChunks) continue
+      if (open.turnStop === null && open.agentInitiated) {
+        // No prompt is outstanding, so this is the agent working on its own.
+        if (isAgentWorkUpdate(update)) open.agentInitiated.begin()
+        else if (endsSelfStartedTurn(update)) open.agentInitiated.end()
+      }
       try {
         // Dismiss a permission modal as soon as the agent marks that tool call
         // terminal (completed/failed) without waiting for our answer.

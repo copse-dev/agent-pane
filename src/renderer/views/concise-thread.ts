@@ -16,6 +16,7 @@ import { resolveModelIntellect } from '@copse/llm/intellect-lookup.ts'
 import type { Message, Thread, ToolCall } from '@shared/types'
 import { formatTodoProgress } from '@shared/todos/todo-logic.ts'
 import { getToolCallLabel, shellCommandLabel } from '@shared/tools/tool-display.ts'
+import { isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 
 /** Canonical intellect a model must exceed for its turns to render concisely. */
@@ -132,7 +133,7 @@ function runningToolCall(thread: Pick<Thread, 'messages'>): ToolCall | null {
 }
 
 function shellCommand(tc: ToolCall): string | null {
-  if (tc.name !== 'run_shell' && tc.kind !== 'execute') return null
+  if (!isCopseToolCall(tc, 'run_shell') && tc.kind !== 'execute') return null
   const command = isRecord(tc.args) ? tc.args['command'] : undefined
   return typeof command === 'string' && command.trim() ? shellCommandLabel(command) : null
 }

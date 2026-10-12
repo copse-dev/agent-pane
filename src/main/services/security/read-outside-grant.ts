@@ -32,14 +32,14 @@ function inspectPath(path: string): GrantedPath {
       identity: { device: stat.dev, inode: stat.ino, realpath: realpathSync.native(path) },
     }
   } catch {
-    // A missing or inaccessible path cannot safely grant its descendants. Its
-    // exact token remains re-readable, matching the existing glob contract.
+    // A missing or inaccessible literal path has no durable identity to approve.
+    // Shell patterns retain their separate exact-token contract.
     return { directory: false, identity: null }
   }
 }
 
 function stillNamesApprovedPath(path: string, identity: PathIdentity | null): boolean {
-  if (identity === null) return true
+  if (identity === null) return !isLiteralPath(path) && inspectPath(path).identity === null
   try {
     const stat = statSync(path, { bigint: true })
     return (
