@@ -56,7 +56,10 @@ import { setSecretCipher } from './services/storage/secret-cipher.ts'
 import { createKeyringCipher, createMigratingCipher } from './services/storage/keyring-cipher.ts'
 import { createOsKeyringStore } from './services/storage/os-keyring.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
-import { resumeMobileCompanion, stopMobileCompanion } from './windows/mobile-desktop.ts'
+import {
+  resumeMobileCompanion,
+  stopMobileCompanion,
+} from './services/mobile/mobile-companion-service.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import {
@@ -153,6 +156,7 @@ import { getContainerRunService } from './services/container-runtime/container-r
 import { recordContainerRunTurn } from './services/container-runtime/container-run-history.ts'
 import { recordUserReview } from './services/review/review-history.ts'
 import { AgentDispatcher } from './services/agent-dispatcher.ts'
+import { setAgentInitiatedTurnAuthority } from './services/acp/agent-initiated-turn.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
@@ -643,6 +647,7 @@ app
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
+    setAgentInitiatedTurnAuthority(agentDispatcher)
     registerAllHandlers(
       win,
       registry,
