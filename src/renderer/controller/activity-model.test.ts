@@ -1,7 +1,9 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { setThreadStatus } from '@shared/store/thread-helpers.ts'
+import { setThreadStatus, setThreadGitBranch } from '@shared/store/thread-helpers.ts'
+import { commitThreadModelSelection } from './model-selection.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 import type { Thread } from '@shared/types'
 import {
   collectActivityThreads,
@@ -337,6 +339,59 @@ describe('deriveActivity', () => {
 })
 
 describe('collectActivityThreads', () => {
+  it('does not turn model and branch edits into a new completion', () => {
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/one', name: 'one' }],
+      activeProjectId: 'p1',
+      threads: [
+        {
+          id: 'old',
+          title: 'Old',
+          status: 'idle',
+          messages: [],
+          usage: { inputTokens: 1, outputTokens: 0 },
+          createdAt: 0,
+          lastPromptAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    })
+    commitThreadModelSelection(store, createFakeApi(), 'old', 'user', undefined, 'mock:test')
+    setThreadGitBranch(store, 'old', 'feature')
+    const threads = collectActivityThreads(store)
+    assert.equal(threads[0]?.settledAt, 2)
+    assert.equal(
+      deriveActivity(input({ threads, now: Date.now() })).some((g) =>
+        g.rows.some((row) => row.threadId === 'old'),
+      ),
+      false,
+    )
+  })
+
+  it('records a new completion when a running thread settles', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: 1000 })
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/one', name: 'one' }],
+      activeProjectId: 'p1',
+      threads: [
+        {
+          id: 'run',
+          title: 'Run',
+          status: 'running',
+          messages: [],
+          usage: { inputTokens: 1, outputTokens: 0 },
+          createdAt: 0,
+          updatedAt: 2,
+          lastPromptAt: 1,
+          lastSettledAt: 2,
+        },
+      ],
+    })
+    setThreadStatus(store, 'run', 'idle')
+    setThreadGitBranch(store, 'run', 'feature')
+    assert.equal(collectActivityThreads(store)[0]?.settledAt, 1000)
+  })
+
   it('carries the persisted write time only for threads that ran', () => {
     setThreadCacheForTest('p2', [
       metadataOnly('cached-run', { updatedAt: 40, lastPromptAt: 30 }),
