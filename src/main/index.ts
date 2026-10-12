@@ -1,6 +1,7 @@
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 // MUST be second — owns the profile (single-instance lock, vault replay) before any store opens.
 import { profileSingleInstanceLock } from './app-profile-owner.ts'
+import { initThreadPrompts } from './services/thread-prompts.ts'
 import { savedSecretEnvironment } from '@copse/store-kit/secret-environment.ts'
 import { join } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
@@ -674,6 +675,7 @@ app
     initApproval(win, ipcMain, alertUser)
     initAskUser(win, ipcMain, alertUser)
     initMobileChat(win, ipcMain)
+    initThreadPrompts(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
     // (the ACP re-authentication offer). The renderer owns the PTY's xterm tab,
     // so the request is forwarded rather than spawned here.

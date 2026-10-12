@@ -98,4 +98,5 @@
 // v59 integrates the device-bound vault wire changes.
 // v60 integrates Send now abort causes.
 // v61 integrates missing-worktree recovery.
-export const API_PROTOCOL_VERSION = 61 as const
+// v62 integrates cross-thread read and send permissions.
+export const API_PROTOCOL_VERSION = 62 as const

@@ -2021,7 +2021,9 @@ function buildMessageOriginMarker(origin: MessageOrigin, editedByUser: boolean):
   const fromHook = origin.kind === 'hook'
   const label = fromHook
     ? `Hook · ${origin.hookId} (${hookEventLabel(origin.event)})`
-    : 'Machine · automatic continuation'
+    : origin.operationId.startsWith('thread:')
+      ? 'Thread · prompt from another conversation'
+      : 'Machine · automatic continuation'
   const marker = el(
     'div',
     {
@@ -3089,10 +3091,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (editing) classes.push('msg-editing')
     if (held) classes.push('msg-held')
     if (fromHook) classes.push('msg-hook-origin')
+    if (queued.origin?.kind === 'machine') classes.push('msg-machine-origin')
     const item = el('div', {
       class: classes.join(' '),
       'data-message-id': msg.id,
-      ...(fromHook ? { 'data-hook-id': queued.origin?.hookId ?? '' } : {}),
+      ...(queued.origin?.kind === 'hook' ? { 'data-hook-id': queued.origin.hookId } : {}),
     })
     const body = el('div', { class: 'message-body' })
     const badgeText = editing ? 'Editing' : held ? 'Held' : 'Queued'

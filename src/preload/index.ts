@@ -16,6 +16,23 @@ exposePerfBridge()
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  threadPrompts: {
+    revokeAccess: (threadId, access) =>
+      ipcRenderer.invoke('thread-prompts:revoke-access', threadId, access),
+    onPrompt: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        command: import('@shared/thread-prompt.ts').ThreadPromptCommand,
+      ): void => {
+        handler(command)
+      }
+      ipcRenderer.on('thread-prompts:prompt', listener)
+      return () => {
+        ipcRenderer.off('thread-prompts:prompt', listener)
+      }
+    },
+    reply: (id, result) => ipcRenderer.invoke('thread-prompts:reply', id, result),
+  },
   mobile: {
     getState: () => ipcRenderer.invoke('mobile:get-state'),
     onStateChanged: (

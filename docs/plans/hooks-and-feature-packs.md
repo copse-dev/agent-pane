@@ -1056,6 +1056,15 @@ Its separate signing capability never inherits a shell basename bypass: approval
 bind to a project, system signer, public key and agent socket, and do not change the
 Git hook process's sandbox. See `docs/shell-permissions.md#native-commits-and-signing`.
 
+### Cross-thread prompts
+
+`send_thread_prompt` is a machine submission surface, authorized by a separate durable
+send grant on the source thread. It enters the destination's pending-message queue with
+`kind: 'machine'` provenance. These queued items consume the same continuation budget as
+hook-originated items (decision 5), never start a human turn tree, never interrupt an
+active run, and respect held/paused queues. The renderer remains the transcript writer.
+Sending does not transfer the source's read or send grants to the destination.
+
 ### Mobile human submissions (26 September 2026)
 
 An authenticated, desktop-authorized phone is a human submission surface. New

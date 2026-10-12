@@ -92,13 +92,14 @@ export function approvalRequestDetails(req: {
 }): HTMLElement[] {
   const parts: HTMLElement[] = []
   if (req.bodyAdvice) parts.push(approvalCopyElement('approval-advice', req.bodyAdvice))
-  parts.push(
-    el(
-      'div',
-      { class: req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body' },
-      req.body,
-    ),
-  )
+  if (req.body.trim())
+    parts.push(
+      el(
+        'div',
+        { class: req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body' },
+        req.body,
+      ),
+    )
   if (req.bodyFooter) parts.push(approvalCopyElement('approval-footer', req.bodyFooter))
   return parts
 }
@@ -470,7 +471,7 @@ export function mountApprovalDialog(
       // interface font so they don't read as a raw JSON dump in a <pre>.
       const bodyClass = req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body'
       const body = el('div', { class: bodyClass }, req.body)
-      if (collapseDetails && !detailsExpanded) body.hidden = true
+      if (!req.body.trim() || (collapseDetails && !detailsExpanded)) body.hidden = true
       return body
     }
 
