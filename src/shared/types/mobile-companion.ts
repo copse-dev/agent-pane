@@ -1,6 +1,6 @@
 /**
  * Mobile Companion is managed entirely from Settings > Experimental, including
- * pairing approval: there is no separate native-dialog flow. The renderer polls
+ * pairing approval. Control grants additionally require an OS-native trust confirmation. The renderer polls
  * nothing — the main process pushes a fresh snapshot on every change.
  */
 export interface MobileCompanionAddress {

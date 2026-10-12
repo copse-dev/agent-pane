@@ -96,9 +96,19 @@ function approvePair(label: string, code: string): Promise<MobileCompanionAccess
   })
 }
 
-export function respondToMobilePairing(decision: MobileCompanionAccess | 'deny'): void {
-  if (!pendingPairing) return
-  const { resolve } = pendingPairing
+export async function respondToMobilePairing(
+  decision: MobileCompanionAccess | 'deny',
+  confirmControl: (label: string, code: string) => Promise<boolean>,
+): Promise<void> {
+  const pairing = pendingPairing
+  const pairingGeneration = generation
+  if (!pairing) return
+  if (decision === 'control') {
+    if (!(await confirmControl(pairing.label, pairing.code))) return
+    // A denial, replacement pairing, or shutdown can settle it while the native dialog is open.
+    if (pendingPairing !== pairing || quitting || generation !== pairingGeneration) return
+  }
+  const { resolve } = pairing
   pendingPairing = null
   resolve(decision === 'deny' ? null : decision)
   publish()
@@ -181,7 +191,26 @@ export async function disableMobileCompanion(): Promise<void> {
   publish()
 }
 
-export function setMobileDeviceAccess(id: string, access: MobileCompanionAccess): void {
+export async function setMobileDeviceAccess(
+  id: string,
+  access: MobileCompanionAccess,
+  confirmControl: (label: string) => Promise<boolean>,
+): Promise<void> {
+  const device = devices()
+    .list()
+    .find((item) => item.id === id)
+  if (!device) return
+  if (access === 'control') {
+    if (!(await confirmControl(device.label))) return
+    // A revoked phone cannot regain access after its confirmation returns.
+    if (
+      quitting ||
+      !devices()
+        .list()
+        .some((item) => item.id === id)
+    )
+      return
+  }
   devices().setAccess(id, access)
   publish()
 }

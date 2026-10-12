@@ -1,3 +1,4 @@
+import { confirmMobileControl } from '../services/mobile/mobile-control-confirmation.ts'
 import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
@@ -629,20 +630,24 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     await disableMobileCompanion()
   })
-  ipcMain.handle('mobile:set-device-access', (event, ...args) => {
+  ipcMain.handle('mobile:set-device-access', async (event, ...args) => {
     assertMainFrameSender(event, win)
     const [id, access] = parseIpcArgs(mobileDeviceAccessPairSchema, args)
-    setMobileDeviceAccess(id, access)
+    await setMobileDeviceAccess(id, access, (label) =>
+      confirmMobileControl((options) => dialog.showMessageBox(win, options), label),
+    )
   })
   ipcMain.handle('mobile:revoke-device', (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(mobileDeviceIdSchema, [rawId])
     revokeMobileDevice(id)
   })
-  ipcMain.handle('mobile:respond-pairing', (event, rawDecision: unknown) => {
+  ipcMain.handle('mobile:respond-pairing', async (event, rawDecision: unknown) => {
     assertMainFrameSender(event, win)
     const decision = parseIpcArgs(mobilePairingDecisionSchema, [rawDecision])
-    respondToMobilePairing(decision)
+    await respondToMobilePairing(decision, (label, code) =>
+      confirmMobileControl((options) => dialog.showMessageBox(win, options), label, code),
+    )
   })
   ipcMain.handle('mobile:reveal-certificate', (event) => {
     assertMainFrameSender(event, win)

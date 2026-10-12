@@ -13,8 +13,8 @@ export interface MobileCompanionSection {
 
 /**
  * Everything about Mobile Companion — enabling, the network choice, pairing
- * approval, and per-phone access — lives here instead of native OS dialogs, so
- * it stays reachable without stealing focus from the rest of Settings.
+ * approval, and per-phone access — lives here. Control grants also require a
+ * native desktop confirmation of the phone’s certificate trust.
  */
 export function createMobileCompanionSection(api: ApiClient): MobileCompanionSection {
   const status = el('span', { class: 'mobile-companion-status' })
@@ -153,7 +153,7 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
         el(
           'p',
           { class: 'field-hint' },
-          'Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold.',
+          'Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Allow control opens a desktop confirmation of certificate trust.',
         ),
         el(
           'label',

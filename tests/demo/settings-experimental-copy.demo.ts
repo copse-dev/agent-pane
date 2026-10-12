@@ -151,4 +151,32 @@ describe('browser-hosted Experimental settings copy', () => {
     }
     assert.equal(await $$('#advisorModel').length, 1)
   })
+  it('explains the native trust confirmation before granting a pairing control', async () => {
+    await browser.url('/?scenario=settings-footer')
+    await $('.prompt-input').waitForExist()
+    await browser.execute(() => {
+      const getState = window.api.mobile.getState
+      window.api.mobile.getState = async () => ({
+        ...(await getState()),
+        pairing: { label: 'My phone', code: '123456' },
+      })
+    })
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').$('button[data-section="experimental"]').click()
+    const banner = $(`${MOBILE_FIELDSET} .mobile-companion-pairing-banner`)
+    await expect(banner).toBeDisplayed()
+    await expect(banner.$('.mobile-companion-pairing-code')).toHaveText('123456')
+    await expect(banner.$('.field-hint')).toHaveText(
+      expect.stringContaining('Allow control opens a desktop confirmation of certificate trust.'),
+    )
+    const control = banner.$('button=Allow control')
+    await expect(control).toBeDisabled()
+    await banner.$('input[type="checkbox"]').click()
+    await expect(control).toBeEnabled()
+    await banner.scrollIntoView()
+    await saveElementScreenshot(
+      `${MOBILE_FIELDSET} .mobile-companion-pairing-banner`,
+      'settings-mobile-companion-pairing.png',
+    )
+  })
 })
