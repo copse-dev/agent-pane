@@ -266,7 +266,8 @@ describe('Machines settings', function () {
     await click('[name="machineSharedProfile"][value="desktop-kev"]')
     await click('[name="machineSharingEnabled"]')
     await $('[name="machineSharingAddress"]').selectByAttribute('value', '127.0.0.1')
-    await $('[name="machineSharingPort"]').setValue('0')
+    // This value is visible in the sharing capture; use a real fixed listener.
+    await $('[name="machineSharingPort"]').setValue('4319')
     await click('.machine-sharing-save')
     await expect($('.machine-sharing-status')).toHaveText(
       expect.stringContaining('Sharing on 127.0.0.1'),
