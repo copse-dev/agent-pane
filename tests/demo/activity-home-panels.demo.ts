@@ -1,5 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import { pinDemoClock } from './helpers/fixed-clock.ts'
 
 // Slice 7 of docs/plans/new-thread-activity-screen.md: the Activity home above a
 // bottom panel and in a chat pane of about 360 px, in both themes. The prototype
@@ -100,6 +101,9 @@ function expectArranged(result: PanelProbe | null): asserts result is PanelProbe
 }
 
 describe('Activity home beside and above panels', () => {
+  before(async () => {
+    await pinDemoClock()
+  })
   afterEach(async () => {
     await setTheme('dark')
   })
