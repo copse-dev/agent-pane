@@ -48450,6 +48450,266 @@ var init_about_section = __esm({
   }
 });
 
+// src/renderer/views/setup/mobile-companion-section.ts
+function createMobileCompanionSection(api2) {
+  const status = el("span", { class: "mobile-companion-status" });
+  const enabledInput = el("input", { type: "checkbox", name: "mobileCompanionEnabled" });
+  const addressSelect = el("select", { name: "mobileCompanionAddress" });
+  const addressHint = el("p", { class: "field-hint" });
+  const connectionInfo = el("div", { class: "mobile-companion-connection" });
+  const qrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
+  const qrUrl = el("code", { class: "mobile-companion-qr-url" });
+  const qrHost = el(
+    "div",
+    { id: "mobile-companion-qr", class: "mobile-companion-qr", hidden: true },
+    qrImage,
+    el(
+      "div",
+      { class: "mobile-companion-qr-text" },
+      el("p", { class: "field-hint" }, "Scan with your phone's camera to open Copse."),
+      qrUrl
+    )
+  );
+  const pairingHost = el("div", { class: "mobile-companion-pairing" });
+  const deviceList = el("div", { class: "mobile-companion-device-list" });
+  let lastPairingKey = null;
+  let lastDevicesKey = null;
+  function renderAddresses(state) {
+    const previous = addressSelect.value;
+    clear(addressSelect);
+    for (const candidate of state.addresses) {
+      addressSelect.append(
+        el(
+          "option",
+          { value: candidate.address },
+          `${candidate.interfaceName} \u2014 ${candidate.address}`
+        )
+      );
+    }
+    if (state.addresses.some((candidate) => candidate.address === previous))
+      addressSelect.value = previous;
+    const disabled = state.addresses.length === 0 || state.enabled;
+    if (disabled) addressSelect.setAttribute("disabled", "");
+    else addressSelect.removeAttribute("disabled");
+    addressHint.textContent = state.addresses.length === 0 ? "Connect this Mac to a private Wi-Fi or wired network first." : "Pick the interface your phone is on \u2014 usually Wi-Fi. Turn Mobile Companion off to change it.";
+  }
+  function renderConnection(state) {
+    clear(connectionInfo);
+    if (!state.enabled) {
+      qrHost.hidden = true;
+      return;
+    }
+    if (!state.running || !state.url) {
+      qrHost.hidden = true;
+      connectionInfo.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          "Enabled, but its local server is not running yet. Copse retries automatically while it is open."
+        )
+      );
+      return;
+    }
+    connectionInfo.append(
+      el("p", {}, "Open ", el("strong", {}, state.url), " on your phone."),
+      el(
+        "p",
+        { class: "field-hint" },
+        "Transfer the trust certificate directly to your phone and install it there for a verified connection \u2014 it can only vouch for private-network addresses, never a website. Remove it from the phone\u2019s certificate settings when you no longer need it."
+      )
+    );
+    if (state.rootCertificatePath) {
+      const revealBtn = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary" },
+        "Reveal certificate\u2026"
+      );
+      revealBtn.addEventListener("click", () => {
+        void api2.mobile.revealCertificate();
+      });
+      connectionInfo.append(revealBtn);
+    }
+    connectionInfo.append(qrHost);
+    if (state.qrSvg) {
+      qrImage.innerHTML = state.qrSvg;
+      qrUrl.textContent = state.url;
+      qrHost.hidden = false;
+    } else {
+      qrHost.hidden = true;
+    }
+  }
+  function pairingKey(state) {
+    return state.pairing ? `${state.pairing.label}:${state.pairing.code}` : null;
+  }
+  function renderPairing(state) {
+    const key = pairingKey(state);
+    if (key === lastPairingKey) return;
+    lastPairingKey = key;
+    clear(pairingHost);
+    const pairing = state.pairing;
+    if (!pairing) return;
+    const trustInput = el("input", { type: "checkbox" });
+    const controlBtn = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-primary", disabled: true },
+      "Allow control"
+    );
+    const readBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Read only");
+    const denyBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Deny");
+    trustInput.addEventListener("change", () => {
+      controlBtn.toggleAttribute("disabled", !trustInput.checked);
+    });
+    readBtn.addEventListener("click", () => {
+      void api2.mobile.respondPairing("read");
+    });
+    controlBtn.addEventListener("click", () => {
+      if (trustInput.checked) void api2.mobile.respondPairing("control");
+    });
+    denyBtn.addEventListener("click", () => {
+      void api2.mobile.respondPairing("deny");
+    });
+    pairingHost.append(
+      el(
+        "div",
+        { class: "mobile-companion-pairing-banner" },
+        el("p", {}, "Does this code appear on ", el("strong", {}, pairing.label), "?"),
+        el("p", { class: "mobile-companion-pairing-code" }, pairing.code),
+        el(
+          "p",
+          { class: "field-hint" },
+          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Allow control opens a desktop confirmation of certificate trust."
+        ),
+        el(
+          "label",
+          { class: "checkbox-label" },
+          trustInput,
+          " The Copse Local Root is installed and trusted on this phone"
+        ),
+        el("div", { class: "settings-action-row" }, denyBtn, readBtn, controlBtn)
+      )
+    );
+  }
+  function deviceRow(device) {
+    const row2 = el("div", { class: "mobile-companion-device-row" });
+    const summary = el(
+      "div",
+      { class: "mobile-companion-device-summary" },
+      el("strong", {}, device.label),
+      ` \u2014 ${device.access === "control" ? "Chat and run control" : "Read only"}`
+    );
+    const actions = el("div", { class: "mobile-companion-device-actions" });
+    if (device.access === "control") {
+      const toReadBtn = el("button", { type: "button" }, "Make read only");
+      toReadBtn.addEventListener("click", () => {
+        void api2.mobile.setDeviceAccess(device.id, "read");
+      });
+      actions.append(toReadBtn);
+    } else {
+      const trustInput = el("input", { type: "checkbox" });
+      const toControlBtn = el("button", { type: "button", disabled: true }, "Allow control");
+      trustInput.addEventListener("change", () => {
+        toControlBtn.toggleAttribute("disabled", !trustInput.checked);
+      });
+      toControlBtn.addEventListener("click", () => {
+        if (trustInput.checked) void api2.mobile.setDeviceAccess(device.id, "control");
+      });
+      actions.append(
+        el(
+          "label",
+          { class: "checkbox-label mobile-companion-trust-label" },
+          trustInput,
+          " Trusted"
+        ),
+        toControlBtn
+      );
+    }
+    const revokeBtn = el(
+      "button",
+      { type: "button", class: "mobile-companion-device-revoke" },
+      "Revoke"
+    );
+    revokeBtn.addEventListener("click", () => {
+      void api2.mobile.revokeDevice(device.id);
+    });
+    actions.append(revokeBtn);
+    row2.append(summary, actions);
+    return row2;
+  }
+  function renderDevices(state) {
+    const key = JSON.stringify(state.devices);
+    if (key === lastDevicesKey) return;
+    lastDevicesKey = key;
+    clear(deviceList);
+    if (state.devices.length === 0) {
+      deviceList.append(el("p", { class: "field-hint" }, "No phones are paired."));
+      return;
+    }
+    deviceList.append(
+      el(
+        "p",
+        { class: "field-hint" },
+        "Revoking access takes effect immediately. If you installed the Copse Local Root on that phone, remove it in the phone\u2019s certificate settings too."
+      )
+    );
+    for (const device of state.devices) deviceList.append(deviceRow(device));
+  }
+  function applyState(state) {
+    enabledInput.checked = state.enabled;
+    renderAddresses(state);
+    renderConnection(state);
+    renderPairing(state);
+    renderDevices(state);
+    if (state.lastError) setInlineStatus(status, "error", state.lastError);
+    else status.replaceChildren();
+  }
+  enabledInput.addEventListener("change", () => {
+    void (async () => {
+      if (enabledInput.checked) {
+        const address = addressSelect.value;
+        if (!address) {
+          enabledInput.checked = false;
+          return;
+        }
+        await api2.mobile.enable(address);
+      } else {
+        await api2.mobile.disable();
+      }
+      await refresh();
+    })();
+  });
+  async function refresh() {
+    const state = await api2.mobile.getState();
+    applyState(state);
+  }
+  api2.mobile.onStateChanged((state) => {
+    applyState(state);
+  });
+  const root = el(
+    "fieldset",
+    {},
+    el("legend", {}, "Mobile Companion"),
+    el(
+      "p",
+      { class: "field-hint" },
+      "Open your Copse threads from a phone on the same local network. Choose the network interface your phone uses, pair phones, or turn sharing off. Copse must stay open and this computer must stay awake."
+    ),
+    el("label", { class: "checkbox-label" }, enabledInput, " Enable Mobile Companion"),
+    el("label", {}, "Network ", addressSelect),
+    addressHint,
+    connectionInfo,
+    pairingHost,
+    deviceList,
+    status
+  );
+  return { root, refresh };
+}
+var init_mobile_companion_section = __esm({
+  "src/renderer/views/setup/mobile-companion-section.ts"() {
+    init_helpers();
+    init_inline_status();
+  }
+});
+
 // src/renderer/views/settings/fields.ts
 function loadSimpleFields(root, fields, snapshot) {
   for (const field of fields) {
@@ -52190,8 +52450,16 @@ function knownToConfig(known) {
   };
 }
 function registryToDraft(entry) {
+  let id = `registry-${entry.id}`;
+  if (id.length > 64) {
+    let hash2 = 0xcbf29ce484222325n;
+    for (const character of entry.id) {
+      hash2 = BigInt.asUintN(64, (hash2 ^ BigInt(character.charCodeAt(0))) * 0x100000001b3n);
+    }
+    id = `${id.slice(0, 47)}-${hash2.toString(16).padStart(16, "0")}`;
+  }
   return {
-    id: `registry-${entry.id}`.slice(0, 64),
+    id,
     title: entry.title,
     command: entry.installedPath ?? entry.command ?? "",
     args: [...entry.args],
@@ -56100,12 +56368,18 @@ var init_thread_proposal = __esm({
 });
 
 // src/shared/tools/copse-tool-call.ts
-function matchesCopseToolName(name, tool) {
-  return name === tool || new RegExp(`^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+${tool}(?![a-z0-9_])`, "i").test(name);
+function normalizeCopseToolName(name) {
+  const server = /^mcp__([\w.-]+?)__/i.exec(name)?.[1];
+  if (server && server.toLowerCase() !== "copse") return name;
+  const match = /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+([a-z][a-z0-9_.-]*)/i.exec(name);
+  return match?.[1]?.toLowerCase() ?? name;
+}
+function copseToolCallName(call) {
+  return normalizeCopseToolName(call.programmaticName ?? call.name);
 }
 function isCopseToolCall(call, tool) {
   return [call.name, call.programmaticName].some(
-    (name) => typeof name === "string" && matchesCopseToolName(name, tool)
+    (name) => typeof name === "string" && normalizeCopseToolName(name) === tool
   );
 }
 var init_copse_tool_call = __esm({
@@ -57921,19 +58195,15 @@ function parseMcp(name) {
   const tool = match?.[2];
   return server && tool ? { server, tool } : null;
 }
-function nativeDisplayToolName(name) {
-  const mcp = parseMcp(name);
-  return mcp?.server.toLowerCase() === "copse" ? mcp.tool : name;
-}
 function getToolDisplayName(name, tense = "done") {
-  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)];
+  const known = TOOL_DISPLAY_NAMES[normalizeCopseToolName(name)];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
   if (mcp?.tool === "startup") return `${mcp.server} startup`;
   if (mcp) return humanizeIdentifier(mcp.tool);
   const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, "");
   if (stripped !== name) return humanizeIdentifier(stripped);
-  return humanizeIdentifier(name);
+  return humanizeIdentifier(normalizeCopseToolName(name));
 }
 function stringArg(args, key) {
   if (!isRecord(args)) return null;
@@ -57948,7 +58218,7 @@ function getApplyPatchFiles(tc2) {
   return input2 === null ? [] : summarizePatch(input2);
 }
 function getToolEditPath(tc2) {
-  const name = nativeDisplayToolName(tc2.name);
+  const name = copseToolCallName(tc2);
   if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
   const key = FILE_EDIT_PATH_ARG[name];
   if (!key) return null;
@@ -57970,7 +58240,7 @@ function shellCommandArg(args) {
 function shellCommandsFromToolCalls(toolCalls) {
   const commands = [];
   for (const tc2 of toolCalls) {
-    if (tc2.name !== "run_shell" || tc2.status === "error") continue;
+    if (!isCopseToolCall(tc2, "run_shell") || tc2.status === "error") continue;
     const command = shellCommandArg(tc2.args);
     if (command) commands.push(stripShellCdPrefix(command).trim());
   }
@@ -57978,8 +58248,8 @@ function shellCommandsFromToolCalls(toolCalls) {
 }
 function getToolCallLabel(tc2) {
   const tense = tenseFromStatus(tc2.status);
-  const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
-  const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
+  const mcpTitle = tc2.title && (parseMcp(tc2.title) || normalizeCopseToolName(tc2.title) !== tc2.title && !/\s/.test(tc2.title)) ? tc2.title : void 0;
+  const name = copseToolCallName({ ...tc2, name: mcpTitle ?? tc2.name });
   const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
   if (name === "read_skill") {
     const skillName = stringArg(tc2.args, "name");
@@ -58035,17 +58305,13 @@ function getToolCallLabel(tc2) {
     if (title) return shellCommandLabel(title);
   }
   if (title) return title;
-  return getToolDisplayName(mcpTitle ?? tc2.name, tense);
+  return getToolDisplayName(tc2.programmaticName ?? mcpTitle ?? tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
-  const builtIn = TOOL_TO_GROUP.get(name);
+  const builtIn = TOOL_TO_GROUP.get(normalizeCopseToolName(name));
   if (builtIn) return builtIn;
   const mcp = parseMcp(name);
   if (mcp) {
-    if (mcp.server === "copse") {
-      const copseBuiltIn = TOOL_TO_GROUP.get(mcp.tool);
-      if (copseBuiltIn) return copseBuiltIn;
-    }
     if (mcp.server === "copse.git") return "git";
     if (mcp.server === "copse.run") return "shell";
     return `${MCP_GROUP_PREFIX}${mcp.server}`;
@@ -58073,7 +58339,7 @@ function buildGroupedDisplayItems(toolCalls) {
   if (toolCalls.length === 0) return [];
   const groupMembers = /* @__PURE__ */ new Map();
   for (const tc2 of toolCalls) {
-    const groupKey = getToolGroupKey(tc2.name, tc2.kind);
+    const groupKey = getToolGroupKey(tc2.programmaticName ?? tc2.name, tc2.kind);
     if (!groupKey) continue;
     const key = bucketKey(groupKey, tc2.status === "error");
     const members2 = groupMembers.get(key) ?? [];
@@ -58083,7 +58349,7 @@ function buildGroupedDisplayItems(toolCalls) {
   const result = [];
   const emittedGroups = /* @__PURE__ */ new Set();
   for (const tc2 of toolCalls) {
-    const groupKey = getToolGroupKey(tc2.name, tc2.kind);
+    const groupKey = getToolGroupKey(tc2.programmaticName ?? tc2.name, tc2.kind);
     if (!groupKey) {
       result.push({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) });
       continue;
@@ -58219,6 +58485,7 @@ var init_tool_display = __esm({
     init_humanize_identifier();
     init_thread_proposal2();
     init_reviewer_input();
+    init_copse_tool_call();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
       read_file: { running: "Reading file", done: "Read file" },
@@ -74607,26 +74874,7 @@ var init_experimental_markup = __esm({
               </p>
             </fieldset>
 
-            <fieldset>
-              <legend>Mobile Companion</legend>
-              <p class="field-hint">
-                Open your Copse threads from a phone on the same local network. Choose the network
-                interface your phone uses, pair phones, or turn sharing off. Copse must stay open
-                and this computer must stay awake.
-              </p>
-              <div class="settings-action-row">
-                <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
-                  Set up or manage\u2026
-                </button>
-              </div>
-              <div id="mobile-companion-qr" class="mobile-companion-qr" hidden>
-                <div id="mobile-companion-qr-image" class="mobile-companion-qr-image" aria-hidden="true"></div>
-                <div class="mobile-companion-qr-text">
-                  <p class="field-hint">Scan with your phone's camera to open Copse.</p>
-                  <code id="mobile-companion-qr-url" class="mobile-companion-qr-url"></code>
-                </div>
-              </div>
-            </fieldset>
+            <div id="settings-mobile-companion-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Remote desktop viewer</legend>
@@ -75204,13 +75452,8 @@ function mountSettingsDialog(store2, api2) {
   qsRequired(overlay, "#settings-usage-host").append(usageSection.root);
   const aboutSection = createAboutSection(api2);
   qsRequired(overlay, "#settings-about-host").append(aboutSection.root);
-  qsRequired(overlay, "#mobile-companion-manage").addEventListener(
-    "click",
-    () => {
-      closeSettingsDialog();
-      void api2.mobile.manage();
-    }
-  );
+  const mobileCompanionSection = createMobileCompanionSection(api2);
+  qsRequired(overlay, "#settings-mobile-companion-host").append(mobileCompanionSection.root);
   const form = qsRequired(overlay, "form");
   const status = qsRequired(overlay, "#settings-save-status");
   const loadRetry = qsRequired(overlay, "#settings-load-retry");
@@ -75335,12 +75578,11 @@ function mountSettingsDialog(store2, api2) {
       experimental: {
         retainDrafts: true,
         refresh: async (values, signal) => {
-          await Promise.all([modelsSection.refreshWorker(values, signal), packs.refresh(signal)]);
-          const status2 = await api2.mobile.status();
-          if (signal.aborted) return;
-          qsRequired(overlay, "#mobile-companion-qr-image").innerHTML = status2.qrSvg ?? "";
-          qsRequired(overlay, "#mobile-companion-qr-url").textContent = status2.url ?? "";
-          qsRequired(overlay, "#mobile-companion-qr").hidden = !status2.url || !status2.qrSvg;
+          await Promise.all([
+            modelsSection.refreshWorker(values, signal),
+            packs.refresh(signal),
+            mobileCompanionSection.refresh()
+          ]);
         },
         deactivate: () => {
           packs.invalidate();
@@ -75543,6 +75785,7 @@ var init_settings_dialog = __esm({
     init_tool_permissions_panel();
     init_usage_section();
     init_about_section();
+    init_mobile_companion_section();
     init_models_section();
     init_providers_section2();
     init_appearance_section();
@@ -79147,6 +79390,143 @@ var init_demo_site_tour = __esm({
   }
 });
 
+// src/shared/demo-bridged-tools.ts
+var CREATED_AT, MODEL, PATCH, BRIDGED_TOOL_SCENARIOS;
+var init_demo_bridged_tools = __esm({
+  "src/shared/demo-bridged-tools.ts"() {
+    CREATED_AT = Date.UTC(2026, 9, 11, 9);
+    MODEL = "claude-opus-5-5";
+    PATCH = [
+      "*** Begin Patch",
+      "*** Update File: src/greeting.ts",
+      "-hello",
+      "+hello, world",
+      "*** Add File: src/farewell.ts",
+      "+goodbye",
+      "*** End Patch"
+    ].join("\n");
+    BRIDGED_TOOL_SCENARIOS = [
+      {
+        id: "bridged-tools",
+        label: "Patch file links and command output",
+        project: { id: "demo-bridge-project", name: "Bridge tools", path: "/demo/bridge" },
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off", model: MODEL },
+        threads: [
+          {
+            id: "demo-bridge-thread",
+            title: "Update greetings",
+            status: "idle",
+            model: MODEL,
+            messages: [
+              {
+                id: "bridge-user",
+                role: "user",
+                content: "Update the greetings.",
+                toolCalls: [],
+                createdAt: CREATED_AT
+              },
+              {
+                id: "bridge-patch",
+                role: "assistant",
+                content: "Updated both greetings.",
+                createdAt: CREATED_AT,
+                toolCalls: [
+                  {
+                    id: "bridge-patch-call",
+                    name: "copse.apply_patch",
+                    args: { input: PATCH },
+                    status: "done",
+                    result: "Patched two files."
+                  }
+                ]
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: CREATED_AT,
+            updatedAt: CREATED_AT
+          }
+        ],
+        trace: {
+          id: "bridge-shell-trace",
+          label: "Run greeting tests",
+          prompt: "Run the greeting tests.",
+          steps: [
+            {
+              chunk: {
+                type: "tool_call",
+                toolCall: {
+                  id: "bridge-shell",
+                  name: "Run greeting tests",
+                  programmaticName: "mcp__copse__run_shell",
+                  args: { command: "pnpm test greetings" }
+                }
+              }
+            },
+            {
+              chunk: {
+                type: "tool_result",
+                toolCallId: "bridge-shell",
+                result: "2 greeting tests passed.",
+                isError: false
+              }
+            },
+            { chunk: { type: "text", text: "Both greeting tests passed." } },
+            { chunk: { type: "done", stopReason: "end_turn" } }
+          ]
+        }
+      },
+      {
+        id: "bridged-tools-concise",
+        label: "Running command in concise view",
+        project: { id: "demo-bridge-concise-project", name: "Bridge tools", path: "/demo/bridge" },
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: MODEL,
+          conciseThreadsEnabled: true
+        },
+        threads: [
+          {
+            id: "demo-bridge-concise-thread",
+            title: "Test greetings",
+            status: "running",
+            model: MODEL,
+            messages: [
+              {
+                id: "bridge-concise-user",
+                role: "user",
+                content: "Run the greeting tests.",
+                toolCalls: [],
+                createdAt: CREATED_AT
+              },
+              {
+                id: "bridge-concise-shell",
+                role: "assistant",
+                content: "",
+                model: MODEL,
+                createdAt: CREATED_AT,
+                toolCalls: [
+                  {
+                    id: "bridge-running-shell",
+                    name: "copse-run_shell: Test greetings",
+                    args: { command: "pnpm test greetings" },
+                    status: "running",
+                    result: null
+                  }
+                ]
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: CREATED_AT,
+            updatedAt: CREATED_AT
+          }
+        ]
+      }
+    ];
+  }
+});
+
 // src/shared/approval-copy.ts
 function webApprovalDetails(origin, url2, allowRemember, context) {
   return {
@@ -79425,17 +79805,20 @@ function approvalRiskScenario(id, request) {
     approvalRequests: [request]
   };
 }
-var FIXED_TIME, SIDE_CHATS_MAIN_ID, SIDE_CHATS_OTHER_ID, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, SIDE_CHATS_THREADS, DEMO_SCENARIOS;
+var FIXED_TIME, SIDE_CHATS_MAIN_ID, SIDE_CHATS_OTHER_ID, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, MOBILE_COMPANION_DEMO_URL, MOBILE_COMPANION_DEMO_QR_SVG, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, SIDE_CHATS_THREADS, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
     init_demo_site_tour();
+    init_demo_bridged_tools();
     init_approval_copy();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
     SIDE_CHATS_MAIN_ID = "7b3e9a10-5c2d-4f6e-8a41-0d9c2b7e5f13";
     SIDE_CHATS_OTHER_ID = "3c1f0a52-8b3e-4d7a-9f10-2a6b7c8d9e01";
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
+    MOBILE_COMPANION_DEMO_URL = "https://192.168.1.42:42773";
+    MOBILE_COMPANION_DEMO_QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27 27" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h27v27H0z"/><path stroke="#000000" d="M1 1.5h7m3 0h3m1 0h1m3 0h7M1 2.5h1m5 0h1m3 0h1m1 0h1m2 0h1m2 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m1 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h2m2 0h2m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m1 0h1m5 0h2m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m1 0h2m2 0h3m1 0h1m1 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h3m4 0h1M1 9.5h1m1 0h5m2 0h2m1 0h2m2 0h1m1 0h5M2 10.5h2m1 0h1m2 0h1m1 0h1m1 0h3m1 0h2m1 0h1m4 0h1M1 11.5h2m3 0h2m1 0h1m1 0h2m4 0h3m1 0h2m1 0h2M3 12.5h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m7 0h1M3 13.5h1m2 0h5m1 0h1m2 0h2m1 0h4m1 0h3M1 14.5h2m1 0h2m3 0h2m2 0h1m2 0h7m1 0h1M1 15.5h1m1 0h1m1 0h5m1 0h1m6 0h1m1 0h3m1 0h2M1 16.5h1m2 0h2m4 0h2m1 0h3m1 0h2m1 0h1m4 0h1M1 17.5h1m1 0h2m2 0h2m1 0h2m1 0h1m3 0h5m1 0h1M9 18.5h1m1 0h1m4 0h2m3 0h2M1 19.5h7m3 0h3m3 0h1m1 0h1m1 0h1m1 0h3M1 20.5h1m5 0h1m1 0h1m2 0h1m4 0h1m3 0h2m1 0h2M1 21.5h1m1 0h3m1 0h1m1 0h4m3 0h10M1 22.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m6 0h2m2 0h1M1 23.5h1m1 0h3m1 0h1m1 0h1m4 0h3m1 0h1m1 0h3m2 0h1M1 24.5h1m5 0h1m5 0h2m4 0h5m1 0h1M1 25.5h7m1 0h1m1 0h1m1 0h1m1 0h11"/></svg>';
     DEMO_CODEX_ACP_AGENT = {
       id: "codex-acp",
       title: "Codex",
@@ -80784,6 +81167,7 @@ var init_demo_scenarios = __esm({
           theme: "dark",
           uiTintStrength: "off"
         },
+        mobileCompanion: { url: MOBILE_COMPANION_DEMO_URL, qrSvg: MOBILE_COMPANION_DEMO_QR_SVG },
         threads: [
           {
             id: "demo-settings-footer-thread",
@@ -82124,6 +82508,7 @@ var init_demo_scenarios = __esm({
           }
         ]
       },
+      ...BRIDGED_TOOL_SCENARIOS,
       conciseThreadScenario(
         "concise-thread-working",
         "Concise thread view while a capable model works",
@@ -82384,9 +82769,25 @@ function createDemoApi(scenario, options = {}) {
   );
   const api2 = {
     mobile: {
-      manage: async () => {
+      getState: () => resolved2({
+        enabled: scenario.mobileCompanion !== void 0,
+        running: scenario.mobileCompanion !== void 0,
+        url: scenario.mobileCompanion?.url ?? null,
+        qrSvg: scenario.mobileCompanion?.qrSvg ?? null,
+        rootCertificatePath: null,
+        addresses: scenario.mobileCompanion ? [{ address: new URL(scenario.mobileCompanion.url).hostname, interfaceName: "Wi-Fi" }] : [],
+        devices: [],
+        pairing: null,
+        lastError: null
+      }),
+      onStateChanged: () => () => {
       },
-      status: () => resolved2(MOBILE_COMPANION_DEMO_STATUS),
+      enable: () => resolvedVoid(),
+      disable: () => resolvedVoid(),
+      setDeviceAccess: () => resolvedVoid(),
+      revokeDevice: () => resolvedVoid(),
+      respondPairing: () => resolvedVoid(),
+      revealCertificate: () => resolvedVoid(),
       onChat: () => () => {
       },
       reply: async () => {
@@ -83448,7 +83849,7 @@ function createDemoApi(scenario, options = {}) {
   };
   return api2;
 }
-var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray, MOBILE_COMPANION_DEMO_QR_SVG, MOBILE_COMPANION_DEMO_STATUS;
+var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
     init_storage_cleanup();
@@ -83727,12 +84128,6 @@ var init_demo_api = __esm({
       }
     ];
     emptyArray = () => Promise.resolve([]);
-    MOBILE_COMPANION_DEMO_QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27 27" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h27v27H0z"/><path stroke="#000000" d="M1 1.5h7m3 0h3m1 0h1m3 0h7M1 2.5h1m5 0h1m3 0h1m1 0h1m2 0h1m2 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m1 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h2m2 0h2m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m1 0h1m5 0h2m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m1 0h2m2 0h3m1 0h1m1 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h3m4 0h1M1 9.5h1m1 0h5m2 0h2m1 0h2m2 0h1m1 0h5M2 10.5h2m1 0h1m2 0h1m1 0h1m1 0h3m1 0h2m1 0h1m4 0h1M1 11.5h2m3 0h2m1 0h1m1 0h2m4 0h3m1 0h2m1 0h2M3 12.5h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m7 0h1M3 13.5h1m2 0h5m1 0h1m2 0h2m1 0h4m1 0h3M1 14.5h2m1 0h2m3 0h2m2 0h1m2 0h7m1 0h1M1 15.5h1m1 0h1m1 0h5m1 0h1m6 0h1m1 0h3m1 0h2M1 16.5h1m2 0h2m4 0h2m1 0h3m1 0h2m1 0h1m4 0h1M1 17.5h1m1 0h2m2 0h2m1 0h2m1 0h1m3 0h5m1 0h1M9 18.5h1m1 0h1m4 0h2m3 0h2M1 19.5h7m3 0h3m3 0h1m1 0h1m1 0h1m1 0h3M1 20.5h1m5 0h1m1 0h1m2 0h1m4 0h1m3 0h2m1 0h2M1 21.5h1m1 0h3m1 0h1m1 0h4m3 0h10M1 22.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m6 0h2m2 0h1M1 23.5h1m1 0h3m1 0h1m1 0h1m4 0h3m1 0h1m1 0h3m2 0h1M1 24.5h1m5 0h1m5 0h2m4 0h5m1 0h1M1 25.5h7m1 0h1m1 0h1m1 0h1m1 0h11"/></svg>';
-    MOBILE_COMPANION_DEMO_STATUS = {
-      enabled: true,
-      url: "https://192.168.1.42:42773",
-      qrSvg: MOBILE_COMPANION_DEMO_QR_SVG
-    };
   }
 });
 
@@ -98117,7 +98512,7 @@ function runningToolCall(thread) {
   return null;
 }
 function shellCommand(tc2) {
-  if (tc2.name !== "run_shell" && tc2.kind !== "execute") return null;
+  if (!isCopseToolCall(tc2, "run_shell") && tc2.kind !== "execute") return null;
   const command = isRecord(tc2.args) ? tc2.args["command"] : void 0;
   return typeof command === "string" && command.trim() ? shellCommandLabel(command) : null;
 }
@@ -98136,6 +98531,7 @@ var init_concise_thread = __esm({
     init_intellect_lookup();
     init_todo_logic();
     init_tool_display();
+    init_copse_tool_call();
     init_unknown_value3();
     CONCISE_THREAD_MIN_INTELLECT = 50;
     conciseByModel = /* @__PURE__ */ new Map();
@@ -100263,7 +100659,7 @@ function statusIcon3(status) {
   return moreHorizontalIcon("ui-icon ui-icon-sm");
 }
 function createPatchFilesSection(tc2) {
-  if (tc2.name !== "apply_patch") return null;
+  if (!isCopseToolCall(tc2, "apply_patch")) return null;
   const files = getApplyPatchFiles(tc2);
   if (files.length === 0) return null;
   return el(
@@ -103796,6 +104192,7 @@ var init_conversation = __esm({
     init_tool_display();
     init_tool_runs();
     init_tool_interruption();
+    init_copse_tool_call();
     init_panels();
     init_thread_roadmap_origin();
     init_thread_hydration();
@@ -116757,7 +117154,6 @@ function createContextWheel() {
     popoverActive = true;
     root.tabIndex = 0;
     const usageLine = options?.usageLine?.trim() ?? usage.header;
-    root.title = usageLine;
     root.setAttribute("aria-label", usageLine);
     composePopover(null);
   }
@@ -120892,6 +121288,12 @@ ${reply}`);
     sendQuotedReply: async (content, reply) => {
       if (!getActiveThreadId() || imageDescriptionInProgress) return false;
       attachmentHandlers.quoteText(content, reply);
+      await submit();
+      return true;
+    },
+    sendMessage: async (content) => {
+      if (!getActiveThreadId() || imageDescriptionInProgress) return false;
+      composer.value = content;
       await submit();
       return true;
     },
@@ -132433,7 +132835,7 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
   const unsubChunk = api2.agent.onChunk((threadId, chunk) => {
     if (chunk.type === "tool_call") {
       const isAcpShell = chunk.toolCall.kind === "execute";
-      if (chunk.toolCall.name === "run_shell" || isAcpShell) {
+      if (isCopseToolCall(chunk.toolCall, "run_shell") || isAcpShell) {
         const command = shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.title ?? chunk.toolCall.name : null);
         if (command) addTask(chunk.toolCall.id, command, chunk.toolCall.args, threadId);
       }
@@ -132464,6 +132866,7 @@ var init_agent_tasks = __esm({
   "src/renderer/views/agent-tasks.ts"() {
     init_helpers();
     init_tool_display();
+    init_copse_tool_call();
     init_array_utils2();
     init_scoped_tabs();
     init_unknown_value3();
@@ -135056,6 +135459,17 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         },
         (check2, headSha) => {
           if (!prDetails) return;
+          const key = prRelationKey(prDetails);
+          const producingThreadId = (prRelationships ?? threadLinks.get(key) ?? []).find(
+            (row2) => row2.kinds.includes("produced")
+          )?.threadId;
+          if (producingThreadId) {
+            switchThread(store2, producingThreadId);
+            void getPromptAttachmentHandlers()?.sendMessage?.(
+              prCheckFixDraft(prDetails, check2, headSha)
+            );
+            return;
+          }
           startPrCheckFixThread(store2, prDetails, check2, headSha);
           getPromptAttachmentHandlers()?.focusComposer?.();
         }
