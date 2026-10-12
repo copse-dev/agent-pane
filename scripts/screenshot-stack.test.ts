@@ -6,6 +6,7 @@ import { load } from 'js-yaml'
 import { z } from 'zod'
 import {
   attestScreenshotStack,
+  memoizeScreenshotStackAncestry,
   parseScreenshotStack,
   reconcileScreenshotStack,
   STACK_COVERAGE,
@@ -127,6 +128,76 @@ describe('screenshot stack declarations', () => {
 })
 
 describe('combined stack review gates', () => {
+  it('shares immutable ancestry comparisons across a ten-PR stack, not live proof', async () => {
+    const f = fixture()
+    const sha = (number: number): string => number.toString(16).padStart(40, '0')
+    const text = `<!-- copse-screenshot-stack: ${Array.from({ length: 9 }, (_, i) => `#${String(i + 1)}@${sha(i + 1)}`).join(' ')} tip=#10 -->`
+    const parsed = parseScreenshotStack(text)
+    assert.ok(parsed)
+    for (let number = 1; number <= 10; number += 1) {
+      f.pulls.set(number, pull(number, sha(number), text))
+    }
+    f.statuses.set(sha(10), [
+      status('Screenshot review', 1),
+      status(STACK_COVERAGE, 2, `Stack coverage ${parsed.digest}`),
+      status(STACK_DECISION, 3, `Stack decision ${parsed.digest}`),
+    ])
+    let comparisons = 0
+    const compare = f.github.rest.repos.compareCommitsWithBasehead.bind(f.github.rest.repos)
+    f.github.rest.repos.compareCommitsWithBasehead = async (
+      request,
+    ): Promise<{ data: unknown }> => {
+      comparisons += 1
+      return compare(request)
+    }
+    const cached = memoizeScreenshotStackAncestry(f.github)
+    for (let number = 1; number <= 10; number += 1) {
+      assert.equal((await verifyScreenshotStack(cached, { ...input, number }))?.approved, true)
+    }
+    assert.equal(comparisons, 17, 'one query per immutable ancestry pair, rather than 170')
+    f.statuses.set(sha(10), [status('Screenshot review', 4, 'Review revoked', 'error')])
+    assert.equal((await verifyScreenshotStack(cached, { ...input, number: 10 }))?.approved, false)
+    f.pulls.set(3, pull(3, BASE, text))
+    await assert.rejects(
+      verifyScreenshotStack(cached, { ...input, number: 10 }),
+      /head or declaration changed/,
+    )
+  })
+  it('does not append duplicate trusted statuses and returns the verified outcome', async () => {
+    const f = fixture()
+    const description = `Stack deferred to approved tip #2 at ${TIP.slice(0, 12)}`
+    f.statuses.set(LOWER, [status('Screenshot review', 4, description)])
+    assert.deepEqual(await reconcileScreenshotStack(f.github, input), {
+      head: LOWER,
+      state: 'success',
+      description,
+    })
+    assert.deepEqual(f.writes, [])
+    f.statuses.set(LOWER, [status('Screenshot review', 5, description, 'success', 123)])
+    await reconcileScreenshotStack(f.github, input)
+    assert.equal(f.writes.length, 1, 'an untrusted lookalike must be replaced')
+  })
+  it('keeps racing-push checks live when ancestry results are already cached', async () => {
+    const f = fixture()
+    const cached = memoizeScreenshotStackAncestry(f.github)
+    await verifyScreenshotStack(cached, tipInput)
+    const get = f.github.rest.pulls.get.bind(f.github.rest.pulls)
+    let lowerReads = 0
+    f.github.rest.pulls.get = async (request): Promise<{ data: unknown }> => {
+      const result = await get(request)
+      if (request.pull_number === 1 && ++lowerReads === 1) f.pulls.set(1, pull(1, BASE))
+      return result
+    }
+    await assert.rejects(verifyScreenshotStack(cached, tipInput), /changed during validation/)
+  })
+  it('does not grow pending status history while the tip is still awaiting review', async () => {
+    const f = fixture()
+    f.statuses.set(TIP, [])
+    const description = 'Stack waiting for covered screenshot approval on tip #2'
+    f.statuses.set(LOWER, [status('Screenshot review', 4, description, 'pending')])
+    assert.equal((await reconcileScreenshotStack(f.github, input))?.state, 'pending')
+    assert.deepEqual(f.writes, [])
+  })
   it('defers lower review only to an approved tip with declaration-bound coverage', async () => {
     const f = fixture()
     const stack = await verifyScreenshotStack(f.github, input)

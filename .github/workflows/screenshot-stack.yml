@@ -43,9 +43,12 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const { reconcileScreenshotStack, parseScreenshotStack } = await import(
+            const { reconcileScreenshotStack, parseScreenshotStack, memoizeScreenshotStackAncestry } = await import(
               `${process.env.GITHUB_WORKSPACE}/scripts/screenshot-stack.mts`);
             const { owner, repo } = context.repo;
+            // Comparisons name immutable SHAs. Live PRs, declarations and
+            // review/coverage statuses must still be read on every validation.
+            const policy = memoizeScreenshotStackAncestry(github);
             const open = await github.paginate(github.rest.pulls.list, {
               owner, repo, state: 'open', per_page: 100,
             });
@@ -54,12 +57,9 @@ jobs:
             const selected = open.filter((pr) =>
               pr.head.repo?.full_name === `${owner}/${repo}`);
             for (const pr of selected) {
-              await reconcileScreenshotStack(github, { owner, repo, number: pr.number });
-              const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
-                owner, repo, ref: pr.head.sha, per_page: 100,
-              });
-              const review = statuses.find((status) => status.context === 'Screenshot review');
+              const review = await reconcileScreenshotStack(policy, { owner, repo, number: pr.number });
               if (!review?.description?.startsWith('Stack ')) continue;
+              if (review.head !== pr.head.sha) continue;
               const { data: live } = await github.rest.pulls.get({ owner, repo, pull_number: pr.number });
               if (live.head.sha !== pr.head.sha || live.body !== pr.body) continue;
               let declaration;
@@ -67,12 +67,14 @@ jobs:
               if (declaration?.tip === pr.number) continue;
               // Replace the per-PR request with the stack decision. Only the tip
               // keeps individual image acceptance controls and a review label.
-              try {
-                await github.rest.issues.removeLabel({
-                  owner, repo, issue_number: pr.number, name: 'screenshots-need-review',
-                });
-              } catch (error) {
-                if (error.status !== 404) throw error;
+              if (live.labels.some((label) => label.name === 'screenshots-need-review')) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner, repo, issue_number: pr.number, name: 'screenshots-need-review',
+                  });
+                } catch (error) {
+                  if (error.status !== 404) throw error;
+                }
               }
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner, repo, issue_number: pr.number, per_page: 100,
