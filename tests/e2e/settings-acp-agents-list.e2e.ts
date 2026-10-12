@@ -68,6 +68,24 @@ describe('Coding agents list in Settings', () => {
     // Agents that are not installed are not listed until the user goes looking.
     await expect(list.$('.acp-row[data-agent="cursor"]')).not.toExist()
 
+    // The list shows a chip only for an installed agent whose sign-in state is
+    // known, so check both IPC answers first: a failure here names the missing
+    // half instead of timing out on the chip.
+    const probe = await browser.execute(async () => {
+      const found = await window.api.acp.detectAgents()
+      const installed = found.filter((agent) => agent.installed).map((agent) => agent.id)
+      const auth = installed.length ? await window.api.acp.authStatus(installed) : []
+      return { installed, auth }
+    })
+    assert.ok(
+      probe.installed.includes('codex-acp'),
+      `codex-acp not detected: ${JSON.stringify(probe)}`,
+    )
+    assert.ok(
+      probe.auth.some((entry) => entry.id === 'codex-acp' && entry.state !== 'unknown'),
+      `codex-acp has no sign-in state: ${JSON.stringify(probe)}`,
+    )
+
     // The status chip shares the row with the agent name, whatever its width.
     const chip = codex.$('.acp-row-chip')
     await chip.waitForExist({ timeout: 15_000 })
