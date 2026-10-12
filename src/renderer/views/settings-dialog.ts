@@ -6,7 +6,7 @@ import type { ModelSettingsTarget } from '@shared/model-invalidation.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { closeIcon } from '../dom/icons.ts'
-import { errorMessage } from '@shared/errors.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { createClassifiersSection } from './setup/classifiers-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { createToolPermissionsPanel } from './tool-permissions-panel.ts'
@@ -295,7 +295,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       },
     },
     (id, error): void => {
-      status.textContent = `Could not load ${id}: ${errorMessage(error)}`
+      status.textContent = `Could not load ${id}: ${ipcErrorMessage(error, 'Please try again.')}`
       status.hidden = false
       overlay.dataset['settingsRefreshFailed'] = id
     },
@@ -373,7 +373,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         revealModelSettingsControl(overlay, modelTarget)
     })().catch((error: unknown) => {
       if (mine !== openGeneration || !isSettingsDialogOpen()) return
-      status.textContent = `Could not load settings: ${errorMessage(error)}`
+      status.textContent = `Could not load settings: ${ipcErrorMessage(error, 'Please try again.')}`
       status.hidden = false
       loadRetry.hidden = snapshot !== null
     })
@@ -469,7 +469,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })()
       .catch((error: unknown) => {
         if (mine !== openGeneration || !isSettingsDialogOpen()) return
-        status.textContent = errorMessage(error)
+        status.textContent = ipcErrorMessage(error, 'Could not save settings. Please try again.')
         status.hidden = false
       })
       .finally(() => {
