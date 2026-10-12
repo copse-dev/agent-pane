@@ -80111,6 +80111,31 @@ var init_demo_scenarios = __esm({
         threads: SIDE_CHATS_THREADS
       },
       {
+        id: "thread-context-worktree",
+        label: "Context identifies a dedicated worktree and its branch",
+        project: project("demo-context-worktree", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          filesPaneOpen: true,
+          rightPanelMode: "context"
+        },
+        threads: SIDE_CHATS_THREADS.map(
+          (thread) => thread.id === SIDE_CHATS_MAIN_ID ? {
+            ...thread,
+            worktree: {
+              path: "/demo/widgets/.copse/worktrees/mermaid-wait",
+              branch: "fix/mermaid-wait",
+              baseBranch: "main",
+              baseCommit: "0000000000000000000000000000000000000000",
+              createdAt: FIXED_TIME,
+              seededFromDirtyProject: false
+            }
+          } : thread
+        )
+      },
+      {
         id: "side-chat-approval",
         label: "A side chat asks for approval over its parent thread",
         project: project("demo-side-chat-approval", "Widgets", "/demo/widgets"),
@@ -133920,7 +133945,7 @@ function deriveThreadContext(input2) {
     const branch = thread.worktree?.branch ?? thread.gitBranch;
     repos.push({
       name: project2.name,
-      path: project2.path,
+      path: thread.worktree?.path ?? project2.path,
       ...branch !== void 0 ? { branch } : {},
       checkout
     });
@@ -134039,7 +134064,11 @@ function reposSection(model) {
           { class: "thread-context-main" },
           el("span", { class: "thread-context-title" }, repo.name)
         ),
-        el("span", { class: "thread-context-meta" }, "Primary")
+        el(
+          "span",
+          { class: "thread-context-meta" },
+          [repo.checkout === "worktree" ? "Worktree" : "Primary", repo.branch].filter(Boolean).join(" \xB7 ")
+        )
       )
     )
   );
@@ -153619,6 +153648,15 @@ function createVncSshHostForm(api2, onSaved, onClose) {
     importButton.disabled = value;
     cancel.disabled = value;
   }
+  async function requireSshEnabled() {
+    if (await api2.settings.get("sshWorkspaceEnabled") === true) return true;
+    setInlineStatus(
+      status,
+      "error",
+      "Enable SSH workspaces in Settings before adding or importing an SSH machine."
+    );
+    return false;
+  }
   cancel.addEventListener("click", close);
   root.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -153638,6 +153676,7 @@ function createVncSshHostForm(api2, onSaved, onClose) {
     void (async () => {
       busy(true);
       try {
+        if (!await requireSshEnabled()) return;
         const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
         if (existing.some((item) => item.id === parsed2.host.id)) {
           setInlineStatus(status, "error", "A machine with this id already exists.");
@@ -153657,6 +153696,7 @@ function createVncSshHostForm(api2, onSaved, onClose) {
     void (async () => {
       busy(true);
       try {
+        if (!await requireSshEnabled()) return;
         const aliases = await api2.sshWorkspace.listConfigAliases();
         if (aliases.length === 0) {
           setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
