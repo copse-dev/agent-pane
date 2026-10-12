@@ -322,13 +322,20 @@ describe('browser-hosted Activity home', () => {
       const probe = await browser.execute(() => {
         const approve = document.querySelector('#activity-home .activity-approve')
         const input = document.getElementById('input-bar')
+        const card = document.querySelector('#activity-home .activity-panel-body')
         return {
+          approveTop: approve?.getBoundingClientRect().top ?? 0,
           approveBottom: approve?.getBoundingClientRect().bottom ?? 0,
           inputTop: input?.getBoundingClientRect().top ?? 0,
+          cardTop: card?.getBoundingClientRect().top ?? 0,
+          cardBottom: card?.getBoundingClientRect().bottom ?? 0,
         }
       })
       await saveAppScreenshot('activity-home-short.png')
+      await expect($('#activity-home .activity-home-caption')).not.toBeDisplayed()
       expect(probe.approveBottom).toBeLessThanOrEqual(probe.inputTop + 1)
+      expect(probe.approveTop).toBeGreaterThanOrEqual(probe.cardTop)
+      expect(probe.approveBottom).toBeLessThanOrEqual(probe.cardBottom + 1)
     } finally {
       await browser.setWindowSize(before.width, before.height)
     }

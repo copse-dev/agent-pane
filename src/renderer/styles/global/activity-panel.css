@@ -650,6 +650,11 @@ dialog.activity-panel-overlay {
   .activity-home .activity-panel-body {
     min-height: 200px;
   }
+  .activity-home-caption {
+    /* The composer already identifies the new-thread action. Give the request
+       and its decisions the space in short windows instead of covering a hint. */
+    display: none;
+  }
 }
 /* 760px, not the 640px the short-pane media query above uses: below it the list
    column's 0.43fr share would compute under its 285px floor, so the floor wins
