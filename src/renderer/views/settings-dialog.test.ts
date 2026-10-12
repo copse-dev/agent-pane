@@ -707,14 +707,20 @@ describe('Settings snapshot and submitted draft lifecycle', () => {
       settings: {
         ...base.settings,
         getSnapshot: async () => {
-          if (++calls === 1) throw new Error('Temporary failure')
+          if (++calls === 1)
+            throw new Error(
+              "Error invoking remote method 'settings:get-snapshot': Error: Temporary failure",
+            )
           return retry.promise
         },
       },
     })
     openSettingsDialog('appearance')
     await tick()
-    assert.match(qsRequired(dialog, '#settings-save-status').textContent, /Temporary failure/)
+    assert.equal(
+      qsRequired(dialog, '#settings-save-status').textContent,
+      'Could not load settings: Temporary failure',
+    )
     assert.equal(qsRequired<HTMLButtonElement>(dialog, 'button[type="submit"]').disabled, true)
     const button = qsRequired<HTMLButtonElement>(dialog, '#settings-load-retry')
     assert.equal(button.hidden, false)
@@ -870,7 +876,9 @@ describe('Settings snapshot and submitted draft lifecycle', () => {
         getSnapshot: async () => ({ theme: 'dark' }),
         update: async () => {},
         setSecurity: async () => {
-          throw new Error('Security save failed')
+          throw new Error(
+            "Error invoking remote method 'settings:set-security': Error: Security save failed",
+          )
         },
       },
     })
@@ -884,7 +892,7 @@ describe('Settings snapshot and submitted draft lifecycle', () => {
     submit(dialog)
     await tick()
     assert.equal(dialog.open, true)
-    assert.match(qsRequired(dialog, '#settings-save-status').textContent, /Security save failed/)
+    assert.equal(qsRequired(dialog, '#settings-save-status').textContent, 'Security save failed')
     change(theme, 'dark')
     closeSettingsDialog()
     dialog.dispatchEvent(new Event('close'))
@@ -899,7 +907,7 @@ describe('Settings snapshot and submitted draft lifecycle', () => {
       settings: {
         ...base.settings,
         update: async () => {
-          throw new Error('Storage is full')
+          throw new Error("Error invoking remote method 'settings:update': Error: Storage is full")
         },
         setSecurity: async () => {
           securityWrites += 1
@@ -916,7 +924,7 @@ describe('Settings snapshot and submitted draft lifecycle', () => {
     await tick()
     assert.equal(securityWrites, 0)
     assert.equal(dialog.open, true)
-    assert.match(qsRequired(dialog, '#settings-save-status').textContent, /Storage is full/)
+    assert.equal(qsRequired(dialog, '#settings-save-status').textContent, 'Storage is full')
     assert.equal(qsRequired(dialog, '.settings-body').inert, false)
   })
 })
