@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -13,8 +13,10 @@ describe('roadmap project switching', () => {
 
   before(async () => {
     resetUserData()
-    const workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-roadmap-switch-'))
-    cleanup.push(workspaceRoot)
+    const parent = mkdtempSync(join(tmpdir(), 'copse-roadmap-switch-'))
+    cleanup.push(parent)
+    const workspaceRoot = join(parent, 'roadmap-switch')
+    mkdirSync(workspaceRoot)
     ;({ projectAId: projectA, projectBId: projectB } = seedProjectSwitchFixture(workspaceRoot, {
       roadmapPlansEnabled: true,
     }))

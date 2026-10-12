@@ -94,6 +94,7 @@
 // v55 versions host-owned container authentication.
 // v56 versions threads:archive stopProcesses and blocked-running live-work reports.
 // v57 versions approval effect, boundary, and grant-scope details.
-// v58 integrates the device-bound vault wire changes.
-// v59 integrates Send now abort causes.
+// v58 versions inline Mobile Companion settings endpoints.
+// v59 integrates the device-bound vault wire changes.
+// v60 integrates Send now abort causes.
 export const API_PROTOCOL_VERSION = 60 as const
