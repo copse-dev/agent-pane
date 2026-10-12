@@ -10,7 +10,8 @@ export const ROADMAP_TYPE = 'Roadmap'
  * surfaces produce identically-shaped notes.
  */
 export function roadmapTitleFromPrompt(prompt: string): string {
-  return prompt.slice(0, 80)
+  const firstLine = prompt.trim().split(/\r?\n/, 1)[0] ?? ''
+  return firstLine.trim().slice(0, 80)
 }
 
 /**
