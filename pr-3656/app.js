@@ -22086,6 +22086,9 @@ function ipcErrorMessage(err2, fallback) {
   if (!(err2 instanceof Error)) return fallback;
   return unwrapIpcErrorText(err2.message) || fallback;
 }
+function isUnavailableThreadCheckoutError(err2) {
+  return err2 instanceof Error && /^ThreadWorktree(?:OnBaseBranch|Detached)Error:/.test(unwrapIpcErrorText(err2.message));
+}
 var init_ipc_error_message = __esm({
   "src/renderer/ipc-error-message.ts"() {
   }
@@ -53928,6 +53931,266 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
+// src/renderer/views/setup/mobile-companion-section.ts
+function createMobileCompanionSection(api2) {
+  const status = el("span", { class: "mobile-companion-status" });
+  const enabledInput = el("input", { type: "checkbox", name: "mobileCompanionEnabled" });
+  const addressSelect = el("select", { name: "mobileCompanionAddress" });
+  const addressHint = el("p", { class: "field-hint" });
+  const connectionInfo = el("div", { class: "mobile-companion-connection" });
+  const qrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
+  const qrUrl = el("code", { class: "mobile-companion-qr-url" });
+  const qrHost = el(
+    "div",
+    { id: "mobile-companion-qr", class: "mobile-companion-qr", hidden: true },
+    qrImage,
+    el(
+      "div",
+      { class: "mobile-companion-qr-text" },
+      el("p", { class: "field-hint" }, "Scan with your phone's camera to open Copse."),
+      qrUrl
+    )
+  );
+  const pairingHost = el("div", { class: "mobile-companion-pairing" });
+  const deviceList = el("div", { class: "mobile-companion-device-list" });
+  let lastPairingKey = null;
+  let lastDevicesKey = null;
+  function renderAddresses(state) {
+    const previous = addressSelect.value;
+    clear(addressSelect);
+    for (const candidate of state.addresses) {
+      addressSelect.append(
+        el(
+          "option",
+          { value: candidate.address },
+          `${candidate.interfaceName} \u2014 ${candidate.address}`
+        )
+      );
+    }
+    if (state.addresses.some((candidate) => candidate.address === previous))
+      addressSelect.value = previous;
+    const disabled = state.addresses.length === 0 || state.enabled;
+    if (disabled) addressSelect.setAttribute("disabled", "");
+    else addressSelect.removeAttribute("disabled");
+    addressHint.textContent = state.addresses.length === 0 ? "Connect this Mac to a private Wi-Fi or wired network first." : "Pick the interface your phone is on \u2014 usually Wi-Fi. Turn Mobile Companion off to change it.";
+  }
+  function renderConnection(state) {
+    clear(connectionInfo);
+    if (!state.enabled) {
+      qrHost.hidden = true;
+      return;
+    }
+    if (!state.running || !state.url) {
+      qrHost.hidden = true;
+      connectionInfo.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          "Enabled, but its local server is not running yet. Copse retries automatically while it is open."
+        )
+      );
+      return;
+    }
+    connectionInfo.append(
+      el("p", {}, "Open ", el("strong", {}, state.url), " on your phone."),
+      el(
+        "p",
+        { class: "field-hint" },
+        "Transfer the trust certificate directly to your phone and install it there for a verified connection \u2014 it can only vouch for private-network addresses, never a website. Remove it from the phone\u2019s certificate settings when you no longer need it."
+      )
+    );
+    if (state.rootCertificatePath) {
+      const revealBtn = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary" },
+        "Reveal certificate\u2026"
+      );
+      revealBtn.addEventListener("click", () => {
+        void api2.mobile.revealCertificate();
+      });
+      connectionInfo.append(revealBtn);
+    }
+    connectionInfo.append(qrHost);
+    if (state.qrSvg) {
+      qrImage.innerHTML = state.qrSvg;
+      qrUrl.textContent = state.url;
+      qrHost.hidden = false;
+    } else {
+      qrHost.hidden = true;
+    }
+  }
+  function pairingKey(state) {
+    return state.pairing ? `${state.pairing.label}:${state.pairing.code}` : null;
+  }
+  function renderPairing(state) {
+    const key = pairingKey(state);
+    if (key === lastPairingKey) return;
+    lastPairingKey = key;
+    clear(pairingHost);
+    const pairing = state.pairing;
+    if (!pairing) return;
+    const trustInput = el("input", { type: "checkbox" });
+    const controlBtn = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-primary", disabled: true },
+      "Allow control"
+    );
+    const readBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Read only");
+    const denyBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Deny");
+    trustInput.addEventListener("change", () => {
+      controlBtn.toggleAttribute("disabled", !trustInput.checked);
+    });
+    readBtn.addEventListener("click", () => {
+      void api2.mobile.respondPairing("read");
+    });
+    controlBtn.addEventListener("click", () => {
+      if (trustInput.checked) void api2.mobile.respondPairing("control");
+    });
+    denyBtn.addEventListener("click", () => {
+      void api2.mobile.respondPairing("deny");
+    });
+    pairingHost.append(
+      el(
+        "div",
+        { class: "mobile-companion-pairing-banner" },
+        el("p", {}, "Does this code appear on ", el("strong", {}, pairing.label), "?"),
+        el("p", { class: "mobile-companion-pairing-code" }, pairing.code),
+        el(
+          "p",
+          { class: "field-hint" },
+          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Allow control opens a desktop confirmation of certificate trust."
+        ),
+        el(
+          "label",
+          { class: "checkbox-label" },
+          trustInput,
+          " The Copse Local Root is installed and trusted on this phone"
+        ),
+        el("div", { class: "settings-action-row" }, denyBtn, readBtn, controlBtn)
+      )
+    );
+  }
+  function deviceRow(device) {
+    const row2 = el("div", { class: "mobile-companion-device-row" });
+    const summary = el(
+      "div",
+      { class: "mobile-companion-device-summary" },
+      el("strong", {}, device.label),
+      ` \u2014 ${device.access === "control" ? "Chat and run control" : "Read only"}`
+    );
+    const actions = el("div", { class: "mobile-companion-device-actions" });
+    if (device.access === "control") {
+      const toReadBtn = el("button", { type: "button" }, "Make read only");
+      toReadBtn.addEventListener("click", () => {
+        void api2.mobile.setDeviceAccess(device.id, "read");
+      });
+      actions.append(toReadBtn);
+    } else {
+      const trustInput = el("input", { type: "checkbox" });
+      const toControlBtn = el("button", { type: "button", disabled: true }, "Allow control");
+      trustInput.addEventListener("change", () => {
+        toControlBtn.toggleAttribute("disabled", !trustInput.checked);
+      });
+      toControlBtn.addEventListener("click", () => {
+        if (trustInput.checked) void api2.mobile.setDeviceAccess(device.id, "control");
+      });
+      actions.append(
+        el(
+          "label",
+          { class: "checkbox-label mobile-companion-trust-label" },
+          trustInput,
+          " Trusted"
+        ),
+        toControlBtn
+      );
+    }
+    const revokeBtn = el(
+      "button",
+      { type: "button", class: "mobile-companion-device-revoke" },
+      "Revoke"
+    );
+    revokeBtn.addEventListener("click", () => {
+      void api2.mobile.revokeDevice(device.id);
+    });
+    actions.append(revokeBtn);
+    row2.append(summary, actions);
+    return row2;
+  }
+  function renderDevices(state) {
+    const key = JSON.stringify(state.devices);
+    if (key === lastDevicesKey) return;
+    lastDevicesKey = key;
+    clear(deviceList);
+    if (state.devices.length === 0) {
+      deviceList.append(el("p", { class: "field-hint" }, "No phones are paired."));
+      return;
+    }
+    deviceList.append(
+      el(
+        "p",
+        { class: "field-hint" },
+        "Revoking access takes effect immediately. If you installed the Copse Local Root on that phone, remove it in the phone\u2019s certificate settings too."
+      )
+    );
+    for (const device of state.devices) deviceList.append(deviceRow(device));
+  }
+  function applyState(state) {
+    enabledInput.checked = state.enabled;
+    renderAddresses(state);
+    renderConnection(state);
+    renderPairing(state);
+    renderDevices(state);
+    if (state.lastError) setInlineStatus(status, "error", state.lastError);
+    else status.replaceChildren();
+  }
+  enabledInput.addEventListener("change", () => {
+    void (async () => {
+      if (enabledInput.checked) {
+        const address = addressSelect.value;
+        if (!address) {
+          enabledInput.checked = false;
+          return;
+        }
+        await api2.mobile.enable(address);
+      } else {
+        await api2.mobile.disable();
+      }
+      await refresh();
+    })();
+  });
+  async function refresh() {
+    const state = await api2.mobile.getState();
+    applyState(state);
+  }
+  api2.mobile.onStateChanged((state) => {
+    applyState(state);
+  });
+  const root = el(
+    "fieldset",
+    {},
+    el("legend", {}, "Mobile Companion"),
+    el(
+      "p",
+      { class: "field-hint" },
+      "Open your Copse threads from a phone on the same local network. Choose the network interface your phone uses, pair phones, or turn sharing off. Copse must stay open and this computer must stay awake."
+    ),
+    el("label", { class: "checkbox-label" }, enabledInput, " Enable Mobile Companion"),
+    el("label", {}, "Network ", addressSelect),
+    addressHint,
+    connectionInfo,
+    pairingHost,
+    deviceList,
+    status
+  );
+  return { root, refresh };
+}
+var init_mobile_companion_section = __esm({
+  "src/renderer/views/setup/mobile-companion-section.ts"() {
+    init_helpers();
+    init_inline_status();
+  }
+});
+
 // packages/agent/src/plugins/automations-plugin.ts
 var AUTOMATIONS_PLUGIN_ID, automationsPlugin;
 var init_automations_plugin = __esm({
@@ -54986,12 +55249,18 @@ var init_thread_proposal = __esm({
 });
 
 // src/shared/tools/copse-tool-call.ts
-function matchesCopseToolName(name, tool) {
-  return name === tool || new RegExp(`^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+${tool}(?![a-z0-9_])`, "i").test(name);
+function normalizeCopseToolName(name) {
+  const server = /^mcp__([\w.-]+?)__/i.exec(name)?.[1];
+  if (server && server.toLowerCase() !== "copse") return name;
+  const match = /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+([a-z][a-z0-9_.-]*)/i.exec(name);
+  return match?.[1]?.toLowerCase() ?? name;
+}
+function copseToolCallName(call) {
+  return normalizeCopseToolName(call.programmaticName ?? call.name);
 }
 function isCopseToolCall(call, tool) {
   return [call.name, call.programmaticName].some(
-    (name) => typeof name === "string" && matchesCopseToolName(name, tool)
+    (name) => typeof name === "string" && normalizeCopseToolName(name) === tool
   );
 }
 var init_copse_tool_call = __esm({
@@ -56198,19 +56467,15 @@ function parseMcp(name) {
   const tool = match?.[2];
   return server && tool ? { server, tool } : null;
 }
-function nativeDisplayToolName(name) {
-  const mcp = parseMcp(name);
-  return mcp?.server.toLowerCase() === "copse" ? mcp.tool : name;
-}
 function getToolDisplayName(name, tense = "done") {
-  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)];
+  const known = TOOL_DISPLAY_NAMES[normalizeCopseToolName(name)];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
   if (mcp?.tool === "startup") return `${mcp.server} startup`;
   if (mcp) return humanizeIdentifier(mcp.tool);
   const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, "");
   if (stripped !== name) return humanizeIdentifier(stripped);
-  return humanizeIdentifier(name);
+  return humanizeIdentifier(normalizeCopseToolName(name));
 }
 function stringArg(args, key) {
   if (!isRecord(args)) return null;
@@ -56225,7 +56490,7 @@ function getApplyPatchFiles(tc2) {
   return input2 === null ? [] : summarizePatch(input2);
 }
 function getToolEditPath(tc2) {
-  const name = nativeDisplayToolName(tc2.name);
+  const name = copseToolCallName(tc2);
   if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
   const key = FILE_EDIT_PATH_ARG[name];
   if (!key) return null;
@@ -56247,7 +56512,7 @@ function shellCommandArg(args) {
 function shellCommandsFromToolCalls(toolCalls) {
   const commands = [];
   for (const tc2 of toolCalls) {
-    if (tc2.name !== "run_shell" || tc2.status === "error") continue;
+    if (!isCopseToolCall(tc2, "run_shell") || tc2.status === "error") continue;
     const command2 = shellCommandArg(tc2.args);
     if (command2) commands.push(stripShellCdPrefix(command2).trim());
   }
@@ -56255,8 +56520,8 @@ function shellCommandsFromToolCalls(toolCalls) {
 }
 function getToolCallLabel(tc2) {
   const tense = tenseFromStatus(tc2.status);
-  const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
-  const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
+  const mcpTitle = tc2.title && (parseMcp(tc2.title) || normalizeCopseToolName(tc2.title) !== tc2.title && !/\s/.test(tc2.title)) ? tc2.title : void 0;
+  const name = copseToolCallName({ ...tc2, name: mcpTitle ?? tc2.name });
   const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
   if (name === "read_skill") {
     const skillName = stringArg(tc2.args, "name");
@@ -56312,17 +56577,13 @@ function getToolCallLabel(tc2) {
     if (title) return shellCommandLabel(title);
   }
   if (title) return title;
-  return getToolDisplayName(mcpTitle ?? tc2.name, tense);
+  return getToolDisplayName(tc2.programmaticName ?? mcpTitle ?? tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
-  const builtIn = TOOL_TO_GROUP.get(name);
+  const builtIn = TOOL_TO_GROUP.get(normalizeCopseToolName(name));
   if (builtIn) return builtIn;
   const mcp = parseMcp(name);
   if (mcp) {
-    if (mcp.server === "copse") {
-      const copseBuiltIn = TOOL_TO_GROUP.get(mcp.tool);
-      if (copseBuiltIn) return copseBuiltIn;
-    }
     if (mcp.server === "copse.git") return "git";
     if (mcp.server === "copse.run") return "shell";
     return `${MCP_GROUP_PREFIX}${mcp.server}`;
@@ -56350,7 +56611,7 @@ function buildGroupedDisplayItems(toolCalls) {
   if (toolCalls.length === 0) return [];
   const groupMembers = /* @__PURE__ */ new Map();
   for (const tc2 of toolCalls) {
-    const groupKey = getToolGroupKey(tc2.name, tc2.kind);
+    const groupKey = getToolGroupKey(tc2.programmaticName ?? tc2.name, tc2.kind);
     if (!groupKey) continue;
     const key = bucketKey(groupKey, tc2.status === "error");
     const members2 = groupMembers.get(key) ?? [];
@@ -56360,7 +56621,7 @@ function buildGroupedDisplayItems(toolCalls) {
   const result = [];
   const emittedGroups = /* @__PURE__ */ new Set();
   for (const tc2 of toolCalls) {
-    const groupKey = getToolGroupKey(tc2.name, tc2.kind);
+    const groupKey = getToolGroupKey(tc2.programmaticName ?? tc2.name, tc2.kind);
     if (!groupKey) {
       result.push({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) });
       continue;
@@ -56496,6 +56757,7 @@ var init_tool_display = __esm({
     init_humanize_identifier();
     init_thread_proposal2();
     init_reviewer_input();
+    init_copse_tool_call();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
       read_file: { running: "Reading file", done: "Read file" },
@@ -56879,9 +57141,1230 @@ var init_artefact_previews = __esm({
   }
 });
 
+// node_modules/.pnpm/marked@17.0.6/node_modules/marked/lib/marked.esm.js
+function M() {
+  return { async: false, breaks: false, extensions: null, gfm: true, hooks: null, pedantic: false, renderer: null, silent: false, tokenizer: null, walkTokens: null };
+}
+function G(u4) {
+  O = u4;
+}
+function k(u4, e3 = "") {
+  let t2 = typeof u4 == "string" ? u4 : u4.source, n2 = { replace: (r2, i3) => {
+    let s16 = typeof i3 == "string" ? i3 : i3.source;
+    return s16 = s16.replace(m.caret, "$1"), t2 = t2.replace(r2, s16), n2;
+  }, getRegex: () => new RegExp(t2, e3) };
+  return n2;
+}
+function T(u4, e3) {
+  if (e3) {
+    if (m.escapeTest.test(u4)) return u4.replace(m.escapeReplace, ke);
+  } else if (m.escapeTestNoEncode.test(u4)) return u4.replace(m.escapeReplaceNoEncode, ke);
+  return u4;
+}
+function J(u4) {
+  try {
+    u4 = encodeURI(u4).replace(m.percentDecode, "%");
+  } catch {
+    return null;
+  }
+  return u4;
+}
+function V(u4, e3) {
+  let t2 = u4.replace(m.findPipe, (i3, s16, a3) => {
+    let o3 = false, l2 = s16;
+    for (; --l2 >= 0 && a3[l2] === "\\"; ) o3 = !o3;
+    return o3 ? "|" : " |";
+  }), n2 = t2.split(m.splitPipe), r2 = 0;
+  if (n2[0].trim() || n2.shift(), n2.length > 0 && !n2.at(-1)?.trim() && n2.pop(), e3) if (n2.length > e3) n2.splice(e3);
+  else for (; n2.length < e3; ) n2.push("");
+  for (; r2 < n2.length; r2++) n2[r2] = n2[r2].trim().replace(m.slashPipe, "|");
+  return n2;
+}
+function I(u4, e3, t2) {
+  let n2 = u4.length;
+  if (n2 === 0) return "";
+  let r2 = 0;
+  for (; r2 < n2; ) {
+    let i3 = u4.charAt(n2 - r2 - 1);
+    if (i3 === e3 && !t2) r2++;
+    else if (i3 !== e3 && t2) r2++;
+    else break;
+  }
+  return u4.slice(0, n2 - r2);
+}
+function de(u4, e3) {
+  if (u4.indexOf(e3[1]) === -1) return -1;
+  let t2 = 0;
+  for (let n2 = 0; n2 < u4.length; n2++) if (u4[n2] === "\\") n2++;
+  else if (u4[n2] === e3[0]) t2++;
+  else if (u4[n2] === e3[1] && (t2--, t2 < 0)) return n2;
+  return t2 > 0 ? -2 : -1;
+}
+function ge(u4, e3 = 0) {
+  let t2 = e3, n2 = "";
+  for (let r2 of u4) if (r2 === "	") {
+    let i3 = 4 - t2 % 4;
+    n2 += " ".repeat(i3), t2 += i3;
+  } else n2 += r2, t2++;
+  return n2;
+}
+function fe(u4, e3, t2, n2, r2) {
+  let i3 = e3.href, s16 = e3.title || null, a3 = u4[1].replace(r2.other.outputLinkReplace, "$1");
+  n2.state.inLink = true;
+  let o3 = { type: u4[0].charAt(0) === "!" ? "image" : "link", raw: t2, href: i3, title: s16, text: a3, tokens: n2.inlineTokens(a3) };
+  return n2.state.inLink = false, o3;
+}
+function nt(u4, e3, t2) {
+  let n2 = u4.match(t2.other.indentCodeCompensation);
+  if (n2 === null) return e3;
+  let r2 = n2[1];
+  return e3.split(`
+`).map((i3) => {
+    let s16 = i3.match(t2.other.beginningSpace);
+    if (s16 === null) return i3;
+    let [a3] = s16;
+    return a3.length >= r2.length ? i3.slice(r2.length) : i3;
+  }).join(`
+`);
+}
+function g(u4, e3) {
+  return L.parse(u4, e3);
+}
+var O, _, be, m, Re, Oe, Te, C, we, Q, se, ie, ye, j, Pe, F, Se, $e, v, U, _e, oe, Le, K, ne, Me, ze, Ee, Ie, ae, Ae, z2, H, W, Ce, le, Be, De, qe, ue, ve, He, pe, Ze, Ge, Ne, Qe, je, Fe, Ue, Ke, We, Xe, q, Je, ce, he, Ve, re, X, Ye, N, et, B2, E, tt, ke, w, x, y, $, b, P, D, L, Qt, jt, Ft, Ut, Kt, Xt, Jt;
+var init_marked_esm = __esm({
+  "node_modules/.pnpm/marked@17.0.6/node_modules/marked/lib/marked.esm.js"() {
+    O = M();
+    _ = { exec: () => null };
+    be = (() => {
+      try {
+        return !!new RegExp("(?<=1)(?<!1)");
+      } catch {
+        return false;
+      }
+    })();
+    m = { codeRemoveIndent: /^(?: {1,4}| {0,3}\t)/gm, outputLinkReplace: /\\([\[\]])/g, indentCodeCompensation: /^(\s+)(?:```)/, beginningSpace: /^\s+/, endingHash: /#$/, startingSpaceChar: /^ /, endingSpaceChar: / $/, nonSpaceChar: /[^ ]/, newLineCharGlobal: /\n/g, tabCharGlobal: /\t/g, multipleSpaceGlobal: /\s+/g, blankLine: /^[ \t]*$/, doubleBlankLine: /\n[ \t]*\n[ \t]*$/, blockquoteStart: /^ {0,3}>/, blockquoteSetextReplace: /\n {0,3}((?:=+|-+) *)(?=\n|$)/g, blockquoteSetextReplace2: /^ {0,3}>[ \t]?/gm, listReplaceNesting: /^ {1,4}(?=( {4})*[^ ])/g, listIsTask: /^\[[ xX]\] +\S/, listReplaceTask: /^\[[ xX]\] +/, listTaskCheckbox: /\[[ xX]\]/, anyLine: /\n.*\n/, hrefBrackets: /^<(.*)>$/, tableDelimiter: /[:|]/, tableAlignChars: /^\||\| *$/g, tableRowBlankLine: /\n[ \t]*$/, tableAlignRight: /^ *-+: *$/, tableAlignCenter: /^ *:-+: *$/, tableAlignLeft: /^ *:-+ *$/, startATag: /^<a /i, endATag: /^<\/a>/i, startPreScriptTag: /^<(pre|code|kbd|script)(\s|>)/i, endPreScriptTag: /^<\/(pre|code|kbd|script)(\s|>)/i, startAngleBracket: /^</, endAngleBracket: />$/, pedanticHrefTitle: /^([^'"]*[^\s])\s+(['"])(.*)\2/, unicodeAlphaNumeric: /[\p{L}\p{N}]/u, escapeTest: /[&<>"']/, escapeReplace: /[&<>"']/g, escapeTestNoEncode: /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/, escapeReplaceNoEncode: /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/g, caret: /(^|[^\[])\^/g, percentDecode: /%25/g, findPipe: /\|/g, splitPipe: / \|/, slashPipe: /\\\|/g, carriageReturn: /\r\n|\r/g, spaceLine: /^ +$/gm, notSpaceStart: /^\S*/, endingNewline: /\n$/, listItemRegex: (u4) => new RegExp(`^( {0,3}${u4})((?:[	 ][^\\n]*)?(?:\\n|$))`), nextBulletRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}(?:[*+-]|\\d{1,9}[.)])((?:[ 	][^\\n]*)?(?:\\n|$))`), hrRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}((?:- *){3,}|(?:_ *){3,}|(?:\\* *){3,})(?:\\n+|$)`), fencesBeginRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}(?:\`\`\`|~~~)`), headingBeginRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}#`), htmlBeginRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}<(?:[a-z].*>|!--)`, "i"), blockquoteBeginRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}>`) };
+    Re = /^(?:[ \t]*(?:\n|$))+/;
+    Oe = /^((?: {4}| {0,3}\t)[^\n]+(?:\n(?:[ \t]*(?:\n|$))*)?)+/;
+    Te = /^ {0,3}(`{3,}(?=[^`\n]*(?:\n|$))|~{3,})([^\n]*)(?:\n|$)(?:|([\s\S]*?)(?:\n|$))(?: {0,3}\1[~`]* *(?=\n|$)|$)/;
+    C = /^ {0,3}((?:-[\t ]*){3,}|(?:_[ \t]*){3,}|(?:\*[ \t]*){3,})(?:\n+|$)/;
+    we = /^ {0,3}(#{1,6})(?=\s|$)(.*)(?:\n+|$)/;
+    Q = / {0,3}(?:[*+-]|\d{1,9}[.)])/;
+    se = /^(?!bull |blockCode|fences|blockquote|heading|html|table)((?:.|\n(?!\s*?\n|bull |blockCode|fences|blockquote|heading|html|table))+?)\n {0,3}(=+|-+) *(?:\n+|$)/;
+    ie = k(se).replace(/bull/g, Q).replace(/blockCode/g, /(?: {4}| {0,3}\t)/).replace(/fences/g, / {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g, / {0,3}>/).replace(/heading/g, / {0,3}#{1,6}/).replace(/html/g, / {0,3}<[^\n>]+>\n/).replace(/\|table/g, "").getRegex();
+    ye = k(se).replace(/bull/g, Q).replace(/blockCode/g, /(?: {4}| {0,3}\t)/).replace(/fences/g, / {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g, / {0,3}>/).replace(/heading/g, / {0,3}#{1,6}/).replace(/html/g, / {0,3}<[^\n>]+>\n/).replace(/table/g, / {0,3}\|?(?:[:\- ]*\|)+[\:\- ]*\n/).getRegex();
+    j = /^([^\n]+(?:\n(?!hr|heading|lheading|blockquote|fences|list|html|table| +\n)[^\n]+)*)/;
+    Pe = /^[^\n]+/;
+    F = /(?!\s*\])(?:\\[\s\S]|[^\[\]\\])+/;
+    Se = k(/^ {0,3}\[(label)\]: *(?:\n[ \t]*)?([^<\s][^\s]*|<.*?>)(?:(?: +(?:\n[ \t]*)?| *\n[ \t]*)(title))? *(?:\n+|$)/).replace("label", F).replace("title", /(?:"(?:\\"?|[^"\\])*"|'[^'\n]*(?:\n[^'\n]+)*\n?'|\([^()]*\))/).getRegex();
+    $e = k(/^(bull)([ \t][^\n]+?)?(?:\n|$)/).replace(/bull/g, Q).getRegex();
+    v = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|meta|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
+    U = /<!--(?:-?>|[\s\S]*?(?:-->|$))/;
+    _e = k("^ {0,3}(?:<(script|pre|style|textarea)[\\s>][\\s\\S]*?(?:</\\1>[^\\n]*\\n+|$)|comment[^\\n]*(\\n+|$)|<\\?[\\s\\S]*?(?:\\?>\\n*|$)|<![A-Z][\\s\\S]*?(?:>\\n*|$)|<!\\[CDATA\\[[\\s\\S]*?(?:\\]\\]>\\n*|$)|</?(tag)(?: +|\\n|/?>)[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$)|<(?!script|pre|style|textarea)([a-z][\\w-]*)(?:attribute)*? */?>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$)|</(?!script|pre|style|textarea)[a-z][\\w-]*\\s*>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$))", "i").replace("comment", U).replace("tag", v).replace("attribute", / +[a-zA-Z:_][\w.:-]*(?: *= *"[^"\n]*"| *= *'[^'\n]*'| *= *[^\s"'=<>`]+)?/).getRegex();
+    oe = k(j).replace("hr", C).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("|lheading", "").replace("|table", "").replace("blockquote", " {0,3}>").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)])[ \\t]").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", v).getRegex();
+    Le = k(/^( {0,3}> ?(paragraph|[^\n]*)(?:\n|$))+/).replace("paragraph", oe).getRegex();
+    K = { blockquote: Le, code: Oe, def: Se, fences: Te, heading: we, hr: C, html: _e, lheading: ie, list: $e, newline: Re, paragraph: oe, table: _, text: Pe };
+    ne = k("^ *([^\\n ].*)\\n {0,3}((?:\\| *)?:?-+:? *(?:\\| *:?-+:? *)*(?:\\| *)?)(?:\\n((?:(?! *\\n|hr|heading|blockquote|code|fences|list|html).*(?:\\n|$))*)\\n*|$)").replace("hr", C).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("blockquote", " {0,3}>").replace("code", "(?: {4}| {0,3}	)[^\\n]").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)])[ \\t]").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", v).getRegex();
+    Me = { ...K, lheading: ye, table: ne, paragraph: k(j).replace("hr", C).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("|lheading", "").replace("table", ne).replace("blockquote", " {0,3}>").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)])[ \\t]").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", v).getRegex() };
+    ze = { ...K, html: k(`^ *(?:comment *(?:\\n|\\s*$)|<(tag)[\\s\\S]+?</\\1> *(?:\\n{2,}|\\s*$)|<tag(?:"[^"]*"|'[^']*'|\\s[^'"/>\\s]*)*?/?> *(?:\\n{2,}|\\s*$))`).replace("comment", U).replace(/tag/g, "(?!(?:a|em|strong|small|s|cite|q|dfn|abbr|data|time|code|var|samp|kbd|sub|sup|i|b|u|mark|ruby|rt|rp|bdi|bdo|span|br|wbr|ins|del|img)\\b)\\w+(?!:|[^\\w\\s@]*@)\\b").getRegex(), def: /^ *\[([^\]]+)\]: *<?([^\s>]+)>?(?: +(["(][^\n]+[")]))? *(?:\n+|$)/, heading: /^(#{1,6})(.*)(?:\n+|$)/, fences: _, lheading: /^(.+?)\n {0,3}(=+|-+) *(?:\n+|$)/, paragraph: k(j).replace("hr", C).replace("heading", ` *#{1,6} *[^
+]`).replace("lheading", ie).replace("|table", "").replace("blockquote", " {0,3}>").replace("|fences", "").replace("|list", "").replace("|html", "").replace("|tag", "").getRegex() };
+    Ee = /^\\([!"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])/;
+    Ie = /^(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/;
+    ae = /^( {2,}|\\)\n(?!\s*$)/;
+    Ae = /^(`+|[^`])(?:(?= {2,}\n)|[\s\S]*?(?:(?=[\\<!\[`*_]|\b_|$)|[^ ](?= {2,}\n)))/;
+    z2 = /[\p{P}\p{S}]/u;
+    H = /[\s\p{P}\p{S}]/u;
+    W = /[^\s\p{P}\p{S}]/u;
+    Ce = k(/^((?![*_])punctSpace)/, "u").replace(/punctSpace/g, H).getRegex();
+    le = /(?!~)[\p{P}\p{S}]/u;
+    Be = /(?!~)[\s\p{P}\p{S}]/u;
+    De = /(?:[^\s\p{P}\p{S}]|~)/u;
+    qe = k(/link|precode-code|html/, "g").replace("link", /\[(?:[^\[\]`]|(?<a>`+)[^`]+\k<a>(?!`))*?\]\((?:\\[\s\S]|[^\\\(\)]|\((?:\\[\s\S]|[^\\\(\)])*\))*\)/).replace("precode-", be ? "(?<!`)()" : "(^^|[^`])").replace("code", /(?<b>`+)[^`]+\k<b>(?!`)/).replace("html", /<(?! )[^<>]*?>/).getRegex();
+    ue = /^(?:\*+(?:((?!\*)punct)|([^\s*]))?)|^_+(?:((?!_)punct)|([^\s_]))?/;
+    ve = k(ue, "u").replace(/punct/g, z2).getRegex();
+    He = k(ue, "u").replace(/punct/g, le).getRegex();
+    pe = "^[^_*]*?__[^_*]*?\\*[^_*]*?(?=__)|[^*]+(?=[^*])|(?!\\*)punct(\\*+)(?=[\\s]|$)|notPunctSpace(\\*+)(?!\\*)(?=punctSpace|$)|(?!\\*)punctSpace(\\*+)(?=notPunctSpace)|[\\s](\\*+)(?!\\*)(?=punct)|(?!\\*)punct(\\*+)(?!\\*)(?=punct)|notPunctSpace(\\*+)(?=notPunctSpace)";
+    Ze = k(pe, "gu").replace(/notPunctSpace/g, W).replace(/punctSpace/g, H).replace(/punct/g, z2).getRegex();
+    Ge = k(pe, "gu").replace(/notPunctSpace/g, De).replace(/punctSpace/g, Be).replace(/punct/g, le).getRegex();
+    Ne = k("^[^_*]*?\\*\\*[^_*]*?_[^_*]*?(?=\\*\\*)|[^_]+(?=[^_])|(?!_)punct(_+)(?=[\\s]|$)|notPunctSpace(_+)(?!_)(?=punctSpace|$)|(?!_)punctSpace(_+)(?=notPunctSpace)|[\\s](_+)(?!_)(?=punct)|(?!_)punct(_+)(?!_)(?=punct)", "gu").replace(/notPunctSpace/g, W).replace(/punctSpace/g, H).replace(/punct/g, z2).getRegex();
+    Qe = k(/^~~?(?:((?!~)punct)|[^\s~])/, "u").replace(/punct/g, z2).getRegex();
+    je = "^[^~]+(?=[^~])|(?!~)punct(~~?)(?=[\\s]|$)|notPunctSpace(~~?)(?!~)(?=punctSpace|$)|(?!~)punctSpace(~~?)(?=notPunctSpace)|[\\s](~~?)(?!~)(?=punct)|(?!~)punct(~~?)(?!~)(?=punct)|notPunctSpace(~~?)(?=notPunctSpace)";
+    Fe = k(je, "gu").replace(/notPunctSpace/g, W).replace(/punctSpace/g, H).replace(/punct/g, z2).getRegex();
+    Ue = k(/\\(punct)/, "gu").replace(/punct/g, z2).getRegex();
+    Ke = k(/^<(scheme:[^\s\x00-\x1f<>]*|email)>/).replace("scheme", /[a-zA-Z][a-zA-Z0-9+.-]{1,31}/).replace("email", /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+(@)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+(?![-_])/).getRegex();
+    We = k(U).replace("(?:-->|$)", "-->").getRegex();
+    Xe = k("^comment|^</[a-zA-Z][\\w:-]*\\s*>|^<[a-zA-Z][\\w-]*(?:attribute)*?\\s*/?>|^<\\?[\\s\\S]*?\\?>|^<![a-zA-Z]+\\s[\\s\\S]*?>|^<!\\[CDATA\\[[\\s\\S]*?\\]\\]>").replace("comment", We).replace("attribute", /\s+[a-zA-Z:_][\w.:-]*(?:\s*=\s*"[^"]*"|\s*=\s*'[^']*'|\s*=\s*[^\s"'=<>`]+)?/).getRegex();
+    q = /(?:\[(?:\\[\s\S]|[^\[\]\\])*\]|\\[\s\S]|`+(?!`)[^`]*?`+(?!`)|``+(?=\])|[^\[\]\\`])*?/;
+    Je = k(/^!?\[(label)\]\(\s*(href)(?:(?:[ \t]+(?:\n[ \t]*)?|\n[ \t]*)(title))?\s*\)/).replace("label", q).replace("href", /<(?:\\.|[^\n<>\\])+>|[^ \t\n\x00-\x1f]*/).replace("title", /"(?:\\"?|[^"\\])*"|'(?:\\'?|[^'\\])*'|\((?:\\\)?|[^)\\])*\)/).getRegex();
+    ce = k(/^!?\[(label)\]\[(ref)\]/).replace("label", q).replace("ref", F).getRegex();
+    he = k(/^!?\[(ref)\](?:\[\])?/).replace("ref", F).getRegex();
+    Ve = k("reflink|nolink(?!\\()", "g").replace("reflink", ce).replace("nolink", he).getRegex();
+    re = /[hH][tT][tT][pP][sS]?|[fF][tT][pP]/;
+    X = { _backpedal: _, anyPunctuation: Ue, autolink: Ke, blockSkip: qe, br: ae, code: Ie, del: _, delLDelim: _, delRDelim: _, emStrongLDelim: ve, emStrongRDelimAst: Ze, emStrongRDelimUnd: Ne, escape: Ee, link: Je, nolink: he, punctuation: Ce, reflink: ce, reflinkSearch: Ve, tag: Xe, text: Ae, url: _ };
+    Ye = { ...X, link: k(/^!?\[(label)\]\((.*?)\)/).replace("label", q).getRegex(), reflink: k(/^!?\[(label)\]\s*\[([^\]]*)\]/).replace("label", q).getRegex() };
+    N = { ...X, emStrongRDelimAst: Ge, emStrongLDelim: He, delLDelim: Qe, delRDelim: Fe, url: k(/^((?:protocol):\/\/|www\.)(?:[a-zA-Z0-9\-]+\.?)+[^\s<]*|^email/).replace("protocol", re).replace("email", /[A-Za-z0-9._+-]+(@)[a-zA-Z0-9-_]+(?:\.[a-zA-Z0-9-_]*[a-zA-Z0-9])+(?![-_])/).getRegex(), _backpedal: /(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![a-zA-Z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+/, del: /^(~~?)(?=[^\s~])((?:\\[\s\S]|[^\\])*?(?:\\[\s\S]|[^\s~\\]))\1(?=[^~]|$)/, text: k(/^([`~]+|[^`~])(?:(?= {2,}\n)|(?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)|[\s\S]*?(?:(?=[\\<!\[`*~_]|\b_|protocol:\/\/|www\.|$)|[^ ](?= {2,}\n)|[^a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-](?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)))/).replace("protocol", re).getRegex() };
+    et = { ...N, br: k(ae).replace("{2,}", "*").getRegex(), text: k(N.text).replace("\\b_", "\\b_| {2,}\\n").replace(/\{2,\}/g, "*").getRegex() };
+    B2 = { normal: K, gfm: Me, pedantic: ze };
+    E = { normal: X, gfm: N, breaks: et, pedantic: Ye };
+    tt = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+    ke = (u4) => tt[u4];
+    w = class {
+      options;
+      rules;
+      lexer;
+      constructor(e3) {
+        this.options = e3 || O;
+      }
+      space(e3) {
+        let t2 = this.rules.block.newline.exec(e3);
+        if (t2 && t2[0].length > 0) return { type: "space", raw: t2[0] };
+      }
+      code(e3) {
+        let t2 = this.rules.block.code.exec(e3);
+        if (t2) {
+          let n2 = t2[0].replace(this.rules.other.codeRemoveIndent, "");
+          return { type: "code", raw: t2[0], codeBlockStyle: "indented", text: this.options.pedantic ? n2 : I(n2, `
+`) };
+        }
+      }
+      fences(e3) {
+        let t2 = this.rules.block.fences.exec(e3);
+        if (t2) {
+          let n2 = t2[0], r2 = nt(n2, t2[3] || "", this.rules);
+          return { type: "code", raw: n2, lang: t2[2] ? t2[2].trim().replace(this.rules.inline.anyPunctuation, "$1") : t2[2], text: r2 };
+        }
+      }
+      heading(e3) {
+        let t2 = this.rules.block.heading.exec(e3);
+        if (t2) {
+          let n2 = t2[2].trim();
+          if (this.rules.other.endingHash.test(n2)) {
+            let r2 = I(n2, "#");
+            (this.options.pedantic || !r2 || this.rules.other.endingSpaceChar.test(r2)) && (n2 = r2.trim());
+          }
+          return { type: "heading", raw: t2[0], depth: t2[1].length, text: n2, tokens: this.lexer.inline(n2) };
+        }
+      }
+      hr(e3) {
+        let t2 = this.rules.block.hr.exec(e3);
+        if (t2) return { type: "hr", raw: I(t2[0], `
+`) };
+      }
+      blockquote(e3) {
+        let t2 = this.rules.block.blockquote.exec(e3);
+        if (t2) {
+          let n2 = I(t2[0], `
+`).split(`
+`), r2 = "", i3 = "", s16 = [];
+          for (; n2.length > 0; ) {
+            let a3 = false, o3 = [], l2;
+            for (l2 = 0; l2 < n2.length; l2++) if (this.rules.other.blockquoteStart.test(n2[l2])) o3.push(n2[l2]), a3 = true;
+            else if (!a3) o3.push(n2[l2]);
+            else break;
+            n2 = n2.slice(l2);
+            let p2 = o3.join(`
+`), c3 = p2.replace(this.rules.other.blockquoteSetextReplace, `
+    $1`).replace(this.rules.other.blockquoteSetextReplace2, "");
+            r2 = r2 ? `${r2}
+${p2}` : p2, i3 = i3 ? `${i3}
+${c3}` : c3;
+            let d3 = this.lexer.state.top;
+            if (this.lexer.state.top = true, this.lexer.blockTokens(c3, s16, true), this.lexer.state.top = d3, n2.length === 0) break;
+            let h4 = s16.at(-1);
+            if (h4?.type === "code") break;
+            if (h4?.type === "blockquote") {
+              let R2 = h4, f4 = R2.raw + `
+` + n2.join(`
+`), S3 = this.blockquote(f4);
+              s16[s16.length - 1] = S3, r2 = r2.substring(0, r2.length - R2.raw.length) + S3.raw, i3 = i3.substring(0, i3.length - R2.text.length) + S3.text;
+              break;
+            } else if (h4?.type === "list") {
+              let R2 = h4, f4 = R2.raw + `
+` + n2.join(`
+`), S3 = this.list(f4);
+              s16[s16.length - 1] = S3, r2 = r2.substring(0, r2.length - h4.raw.length) + S3.raw, i3 = i3.substring(0, i3.length - R2.raw.length) + S3.raw, n2 = f4.substring(s16.at(-1).raw.length).split(`
+`);
+              continue;
+            }
+          }
+          return { type: "blockquote", raw: r2, tokens: s16, text: i3 };
+        }
+      }
+      list(e3) {
+        let t2 = this.rules.block.list.exec(e3);
+        if (t2) {
+          let n2 = t2[1].trim(), r2 = n2.length > 1, i3 = { type: "list", raw: "", ordered: r2, start: r2 ? +n2.slice(0, -1) : "", loose: false, items: [] };
+          n2 = r2 ? `\\d{1,9}\\${n2.slice(-1)}` : `\\${n2}`, this.options.pedantic && (n2 = r2 ? n2 : "[*+-]");
+          let s16 = this.rules.other.listItemRegex(n2), a3 = false;
+          for (; e3; ) {
+            let l2 = false, p2 = "", c3 = "";
+            if (!(t2 = s16.exec(e3)) || this.rules.block.hr.test(e3)) break;
+            p2 = t2[0], e3 = e3.substring(p2.length);
+            let d3 = ge(t2[2].split(`
+`, 1)[0], t2[1].length), h4 = e3.split(`
+`, 1)[0], R2 = !d3.trim(), f4 = 0;
+            if (this.options.pedantic ? (f4 = 2, c3 = d3.trimStart()) : R2 ? f4 = t2[1].length + 1 : (f4 = d3.search(this.rules.other.nonSpaceChar), f4 = f4 > 4 ? 1 : f4, c3 = d3.slice(f4), f4 += t2[1].length), R2 && this.rules.other.blankLine.test(h4) && (p2 += h4 + `
+`, e3 = e3.substring(h4.length + 1), l2 = true), !l2) {
+              let S3 = this.rules.other.nextBulletRegex(f4), Y3 = this.rules.other.hrRegex(f4), ee3 = this.rules.other.fencesBeginRegex(f4), te2 = this.rules.other.headingBeginRegex(f4), me = this.rules.other.htmlBeginRegex(f4), xe2 = this.rules.other.blockquoteBeginRegex(f4);
+              for (; e3; ) {
+                let Z = e3.split(`
+`, 1)[0], A3;
+                if (h4 = Z, this.options.pedantic ? (h4 = h4.replace(this.rules.other.listReplaceNesting, "  "), A3 = h4) : A3 = h4.replace(this.rules.other.tabCharGlobal, "    "), ee3.test(h4) || te2.test(h4) || me.test(h4) || xe2.test(h4) || S3.test(h4) || Y3.test(h4)) break;
+                if (A3.search(this.rules.other.nonSpaceChar) >= f4 || !h4.trim()) c3 += `
+` + A3.slice(f4);
+                else {
+                  if (R2 || d3.replace(this.rules.other.tabCharGlobal, "    ").search(this.rules.other.nonSpaceChar) >= 4 || ee3.test(d3) || te2.test(d3) || Y3.test(d3)) break;
+                  c3 += `
+` + h4;
+                }
+                R2 = !h4.trim(), p2 += Z + `
+`, e3 = e3.substring(Z.length + 1), d3 = A3.slice(f4);
+              }
+            }
+            i3.loose || (a3 ? i3.loose = true : this.rules.other.doubleBlankLine.test(p2) && (a3 = true)), i3.items.push({ type: "list_item", raw: p2, task: !!this.options.gfm && this.rules.other.listIsTask.test(c3), loose: false, text: c3, tokens: [] }), i3.raw += p2;
+          }
+          let o3 = i3.items.at(-1);
+          if (o3) o3.raw = o3.raw.trimEnd(), o3.text = o3.text.trimEnd();
+          else return;
+          i3.raw = i3.raw.trimEnd();
+          for (let l2 of i3.items) {
+            if (this.lexer.state.top = false, l2.tokens = this.lexer.blockTokens(l2.text, []), l2.task) {
+              if (l2.text = l2.text.replace(this.rules.other.listReplaceTask, ""), l2.tokens[0]?.type === "text" || l2.tokens[0]?.type === "paragraph") {
+                l2.tokens[0].raw = l2.tokens[0].raw.replace(this.rules.other.listReplaceTask, ""), l2.tokens[0].text = l2.tokens[0].text.replace(this.rules.other.listReplaceTask, "");
+                for (let c3 = this.lexer.inlineQueue.length - 1; c3 >= 0; c3--) if (this.rules.other.listIsTask.test(this.lexer.inlineQueue[c3].src)) {
+                  this.lexer.inlineQueue[c3].src = this.lexer.inlineQueue[c3].src.replace(this.rules.other.listReplaceTask, "");
+                  break;
+                }
+              }
+              let p2 = this.rules.other.listTaskCheckbox.exec(l2.raw);
+              if (p2) {
+                let c3 = { type: "checkbox", raw: p2[0] + " ", checked: p2[0] !== "[ ]" };
+                l2.checked = c3.checked, i3.loose ? l2.tokens[0] && ["paragraph", "text"].includes(l2.tokens[0].type) && "tokens" in l2.tokens[0] && l2.tokens[0].tokens ? (l2.tokens[0].raw = c3.raw + l2.tokens[0].raw, l2.tokens[0].text = c3.raw + l2.tokens[0].text, l2.tokens[0].tokens.unshift(c3)) : l2.tokens.unshift({ type: "paragraph", raw: c3.raw, text: c3.raw, tokens: [c3] }) : l2.tokens.unshift(c3);
+              }
+            }
+            if (!i3.loose) {
+              let p2 = l2.tokens.filter((d3) => d3.type === "space"), c3 = p2.length > 0 && p2.some((d3) => this.rules.other.anyLine.test(d3.raw));
+              i3.loose = c3;
+            }
+          }
+          if (i3.loose) for (let l2 of i3.items) {
+            l2.loose = true;
+            for (let p2 of l2.tokens) p2.type === "text" && (p2.type = "paragraph");
+          }
+          return i3;
+        }
+      }
+      html(e3) {
+        let t2 = this.rules.block.html.exec(e3);
+        if (t2) return { type: "html", block: true, raw: t2[0], pre: t2[1] === "pre" || t2[1] === "script" || t2[1] === "style", text: t2[0] };
+      }
+      def(e3) {
+        let t2 = this.rules.block.def.exec(e3);
+        if (t2) {
+          let n2 = t2[1].toLowerCase().replace(this.rules.other.multipleSpaceGlobal, " "), r2 = t2[2] ? t2[2].replace(this.rules.other.hrefBrackets, "$1").replace(this.rules.inline.anyPunctuation, "$1") : "", i3 = t2[3] ? t2[3].substring(1, t2[3].length - 1).replace(this.rules.inline.anyPunctuation, "$1") : t2[3];
+          return { type: "def", tag: n2, raw: t2[0], href: r2, title: i3 };
+        }
+      }
+      table(e3) {
+        let t2 = this.rules.block.table.exec(e3);
+        if (!t2 || !this.rules.other.tableDelimiter.test(t2[2])) return;
+        let n2 = V(t2[1]), r2 = t2[2].replace(this.rules.other.tableAlignChars, "").split("|"), i3 = t2[3]?.trim() ? t2[3].replace(this.rules.other.tableRowBlankLine, "").split(`
+`) : [], s16 = { type: "table", raw: t2[0], header: [], align: [], rows: [] };
+        if (n2.length === r2.length) {
+          for (let a3 of r2) this.rules.other.tableAlignRight.test(a3) ? s16.align.push("right") : this.rules.other.tableAlignCenter.test(a3) ? s16.align.push("center") : this.rules.other.tableAlignLeft.test(a3) ? s16.align.push("left") : s16.align.push(null);
+          for (let a3 = 0; a3 < n2.length; a3++) s16.header.push({ text: n2[a3], tokens: this.lexer.inline(n2[a3]), header: true, align: s16.align[a3] });
+          for (let a3 of i3) s16.rows.push(V(a3, s16.header.length).map((o3, l2) => ({ text: o3, tokens: this.lexer.inline(o3), header: false, align: s16.align[l2] })));
+          return s16;
+        }
+      }
+      lheading(e3) {
+        let t2 = this.rules.block.lheading.exec(e3);
+        if (t2) {
+          let n2 = t2[1].trim();
+          return { type: "heading", raw: t2[0], depth: t2[2].charAt(0) === "=" ? 1 : 2, text: n2, tokens: this.lexer.inline(n2) };
+        }
+      }
+      paragraph(e3) {
+        let t2 = this.rules.block.paragraph.exec(e3);
+        if (t2) {
+          let n2 = t2[1].charAt(t2[1].length - 1) === `
+` ? t2[1].slice(0, -1) : t2[1];
+          return { type: "paragraph", raw: t2[0], text: n2, tokens: this.lexer.inline(n2) };
+        }
+      }
+      text(e3) {
+        let t2 = this.rules.block.text.exec(e3);
+        if (t2) return { type: "text", raw: t2[0], text: t2[0], tokens: this.lexer.inline(t2[0]) };
+      }
+      escape(e3) {
+        let t2 = this.rules.inline.escape.exec(e3);
+        if (t2) return { type: "escape", raw: t2[0], text: t2[1] };
+      }
+      tag(e3) {
+        let t2 = this.rules.inline.tag.exec(e3);
+        if (t2) return !this.lexer.state.inLink && this.rules.other.startATag.test(t2[0]) ? this.lexer.state.inLink = true : this.lexer.state.inLink && this.rules.other.endATag.test(t2[0]) && (this.lexer.state.inLink = false), !this.lexer.state.inRawBlock && this.rules.other.startPreScriptTag.test(t2[0]) ? this.lexer.state.inRawBlock = true : this.lexer.state.inRawBlock && this.rules.other.endPreScriptTag.test(t2[0]) && (this.lexer.state.inRawBlock = false), { type: "html", raw: t2[0], inLink: this.lexer.state.inLink, inRawBlock: this.lexer.state.inRawBlock, block: false, text: t2[0] };
+      }
+      link(e3) {
+        let t2 = this.rules.inline.link.exec(e3);
+        if (t2) {
+          let n2 = t2[2].trim();
+          if (!this.options.pedantic && this.rules.other.startAngleBracket.test(n2)) {
+            if (!this.rules.other.endAngleBracket.test(n2)) return;
+            let s16 = I(n2.slice(0, -1), "\\");
+            if ((n2.length - s16.length) % 2 === 0) return;
+          } else {
+            let s16 = de(t2[2], "()");
+            if (s16 === -2) return;
+            if (s16 > -1) {
+              let o3 = (t2[0].indexOf("!") === 0 ? 5 : 4) + t2[1].length + s16;
+              t2[2] = t2[2].substring(0, s16), t2[0] = t2[0].substring(0, o3).trim(), t2[3] = "";
+            }
+          }
+          let r2 = t2[2], i3 = "";
+          if (this.options.pedantic) {
+            let s16 = this.rules.other.pedanticHrefTitle.exec(r2);
+            s16 && (r2 = s16[1], i3 = s16[3]);
+          } else i3 = t2[3] ? t2[3].slice(1, -1) : "";
+          return r2 = r2.trim(), this.rules.other.startAngleBracket.test(r2) && (this.options.pedantic && !this.rules.other.endAngleBracket.test(n2) ? r2 = r2.slice(1) : r2 = r2.slice(1, -1)), fe(t2, { href: r2 && r2.replace(this.rules.inline.anyPunctuation, "$1"), title: i3 && i3.replace(this.rules.inline.anyPunctuation, "$1") }, t2[0], this.lexer, this.rules);
+        }
+      }
+      reflink(e3, t2) {
+        let n2;
+        if ((n2 = this.rules.inline.reflink.exec(e3)) || (n2 = this.rules.inline.nolink.exec(e3))) {
+          let r2 = (n2[2] || n2[1]).replace(this.rules.other.multipleSpaceGlobal, " "), i3 = t2[r2.toLowerCase()];
+          if (!i3) {
+            let s16 = n2[0].charAt(0);
+            return { type: "text", raw: s16, text: s16 };
+          }
+          return fe(n2, i3, n2[0], this.lexer, this.rules);
+        }
+      }
+      emStrong(e3, t2, n2 = "") {
+        let r2 = this.rules.inline.emStrongLDelim.exec(e3);
+        if (!r2 || !r2[1] && !r2[2] && !r2[3] && !r2[4] || r2[4] && n2.match(this.rules.other.unicodeAlphaNumeric)) return;
+        if (!(r2[1] || r2[3] || "") || !n2 || this.rules.inline.punctuation.exec(n2)) {
+          let s16 = [...r2[0]].length - 1, a3, o3, l2 = s16, p2 = 0, c3 = r2[0][0] === "*" ? this.rules.inline.emStrongRDelimAst : this.rules.inline.emStrongRDelimUnd;
+          for (c3.lastIndex = 0, t2 = t2.slice(-1 * e3.length + s16); (r2 = c3.exec(t2)) !== null; ) {
+            if (a3 = r2[1] || r2[2] || r2[3] || r2[4] || r2[5] || r2[6], !a3) continue;
+            if (o3 = [...a3].length, r2[3] || r2[4]) {
+              l2 += o3;
+              continue;
+            } else if ((r2[5] || r2[6]) && s16 % 3 && !((s16 + o3) % 3)) {
+              p2 += o3;
+              continue;
+            }
+            if (l2 -= o3, l2 > 0) continue;
+            o3 = Math.min(o3, o3 + l2 + p2);
+            let d3 = [...r2[0]][0].length, h4 = e3.slice(0, s16 + r2.index + d3 + o3);
+            if (Math.min(s16, o3) % 2) {
+              let f4 = h4.slice(1, -1);
+              return { type: "em", raw: h4, text: f4, tokens: this.lexer.inlineTokens(f4) };
+            }
+            let R2 = h4.slice(2, -2);
+            return { type: "strong", raw: h4, text: R2, tokens: this.lexer.inlineTokens(R2) };
+          }
+        }
+      }
+      codespan(e3) {
+        let t2 = this.rules.inline.code.exec(e3);
+        if (t2) {
+          let n2 = t2[2].replace(this.rules.other.newLineCharGlobal, " "), r2 = this.rules.other.nonSpaceChar.test(n2), i3 = this.rules.other.startingSpaceChar.test(n2) && this.rules.other.endingSpaceChar.test(n2);
+          return r2 && i3 && (n2 = n2.substring(1, n2.length - 1)), { type: "codespan", raw: t2[0], text: n2 };
+        }
+      }
+      br(e3) {
+        let t2 = this.rules.inline.br.exec(e3);
+        if (t2) return { type: "br", raw: t2[0] };
+      }
+      del(e3, t2, n2 = "") {
+        let r2 = this.rules.inline.delLDelim.exec(e3);
+        if (!r2) return;
+        if (!(r2[1] || "") || !n2 || this.rules.inline.punctuation.exec(n2)) {
+          let s16 = [...r2[0]].length - 1, a3, o3, l2 = s16, p2 = this.rules.inline.delRDelim;
+          for (p2.lastIndex = 0, t2 = t2.slice(-1 * e3.length + s16); (r2 = p2.exec(t2)) !== null; ) {
+            if (a3 = r2[1] || r2[2] || r2[3] || r2[4] || r2[5] || r2[6], !a3 || (o3 = [...a3].length, o3 !== s16)) continue;
+            if (r2[3] || r2[4]) {
+              l2 += o3;
+              continue;
+            }
+            if (l2 -= o3, l2 > 0) continue;
+            o3 = Math.min(o3, o3 + l2);
+            let c3 = [...r2[0]][0].length, d3 = e3.slice(0, s16 + r2.index + c3 + o3), h4 = d3.slice(s16, -s16);
+            return { type: "del", raw: d3, text: h4, tokens: this.lexer.inlineTokens(h4) };
+          }
+        }
+      }
+      autolink(e3) {
+        let t2 = this.rules.inline.autolink.exec(e3);
+        if (t2) {
+          let n2, r2;
+          return t2[2] === "@" ? (n2 = t2[1], r2 = "mailto:" + n2) : (n2 = t2[1], r2 = n2), { type: "link", raw: t2[0], text: n2, href: r2, tokens: [{ type: "text", raw: n2, text: n2 }] };
+        }
+      }
+      url(e3) {
+        let t2;
+        if (t2 = this.rules.inline.url.exec(e3)) {
+          let n2, r2;
+          if (t2[2] === "@") n2 = t2[0], r2 = "mailto:" + n2;
+          else {
+            let i3;
+            do
+              i3 = t2[0], t2[0] = this.rules.inline._backpedal.exec(t2[0])?.[0] ?? "";
+            while (i3 !== t2[0]);
+            n2 = t2[0], t2[1] === "www." ? r2 = "http://" + t2[0] : r2 = t2[0];
+          }
+          return { type: "link", raw: t2[0], text: n2, href: r2, tokens: [{ type: "text", raw: n2, text: n2 }] };
+        }
+      }
+      inlineText(e3) {
+        let t2 = this.rules.inline.text.exec(e3);
+        if (t2) {
+          let n2 = this.lexer.state.inRawBlock;
+          return { type: "text", raw: t2[0], text: t2[0], escaped: n2 };
+        }
+      }
+    };
+    x = class u {
+      tokens;
+      options;
+      state;
+      inlineQueue;
+      tokenizer;
+      constructor(e3) {
+        this.tokens = [], this.tokens.links = /* @__PURE__ */ Object.create(null), this.options = e3 || O, this.options.tokenizer = this.options.tokenizer || new w(), this.tokenizer = this.options.tokenizer, this.tokenizer.options = this.options, this.tokenizer.lexer = this, this.inlineQueue = [], this.state = { inLink: false, inRawBlock: false, top: true };
+        let t2 = { other: m, block: B2.normal, inline: E.normal };
+        this.options.pedantic ? (t2.block = B2.pedantic, t2.inline = E.pedantic) : this.options.gfm && (t2.block = B2.gfm, this.options.breaks ? t2.inline = E.breaks : t2.inline = E.gfm), this.tokenizer.rules = t2;
+      }
+      static get rules() {
+        return { block: B2, inline: E };
+      }
+      static lex(e3, t2) {
+        return new u(t2).lex(e3);
+      }
+      static lexInline(e3, t2) {
+        return new u(t2).inlineTokens(e3);
+      }
+      lex(e3) {
+        e3 = e3.replace(m.carriageReturn, `
+`), this.blockTokens(e3, this.tokens);
+        for (let t2 = 0; t2 < this.inlineQueue.length; t2++) {
+          let n2 = this.inlineQueue[t2];
+          this.inlineTokens(n2.src, n2.tokens);
+        }
+        return this.inlineQueue = [], this.tokens;
+      }
+      blockTokens(e3, t2 = [], n2 = false) {
+        for (this.tokenizer.lexer = this, this.options.pedantic && (e3 = e3.replace(m.tabCharGlobal, "    ").replace(m.spaceLine, "")); e3; ) {
+          let r2;
+          if (this.options.extensions?.block?.some((s16) => (r2 = s16.call({ lexer: this }, e3, t2)) ? (e3 = e3.substring(r2.raw.length), t2.push(r2), true) : false)) continue;
+          if (r2 = this.tokenizer.space(e3)) {
+            e3 = e3.substring(r2.raw.length);
+            let s16 = t2.at(-1);
+            r2.raw.length === 1 && s16 !== void 0 ? s16.raw += `
+` : t2.push(r2);
+            continue;
+          }
+          if (r2 = this.tokenizer.code(e3)) {
+            e3 = e3.substring(r2.raw.length);
+            let s16 = t2.at(-1);
+            s16?.type === "paragraph" || s16?.type === "text" ? (s16.raw += (s16.raw.endsWith(`
+`) ? "" : `
+`) + r2.raw, s16.text += `
+` + r2.text, this.inlineQueue.at(-1).src = s16.text) : t2.push(r2);
+            continue;
+          }
+          if (r2 = this.tokenizer.fences(e3)) {
+            e3 = e3.substring(r2.raw.length), t2.push(r2);
+            continue;
+          }
+          if (r2 = this.tokenizer.heading(e3)) {
+            e3 = e3.substring(r2.raw.length), t2.push(r2);
+            continue;
+          }
+          if (r2 = this.tokenizer.hr(e3)) {
+            e3 = e3.substring(r2.raw.length), t2.push(r2);
+            continue;
+          }
+          if (r2 = this.tokenizer.blockquote(e3)) {
+            e3 = e3.substring(r2.raw.length), t2.push(r2);
+            continue;
+          }
+          if (r2 = this.tokenizer.list(e3)) {
+            e3 = e3.substring(r2.raw.length), t2.push(r2);
+            continue;
+          }
+          if (r2 = this.tokenizer.html(e3)) {
+            e3 = e3.substring(r2.raw.length), t2.push(r2);
+            continue;
+          }
+          if (r2 = this.tokenizer.def(e3)) {
+            e3 = e3.substring(r2.raw.length);
+            let s16 = t2.at(-1);
+            s16?.type === "paragraph" || s16?.type === "text" ? (s16.raw += (s16.raw.endsWith(`
+`) ? "" : `
+`) + r2.raw, s16.text += `
+` + r2.raw, this.inlineQueue.at(-1).src = s16.text) : this.tokens.links[r2.tag] || (this.tokens.links[r2.tag] = { href: r2.href, title: r2.title }, t2.push(r2));
+            continue;
+          }
+          if (r2 = this.tokenizer.table(e3)) {
+            e3 = e3.substring(r2.raw.length), t2.push(r2);
+            continue;
+          }
+          if (r2 = this.tokenizer.lheading(e3)) {
+            e3 = e3.substring(r2.raw.length), t2.push(r2);
+            continue;
+          }
+          let i3 = e3;
+          if (this.options.extensions?.startBlock) {
+            let s16 = 1 / 0, a3 = e3.slice(1), o3;
+            this.options.extensions.startBlock.forEach((l2) => {
+              o3 = l2.call({ lexer: this }, a3), typeof o3 == "number" && o3 >= 0 && (s16 = Math.min(s16, o3));
+            }), s16 < 1 / 0 && s16 >= 0 && (i3 = e3.substring(0, s16 + 1));
+          }
+          if (this.state.top && (r2 = this.tokenizer.paragraph(i3))) {
+            let s16 = t2.at(-1);
+            n2 && s16?.type === "paragraph" ? (s16.raw += (s16.raw.endsWith(`
+`) ? "" : `
+`) + r2.raw, s16.text += `
+` + r2.text, this.inlineQueue.pop(), this.inlineQueue.at(-1).src = s16.text) : t2.push(r2), n2 = i3.length !== e3.length, e3 = e3.substring(r2.raw.length);
+            continue;
+          }
+          if (r2 = this.tokenizer.text(e3)) {
+            e3 = e3.substring(r2.raw.length);
+            let s16 = t2.at(-1);
+            s16?.type === "text" ? (s16.raw += (s16.raw.endsWith(`
+`) ? "" : `
+`) + r2.raw, s16.text += `
+` + r2.text, this.inlineQueue.pop(), this.inlineQueue.at(-1).src = s16.text) : t2.push(r2);
+            continue;
+          }
+          if (e3) {
+            let s16 = "Infinite loop on byte: " + e3.charCodeAt(0);
+            if (this.options.silent) {
+              console.error(s16);
+              break;
+            } else throw new Error(s16);
+          }
+        }
+        return this.state.top = true, t2;
+      }
+      inline(e3, t2 = []) {
+        return this.inlineQueue.push({ src: e3, tokens: t2 }), t2;
+      }
+      inlineTokens(e3, t2 = []) {
+        this.tokenizer.lexer = this;
+        let n2 = e3, r2 = null;
+        if (this.tokens.links) {
+          let o3 = Object.keys(this.tokens.links);
+          if (o3.length > 0) for (; (r2 = this.tokenizer.rules.inline.reflinkSearch.exec(n2)) !== null; ) o3.includes(r2[0].slice(r2[0].lastIndexOf("[") + 1, -1)) && (n2 = n2.slice(0, r2.index) + "[" + "a".repeat(r2[0].length - 2) + "]" + n2.slice(this.tokenizer.rules.inline.reflinkSearch.lastIndex));
+        }
+        for (; (r2 = this.tokenizer.rules.inline.anyPunctuation.exec(n2)) !== null; ) n2 = n2.slice(0, r2.index) + "++" + n2.slice(this.tokenizer.rules.inline.anyPunctuation.lastIndex);
+        let i3;
+        for (; (r2 = this.tokenizer.rules.inline.blockSkip.exec(n2)) !== null; ) i3 = r2[2] ? r2[2].length : 0, n2 = n2.slice(0, r2.index + i3) + "[" + "a".repeat(r2[0].length - i3 - 2) + "]" + n2.slice(this.tokenizer.rules.inline.blockSkip.lastIndex);
+        n2 = this.options.hooks?.emStrongMask?.call({ lexer: this }, n2) ?? n2;
+        let s16 = false, a3 = "";
+        for (; e3; ) {
+          s16 || (a3 = ""), s16 = false;
+          let o3;
+          if (this.options.extensions?.inline?.some((p2) => (o3 = p2.call({ lexer: this }, e3, t2)) ? (e3 = e3.substring(o3.raw.length), t2.push(o3), true) : false)) continue;
+          if (o3 = this.tokenizer.escape(e3)) {
+            e3 = e3.substring(o3.raw.length), t2.push(o3);
+            continue;
+          }
+          if (o3 = this.tokenizer.tag(e3)) {
+            e3 = e3.substring(o3.raw.length), t2.push(o3);
+            continue;
+          }
+          if (o3 = this.tokenizer.link(e3)) {
+            e3 = e3.substring(o3.raw.length), t2.push(o3);
+            continue;
+          }
+          if (o3 = this.tokenizer.reflink(e3, this.tokens.links)) {
+            e3 = e3.substring(o3.raw.length);
+            let p2 = t2.at(-1);
+            o3.type === "text" && p2?.type === "text" ? (p2.raw += o3.raw, p2.text += o3.text) : t2.push(o3);
+            continue;
+          }
+          if (o3 = this.tokenizer.emStrong(e3, n2, a3)) {
+            e3 = e3.substring(o3.raw.length), t2.push(o3);
+            continue;
+          }
+          if (o3 = this.tokenizer.codespan(e3)) {
+            e3 = e3.substring(o3.raw.length), t2.push(o3);
+            continue;
+          }
+          if (o3 = this.tokenizer.br(e3)) {
+            e3 = e3.substring(o3.raw.length), t2.push(o3);
+            continue;
+          }
+          if (o3 = this.tokenizer.del(e3, n2, a3)) {
+            e3 = e3.substring(o3.raw.length), t2.push(o3);
+            continue;
+          }
+          if (o3 = this.tokenizer.autolink(e3)) {
+            e3 = e3.substring(o3.raw.length), t2.push(o3);
+            continue;
+          }
+          if (!this.state.inLink && (o3 = this.tokenizer.url(e3))) {
+            e3 = e3.substring(o3.raw.length), t2.push(o3);
+            continue;
+          }
+          let l2 = e3;
+          if (this.options.extensions?.startInline) {
+            let p2 = 1 / 0, c3 = e3.slice(1), d3;
+            this.options.extensions.startInline.forEach((h4) => {
+              d3 = h4.call({ lexer: this }, c3), typeof d3 == "number" && d3 >= 0 && (p2 = Math.min(p2, d3));
+            }), p2 < 1 / 0 && p2 >= 0 && (l2 = e3.substring(0, p2 + 1));
+          }
+          if (o3 = this.tokenizer.inlineText(l2)) {
+            e3 = e3.substring(o3.raw.length), o3.raw.slice(-1) !== "_" && (a3 = o3.raw.slice(-1)), s16 = true;
+            let p2 = t2.at(-1);
+            p2?.type === "text" ? (p2.raw += o3.raw, p2.text += o3.text) : t2.push(o3);
+            continue;
+          }
+          if (e3) {
+            let p2 = "Infinite loop on byte: " + e3.charCodeAt(0);
+            if (this.options.silent) {
+              console.error(p2);
+              break;
+            } else throw new Error(p2);
+          }
+        }
+        return t2;
+      }
+    };
+    y = class {
+      options;
+      parser;
+      constructor(e3) {
+        this.options = e3 || O;
+      }
+      space(e3) {
+        return "";
+      }
+      code({ text: e3, lang: t2, escaped: n2 }) {
+        let r2 = (t2 || "").match(m.notSpaceStart)?.[0], i3 = e3.replace(m.endingNewline, "") + `
+`;
+        return r2 ? '<pre><code class="language-' + T(r2) + '">' + (n2 ? i3 : T(i3, true)) + `</code></pre>
+` : "<pre><code>" + (n2 ? i3 : T(i3, true)) + `</code></pre>
+`;
+      }
+      blockquote({ tokens: e3 }) {
+        return `<blockquote>
+${this.parser.parse(e3)}</blockquote>
+`;
+      }
+      html({ text: e3 }) {
+        return e3;
+      }
+      def(e3) {
+        return "";
+      }
+      heading({ tokens: e3, depth: t2 }) {
+        return `<h${t2}>${this.parser.parseInline(e3)}</h${t2}>
+`;
+      }
+      hr(e3) {
+        return `<hr>
+`;
+      }
+      list(e3) {
+        let t2 = e3.ordered, n2 = e3.start, r2 = "";
+        for (let a3 = 0; a3 < e3.items.length; a3++) {
+          let o3 = e3.items[a3];
+          r2 += this.listitem(o3);
+        }
+        let i3 = t2 ? "ol" : "ul", s16 = t2 && n2 !== 1 ? ' start="' + n2 + '"' : "";
+        return "<" + i3 + s16 + `>
+` + r2 + "</" + i3 + `>
+`;
+      }
+      listitem(e3) {
+        return `<li>${this.parser.parse(e3.tokens)}</li>
+`;
+      }
+      checkbox({ checked: e3 }) {
+        return "<input " + (e3 ? 'checked="" ' : "") + 'disabled="" type="checkbox"> ';
+      }
+      paragraph({ tokens: e3 }) {
+        return `<p>${this.parser.parseInline(e3)}</p>
+`;
+      }
+      table(e3) {
+        let t2 = "", n2 = "";
+        for (let i3 = 0; i3 < e3.header.length; i3++) n2 += this.tablecell(e3.header[i3]);
+        t2 += this.tablerow({ text: n2 });
+        let r2 = "";
+        for (let i3 = 0; i3 < e3.rows.length; i3++) {
+          let s16 = e3.rows[i3];
+          n2 = "";
+          for (let a3 = 0; a3 < s16.length; a3++) n2 += this.tablecell(s16[a3]);
+          r2 += this.tablerow({ text: n2 });
+        }
+        return r2 && (r2 = `<tbody>${r2}</tbody>`), `<table>
+<thead>
+` + t2 + `</thead>
+` + r2 + `</table>
+`;
+      }
+      tablerow({ text: e3 }) {
+        return `<tr>
+${e3}</tr>
+`;
+      }
+      tablecell(e3) {
+        let t2 = this.parser.parseInline(e3.tokens), n2 = e3.header ? "th" : "td";
+        return (e3.align ? `<${n2} align="${e3.align}">` : `<${n2}>`) + t2 + `</${n2}>
+`;
+      }
+      strong({ tokens: e3 }) {
+        return `<strong>${this.parser.parseInline(e3)}</strong>`;
+      }
+      em({ tokens: e3 }) {
+        return `<em>${this.parser.parseInline(e3)}</em>`;
+      }
+      codespan({ text: e3 }) {
+        return `<code>${T(e3, true)}</code>`;
+      }
+      br(e3) {
+        return "<br>";
+      }
+      del({ tokens: e3 }) {
+        return `<del>${this.parser.parseInline(e3)}</del>`;
+      }
+      link({ href: e3, title: t2, tokens: n2 }) {
+        let r2 = this.parser.parseInline(n2), i3 = J(e3);
+        if (i3 === null) return r2;
+        e3 = i3;
+        let s16 = '<a href="' + e3 + '"';
+        return t2 && (s16 += ' title="' + T(t2) + '"'), s16 += ">" + r2 + "</a>", s16;
+      }
+      image({ href: e3, title: t2, text: n2, tokens: r2 }) {
+        r2 && (n2 = this.parser.parseInline(r2, this.parser.textRenderer));
+        let i3 = J(e3);
+        if (i3 === null) return T(n2);
+        e3 = i3;
+        let s16 = `<img src="${e3}" alt="${T(n2)}"`;
+        return t2 && (s16 += ` title="${T(t2)}"`), s16 += ">", s16;
+      }
+      text(e3) {
+        return "tokens" in e3 && e3.tokens ? this.parser.parseInline(e3.tokens) : "escaped" in e3 && e3.escaped ? e3.text : T(e3.text);
+      }
+    };
+    $ = class {
+      strong({ text: e3 }) {
+        return e3;
+      }
+      em({ text: e3 }) {
+        return e3;
+      }
+      codespan({ text: e3 }) {
+        return e3;
+      }
+      del({ text: e3 }) {
+        return e3;
+      }
+      html({ text: e3 }) {
+        return e3;
+      }
+      text({ text: e3 }) {
+        return e3;
+      }
+      link({ text: e3 }) {
+        return "" + e3;
+      }
+      image({ text: e3 }) {
+        return "" + e3;
+      }
+      br() {
+        return "";
+      }
+      checkbox({ raw: e3 }) {
+        return e3;
+      }
+    };
+    b = class u2 {
+      options;
+      renderer;
+      textRenderer;
+      constructor(e3) {
+        this.options = e3 || O, this.options.renderer = this.options.renderer || new y(), this.renderer = this.options.renderer, this.renderer.options = this.options, this.renderer.parser = this, this.textRenderer = new $();
+      }
+      static parse(e3, t2) {
+        return new u2(t2).parse(e3);
+      }
+      static parseInline(e3, t2) {
+        return new u2(t2).parseInline(e3);
+      }
+      parse(e3) {
+        this.renderer.parser = this;
+        let t2 = "";
+        for (let n2 = 0; n2 < e3.length; n2++) {
+          let r2 = e3[n2];
+          if (this.options.extensions?.renderers?.[r2.type]) {
+            let s16 = r2, a3 = this.options.extensions.renderers[s16.type].call({ parser: this }, s16);
+            if (a3 !== false || !["space", "hr", "heading", "code", "table", "blockquote", "list", "html", "def", "paragraph", "text"].includes(s16.type)) {
+              t2 += a3 || "";
+              continue;
+            }
+          }
+          let i3 = r2;
+          switch (i3.type) {
+            case "space": {
+              t2 += this.renderer.space(i3);
+              break;
+            }
+            case "hr": {
+              t2 += this.renderer.hr(i3);
+              break;
+            }
+            case "heading": {
+              t2 += this.renderer.heading(i3);
+              break;
+            }
+            case "code": {
+              t2 += this.renderer.code(i3);
+              break;
+            }
+            case "table": {
+              t2 += this.renderer.table(i3);
+              break;
+            }
+            case "blockquote": {
+              t2 += this.renderer.blockquote(i3);
+              break;
+            }
+            case "list": {
+              t2 += this.renderer.list(i3);
+              break;
+            }
+            case "checkbox": {
+              t2 += this.renderer.checkbox(i3);
+              break;
+            }
+            case "html": {
+              t2 += this.renderer.html(i3);
+              break;
+            }
+            case "def": {
+              t2 += this.renderer.def(i3);
+              break;
+            }
+            case "paragraph": {
+              t2 += this.renderer.paragraph(i3);
+              break;
+            }
+            case "text": {
+              t2 += this.renderer.text(i3);
+              break;
+            }
+            default: {
+              let s16 = 'Token with "' + i3.type + '" type was not found.';
+              if (this.options.silent) return console.error(s16), "";
+              throw new Error(s16);
+            }
+          }
+        }
+        return t2;
+      }
+      parseInline(e3, t2 = this.renderer) {
+        this.renderer.parser = this;
+        let n2 = "";
+        for (let r2 = 0; r2 < e3.length; r2++) {
+          let i3 = e3[r2];
+          if (this.options.extensions?.renderers?.[i3.type]) {
+            let a3 = this.options.extensions.renderers[i3.type].call({ parser: this }, i3);
+            if (a3 !== false || !["escape", "html", "link", "image", "strong", "em", "codespan", "br", "del", "text"].includes(i3.type)) {
+              n2 += a3 || "";
+              continue;
+            }
+          }
+          let s16 = i3;
+          switch (s16.type) {
+            case "escape": {
+              n2 += t2.text(s16);
+              break;
+            }
+            case "html": {
+              n2 += t2.html(s16);
+              break;
+            }
+            case "link": {
+              n2 += t2.link(s16);
+              break;
+            }
+            case "image": {
+              n2 += t2.image(s16);
+              break;
+            }
+            case "checkbox": {
+              n2 += t2.checkbox(s16);
+              break;
+            }
+            case "strong": {
+              n2 += t2.strong(s16);
+              break;
+            }
+            case "em": {
+              n2 += t2.em(s16);
+              break;
+            }
+            case "codespan": {
+              n2 += t2.codespan(s16);
+              break;
+            }
+            case "br": {
+              n2 += t2.br(s16);
+              break;
+            }
+            case "del": {
+              n2 += t2.del(s16);
+              break;
+            }
+            case "text": {
+              n2 += t2.text(s16);
+              break;
+            }
+            default: {
+              let a3 = 'Token with "' + s16.type + '" type was not found.';
+              if (this.options.silent) return console.error(a3), "";
+              throw new Error(a3);
+            }
+          }
+        }
+        return n2;
+      }
+    };
+    P = class {
+      options;
+      block;
+      constructor(e3) {
+        this.options = e3 || O;
+      }
+      static passThroughHooks = /* @__PURE__ */ new Set(["preprocess", "postprocess", "processAllTokens", "emStrongMask"]);
+      static passThroughHooksRespectAsync = /* @__PURE__ */ new Set(["preprocess", "postprocess", "processAllTokens"]);
+      preprocess(e3) {
+        return e3;
+      }
+      postprocess(e3) {
+        return e3;
+      }
+      processAllTokens(e3) {
+        return e3;
+      }
+      emStrongMask(e3) {
+        return e3;
+      }
+      provideLexer(e3 = this.block) {
+        return e3 ? x.lex : x.lexInline;
+      }
+      provideParser(e3 = this.block) {
+        return e3 ? b.parse : b.parseInline;
+      }
+    };
+    D = class {
+      defaults = M();
+      options = this.setOptions;
+      parse = this.parseMarkdown(true);
+      parseInline = this.parseMarkdown(false);
+      Parser = b;
+      Renderer = y;
+      TextRenderer = $;
+      Lexer = x;
+      Tokenizer = w;
+      Hooks = P;
+      constructor(...e3) {
+        this.use(...e3);
+      }
+      walkTokens(e3, t2) {
+        let n2 = [];
+        for (let r2 of e3) switch (n2 = n2.concat(t2.call(this, r2)), r2.type) {
+          case "table": {
+            let i3 = r2;
+            for (let s16 of i3.header) n2 = n2.concat(this.walkTokens(s16.tokens, t2));
+            for (let s16 of i3.rows) for (let a3 of s16) n2 = n2.concat(this.walkTokens(a3.tokens, t2));
+            break;
+          }
+          case "list": {
+            let i3 = r2;
+            n2 = n2.concat(this.walkTokens(i3.items, t2));
+            break;
+          }
+          default: {
+            let i3 = r2;
+            this.defaults.extensions?.childTokens?.[i3.type] ? this.defaults.extensions.childTokens[i3.type].forEach((s16) => {
+              let a3 = i3[s16].flat(1 / 0);
+              n2 = n2.concat(this.walkTokens(a3, t2));
+            }) : i3.tokens && (n2 = n2.concat(this.walkTokens(i3.tokens, t2)));
+          }
+        }
+        return n2;
+      }
+      use(...e3) {
+        let t2 = this.defaults.extensions || { renderers: {}, childTokens: {} };
+        return e3.forEach((n2) => {
+          let r2 = { ...n2 };
+          if (r2.async = this.defaults.async || r2.async || false, n2.extensions && (n2.extensions.forEach((i3) => {
+            if (!i3.name) throw new Error("extension name required");
+            if ("renderer" in i3) {
+              let s16 = t2.renderers[i3.name];
+              s16 ? t2.renderers[i3.name] = function(...a3) {
+                let o3 = i3.renderer.apply(this, a3);
+                return o3 === false && (o3 = s16.apply(this, a3)), o3;
+              } : t2.renderers[i3.name] = i3.renderer;
+            }
+            if ("tokenizer" in i3) {
+              if (!i3.level || i3.level !== "block" && i3.level !== "inline") throw new Error("extension level must be 'block' or 'inline'");
+              let s16 = t2[i3.level];
+              s16 ? s16.unshift(i3.tokenizer) : t2[i3.level] = [i3.tokenizer], i3.start && (i3.level === "block" ? t2.startBlock ? t2.startBlock.push(i3.start) : t2.startBlock = [i3.start] : i3.level === "inline" && (t2.startInline ? t2.startInline.push(i3.start) : t2.startInline = [i3.start]));
+            }
+            "childTokens" in i3 && i3.childTokens && (t2.childTokens[i3.name] = i3.childTokens);
+          }), r2.extensions = t2), n2.renderer) {
+            let i3 = this.defaults.renderer || new y(this.defaults);
+            for (let s16 in n2.renderer) {
+              if (!(s16 in i3)) throw new Error(`renderer '${s16}' does not exist`);
+              if (["options", "parser"].includes(s16)) continue;
+              let a3 = s16, o3 = n2.renderer[a3], l2 = i3[a3];
+              i3[a3] = (...p2) => {
+                let c3 = o3.apply(i3, p2);
+                return c3 === false && (c3 = l2.apply(i3, p2)), c3 || "";
+              };
+            }
+            r2.renderer = i3;
+          }
+          if (n2.tokenizer) {
+            let i3 = this.defaults.tokenizer || new w(this.defaults);
+            for (let s16 in n2.tokenizer) {
+              if (!(s16 in i3)) throw new Error(`tokenizer '${s16}' does not exist`);
+              if (["options", "rules", "lexer"].includes(s16)) continue;
+              let a3 = s16, o3 = n2.tokenizer[a3], l2 = i3[a3];
+              i3[a3] = (...p2) => {
+                let c3 = o3.apply(i3, p2);
+                return c3 === false && (c3 = l2.apply(i3, p2)), c3;
+              };
+            }
+            r2.tokenizer = i3;
+          }
+          if (n2.hooks) {
+            let i3 = this.defaults.hooks || new P();
+            for (let s16 in n2.hooks) {
+              if (!(s16 in i3)) throw new Error(`hook '${s16}' does not exist`);
+              if (["options", "block"].includes(s16)) continue;
+              let a3 = s16, o3 = n2.hooks[a3], l2 = i3[a3];
+              P.passThroughHooks.has(s16) ? i3[a3] = (p2) => {
+                if (this.defaults.async && P.passThroughHooksRespectAsync.has(s16)) return (async () => {
+                  let d3 = await o3.call(i3, p2);
+                  return l2.call(i3, d3);
+                })();
+                let c3 = o3.call(i3, p2);
+                return l2.call(i3, c3);
+              } : i3[a3] = (...p2) => {
+                if (this.defaults.async) return (async () => {
+                  let d3 = await o3.apply(i3, p2);
+                  return d3 === false && (d3 = await l2.apply(i3, p2)), d3;
+                })();
+                let c3 = o3.apply(i3, p2);
+                return c3 === false && (c3 = l2.apply(i3, p2)), c3;
+              };
+            }
+            r2.hooks = i3;
+          }
+          if (n2.walkTokens) {
+            let i3 = this.defaults.walkTokens, s16 = n2.walkTokens;
+            r2.walkTokens = function(a3) {
+              let o3 = [];
+              return o3.push(s16.call(this, a3)), i3 && (o3 = o3.concat(i3.call(this, a3))), o3;
+            };
+          }
+          this.defaults = { ...this.defaults, ...r2 };
+        }), this;
+      }
+      setOptions(e3) {
+        return this.defaults = { ...this.defaults, ...e3 }, this;
+      }
+      lexer(e3, t2) {
+        return x.lex(e3, t2 ?? this.defaults);
+      }
+      parser(e3, t2) {
+        return b.parse(e3, t2 ?? this.defaults);
+      }
+      parseMarkdown(e3) {
+        return (n2, r2) => {
+          let i3 = { ...r2 }, s16 = { ...this.defaults, ...i3 }, a3 = this.onError(!!s16.silent, !!s16.async);
+          if (this.defaults.async === true && i3.async === false) return a3(new Error("marked(): The async option was set to true by an extension. Remove async: false from the parse options object to return a Promise."));
+          if (typeof n2 > "u" || n2 === null) return a3(new Error("marked(): input parameter is undefined or null"));
+          if (typeof n2 != "string") return a3(new Error("marked(): input parameter is of type " + Object.prototype.toString.call(n2) + ", string expected"));
+          if (s16.hooks && (s16.hooks.options = s16, s16.hooks.block = e3), s16.async) return (async () => {
+            let o3 = s16.hooks ? await s16.hooks.preprocess(n2) : n2, p2 = await (s16.hooks ? await s16.hooks.provideLexer(e3) : e3 ? x.lex : x.lexInline)(o3, s16), c3 = s16.hooks ? await s16.hooks.processAllTokens(p2) : p2;
+            s16.walkTokens && await Promise.all(this.walkTokens(c3, s16.walkTokens));
+            let h4 = await (s16.hooks ? await s16.hooks.provideParser(e3) : e3 ? b.parse : b.parseInline)(c3, s16);
+            return s16.hooks ? await s16.hooks.postprocess(h4) : h4;
+          })().catch(a3);
+          try {
+            s16.hooks && (n2 = s16.hooks.preprocess(n2));
+            let l2 = (s16.hooks ? s16.hooks.provideLexer(e3) : e3 ? x.lex : x.lexInline)(n2, s16);
+            s16.hooks && (l2 = s16.hooks.processAllTokens(l2)), s16.walkTokens && this.walkTokens(l2, s16.walkTokens);
+            let c3 = (s16.hooks ? s16.hooks.provideParser(e3) : e3 ? b.parse : b.parseInline)(l2, s16);
+            return s16.hooks && (c3 = s16.hooks.postprocess(c3)), c3;
+          } catch (o3) {
+            return a3(o3);
+          }
+        };
+      }
+      onError(e3, t2) {
+        return (n2) => {
+          if (n2.message += `
+Please report this to https://github.com/markedjs/marked.`, e3) {
+            let r2 = "<p>An error occurred:</p><pre>" + T(n2.message + "", true) + "</pre>";
+            return t2 ? Promise.resolve(r2) : r2;
+          }
+          if (t2) return Promise.reject(n2);
+          throw n2;
+        };
+      }
+    };
+    L = new D();
+    g.options = g.setOptions = function(u4) {
+      return L.setOptions(u4), g.defaults = L.defaults, G(g.defaults), g;
+    };
+    g.getDefaults = M;
+    g.defaults = O;
+    g.use = function(...u4) {
+      return L.use(...u4), g.defaults = L.defaults, G(g.defaults), g;
+    };
+    g.walkTokens = function(u4, e3) {
+      return L.walkTokens(u4, e3);
+    };
+    g.parseInline = L.parseInline;
+    g.Parser = b;
+    g.parser = b.parse;
+    g.Renderer = y;
+    g.TextRenderer = $;
+    g.Lexer = x;
+    g.lexer = x.lex;
+    g.Tokenizer = w;
+    g.Hooks = P;
+    g.parse = g;
+    Qt = g.options;
+    jt = g.setOptions;
+    Ft = g.use;
+    Ut = g.walkTokens;
+    Kt = g.parseInline;
+    Xt = b.parse;
+    Jt = x.lex;
+  }
+});
+
 // packages/thread-store/src/side-chat.ts
+function excerptTokenText(token) {
+  if (token.type === "html") return "";
+  if (token.tokens) return token.tokens.map(excerptTokenText).join("");
+  return token.text ?? "";
+}
 function stripInlineMarkdown(text2) {
-  return text2.replace(/^#{1,6}\s+/, "").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/`([^`]*)`/g, "$1").replace(/\*\*([^*]+)\*\*/g, "$1").replace(/__([^_]+)__/g, "$1").replace(/~~([^~]+)~~/g, "$1").replace(/\*([^*]+)\*/g, "$1").replace(/_([^_]+)_/g, "$1");
+  const tokens = x.lexInline(text2.replace(/^#{1,6}\s+/, ""), {
+    gfm: true
+  });
+  return tokens.map(excerptTokenText).join("");
 }
 function excerptText(text2) {
   const line = stripInlineMarkdown(text2.trim().split("\n", 1)[0] ?? "");
@@ -56952,6 +58435,7 @@ function unreadSideChatParents(threads) {
 var MAX_TITLE_LENGTH;
 var init_side_chat = __esm({
   "packages/thread-store/src/side-chat.ts"() {
+    init_marked_esm();
     MAX_TITLE_LENGTH = 80;
   }
 });
@@ -61701,6 +63185,12 @@ function createAppleDevelopmentPanel(store2, api2, options) {
       if (current === generation) render2(owner, state);
     } catch (error62) {
       if (current !== generation) return;
+      if (!options.allowEnrollment && isUnavailableThreadCheckoutError(error62)) {
+        stopPolling();
+        host.replaceChildren();
+        host.hidden = true;
+        return;
+      }
       host.hidden = false;
       host.replaceChildren(
         el(
@@ -61721,6 +63211,7 @@ var init_apple_development_panel = __esm({
   "src/renderer/views/apple-development-panel.ts"() {
     init_helpers();
     init_icons();
+    init_ipc_error_message();
   }
 });
 
@@ -69680,12 +71171,6 @@ async function loadSimpleFields(form, api2) {
     }
   }
 }
-async function mountMobileCompanionQr(overlay, api2) {
-  const status = await api2.mobile.status();
-  qsRequired(overlay, "#mobile-companion-qr-image").innerHTML = status.qrSvg ?? "";
-  qsRequired(overlay, "#mobile-companion-qr-url").textContent = status.url ?? "";
-  qsRequired(overlay, "#mobile-companion-qr").hidden = !status.url || !status.qrSvg;
-}
 function parseNonNegativeInt(value, fallback) {
   const n2 = Number.parseInt(value, 10);
   return Number.isFinite(n2) && n2 >= 0 ? n2 : fallback;
@@ -70792,26 +72277,7 @@ function mountSettingsDialog(store2, api2) {
               </div>
             </fieldset>
 
-            <fieldset>
-              <legend>Mobile Companion</legend>
-              <p class="field-hint">
-                Open your Copse threads from a phone on the same local network. Choose the network
-                interface your phone uses, pair phones, or turn sharing off. Copse must stay open
-                and this computer must stay awake.
-              </p>
-              <div class="settings-action-row">
-                <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
-                  Set up or manage\u2026
-                </button>
-              </div>
-              <div id="mobile-companion-qr" class="mobile-companion-qr" hidden>
-                <div id="mobile-companion-qr-image" class="mobile-companion-qr-image" aria-hidden="true"></div>
-                <div class="mobile-companion-qr-text">
-                  <p class="field-hint">Scan with your phone's camera to open Copse.</p>
-                  <code id="mobile-companion-qr-url" class="mobile-companion-qr-url"></code>
-                </div>
-              </div>
-            </fieldset>
+            <div id="settings-mobile-companion-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Remote desktop viewer</legend>
@@ -71085,13 +72551,8 @@ function mountSettingsDialog(store2, api2) {
   qsRequired(overlay, "#settings-usage-host").append(usageSection.root);
   const aboutSection = createAboutSection(api2);
   qsRequired(overlay, "#settings-about-host").append(aboutSection.root);
-  qsRequired(overlay, "#mobile-companion-manage").addEventListener(
-    "click",
-    () => {
-      closeSettingsDialog();
-      void api2.mobile.manage();
-    }
-  );
+  const mobileCompanionSection = createMobileCompanionSection(api2);
+  qsRequired(overlay, "#settings-mobile-companion-host").append(mobileCompanionSection.root);
   const navBtns = overlay.querySelectorAll(".settings-nav-btn");
   const sections = overlay.querySelectorAll(".settings-section");
   const contentEl = qsRequired(overlay, ".settings-content");
@@ -71317,6 +72778,7 @@ function mountSettingsDialog(store2, api2) {
           void refreshSources();
         }
         if (id === "customise" || id === "experimental") void refreshPlugins();
+        if (id === "experimental") void mobileCompanionSection.refresh();
         if (id === "storage") {
           void refreshWorktrees();
           void storageMaintenance.refresh();
@@ -73241,10 +74703,6 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     });
   }
   overlay.addEventListener("settings-open", () => {
-    void mountMobileCompanionQr(overlay, api2).catch((error62) => {
-      qsRequired(overlay, "#mobile-companion-qr").hidden = true;
-      console.error("[settings] Could not load Mobile Companion status:", error62);
-    });
     appearanceBaseline = currentAppearance();
     appearanceCommitted = false;
     resetDirtyState();
@@ -73269,7 +74727,10 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
     if (openedSection === "about") void aboutSection.refresh();
-    if (openedSection === "experimental") void refreshPlugins();
+    if (openedSection === "experimental") {
+      void refreshPlugins();
+      void mobileCompanionSection.refresh();
+    }
     if (openedSection === "customise") {
       void refreshSources();
       if (modelFocus) void revealPluginModel?.(modelFocus);
@@ -73618,6 +75079,7 @@ var init_settings_dialog = __esm({
     init_usage_section();
     init_about_section();
     init_ssh_workspace_section();
+    init_mobile_companion_section();
     init_dist();
     init_automations_plugin();
     init_canvas_settings();
@@ -74431,11 +75893,11 @@ function totalLength(el3) {
     return null;
   }
 }
-var SVG_NS3, D;
+var SVG_NS3, D2;
 var init_utils = __esm({
   "src/renderer/drawing/drauu/utils.ts"() {
     SVG_NS3 = "http://www.w3.org/2000/svg";
-    D = 2;
+    D2 = 2;
   }
 });
 
@@ -74586,7 +76048,7 @@ var init_base = __esm({
         return el3;
       }
       attr(name, value) {
-        this.el?.setAttribute(name, typeof value === "string" ? value : value.toFixed(D));
+        this.el?.setAttribute(name, typeof value === "string" ? value : value.toFixed(D2));
       }
       setEvent(event) {
         this.point = this.getMousePosition(event);
@@ -74650,10 +76112,10 @@ var init_draw = __esm({
         path.setAttribute("d", _DrawModel.toSvgData(simplify(this.points, 1, true)));
         const first2 = this.points[0];
         if (totalLength(path) === 0 && first2) {
-          const r2 = (this.brush.size / 2).toFixed(D);
-          const d22 = this.brush.size.toFixed(D);
-          const x3 = (first2.x - this.brush.size / 2).toFixed(D);
-          const y3 = first2.y.toFixed(D);
+          const r2 = (this.brush.size / 2).toFixed(D2);
+          const d22 = this.brush.size.toFixed(D2);
+          const x3 = (first2.x - this.brush.size / 2).toFixed(D2);
+          const y3 = first2.y.toFixed(D2);
           path.setAttribute("d", `M ${x3} ${y3} a ${r2},${r2} 0 1,0 ${d22},0 a ${r2},${r2} 0 1,0 -${d22},0`);
           path.setAttribute("fill", this.brush.color);
           path.setAttribute("stroke-width", "0");
@@ -74679,11 +76141,11 @@ var init_draw = __esm({
         const prev = points[i3 - 1] ?? point;
         const cps = _DrawModel.controlPoint(prev, points[i3 - 2], point);
         const cpe = _DrawModel.controlPoint(point, prev, points[i3 + 1], true);
-        return `C ${cps.x.toFixed(D)},${cps.y.toFixed(D)} ${cpe.x.toFixed(D)},${cpe.y.toFixed(D)} ${point.x.toFixed(D)},${point.y.toFixed(D)}`;
+        return `C ${cps.x.toFixed(D2)},${cps.y.toFixed(D2)} ${cpe.x.toFixed(D2)},${cpe.y.toFixed(D2)} ${point.x.toFixed(D2)},${point.y.toFixed(D2)}`;
       }
       static toSvgData(points) {
         return points.reduce(
-          (acc, point, i3, a3) => i3 === 0 ? `M ${point.x.toFixed(D)},${point.y.toFixed(D)}` : `${acc} ${_DrawModel.bezierCommand(point, i3, a3)}`,
+          (acc, point, i3, a3) => i3 === 0 ? `M ${point.x.toFixed(D2)},${point.y.toFixed(D2)}` : `${acc} ${_DrawModel.bezierCommand(point, i3, a3)}`,
           ""
         );
       }
@@ -74965,7 +76427,7 @@ function c(e3, t2) {
 function l(e3, t2, n2) {
   return e3[0] = t2[0] + n2[0], e3[1] = t2[1] + n2[1], e3;
 }
-function u(e3, t2) {
+function u3(e3, t2) {
   return [e3[0] - t2[0], e3[1] - t2[1]];
 }
 function d(e3, t2, n2) {
@@ -74977,55 +76439,55 @@ function f(e3, t2) {
 function p(e3, t2, n2) {
   return e3[0] = t2[0] * n2, e3[1] = t2[1] * n2, e3;
 }
-function m(e3, t2) {
+function m2(e3, t2) {
   return [e3[0] / t2, e3[1] / t2];
 }
 function h(e3) {
   return [e3[1], -e3[0]];
 }
-function g(e3, t2) {
+function g2(e3, t2) {
   let n2 = t2[0];
   return e3[0] = t2[1], e3[1] = -n2, e3;
 }
 function ee(e3, t2) {
   return e3[0] * t2[0] + e3[1] * t2[1];
 }
-function _(e3, t2) {
+function _2(e3, t2) {
   return e3[0] === t2[0] && e3[1] === t2[1];
 }
-function v(e3) {
+function v2(e3) {
   return Math.hypot(e3[0], e3[1]);
 }
-function y(e3, t2) {
+function y2(e3, t2) {
   let n2 = e3[0] - t2[0], r2 = e3[1] - t2[1];
   return n2 * n2 + r2 * r2;
 }
-function b(e3) {
-  return m(e3, v(e3));
+function b2(e3) {
+  return m2(e3, v2(e3));
 }
-function x(e3, t2) {
+function x2(e3, t2) {
   return Math.hypot(e3[1] - t2[1], e3[0] - t2[0]);
 }
 function S(e3, t2, n2) {
   let r2 = Math.sin(n2), i3 = Math.cos(n2), a3 = e3[0] - t2[0], o3 = e3[1] - t2[1], s16 = a3 * i3 - o3 * r2, c3 = a3 * r2 + o3 * i3;
   return [s16 + t2[0], c3 + t2[1]];
 }
-function C(e3, t2, n2, r2) {
+function C2(e3, t2, n2, r2) {
   let i3 = Math.sin(r2), a3 = Math.cos(r2), o3 = t2[0] - n2[0], s16 = t2[1] - n2[1], c3 = o3 * a3 - s16 * i3, l2 = o3 * i3 + s16 * a3;
   return e3[0] = c3 + n2[0], e3[1] = l2 + n2[1], e3;
 }
-function w(e3, t2, n2) {
-  return c(e3, f(u(t2, e3), n2));
+function w2(e3, t2, n2) {
+  return c(e3, f(u3(t2, e3), n2));
 }
 function te(e3, t2, n2, r2) {
   let i3 = n2[0] - t2[0], a3 = n2[1] - t2[1];
   return e3[0] = t2[0] + i3 * r2, e3[1] = t2[1] + a3 * r2, e3;
 }
-function T(e3, t2, n2) {
+function T2(e3, t2, n2) {
   return c(e3, f(t2, n2));
 }
-function k(e3, n2) {
-  let r2 = T(e3, b(h(u(e3, c(e3, [1, 1])))), -n2), i3 = [], a3 = 1 / 13;
+function k2(e3, n2) {
+  let r2 = T2(e3, b2(h(u3(e3, c(e3, [1, 1])))), -n2), i3 = [], a3 = 1 / 13;
   for (let n3 = a3; n3 <= 1; n3 += a3) i3.push(S(r2, e3, t * 2 * n3));
   return i3;
 }
@@ -75034,31 +76496,31 @@ function A2(e3, n2, r2) {
   for (let r3 = a3; r3 <= 1; r3 += a3) i3.push(S(n2, e3, t * r3));
   return i3;
 }
-function j(e3, t2, n2) {
-  let r2 = u(t2, n2), i3 = f(r2, 0.5), a3 = f(r2, 0.51);
-  return [u(e3, i3), u(e3, a3), c(e3, a3), c(e3, i3)];
+function j2(e3, t2, n2) {
+  let r2 = u3(t2, n2), i3 = f(r2, 0.5), a3 = f(r2, 0.51);
+  return [u3(e3, i3), u3(e3, a3), c(e3, a3), c(e3, i3)];
 }
-function M(e3, n2, r2, i3) {
-  let a3 = [], o3 = T(e3, n2, r2), s16 = 1 / i3;
+function M2(e3, n2, r2, i3) {
+  let a3 = [], o3 = T2(e3, n2, r2), s16 = 1 / i3;
   for (let n3 = s16; n3 < 1; n3 += s16) a3.push(S(o3, e3, t * 3 * n3));
   return a3;
 }
-function ne(e3, t2, n2) {
-  return [c(e3, f(t2, n2)), c(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2))];
+function ne2(e3, t2, n2) {
+  return [c(e3, f(t2, n2)), c(e3, f(t2, n2 * 0.99)), u3(e3, f(t2, n2 * 0.99)), u3(e3, f(t2, n2))];
 }
-function N(e3, t2, n2) {
+function N2(e3, t2, n2) {
   return e3 === false || e3 === void 0 ? 0 : e3 === true ? Math.max(t2, n2) : e3;
 }
-function re(e3, t2, n2) {
+function re2(e3, t2, n2) {
   return e3.slice(0, 10).reduce((e4, r2) => {
     let i3 = r2.pressure;
     return t2 && (i3 = o(e4, r2.distance, n2)), (e4 + i3) / 2;
   }, e3[0].pressure);
 }
-function P(e3, n2 = {}) {
+function P2(e3, n2 = {}) {
   let { size: r2 = 16, smoothing: a3 = 0.5, thinning: f4 = 0.5, simulatePressure: m3 = true, easing: _4 = (e4) => e4, start: v4 = {}, end: b5 = {}, last: x3 = false } = n2, { cap: S3 = true, easing: w3 = (e4) => e4 * (2 - e4) } = v4, { cap: T3 = true, easing: P3 = (e4) => --e4 * e4 * e4 + 1 } = b5;
   if (e3.length === 0 || r2 <= 0) return [];
-  let F4 = e3[e3.length - 1].runningLength, I3 = N(v4.taper, r2, F4), L4 = N(b5.taper, r2, F4), R2 = (r2 * a3) ** 2, z5 = [], B4 = [], V3 = re(e3, m3, r2), H3 = i(r2, f4, e3[e3.length - 1].pressure, _4), U3, W2 = e3[0].vector, G3 = e3[0].point, K3 = G3, q3 = G3, J3 = K3, Y3 = false;
+  let F4 = e3[e3.length - 1].runningLength, I3 = N2(v4.taper, r2, F4), L4 = N2(b5.taper, r2, F4), R2 = (r2 * a3) ** 2, z5 = [], B4 = [], V3 = re2(e3, m3, r2), H3 = i(r2, f4, e3[e3.length - 1].pressure, _4), U3, W2 = e3[0].vector, G3 = e3[0].point, K3 = G3, q3 = G3, J3 = K3, Y3 = false;
   for (let n3 = 0; n3 < e3.length; n3++) {
     let { pressure: a4 } = e3[n3], { point: s16, vector: h4, distance: v5, runningLength: b6 } = e3[n3], x4 = n3 === e3.length - 1;
     if (!x4 && F4 - b6 < 3) continue;
@@ -75067,57 +76529,57 @@ function P(e3, n2 = {}) {
     H3 = Math.max(0.01, H3 * Math.min(S4, T4));
     let k3 = (x4 ? e3[n3] : e3[n3 + 1]).vector, A3 = x4 ? 1 : ee(h4, k3), j4 = ee(h4, W2) < 0 && !Y3, M5 = A3 !== null && A3 < 0;
     if (j4 || M5) {
-      g(E, W2), p(E, E, H3);
-      for (let e4 = 0; e4 <= 1; e4 += 0.07692307692307693) d(D2, s16, E), C(D2, D2, s16, t * e4), q3 = [D2[0], D2[1]], z5.push(q3), l(O, s16, E), C(O, O, s16, t * -e4), J3 = [O[0], O[1]], B4.push(J3);
+      g2(E2, W2), p(E2, E2, H3);
+      for (let e4 = 0; e4 <= 1; e4 += 0.07692307692307693) d(D3, s16, E2), C2(D3, D3, s16, t * e4), q3 = [D3[0], D3[1]], z5.push(q3), l(O2, s16, E2), C2(O2, O2, s16, t * -e4), J3 = [O2[0], O2[1]], B4.push(J3);
       G3 = q3, K3 = J3, M5 && (Y3 = true);
       continue;
     }
     if (Y3 = false, x4) {
-      g(E, h4), p(E, E, H3), z5.push(u(s16, E)), B4.push(c(s16, E));
+      g2(E2, h4), p(E2, E2, H3), z5.push(u3(s16, E2)), B4.push(c(s16, E2));
       continue;
     }
-    te(E, k3, h4, A3), g(E, E), p(E, E, H3), d(D2, s16, E), q3 = [D2[0], D2[1]], (n3 <= 1 || y(G3, q3) > R2) && (z5.push(q3), G3 = q3), l(O, s16, E), J3 = [O[0], O[1]], (n3 <= 1 || y(K3, J3) > R2) && (B4.push(J3), K3 = J3), V3 = a4, W2 = h4;
+    te(E2, k3, h4, A3), g2(E2, E2), p(E2, E2, H3), d(D3, s16, E2), q3 = [D3[0], D3[1]], (n3 <= 1 || y2(G3, q3) > R2) && (z5.push(q3), G3 = q3), l(O2, s16, E2), J3 = [O2[0], O2[1]], (n3 <= 1 || y2(K3, J3) > R2) && (B4.push(J3), K3 = J3), V3 = a4, W2 = h4;
   }
   let X4 = [e3[0].point[0], e3[0].point[1]], Z = e3.length > 1 ? [e3[e3.length - 1].point[0], e3[e3.length - 1].point[1]] : c(e3[0].point, [1, 1]), Q4 = [], $3 = [];
   if (e3.length === 1) {
-    if (!(I3 || L4) || x3) return k(X4, U3 || H3);
+    if (!(I3 || L4) || x3) return k2(X4, U3 || H3);
   } else {
-    I3 || L4 && e3.length === 1 || (S3 ? Q4.push(...A2(X4, B4[0], 13)) : Q4.push(...j(X4, z5[0], B4[0])));
+    I3 || L4 && e3.length === 1 || (S3 ? Q4.push(...A2(X4, B4[0], 13)) : Q4.push(...j2(X4, z5[0], B4[0])));
     let t2 = h(s(e3[e3.length - 1].vector));
-    L4 || I3 && e3.length === 1 ? $3.push(Z) : T3 ? $3.push(...M(Z, t2, H3, 29)) : $3.push(...ne(Z, t2, H3));
+    L4 || I3 && e3.length === 1 ? $3.push(Z) : T3 ? $3.push(...M2(Z, t2, H3, 29)) : $3.push(...ne2(Z, t2, H3));
   }
   return z5.concat($3, B4.reverse(), Q4);
 }
-function I(e3) {
+function I2(e3) {
   return e3 != null && e3 >= 0;
 }
-function L(e3, t2 = {}) {
+function L2(e3, t2 = {}) {
   let { streamline: i3 = 0.5, size: a3 = 16, last: o3 = false } = t2;
   if (e3.length === 0) return [];
   let s16 = 0.15 + (1 - i3) * 0.85, l2 = Array.isArray(e3[0]) ? e3 : e3.map(({ x: e4, y: t3, pressure: r2 = n }) => [e4, t3, r2]);
   if (l2.length === 2) {
     let e4 = l2[1];
     l2 = l2.slice(0, -1);
-    for (let t3 = 1; t3 < 5; t3++) l2.push(w(l2[0], e4, t3 / 4));
+    for (let t3 = 1; t3 < 5; t3++) l2.push(w2(l2[0], e4, t3 / 4));
   }
   l2.length === 1 && (l2 = [...l2, [...c(l2[0], r), ...l2[0].slice(2)]]);
-  let u4 = [{ point: [l2[0][0], l2[0][1]], pressure: I(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f4 = false, p2 = 0, m3 = u4[0], h4 = l2.length - 1;
+  let u4 = [{ point: [l2[0][0], l2[0][1]], pressure: I2(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f4 = false, p2 = 0, m3 = u4[0], h4 = l2.length - 1;
   for (let e4 = 1; e4 < l2.length; e4++) {
-    let t3 = o3 && e4 === h4 ? [l2[e4][0], l2[e4][1]] : w(m3.point, l2[e4], s16);
-    if (_(m3.point, t3)) continue;
-    let r2 = x(t3, m3.point);
+    let t3 = o3 && e4 === h4 ? [l2[e4][0], l2[e4][1]] : w2(m3.point, l2[e4], s16);
+    if (_2(m3.point, t3)) continue;
+    let r2 = x2(t3, m3.point);
     if (p2 += r2, e4 < h4 && !f4) {
       if (p2 < a3) continue;
       f4 = true;
     }
-    d(F, m3.point, t3), m3 = { point: t3, pressure: I(l2[e4][2]) ? l2[e4][2] : n, vector: b(F), distance: r2, runningLength: p2 }, u4.push(m3);
+    d(F2, m3.point, t3), m3 = { point: t3, pressure: I2(l2[e4][2]) ? l2[e4][2] : n, vector: b2(F2), distance: r2, runningLength: p2 }, u4.push(m3);
   }
   return u4[0].vector = u4[1]?.vector || [0, 0], u4;
 }
 function R(e3, t2 = {}) {
-  return P(L(e3, t2), t2);
+  return P2(L2(e3, t2), t2);
 }
-var e, t, n, r, a, E, D2, O, F;
+var e, t, n, r, a, E2, D3, O2, F2;
 var init_esm = __esm({
   "node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs"() {
     ({ PI: e } = Math);
@@ -75125,10 +76587,10 @@ var init_esm = __esm({
     n = 0.5;
     r = [1, 1];
     ({ min: a } = Math);
-    E = [0, 0];
-    D2 = [0, 0];
-    O = [0, 0];
-    F = [0, 0];
+    E2 = [0, 0];
+    D3 = [0, 0];
+    O2 = [0, 0];
+    F2 = [0, 0];
   }
 });
 
@@ -77771,6 +79233,143 @@ var init_demo_concise_states = __esm({
   }
 });
 
+// src/shared/demo-bridged-tools.ts
+var CREATED_AT, MODEL, PATCH2, BRIDGED_TOOL_SCENARIOS;
+var init_demo_bridged_tools = __esm({
+  "src/shared/demo-bridged-tools.ts"() {
+    CREATED_AT = Date.UTC(2026, 9, 11, 9);
+    MODEL = "claude-opus-5-5";
+    PATCH2 = [
+      "*** Begin Patch",
+      "*** Update File: src/greeting.ts",
+      "-hello",
+      "+hello, world",
+      "*** Add File: src/farewell.ts",
+      "+goodbye",
+      "*** End Patch"
+    ].join("\n");
+    BRIDGED_TOOL_SCENARIOS = [
+      {
+        id: "bridged-tools",
+        label: "Patch file links and command output",
+        project: { id: "demo-bridge-project", name: "Bridge tools", path: "/demo/bridge" },
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off", model: MODEL },
+        threads: [
+          {
+            id: "demo-bridge-thread",
+            title: "Update greetings",
+            status: "idle",
+            model: MODEL,
+            messages: [
+              {
+                id: "bridge-user",
+                role: "user",
+                content: "Update the greetings.",
+                toolCalls: [],
+                createdAt: CREATED_AT
+              },
+              {
+                id: "bridge-patch",
+                role: "assistant",
+                content: "Updated both greetings.",
+                createdAt: CREATED_AT,
+                toolCalls: [
+                  {
+                    id: "bridge-patch-call",
+                    name: "copse.apply_patch",
+                    args: { input: PATCH2 },
+                    status: "done",
+                    result: "Patched two files."
+                  }
+                ]
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: CREATED_AT,
+            updatedAt: CREATED_AT
+          }
+        ],
+        trace: {
+          id: "bridge-shell-trace",
+          label: "Run greeting tests",
+          prompt: "Run the greeting tests.",
+          steps: [
+            {
+              chunk: {
+                type: "tool_call",
+                toolCall: {
+                  id: "bridge-shell",
+                  name: "Run greeting tests",
+                  programmaticName: "mcp__copse__run_shell",
+                  args: { command: "pnpm test greetings" }
+                }
+              }
+            },
+            {
+              chunk: {
+                type: "tool_result",
+                toolCallId: "bridge-shell",
+                result: "2 greeting tests passed.",
+                isError: false
+              }
+            },
+            { chunk: { type: "text", text: "Both greeting tests passed." } },
+            { chunk: { type: "done", stopReason: "end_turn" } }
+          ]
+        }
+      },
+      {
+        id: "bridged-tools-concise",
+        label: "Running command in concise view",
+        project: { id: "demo-bridge-concise-project", name: "Bridge tools", path: "/demo/bridge" },
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: MODEL,
+          conciseThreadsEnabled: true
+        },
+        threads: [
+          {
+            id: "demo-bridge-concise-thread",
+            title: "Test greetings",
+            status: "running",
+            model: MODEL,
+            messages: [
+              {
+                id: "bridge-concise-user",
+                role: "user",
+                content: "Run the greeting tests.",
+                toolCalls: [],
+                createdAt: CREATED_AT
+              },
+              {
+                id: "bridge-concise-shell",
+                role: "assistant",
+                content: "",
+                model: MODEL,
+                createdAt: CREATED_AT,
+                toolCalls: [
+                  {
+                    id: "bridge-running-shell",
+                    name: "copse-run_shell: Test greetings",
+                    args: { command: "pnpm test greetings" },
+                    status: "running",
+                    result: null
+                  }
+                ]
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: CREATED_AT,
+            updatedAt: CREATED_AT
+          }
+        ]
+      }
+    ];
+  }
+});
+
 // src/shared/approval-copy.ts
 function webApprovalDetails(origin, url2, allowRemember, context) {
   return {
@@ -78052,18 +79651,21 @@ function approvalRiskScenario(id, request) {
     approvalRequests: [request]
   };
 }
-var FIXED_TIME, SIDE_CHATS_MAIN_ID, SIDE_CHATS_OTHER_ID, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, SIDE_CHATS_THREADS, DEMO_SCENARIOS;
+var FIXED_TIME, SIDE_CHATS_MAIN_ID, SIDE_CHATS_OTHER_ID, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, MOBILE_COMPANION_DEMO_URL, MOBILE_COMPANION_DEMO_QR_SVG, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, SIDE_CHATS_THREADS, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
     init_demo_site_tour();
     init_demo_concise_states();
+    init_demo_bridged_tools();
     init_approval_copy();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
     SIDE_CHATS_MAIN_ID = "7b3e9a10-5c2d-4f6e-8a41-0d9c2b7e5f13";
     SIDE_CHATS_OTHER_ID = "3c1f0a52-8b3e-4d7a-9f10-2a6b7c8d9e01";
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
+    MOBILE_COMPANION_DEMO_URL = "https://192.168.1.42:42773";
+    MOBILE_COMPANION_DEMO_QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27 27" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h27v27H0z"/><path stroke="#000000" d="M1 1.5h7m3 0h3m1 0h1m3 0h7M1 2.5h1m5 0h1m3 0h1m1 0h1m2 0h1m2 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m1 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h2m2 0h2m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m1 0h1m5 0h2m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m1 0h2m2 0h3m1 0h1m1 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h3m4 0h1M1 9.5h1m1 0h5m2 0h2m1 0h2m2 0h1m1 0h5M2 10.5h2m1 0h1m2 0h1m1 0h1m1 0h3m1 0h2m1 0h1m4 0h1M1 11.5h2m3 0h2m1 0h1m1 0h2m4 0h3m1 0h2m1 0h2M3 12.5h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m7 0h1M3 13.5h1m2 0h5m1 0h1m2 0h2m1 0h4m1 0h3M1 14.5h2m1 0h2m3 0h2m2 0h1m2 0h7m1 0h1M1 15.5h1m1 0h1m1 0h5m1 0h1m6 0h1m1 0h3m1 0h2M1 16.5h1m2 0h2m4 0h2m1 0h3m1 0h2m1 0h1m4 0h1M1 17.5h1m1 0h2m2 0h2m1 0h2m1 0h1m3 0h5m1 0h1M9 18.5h1m1 0h1m4 0h2m3 0h2M1 19.5h7m3 0h3m3 0h1m1 0h1m1 0h1m1 0h3M1 20.5h1m5 0h1m1 0h1m2 0h1m4 0h1m3 0h2m1 0h2M1 21.5h1m1 0h3m1 0h1m1 0h4m3 0h10M1 22.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m6 0h2m2 0h1M1 23.5h1m1 0h3m1 0h1m1 0h1m4 0h3m1 0h1m1 0h3m2 0h1M1 24.5h1m5 0h1m5 0h2m4 0h5m1 0h1M1 25.5h7m1 0h1m1 0h1m1 0h1m1 0h11"/></svg>';
     DEMO_CODEX_ACP_AGENT = {
       id: "codex-acp",
       title: "Codex",
@@ -79416,6 +81018,7 @@ var init_demo_scenarios = __esm({
           theme: "dark",
           uiTintStrength: "off"
         },
+        mobileCompanion: { url: MOBILE_COMPANION_DEMO_URL, qrSvg: MOBILE_COMPANION_DEMO_QR_SVG },
         threads: [
           {
             id: "demo-settings-footer-thread",
@@ -80756,6 +82359,7 @@ var init_demo_scenarios = __esm({
           }
         ]
       },
+      ...BRIDGED_TOOL_SCENARIOS,
       conciseThreadScenario(
         "concise-thread-working",
         "Concise thread view while a capable model works",
@@ -81018,9 +82622,25 @@ function createDemoApi(scenario2, options = {}) {
   );
   const api2 = {
     mobile: {
-      manage: async () => {
+      getState: () => resolved2({
+        enabled: scenario2.mobileCompanion !== void 0,
+        running: scenario2.mobileCompanion !== void 0,
+        url: scenario2.mobileCompanion?.url ?? null,
+        qrSvg: scenario2.mobileCompanion?.qrSvg ?? null,
+        rootCertificatePath: null,
+        addresses: scenario2.mobileCompanion ? [{ address: new URL(scenario2.mobileCompanion.url).hostname, interfaceName: "Wi-Fi" }] : [],
+        devices: [],
+        pairing: null,
+        lastError: null
+      }),
+      onStateChanged: () => () => {
       },
-      status: () => resolved2(MOBILE_COMPANION_DEMO_STATUS),
+      enable: () => resolvedVoid(),
+      disable: () => resolvedVoid(),
+      setDeviceAccess: () => resolvedVoid(),
+      revokeDevice: () => resolvedVoid(),
+      respondPairing: () => resolvedVoid(),
+      revealCertificate: () => resolvedVoid(),
       onChat: () => () => {
       },
       reply: async () => {
@@ -82056,7 +83676,7 @@ function createDemoApi(scenario2, options = {}) {
   };
   return api2;
 }
-var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray, MOBILE_COMPANION_DEMO_QR_SVG, MOBILE_COMPANION_DEMO_STATUS;
+var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
     init_thread_pr_relations2();
@@ -82334,12 +83954,6 @@ var init_demo_api = __esm({
       }
     ];
     emptyArray = () => Promise.resolve([]);
-    MOBILE_COMPANION_DEMO_QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27 27" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h27v27H0z"/><path stroke="#000000" d="M1 1.5h7m3 0h3m1 0h1m3 0h7M1 2.5h1m5 0h1m3 0h1m1 0h1m2 0h1m2 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m1 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h2m2 0h2m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m1 0h1m5 0h2m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m1 0h2m2 0h3m1 0h1m1 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h3m4 0h1M1 9.5h1m1 0h5m2 0h2m1 0h2m2 0h1m1 0h5M2 10.5h2m1 0h1m2 0h1m1 0h1m1 0h3m1 0h2m1 0h1m4 0h1M1 11.5h2m3 0h2m1 0h1m1 0h2m4 0h3m1 0h2m1 0h2M3 12.5h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m7 0h1M3 13.5h1m2 0h5m1 0h1m2 0h2m1 0h4m1 0h3M1 14.5h2m1 0h2m3 0h2m2 0h1m2 0h7m1 0h1M1 15.5h1m1 0h1m1 0h5m1 0h1m6 0h1m1 0h3m1 0h2M1 16.5h1m2 0h2m4 0h2m1 0h3m1 0h2m1 0h1m4 0h1M1 17.5h1m1 0h2m2 0h2m1 0h2m1 0h1m3 0h5m1 0h1M9 18.5h1m1 0h1m4 0h2m3 0h2M1 19.5h7m3 0h3m3 0h1m1 0h1m1 0h1m1 0h3M1 20.5h1m5 0h1m1 0h1m2 0h1m4 0h1m3 0h2m1 0h2M1 21.5h1m1 0h3m1 0h1m1 0h4m3 0h10M1 22.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m6 0h2m2 0h1M1 23.5h1m1 0h3m1 0h1m1 0h1m4 0h3m1 0h1m1 0h3m2 0h1M1 24.5h1m5 0h1m5 0h2m4 0h5m1 0h1M1 25.5h7m1 0h1m1 0h1m1 0h1m1 0h11"/></svg>';
-    MOBILE_COMPANION_DEMO_STATUS = {
-      enabled: true,
-      url: "https://192.168.1.42:42773",
-      qrSvg: MOBILE_COMPANION_DEMO_QR_SVG
-    };
   }
 });
 
@@ -96797,7 +98411,7 @@ function runningToolCall(thread) {
   return null;
 }
 function shellCommand(tc2) {
-  if (tc2.name !== "run_shell" && tc2.kind !== "execute") return null;
+  if (!isCopseToolCall(tc2, "run_shell") && tc2.kind !== "execute") return null;
   const command2 = isRecord(tc2.args) ? tc2.args["command"] : void 0;
   return typeof command2 === "string" && command2.trim() ? shellCommandLabel(command2) : null;
 }
@@ -96818,6 +98432,7 @@ var init_concise_thread = __esm({
     init_tool_display();
     init_thread_proposal2();
     init_reviewer_input();
+    init_copse_tool_call();
     init_unknown_value3();
     init_turn_interruption();
     CONCISE_THREAD_MIN_INTELLECT = 50;
@@ -98994,7 +100609,7 @@ function statusIcon3(status) {
   return moreHorizontalIcon("ui-icon ui-icon-sm");
 }
 function createPatchFilesSection(tc2) {
-  if (tc2.name !== "apply_patch") return null;
+  if (!isCopseToolCall(tc2, "apply_patch")) return null;
   const files = getApplyPatchFiles(tc2);
   if (files.length === 0) return null;
   return el(
@@ -102614,6 +104229,7 @@ var init_conversation = __esm({
     init_tool_display();
     init_tool_runs();
     init_tool_interruption();
+    init_copse_tool_call();
     init_panels();
     init_thread_roadmap_origin();
     init_thread_hydration();
@@ -113612,1219 +115228,6 @@ var init_file_tree = __esm({
   }
 });
 
-// node_modules/.pnpm/marked@17.0.6/node_modules/marked/lib/marked.esm.js
-function M2() {
-  return { async: false, breaks: false, extensions: null, gfm: true, hooks: null, pedantic: false, renderer: null, silent: false, tokenizer: null, walkTokens: null };
-}
-function G(u4) {
-  O2 = u4;
-}
-function k2(u4, e3 = "") {
-  let t2 = typeof u4 == "string" ? u4 : u4.source, n2 = { replace: (r2, i3) => {
-    let s16 = typeof i3 == "string" ? i3 : i3.source;
-    return s16 = s16.replace(m2.caret, "$1"), t2 = t2.replace(r2, s16), n2;
-  }, getRegex: () => new RegExp(t2, e3) };
-  return n2;
-}
-function T2(u4, e3) {
-  if (e3) {
-    if (m2.escapeTest.test(u4)) return u4.replace(m2.escapeReplace, ke);
-  } else if (m2.escapeTestNoEncode.test(u4)) return u4.replace(m2.escapeReplaceNoEncode, ke);
-  return u4;
-}
-function J(u4) {
-  try {
-    u4 = encodeURI(u4).replace(m2.percentDecode, "%");
-  } catch {
-    return null;
-  }
-  return u4;
-}
-function V(u4, e3) {
-  let t2 = u4.replace(m2.findPipe, (i3, s16, a3) => {
-    let o3 = false, l2 = s16;
-    for (; --l2 >= 0 && a3[l2] === "\\"; ) o3 = !o3;
-    return o3 ? "|" : " |";
-  }), n2 = t2.split(m2.splitPipe), r2 = 0;
-  if (n2[0].trim() || n2.shift(), n2.length > 0 && !n2.at(-1)?.trim() && n2.pop(), e3) if (n2.length > e3) n2.splice(e3);
-  else for (; n2.length < e3; ) n2.push("");
-  for (; r2 < n2.length; r2++) n2[r2] = n2[r2].trim().replace(m2.slashPipe, "|");
-  return n2;
-}
-function I2(u4, e3, t2) {
-  let n2 = u4.length;
-  if (n2 === 0) return "";
-  let r2 = 0;
-  for (; r2 < n2; ) {
-    let i3 = u4.charAt(n2 - r2 - 1);
-    if (i3 === e3 && !t2) r2++;
-    else if (i3 !== e3 && t2) r2++;
-    else break;
-  }
-  return u4.slice(0, n2 - r2);
-}
-function de(u4, e3) {
-  if (u4.indexOf(e3[1]) === -1) return -1;
-  let t2 = 0;
-  for (let n2 = 0; n2 < u4.length; n2++) if (u4[n2] === "\\") n2++;
-  else if (u4[n2] === e3[0]) t2++;
-  else if (u4[n2] === e3[1] && (t2--, t2 < 0)) return n2;
-  return t2 > 0 ? -2 : -1;
-}
-function ge(u4, e3 = 0) {
-  let t2 = e3, n2 = "";
-  for (let r2 of u4) if (r2 === "	") {
-    let i3 = 4 - t2 % 4;
-    n2 += " ".repeat(i3), t2 += i3;
-  } else n2 += r2, t2++;
-  return n2;
-}
-function fe(u4, e3, t2, n2, r2) {
-  let i3 = e3.href, s16 = e3.title || null, a3 = u4[1].replace(r2.other.outputLinkReplace, "$1");
-  n2.state.inLink = true;
-  let o3 = { type: u4[0].charAt(0) === "!" ? "image" : "link", raw: t2, href: i3, title: s16, text: a3, tokens: n2.inlineTokens(a3) };
-  return n2.state.inLink = false, o3;
-}
-function nt(u4, e3, t2) {
-  let n2 = u4.match(t2.other.indentCodeCompensation);
-  if (n2 === null) return e3;
-  let r2 = n2[1];
-  return e3.split(`
-`).map((i3) => {
-    let s16 = i3.match(t2.other.beginningSpace);
-    if (s16 === null) return i3;
-    let [a3] = s16;
-    return a3.length >= r2.length ? i3.slice(r2.length) : i3;
-  }).join(`
-`);
-}
-function g2(u4, e3) {
-  return L2.parse(u4, e3);
-}
-var O2, _2, be, m2, Re, Oe, Te, C2, we, Q, se, ie, ye, j2, Pe, F2, Se, $e, v2, U, _e, oe, Le, K, ne2, Me, ze, Ee, Ie, ae, Ae, z2, H, W, Ce, le, Be, De, qe, ue, ve, He, pe, Ze, Ge, Ne, Qe, je, Fe, Ue, Ke, We, Xe, q, Je, ce, he, Ve, re2, X, Ye, N2, et, B2, E2, tt, ke, w2, x2, y2, $, b2, P2, D3, L2, Qt, jt, Ft, Ut, Kt, Xt, Jt;
-var init_marked_esm = __esm({
-  "node_modules/.pnpm/marked@17.0.6/node_modules/marked/lib/marked.esm.js"() {
-    O2 = M2();
-    _2 = { exec: () => null };
-    be = (() => {
-      try {
-        return !!new RegExp("(?<=1)(?<!1)");
-      } catch {
-        return false;
-      }
-    })();
-    m2 = { codeRemoveIndent: /^(?: {1,4}| {0,3}\t)/gm, outputLinkReplace: /\\([\[\]])/g, indentCodeCompensation: /^(\s+)(?:```)/, beginningSpace: /^\s+/, endingHash: /#$/, startingSpaceChar: /^ /, endingSpaceChar: / $/, nonSpaceChar: /[^ ]/, newLineCharGlobal: /\n/g, tabCharGlobal: /\t/g, multipleSpaceGlobal: /\s+/g, blankLine: /^[ \t]*$/, doubleBlankLine: /\n[ \t]*\n[ \t]*$/, blockquoteStart: /^ {0,3}>/, blockquoteSetextReplace: /\n {0,3}((?:=+|-+) *)(?=\n|$)/g, blockquoteSetextReplace2: /^ {0,3}>[ \t]?/gm, listReplaceNesting: /^ {1,4}(?=( {4})*[^ ])/g, listIsTask: /^\[[ xX]\] +\S/, listReplaceTask: /^\[[ xX]\] +/, listTaskCheckbox: /\[[ xX]\]/, anyLine: /\n.*\n/, hrefBrackets: /^<(.*)>$/, tableDelimiter: /[:|]/, tableAlignChars: /^\||\| *$/g, tableRowBlankLine: /\n[ \t]*$/, tableAlignRight: /^ *-+: *$/, tableAlignCenter: /^ *:-+: *$/, tableAlignLeft: /^ *:-+ *$/, startATag: /^<a /i, endATag: /^<\/a>/i, startPreScriptTag: /^<(pre|code|kbd|script)(\s|>)/i, endPreScriptTag: /^<\/(pre|code|kbd|script)(\s|>)/i, startAngleBracket: /^</, endAngleBracket: />$/, pedanticHrefTitle: /^([^'"]*[^\s])\s+(['"])(.*)\2/, unicodeAlphaNumeric: /[\p{L}\p{N}]/u, escapeTest: /[&<>"']/, escapeReplace: /[&<>"']/g, escapeTestNoEncode: /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/, escapeReplaceNoEncode: /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/g, caret: /(^|[^\[])\^/g, percentDecode: /%25/g, findPipe: /\|/g, splitPipe: / \|/, slashPipe: /\\\|/g, carriageReturn: /\r\n|\r/g, spaceLine: /^ +$/gm, notSpaceStart: /^\S*/, endingNewline: /\n$/, listItemRegex: (u4) => new RegExp(`^( {0,3}${u4})((?:[	 ][^\\n]*)?(?:\\n|$))`), nextBulletRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}(?:[*+-]|\\d{1,9}[.)])((?:[ 	][^\\n]*)?(?:\\n|$))`), hrRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}((?:- *){3,}|(?:_ *){3,}|(?:\\* *){3,})(?:\\n+|$)`), fencesBeginRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}(?:\`\`\`|~~~)`), headingBeginRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}#`), htmlBeginRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}<(?:[a-z].*>|!--)`, "i"), blockquoteBeginRegex: (u4) => new RegExp(`^ {0,${Math.min(3, u4 - 1)}}>`) };
-    Re = /^(?:[ \t]*(?:\n|$))+/;
-    Oe = /^((?: {4}| {0,3}\t)[^\n]+(?:\n(?:[ \t]*(?:\n|$))*)?)+/;
-    Te = /^ {0,3}(`{3,}(?=[^`\n]*(?:\n|$))|~{3,})([^\n]*)(?:\n|$)(?:|([\s\S]*?)(?:\n|$))(?: {0,3}\1[~`]* *(?=\n|$)|$)/;
-    C2 = /^ {0,3}((?:-[\t ]*){3,}|(?:_[ \t]*){3,}|(?:\*[ \t]*){3,})(?:\n+|$)/;
-    we = /^ {0,3}(#{1,6})(?=\s|$)(.*)(?:\n+|$)/;
-    Q = / {0,3}(?:[*+-]|\d{1,9}[.)])/;
-    se = /^(?!bull |blockCode|fences|blockquote|heading|html|table)((?:.|\n(?!\s*?\n|bull |blockCode|fences|blockquote|heading|html|table))+?)\n {0,3}(=+|-+) *(?:\n+|$)/;
-    ie = k2(se).replace(/bull/g, Q).replace(/blockCode/g, /(?: {4}| {0,3}\t)/).replace(/fences/g, / {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g, / {0,3}>/).replace(/heading/g, / {0,3}#{1,6}/).replace(/html/g, / {0,3}<[^\n>]+>\n/).replace(/\|table/g, "").getRegex();
-    ye = k2(se).replace(/bull/g, Q).replace(/blockCode/g, /(?: {4}| {0,3}\t)/).replace(/fences/g, / {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g, / {0,3}>/).replace(/heading/g, / {0,3}#{1,6}/).replace(/html/g, / {0,3}<[^\n>]+>\n/).replace(/table/g, / {0,3}\|?(?:[:\- ]*\|)+[\:\- ]*\n/).getRegex();
-    j2 = /^([^\n]+(?:\n(?!hr|heading|lheading|blockquote|fences|list|html|table| +\n)[^\n]+)*)/;
-    Pe = /^[^\n]+/;
-    F2 = /(?!\s*\])(?:\\[\s\S]|[^\[\]\\])+/;
-    Se = k2(/^ {0,3}\[(label)\]: *(?:\n[ \t]*)?([^<\s][^\s]*|<.*?>)(?:(?: +(?:\n[ \t]*)?| *\n[ \t]*)(title))? *(?:\n+|$)/).replace("label", F2).replace("title", /(?:"(?:\\"?|[^"\\])*"|'[^'\n]*(?:\n[^'\n]+)*\n?'|\([^()]*\))/).getRegex();
-    $e = k2(/^(bull)([ \t][^\n]+?)?(?:\n|$)/).replace(/bull/g, Q).getRegex();
-    v2 = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|meta|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
-    U = /<!--(?:-?>|[\s\S]*?(?:-->|$))/;
-    _e = k2("^ {0,3}(?:<(script|pre|style|textarea)[\\s>][\\s\\S]*?(?:</\\1>[^\\n]*\\n+|$)|comment[^\\n]*(\\n+|$)|<\\?[\\s\\S]*?(?:\\?>\\n*|$)|<![A-Z][\\s\\S]*?(?:>\\n*|$)|<!\\[CDATA\\[[\\s\\S]*?(?:\\]\\]>\\n*|$)|</?(tag)(?: +|\\n|/?>)[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$)|<(?!script|pre|style|textarea)([a-z][\\w-]*)(?:attribute)*? */?>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$)|</(?!script|pre|style|textarea)[a-z][\\w-]*\\s*>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$))", "i").replace("comment", U).replace("tag", v2).replace("attribute", / +[a-zA-Z:_][\w.:-]*(?: *= *"[^"\n]*"| *= *'[^'\n]*'| *= *[^\s"'=<>`]+)?/).getRegex();
-    oe = k2(j2).replace("hr", C2).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("|lheading", "").replace("|table", "").replace("blockquote", " {0,3}>").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)])[ \\t]").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", v2).getRegex();
-    Le = k2(/^( {0,3}> ?(paragraph|[^\n]*)(?:\n|$))+/).replace("paragraph", oe).getRegex();
-    K = { blockquote: Le, code: Oe, def: Se, fences: Te, heading: we, hr: C2, html: _e, lheading: ie, list: $e, newline: Re, paragraph: oe, table: _2, text: Pe };
-    ne2 = k2("^ *([^\\n ].*)\\n {0,3}((?:\\| *)?:?-+:? *(?:\\| *:?-+:? *)*(?:\\| *)?)(?:\\n((?:(?! *\\n|hr|heading|blockquote|code|fences|list|html).*(?:\\n|$))*)\\n*|$)").replace("hr", C2).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("blockquote", " {0,3}>").replace("code", "(?: {4}| {0,3}	)[^\\n]").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)])[ \\t]").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", v2).getRegex();
-    Me = { ...K, lheading: ye, table: ne2, paragraph: k2(j2).replace("hr", C2).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("|lheading", "").replace("table", ne2).replace("blockquote", " {0,3}>").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)])[ \\t]").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", v2).getRegex() };
-    ze = { ...K, html: k2(`^ *(?:comment *(?:\\n|\\s*$)|<(tag)[\\s\\S]+?</\\1> *(?:\\n{2,}|\\s*$)|<tag(?:"[^"]*"|'[^']*'|\\s[^'"/>\\s]*)*?/?> *(?:\\n{2,}|\\s*$))`).replace("comment", U).replace(/tag/g, "(?!(?:a|em|strong|small|s|cite|q|dfn|abbr|data|time|code|var|samp|kbd|sub|sup|i|b|u|mark|ruby|rt|rp|bdi|bdo|span|br|wbr|ins|del|img)\\b)\\w+(?!:|[^\\w\\s@]*@)\\b").getRegex(), def: /^ *\[([^\]]+)\]: *<?([^\s>]+)>?(?: +(["(][^\n]+[")]))? *(?:\n+|$)/, heading: /^(#{1,6})(.*)(?:\n+|$)/, fences: _2, lheading: /^(.+?)\n {0,3}(=+|-+) *(?:\n+|$)/, paragraph: k2(j2).replace("hr", C2).replace("heading", ` *#{1,6} *[^
-]`).replace("lheading", ie).replace("|table", "").replace("blockquote", " {0,3}>").replace("|fences", "").replace("|list", "").replace("|html", "").replace("|tag", "").getRegex() };
-    Ee = /^\\([!"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])/;
-    Ie = /^(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/;
-    ae = /^( {2,}|\\)\n(?!\s*$)/;
-    Ae = /^(`+|[^`])(?:(?= {2,}\n)|[\s\S]*?(?:(?=[\\<!\[`*_]|\b_|$)|[^ ](?= {2,}\n)))/;
-    z2 = /[\p{P}\p{S}]/u;
-    H = /[\s\p{P}\p{S}]/u;
-    W = /[^\s\p{P}\p{S}]/u;
-    Ce = k2(/^((?![*_])punctSpace)/, "u").replace(/punctSpace/g, H).getRegex();
-    le = /(?!~)[\p{P}\p{S}]/u;
-    Be = /(?!~)[\s\p{P}\p{S}]/u;
-    De = /(?:[^\s\p{P}\p{S}]|~)/u;
-    qe = k2(/link|precode-code|html/, "g").replace("link", /\[(?:[^\[\]`]|(?<a>`+)[^`]+\k<a>(?!`))*?\]\((?:\\[\s\S]|[^\\\(\)]|\((?:\\[\s\S]|[^\\\(\)])*\))*\)/).replace("precode-", be ? "(?<!`)()" : "(^^|[^`])").replace("code", /(?<b>`+)[^`]+\k<b>(?!`)/).replace("html", /<(?! )[^<>]*?>/).getRegex();
-    ue = /^(?:\*+(?:((?!\*)punct)|([^\s*]))?)|^_+(?:((?!_)punct)|([^\s_]))?/;
-    ve = k2(ue, "u").replace(/punct/g, z2).getRegex();
-    He = k2(ue, "u").replace(/punct/g, le).getRegex();
-    pe = "^[^_*]*?__[^_*]*?\\*[^_*]*?(?=__)|[^*]+(?=[^*])|(?!\\*)punct(\\*+)(?=[\\s]|$)|notPunctSpace(\\*+)(?!\\*)(?=punctSpace|$)|(?!\\*)punctSpace(\\*+)(?=notPunctSpace)|[\\s](\\*+)(?!\\*)(?=punct)|(?!\\*)punct(\\*+)(?!\\*)(?=punct)|notPunctSpace(\\*+)(?=notPunctSpace)";
-    Ze = k2(pe, "gu").replace(/notPunctSpace/g, W).replace(/punctSpace/g, H).replace(/punct/g, z2).getRegex();
-    Ge = k2(pe, "gu").replace(/notPunctSpace/g, De).replace(/punctSpace/g, Be).replace(/punct/g, le).getRegex();
-    Ne = k2("^[^_*]*?\\*\\*[^_*]*?_[^_*]*?(?=\\*\\*)|[^_]+(?=[^_])|(?!_)punct(_+)(?=[\\s]|$)|notPunctSpace(_+)(?!_)(?=punctSpace|$)|(?!_)punctSpace(_+)(?=notPunctSpace)|[\\s](_+)(?!_)(?=punct)|(?!_)punct(_+)(?!_)(?=punct)", "gu").replace(/notPunctSpace/g, W).replace(/punctSpace/g, H).replace(/punct/g, z2).getRegex();
-    Qe = k2(/^~~?(?:((?!~)punct)|[^\s~])/, "u").replace(/punct/g, z2).getRegex();
-    je = "^[^~]+(?=[^~])|(?!~)punct(~~?)(?=[\\s]|$)|notPunctSpace(~~?)(?!~)(?=punctSpace|$)|(?!~)punctSpace(~~?)(?=notPunctSpace)|[\\s](~~?)(?!~)(?=punct)|(?!~)punct(~~?)(?!~)(?=punct)|notPunctSpace(~~?)(?=notPunctSpace)";
-    Fe = k2(je, "gu").replace(/notPunctSpace/g, W).replace(/punctSpace/g, H).replace(/punct/g, z2).getRegex();
-    Ue = k2(/\\(punct)/, "gu").replace(/punct/g, z2).getRegex();
-    Ke = k2(/^<(scheme:[^\s\x00-\x1f<>]*|email)>/).replace("scheme", /[a-zA-Z][a-zA-Z0-9+.-]{1,31}/).replace("email", /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+(@)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+(?![-_])/).getRegex();
-    We = k2(U).replace("(?:-->|$)", "-->").getRegex();
-    Xe = k2("^comment|^</[a-zA-Z][\\w:-]*\\s*>|^<[a-zA-Z][\\w-]*(?:attribute)*?\\s*/?>|^<\\?[\\s\\S]*?\\?>|^<![a-zA-Z]+\\s[\\s\\S]*?>|^<!\\[CDATA\\[[\\s\\S]*?\\]\\]>").replace("comment", We).replace("attribute", /\s+[a-zA-Z:_][\w.:-]*(?:\s*=\s*"[^"]*"|\s*=\s*'[^']*'|\s*=\s*[^\s"'=<>`]+)?/).getRegex();
-    q = /(?:\[(?:\\[\s\S]|[^\[\]\\])*\]|\\[\s\S]|`+(?!`)[^`]*?`+(?!`)|``+(?=\])|[^\[\]\\`])*?/;
-    Je = k2(/^!?\[(label)\]\(\s*(href)(?:(?:[ \t]+(?:\n[ \t]*)?|\n[ \t]*)(title))?\s*\)/).replace("label", q).replace("href", /<(?:\\.|[^\n<>\\])+>|[^ \t\n\x00-\x1f]*/).replace("title", /"(?:\\"?|[^"\\])*"|'(?:\\'?|[^'\\])*'|\((?:\\\)?|[^)\\])*\)/).getRegex();
-    ce = k2(/^!?\[(label)\]\[(ref)\]/).replace("label", q).replace("ref", F2).getRegex();
-    he = k2(/^!?\[(ref)\](?:\[\])?/).replace("ref", F2).getRegex();
-    Ve = k2("reflink|nolink(?!\\()", "g").replace("reflink", ce).replace("nolink", he).getRegex();
-    re2 = /[hH][tT][tT][pP][sS]?|[fF][tT][pP]/;
-    X = { _backpedal: _2, anyPunctuation: Ue, autolink: Ke, blockSkip: qe, br: ae, code: Ie, del: _2, delLDelim: _2, delRDelim: _2, emStrongLDelim: ve, emStrongRDelimAst: Ze, emStrongRDelimUnd: Ne, escape: Ee, link: Je, nolink: he, punctuation: Ce, reflink: ce, reflinkSearch: Ve, tag: Xe, text: Ae, url: _2 };
-    Ye = { ...X, link: k2(/^!?\[(label)\]\((.*?)\)/).replace("label", q).getRegex(), reflink: k2(/^!?\[(label)\]\s*\[([^\]]*)\]/).replace("label", q).getRegex() };
-    N2 = { ...X, emStrongRDelimAst: Ge, emStrongLDelim: He, delLDelim: Qe, delRDelim: Fe, url: k2(/^((?:protocol):\/\/|www\.)(?:[a-zA-Z0-9\-]+\.?)+[^\s<]*|^email/).replace("protocol", re2).replace("email", /[A-Za-z0-9._+-]+(@)[a-zA-Z0-9-_]+(?:\.[a-zA-Z0-9-_]*[a-zA-Z0-9])+(?![-_])/).getRegex(), _backpedal: /(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![a-zA-Z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+/, del: /^(~~?)(?=[^\s~])((?:\\[\s\S]|[^\\])*?(?:\\[\s\S]|[^\s~\\]))\1(?=[^~]|$)/, text: k2(/^([`~]+|[^`~])(?:(?= {2,}\n)|(?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)|[\s\S]*?(?:(?=[\\<!\[`*~_]|\b_|protocol:\/\/|www\.|$)|[^ ](?= {2,}\n)|[^a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-](?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)))/).replace("protocol", re2).getRegex() };
-    et = { ...N2, br: k2(ae).replace("{2,}", "*").getRegex(), text: k2(N2.text).replace("\\b_", "\\b_| {2,}\\n").replace(/\{2,\}/g, "*").getRegex() };
-    B2 = { normal: K, gfm: Me, pedantic: ze };
-    E2 = { normal: X, gfm: N2, breaks: et, pedantic: Ye };
-    tt = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-    ke = (u4) => tt[u4];
-    w2 = class {
-      options;
-      rules;
-      lexer;
-      constructor(e3) {
-        this.options = e3 || O2;
-      }
-      space(e3) {
-        let t2 = this.rules.block.newline.exec(e3);
-        if (t2 && t2[0].length > 0) return { type: "space", raw: t2[0] };
-      }
-      code(e3) {
-        let t2 = this.rules.block.code.exec(e3);
-        if (t2) {
-          let n2 = t2[0].replace(this.rules.other.codeRemoveIndent, "");
-          return { type: "code", raw: t2[0], codeBlockStyle: "indented", text: this.options.pedantic ? n2 : I2(n2, `
-`) };
-        }
-      }
-      fences(e3) {
-        let t2 = this.rules.block.fences.exec(e3);
-        if (t2) {
-          let n2 = t2[0], r2 = nt(n2, t2[3] || "", this.rules);
-          return { type: "code", raw: n2, lang: t2[2] ? t2[2].trim().replace(this.rules.inline.anyPunctuation, "$1") : t2[2], text: r2 };
-        }
-      }
-      heading(e3) {
-        let t2 = this.rules.block.heading.exec(e3);
-        if (t2) {
-          let n2 = t2[2].trim();
-          if (this.rules.other.endingHash.test(n2)) {
-            let r2 = I2(n2, "#");
-            (this.options.pedantic || !r2 || this.rules.other.endingSpaceChar.test(r2)) && (n2 = r2.trim());
-          }
-          return { type: "heading", raw: t2[0], depth: t2[1].length, text: n2, tokens: this.lexer.inline(n2) };
-        }
-      }
-      hr(e3) {
-        let t2 = this.rules.block.hr.exec(e3);
-        if (t2) return { type: "hr", raw: I2(t2[0], `
-`) };
-      }
-      blockquote(e3) {
-        let t2 = this.rules.block.blockquote.exec(e3);
-        if (t2) {
-          let n2 = I2(t2[0], `
-`).split(`
-`), r2 = "", i3 = "", s16 = [];
-          for (; n2.length > 0; ) {
-            let a3 = false, o3 = [], l2;
-            for (l2 = 0; l2 < n2.length; l2++) if (this.rules.other.blockquoteStart.test(n2[l2])) o3.push(n2[l2]), a3 = true;
-            else if (!a3) o3.push(n2[l2]);
-            else break;
-            n2 = n2.slice(l2);
-            let p2 = o3.join(`
-`), c3 = p2.replace(this.rules.other.blockquoteSetextReplace, `
-    $1`).replace(this.rules.other.blockquoteSetextReplace2, "");
-            r2 = r2 ? `${r2}
-${p2}` : p2, i3 = i3 ? `${i3}
-${c3}` : c3;
-            let d3 = this.lexer.state.top;
-            if (this.lexer.state.top = true, this.lexer.blockTokens(c3, s16, true), this.lexer.state.top = d3, n2.length === 0) break;
-            let h4 = s16.at(-1);
-            if (h4?.type === "code") break;
-            if (h4?.type === "blockquote") {
-              let R2 = h4, f4 = R2.raw + `
-` + n2.join(`
-`), S3 = this.blockquote(f4);
-              s16[s16.length - 1] = S3, r2 = r2.substring(0, r2.length - R2.raw.length) + S3.raw, i3 = i3.substring(0, i3.length - R2.text.length) + S3.text;
-              break;
-            } else if (h4?.type === "list") {
-              let R2 = h4, f4 = R2.raw + `
-` + n2.join(`
-`), S3 = this.list(f4);
-              s16[s16.length - 1] = S3, r2 = r2.substring(0, r2.length - h4.raw.length) + S3.raw, i3 = i3.substring(0, i3.length - R2.raw.length) + S3.raw, n2 = f4.substring(s16.at(-1).raw.length).split(`
-`);
-              continue;
-            }
-          }
-          return { type: "blockquote", raw: r2, tokens: s16, text: i3 };
-        }
-      }
-      list(e3) {
-        let t2 = this.rules.block.list.exec(e3);
-        if (t2) {
-          let n2 = t2[1].trim(), r2 = n2.length > 1, i3 = { type: "list", raw: "", ordered: r2, start: r2 ? +n2.slice(0, -1) : "", loose: false, items: [] };
-          n2 = r2 ? `\\d{1,9}\\${n2.slice(-1)}` : `\\${n2}`, this.options.pedantic && (n2 = r2 ? n2 : "[*+-]");
-          let s16 = this.rules.other.listItemRegex(n2), a3 = false;
-          for (; e3; ) {
-            let l2 = false, p2 = "", c3 = "";
-            if (!(t2 = s16.exec(e3)) || this.rules.block.hr.test(e3)) break;
-            p2 = t2[0], e3 = e3.substring(p2.length);
-            let d3 = ge(t2[2].split(`
-`, 1)[0], t2[1].length), h4 = e3.split(`
-`, 1)[0], R2 = !d3.trim(), f4 = 0;
-            if (this.options.pedantic ? (f4 = 2, c3 = d3.trimStart()) : R2 ? f4 = t2[1].length + 1 : (f4 = d3.search(this.rules.other.nonSpaceChar), f4 = f4 > 4 ? 1 : f4, c3 = d3.slice(f4), f4 += t2[1].length), R2 && this.rules.other.blankLine.test(h4) && (p2 += h4 + `
-`, e3 = e3.substring(h4.length + 1), l2 = true), !l2) {
-              let S3 = this.rules.other.nextBulletRegex(f4), Y3 = this.rules.other.hrRegex(f4), ee3 = this.rules.other.fencesBeginRegex(f4), te2 = this.rules.other.headingBeginRegex(f4), me = this.rules.other.htmlBeginRegex(f4), xe2 = this.rules.other.blockquoteBeginRegex(f4);
-              for (; e3; ) {
-                let Z = e3.split(`
-`, 1)[0], A3;
-                if (h4 = Z, this.options.pedantic ? (h4 = h4.replace(this.rules.other.listReplaceNesting, "  "), A3 = h4) : A3 = h4.replace(this.rules.other.tabCharGlobal, "    "), ee3.test(h4) || te2.test(h4) || me.test(h4) || xe2.test(h4) || S3.test(h4) || Y3.test(h4)) break;
-                if (A3.search(this.rules.other.nonSpaceChar) >= f4 || !h4.trim()) c3 += `
-` + A3.slice(f4);
-                else {
-                  if (R2 || d3.replace(this.rules.other.tabCharGlobal, "    ").search(this.rules.other.nonSpaceChar) >= 4 || ee3.test(d3) || te2.test(d3) || Y3.test(d3)) break;
-                  c3 += `
-` + h4;
-                }
-                R2 = !h4.trim(), p2 += Z + `
-`, e3 = e3.substring(Z.length + 1), d3 = A3.slice(f4);
-              }
-            }
-            i3.loose || (a3 ? i3.loose = true : this.rules.other.doubleBlankLine.test(p2) && (a3 = true)), i3.items.push({ type: "list_item", raw: p2, task: !!this.options.gfm && this.rules.other.listIsTask.test(c3), loose: false, text: c3, tokens: [] }), i3.raw += p2;
-          }
-          let o3 = i3.items.at(-1);
-          if (o3) o3.raw = o3.raw.trimEnd(), o3.text = o3.text.trimEnd();
-          else return;
-          i3.raw = i3.raw.trimEnd();
-          for (let l2 of i3.items) {
-            if (this.lexer.state.top = false, l2.tokens = this.lexer.blockTokens(l2.text, []), l2.task) {
-              if (l2.text = l2.text.replace(this.rules.other.listReplaceTask, ""), l2.tokens[0]?.type === "text" || l2.tokens[0]?.type === "paragraph") {
-                l2.tokens[0].raw = l2.tokens[0].raw.replace(this.rules.other.listReplaceTask, ""), l2.tokens[0].text = l2.tokens[0].text.replace(this.rules.other.listReplaceTask, "");
-                for (let c3 = this.lexer.inlineQueue.length - 1; c3 >= 0; c3--) if (this.rules.other.listIsTask.test(this.lexer.inlineQueue[c3].src)) {
-                  this.lexer.inlineQueue[c3].src = this.lexer.inlineQueue[c3].src.replace(this.rules.other.listReplaceTask, "");
-                  break;
-                }
-              }
-              let p2 = this.rules.other.listTaskCheckbox.exec(l2.raw);
-              if (p2) {
-                let c3 = { type: "checkbox", raw: p2[0] + " ", checked: p2[0] !== "[ ]" };
-                l2.checked = c3.checked, i3.loose ? l2.tokens[0] && ["paragraph", "text"].includes(l2.tokens[0].type) && "tokens" in l2.tokens[0] && l2.tokens[0].tokens ? (l2.tokens[0].raw = c3.raw + l2.tokens[0].raw, l2.tokens[0].text = c3.raw + l2.tokens[0].text, l2.tokens[0].tokens.unshift(c3)) : l2.tokens.unshift({ type: "paragraph", raw: c3.raw, text: c3.raw, tokens: [c3] }) : l2.tokens.unshift(c3);
-              }
-            }
-            if (!i3.loose) {
-              let p2 = l2.tokens.filter((d3) => d3.type === "space"), c3 = p2.length > 0 && p2.some((d3) => this.rules.other.anyLine.test(d3.raw));
-              i3.loose = c3;
-            }
-          }
-          if (i3.loose) for (let l2 of i3.items) {
-            l2.loose = true;
-            for (let p2 of l2.tokens) p2.type === "text" && (p2.type = "paragraph");
-          }
-          return i3;
-        }
-      }
-      html(e3) {
-        let t2 = this.rules.block.html.exec(e3);
-        if (t2) return { type: "html", block: true, raw: t2[0], pre: t2[1] === "pre" || t2[1] === "script" || t2[1] === "style", text: t2[0] };
-      }
-      def(e3) {
-        let t2 = this.rules.block.def.exec(e3);
-        if (t2) {
-          let n2 = t2[1].toLowerCase().replace(this.rules.other.multipleSpaceGlobal, " "), r2 = t2[2] ? t2[2].replace(this.rules.other.hrefBrackets, "$1").replace(this.rules.inline.anyPunctuation, "$1") : "", i3 = t2[3] ? t2[3].substring(1, t2[3].length - 1).replace(this.rules.inline.anyPunctuation, "$1") : t2[3];
-          return { type: "def", tag: n2, raw: t2[0], href: r2, title: i3 };
-        }
-      }
-      table(e3) {
-        let t2 = this.rules.block.table.exec(e3);
-        if (!t2 || !this.rules.other.tableDelimiter.test(t2[2])) return;
-        let n2 = V(t2[1]), r2 = t2[2].replace(this.rules.other.tableAlignChars, "").split("|"), i3 = t2[3]?.trim() ? t2[3].replace(this.rules.other.tableRowBlankLine, "").split(`
-`) : [], s16 = { type: "table", raw: t2[0], header: [], align: [], rows: [] };
-        if (n2.length === r2.length) {
-          for (let a3 of r2) this.rules.other.tableAlignRight.test(a3) ? s16.align.push("right") : this.rules.other.tableAlignCenter.test(a3) ? s16.align.push("center") : this.rules.other.tableAlignLeft.test(a3) ? s16.align.push("left") : s16.align.push(null);
-          for (let a3 = 0; a3 < n2.length; a3++) s16.header.push({ text: n2[a3], tokens: this.lexer.inline(n2[a3]), header: true, align: s16.align[a3] });
-          for (let a3 of i3) s16.rows.push(V(a3, s16.header.length).map((o3, l2) => ({ text: o3, tokens: this.lexer.inline(o3), header: false, align: s16.align[l2] })));
-          return s16;
-        }
-      }
-      lheading(e3) {
-        let t2 = this.rules.block.lheading.exec(e3);
-        if (t2) {
-          let n2 = t2[1].trim();
-          return { type: "heading", raw: t2[0], depth: t2[2].charAt(0) === "=" ? 1 : 2, text: n2, tokens: this.lexer.inline(n2) };
-        }
-      }
-      paragraph(e3) {
-        let t2 = this.rules.block.paragraph.exec(e3);
-        if (t2) {
-          let n2 = t2[1].charAt(t2[1].length - 1) === `
-` ? t2[1].slice(0, -1) : t2[1];
-          return { type: "paragraph", raw: t2[0], text: n2, tokens: this.lexer.inline(n2) };
-        }
-      }
-      text(e3) {
-        let t2 = this.rules.block.text.exec(e3);
-        if (t2) return { type: "text", raw: t2[0], text: t2[0], tokens: this.lexer.inline(t2[0]) };
-      }
-      escape(e3) {
-        let t2 = this.rules.inline.escape.exec(e3);
-        if (t2) return { type: "escape", raw: t2[0], text: t2[1] };
-      }
-      tag(e3) {
-        let t2 = this.rules.inline.tag.exec(e3);
-        if (t2) return !this.lexer.state.inLink && this.rules.other.startATag.test(t2[0]) ? this.lexer.state.inLink = true : this.lexer.state.inLink && this.rules.other.endATag.test(t2[0]) && (this.lexer.state.inLink = false), !this.lexer.state.inRawBlock && this.rules.other.startPreScriptTag.test(t2[0]) ? this.lexer.state.inRawBlock = true : this.lexer.state.inRawBlock && this.rules.other.endPreScriptTag.test(t2[0]) && (this.lexer.state.inRawBlock = false), { type: "html", raw: t2[0], inLink: this.lexer.state.inLink, inRawBlock: this.lexer.state.inRawBlock, block: false, text: t2[0] };
-      }
-      link(e3) {
-        let t2 = this.rules.inline.link.exec(e3);
-        if (t2) {
-          let n2 = t2[2].trim();
-          if (!this.options.pedantic && this.rules.other.startAngleBracket.test(n2)) {
-            if (!this.rules.other.endAngleBracket.test(n2)) return;
-            let s16 = I2(n2.slice(0, -1), "\\");
-            if ((n2.length - s16.length) % 2 === 0) return;
-          } else {
-            let s16 = de(t2[2], "()");
-            if (s16 === -2) return;
-            if (s16 > -1) {
-              let o3 = (t2[0].indexOf("!") === 0 ? 5 : 4) + t2[1].length + s16;
-              t2[2] = t2[2].substring(0, s16), t2[0] = t2[0].substring(0, o3).trim(), t2[3] = "";
-            }
-          }
-          let r2 = t2[2], i3 = "";
-          if (this.options.pedantic) {
-            let s16 = this.rules.other.pedanticHrefTitle.exec(r2);
-            s16 && (r2 = s16[1], i3 = s16[3]);
-          } else i3 = t2[3] ? t2[3].slice(1, -1) : "";
-          return r2 = r2.trim(), this.rules.other.startAngleBracket.test(r2) && (this.options.pedantic && !this.rules.other.endAngleBracket.test(n2) ? r2 = r2.slice(1) : r2 = r2.slice(1, -1)), fe(t2, { href: r2 && r2.replace(this.rules.inline.anyPunctuation, "$1"), title: i3 && i3.replace(this.rules.inline.anyPunctuation, "$1") }, t2[0], this.lexer, this.rules);
-        }
-      }
-      reflink(e3, t2) {
-        let n2;
-        if ((n2 = this.rules.inline.reflink.exec(e3)) || (n2 = this.rules.inline.nolink.exec(e3))) {
-          let r2 = (n2[2] || n2[1]).replace(this.rules.other.multipleSpaceGlobal, " "), i3 = t2[r2.toLowerCase()];
-          if (!i3) {
-            let s16 = n2[0].charAt(0);
-            return { type: "text", raw: s16, text: s16 };
-          }
-          return fe(n2, i3, n2[0], this.lexer, this.rules);
-        }
-      }
-      emStrong(e3, t2, n2 = "") {
-        let r2 = this.rules.inline.emStrongLDelim.exec(e3);
-        if (!r2 || !r2[1] && !r2[2] && !r2[3] && !r2[4] || r2[4] && n2.match(this.rules.other.unicodeAlphaNumeric)) return;
-        if (!(r2[1] || r2[3] || "") || !n2 || this.rules.inline.punctuation.exec(n2)) {
-          let s16 = [...r2[0]].length - 1, a3, o3, l2 = s16, p2 = 0, c3 = r2[0][0] === "*" ? this.rules.inline.emStrongRDelimAst : this.rules.inline.emStrongRDelimUnd;
-          for (c3.lastIndex = 0, t2 = t2.slice(-1 * e3.length + s16); (r2 = c3.exec(t2)) !== null; ) {
-            if (a3 = r2[1] || r2[2] || r2[3] || r2[4] || r2[5] || r2[6], !a3) continue;
-            if (o3 = [...a3].length, r2[3] || r2[4]) {
-              l2 += o3;
-              continue;
-            } else if ((r2[5] || r2[6]) && s16 % 3 && !((s16 + o3) % 3)) {
-              p2 += o3;
-              continue;
-            }
-            if (l2 -= o3, l2 > 0) continue;
-            o3 = Math.min(o3, o3 + l2 + p2);
-            let d3 = [...r2[0]][0].length, h4 = e3.slice(0, s16 + r2.index + d3 + o3);
-            if (Math.min(s16, o3) % 2) {
-              let f4 = h4.slice(1, -1);
-              return { type: "em", raw: h4, text: f4, tokens: this.lexer.inlineTokens(f4) };
-            }
-            let R2 = h4.slice(2, -2);
-            return { type: "strong", raw: h4, text: R2, tokens: this.lexer.inlineTokens(R2) };
-          }
-        }
-      }
-      codespan(e3) {
-        let t2 = this.rules.inline.code.exec(e3);
-        if (t2) {
-          let n2 = t2[2].replace(this.rules.other.newLineCharGlobal, " "), r2 = this.rules.other.nonSpaceChar.test(n2), i3 = this.rules.other.startingSpaceChar.test(n2) && this.rules.other.endingSpaceChar.test(n2);
-          return r2 && i3 && (n2 = n2.substring(1, n2.length - 1)), { type: "codespan", raw: t2[0], text: n2 };
-        }
-      }
-      br(e3) {
-        let t2 = this.rules.inline.br.exec(e3);
-        if (t2) return { type: "br", raw: t2[0] };
-      }
-      del(e3, t2, n2 = "") {
-        let r2 = this.rules.inline.delLDelim.exec(e3);
-        if (!r2) return;
-        if (!(r2[1] || "") || !n2 || this.rules.inline.punctuation.exec(n2)) {
-          let s16 = [...r2[0]].length - 1, a3, o3, l2 = s16, p2 = this.rules.inline.delRDelim;
-          for (p2.lastIndex = 0, t2 = t2.slice(-1 * e3.length + s16); (r2 = p2.exec(t2)) !== null; ) {
-            if (a3 = r2[1] || r2[2] || r2[3] || r2[4] || r2[5] || r2[6], !a3 || (o3 = [...a3].length, o3 !== s16)) continue;
-            if (r2[3] || r2[4]) {
-              l2 += o3;
-              continue;
-            }
-            if (l2 -= o3, l2 > 0) continue;
-            o3 = Math.min(o3, o3 + l2);
-            let c3 = [...r2[0]][0].length, d3 = e3.slice(0, s16 + r2.index + c3 + o3), h4 = d3.slice(s16, -s16);
-            return { type: "del", raw: d3, text: h4, tokens: this.lexer.inlineTokens(h4) };
-          }
-        }
-      }
-      autolink(e3) {
-        let t2 = this.rules.inline.autolink.exec(e3);
-        if (t2) {
-          let n2, r2;
-          return t2[2] === "@" ? (n2 = t2[1], r2 = "mailto:" + n2) : (n2 = t2[1], r2 = n2), { type: "link", raw: t2[0], text: n2, href: r2, tokens: [{ type: "text", raw: n2, text: n2 }] };
-        }
-      }
-      url(e3) {
-        let t2;
-        if (t2 = this.rules.inline.url.exec(e3)) {
-          let n2, r2;
-          if (t2[2] === "@") n2 = t2[0], r2 = "mailto:" + n2;
-          else {
-            let i3;
-            do
-              i3 = t2[0], t2[0] = this.rules.inline._backpedal.exec(t2[0])?.[0] ?? "";
-            while (i3 !== t2[0]);
-            n2 = t2[0], t2[1] === "www." ? r2 = "http://" + t2[0] : r2 = t2[0];
-          }
-          return { type: "link", raw: t2[0], text: n2, href: r2, tokens: [{ type: "text", raw: n2, text: n2 }] };
-        }
-      }
-      inlineText(e3) {
-        let t2 = this.rules.inline.text.exec(e3);
-        if (t2) {
-          let n2 = this.lexer.state.inRawBlock;
-          return { type: "text", raw: t2[0], text: t2[0], escaped: n2 };
-        }
-      }
-    };
-    x2 = class u2 {
-      tokens;
-      options;
-      state;
-      inlineQueue;
-      tokenizer;
-      constructor(e3) {
-        this.tokens = [], this.tokens.links = /* @__PURE__ */ Object.create(null), this.options = e3 || O2, this.options.tokenizer = this.options.tokenizer || new w2(), this.tokenizer = this.options.tokenizer, this.tokenizer.options = this.options, this.tokenizer.lexer = this, this.inlineQueue = [], this.state = { inLink: false, inRawBlock: false, top: true };
-        let t2 = { other: m2, block: B2.normal, inline: E2.normal };
-        this.options.pedantic ? (t2.block = B2.pedantic, t2.inline = E2.pedantic) : this.options.gfm && (t2.block = B2.gfm, this.options.breaks ? t2.inline = E2.breaks : t2.inline = E2.gfm), this.tokenizer.rules = t2;
-      }
-      static get rules() {
-        return { block: B2, inline: E2 };
-      }
-      static lex(e3, t2) {
-        return new u2(t2).lex(e3);
-      }
-      static lexInline(e3, t2) {
-        return new u2(t2).inlineTokens(e3);
-      }
-      lex(e3) {
-        e3 = e3.replace(m2.carriageReturn, `
-`), this.blockTokens(e3, this.tokens);
-        for (let t2 = 0; t2 < this.inlineQueue.length; t2++) {
-          let n2 = this.inlineQueue[t2];
-          this.inlineTokens(n2.src, n2.tokens);
-        }
-        return this.inlineQueue = [], this.tokens;
-      }
-      blockTokens(e3, t2 = [], n2 = false) {
-        for (this.tokenizer.lexer = this, this.options.pedantic && (e3 = e3.replace(m2.tabCharGlobal, "    ").replace(m2.spaceLine, "")); e3; ) {
-          let r2;
-          if (this.options.extensions?.block?.some((s16) => (r2 = s16.call({ lexer: this }, e3, t2)) ? (e3 = e3.substring(r2.raw.length), t2.push(r2), true) : false)) continue;
-          if (r2 = this.tokenizer.space(e3)) {
-            e3 = e3.substring(r2.raw.length);
-            let s16 = t2.at(-1);
-            r2.raw.length === 1 && s16 !== void 0 ? s16.raw += `
-` : t2.push(r2);
-            continue;
-          }
-          if (r2 = this.tokenizer.code(e3)) {
-            e3 = e3.substring(r2.raw.length);
-            let s16 = t2.at(-1);
-            s16?.type === "paragraph" || s16?.type === "text" ? (s16.raw += (s16.raw.endsWith(`
-`) ? "" : `
-`) + r2.raw, s16.text += `
-` + r2.text, this.inlineQueue.at(-1).src = s16.text) : t2.push(r2);
-            continue;
-          }
-          if (r2 = this.tokenizer.fences(e3)) {
-            e3 = e3.substring(r2.raw.length), t2.push(r2);
-            continue;
-          }
-          if (r2 = this.tokenizer.heading(e3)) {
-            e3 = e3.substring(r2.raw.length), t2.push(r2);
-            continue;
-          }
-          if (r2 = this.tokenizer.hr(e3)) {
-            e3 = e3.substring(r2.raw.length), t2.push(r2);
-            continue;
-          }
-          if (r2 = this.tokenizer.blockquote(e3)) {
-            e3 = e3.substring(r2.raw.length), t2.push(r2);
-            continue;
-          }
-          if (r2 = this.tokenizer.list(e3)) {
-            e3 = e3.substring(r2.raw.length), t2.push(r2);
-            continue;
-          }
-          if (r2 = this.tokenizer.html(e3)) {
-            e3 = e3.substring(r2.raw.length), t2.push(r2);
-            continue;
-          }
-          if (r2 = this.tokenizer.def(e3)) {
-            e3 = e3.substring(r2.raw.length);
-            let s16 = t2.at(-1);
-            s16?.type === "paragraph" || s16?.type === "text" ? (s16.raw += (s16.raw.endsWith(`
-`) ? "" : `
-`) + r2.raw, s16.text += `
-` + r2.raw, this.inlineQueue.at(-1).src = s16.text) : this.tokens.links[r2.tag] || (this.tokens.links[r2.tag] = { href: r2.href, title: r2.title }, t2.push(r2));
-            continue;
-          }
-          if (r2 = this.tokenizer.table(e3)) {
-            e3 = e3.substring(r2.raw.length), t2.push(r2);
-            continue;
-          }
-          if (r2 = this.tokenizer.lheading(e3)) {
-            e3 = e3.substring(r2.raw.length), t2.push(r2);
-            continue;
-          }
-          let i3 = e3;
-          if (this.options.extensions?.startBlock) {
-            let s16 = 1 / 0, a3 = e3.slice(1), o3;
-            this.options.extensions.startBlock.forEach((l2) => {
-              o3 = l2.call({ lexer: this }, a3), typeof o3 == "number" && o3 >= 0 && (s16 = Math.min(s16, o3));
-            }), s16 < 1 / 0 && s16 >= 0 && (i3 = e3.substring(0, s16 + 1));
-          }
-          if (this.state.top && (r2 = this.tokenizer.paragraph(i3))) {
-            let s16 = t2.at(-1);
-            n2 && s16?.type === "paragraph" ? (s16.raw += (s16.raw.endsWith(`
-`) ? "" : `
-`) + r2.raw, s16.text += `
-` + r2.text, this.inlineQueue.pop(), this.inlineQueue.at(-1).src = s16.text) : t2.push(r2), n2 = i3.length !== e3.length, e3 = e3.substring(r2.raw.length);
-            continue;
-          }
-          if (r2 = this.tokenizer.text(e3)) {
-            e3 = e3.substring(r2.raw.length);
-            let s16 = t2.at(-1);
-            s16?.type === "text" ? (s16.raw += (s16.raw.endsWith(`
-`) ? "" : `
-`) + r2.raw, s16.text += `
-` + r2.text, this.inlineQueue.pop(), this.inlineQueue.at(-1).src = s16.text) : t2.push(r2);
-            continue;
-          }
-          if (e3) {
-            let s16 = "Infinite loop on byte: " + e3.charCodeAt(0);
-            if (this.options.silent) {
-              console.error(s16);
-              break;
-            } else throw new Error(s16);
-          }
-        }
-        return this.state.top = true, t2;
-      }
-      inline(e3, t2 = []) {
-        return this.inlineQueue.push({ src: e3, tokens: t2 }), t2;
-      }
-      inlineTokens(e3, t2 = []) {
-        this.tokenizer.lexer = this;
-        let n2 = e3, r2 = null;
-        if (this.tokens.links) {
-          let o3 = Object.keys(this.tokens.links);
-          if (o3.length > 0) for (; (r2 = this.tokenizer.rules.inline.reflinkSearch.exec(n2)) !== null; ) o3.includes(r2[0].slice(r2[0].lastIndexOf("[") + 1, -1)) && (n2 = n2.slice(0, r2.index) + "[" + "a".repeat(r2[0].length - 2) + "]" + n2.slice(this.tokenizer.rules.inline.reflinkSearch.lastIndex));
-        }
-        for (; (r2 = this.tokenizer.rules.inline.anyPunctuation.exec(n2)) !== null; ) n2 = n2.slice(0, r2.index) + "++" + n2.slice(this.tokenizer.rules.inline.anyPunctuation.lastIndex);
-        let i3;
-        for (; (r2 = this.tokenizer.rules.inline.blockSkip.exec(n2)) !== null; ) i3 = r2[2] ? r2[2].length : 0, n2 = n2.slice(0, r2.index + i3) + "[" + "a".repeat(r2[0].length - i3 - 2) + "]" + n2.slice(this.tokenizer.rules.inline.blockSkip.lastIndex);
-        n2 = this.options.hooks?.emStrongMask?.call({ lexer: this }, n2) ?? n2;
-        let s16 = false, a3 = "";
-        for (; e3; ) {
-          s16 || (a3 = ""), s16 = false;
-          let o3;
-          if (this.options.extensions?.inline?.some((p2) => (o3 = p2.call({ lexer: this }, e3, t2)) ? (e3 = e3.substring(o3.raw.length), t2.push(o3), true) : false)) continue;
-          if (o3 = this.tokenizer.escape(e3)) {
-            e3 = e3.substring(o3.raw.length), t2.push(o3);
-            continue;
-          }
-          if (o3 = this.tokenizer.tag(e3)) {
-            e3 = e3.substring(o3.raw.length), t2.push(o3);
-            continue;
-          }
-          if (o3 = this.tokenizer.link(e3)) {
-            e3 = e3.substring(o3.raw.length), t2.push(o3);
-            continue;
-          }
-          if (o3 = this.tokenizer.reflink(e3, this.tokens.links)) {
-            e3 = e3.substring(o3.raw.length);
-            let p2 = t2.at(-1);
-            o3.type === "text" && p2?.type === "text" ? (p2.raw += o3.raw, p2.text += o3.text) : t2.push(o3);
-            continue;
-          }
-          if (o3 = this.tokenizer.emStrong(e3, n2, a3)) {
-            e3 = e3.substring(o3.raw.length), t2.push(o3);
-            continue;
-          }
-          if (o3 = this.tokenizer.codespan(e3)) {
-            e3 = e3.substring(o3.raw.length), t2.push(o3);
-            continue;
-          }
-          if (o3 = this.tokenizer.br(e3)) {
-            e3 = e3.substring(o3.raw.length), t2.push(o3);
-            continue;
-          }
-          if (o3 = this.tokenizer.del(e3, n2, a3)) {
-            e3 = e3.substring(o3.raw.length), t2.push(o3);
-            continue;
-          }
-          if (o3 = this.tokenizer.autolink(e3)) {
-            e3 = e3.substring(o3.raw.length), t2.push(o3);
-            continue;
-          }
-          if (!this.state.inLink && (o3 = this.tokenizer.url(e3))) {
-            e3 = e3.substring(o3.raw.length), t2.push(o3);
-            continue;
-          }
-          let l2 = e3;
-          if (this.options.extensions?.startInline) {
-            let p2 = 1 / 0, c3 = e3.slice(1), d3;
-            this.options.extensions.startInline.forEach((h4) => {
-              d3 = h4.call({ lexer: this }, c3), typeof d3 == "number" && d3 >= 0 && (p2 = Math.min(p2, d3));
-            }), p2 < 1 / 0 && p2 >= 0 && (l2 = e3.substring(0, p2 + 1));
-          }
-          if (o3 = this.tokenizer.inlineText(l2)) {
-            e3 = e3.substring(o3.raw.length), o3.raw.slice(-1) !== "_" && (a3 = o3.raw.slice(-1)), s16 = true;
-            let p2 = t2.at(-1);
-            p2?.type === "text" ? (p2.raw += o3.raw, p2.text += o3.text) : t2.push(o3);
-            continue;
-          }
-          if (e3) {
-            let p2 = "Infinite loop on byte: " + e3.charCodeAt(0);
-            if (this.options.silent) {
-              console.error(p2);
-              break;
-            } else throw new Error(p2);
-          }
-        }
-        return t2;
-      }
-    };
-    y2 = class {
-      options;
-      parser;
-      constructor(e3) {
-        this.options = e3 || O2;
-      }
-      space(e3) {
-        return "";
-      }
-      code({ text: e3, lang: t2, escaped: n2 }) {
-        let r2 = (t2 || "").match(m2.notSpaceStart)?.[0], i3 = e3.replace(m2.endingNewline, "") + `
-`;
-        return r2 ? '<pre><code class="language-' + T2(r2) + '">' + (n2 ? i3 : T2(i3, true)) + `</code></pre>
-` : "<pre><code>" + (n2 ? i3 : T2(i3, true)) + `</code></pre>
-`;
-      }
-      blockquote({ tokens: e3 }) {
-        return `<blockquote>
-${this.parser.parse(e3)}</blockquote>
-`;
-      }
-      html({ text: e3 }) {
-        return e3;
-      }
-      def(e3) {
-        return "";
-      }
-      heading({ tokens: e3, depth: t2 }) {
-        return `<h${t2}>${this.parser.parseInline(e3)}</h${t2}>
-`;
-      }
-      hr(e3) {
-        return `<hr>
-`;
-      }
-      list(e3) {
-        let t2 = e3.ordered, n2 = e3.start, r2 = "";
-        for (let a3 = 0; a3 < e3.items.length; a3++) {
-          let o3 = e3.items[a3];
-          r2 += this.listitem(o3);
-        }
-        let i3 = t2 ? "ol" : "ul", s16 = t2 && n2 !== 1 ? ' start="' + n2 + '"' : "";
-        return "<" + i3 + s16 + `>
-` + r2 + "</" + i3 + `>
-`;
-      }
-      listitem(e3) {
-        return `<li>${this.parser.parse(e3.tokens)}</li>
-`;
-      }
-      checkbox({ checked: e3 }) {
-        return "<input " + (e3 ? 'checked="" ' : "") + 'disabled="" type="checkbox"> ';
-      }
-      paragraph({ tokens: e3 }) {
-        return `<p>${this.parser.parseInline(e3)}</p>
-`;
-      }
-      table(e3) {
-        let t2 = "", n2 = "";
-        for (let i3 = 0; i3 < e3.header.length; i3++) n2 += this.tablecell(e3.header[i3]);
-        t2 += this.tablerow({ text: n2 });
-        let r2 = "";
-        for (let i3 = 0; i3 < e3.rows.length; i3++) {
-          let s16 = e3.rows[i3];
-          n2 = "";
-          for (let a3 = 0; a3 < s16.length; a3++) n2 += this.tablecell(s16[a3]);
-          r2 += this.tablerow({ text: n2 });
-        }
-        return r2 && (r2 = `<tbody>${r2}</tbody>`), `<table>
-<thead>
-` + t2 + `</thead>
-` + r2 + `</table>
-`;
-      }
-      tablerow({ text: e3 }) {
-        return `<tr>
-${e3}</tr>
-`;
-      }
-      tablecell(e3) {
-        let t2 = this.parser.parseInline(e3.tokens), n2 = e3.header ? "th" : "td";
-        return (e3.align ? `<${n2} align="${e3.align}">` : `<${n2}>`) + t2 + `</${n2}>
-`;
-      }
-      strong({ tokens: e3 }) {
-        return `<strong>${this.parser.parseInline(e3)}</strong>`;
-      }
-      em({ tokens: e3 }) {
-        return `<em>${this.parser.parseInline(e3)}</em>`;
-      }
-      codespan({ text: e3 }) {
-        return `<code>${T2(e3, true)}</code>`;
-      }
-      br(e3) {
-        return "<br>";
-      }
-      del({ tokens: e3 }) {
-        return `<del>${this.parser.parseInline(e3)}</del>`;
-      }
-      link({ href: e3, title: t2, tokens: n2 }) {
-        let r2 = this.parser.parseInline(n2), i3 = J(e3);
-        if (i3 === null) return r2;
-        e3 = i3;
-        let s16 = '<a href="' + e3 + '"';
-        return t2 && (s16 += ' title="' + T2(t2) + '"'), s16 += ">" + r2 + "</a>", s16;
-      }
-      image({ href: e3, title: t2, text: n2, tokens: r2 }) {
-        r2 && (n2 = this.parser.parseInline(r2, this.parser.textRenderer));
-        let i3 = J(e3);
-        if (i3 === null) return T2(n2);
-        e3 = i3;
-        let s16 = `<img src="${e3}" alt="${T2(n2)}"`;
-        return t2 && (s16 += ` title="${T2(t2)}"`), s16 += ">", s16;
-      }
-      text(e3) {
-        return "tokens" in e3 && e3.tokens ? this.parser.parseInline(e3.tokens) : "escaped" in e3 && e3.escaped ? e3.text : T2(e3.text);
-      }
-    };
-    $ = class {
-      strong({ text: e3 }) {
-        return e3;
-      }
-      em({ text: e3 }) {
-        return e3;
-      }
-      codespan({ text: e3 }) {
-        return e3;
-      }
-      del({ text: e3 }) {
-        return e3;
-      }
-      html({ text: e3 }) {
-        return e3;
-      }
-      text({ text: e3 }) {
-        return e3;
-      }
-      link({ text: e3 }) {
-        return "" + e3;
-      }
-      image({ text: e3 }) {
-        return "" + e3;
-      }
-      br() {
-        return "";
-      }
-      checkbox({ raw: e3 }) {
-        return e3;
-      }
-    };
-    b2 = class u3 {
-      options;
-      renderer;
-      textRenderer;
-      constructor(e3) {
-        this.options = e3 || O2, this.options.renderer = this.options.renderer || new y2(), this.renderer = this.options.renderer, this.renderer.options = this.options, this.renderer.parser = this, this.textRenderer = new $();
-      }
-      static parse(e3, t2) {
-        return new u3(t2).parse(e3);
-      }
-      static parseInline(e3, t2) {
-        return new u3(t2).parseInline(e3);
-      }
-      parse(e3) {
-        this.renderer.parser = this;
-        let t2 = "";
-        for (let n2 = 0; n2 < e3.length; n2++) {
-          let r2 = e3[n2];
-          if (this.options.extensions?.renderers?.[r2.type]) {
-            let s16 = r2, a3 = this.options.extensions.renderers[s16.type].call({ parser: this }, s16);
-            if (a3 !== false || !["space", "hr", "heading", "code", "table", "blockquote", "list", "html", "def", "paragraph", "text"].includes(s16.type)) {
-              t2 += a3 || "";
-              continue;
-            }
-          }
-          let i3 = r2;
-          switch (i3.type) {
-            case "space": {
-              t2 += this.renderer.space(i3);
-              break;
-            }
-            case "hr": {
-              t2 += this.renderer.hr(i3);
-              break;
-            }
-            case "heading": {
-              t2 += this.renderer.heading(i3);
-              break;
-            }
-            case "code": {
-              t2 += this.renderer.code(i3);
-              break;
-            }
-            case "table": {
-              t2 += this.renderer.table(i3);
-              break;
-            }
-            case "blockquote": {
-              t2 += this.renderer.blockquote(i3);
-              break;
-            }
-            case "list": {
-              t2 += this.renderer.list(i3);
-              break;
-            }
-            case "checkbox": {
-              t2 += this.renderer.checkbox(i3);
-              break;
-            }
-            case "html": {
-              t2 += this.renderer.html(i3);
-              break;
-            }
-            case "def": {
-              t2 += this.renderer.def(i3);
-              break;
-            }
-            case "paragraph": {
-              t2 += this.renderer.paragraph(i3);
-              break;
-            }
-            case "text": {
-              t2 += this.renderer.text(i3);
-              break;
-            }
-            default: {
-              let s16 = 'Token with "' + i3.type + '" type was not found.';
-              if (this.options.silent) return console.error(s16), "";
-              throw new Error(s16);
-            }
-          }
-        }
-        return t2;
-      }
-      parseInline(e3, t2 = this.renderer) {
-        this.renderer.parser = this;
-        let n2 = "";
-        for (let r2 = 0; r2 < e3.length; r2++) {
-          let i3 = e3[r2];
-          if (this.options.extensions?.renderers?.[i3.type]) {
-            let a3 = this.options.extensions.renderers[i3.type].call({ parser: this }, i3);
-            if (a3 !== false || !["escape", "html", "link", "image", "strong", "em", "codespan", "br", "del", "text"].includes(i3.type)) {
-              n2 += a3 || "";
-              continue;
-            }
-          }
-          let s16 = i3;
-          switch (s16.type) {
-            case "escape": {
-              n2 += t2.text(s16);
-              break;
-            }
-            case "html": {
-              n2 += t2.html(s16);
-              break;
-            }
-            case "link": {
-              n2 += t2.link(s16);
-              break;
-            }
-            case "image": {
-              n2 += t2.image(s16);
-              break;
-            }
-            case "checkbox": {
-              n2 += t2.checkbox(s16);
-              break;
-            }
-            case "strong": {
-              n2 += t2.strong(s16);
-              break;
-            }
-            case "em": {
-              n2 += t2.em(s16);
-              break;
-            }
-            case "codespan": {
-              n2 += t2.codespan(s16);
-              break;
-            }
-            case "br": {
-              n2 += t2.br(s16);
-              break;
-            }
-            case "del": {
-              n2 += t2.del(s16);
-              break;
-            }
-            case "text": {
-              n2 += t2.text(s16);
-              break;
-            }
-            default: {
-              let a3 = 'Token with "' + s16.type + '" type was not found.';
-              if (this.options.silent) return console.error(a3), "";
-              throw new Error(a3);
-            }
-          }
-        }
-        return n2;
-      }
-    };
-    P2 = class {
-      options;
-      block;
-      constructor(e3) {
-        this.options = e3 || O2;
-      }
-      static passThroughHooks = /* @__PURE__ */ new Set(["preprocess", "postprocess", "processAllTokens", "emStrongMask"]);
-      static passThroughHooksRespectAsync = /* @__PURE__ */ new Set(["preprocess", "postprocess", "processAllTokens"]);
-      preprocess(e3) {
-        return e3;
-      }
-      postprocess(e3) {
-        return e3;
-      }
-      processAllTokens(e3) {
-        return e3;
-      }
-      emStrongMask(e3) {
-        return e3;
-      }
-      provideLexer(e3 = this.block) {
-        return e3 ? x2.lex : x2.lexInline;
-      }
-      provideParser(e3 = this.block) {
-        return e3 ? b2.parse : b2.parseInline;
-      }
-    };
-    D3 = class {
-      defaults = M2();
-      options = this.setOptions;
-      parse = this.parseMarkdown(true);
-      parseInline = this.parseMarkdown(false);
-      Parser = b2;
-      Renderer = y2;
-      TextRenderer = $;
-      Lexer = x2;
-      Tokenizer = w2;
-      Hooks = P2;
-      constructor(...e3) {
-        this.use(...e3);
-      }
-      walkTokens(e3, t2) {
-        let n2 = [];
-        for (let r2 of e3) switch (n2 = n2.concat(t2.call(this, r2)), r2.type) {
-          case "table": {
-            let i3 = r2;
-            for (let s16 of i3.header) n2 = n2.concat(this.walkTokens(s16.tokens, t2));
-            for (let s16 of i3.rows) for (let a3 of s16) n2 = n2.concat(this.walkTokens(a3.tokens, t2));
-            break;
-          }
-          case "list": {
-            let i3 = r2;
-            n2 = n2.concat(this.walkTokens(i3.items, t2));
-            break;
-          }
-          default: {
-            let i3 = r2;
-            this.defaults.extensions?.childTokens?.[i3.type] ? this.defaults.extensions.childTokens[i3.type].forEach((s16) => {
-              let a3 = i3[s16].flat(1 / 0);
-              n2 = n2.concat(this.walkTokens(a3, t2));
-            }) : i3.tokens && (n2 = n2.concat(this.walkTokens(i3.tokens, t2)));
-          }
-        }
-        return n2;
-      }
-      use(...e3) {
-        let t2 = this.defaults.extensions || { renderers: {}, childTokens: {} };
-        return e3.forEach((n2) => {
-          let r2 = { ...n2 };
-          if (r2.async = this.defaults.async || r2.async || false, n2.extensions && (n2.extensions.forEach((i3) => {
-            if (!i3.name) throw new Error("extension name required");
-            if ("renderer" in i3) {
-              let s16 = t2.renderers[i3.name];
-              s16 ? t2.renderers[i3.name] = function(...a3) {
-                let o3 = i3.renderer.apply(this, a3);
-                return o3 === false && (o3 = s16.apply(this, a3)), o3;
-              } : t2.renderers[i3.name] = i3.renderer;
-            }
-            if ("tokenizer" in i3) {
-              if (!i3.level || i3.level !== "block" && i3.level !== "inline") throw new Error("extension level must be 'block' or 'inline'");
-              let s16 = t2[i3.level];
-              s16 ? s16.unshift(i3.tokenizer) : t2[i3.level] = [i3.tokenizer], i3.start && (i3.level === "block" ? t2.startBlock ? t2.startBlock.push(i3.start) : t2.startBlock = [i3.start] : i3.level === "inline" && (t2.startInline ? t2.startInline.push(i3.start) : t2.startInline = [i3.start]));
-            }
-            "childTokens" in i3 && i3.childTokens && (t2.childTokens[i3.name] = i3.childTokens);
-          }), r2.extensions = t2), n2.renderer) {
-            let i3 = this.defaults.renderer || new y2(this.defaults);
-            for (let s16 in n2.renderer) {
-              if (!(s16 in i3)) throw new Error(`renderer '${s16}' does not exist`);
-              if (["options", "parser"].includes(s16)) continue;
-              let a3 = s16, o3 = n2.renderer[a3], l2 = i3[a3];
-              i3[a3] = (...p2) => {
-                let c3 = o3.apply(i3, p2);
-                return c3 === false && (c3 = l2.apply(i3, p2)), c3 || "";
-              };
-            }
-            r2.renderer = i3;
-          }
-          if (n2.tokenizer) {
-            let i3 = this.defaults.tokenizer || new w2(this.defaults);
-            for (let s16 in n2.tokenizer) {
-              if (!(s16 in i3)) throw new Error(`tokenizer '${s16}' does not exist`);
-              if (["options", "rules", "lexer"].includes(s16)) continue;
-              let a3 = s16, o3 = n2.tokenizer[a3], l2 = i3[a3];
-              i3[a3] = (...p2) => {
-                let c3 = o3.apply(i3, p2);
-                return c3 === false && (c3 = l2.apply(i3, p2)), c3;
-              };
-            }
-            r2.tokenizer = i3;
-          }
-          if (n2.hooks) {
-            let i3 = this.defaults.hooks || new P2();
-            for (let s16 in n2.hooks) {
-              if (!(s16 in i3)) throw new Error(`hook '${s16}' does not exist`);
-              if (["options", "block"].includes(s16)) continue;
-              let a3 = s16, o3 = n2.hooks[a3], l2 = i3[a3];
-              P2.passThroughHooks.has(s16) ? i3[a3] = (p2) => {
-                if (this.defaults.async && P2.passThroughHooksRespectAsync.has(s16)) return (async () => {
-                  let d3 = await o3.call(i3, p2);
-                  return l2.call(i3, d3);
-                })();
-                let c3 = o3.call(i3, p2);
-                return l2.call(i3, c3);
-              } : i3[a3] = (...p2) => {
-                if (this.defaults.async) return (async () => {
-                  let d3 = await o3.apply(i3, p2);
-                  return d3 === false && (d3 = await l2.apply(i3, p2)), d3;
-                })();
-                let c3 = o3.apply(i3, p2);
-                return c3 === false && (c3 = l2.apply(i3, p2)), c3;
-              };
-            }
-            r2.hooks = i3;
-          }
-          if (n2.walkTokens) {
-            let i3 = this.defaults.walkTokens, s16 = n2.walkTokens;
-            r2.walkTokens = function(a3) {
-              let o3 = [];
-              return o3.push(s16.call(this, a3)), i3 && (o3 = o3.concat(i3.call(this, a3))), o3;
-            };
-          }
-          this.defaults = { ...this.defaults, ...r2 };
-        }), this;
-      }
-      setOptions(e3) {
-        return this.defaults = { ...this.defaults, ...e3 }, this;
-      }
-      lexer(e3, t2) {
-        return x2.lex(e3, t2 ?? this.defaults);
-      }
-      parser(e3, t2) {
-        return b2.parse(e3, t2 ?? this.defaults);
-      }
-      parseMarkdown(e3) {
-        return (n2, r2) => {
-          let i3 = { ...r2 }, s16 = { ...this.defaults, ...i3 }, a3 = this.onError(!!s16.silent, !!s16.async);
-          if (this.defaults.async === true && i3.async === false) return a3(new Error("marked(): The async option was set to true by an extension. Remove async: false from the parse options object to return a Promise."));
-          if (typeof n2 > "u" || n2 === null) return a3(new Error("marked(): input parameter is undefined or null"));
-          if (typeof n2 != "string") return a3(new Error("marked(): input parameter is of type " + Object.prototype.toString.call(n2) + ", string expected"));
-          if (s16.hooks && (s16.hooks.options = s16, s16.hooks.block = e3), s16.async) return (async () => {
-            let o3 = s16.hooks ? await s16.hooks.preprocess(n2) : n2, p2 = await (s16.hooks ? await s16.hooks.provideLexer(e3) : e3 ? x2.lex : x2.lexInline)(o3, s16), c3 = s16.hooks ? await s16.hooks.processAllTokens(p2) : p2;
-            s16.walkTokens && await Promise.all(this.walkTokens(c3, s16.walkTokens));
-            let h4 = await (s16.hooks ? await s16.hooks.provideParser(e3) : e3 ? b2.parse : b2.parseInline)(c3, s16);
-            return s16.hooks ? await s16.hooks.postprocess(h4) : h4;
-          })().catch(a3);
-          try {
-            s16.hooks && (n2 = s16.hooks.preprocess(n2));
-            let l2 = (s16.hooks ? s16.hooks.provideLexer(e3) : e3 ? x2.lex : x2.lexInline)(n2, s16);
-            s16.hooks && (l2 = s16.hooks.processAllTokens(l2)), s16.walkTokens && this.walkTokens(l2, s16.walkTokens);
-            let c3 = (s16.hooks ? s16.hooks.provideParser(e3) : e3 ? b2.parse : b2.parseInline)(l2, s16);
-            return s16.hooks && (c3 = s16.hooks.postprocess(c3)), c3;
-          } catch (o3) {
-            return a3(o3);
-          }
-        };
-      }
-      onError(e3, t2) {
-        return (n2) => {
-          if (n2.message += `
-Please report this to https://github.com/markedjs/marked.`, e3) {
-            let r2 = "<p>An error occurred:</p><pre>" + T2(n2.message + "", true) + "</pre>";
-            return t2 ? Promise.resolve(r2) : r2;
-          }
-          if (t2) return Promise.reject(n2);
-          throw n2;
-        };
-      }
-    };
-    L2 = new D3();
-    g2.options = g2.setOptions = function(u4) {
-      return L2.setOptions(u4), g2.defaults = L2.defaults, G(g2.defaults), g2;
-    };
-    g2.getDefaults = M2;
-    g2.defaults = O2;
-    g2.use = function(...u4) {
-      return L2.use(...u4), g2.defaults = L2.defaults, G(g2.defaults), g2;
-    };
-    g2.walkTokens = function(u4, e3) {
-      return L2.walkTokens(u4, e3);
-    };
-    g2.parseInline = L2.parseInline;
-    g2.Parser = b2;
-    g2.parser = b2.parse;
-    g2.Renderer = y2;
-    g2.TextRenderer = $;
-    g2.Lexer = x2;
-    g2.lexer = x2.lex;
-    g2.Tokenizer = w2;
-    g2.Hooks = P2;
-    g2.parse = g2;
-    Qt = g2.options;
-    jt = g2.setOptions;
-    Ft = g2.use;
-    Ut = g2.walkTokens;
-    Kt = g2.parseInline;
-    Xt = b2.parse;
-    Jt = x2.lex;
-  }
-});
-
 // packages/thread-store/src/plan-schema.ts
 function tokenText(token) {
   if (["space", "html", "def", "hr", "checkbox"].includes(token.type)) return "";
@@ -114848,7 +115251,7 @@ function listCriteria(tokens) {
   });
 }
 function parsePlanDocument(body) {
-  const tokens = x2.lex(body, { gfm: true });
+  const tokens = x.lex(body, { gfm: true });
   const sections = /* @__PURE__ */ new Map();
   let active3 = null;
   for (const token of tokens) {
@@ -138398,7 +138801,7 @@ var init_dist33 = __esm({
         this.schemaParseDomTagsCache = null;
         this.inlineNodeTypesCache = null;
         this.lastParseResult = null;
-        this.markedInstance = (_options$marked = options === null || options === void 0 ? void 0 : options.marked) !== null && _options$marked !== void 0 ? _options$marked : g2;
+        this.markedInstance = (_options$marked = options === null || options === void 0 ? void 0 : options.marked) !== null && _options$marked !== void 0 ? _options$marked : g;
         this.indentStyle = (_options$indentation$ = options === null || options === void 0 || (_options$indentation = options.indentation) === null || _options$indentation === void 0 ? void 0 : _options$indentation.style) !== null && _options$indentation$ !== void 0 ? _options$indentation$ : "space";
         this.indentSize = (_options$indentation$2 = options === null || options === void 0 || (_options$indentation2 = options.indentation) === null || _options$indentation2 === void 0 ? void 0 : _options$indentation2.size) !== null && _options$indentation$2 !== void 0 ? _options$indentation$2 : 2;
         this.baseExtensions = (options === null || options === void 0 ? void 0 : options.extensions) || [];
@@ -160504,7 +160907,7 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
   const unsubChunk = api2.agent.onChunk((threadId, chunk) => {
     if (chunk.type === "tool_call") {
       const isAcpShell = chunk.toolCall.kind === "execute";
-      if (chunk.toolCall.name === "run_shell" || isAcpShell) {
+      if (isCopseToolCall(chunk.toolCall, "run_shell") || isAcpShell) {
         const command2 = shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.title ?? chunk.toolCall.name : null);
         if (command2) addTask(chunk.toolCall.id, command2, chunk.toolCall.args, threadId);
       }
@@ -160535,6 +160938,7 @@ var init_agent_tasks = __esm({
   "src/renderer/views/agent-tasks.ts"() {
     init_helpers();
     init_tool_display();
+    init_copse_tool_call();
     init_array_utils2();
     init_scoped_tabs();
     init_unknown_value3();
@@ -187944,7 +188348,14 @@ var init_activity_home = __esm({
 async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
   const projectId = store2.getState().activeProjectId;
   if (!projectId) return;
-  const { currentBranch } = await api2.git.branchStatus(projectId, threadId);
+  let currentBranch;
+  try {
+    ;
+    ({ currentBranch } = await api2.git.branchStatus(projectId, threadId));
+  } catch (error62) {
+    if (!isUnavailableThreadCheckoutError(error62)) throw error62;
+    return;
+  }
   if (syncThreadGitBranchIfChanged(store2, threadId, currentBranch)) {
     store2.emit("git_branch_changed");
   }
@@ -187952,6 +188363,7 @@ async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
 var init_sync_thread_branch_after_shell = __esm({
   "src/renderer/controller/sync-thread-branch-after-shell.ts"() {
     init_sync_thread_branch();
+    init_ipc_error_message();
   }
 });
 
