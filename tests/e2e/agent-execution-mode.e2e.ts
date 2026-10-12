@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { E2E_GIT_BRANCH } from './helpers/e2e-env.ts'
 import {
   resetUserData,
   seedEmptyProject,
@@ -73,7 +74,7 @@ describe('agent execution mode in the composer', () => {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await expect($('.footer-branch-label')).toHaveText('main')
+    await expect($('.footer-branch-label')).toHaveText(E2E_GIT_BRANCH)
   })
 
   after(() => {
