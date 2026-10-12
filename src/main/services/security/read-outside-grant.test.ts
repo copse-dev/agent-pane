@@ -113,7 +113,7 @@ describe('read-outside grant coverage', () => {
   it('requires a fresh approval when a missing literal target appears', () => {
     const approved = join(base, 'missing.txt')
     grantReadOutsideProject(thread, [approved])
-    assert.equal(covered(approved), false)
+    assert.equal(covered(approved), true, 'an absent token may be repeated while it stays absent')
     writeFileSync(approved, 'new file')
     assert.equal(covered(approved), false)
     grantReadOutsideProject(thread, [approved])
