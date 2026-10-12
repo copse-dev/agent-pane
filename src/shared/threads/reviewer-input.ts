@@ -1,5 +1,6 @@
 import { isRecord } from '@shared/unknown-value.ts'
 import type { ReviewerInputAnswer, Thread, ToolCall } from '@shared/types'
+import { isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
 
 export const REVIEWER_INPUT_TOOL = 'request_review_input'
 
@@ -14,12 +15,7 @@ export interface ReviewerInputRequest {
 }
 
 export function isReviewerInputCall(call: ToolCall): boolean {
-  return [call.name, call.programmaticName].some(
-    (name) =>
-      name === REVIEWER_INPUT_TOOL ||
-      (typeof name === 'string' &&
-        /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+request_review_input(?![a-z0-9_])/i.test(name)),
-  )
+  return isCopseToolCall(call, REVIEWER_INPUT_TOOL)
 }
 
 export function parseReviewerInputCall(

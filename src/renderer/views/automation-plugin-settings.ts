@@ -26,6 +26,7 @@ import { mountBranchCiEditor, type AutomationCreationDraft } from './branch-ci-e
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { describeRetainedWorktrees } from './automation-retained-worktrees.ts'
 import { describeAutomationFailure } from '@shared/automation-failure.ts'
+import { refreshAutomationSchedules } from '../controller/automations.ts'
 
 function cleanIpcError(error: unknown): string {
   return ipcErrorMessage(error, 'Automation request failed.')
@@ -373,6 +374,9 @@ export function createAutomationPluginSettings(
     showStatus,
     hideStatus,
     onScheduleSelected: (draft) => void openForm(undefined, draft),
+    onChanged: async () => {
+      if (projectId) await refreshAutomationSchedules(store, api, projectId)
+    },
     ...(actions.openRun ? { onOpenRun: actions.openRun } : {}),
   })
   // A schedule fires unattended, potentially months after it was written, so it
@@ -927,7 +931,7 @@ export function createAutomationPluginSettings(
     if (!projectId) return
     try {
       const [loadedSchedules, loadedPermissions] = await Promise.all([
-        api.automations.list(projectId),
+        refreshAutomationSchedules(store, api, projectId),
         api.automations.permissionOptions(projectId),
         ciEditor.refresh(),
       ])

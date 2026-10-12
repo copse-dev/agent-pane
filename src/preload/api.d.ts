@@ -585,6 +585,10 @@ export interface ApiClient {
     set: (key: string, value: unknown) => Promise<void>
   }
   threads: {
+    storageSize: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<{ bytes: number; truncated: boolean }>
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
     /** Fill legacy PR links for a bounded set of visible sidebar threads. */
     backfillPrRefs: (projectId: string, threadIds: string[]) => Promise<void>
@@ -997,7 +1001,7 @@ export interface ApiClient {
   }
   usage: {
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
-    getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
+    getPlanUsage: (force?: boolean) => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
     getPlanWorthIt: () => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
     setClaudePlanMonthlyFee: (
       fee: number | null,

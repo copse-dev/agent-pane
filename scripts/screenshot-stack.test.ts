@@ -6,6 +6,7 @@ import { load } from 'js-yaml'
 import { z } from 'zod'
 import {
   attestScreenshotStack,
+  memoizeScreenshotStackAncestry,
   parseScreenshotStack,
   reconcileScreenshotStack,
   STACK_COVERAGE,
@@ -127,6 +128,120 @@ describe('screenshot stack declarations', () => {
 })
 
 describe('combined stack review gates', () => {
+  it('reads current contexts without traversing status history and observes revocation', async () => {
+    const f = fixture()
+    let reads = 0
+    f.github.rest.repos.listCommitStatusesForRef = async (): Promise<{ data: unknown }> => {
+      throw new Error('Historical status endpoint must not be queried')
+    }
+    f.github.rest.repos.getCombinedStatusForRef = async ({
+      ref,
+      page,
+    }): Promise<{ data: unknown }> => {
+      assert.equal(page, 1)
+      reads += 1
+      return { data: { statuses: f.statuses.get(ref) ?? [] } }
+    }
+    const policy = memoizeScreenshotStackAncestry(f.github)
+    assert.equal((await verifyScreenshotStack(policy, input))?.approved, true)
+    f.statuses.set(TIP, [status('Screenshot review', 4, 'Review revoked', 'error')])
+    assert.equal((await verifyScreenshotStack(policy, input))?.approved, false)
+    assert.equal(reads, 2, 'decision reads remain live despite shared immutable ancestry')
+  })
+  it('paginates current contexts and fails closed for malformed combined responses', async () => {
+    const f = fixture()
+    const pages: number[] = []
+    f.github.rest.repos.getCombinedStatusForRef = async ({
+      ref,
+      page,
+    }): Promise<{ data: unknown }> => {
+      pages.push(page)
+      return {
+        data: {
+          statuses:
+            page === 1
+              ? Array.from({ length: 100 }, (_, i) => status(`Other ${String(i)}`, 100 + i))
+              : (f.statuses.get(ref) ?? []),
+        },
+      }
+    }
+    assert.equal((await verifyScreenshotStack(f.github, input))?.approved, true)
+    assert.deepEqual(pages, [1, 2])
+    f.github.rest.repos.getCombinedStatusForRef = async (): Promise<{ data: unknown }> => ({
+      data: {},
+    })
+    await assert.rejects(verifyScreenshotStack(f.github, input), /statuses unavailable/)
+  })
+  it('shares immutable ancestry comparisons across a ten-PR stack, not live proof', async () => {
+    const f = fixture()
+    const sha = (number: number): string => number.toString(16).padStart(40, '0')
+    const text = `<!-- copse-screenshot-stack: ${Array.from({ length: 9 }, (_, i) => `#${String(i + 1)}@${sha(i + 1)}`).join(' ')} tip=#10 -->`
+    const parsed = parseScreenshotStack(text)
+    assert.ok(parsed)
+    for (let number = 1; number <= 10; number += 1) {
+      f.pulls.set(number, pull(number, sha(number), text))
+    }
+    f.statuses.set(sha(10), [
+      status('Screenshot review', 1),
+      status(STACK_COVERAGE, 2, `Stack coverage ${parsed.digest}`),
+      status(STACK_DECISION, 3, `Stack decision ${parsed.digest}`),
+    ])
+    let comparisons = 0
+    const compare = f.github.rest.repos.compareCommitsWithBasehead.bind(f.github.rest.repos)
+    f.github.rest.repos.compareCommitsWithBasehead = async (
+      request,
+    ): Promise<{ data: unknown }> => {
+      comparisons += 1
+      return compare(request)
+    }
+    const cached = memoizeScreenshotStackAncestry(f.github)
+    for (let number = 1; number <= 10; number += 1) {
+      assert.equal((await verifyScreenshotStack(cached, { ...input, number }))?.approved, true)
+    }
+    assert.equal(comparisons, 17, 'one query per immutable ancestry pair, rather than 170')
+    f.statuses.set(sha(10), [status('Screenshot review', 4, 'Review revoked', 'error')])
+    assert.equal((await verifyScreenshotStack(cached, { ...input, number: 10 }))?.approved, false)
+    f.pulls.set(3, pull(3, BASE, text))
+    await assert.rejects(
+      verifyScreenshotStack(cached, { ...input, number: 10 }),
+      /head or declaration changed/,
+    )
+  })
+  it('does not append duplicate trusted statuses and returns the verified outcome', async () => {
+    const f = fixture()
+    const description = `Stack deferred to approved tip #2 at ${TIP.slice(0, 12)}`
+    f.statuses.set(LOWER, [status('Screenshot review', 4, description)])
+    assert.deepEqual(await reconcileScreenshotStack(f.github, input), {
+      head: LOWER,
+      state: 'success',
+      description,
+    })
+    assert.deepEqual(f.writes, [])
+    f.statuses.set(LOWER, [status('Screenshot review', 5, description, 'success', 123)])
+    await reconcileScreenshotStack(f.github, input)
+    assert.equal(f.writes.length, 1, 'an untrusted lookalike must be replaced')
+  })
+  it('keeps racing-push checks live when ancestry results are already cached', async () => {
+    const f = fixture()
+    const cached = memoizeScreenshotStackAncestry(f.github)
+    await verifyScreenshotStack(cached, tipInput)
+    const get = f.github.rest.pulls.get.bind(f.github.rest.pulls)
+    let lowerReads = 0
+    f.github.rest.pulls.get = async (request): Promise<{ data: unknown }> => {
+      const result = await get(request)
+      if (request.pull_number === 1 && ++lowerReads === 1) f.pulls.set(1, pull(1, BASE))
+      return result
+    }
+    await assert.rejects(verifyScreenshotStack(cached, tipInput), /changed during validation/)
+  })
+  it('does not grow pending status history while the tip is still awaiting review', async () => {
+    const f = fixture()
+    f.statuses.set(TIP, [])
+    const description = 'Stack waiting for covered screenshot approval on tip #2'
+    f.statuses.set(LOWER, [status('Screenshot review', 4, description, 'pending')])
+    assert.equal((await reconcileScreenshotStack(f.github, input))?.state, 'pending')
+    assert.deepEqual(f.writes, [])
+  })
   it('defers lower review only to an approved tip with declaration-bound coverage', async () => {
     const f = fixture()
     const stack = await verifyScreenshotStack(f.github, input)
@@ -213,6 +328,41 @@ describe('combined stack review gates', () => {
     assert.equal(f.writes.at(-1)?.state, 'pending')
     assert.match(f.writes.at(-1)?.description ?? '', /rerun CI/)
   })
+  it('leaves ordinary PR screenshot checks untouched', async () => {
+    const f = fixture()
+    f.pulls.set(1, pull(1, LOWER, 'ordinary PR'))
+    await reconcileScreenshotStack(f.github, input)
+    assert.deepEqual(f.writes, [])
+  })
+  it('names the moved PR instead of reporting a generic invalid stack', async () => {
+    const f = fixture()
+    f.pulls.set(1, pull(1, BASE))
+    await reconcileScreenshotStack(f.github, input)
+    assert.equal(f.writes.at(-1)?.state, 'error')
+    assert.match(f.writes.at(-1)?.description ?? '', /PR #1 head moved; update its stack pin/)
+  })
+  it('clears a resolved tip setup error without granting screenshot approval', async () => {
+    const f = fixture()
+    f.statuses.set(TIP, [status('Screenshot review', 4, 'Stack invalid or changed', 'error')])
+    await reconcileScreenshotStack(f.github, tipInput)
+    assert.equal(f.writes.at(-1)?.state, 'pending')
+    assert.match(f.writes.at(-1)?.description ?? '', /waiting for combined CI/)
+  })
+  it('preserves an explicit tip decision during reconciliation', async () => {
+    const f = fixture()
+    await reconcileScreenshotStack(f.github, tipInput)
+    assert.deepEqual(f.writes, [])
+  })
+  it('does not publish raw API errors as a declaration problem', async () => {
+    const f = fixture()
+    f.github.rest.repos.compareCommitsWithBasehead = async (): Promise<never> => {
+      throw new Error('private response details')
+    }
+    await reconcileScreenshotStack(f.github, input)
+    assert.equal(f.writes.at(-1)?.state, 'error')
+    assert.match(f.writes.at(-1)?.description ?? '', /Validation unavailable/)
+    assert.doesNotMatch(f.writes.at(-1)?.description ?? '', /private response/)
+  })
   it('reports invalid live stacks as errors without granting success', async () => {
     const f = fixture()
     f.diverge()
@@ -283,6 +433,33 @@ const workflowSchema = z.object({
   ),
 })
 describe('stack workflow integration', () => {
+  it('reconciles removed declarations when their event is replaced by another pending run', () => {
+    const workflow = workflowSchema.parse(
+      load(readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')),
+    )
+    const script = workflow.jobs['reconcile']?.steps.find(
+      (step) => step.name === 'Reconcile live screenshot stacks',
+    )?.with?.['script']
+    assert.equal(typeof script, 'string')
+    assert.ok(typeof script === 'string')
+    const start = script.indexOf('const selected =')
+    const end = script.indexOf('for (const pr of selected)', start)
+    assert.ok(start >= 0 && end > start)
+    const removed = pull(3, BASE, '')
+    const foreign = {
+      ...pull(4, BASE),
+      head: { sha: BASE, repo: { full_name: 'someone/fork' } },
+    }
+    const selected: unknown = new Script(
+      `${script.slice(start, end)}\nselected.map(pr => pr.number)`,
+    ).runInNewContext({
+      open: [pull(1, LOWER), removed, foreign],
+      owner: 'copse-dev',
+      repo: 'agent-pane',
+      context: { payload: { pull_request: { number: 1 } } },
+    })
+    assert.equal(JSON.stringify(selected), '[1,3]')
+  })
   it('forces combined coverage before the screenshot-only shortcut and preserves source-event evidence', () => {
     const ci = readFileSync('.github/workflows/ci.yml', 'utf8')
     const workflow = workflowSchema.parse(load(ci))

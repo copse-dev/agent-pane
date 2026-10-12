@@ -885,3 +885,11 @@ export class ForgeReviewError extends Error {
     this.status = status
   }
 }
+
+/** A confirmed change to the PR makes publication obsolete, without failing the review. */
+export class ForgePublicationSkippedError extends ForgeReviewError {
+  constructor(message: string) {
+    super(0, message)
+    this.name = 'ForgePublicationSkippedError'
+  }
+}

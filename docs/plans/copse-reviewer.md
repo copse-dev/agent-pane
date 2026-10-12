@@ -1511,8 +1511,9 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
   `write_summary`, with one repair turn if it ends in prose. The prompt tells the model to
   describe, not review. It reuses the review's model route; it adds no new trust boundary.
 - **Grounding.** The model proposes the level; evidence can only raise it. A surfaced high or
-  critical finding makes it High, any surfaced finding makes Low into Medium, and the block
-  says why. Stage 0's regressions are findings, so they count.
+  critical finding makes it High, a medium-severity finding makes Low into Medium, and the block
+  says why. Low-severity findings remain visible without raising the risk. Stage 0's regressions
+  are findings, so they count according to their severity.
 - **Inertness.** Every model-written line goes through the same `inertMarkdown` as review
   comments and is flattened to one quoted line. `<` becomes `&lt;`, so a diff that steers
   the model cannot forge the end marker, hide the author's text or mention anyone.
@@ -1594,3 +1595,27 @@ would suppress CI and is intentionally absent. Existing environment approval rul
 Validation must cover authorization and reruns, context collection, concurrent head/base changes,
 failed/partial runs, divergent-base carry-in, conflict completion, and lease-protected publication.
 A live paid-model Actions run remains a deployment check; unit coverage does not establish it.
+
+### October 11: resolve verified Copse findings after follow-up edits
+
+A successful `fix` follow-up (including a clean no-op) starts a separate verification job at
+its published head. Rebase-only commands do not close findings. A fresh container receives
+unresolved threads whose root author and parent review author are the Copse release bot and
+whose review is recognized as a current or historical Copse review. Human-authored threads, threads with human participation,
+and truncated comment histories are excluded. Outdated lines are not evidence of a fix.
+
+The verifier must leave product files unchanged and write only its verdict JSON. Addressed
+findings need source quotes that the trusted host checks against the exact published commit,
+plus relevant checks reported as passed by the independent verifier. Uncertain findings,
+unavailable/failed checks, malformed output, incomplete runs, deferrals, and cleanup failures
+cannot authorize resolution. These are model-assisted judgments, not a proof of correctness.
+At most 20 eligible threads are considered per command; others remain open.
+
+The editing job's token is revoked when that job finishes. Only after verifier teardown and
+host validation does the verification job mint a separate App token with Contents read and
+Pull requests write. The host rechecks the unchanged owner command, permissions, PR head/base,
+opt-out and thread snapshot, posts the fixing commit and verification evidence, then rechecks
+before resolving. New human replies or changed threads remain open. GitHub has no atomic
+expected-head condition on `resolveReviewThread`; a very small race remains after the last
+check. No merge or screenshot acceptance is performed. Conversation comments and historical
+review summaries are retained. Verification failure never rolls back an already-pushed fix.

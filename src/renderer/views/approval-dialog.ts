@@ -103,37 +103,34 @@ export function approvalRequestDetails(req: {
   return parts
 }
 
-/**
- * Combine the distinct explanations for one grouped decision. Permission copy
- * commonly shares a lead line followed by request-specific bullets; keep that
- * lead once and preserve every unique detail below it. Unstructured advice stays
- * intact as separate paragraphs.
- */
+/** Combine shared reason lists and prose once for a grouped decision. */
 function mergeApprovalAdvice(values: readonly (string | undefined)[]): string | undefined {
-  const unique: string[] = []
-  const seen = new Set<string>()
+  const sections: string[] = []
+  const sectionIndexes = new Map<string, number>()
   for (const value of values) {
-    if (!value || seen.has(value)) continue
-    seen.add(value)
-    unique.push(value)
+    if (!value) continue
+    for (const section of value.split('\n\n')) {
+      const lines = section.split('\n')
+      const lead = lines[0]
+      const reasons = lines.slice(1)
+      if (lead && reasons.length > 0 && reasons.every((line) => line.startsWith(REASON_BULLET))) {
+        const index = sectionIndexes.get(lead)
+        if (index !== undefined) {
+          const existing = sections[index]
+          if (existing === undefined) continue
+          const mergedReasons = new Set(existing.split('\n').slice(1))
+          for (const reason of reasons) mergedReasons.add(reason)
+          sections[index] = [lead, ...mergedReasons].join('\n')
+          continue
+        }
+        sectionIndexes.set(lead, sections.length)
+        sections.push(section)
+      } else if (!sections.includes(section)) {
+        sections.push(section)
+      }
+    }
   }
-  if (unique.length <= 1) return unique[0]
-
-  const lines = unique.map((value) => value.split('\n'))
-  const sharedLead = lines[0]?.[0]
-  if (sharedLead === undefined || !lines.every((parts) => parts[0] === sharedLead)) {
-    return unique.join('\n\n')
-  }
-
-  const merged = [sharedLead]
-  const seenDetails = new Set<string>()
-  for (const parts of lines) {
-    const details = parts.slice(1).join('\n')
-    if (!details || seenDetails.has(details)) continue
-    seenDetails.add(details)
-    merged.push(details)
-  }
-  return merged.join('\n')
+  return sections.length > 0 ? sections.join('\n\n') : undefined
 }
 
 /**

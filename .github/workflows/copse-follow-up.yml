@@ -26,6 +26,9 @@ jobs:
       contents: read
       pull-requests: read
       issues: read
+    outputs:
+      head: ${{ steps.published.outputs.head }}
+      mode: ${{ steps.published.outputs.mode }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -103,6 +106,90 @@ jobs:
           permission-contents: write
           permission-pull-requests: read
       - name: Recheck authorization and publish with an exact head lease
+        id: published
         env:
           GH_TOKEN: ${{ steps.publisher.outputs.token }}
         run: node scripts/copse-follow-up.mts publish
+
+  resolve-copse-threads:
+    needs: follow-up
+    if: needs.follow-up.outputs.mode == 'fix' && needs.follow-up.outputs.head != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: copse-review-models
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    env:
+      EXPECTED_HEAD: ${{ needs.follow-up.outputs.head }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Install trusted host dependencies
+        run: |
+          corepack enable
+          corepack prepare --activate
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Select isolated verification directories
+        run: |
+          echo "FOLLOW_UP_DIR=$RUNNER_TEMP/copse-verification" >> "$GITHUB_ENV"
+          echo "COPSE_DIR=$RUNNER_TEMP/copse-verification-profile" >> "$GITHUB_ENV"
+      - name: Snapshot eligible Copse threads at the published head
+        id: verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/copse-follow-up.mts prepare-verification
+      - name: Independently verify in a fresh container
+        if: steps.verification.outputs.has_threads == 'true'
+        env:
+          COPSE_FOLLOW_UP_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
+          COPSE_MODEL: ${{ vars.COPSE_REVIEW_MODEL || 'qwen3.8-27b' }}
+          COPSE_PROVIDER_URL: ${{ vars.COPSE_REVIEW_BASE_URL || vars.SCW_GENERATIVE_API_URL || 'https://api.scaleway.ai/v1' }}
+          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          COPSE_PROVIDER_URL="${COPSE_PROVIDER_URL%/}"
+          if [ "$COPSE_PROVIDER_URL" = https://api.scaleway.ai/v1 ]; then
+            if [[ ! "$SCW_DEFAULT_PROJECT_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+              echo '::error::SCW_DEFAULT_PROJECT_ID must be a lowercase UUID for explicit billing attribution'
+              exit 1
+            fi
+            export COPSE_PROVIDER_URL="https://api.scaleway.ai/${SCW_DEFAULT_PROJECT_ID}/v1"
+          fi
+          unset SCW_DEFAULT_PROJECT_ID
+          node scripts/run-thread-container.mts --build \
+            --workspace "$FOLLOW_UP_DIR/workspace" \
+            --prompt-file "$FOLLOW_UP_DIR/prompt.txt" \
+            --report "$FOLLOW_UP_DIR/report.json" \
+            --api-key-env COPSE_FOLLOW_UP_API_KEY \
+            --ttl 35 --tokens 500000 --max-output-tokens 16384 --max-steps 100 \
+            --install-dependencies \
+            --allow registry.npmjs.org:443 --allow github.com:443 \
+            --allow codeload.github.com:443 --allow release-assets.githubusercontent.com:443
+      - name: Validate the verifier before granting review writes
+        if: steps.verification.outputs.has_threads == 'true'
+        id: validated
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/copse-follow-up.mts validate-verification
+      - name: Mint the thread-resolution token after verifier teardown
+        if: steps.validated.outputs.has_findings == 'true'
+        id: resolver
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
+      - name: Recheck and resolve verified Copse threads
+        if: steps.validated.outputs.has_findings == 'true'
+        env:
+          GH_TOKEN: ${{ steps.resolver.outputs.token }}
+        run: node scripts/copse-follow-up.mts resolve-threads

@@ -10,6 +10,7 @@ import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import type { GhPrDetails } from './types/git.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
+import { BRIDGED_TOOL_SCENARIOS } from './demo-bridged-tools.ts'
 import {
   browserApprovalDetails,
   providerApprovalDetails,
@@ -534,7 +535,7 @@ function conciseMultiTurnMessages(model: string): Thread['messages'] {
               id: `concise-multi-steps-${String(n)}`,
               role: 'assistant' as const,
               model,
-              content: 'Checking the code.',
+              content: '',
               toolCalls: [
                 {
                   id: `concise-multi-read-${String(n)}`,
@@ -588,7 +589,15 @@ function conciseMultiTurnMessages(model: string): Thread['messages'] {
         role: 'assistant' as const,
         model,
         content,
-        toolCalls: [],
+        toolCalls: [
+          {
+            id: `concise-multi-audit-${String(n)}-${String(i)}`,
+            name: 'sandbox_network_audit',
+            args: {},
+            status: 'done' as const,
+            result: 'Audit complete.',
+          },
+        ],
         createdAt: at + 3 + i,
       })),
     ]
@@ -1578,7 +1587,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'node .tmp/dep-candidates.mjs',
         bodyAdvice:
-          "The project sandbox would block this command:\n• Runs a script file from the project, so Copse can't tell what it does",
+          "The project sandbox would block this command:\n• Runs a script file from the project, so Copse can't tell what it does\n\nThis runs with your user account’s access to files and the network, beyond the project sandbox.",
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
@@ -1587,7 +1596,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'mkdir -p node_modules && ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild',
         bodyAdvice:
-          'The project sandbox would block this command:\n• Reaches outside the project with a ../ path',
+          'The project sandbox would block this command:\n• Reaches outside the project with a ../ path\n\nThis runs with your user account’s access to files and the network, beyond the project sandbox.',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
@@ -1596,7 +1605,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild',
         bodyAdvice:
-          'The project sandbox would block this command:\n• Reaches outside the project with a ../ path',
+          'The project sandbox would block this command:\n• Reaches outside the project with a ../ path\n\nThis runs with your user account’s access to files and the network, beyond the project sandbox.',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
@@ -2337,6 +2346,13 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       theme: 'dark',
       uiTintStrength: 'off',
     },
+    // Two rows carry a trailing changes glyph, with very different title lengths,
+    // so a grouped view's "· demo" owner labels can't hide a glyph that isn't
+    // pinned to the row's trailing edge.
+    threadChanges: {
+      'demo-sidebar-sort-b': { dirty: false, unpushed: 2 },
+      'demo-sidebar-sort-c': { dirty: true },
+    },
     // Newest-prompted first, as the store keeps them: neither creation nor title order.
     threads: [
       {
@@ -2390,6 +2406,94 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         updatedAt: FIXED_TIME - 5,
       },
     ],
+  },
+  {
+    id: 'sidebar-cleanup-ssh',
+    label: 'Cleanup for SSH pull requests',
+    project: {
+      ...project('demo-cleanup-ssh', 'Remote widgets', '/srv/widgets'),
+      sshHost: 'build-host',
+    },
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      sshWorkspaceEnabled: true,
+    },
+    threads: ['open', 'closed'].map((state, index) => ({
+      id: `ssh-cleanup-${state}`,
+      title: state === 'open' ? 'Remote PR still open' : 'Remote PR completed',
+      status: state === 'open' ? 'running' : 'idle',
+      messages: [],
+      messagesLoaded: false,
+      prRefs: [
+        {
+          owner: 'acme',
+          repo: 'widgets',
+          number: index + 1,
+          url: `https://github.com/acme/widgets/pull/${String(index + 1)}`,
+        },
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: FIXED_TIME - index,
+      updatedAt: FIXED_TIME - index,
+    })),
+    pullRequests: [1, 2].map((number) => ({
+      owner: 'acme',
+      repo: 'widgets',
+      number,
+      url: `https://github.com/acme/widgets/pull/${String(number)}`,
+      title: 'Remote change',
+      state: number === 1 ? 'OPEN' : 'CLOSED',
+      body: '',
+      files: [],
+      checks: 'success',
+    })),
+  },
+  {
+    id: 'sidebar-cleanup-after-pr',
+    label: 'Cleanup after merged or closed PRs',
+    project: project('demo-cleanup-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threadChanges: {
+      'cleanup-dirty': { dirty: true },
+      'cleanup-unpushed': { dirty: false, unpushed: 2 },
+      'cleanup-clean': { dirty: false },
+    },
+    threads: ['dirty', 'unpushed', 'clean'].map((state, index) => ({
+      id: `cleanup-${state}`,
+      title:
+        state === 'dirty'
+          ? 'New edits after merge'
+          : state === 'unpushed'
+            ? 'Unpushed follow-up'
+            : 'Finished and clean',
+      status: 'idle',
+      messages: [],
+      messagesLoaded: false,
+      prRefs: [
+        {
+          owner: 'acme',
+          repo: 'widgets',
+          number: index + 1,
+          url: `https://github.com/acme/widgets/pull/${String(index + 1)}`,
+        },
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: FIXED_TIME - index,
+      updatedAt: FIXED_TIME - index,
+    })),
+    pullRequests: [1, 2, 3].map((number) => ({
+      owner: 'acme',
+      repo: 'widgets',
+      number,
+      url: `https://github.com/acme/widgets/pull/${String(number)}`,
+      title: 'Previous change',
+      state: number === 2 ? 'CLOSED' : 'MERGED',
+      body: '',
+      files: [],
+      checks: 'success',
+    })),
   },
   {
     id: 'sidebar-thread-changes',
@@ -3083,6 +3187,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
   },
+  ...BRIDGED_TOOL_SCENARIOS,
   conciseThreadScenario(
     'concise-thread-working',
     'Concise thread view while a capable model works',

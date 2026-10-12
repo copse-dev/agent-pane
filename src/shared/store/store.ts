@@ -79,6 +79,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     browser_url_requested: new Set(),
     browser_url_bar_focus_requested: new Set(),
     pr_open_requested: new Set(),
+    thread_archive_requested: new Set(),
     side_chat_open_requested: new Set(),
     canvas_artefact_requested: new Set(),
     canvas_artefact_show_requested: new Set(),
@@ -102,6 +103,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     code_block_run_finished: new Set(),
     attention_changed: new Set(),
     sidebar_threads_loaded: new Set(),
+    automation_schedules_loaded: new Set(),
   }
 
   function on<K extends keyof StoreEvents>(event: K, handler: EventHandler<K>): Unsubscribe {

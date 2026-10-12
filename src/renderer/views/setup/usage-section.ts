@@ -672,9 +672,18 @@ export function createUsageSection(
   refresh: () => Promise<void>
   detach: () => void
 } {
+  let pendingSignInProvider: 'claude' | 'codex' | null = null
+  const onSignIn = (provider: 'claude' | 'codex'): (() => void) | undefined => {
+    const handler = createPlanSignInHandler(store, provider, onRequestClose)
+    if (!handler) return undefined
+    return (): void => {
+      pendingSignInProvider = provider
+      handler()
+    }
+  }
   const handleSignIn = {
-    claude: createPlanSignInHandler(store, 'claude', onRequestClose) ?? undefined,
-    codex: createPlanSignInHandler(store, 'codex', onRequestClose) ?? undefined,
+    claude: onSignIn('claude'),
+    codex: onSignIn('codex'),
   }
   const root = document.createElement('div')
   root.className = 'usage-section-root'
@@ -828,9 +837,17 @@ export function createUsageSection(
       renderPlanSection(planEl, null, null, handleSignIn)
     }
     try {
-      const snapshot = await api.usage.getPlanUsage()
+      const snapshot = await api.usage.getPlanUsage(pendingSignInProvider !== null)
       cachedPlanSnapshot = snapshot
       renderPlanSection(planEl, snapshot, null, handleSignIn)
+      if (
+        pendingSignInProvider &&
+        snapshot.providers.some(
+          (provider) => provider.provider === pendingSignInProvider && provider.status === 'ok',
+        )
+      ) {
+        pendingSignInProvider = null
+      }
     } catch (err) {
       // Plan usage is best-effort — never block the ledger on IPC failure.
       const message = err instanceof Error ? err.message : 'Failed to load subscription plan usage.'

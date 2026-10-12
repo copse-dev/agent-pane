@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { prepareE2eScreenshot, savePreparedAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 describe('Changes chip includes committed branch work', () => {
+  let temporaryRoot = ''
   let root = ''
   let previousMockBranch: string | undefined
 
@@ -21,7 +22,9 @@ describe('Changes chip includes committed branch work', () => {
   before(async () => {
     previousMockBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
     resetUserData()
-    root = mkdtempSync(join(tmpdir(), 'copse-committed-chip-'))
+    temporaryRoot = mkdtempSync(join(tmpdir(), 'copse-committed-chip-'))
+    root = join(temporaryRoot, 'committed-chip')
+    mkdirSync(root)
     git('init', '-q', '-b', 'main')
     git('config', 'user.name', 'E2E')
     git('config', 'user.email', 'e2e@example.com')
@@ -45,7 +48,7 @@ describe('Changes chip includes committed branch work', () => {
   after(() => {
     writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: previousMockBranch })
     resetUserData()
-    if (root) rmSync(root, { recursive: true, force: true })
+    if (temporaryRoot) rmSync(temporaryRoot, { recursive: true, force: true })
   })
 
   it('keeps accurate totals as edits move from the working tree into commits', async () => {
@@ -103,6 +106,15 @@ describe('Changes chip includes committed branch work', () => {
     await expect($('.git-change-row-committed .git-change-path')).toHaveText('example.txt')
     await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+3')
     await expect($('.follow-up-bubble-changes .follow-up-stat-del')).toHaveText('-1')
-    await saveAppScreenshot('changes-chip-committed.png')
+    // Set the capture viewport before waiting: resizing can refresh the pane.
+    await prepareE2eScreenshot()
+    await browser.waitUntil(
+      async () => !(await $('.git-changes-list').getText()).includes('Checking committed changes'),
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected committed changes to finish loading before capture',
+      },
+    )
+    await savePreparedAppScreenshot('changes-chip-committed.png')
   })
 })

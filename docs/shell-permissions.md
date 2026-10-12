@@ -22,7 +22,7 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Standard shell mode              | Contained commands may auto-run; external and destructive commands normally prompt. Local containment requires active macOS Seatbelt or Linux bubblewrap.                                                                                               |
 | Auto-run and deterministic tiers | Extra shape grants are Off, Reads, Reads + local commits, or Reads + local commits + pushes. Require auto-run, workspace trust and an active project sandbox; can authorize an external command without a prompt.                                       |
-| Trusted commands                 | Explicit binary grants route eligible commands outside the sandbox in trusted projects with auto-run on. Every segment must qualify; Always ask suppresses the grant.                                                                                   |
+| Trusted commands                 | Explicit binary grants route eligible commands outside the sandbox in trusted projects with auto-run on. Every segment must qualify and none may redirect into a file other than `/dev/null`; Always ask suppresses the grant.                          |
 | Per-tool override                | Inherited behavior, Always allow, Always ask or Blocked. Ordinary approval is independent of operation-specific gates and runtime containment.                                                                                                          |
 | Read-only agent mode             | Default-deny tool allowlist; MCP tools need read-only/non-destructive hints and retain their ordinary gate. Child calls inherit the run scope.                                                                                                          |
 | Strict external denial           | Classifier confidence plus a deterministic destructive signal can hard-deny. The classifier cannot authorize execution.                                                                                                                                 |
@@ -167,6 +167,17 @@ The ambiguous tier exists because short command names also appear harmlessly as 
 Where a sandbox is active, the sandbox—not a fuzzy match—decides whether they escape. Without a
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
+
+`pnpm exec <command>` runs an installed command and is not itself an install or shell
+`exec` signal. Its child command still receives the normal scope checks, so downloads,
+opaque interpreter code, and outside-project paths keep their existing policy. Corepack
+and package downloads retain their existing gates.
+
+Remembered local port-binding consent is keyed by the project root, shared across its
+thread worktrees. Command execution still uses the thread's execution root and passes
+the shell gate. Other projects require their own consent, and disabling the Background
+tasks plugin still revokes its loopback-binding capability. Legacy worktree-root grants
+are not broadened automatically; the next project-level consent can be remembered.
 
 Newline-separated commands are inspected independently. For example, an opaque
 `python3 - <<'PY'` heredoc followed by `wc -l src/a.ts` stays ambiguous and runs inside
@@ -390,7 +401,9 @@ classified by the file it opens.
 
 The grant authorizes no command by itself. `read-outside-project.ts` re-analyzes every later command
 and must prove it is a plain read through a fail-closed allow-list. An unknown command head, write
-flag, redirect, environment variable, or privilege wrapper falls back to the ordinary prompt.
+flag, redirect, environment variable, or privilege wrapper falls back to the ordinary prompt; the
+whole wrapper chain counts, so `nohup env …` is refused like `env …`. Another user's home
+(`~name/…`) and `~+`/`~-` are never resolved into a grant target.
 Shell-builtin assignment forms such as `printf -v` also fall back: they can change `PATH` and
 replace a later reader without containing a leading `NAME=value` token.
 Credential targets (`.env*`, `*.pem`, `~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`, and similar) and
@@ -573,7 +586,8 @@ While active:
   remain hard-denied by the harm gate.
 - Writing or opaque GitHub CLI forms (`gh pr create`, `gh api -X POST`, `gh api -f …`,
   `gh api graphql`, …) prompt via the harm gate. A `gh api` call is a read only as a plain GET:
-  one REST endpoint (no full URL), no method other than `GET`, no field, `--input` or header flag.
+  one REST endpoint (no full URL), no method other than `GET`, no field, `--input`, header or
+  `--hostname` flag.
   `gh run download` may run inside the project sandbox, which contains its local writes.
   It does not receive a classifier read grant: running or retrying it outside the sandbox
   requires approval, even when the session has an active sandbox. Dedicated mutating GitHub tools
