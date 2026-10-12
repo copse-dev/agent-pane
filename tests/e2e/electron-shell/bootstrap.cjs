@@ -21,6 +21,24 @@ function applyEnvFile(filePath) {
 applyEnvFile(path.join(__dirname, '.eval-env.json'))
 applyEnvFile(path.join(__dirname, '.e2e-env.json'))
 
+// Inject a deterministic LAN interface only for the Mobile Companion settings capture.
+// This lives at the OS dependency boundary in the test launcher, never in product config.
+if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_MOBILE_NETWORK === '1') {
+  require('node:os').networkInterfaces = () => ({
+    'Wi-Fi': [
+      {
+        address: '192.168.1.42',
+        netmask: '255.255.255.0',
+        family: 'IPv4',
+        mac: '02:00:00:00:00:42',
+        internal: false,
+        cidr: '192.168.1.42/24',
+      },
+    ],
+  })
+  require('node:module').syncBuiltinESMExports()
+}
+
 if (process.env.COPSE_E2E_ABOUT_OPTIONS) {
   require('./about-options-fixture.cjs').install(process.env.COPSE_E2E_ABOUT_OPTIONS)
 }
