@@ -844,6 +844,7 @@ describe('thread-store', () => {
       assert.equal(loaded.length, 1)
       assert.deepEqual(loaded[0], {
         ...thread('t1', { title: 'Renamed', updatedAt: 42, draftPrompt: 'wip' }),
+        lastSettledAt: 1,
         messages: [userMsg('u1', 'hello'), assistantMsg('a1', 'on it', 'file contents')],
       })
     })
@@ -1196,6 +1197,17 @@ describe('thread-store', () => {
         loaded?.messages.map((message) => message.id),
         ['u1'],
       )
+    })
+
+    it('preserves completion time across metadata edits and records the next settled run', async () => {
+      await createThread('proj-1', thread('t1', { status: 'idle', updatedAt: 10 }))
+      await updateMeta('proj-1', 't1', { gitBranch: 'feature', updatedAt: 500 })
+      assert.equal((await getThreadMeta('proj-1', 't1'))?.lastSettledAt, 10)
+      await updateMeta('proj-1', 't1', { status: 'running', updatedAt: 600 })
+      await updateMetaOrThrow('proj-1', 't1', { status: 'idle', updatedAt: 700 })
+      assert.equal((await getThreadMeta('proj-1', 't1'))?.lastSettledAt, 700)
+      await updateMetaOrThrow('proj-1', 't1', { model: 'mock:test', updatedAt: 900 })
+      assert.equal((await getThreadMeta('proj-1', 't1'))?.lastSettledAt, 700)
     })
 
     it('updateMeta persists the resolved model as a distinct field next to the selector', async () => {
