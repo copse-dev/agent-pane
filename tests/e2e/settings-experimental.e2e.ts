@@ -150,6 +150,9 @@ describe('experimental settings section', () => {
     // Enabling, network choice, pairing approval, and device management all live
     // inline here now — no separate native-dialog management surface.
     await expect(mobileCompanion.$('input[name="mobileCompanionEnabled"]')).toExist()
+    await expect(
+      mobileCompanion.$('select[name="mobileCompanionAddress"] option:checked'),
+    ).toHaveText('Wi-Fi — 192.168.1.42')
     assert.equal(await mobileCompanion.$('#mobile-companion-manage').isExisting(), false)
     const mobileCompanionHint = await mobileCompanion.$('.field-hint').getText()
     assert.match(mobileCompanionHint, /same local network/i)
