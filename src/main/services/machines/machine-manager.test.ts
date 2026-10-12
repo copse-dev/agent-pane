@@ -7,6 +7,7 @@ import {
   classify,
   CLASSIFIER_TEST_REQUEST,
   type ClassifierProfile,
+  type ClassifierResult,
 } from '@copse/llm/classifiers/index.ts'
 import { createKeyringCipher } from '../storage/keyring-cipher.ts'
 import { isSecretSettingKey } from '../storage/settings-writable.ts'
@@ -34,6 +35,64 @@ function storage(): MachineStore {
     available: () => true,
   }
 }
+
+test('revocation refuses an in-flight result even when inference ignores cancellation', async () => {
+  const started = Promise.withResolvers<undefined>()
+  const answer = Promise.withResolvers<ClassifierResult>()
+  const profile: ClassifierProfile = {
+    id: 'slow',
+    label: 'Slow local model',
+    model: 'slow-model',
+    timeoutMs: 5000,
+    connection: {
+      type: 'http',
+      protocol: 'systemone',
+      auth: 'none',
+      baseUrl: 'http://127.0.0.1:1/v1',
+    },
+  }
+  const host = new MachineManager(
+    storage(),
+    () => [profile],
+    async () => {
+      started.resolve(undefined)
+      return answer.promise
+    },
+    'Host',
+  )
+  const client = new MachineManager(
+    storage(),
+    () => [],
+    async () => {
+      throw new Error('No local model')
+    },
+    'Client',
+  )
+  try {
+    await host.share({ enabled: true, address: '127.0.0.1', port: 0, profileIds: [profile.id] })
+    const peer = (await client.pair(host.invitation())).machines[0]
+    assert.ok(peer)
+    const denied = assert.rejects(
+      client.call(peer.id, profile.id, CLASSIFIER_TEST_REQUEST, new AbortController().signal, 5000),
+    )
+    await started.promise
+    const allowed = host.snapshot().clients[0]
+    assert.ok(allowed)
+    await host.revoke(allowed.id)
+    answer.resolve({
+      profileId: profile.id,
+      requestedModel: profile.model,
+      model: profile.model,
+      adapter: 'fixture',
+      elapsedMs: 1,
+      answers: {},
+      metadata: {},
+    })
+    await denied
+  } finally {
+    await Promise.all([host.close(), client.close()])
+  }
+})
 
 test('paired machines route native calls, preserve pins across restart, recover, and revoke per client', async () => {
   let calls = 0
