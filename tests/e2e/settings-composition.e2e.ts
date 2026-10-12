@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -8,7 +7,7 @@ import {
   prepareE2eScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 
 const SKILL = 'settings-navigation-fixture'
 const INSTRUCTIONS = 'Prefer readable names and focused changes.'
@@ -18,13 +17,11 @@ describe('Settings section composition, validation and sticky actions', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspace = realpathSync(mkdtempSync(join(tmpdir(), 'copse-settings-composition-')))
-    const folder = join(workspace, '.cursor', 'skills', SKILL)
-    mkdirSync(folder, { recursive: true })
-    writeFileSync(
-      join(folder, 'SKILL.md'),
-      `---\nname: ${SKILL}\ndescription: A skill loaded through the final Sources section.\n---\n\n# Settings fixture\n`,
-    )
+    workspace = seedStableWorkspace({
+      files: {
+        [`.cursor/skills/${SKILL}/SKILL.md`]: `---\nname: ${SKILL}\ndescription: A skill loaded through the final Sources section.\n---\n\n# Settings fixture\n`,
+      },
+    })
     seedEmptyProject(workspace, 'e2e-settings-composition')
     await browser.reloadSession()
   })
