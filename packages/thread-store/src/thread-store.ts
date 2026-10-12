@@ -2312,6 +2312,18 @@ export function appendReasoningCheckpoint(projectId: string, line: unknown): Pro
   )
 }
 
+/** Preserve the legacy completion proxy before a metadata write changes updatedAt. */
+function completionTimeForPatch(
+  current: ThreadMeta,
+  patch: Partial<ThreadMeta>,
+): number | undefined {
+  if (patch.lastSettledAt !== undefined) return patch.lastSettledAt
+  if (current.status === 'running' && patch.status !== undefined && patch.status !== 'running') {
+    return patch.updatedAt ?? Date.now()
+  }
+  return current.lastSettledAt ?? (current.status !== 'running' ? current.updatedAt : undefined)
+}
+
 /** Patch a thread's mutable metadata in place and refresh its catalog line. */
 export function updateMeta(
   projectId: string,
@@ -2324,9 +2336,11 @@ export function updateMeta(
     // updateMeta only patches an existing thread; `createThread` writes the
     // initial meta.json, so a missing base means there is nothing to patch.
     if (current === null) return
+    const lastSettledAt = completionTimeForPatch(current, patch)
     const merged: ThreadMeta = {
       ...current,
       ...patch,
+      ...(lastSettledAt !== undefined ? { lastSettledAt } : {}),
       id: threadId,
       ...(current.prProductions ? { prProductions: current.prProductions } : {}),
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
@@ -2347,9 +2361,11 @@ export function updateMetaOrThrow(
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
     if (current === null) throw new Error('Thread is not persisted yet; retry sending the message')
+    const lastSettledAt = completionTimeForPatch(current, patch)
     const merged: ThreadMeta = {
       ...current,
       ...patch,
+      ...(lastSettledAt !== undefined ? { lastSettledAt } : {}),
       id: threadId,
       ...(current.prProductions ? { prProductions: current.prProductions } : {}),
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
