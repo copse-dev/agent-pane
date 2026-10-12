@@ -47,7 +47,10 @@ import {
 } from './acp-client.ts'
 import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
-import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
+import { acquireAcpSession, disposeAcpSession, type PooledAcpSession } from './acp-session-pool.ts'
+import { createAgentInitiatedTurnLease } from './agent-initiated-turn.ts'
+import { requestUserAnswers } from '../ask-user.ts'
+import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
@@ -104,7 +107,12 @@ import {
   toRelativePathWithinRoot,
 } from '../workspace.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
-import { getThreadExecutionContext, isThreadCheckoutDeferred } from '../thread-execution-context.ts'
+import {
+  getThreadExecutionContext,
+  isThreadCheckoutDeferred,
+  resolveThreadExecutionContext,
+  runWithThreadExecutionContext,
+} from '../thread-execution-context.ts'
 import { ensureWritableThreadCheckout } from '../deferred-worktree.ts'
 import { acpAgentCanDeferCheckout } from './acp-deferred-checkout.ts'
 import {
@@ -436,6 +444,63 @@ export async function runWithAcpRetry<T>(
  * session; when it cannot, the continuation opens with the handover note and the
  * agent works from Copse's transcript (docs/plans/acp-session-continuity.md).
  */
+/**
+ * Let the pooled session bind its thread for turns the agent starts itself
+ * (a background task finishing after the prompt ended), so its bridged tool
+ * calls run against the thread's own root rather than being rejected. Idempotent.
+ */
+function installAgentInitiatedTurnLease(
+  entry: PooledAcpSession,
+  threadId: string,
+  projectId: string | undefined,
+  cwd: string,
+): void {
+  const bridge = entry.bridge
+  if (!bridge || !projectId || entry.open.agentInitiated) return
+  entry.open.agentInitiated = createAgentInitiatedTurnLease({
+    projectId,
+    threadId,
+    bridge: {
+      setExecutionContext: (context) => {
+        if (!context) {
+          bridge.setExecutionContext(null)
+          return
+        }
+        // The bridge captures per-thread scopes from the async context at bind time.
+        runWithThreadExecutionContext(context, () => {
+          runWithActiveRunIdentity(threadId, () => {
+            bridge.setExecutionContext(context)
+          })
+        })
+      },
+      setTurnSignal: (signal) => {
+        bridge.setTurnSignal(signal)
+      },
+      setPendingExecutionContext: (pending) => {
+        bridge.setPendingExecutionContext(pending)
+      },
+    },
+    resolveContext: resolveThreadExecutionContext,
+    beginWriter: () => beginWorktreeWriter(cwd),
+    confirmContinue: async () => {
+      const result = await runWithActiveRunIdentity(threadId, () =>
+        requestUserAnswers({
+          questions: [
+            {
+              question:
+                'The coding agent resumed on its own (a background task finished) and wants to ' +
+                "keep working, but this thread's automatic-continuation limit is used up. " +
+                'Let it continue?',
+              options: ['Allow', 'Stop'],
+            },
+          ],
+        }),
+      )
+      return result.cancelled !== true && result.answers[0] === 'Allow'
+    },
+  })
+}
+
 export function runAcpAgentFromSettings(options: RunAcpAgentOptions): Promise<RunAcpAgentResult> {
   return runAcpTurnWithContinuation(options, {
     runTurn: runAcpAgentTurn,
@@ -759,6 +824,10 @@ async function runAcpAgentTurn(
       // replayed into later turns nor counts as progress that blocks a retry.
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
+    // A turn the agent started on its own ends here: this prompt binds its own
+    // context below, and must not have it cleared by the earlier lease.
+    entry.open.agentInitiated?.end()
+    installAgentInitiatedTurnLease(entry, options.threadId, executionContext?.projectId, cwd)
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)

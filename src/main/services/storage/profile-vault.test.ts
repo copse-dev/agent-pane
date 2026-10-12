@@ -16,6 +16,10 @@ import { registerVaultProfileClient } from '@copse/store-kit/profile-vault-acces
 import type { NativeVaultRequest, NativeVaultReply } from '@copse/store-kit/profile-vault-native.ts'
 import { AppProfileVault, type ProfileVaultDependencies } from './profile-vault.ts'
 import type { SecretCipher } from './secret-cipher.ts'
+import { setSecretCipher } from './secret-cipher.ts'
+import { setPersistentStoreFactory } from './persistent-store.ts'
+import { readMcpOAuthRecord, writeMcpOAuthRecord } from '../mcp/mcp-oauth-store.ts'
+import { createChatGptPlanStore } from '../providers/chatgpt-plan-store.ts'
 
 const legacy: SecretCipher = {
   isEncryptionAvailable: () => true,
@@ -86,6 +90,61 @@ function fixture(): {
 }
 
 describe('application vault', () => {
+  it('round trips MCP and ChatGPT sign-ins through an unlocked application vault', async () => {
+    const f = fixture()
+    const values = new Map<string, unknown>()
+    f.seed()
+    const vault = new AppProfileVault(f.deps)
+    try {
+      await vault.initialize()
+      setSecretCipher(vault.cipher)
+      setPersistentStoreFactory(() => ({
+        get: (key): unknown => values.get(key),
+        set: (key, value): void => {
+          values.set(key, value)
+        },
+        delete: (key): void => {
+          values.delete(key)
+        },
+        listKeys: (): string[] => [...values.keys()],
+        deleteKeys: (keys): void => {
+          keys.forEach((key) => {
+            values.delete(key)
+          })
+        },
+      }))
+      const dependencies = {
+        getCipher: (): SecretCipher => vault.cipher,
+        read: (key: string): unknown => values.get(key),
+        write: async (key: string, value: unknown): Promise<void> => {
+          values.set(key, value)
+        },
+        remove: async (key: string): Promise<void> => {
+          values.delete(key)
+        },
+      }
+      const record = {
+        serverUrl: 'https://mcp.example.test/mcp',
+        redirectUrl: 'http://127.0.0.1:43123/callback',
+        authorizationServer: 'https://auth.example.test',
+        clientInformation: { client_id: 'synthetic-client' },
+        tokens: { access_token: 'synthetic-access', token_type: 'Bearer' },
+      }
+      await writeMcpOAuthRecord(record, dependencies)
+      assert.deepEqual(readMcpOAuthRecord(record.serverUrl, dependencies), record)
+      const chatgpt = createChatGptPlanStore()
+      const state = chatgpt.read()
+      chatgpt.write(state)
+      assert.deepEqual(createChatGptPlanStore().read(), state)
+      assert.equal(JSON.stringify([...values.values()]).includes('synthetic-access'), false)
+      assert.throws(() => vault.cipher.decryptString(Buffer.from('invalid')), VaultError)
+    } finally {
+      setSecretCipher(null)
+      setPersistentStoreFactory(null)
+      vault.dispose()
+      f.dispose()
+    }
+  })
   it('automatically migrates every saved credential before startup and silently opens on restart', async () => {
     const f = fixture()
     try {

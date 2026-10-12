@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -56,6 +56,7 @@ async function sendAndAwaitReply(prompt: string, reply: string): Promise<void> {
  * needs to write, and only then gets a worktree and branch.
  */
 describe('deferred thread worktree', () => {
+  let fixtureRoot = ''
   let projectRoot = ''
   let worktreeRoot = ''
   let server: ConversationServer
@@ -73,7 +74,10 @@ describe('deferred thread worktree', () => {
     resetUserData()
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
-    projectRoot = mkdtempSync(join(tmpdir(), 'copse-deferred-worktree-'))
+    fixtureRoot = mkdtempSync(join(tmpdir(), 'copse-deferred-worktree-'))
+    // Keep the reference's visible basename; only its parent needs uniqueness.
+    projectRoot = join(fixtureRoot, 'copse-deferred-worktree-QmXrAF')
+    mkdirSync(projectRoot)
     worktreeRoot = join(worktreesRoot, PROJECT_ID, THREAD_ID)
     rmSync(worktreeRoot, { recursive: true, force: true })
     git(projectRoot, ['init', '-q', '-b', 'main'])
@@ -116,7 +120,7 @@ describe('deferred thread worktree', () => {
     } finally {
       resetUserData()
       if (worktreeRoot) rmSync(worktreeRoot, { recursive: true, force: true })
-      if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+      if (projectRoot) rmSync(fixtureRoot, { recursive: true, force: true })
       await server.close()
     }
   })
