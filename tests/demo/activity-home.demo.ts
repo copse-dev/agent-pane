@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import { saveAppScreenshot, waitForSettledLayout } from '../e2e/helpers/screenshot.ts'
 
 // The new-thread screen is the Activity view above a docked composer
 // (views/activity-home.ts), laid out after prototypes/new-thread-activity.html.
@@ -399,7 +399,7 @@ describe('browser-hosted Activity home', () => {
     ): Promise<{ pane: number; clipped: boolean; columns: number }> => {
       const current = await paneWidth()
       await $('#resizer-files').dragAndDrop({ x: Math.round(target - current), y: 0 })
-      await browser.pause(150)
+      await waitForSettledLayout('#pane-chat')
       return browser.execute(() => {
         const body = document.querySelector('#activity-home .activity-panel-body')
         const controls = [
