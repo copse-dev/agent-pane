@@ -3422,3 +3422,10 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .acp-add-menu[hidden] {
   display: none;
 }
+/* The list has its own Re-scan, and the custom-agent form needs breathing room. */
+.acp-add-menu .provider-panel-embedded {
+  padding: var(--spacing-md);
+}
+.acp-add-menu .provider-panel-embedded > .provider-actions:first-child {
+  display: none;
+}

@@ -116,6 +116,13 @@ describe('Coding agents list in Settings', () => {
     for (const id of ['claude-acp', 'gemini', 'cursor']) {
       await expect($(`.acp-add-row[data-agent="${id}"]`)).toBeDisplayed()
     }
+    // Every logo in the menu paints: an SVG without a namespace parses but has no box.
+    const unpainted = await browser.execute(() =>
+      [...document.querySelectorAll('.acp-add-row .acp-logo svg')]
+        .filter((svg) => svg.getBoundingClientRect().width < 8)
+        .map((svg) => svg.closest('.acp-add-row')?.getAttribute('data-agent') ?? '?'),
+    )
+    assert.deepEqual(unpainted, [], 'logos in the Add menu must render')
     await $('[data-testid="acp-agents-fieldset"]').scrollIntoView({ block: 'center' })
     await browser.pause(200)
     await saveElementScreenshot(

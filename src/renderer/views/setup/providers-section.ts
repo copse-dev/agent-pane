@@ -138,14 +138,13 @@ export function createProvidersPanel(
   const fieldset = el(
     'fieldset',
     {},
-    el('legend', {}, 'Providers'),
+    el('legend', {}, 'API keys'),
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Everything Copse can send a turn to. Pick a provider to set up its API ' +
-        'key, its cloud agent, the copy of it installed on this machine, or a ' +
-        'model server you run yourself. Whatever you set up here shows up in the ' +
-        'model picker.',
+      'Add a key and its models show up in the model picker. Pick a provider to ' +
+        'add its key, set up its cloud agent, or connect a model server you run ' +
+        'yourself.',
     ),
     chipRow,
     formHost,

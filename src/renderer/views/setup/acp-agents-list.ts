@@ -262,18 +262,35 @@ export function createAcpAgentsList(api: ApiClient): AcpAgentsList {
     }
     clear(menu)
     menu.hidden = !menuOpen
-    addToggle.textContent = menuOpen ? 'Close' : '+ Add an agent'
+    addToggle.setAttribute('aria-expanded', String(menuOpen))
     if (!menuOpen) return
     for (const known of addableAgents(KNOWN_ACP_AGENTS, detected, configured)) {
       menu.append(addRow(known))
     }
-    const custom = el('button', { type: 'button', class: 'acp-link' }, 'Something else…')
+    const custom = el('button', { type: 'button', class: 'ui-btn ui-btn-secondary' }, 'Set up')
     custom.addEventListener('click', () => {
       panel.select('other')
       clear(menu)
       menu.append(panel.root)
     })
-    menu.append(el('div', { class: 'acp-row' }, custom))
+    menu.append(
+      el(
+        'div',
+        { class: 'acp-row acp-add-row', 'data-agent': 'other' },
+        el(
+          'div',
+          { class: 'acp-row-head' },
+          logoTile('other', '+'),
+          el(
+            'div',
+            { class: 'acp-row-text' },
+            el('div', { class: 'acp-row-name' }, el('strong', {}, 'Something else')),
+            el('div', { class: 'acp-row-desc' }, 'Any agent program on this machine.'),
+          ),
+          custom,
+        ),
+      ),
+    )
   }
 
   /** Device scan + sign-in check, without repainting. */

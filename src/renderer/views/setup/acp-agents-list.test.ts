@@ -6,6 +6,7 @@ import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 import type { DetectedAcpAgent, KnownAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpAgentConfig, AcpAuthState } from '@shared/types/acp.ts'
+import { AGENT_LOGO_SVG } from './agent-logos.ts'
 import { addableAgents, agentChip, createAcpAgentsList, listedAgents } from './acp-agents-list.ts'
 
 function known(id: string, setup?: string): KnownAcpAgent {
@@ -111,5 +112,13 @@ describe('createAcpAgentsList (rendered)', () => {
     )
     assert.ok(added.includes('cursor') && !added.includes('codex-acp'))
     list.root.remove()
+  })
+})
+
+describe('agent logos', () => {
+  it('declare the SVG namespace, or DOMParser yields an element that never paints', () => {
+    for (const [brand, svg] of Object.entries(AGENT_LOGO_SVG)) {
+      assert.match(svg, /^<svg\b[^>]*xmlns="http:\/\/www\.w3\.org\/2000\/svg"/, brand)
+    }
   })
 })
