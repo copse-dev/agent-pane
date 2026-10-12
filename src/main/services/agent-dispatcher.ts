@@ -17,6 +17,7 @@ import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
+import type { AgentInitiatedTurnClaim } from './acp/agent-initiated-turn.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
 import { contextLossNotice, contextWasLost } from './context-loss-notice.ts'
 import { recoverAgentHistory } from './history-recovery.ts'
@@ -67,6 +68,11 @@ export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
   turnTreeId: string
   display?: MachineTurnDisplay
 }
+
+type MachineOperationRef = Pick<
+  MachineAgentDispatchRequest,
+  'projectId' | 'threadId' | 'operationId' | 'turnTreeId'
+>
 
 export interface AgentDispatcherDependencies {
   loadHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
@@ -268,6 +274,46 @@ export class AgentDispatcher {
       if (oldest !== undefined && oldest !== operationKey) this.machineOperations.delete(oldest)
     }
     return running
+  }
+
+  /**
+   * Charge a turn the coding agent started on its own (a background-task
+   * notification re-entering the model) to the same continuation budget as any
+   * other machine-initiated turn. Copse never dispatched it, so unlike
+   * {@link dispatchMachine} this does not take the thread's dispatch slot and
+   * does not run anything: it only decides whether the turn may use bridged
+   * tools. `override` is a human's explicit go-ahead and skips the cap, but the
+   * turn still counts, so later self-resumes are held again.
+   */
+  async claimAgentInitiatedTurn(
+    projectId: string,
+    threadId: string,
+    options: { override: boolean },
+  ): Promise<AgentInitiatedTurnClaim> {
+    const key = dispatchKey(projectId, threadId)
+    await this.epochWrites.get(key)
+    let epoch = this.epochs.get(key)
+    epoch ??= (await this.dependencies.loadEpoch(projectId, threadId)) ?? undefined
+    // A thread that predates persisted epochs keyed its turn tree by thread id.
+    epoch ??= { turnTreeId: threadId, continuationUsed: 0 }
+    const request: MachineOperationRef = {
+      projectId,
+      threadId,
+      operationId: `agent-initiated:${this.dependencies.createId()}`,
+      turnTreeId: epoch.turnTreeId,
+    }
+    if (!options.override && !canContinue(epoch.continuationUsed)) {
+      await this.recordMachineFinish(request, 'budget-exhausted', epoch.continuationUsed)
+      return { status: 'budget-exhausted' }
+    }
+    const next = { ...epoch, continuationUsed: epoch.continuationUsed + 1 }
+    await this.dependencies.saveEpoch(projectId, threadId, next)
+    this.epochs.set(key, next)
+    await this.recordMachineStart(request, next.continuationUsed)
+    return {
+      status: 'granted',
+      release: () => this.recordMachineFinish(request, 'completed', next.continuationUsed),
+    }
   }
 
   isActive(projectId: string, threadId: string): boolean {
@@ -472,10 +518,7 @@ export class AgentDispatcher {
     return 'completed'
   }
 
-  private recordMachineStart(
-    request: MachineAgentDispatchRequest,
-    budgetUsed: number,
-  ): Promise<void> {
+  private recordMachineStart(request: MachineOperationRef, budgetUsed: number): Promise<void> {
     return this.dependencies.appendMachineContinuation(request.projectId, request.threadId, {
       v: SPINE_SCHEMA_VERSION,
       type: 'machine_continuation',
@@ -489,7 +532,7 @@ export class AgentDispatcher {
   }
 
   private recordMachineFinish(
-    request: MachineAgentDispatchRequest,
+    request: MachineOperationRef,
     result: MachineContinuationResult,
     budgetUsed?: number,
     turnOutcome?: TurnOutcome,
