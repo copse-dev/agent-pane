@@ -7,11 +7,7 @@ import {
   seedGitChangesFixture,
   writeSeedConfig,
 } from './helpers/seed-config.ts'
-import {
-  parkPointer,
-  prepareE2eScreenshot,
-  savePreparedAppScreenshot,
-} from './helpers/screenshot.ts'
+import { parkPointer, prepareE2eScreenshot, E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-git-changes-project'
 
@@ -117,6 +113,36 @@ describe('Changes pane thread retention', function () {
         timeoutMsg: 'Monaco hover scrollbars did not settle after the pointer left',
       },
     )
-    await savePreparedAppScreenshot('git-changes-thread-retention.png')
+    const clip = await browser.execute(() => {
+      const rect = document.getElementById('app')?.getBoundingClientRect()
+      if (!rect) throw new Error('App shell is missing')
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 }
+    })
+    // Capture the settled surface directly. WebDriver's element screenshot can
+    // scroll/resize the page again and wake Monaco chrome after our wait.
+    const screenshot: unknown = await browser.sendCommandAndGetResult('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+      clip,
+    })
+    if (
+      typeof screenshot !== 'object' ||
+      screenshot === null ||
+      !('data' in screenshot) ||
+      typeof screenshot.data !== 'string'
+    ) {
+      throw new Error('Chromium did not return screenshot bytes')
+    }
+    const stillSettled = await browser.execute(() =>
+      [...document.querySelectorAll('#git-diff-viewer-host .scrollbar')].every(
+        (element) => getComputedStyle(element).opacity === '0',
+      ),
+    )
+    expect(stillSettled).toBe(true)
+    writeFileSync(
+      join(E2E_SCREENSHOT_DIR, 'git-changes-thread-retention.png'),
+      Buffer.from(screenshot.data, 'base64'),
+    )
   })
 })
