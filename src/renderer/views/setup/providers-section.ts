@@ -5,6 +5,7 @@ import { createAcpAgentsSection } from './acp-agents-section.ts'
 import { SERVICE_TIER_CHOICES } from '@copse/llm/service-tier.ts'
 import { uiField } from '../../ui/index.ts'
 import { createChatGptPlanSection } from './chatgpt-plan-section.ts'
+import { createPasteKeyForm } from './paste-key-form.ts'
 
 // The one "Providers" panel in Settings > General. A provider is a company, not
 // a wiring mechanism: picking Cursor shows everything Cursor can do here (its
@@ -125,6 +126,18 @@ export function createProvidersPanel(
     ...(opts.nativeLocalProviders ? { nativeProviders: opts.nativeLocalProviders } : {}),
   })
   const agentsPanel = createAcpAgentsSection(api, { embedded: true, onChanged: rebuild })
+
+  const pasteKey = createPasteKeyForm(api, {
+    providers: () =>
+      apiPanel.providerIds().map((id) => ({ id, label: apiPanel.labelFor(id) ?? id })),
+    onSaved: () => {
+      void refresh()
+    },
+    renderOther: () => {
+      apiPanel.select(ADD_KEY)
+      return apiPanel.root
+    },
+  })
 
   const chipRow = el('div', { class: 'provider-chips', role: 'tablist' })
   const formHost = el('div', { class: 'provider-form-host' })
@@ -395,8 +408,9 @@ export function createProvidersPanel(
     })
     const host = el('div', { class: 'provider-add-host' })
     if (selectedAddKind === 'api') {
-      apiPanel.select(ADD_KEY)
-      host.append(apiPanel.root)
+      // Paste a key and let Copse work out the provider; "Other" falls through to
+      // the full custom-endpoint form below.
+      host.append(pasteKey.root)
     } else if (selectedAddKind === 'local') {
       localPanel.select(ADD_KEY)
       host.append(localPanel.root)
