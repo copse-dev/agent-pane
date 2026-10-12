@@ -83,6 +83,15 @@ export function createVncSshHostForm(
     importButton.disabled = value
     cancel.disabled = value
   }
+  async function requireSshEnabled(): Promise<boolean> {
+    if ((await api.settings.get('sshWorkspaceEnabled')) === true) return true
+    setInlineStatus(
+      status,
+      'error',
+      'Enable SSH workspaces in Settings before adding or importing an SSH machine.',
+    )
+    return false
+  }
   cancel.addEventListener('click', close)
   root.addEventListener('submit', (event) => {
     event.preventDefault()
@@ -102,6 +111,7 @@ export function createVncSshHostForm(
     void (async (): Promise<void> => {
       busy(true)
       try {
+        if (!(await requireSshEnabled())) return
         const existing = parseSshWorkspaceHosts(await api.settings.get('sshWorkspaceHosts'))
         if (existing.some((item) => item.id === parsed.host.id)) {
           setInlineStatus(status, 'error', 'A machine with this id already exists.')
@@ -121,6 +131,7 @@ export function createVncSshHostForm(
     void (async (): Promise<void> => {
       busy(true)
       try {
+        if (!(await requireSshEnabled())) return
         const aliases = await api.sshWorkspace.listConfigAliases()
         if (aliases.length === 0) {
           setInlineStatus(status, 'error', 'No Host entries found in ~/.ssh/config.')

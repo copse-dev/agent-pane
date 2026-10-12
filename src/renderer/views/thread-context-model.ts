@@ -99,7 +99,7 @@ export function deriveThreadContext(input: ThreadContextInput): ThreadContextMod
     const branch = thread.worktree?.branch ?? thread.gitBranch
     repos.push({
       name: project.name,
-      path: project.path,
+      path: thread.worktree?.path ?? project.path,
       ...(branch !== undefined ? { branch } : {}),
       checkout,
     })

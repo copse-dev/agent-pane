@@ -3006,6 +3006,33 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     threads: SIDE_CHATS_THREADS,
   },
   {
+    id: 'thread-context-worktree',
+    label: 'Context identifies a dedicated worktree and its branch',
+    project: project('demo-context-worktree', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      filesPaneOpen: true,
+      rightPanelMode: 'context',
+    },
+    threads: SIDE_CHATS_THREADS.map((thread) =>
+      thread.id === SIDE_CHATS_MAIN_ID
+        ? {
+            ...thread,
+            worktree: {
+              path: '/demo/widgets/.copse/worktrees/mermaid-wait',
+              branch: 'fix/mermaid-wait',
+              baseBranch: 'main',
+              baseCommit: '0000000000000000000000000000000000000000',
+              createdAt: FIXED_TIME,
+              seededFromDirtyProject: false,
+            },
+          }
+        : thread,
+    ),
+  },
+  {
     id: 'side-chat-approval',
     label: 'A side chat asks for approval over its parent thread',
     project: project('demo-side-chat-approval', 'Widgets', '/demo/widgets'),

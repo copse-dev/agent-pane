@@ -79,6 +79,19 @@ function recorder(): { handlers: ThreadContextHandlers; calls: string[] } {
   }
 }
 
+test('identifies primary and worktree checkouts with their branch', () => {
+  for (const checkout of ['shared', 'worktree'] as const) {
+    const host = renderThreadContext(
+      model({ repos: [{ name: 'Widgets', path: '/work/widgets', branch: 'feature/x', checkout }] }),
+      recorder().handlers,
+    )
+    assert.equal(
+      host.querySelector('.thread-context-repo .thread-context-meta')?.textContent,
+      `${checkout === 'worktree' ? 'Worktree' : 'Primary'} · feature/x`,
+    )
+  }
+})
+
 test('renders every section with safe text and routes each click to its own handler', () => {
   const { handlers, calls } = recorder()
   const host = renderThreadContext(model(), handlers)

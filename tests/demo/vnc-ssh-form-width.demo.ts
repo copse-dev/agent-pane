@@ -38,4 +38,17 @@ describe('SSH machine form in a narrow Desktop rail', () => {
       await saveElementScreenshot('.vnc-ssh-host-actions', `vnc-ssh-actions-${String(width)}.png`)
     })
   }
+
+  it('explains the disabled SSH prerequisite before saving a machine', async () => {
+    await browser.execute(async () => window.api.settings.set('sshWorkspaceEnabled', false))
+    await $('[aria-label="SSH host label"]').setValue('Build Mac')
+    await $('[aria-label="SSH hostname"]').setValue('build.local')
+    await $('.vnc-ssh-host-form button[type="submit"]').click()
+    await browser.waitUntil(async () =>
+      (await $('.vnc-ssh-host-status').getText()).includes('Enable SSH workspaces in Settings'),
+    )
+    assert.equal(await $('.vnc-ssh-host-form').isDisplayed(), true)
+    await $('.vnc-ssh-host-status').scrollIntoView()
+    await saveElementScreenshot('.vnc-ssh-host-status', 'vnc-ssh-disabled-workspaces.png')
+  })
 })
