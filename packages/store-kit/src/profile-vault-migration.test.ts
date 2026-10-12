@@ -14,6 +14,7 @@ import {
 } from './profile-vault-crypto.ts'
 import {
   inventoryVaultStores,
+  assertMigratedVaultStores,
   migrateVaultStores,
   VaultMigrationBlockedError,
 } from './profile-vault-migration.ts'
@@ -51,6 +52,49 @@ function fixture(): {
   }
 }
 describe('profile vault migration', () => {
+  it('migrates OAuth and ChatGPT credentials with slot identities and preserves their wire formats', () => {
+    const { key, manifest, legacy, sealed } = fixture()
+    const settings = { 'mcpOAuth.server': sealed, chatgptPlanCredentials: sealed.enc }
+    const result = migrateVaultStores(settings, {}, legacy, key, manifest)
+    assert.equal(result.count, 2)
+    assert.equal(inventoryVaultStores(settings, {}, legacy), 2)
+    const oauth = result.settings['mcpOAuth.server']
+    assert.ok(oauth && typeof oauth === 'object')
+    const encoded = Reflect.get(oauth, 'enc')
+    assert.ok(typeof encoded === 'string')
+    assert.equal(
+      openVaultRecord(
+        key,
+        manifest,
+        { store: 'mcp-oauth', record: 'mcpOAuth.server' },
+        Buffer.from(encoded, 'base64'),
+      ),
+      'synthetic',
+    )
+    const chatgpt = result.settings['chatgptPlanCredentials']
+    assert.ok(typeof chatgpt === 'string')
+    assert.equal(
+      openVaultRecord(
+        key,
+        manifest,
+        { store: 'chatgpt-plan', record: 'chatgptPlanCredentials' },
+        Buffer.from(chatgpt, 'base64'),
+      ),
+      'synthetic',
+    )
+    assertMigratedVaultStores(result.settings, {}, manifest)
+    assert.throws(() => assertMigratedVaultStores(settings, {}, manifest), VaultError)
+    for (const bad of [null, 'broken']) {
+      assert.throws(
+        () => inventoryVaultStores({ 'mcpOAuth.server': bad }, {}, legacy),
+        VaultMigrationBlockedError,
+      )
+      assert.throws(
+        () => inventoryVaultStores({ chatgptPlanCredentials: bad }, {}, legacy),
+        VaultMigrationBlockedError,
+      )
+    }
+  })
   it('migrates every registered secret namespace and preserves unrelated settings', () => {
     const { key, manifest, legacy, sealed, plain } = fixture()
     const settings = {
