@@ -213,6 +213,16 @@ describe('isolated thread terminal cwd', () => {
     })
     assert.ok(!(await gitChangePaths()).includes('project-only.md'))
     await $('.monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            !document
+              .getElementById('git-changes-host')
+              ?.textContent?.includes('Checking committed changes'),
+        ),
+      { timeout: 30_000, timeoutMsg: 'Popout committed Changes query did not settle' },
+    )
     await saveAppScreenshot('thread-worktree-changes-popout.png')
 
     await browser.closeWindow()

@@ -2504,6 +2504,12 @@ export function mountInputBar(
       // The normal composer now owns any warning, retry or failed-send recovery.
       return true
     },
+    sendMessage: async (content: string): Promise<boolean> => {
+      if (!getActiveThreadId() || imageDescriptionInProgress) return false
+      composer.value = content
+      await submit()
+      return true
+    },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
     attachArchive: addArchiveChip,

@@ -6,6 +6,7 @@ import { load } from 'js-yaml'
 import { z } from 'zod'
 import {
   attestScreenshotStack,
+  memoizeScreenshotStackAncestry,
   parseScreenshotStack,
   reconcileScreenshotStack,
   STACK_COVERAGE,
@@ -41,6 +42,11 @@ function status(
   author = 41898282,
 ): { context: string; id: number; description: string; state: string; creator: { id: number } } {
   return { context, id, description, state, creator: { id: author } }
+}
+/** GitHub's combined-status endpoint uses status-simple, which omits creator. */
+function compactStatus(value: unknown): Record<string, unknown> {
+  assert.ok(value !== null && typeof value === 'object')
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'creator'))
 }
 interface Fixture {
   github: StackGitHub
@@ -127,6 +133,188 @@ describe('screenshot stack declarations', () => {
 })
 
 describe('combined stack review gates', () => {
+  it('hydrates creator-less current statuses without walking unrelated history and observes revocation', async () => {
+    const f = fixture()
+    let reads = 0
+    let historyReads = 0
+    f.github.rest.repos.listCommitStatusesForRef = async ({
+      ref,
+      page,
+    }): Promise<{ data: unknown }> => {
+      assert.equal(page, 1, 'current proof is found on the first history page')
+      historyReads += 1
+      return {
+        data: [
+          ...(f.statuses.get(ref) ?? []),
+          ...Array.from({ length: 97 }, (_, i) => status(`Other ${String(i)}`, 100 + i)),
+        ],
+      }
+    }
+    f.github.rest.repos.getCombinedStatusForRef = async ({
+      ref,
+      page,
+    }): Promise<{ data: unknown }> => {
+      assert.equal(page, 1)
+      reads += 1
+      return { data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) } }
+    }
+    const policy = memoizeScreenshotStackAncestry(f.github)
+    assert.equal((await verifyScreenshotStack(policy, input))?.approved, true)
+    f.statuses.set(TIP, [status('Screenshot review', 4, 'Review revoked', 'error')])
+    assert.equal((await verifyScreenshotStack(policy, input))?.approved, false)
+    assert.equal(reads, 2, 'decision reads remain live despite shared immutable ancestry')
+    assert.equal(historyReads, 2, 'hydrate only the current proof, not unrelated status history')
+  })
+  it('rejects untrusted creators even when compact status states and declaration digests match', async () => {
+    for (const context of ['Screenshot review', STACK_COVERAGE, STACK_DECISION]) {
+      const f = fixture()
+      f.statuses.set(TIP, [
+        status(
+          'Screenshot review',
+          1,
+          undefined,
+          'success',
+          context === 'Screenshot review' ? 123 : 41898282,
+        ),
+        status(
+          STACK_COVERAGE,
+          2,
+          `Stack coverage ${DIGEST}`,
+          'success',
+          context === STACK_COVERAGE ? 123 : 41898282,
+        ),
+        status(
+          STACK_DECISION,
+          3,
+          `Stack decision ${DIGEST}`,
+          'success',
+          context === STACK_DECISION ? 123 : 41898282,
+        ),
+      ])
+      f.github.rest.repos.getCombinedStatusForRef = async ({
+        ref,
+      }): Promise<{ data: unknown }> => ({
+        data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
+      })
+      assert.equal((await verifyScreenshotStack(f.github, input))?.approved, false)
+    }
+  })
+  it('observes a newer revocation while hydrating creator identity', async () => {
+    const f = fixture()
+    const snapshot = (f.statuses.get(TIP) ?? []).map(compactStatus)
+    f.github.rest.repos.getCombinedStatusForRef = async (): Promise<{ data: unknown }> => ({
+      data: { statuses: snapshot },
+    })
+    f.statuses.set(TIP, [
+      status('Screenshot review', 4, 'Review revoked during hydration', 'error'),
+      ...(f.statuses.get(TIP) ?? []),
+    ])
+    assert.equal((await verifyScreenshotStack(f.github, input))?.approved, false)
+  })
+  it('fails closed when full statuses cannot resolve the current status IDs', async () => {
+    const f = fixture()
+    f.github.rest.repos.getCombinedStatusForRef = async ({ ref }): Promise<{ data: unknown }> => ({
+      data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
+    })
+    f.github.rest.repos.listCommitStatusesForRef = async (): Promise<{ data: unknown }> => ({
+      data: [],
+    })
+    await assert.rejects(verifyScreenshotStack(f.github, input), /creators unavailable/)
+  })
+  it('paginates current contexts and fails closed for malformed combined responses', async () => {
+    const f = fixture()
+    const pages: number[] = []
+    f.github.rest.repos.getCombinedStatusForRef = async ({
+      ref,
+      page,
+    }): Promise<{ data: unknown }> => {
+      pages.push(page)
+      return {
+        data: {
+          statuses:
+            page === 1
+              ? Array.from({ length: 100 }, (_, i) => status(`Other ${String(i)}`, 100 + i))
+              : (f.statuses.get(ref) ?? []),
+        },
+      }
+    }
+    assert.equal((await verifyScreenshotStack(f.github, input))?.approved, true)
+    assert.deepEqual(pages, [1, 2])
+    f.github.rest.repos.getCombinedStatusForRef = async (): Promise<{ data: unknown }> => ({
+      data: {},
+    })
+    await assert.rejects(verifyScreenshotStack(f.github, input), /statuses unavailable/)
+  })
+  it('shares immutable ancestry comparisons across a ten-PR stack, not live proof', async () => {
+    const f = fixture()
+    const sha = (number: number): string => number.toString(16).padStart(40, '0')
+    const text = `<!-- copse-screenshot-stack: ${Array.from({ length: 9 }, (_, i) => `#${String(i + 1)}@${sha(i + 1)}`).join(' ')} tip=#10 -->`
+    const parsed = parseScreenshotStack(text)
+    assert.ok(parsed)
+    for (let number = 1; number <= 10; number += 1) {
+      f.pulls.set(number, pull(number, sha(number), text))
+    }
+    f.statuses.set(sha(10), [
+      status('Screenshot review', 1),
+      status(STACK_COVERAGE, 2, `Stack coverage ${parsed.digest}`),
+      status(STACK_DECISION, 3, `Stack decision ${parsed.digest}`),
+    ])
+    let comparisons = 0
+    const compare = f.github.rest.repos.compareCommitsWithBasehead.bind(f.github.rest.repos)
+    f.github.rest.repos.compareCommitsWithBasehead = async (
+      request,
+    ): Promise<{ data: unknown }> => {
+      comparisons += 1
+      return compare(request)
+    }
+    const cached = memoizeScreenshotStackAncestry(f.github)
+    for (let number = 1; number <= 10; number += 1) {
+      assert.equal((await verifyScreenshotStack(cached, { ...input, number }))?.approved, true)
+    }
+    assert.equal(comparisons, 17, 'one query per immutable ancestry pair, rather than 170')
+    f.statuses.set(sha(10), [status('Screenshot review', 4, 'Review revoked', 'error')])
+    assert.equal((await verifyScreenshotStack(cached, { ...input, number: 10 }))?.approved, false)
+    f.pulls.set(3, pull(3, BASE, text))
+    await assert.rejects(
+      verifyScreenshotStack(cached, { ...input, number: 10 }),
+      /head or declaration changed/,
+    )
+  })
+  it('does not append duplicate trusted statuses and returns the verified outcome', async () => {
+    const f = fixture()
+    const description = `Stack deferred to approved tip #2 at ${TIP.slice(0, 12)}`
+    f.statuses.set(LOWER, [status('Screenshot review', 4, description)])
+    assert.deepEqual(await reconcileScreenshotStack(f.github, input), {
+      head: LOWER,
+      state: 'success',
+      description,
+    })
+    assert.deepEqual(f.writes, [])
+    f.statuses.set(LOWER, [status('Screenshot review', 5, description, 'success', 123)])
+    await reconcileScreenshotStack(f.github, input)
+    assert.equal(f.writes.length, 1, 'an untrusted lookalike must be replaced')
+  })
+  it('keeps racing-push checks live when ancestry results are already cached', async () => {
+    const f = fixture()
+    const cached = memoizeScreenshotStackAncestry(f.github)
+    await verifyScreenshotStack(cached, tipInput)
+    const get = f.github.rest.pulls.get.bind(f.github.rest.pulls)
+    let lowerReads = 0
+    f.github.rest.pulls.get = async (request): Promise<{ data: unknown }> => {
+      const result = await get(request)
+      if (request.pull_number === 1 && ++lowerReads === 1) f.pulls.set(1, pull(1, BASE))
+      return result
+    }
+    await assert.rejects(verifyScreenshotStack(cached, tipInput), /changed during validation/)
+  })
+  it('does not grow pending status history while the tip is still awaiting review', async () => {
+    const f = fixture()
+    f.statuses.set(TIP, [])
+    const description = 'Stack waiting for covered screenshot approval on tip #2'
+    f.statuses.set(LOWER, [status('Screenshot review', 4, description, 'pending')])
+    assert.equal((await reconcileScreenshotStack(f.github, input))?.state, 'pending')
+    assert.deepEqual(f.writes, [])
+  })
   it('defers lower review only to an approved tip with declaration-bound coverage', async () => {
     const f = fixture()
     const stack = await verifyScreenshotStack(f.github, input)
@@ -265,6 +453,18 @@ describe('stack coverage attestation', () => {
     assert.equal(f.writes.at(-1)?.sha, TIP)
     assert.equal(f.writes.at(-1)?.description, `Stack coverage ${DIGEST}`)
   })
+  it('preserves an explicit tip decision while refreshing creator-less combined coverage', async () => {
+    const f = fixture()
+    f.github.rest.repos.getCombinedStatusForRef = async ({ ref }): Promise<{ data: unknown }> => ({
+      data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
+    })
+    const result = await attestScreenshotStack(f.github, tipInput, TIP, manifest)
+    assert.equal(result.needsReview, false)
+    assert.deepEqual(
+      f.writes.map((write) => write.context),
+      [STACK_COVERAGE],
+    )
+  })
   it('does not reuse an individual PR review made before combined coverage', async () => {
     const f = fixture()
     f.statuses.set(TIP, [
@@ -318,6 +518,33 @@ const workflowSchema = z.object({
   ),
 })
 describe('stack workflow integration', () => {
+  it('reconciles removed declarations when their event is replaced by another pending run', () => {
+    const workflow = workflowSchema.parse(
+      load(readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')),
+    )
+    const script = workflow.jobs['reconcile']?.steps.find(
+      (step) => step.name === 'Reconcile live screenshot stacks',
+    )?.with?.['script']
+    assert.equal(typeof script, 'string')
+    assert.ok(typeof script === 'string')
+    const start = script.indexOf('const selected =')
+    const end = script.indexOf('for (const pr of selected)', start)
+    assert.ok(start >= 0 && end > start)
+    const removed = pull(3, BASE, '')
+    const foreign = {
+      ...pull(4, BASE),
+      head: { sha: BASE, repo: { full_name: 'someone/fork' } },
+    }
+    const selected: unknown = new Script(
+      `${script.slice(start, end)}\nselected.map(pr => pr.number)`,
+    ).runInNewContext({
+      open: [pull(1, LOWER), removed, foreign],
+      owner: 'copse-dev',
+      repo: 'agent-pane',
+      context: { payload: { pull_request: { number: 1 } } },
+    })
+    assert.equal(JSON.stringify(selected), '[1,3]')
+  })
   it('forces combined coverage before the screenshot-only shortcut and preserves source-event evidence', () => {
     const ci = readFileSync('.github/workflows/ci.yml', 'utf8')
     const workflow = workflowSchema.parse(load(ci))
