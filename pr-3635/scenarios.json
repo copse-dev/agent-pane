@@ -224,6 +224,14 @@
     "label": "OpenAI confirmed cancellation with interrupted recovery"
   },
   {
+    "id": "bridged-tools",
+    "label": "Patch file links and command output"
+  },
+  {
+    "id": "bridged-tools-concise",
+    "label": "Running command in concise view"
+  },
+  {
     "id": "concise-thread-working",
     "label": "Concise thread view while a capable model works"
   },
