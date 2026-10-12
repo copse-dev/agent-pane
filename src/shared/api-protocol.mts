@@ -97,4 +97,5 @@
 // v58 versions inline Mobile Companion settings endpoints.
 // v59 integrates the device-bound vault wire changes.
 // v60 integrates Send now abort causes.
-export const API_PROTOCOL_VERSION = 60 as const
+// v61 integrates missing-worktree recovery.
+export const API_PROTOCOL_VERSION = 61 as const
