@@ -54055,7 +54055,7 @@ function createMobileCompanionSection(api2) {
         el(
           "p",
           { class: "field-hint" },
-          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold."
+          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Allow control opens a desktop confirmation of certificate trust."
         ),
         el(
           "label",
@@ -55246,12 +55246,18 @@ var init_thread_proposal = __esm({
 });
 
 // src/shared/tools/copse-tool-call.ts
-function matchesCopseToolName(name, tool) {
-  return name === tool || new RegExp(`^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+${tool}(?![a-z0-9_])`, "i").test(name);
+function normalizeCopseToolName(name) {
+  const server = /^mcp__([\w.-]+?)__/i.exec(name)?.[1];
+  if (server && server.toLowerCase() !== "copse") return name;
+  const match = /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+([a-z][a-z0-9_.-]*)/i.exec(name);
+  return match?.[1]?.toLowerCase() ?? name;
+}
+function copseToolCallName(call) {
+  return normalizeCopseToolName(call.programmaticName ?? call.name);
 }
 function isCopseToolCall(call, tool) {
   return [call.name, call.programmaticName].some(
-    (name) => typeof name === "string" && matchesCopseToolName(name, tool)
+    (name) => typeof name === "string" && normalizeCopseToolName(name) === tool
   );
 }
 var init_copse_tool_call = __esm({
@@ -56453,19 +56459,15 @@ function parseMcp(name) {
   const tool = match?.[2];
   return server && tool ? { server, tool } : null;
 }
-function nativeDisplayToolName(name) {
-  const mcp = parseMcp(name);
-  return mcp?.server.toLowerCase() === "copse" ? mcp.tool : name;
-}
 function getToolDisplayName(name, tense = "done") {
-  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)];
+  const known = TOOL_DISPLAY_NAMES[normalizeCopseToolName(name)];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
   if (mcp?.tool === "startup") return `${mcp.server} startup`;
   if (mcp) return humanizeIdentifier(mcp.tool);
   const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, "");
   if (stripped !== name) return humanizeIdentifier(stripped);
-  return humanizeIdentifier(name);
+  return humanizeIdentifier(normalizeCopseToolName(name));
 }
 function stringArg(args, key) {
   if (!isRecord(args)) return null;
@@ -56480,7 +56482,7 @@ function getApplyPatchFiles(tc2) {
   return input2 === null ? [] : summarizePatch(input2);
 }
 function getToolEditPath(tc2) {
-  const name = nativeDisplayToolName(tc2.name);
+  const name = copseToolCallName(tc2);
   if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
   const key = FILE_EDIT_PATH_ARG[name];
   if (!key) return null;
@@ -56502,7 +56504,7 @@ function shellCommandArg(args) {
 function shellCommandsFromToolCalls(toolCalls) {
   const commands = [];
   for (const tc2 of toolCalls) {
-    if (tc2.name !== "run_shell" || tc2.status === "error") continue;
+    if (!isCopseToolCall(tc2, "run_shell") || tc2.status === "error") continue;
     const command = shellCommandArg(tc2.args);
     if (command) commands.push(stripShellCdPrefix(command).trim());
   }
@@ -56510,8 +56512,8 @@ function shellCommandsFromToolCalls(toolCalls) {
 }
 function getToolCallLabel(tc2) {
   const tense = tenseFromStatus(tc2.status);
-  const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
-  const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
+  const mcpTitle = tc2.title && (parseMcp(tc2.title) || normalizeCopseToolName(tc2.title) !== tc2.title && !/\s/.test(tc2.title)) ? tc2.title : void 0;
+  const name = copseToolCallName({ ...tc2, name: mcpTitle ?? tc2.name });
   const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
   if (name === "read_skill") {
     const skillName = stringArg(tc2.args, "name");
@@ -56567,17 +56569,13 @@ function getToolCallLabel(tc2) {
     if (title) return shellCommandLabel(title);
   }
   if (title) return title;
-  return getToolDisplayName(mcpTitle ?? tc2.name, tense);
+  return getToolDisplayName(tc2.programmaticName ?? mcpTitle ?? tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
-  const builtIn = TOOL_TO_GROUP.get(name);
+  const builtIn = TOOL_TO_GROUP.get(normalizeCopseToolName(name));
   if (builtIn) return builtIn;
   const mcp = parseMcp(name);
   if (mcp) {
-    if (mcp.server === "copse") {
-      const copseBuiltIn = TOOL_TO_GROUP.get(mcp.tool);
-      if (copseBuiltIn) return copseBuiltIn;
-    }
     if (mcp.server === "copse.git") return "git";
     if (mcp.server === "copse.run") return "shell";
     return `${MCP_GROUP_PREFIX}${mcp.server}`;
@@ -56605,7 +56603,7 @@ function buildGroupedDisplayItems(toolCalls) {
   if (toolCalls.length === 0) return [];
   const groupMembers = /* @__PURE__ */ new Map();
   for (const tc2 of toolCalls) {
-    const groupKey = getToolGroupKey(tc2.name, tc2.kind);
+    const groupKey = getToolGroupKey(tc2.programmaticName ?? tc2.name, tc2.kind);
     if (!groupKey) continue;
     const key = bucketKey(groupKey, tc2.status === "error");
     const members2 = groupMembers.get(key) ?? [];
@@ -56615,7 +56613,7 @@ function buildGroupedDisplayItems(toolCalls) {
   const result = [];
   const emittedGroups = /* @__PURE__ */ new Set();
   for (const tc2 of toolCalls) {
-    const groupKey = getToolGroupKey(tc2.name, tc2.kind);
+    const groupKey = getToolGroupKey(tc2.programmaticName ?? tc2.name, tc2.kind);
     if (!groupKey) {
       result.push({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) });
       continue;
@@ -56751,6 +56749,7 @@ var init_tool_display = __esm({
     init_humanize_identifier();
     init_thread_proposal2();
     init_reviewer_input();
+    init_copse_tool_call();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
       read_file: { running: "Reading file", done: "Read file" },
@@ -77544,6 +77543,143 @@ var init_demo_site_tour = __esm({
   }
 });
 
+// src/shared/demo-bridged-tools.ts
+var CREATED_AT, MODEL, PATCH, BRIDGED_TOOL_SCENARIOS;
+var init_demo_bridged_tools = __esm({
+  "src/shared/demo-bridged-tools.ts"() {
+    CREATED_AT = Date.UTC(2026, 9, 11, 9);
+    MODEL = "claude-opus-5-5";
+    PATCH = [
+      "*** Begin Patch",
+      "*** Update File: src/greeting.ts",
+      "-hello",
+      "+hello, world",
+      "*** Add File: src/farewell.ts",
+      "+goodbye",
+      "*** End Patch"
+    ].join("\n");
+    BRIDGED_TOOL_SCENARIOS = [
+      {
+        id: "bridged-tools",
+        label: "Patch file links and command output",
+        project: { id: "demo-bridge-project", name: "Bridge tools", path: "/demo/bridge" },
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off", model: MODEL },
+        threads: [
+          {
+            id: "demo-bridge-thread",
+            title: "Update greetings",
+            status: "idle",
+            model: MODEL,
+            messages: [
+              {
+                id: "bridge-user",
+                role: "user",
+                content: "Update the greetings.",
+                toolCalls: [],
+                createdAt: CREATED_AT
+              },
+              {
+                id: "bridge-patch",
+                role: "assistant",
+                content: "Updated both greetings.",
+                createdAt: CREATED_AT,
+                toolCalls: [
+                  {
+                    id: "bridge-patch-call",
+                    name: "copse.apply_patch",
+                    args: { input: PATCH },
+                    status: "done",
+                    result: "Patched two files."
+                  }
+                ]
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: CREATED_AT,
+            updatedAt: CREATED_AT
+          }
+        ],
+        trace: {
+          id: "bridge-shell-trace",
+          label: "Run greeting tests",
+          prompt: "Run the greeting tests.",
+          steps: [
+            {
+              chunk: {
+                type: "tool_call",
+                toolCall: {
+                  id: "bridge-shell",
+                  name: "Run greeting tests",
+                  programmaticName: "mcp__copse__run_shell",
+                  args: { command: "pnpm test greetings" }
+                }
+              }
+            },
+            {
+              chunk: {
+                type: "tool_result",
+                toolCallId: "bridge-shell",
+                result: "2 greeting tests passed.",
+                isError: false
+              }
+            },
+            { chunk: { type: "text", text: "Both greeting tests passed." } },
+            { chunk: { type: "done", stopReason: "end_turn" } }
+          ]
+        }
+      },
+      {
+        id: "bridged-tools-concise",
+        label: "Running command in concise view",
+        project: { id: "demo-bridge-concise-project", name: "Bridge tools", path: "/demo/bridge" },
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: MODEL,
+          conciseThreadsEnabled: true
+        },
+        threads: [
+          {
+            id: "demo-bridge-concise-thread",
+            title: "Test greetings",
+            status: "running",
+            model: MODEL,
+            messages: [
+              {
+                id: "bridge-concise-user",
+                role: "user",
+                content: "Run the greeting tests.",
+                toolCalls: [],
+                createdAt: CREATED_AT
+              },
+              {
+                id: "bridge-concise-shell",
+                role: "assistant",
+                content: "",
+                model: MODEL,
+                createdAt: CREATED_AT,
+                toolCalls: [
+                  {
+                    id: "bridge-running-shell",
+                    name: "copse-run_shell: Test greetings",
+                    args: { command: "pnpm test greetings" },
+                    status: "running",
+                    result: null
+                  }
+                ]
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: CREATED_AT,
+            updatedAt: CREATED_AT
+          }
+        ]
+      }
+    ];
+  }
+});
+
 // src/shared/approval-copy.ts
 function webApprovalDetails(origin, url2, allowRemember, context) {
   return {
@@ -77827,6 +77963,7 @@ var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
     init_demo_site_tour();
+    init_demo_bridged_tools();
     init_approval_copy();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
     SIDE_CHATS_MAIN_ID = "7b3e9a10-5c2d-4f6e-8a41-0d9c2b7e5f13";
@@ -80524,6 +80661,7 @@ var init_demo_scenarios = __esm({
           }
         ]
       },
+      ...BRIDGED_TOOL_SCENARIOS,
       conciseThreadScenario(
         "concise-thread-working",
         "Concise thread view while a capable model works",
@@ -96499,7 +96637,7 @@ function runningToolCall(thread) {
   return null;
 }
 function shellCommand(tc2) {
-  if (tc2.name !== "run_shell" && tc2.kind !== "execute") return null;
+  if (!isCopseToolCall(tc2, "run_shell") && tc2.kind !== "execute") return null;
   const command = isRecord(tc2.args) ? tc2.args["command"] : void 0;
   return typeof command === "string" && command.trim() ? shellCommandLabel(command) : null;
 }
@@ -96518,6 +96656,7 @@ var init_concise_thread = __esm({
     init_intellect_lookup();
     init_todo_logic();
     init_tool_display();
+    init_copse_tool_call();
     init_unknown_value3();
     CONCISE_THREAD_MIN_INTELLECT = 50;
     conciseByModel = /* @__PURE__ */ new Map();
@@ -98645,7 +98784,7 @@ function statusIcon3(status) {
   return moreHorizontalIcon("ui-icon ui-icon-sm");
 }
 function createPatchFilesSection(tc2) {
-  if (tc2.name !== "apply_patch") return null;
+  if (!isCopseToolCall(tc2, "apply_patch")) return null;
   const files = getApplyPatchFiles(tc2);
   if (files.length === 0) return null;
   return el(
@@ -102178,6 +102317,7 @@ var init_conversation = __esm({
     init_tool_display();
     init_tool_runs();
     init_tool_interruption();
+    init_copse_tool_call();
     init_panels();
     init_thread_roadmap_origin();
     init_thread_hydration();
@@ -130688,7 +130828,7 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
   const unsubChunk = api2.agent.onChunk((threadId, chunk) => {
     if (chunk.type === "tool_call") {
       const isAcpShell = chunk.toolCall.kind === "execute";
-      if (chunk.toolCall.name === "run_shell" || isAcpShell) {
+      if (isCopseToolCall(chunk.toolCall, "run_shell") || isAcpShell) {
         const command = shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.title ?? chunk.toolCall.name : null);
         if (command) addTask(chunk.toolCall.id, command, chunk.toolCall.args, threadId);
       }
@@ -130719,6 +130859,7 @@ var init_agent_tasks = __esm({
   "src/renderer/views/agent-tasks.ts"() {
     init_helpers();
     init_tool_display();
+    init_copse_tool_call();
     init_array_utils2();
     init_scoped_tabs();
     init_unknown_value3();
