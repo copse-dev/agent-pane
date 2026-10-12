@@ -32,6 +32,13 @@ export interface StackGitHub {
         repo: string
         basehead: string
       }): Promise<{ data: unknown }>
+      getCombinedStatusForRef?(input: {
+        owner: string
+        repo: string
+        ref: string
+        per_page: number
+        page: number
+      }): Promise<{ data: unknown }>
       listCommitStatusesForRef(input: {
         owner: string
         repo: string
@@ -49,6 +56,28 @@ export interface StackGitHub {
         target_url?: string
       }): Promise<unknown>
     }
+  }
+}
+
+/** Share only immutable SHA comparisons within one reconciliation run. */
+export function memoizeScreenshotStackAncestry(github: StackGitHub): StackGitHub {
+  const comparisons = new Map<string, Promise<{ data: unknown }>>()
+  return {
+    rest: {
+      pulls: github.rest.pulls,
+      repos: {
+        ...github.rest.repos,
+        compareCommitsWithBasehead(input): Promise<{ data: unknown }> {
+          const key = JSON.stringify([input.owner, input.repo, input.basehead])
+          let result = comparisons.get(key)
+          if (!result) {
+            result = github.rest.repos.compareCommitsWithBasehead(input)
+            comparisons.set(key, result)
+          }
+          return result
+        },
+      },
+    },
   }
 }
 
@@ -102,13 +131,22 @@ async function statuses(
 ): Promise<Map<string, unknown>> {
   const latest = new Map<string, unknown>()
   for (let page = 1; page <= 20; page += 1) {
-    const { data } = await github.rest.repos.listCommitStatusesForRef({
+    // The combined endpoint returns the latest status for each context, rather
+    // than walking every historical deferral written on an unchanged SHA.
+    // Keep live reads uncached so revoked decisions are observed immediately.
+    const combined = github.rest.repos.getCombinedStatusForRef?.bind(github.rest.repos)
+    const { data: response } = await (
+      combined
+        ? combined.bind(github.rest.repos)
+        : github.rest.repos.listCommitStatusesForRef.bind(github.rest.repos)
+    )({
       owner: input.owner,
       repo: input.repo,
       ref,
       per_page: 100,
       page,
     })
+    const data = combined ? field(response, 'statuses') : response
     if (!Array.isArray(data))
       throw new StackValidationError('Screenshot stack statuses unavailable')
     for (const status of data) {
@@ -303,7 +341,16 @@ export async function attestScreenshotStack(
   return { base: manifest.base, needsReview }
 }
 
-export async function reconcileScreenshotStack(github: StackGitHub, input: Input): Promise<void> {
+interface ReconciledReview {
+  head: string
+  state: 'pending' | 'success' | 'error'
+  description: string
+}
+
+export async function reconcileScreenshotStack(
+  github: StackGitHub,
+  input: Input,
+): Promise<ReconciledReview | undefined> {
   const { data: pr } = await github.rest.pulls.get({
     owner: input.owner,
     repo: input.repo,
@@ -313,13 +360,14 @@ export async function reconcileScreenshotStack(github: StackGitHub, input: Input
   const head = sourceHead(pr, input)
   const latest = await statuses(github, input, head)
   const old = field(latest.get('Screenshot review'), 'description')
+  let review: ReconciledReview | undefined
   // Removing a declaration must revoke a previous deferral on the same SHA.
   try {
     const declaration = parseScreenshotStack(field(pr, 'body'))
     if (!declaration) {
       if (typeof old !== 'string' || !old.startsWith('Stack ')) return
       await write('pending', 'Stack removed; rerun CI for individual screenshot review')
-      return
+      return review
     }
     const stack = await verifyScreenshotStack(github, input)
     if (!stack) throw new StackValidationError('Screenshot stack disappeared')
@@ -332,7 +380,7 @@ export async function reconcileScreenshotStack(github: StackGitHub, input: Input
           'Stack ready; waiting for combined CI and explicit tip screenshot review',
         )
       }
-      return
+      return review
     }
     await write(
       stack.approved ? 'success' : 'pending',
@@ -347,7 +395,16 @@ export async function reconcileScreenshotStack(github: StackGitHub, input: Input
         : 'Validation unavailable; retry stack gates or check workflow logs'
     await write('error', `Stack blocked: ${reason}`.slice(0, 140))
   }
+  return review
   async function write(state: 'pending' | 'success' | 'error', description: string): Promise<void> {
+    review = { head, state, description }
+    const current = latest.get('Screenshot review')
+    if (
+      field(field(current, 'creator'), 'id') === BOT &&
+      field(current, 'state') === state &&
+      field(current, 'description') === description
+    )
+      return
     await github.rest.repos.createCommitStatus({
       owner: input.owner,
       repo: input.repo,

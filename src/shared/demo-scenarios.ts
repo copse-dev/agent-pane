@@ -10,6 +10,7 @@ import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import type { GhPrDetails } from './types/git.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
+import { BRIDGED_TOOL_SCENARIOS } from './demo-bridged-tools.ts'
 import {
   browserApprovalDetails,
   providerApprovalDetails,
@@ -3200,6 +3201,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
   },
+  ...BRIDGED_TOOL_SCENARIOS,
   conciseThreadScenario(
     'concise-thread-working',
     'Concise thread view while a capable model works',

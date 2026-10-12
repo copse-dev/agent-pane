@@ -31,6 +31,7 @@ let sending = false
 let decisionSignature = ''
 let inlineDecisionSignature = ''
 let selectedDecisionRow = null
+let inlineDecisionRequest = 0
 let lastActivityRows = []
 let messageSignature = ''
 let projectSignature = ''
@@ -312,23 +313,27 @@ function buildDecisionCards(data, row, container, afterSubmit) {
   })
 }
 
+// Some external-agent prompts still have a desktop-only transport.
+function buildDesktopAttentionCards(data) {
+  if (data.decisions.length) return []
+  return data.attention.map((item) => {
+    const card = element('section', 'attention')
+    card.append(
+      element('div', 'attention-title', item.title),
+      element('pre', 'attention-body', item.body),
+      element('p', 'hint', 'Answer this prompt on the desktop.'),
+    )
+    return card
+  })
+}
+
 function renderDecisions(data, row) {
   const signature = JSON.stringify([data.decisions, data.attention, data.access])
   if (signature === decisionSignature) return
   decisionSignature = signature
   const attentionEl = document.getElementById('attention')
   const cards = buildDecisionCards(data, row, attentionEl, refreshThread)
-  // Some external-agent prompts still have a desktop-only transport.
-  if (!data.decisions.length)
-    for (const item of data.attention) {
-      const card = element('section', 'attention')
-      card.append(
-        element('div', 'attention-title', item.title),
-        element('pre', 'attention-body', item.body),
-        element('p', 'hint', 'Answer this prompt on the desktop.'),
-      )
-      cards.push(card)
-    }
+  cards.push(...buildDesktopAttentionCards(data))
   const hadCards = attentionEl.childElementCount > 0
   attentionEl.replaceChildren(...cards)
   return cards.length > 0 && !hadCards
@@ -337,6 +342,7 @@ function renderDecisions(data, row) {
 // Needs-you rows answer in place on the Activity screen: tapping the row
 // again, or the decision settling, closes the card without a navigation.
 async function selectDecision(row) {
+  inlineDecisionRequest += 1
   if (
     selectedDecisionRow?.projectId === row.projectId &&
     selectedDecisionRow?.threadId === row.threadId
@@ -357,10 +363,11 @@ async function selectDecision(row) {
 }
 
 function renderInlineDecision(data, row) {
-  const signature = JSON.stringify([data.decisions, data.access])
+  const signature = JSON.stringify([data.decisions, data.attention, data.access])
   if (signature === inlineDecisionSignature) return
   inlineDecisionSignature = signature
   const cards = buildDecisionCards(data, row, inlineDecision, refreshInlineDecision)
+  cards.push(...buildDesktopAttentionCards(data))
   const openLink = element('button', 'open-thread-link', 'Open full thread ↗')
   openLink.type = 'button'
   openLink.addEventListener('click', () => openThread(row))
@@ -370,14 +377,15 @@ function renderInlineDecision(data, row) {
 async function refreshInlineDecision() {
   const row = selectedDecisionRow
   if (!token || !row) return
+  const request = ++inlineDecisionRequest
   try {
     const data = await api(
       `/api/thread/${encodeURIComponent(row.projectId)}/${encodeURIComponent(row.threadId)}`,
     )
-    if (selectedDecisionRow !== row) return
+    if (selectedDecisionRow !== row || request !== inlineDecisionRequest) return
     // Settled elsewhere (e.g. answered on the desktop): drop the card rather
     // than show stale actions for a decision that no longer exists.
-    if (!data.decisions.length) {
+    if (!data.decisions.length && !data.attention.length) {
       selectedDecisionRow = null
       inlineDecisionSignature = ''
       inlineDecision.hidden = true
@@ -388,7 +396,7 @@ async function refreshInlineDecision() {
     }
     renderInlineDecision(data, row)
   } catch (cause) {
-    fail(cause.message)
+    if (selectedDecisionRow === row && request === inlineDecisionRequest) fail(cause.message)
   }
 }
 
@@ -479,6 +487,7 @@ async function refreshThread() {
 }
 
 async function openThread(row, addHistory = true) {
+  inlineDecisionRequest += 1
   if (addHistory && (selected?.projectId !== row.projectId || selected?.threadId !== row.threadId))
     history.pushState({ mobileView: 'thread', row }, '')
   if (selected) drafts.set(selected.threadId, messageInput.value)
