@@ -8,7 +8,7 @@ import { pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT = 'e2e-base-branch-project'
 const THREAD = 'e2e-base-branch-thread'
-const BRANCH = 'copse/recover-checkout'
+const BRANCH = 'copse/recover(checkout)'
 const PROMPT = 'Inspect this checkout without editing the base branch.'
 
 describe('a thread checkout accidentally on its base branch', () => {
@@ -97,7 +97,9 @@ describe('a thread checkout accidentally on its base branch', () => {
     )
     const text = $('.msg-assistant .message-text')
     await expect(text).toHaveText(expect.stringContaining('checkout is on its base branch'))
-    await expect(text).toHaveText(expect.stringContaining(`git checkout ${BRANCH}`))
+    await expect(text).toHaveText(
+      expect.stringContaining('git checkout copse/recover\\(checkout\\)'),
+    )
     await expect(text).toHaveText(expect.stringContaining('Your files are preserved.'))
     await expect($('.toast-error')).not.toExist()
     await expect($('.apple-development-error')).not.toExist()
@@ -116,5 +118,15 @@ describe('a thread checkout accidentally on its base branch', () => {
     } finally {
       await restore()
     }
+    const command = await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('.msg-assistant .message-text code'))
+        .map((code) => code.textContent)
+        .find((value) => value.startsWith('git checkout ')),
+    )
+    if (!command) throw new Error('Missing rendered recovery command')
+    expect(command).toBe('git checkout copse/recover\\(checkout\\)')
+    execFileSync('/bin/sh', ['-c', command], { cwd: worktreeRoot, stdio: 'pipe' })
+    expect(git(worktreeRoot, 'branch', '--show-current')).toBe(BRANCH)
+    expect(git(worktreeRoot, 'status', '--porcelain')).toBe('')
   })
 })
