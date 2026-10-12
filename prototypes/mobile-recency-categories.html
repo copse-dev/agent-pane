@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse — Activity grouping alternatives</title>
+    <style>
+      :root {
+        --tint-hue: #244c25;
+        --bg-base: color-mix(in srgb, var(--tint-hue) 4%, #1e1e1e);
+        --bg-elevated: color-mix(in srgb, var(--tint-hue) 4%, #252526);
+        --bg-hover: color-mix(in srgb, var(--tint-hue) 4%, #2a2d2e);
+        --text-primary: #d4d4d4;
+        --text-secondary: #a6a6a6;
+        --text-muted: #808080;
+        --border: #414141;
+        --border-subtle: #333333;
+        --border-strong: #565656;
+        --accent: #ff93d0;
+        --success: #4ec9b0;
+        --warning: #cca700;
+        --error: #f48771;
+        --info: #6fb3d9;
+        --page-bg: #161616;
+      }
+      [data-theme='light'] {
+        --bg-base: color-mix(in srgb, var(--tint-hue) 7.6%, #ffffff);
+        --bg-elevated: color-mix(in srgb, var(--tint-hue) 7.6%, #f3f3f3);
+        --bg-hover: color-mix(in srgb, var(--tint-hue) 7.6%, #e8e8e8);
+        --text-primary: #333333;
+        --text-secondary: #5f5f5f;
+        --text-muted: #767676;
+        --border: #d4d4d4;
+        --border-subtle: #e4e4e4;
+        --border-strong: #ababab;
+        --accent: color-mix(in srgb, #ff93d0 30%, black);
+        --success: #1a7f37;
+        --warning: #9a6700;
+        --error: #cf222e;
+        --info: #0969da;
+        --page-bg: #e9e9e9;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--page-bg);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: var(--text-primary);
+        padding: 26px 18px 60px;
+      }
+      .wrap {
+        max-width: 1240px;
+        margin: 0 auto;
+      }
+      .page-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+      .page-head h1 {
+        font-size: 18px;
+        margin: 0 0 6px;
+      }
+      .page-head p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--text-muted);
+        max-width: 640px;
+        line-height: 1.55;
+      }
+      .page-head code {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 4px;
+        font-size: 12px;
+      }
+      .controls {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 10px;
+      }
+      .theme-btn {
+        border: 1px solid var(--border-strong);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        border-radius: 999px;
+        padding: 6px 14px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .pills {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .pill {
+        border: 1px solid var(--border-strong);
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+        border-radius: 999px;
+        padding: 6px 13px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .pill.active {
+        border-color: var(--accent);
+        color: var(--text-primary);
+        background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated));
+      }
+      .alt-note {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 16px;
+        font-size: 13px;
+        color: var(--text-secondary);
+        line-height: 1.55;
+        margin-bottom: 20px;
+      }
+      .alt-note strong {
+        color: var(--text-primary);
+      }
+      .surfaces {
+        display: grid;
+        grid-template-columns: 1.6fr 1fr;
+        gap: 22px;
+        align-items: start;
+      }
+      @media (max-width: 860px) {
+        .surfaces {
+          grid-template-columns: 1fr;
+        }
+      }
+      .surface {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+      }
+      .surface-head {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+      }
+      .surface-head h2 {
+        font-size: 13px;
+        margin: 0;
+      }
+      .surface-head span {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .panel-body {
+        padding: 14px 16px 16px;
+      }
+      .phone-frame {
+        max-width: 360px;
+        margin: 0 auto;
+      }
+      .phone-frame .panel-body {
+        background: var(--bg-base);
+        border-radius: 0 0 10px 10px;
+      }
+
+      .group {
+        margin: 0 0 18px;
+      }
+      .group:last-child {
+        margin-bottom: 0;
+      }
+      .group-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        color: var(--text-secondary);
+        margin-bottom: 8px;
+      }
+      .group-heading.sub {
+        font-size: 10px;
+        letter-spacing: 0.03em;
+        color: var(--text-muted);
+        margin: 10px 0 6px;
+        padding-left: 2px;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        background: var(--bg-base);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 9px 11px;
+        margin: 0 0 6px;
+      }
+      .glyph {
+        flex: none;
+        width: 15px;
+        height: 15px;
+        margin-top: 2px;
+      }
+      .glyph.needs-approval,
+      .glyph.needs-answer {
+        color: var(--warning);
+      }
+      /* Held still, not spun: a panel of walking dots would compete with the one
+     row that actually needs the user (activity-panel.css). */
+      .glyph.working {
+        color: var(--text-secondary);
+      }
+      .glyph.failed {
+        color: var(--error);
+      }
+      .glyph.finished {
+        color: var(--success);
+      }
+      .row-main {
+        flex: 1;
+        min-width: 0;
+      }
+      .row-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: baseline;
+      }
+      .state-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-secondary);
+      }
+      .age {
+        font-size: 11px;
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+      .row-title {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 3px 0 1px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row-detail {
+        font-size: 11.5px;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .badge-row {
+        margin-top: 5px;
+      }
+      .badge {
+        display: inline-block;
+        font-size: 10.5px;
+        font-weight: 600;
+        color: var(--warning);
+        border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+        background: color-mix(in srgb, var(--warning) 12%, var(--bg-elevated));
+        border-radius: 5px;
+        padding: 1px 6px;
+      }
+      .empty {
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        padding: 11px;
+        font-size: 11.5px;
+        color: var(--text-muted);
+      }
+      .verdict {
+        max-width: 1240px;
+        margin: 24px auto 0;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px 20px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--text-secondary);
+      }
+      .verdict h2 {
+        font-size: 14px;
+        color: var(--text-primary);
+        margin: 0 0 8px;
+      }
+      .verdict strong {
+        color: var(--text-primary);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="page-head">
+        <div>
+          <h1>Activity grouping — is “Recently finished” one bucket too few?</h1>
+          <p>
+            The desktop Activity panel (<code>activity-model.ts</code>) and the mobile Activity
+            screen (<code>mobile-activity.ts</code>) already share one scheme:
+            <strong>Needs you → Working → Recently finished</strong>. A thread that finished clean
+            and one that finished with an uncommitted diff sitting unreviewed land in the same
+            “Recently finished” bucket today, same weight, sorted only by recency. Four ways to
+            split it, applied live to both surfaces.
+          </p>
+        </div>
+        <div class="controls">
+          <button class="theme-btn" id="theme-toggle">Switch to light</button>
+          <div class="pills" id="pills"></div>
+        </div>
+      </div>
+
+      <div class="alt-note" id="alt-note"></div>
+      <div class="surfaces">
+        <div class="surface" id="desktop-surface">
+          <div class="surface-head">
+            <h2>Desktop — Activity panel</h2>
+            <span>overlay, ⌘⇧A</span>
+          </div>
+          <div class="panel-body" id="desktop-body"></div>
+        </div>
+        <div class="surface phone-frame" id="mobile-surface">
+          <div class="surface-head">
+            <h2>Mobile — Activity screen</h2>
+            <span>copse.dev/m</span>
+          </div>
+          <div class="panel-body" id="mobile-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="verdict">
+      <h2>Read</h2>
+      Going with <strong>flat split (Alt 2)</strong>: “Has changes” earns its own top-level section
+      between Working and Recently finished, rather than hiding one nesting level down — worth the
+      extra section given it's a different ask from a clean finish (something to review/commit/
+      discard, not just a log entry). The per-row “N uncommitted” badge came out, though: once the
+      section is titled “Has changes”, repeating the count on every row underneath is redundant
+      chrome — the section heading already carries it. The badge stays reserved for
+      <strong>Alt 4</strong>, the no-new-section fallback, where it's the only signal doing that
+      job.
+    </div>
+
+    <script>
+      const now = Date.now()
+      const min = (n) => now - n * 60000
+
+      // Same lucide-style paths as src/renderer/dom/icons.ts (handIcon, messageQuestionIcon,
+      // runningStatusIcon, warningIcon, checkIcon) — kept in sync with the real glyph set
+      // rather than redrawn, since state is never carried by colour alone in this app.
+      const icons = {
+        'needs-approval': [
+          'M18 11V6a2 2 0 0 0-4 0v5',
+          'M14 10V4a2 2 0 0 0-4 0v7',
+          'M10 10.5V6a2 2 0 0 0-4 0v8',
+          'M6 14.5 4.5 13a2 2 0 0 0-3 3l5.8 5.8A7.5 7.5 0 0 0 12.6 24H14a8 8 0 0 0 8-8v-5a2 2 0 0 0-4 0Z',
+        ],
+        'needs-answer': [
+          'M7.9 20A9 9 0 1 0 4 16.1L2 22Z',
+          'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3',
+          'M12 17h.01',
+        ],
+        working: ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'],
+        failed: [
+          'M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z',
+          'M12 9v4',
+          'M12 17h.01',
+        ],
+        finished: ['M20 6 9 17l-5-5'],
+      }
+      function glyph(state) {
+        const paths = icons[state].map((d) => `<path d="${d}"/>`).join('')
+        const strokeWidth = state === 'working' ? '3' : '1.75'
+        return `<svg class="glyph ${state}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`
+      }
+
+      const STATE_SHORT = {
+        'needs-approval': 'Approval',
+        'needs-answer': 'Question',
+        working: 'Running',
+        failed: 'Failed',
+        finished: 'Done',
+      }
+
+      const threads = [
+        {
+          title: 'Fix stale cache invalidation on reconnect',
+          project: 'copse-panel',
+          state: 'needs-approval',
+          hasChanges: false,
+          changed: 0,
+          since: min(2),
+          want: 'Run shell command',
+        },
+        {
+          title: 'Draft migration for thread-store v4',
+          project: 'copse-panel',
+          state: 'needs-answer',
+          hasChanges: false,
+          changed: 0,
+          since: min(6),
+          want: 'Which store format should v4 target?',
+        },
+        {
+          title: 'Add retry backoff to gortex daemon',
+          project: 'gortex',
+          state: 'working',
+          hasChanges: false,
+          changed: 0,
+          since: min(1),
+          want: 'Editing daemon.ts…',
+        },
+        {
+          title: 'Rename SidebarThread → ThreadRow',
+          project: 'copse-panel',
+          state: 'finished',
+          hasChanges: true,
+          changed: 4,
+          since: min(14),
+          want: 'Finished',
+        },
+        {
+          title: 'Wire mobile pairing QR fallback',
+          project: 'copse-panel',
+          state: 'finished',
+          hasChanges: true,
+          changed: 2,
+          since: min(38),
+          want: 'Finished',
+        },
+        {
+          title: 'Summarize streaming-markdown README',
+          project: 'streaming-markdown',
+          state: 'finished',
+          hasChanges: false,
+          changed: 0,
+          since: min(52),
+          want: 'Finished',
+        },
+        {
+          title: 'Investigate flaky e2e on slot-7 runners',
+          project: 'copse-panel',
+          state: 'failed',
+          hasChanges: true,
+          changed: 1,
+          since: min(70),
+          want: 'Ended with an error',
+        },
+        {
+          title: 'Tidy worktree-policy test fixtures',
+          project: 'copse-panel',
+          state: 'finished',
+          hasChanges: false,
+          changed: 0,
+          since: min(130),
+          want: 'Finished',
+        },
+        {
+          title: 'Draft PR description for plugin settings',
+          project: 'copse-panel',
+          state: 'finished',
+          hasChanges: false,
+          changed: 0,
+          since: min(260),
+          want: 'Finished',
+        },
+        {
+          title: 'Spike: Apple container e2e engine',
+          project: 'gortex',
+          state: 'failed',
+          hasChanges: false,
+          changed: 0,
+          since: min(400),
+          want: 'Ended with an error',
+        },
+      ]
+
+      function formatAge(ms) {
+        const s = Math.max(0, Math.floor(ms / 1000))
+        if (s < 60) return 'now'
+        if (s < 3600) return Math.floor(s / 60) + 'm'
+        if (s < 86400) return Math.floor(s / 3600) + 'h'
+        return Math.floor(s / 86400) + 'd'
+      }
+
+      function row(t, showBadge) {
+        const badge =
+          showBadge && t.hasChanges
+            ? `<div class="badge-row"><span class="badge">${t.changed} uncommitted</span></div>`
+            : ''
+        return `
+    <div class="row">
+      ${glyph(t.state)}
+      <div class="row-main">
+        <div class="row-top">
+          <span class="state-label">${STATE_SHORT[t.state]}</span>
+          <span class="age">${formatAge(now - t.since)}</span>
+        </div>
+        <div class="row-title">${t.title}</div>
+        <div class="row-detail">${t.want} · ${t.project}</div>
+        ${badge}
+      </div>
+    </div>`
+      }
+
+      function group(label, rows, emptyText, showBadge) {
+        const body = rows.length
+          ? rows.map((t) => row(t, showBadge)).join('')
+          : `<div class="empty">${emptyText}</div>`
+        return `<div class="group"><div class="group-heading"><span>${label}</span><span>${rows.length}</span></div>${body}</div>`
+      }
+
+      function subGroup(label, rows) {
+        if (!rows.length) return ''
+        return `<div class="group-heading sub">${label} · ${rows.length}</div>${rows.map((t) => row(t, false)).join('')}`
+      }
+
+      const byRecency = (a, b) => b.since - a.since
+      const needsYou = threads
+        .filter((t) => t.state === 'needs-approval' || t.state === 'needs-answer')
+        .sort(byRecency)
+      const working = threads.filter((t) => t.state === 'working').sort(byRecency)
+      const done = threads
+        .filter((t) => t.state === 'finished' || t.state === 'failed')
+        .sort(byRecency)
+      const doneChanged = done.filter((t) => t.hasChanges)
+      const doneClean = done.filter((t) => !t.hasChanges)
+
+      const schemes = [
+        {
+          label: 'Today',
+          note: '<strong>Alt 1 — current (3 buckets).</strong> Needs you / Working / Recently finished. A clean finish and a finish with unreviewed changes sit in the same list, same weight.',
+          render: () =>
+            [
+              group('Needs you', needsYou, 'No decisions waiting for you.'),
+              group('Working', working, 'No threads running right now.'),
+              group('Recently finished', done, 'Completed threads will appear here.'),
+            ].join(''),
+        },
+        {
+          label: 'Flat split',
+          note: '<strong>Alt 2 — flat 4-way split.</strong> “Has changes” gets its own top-level bucket between Working and Recently finished. The most direct read of “split Recent” — costs a 4th section on an already-dense panel.',
+          render: () =>
+            [
+              group('Needs you', needsYou, 'No decisions waiting for you.'),
+              group('Working', working, 'No threads running right now.'),
+              group('Has changes', doneChanged, 'Nothing waiting to be committed or discarded.'),
+              group('Recently finished', doneClean, 'Completed threads will appear here.'),
+            ].join(''),
+        },
+        {
+          label: 'Nested',
+          note: '<strong>Alt 3 — nested under Recently finished.</strong> Keep 3 top-level sections; the group splits into two sub-headings so the distinction shows up without a new nav-level bucket.',
+          render: () => {
+            const inner =
+              done.length === 0
+                ? `<div class="empty">Completed threads will appear here.</div>`
+                : subGroup('Has changes', doneChanged) + subGroup('Clean', doneClean)
+            return [
+              group('Needs you', needsYou, 'No decisions waiting for you.'),
+              group('Working', working, 'No threads running right now.'),
+              `<div class="group"><div class="group-heading"><span>Recently finished</span><span>${done.length}</span></div>${inner}</div>`,
+            ].join('')
+          },
+        },
+        {
+          label: 'Badge only',
+          note: "<strong>Alt 4 — badge only, no new section.</strong> Same 3 buckets as today. The existing <code>changedCount</code> / “N uncommitted” badge (already used in Settings' worktree list) threads onto the row in place — the signal exists without touching section or sort logic. Cheapest to ship, easiest to upgrade later into Alt 2 or 3.",
+          render: () =>
+            [
+              group('Needs you', needsYou, 'No decisions waiting for you.'),
+              group('Working', working, 'No threads running right now.'),
+              group('Recently finished', done, 'Completed threads will appear here.', true),
+            ].join(''),
+        },
+      ]
+
+      let active = 1 // default to Flat split
+
+      function renderActive() {
+        document.getElementById('alt-note').innerHTML = schemes[active].note
+        const html = schemes[active].render()
+        document.getElementById('desktop-body').innerHTML = html
+        document.getElementById('mobile-body').innerHTML = html
+        document
+          .querySelectorAll('.pill')
+          .forEach((p, i) => p.classList.toggle('active', i === active))
+      }
+
+      document.getElementById('pills').innerHTML = schemes
+        .map((s, i) => `<button class="pill" data-i="${i}">${s.label}</button>`)
+        .join('')
+      document.querySelectorAll('.pill').forEach((p) =>
+        p.addEventListener('click', () => {
+          active = Number(p.dataset.i)
+          renderActive()
+        }),
+      )
+      renderActive()
+
+      const themeToggle = document.getElementById('theme-toggle')
+      themeToggle.addEventListener('click', () => {
+        const isLight = document.documentElement.dataset.theme === 'light'
+        document.documentElement.dataset.theme = isLight ? 'dark' : 'light'
+        themeToggle.textContent = isLight ? 'Switch to light' : 'Switch to dark'
+      })
+    </script>
+  </body>
+</html>

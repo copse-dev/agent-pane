@@ -99,7 +99,9 @@ function renderGroup(label, key, rows) {
           ? 'No decisions waiting for you.'
           : key === 'working'
             ? 'No threads running right now.'
-            : 'Completed threads will appear here.',
+            : key === 'has-changes'
+              ? 'Nothing waiting to be committed or discarded.'
+              : 'Completed threads will appear here.',
       ),
     )
   for (const row of rows) {
@@ -154,6 +156,11 @@ async function refresh() {
         'WORKING',
         'working',
         data.rows.filter((row) => row.group === 'working'),
+      ),
+      renderGroup(
+        'HAS CHANGES',
+        'has-changes',
+        data.rows.filter((row) => row.group === 'has-changes'),
       ),
       renderGroup(
         'RECENT',
