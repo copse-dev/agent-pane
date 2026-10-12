@@ -1,6 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+  writeSeedConfig,
+} from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
@@ -14,7 +19,8 @@ describe('agent execution mode in the composer', () => {
     process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-agent-execution-mode', {
+    const workspaceRoot = seedStableWorkspace()
+    seedEmptyProject(workspaceRoot, 'e2e-agent-execution-mode', {
       windowBounds: { width: 1280, height: 800 },
       model: 'acp:fixture-agent',
       registeredAcpAgents: [
@@ -41,7 +47,7 @@ describe('agent execution mode in the composer', () => {
     })
     const now = Date.now()
     writeSeedConfig({
-      projects: [{ id: 'e2e-agent-execution-mode', path: process.cwd(), name: 'workspace' }],
+      projects: [{ id: 'e2e-agent-execution-mode', path: workspaceRoot, name: 'workspace' }],
       activeProjectId: 'e2e-agent-execution-mode',
       activeThreadId: 'agent-execution-mode-thread',
       'threads:e2e-agent-execution-mode': [
@@ -67,6 +73,7 @@ describe('agent execution mode in the composer', () => {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await expect($('.footer-branch-label')).toHaveText('main')
   })
 
   after(() => {
