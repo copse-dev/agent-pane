@@ -5,6 +5,7 @@ import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import { isThreadProposalCall } from '@shared/threads/thread-proposal.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import type { ToolRun, ToolRunStep } from './tool-runs.ts'
+import { copseToolCallName, isCopseToolCall, normalizeCopseToolName } from './copse-tool-call.ts'
 
 /** Progressive while a tool is in flight; past once it settles (done/error). */
 export type ToolLabelTense = 'running' | 'done'
@@ -211,15 +212,9 @@ function parseMcp(name: string): ParsedMcp | null {
   return server && tool ? { server, tool } : null
 }
 
-/** Display-only identity; the persisted name still controls tool execution. */
-function nativeDisplayToolName(name: string): string {
-  const mcp = parseMcp(name)
-  return mcp?.server.toLowerCase() === 'copse' ? mcp.tool : name
-}
-
 /** Human label for a tool name. Defaults to past/settled tense. */
 export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done'): string {
-  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)]
+  const known = TOOL_DISPLAY_NAMES[normalizeCopseToolName(name)]
   if (known) return pickLabel(known, tense)
   const mcp = parseMcp(name)
   // Codex reports connection failures as synthetic MCP startup calls. Their
@@ -230,7 +225,7 @@ export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done')
   // user sees just the tool name, not the internal server alias.
   const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, '')
   if (stripped !== name) return humanizeIdentifier(stripped)
-  return humanizeIdentifier(name)
+  return humanizeIdentifier(normalizeCopseToolName(name))
 }
 
 function stringArg(args: unknown, key: string): string | null {
@@ -261,7 +256,7 @@ export function getApplyPatchFiles(tc: ToolCall): PatchFileSummary[] {
 
 /** Workspace-relative path a file-edit tool touched, or null for non-edit tools. */
 export function getToolEditPath(tc: ToolCall): string | null {
-  const name = nativeDisplayToolName(tc.name)
+  const name = copseToolCallName(tc)
   if (name === 'apply_patch') return getApplyPatchFiles(tc)[0]?.path ?? null
   const key = FILE_EDIT_PATH_ARG[name]
   if (!key) return null
@@ -296,7 +291,7 @@ function shellCommandArg(args: unknown): string | null {
 export function shellCommandsFromToolCalls(toolCalls: ToolCall[]): string[] {
   const commands: string[] = []
   for (const tc of toolCalls) {
-    if (tc.name !== 'run_shell' || tc.status === 'error') continue
+    if (!isCopseToolCall(tc, 'run_shell') || tc.status === 'error') continue
     const command = shellCommandArg(tc.args)
     if (command) commands.push(stripShellCdPrefix(command).trim())
   }
@@ -312,8 +307,12 @@ export function getToolCallLabel(tc: ToolCall): string {
   const tense = tenseFromStatus(tc.status)
   // ACP can repeat the raw MCP identifier as its title. That is an identity,
   // not a human description, and must follow the same formatting as `name`.
-  const mcpTitle = tc.title && parseMcp(tc.title) ? tc.title : undefined
-  const name = nativeDisplayToolName(mcpTitle ?? tc.name)
+  const mcpTitle =
+    tc.title &&
+    (parseMcp(tc.title) || (normalizeCopseToolName(tc.title) !== tc.title && !/\s/.test(tc.title)))
+      ? tc.title
+      : undefined
+  const name = copseToolCallName({ ...tc, name: mcpTitle ?? tc.name })
   const title = tc.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc.title) ? tc.title : undefined
   if (name === 'read_skill') {
     const skillName = stringArg(tc.args, 'name')
@@ -381,20 +380,14 @@ export function getToolCallLabel(tc: ToolCall): string {
   // ACP keeps a user-facing title distinct from its programmatic identity.
   // Use it for display without sacrificing `name` for grouping and behavior.
   if (title) return title
-  return getToolDisplayName(mcpTitle ?? tc.name, tense)
+  return getToolDisplayName(tc.programmaticName ?? mcpTitle ?? tc.name, tense)
 }
 
 export function getToolGroupKey(name: string, kind?: string): string | null {
-  const builtIn = TOOL_TO_GROUP.get(name)
+  const builtIn = TOOL_TO_GROUP.get(normalizeCopseToolName(name))
   if (builtIn) return builtIn
   const mcp = parseMcp(name)
   if (mcp) {
-    // Copse exposes its built-in tools through MCP to some agent clients. Keep
-    // those wrappers in the same semantic groups as their bare counterparts.
-    if (mcp.server === 'copse') {
-      const copseBuiltIn = TOOL_TO_GROUP.get(mcp.tool)
-      if (copseBuiltIn) return copseBuiltIn
-    }
     if (mcp.server === 'copse.git') return 'git'
     if (mcp.server === 'copse.run') return 'shell'
     return `${MCP_GROUP_PREFIX}${mcp.server}`
@@ -433,7 +426,7 @@ function buildGroupedDisplayItems(toolCalls: ToolCall[]): ToolCallDisplayItem[] 
 
   const groupMembers = new Map<string, ToolCall[]>()
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.name, tc.kind)
+    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind)
     if (!groupKey) continue
     const key = bucketKey(groupKey, tc.status === 'error')
     const members = groupMembers.get(key) ?? []
@@ -445,7 +438,7 @@ function buildGroupedDisplayItems(toolCalls: ToolCall[]): ToolCallDisplayItem[] 
   const emittedGroups = new Set<string>()
 
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.name, tc.kind)
+    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind)
     if (!groupKey) {
       result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
       continue

@@ -94,6 +94,8 @@ jobs:
       # the code, the pull request, or the rules.
       checks: write
       pull-requests: read
+      # Checkout, base refs and commit comparisons require repository contents.
+      contents: read
     steps:
       # Trusted code only. Under `pull_request_target` this checks out the base
       # repository's default branch at its current tip (on `push` and dispatch,

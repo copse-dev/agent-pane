@@ -12,6 +12,7 @@ import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { createToolPermissionsPanel } from './tool-permissions-panel.ts'
 import { createUsageSection } from './setup/usage-section.ts'
 import { createAboutSection } from './setup/about-section.ts'
+import { createMobileCompanionSection } from './setup/mobile-companion-section.ts'
 import { createModelsSection } from './settings/models-section.ts'
 import { createProvidersSection } from './settings/providers-section.ts'
 import { createAppearanceSection } from './settings/appearance-section.ts'
@@ -136,13 +137,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const aboutSection = createAboutSection(api)
   qsRequired(overlay, '#settings-about-host').append(aboutSection.root)
 
-  qsRequired<HTMLButtonElement>(overlay, '#mobile-companion-manage').addEventListener(
-    'click',
-    () => {
-      closeSettingsDialog()
-      void api.mobile.manage()
-    },
-  )
+  const mobileCompanionSection = createMobileCompanionSection(api)
+  qsRequired(overlay, '#settings-mobile-companion-host').append(mobileCompanionSection.root)
 
   const form = qsRequired<HTMLFormElement>(overlay, 'form')
   const status = qsRequired(overlay, '#settings-save-status')
@@ -268,12 +264,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       experimental: {
         retainDrafts: true,
         refresh: async (values, signal): Promise<void> => {
-          await Promise.all([modelsSection.refreshWorker(values, signal), packs.refresh(signal)])
-          const status = await api.mobile.status()
-          if (signal.aborted) return
-          qsRequired(overlay, '#mobile-companion-qr-image').innerHTML = status.qrSvg ?? ''
-          qsRequired(overlay, '#mobile-companion-qr-url').textContent = status.url ?? ''
-          qsRequired(overlay, '#mobile-companion-qr').hidden = !status.url || !status.qrSvg
+          await Promise.all([
+            modelsSection.refreshWorker(values, signal),
+            packs.refresh(signal),
+            mobileCompanionSection.refresh(),
+          ])
         },
         deactivate: (): void => {
           packs.invalidate()

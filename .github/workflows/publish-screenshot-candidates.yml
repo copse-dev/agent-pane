@@ -189,20 +189,66 @@ jobs:
               core.notice(`Run ${runId} published no changed screenshot candidates.`);
             }
 
+      - name: Download screenshot stack coverage request
+        if: success() && steps.discover.outputs.stack-artifact-id != ''
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.discover.outputs.stack-artifact-id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/screenshot-stack-coverage
+
+      - name: Reject superseded screenshot stack publications
+        id: stack-request
+        if: success() && steps.discover.outputs.stack-artifact-id != ''
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ steps.discover.outputs.parent-number }}
+          HEAD_SHA: ${{ steps.discover.outputs.head-sha }}
+          MANIFEST_PATH: ${{ runner.temp }}/screenshot-stack-coverage/screenshot-stack-coverage.json
+        with:
+          script: |
+            const { lstatSync, readFileSync } = require('node:fs');
+            const stat = lstatSync(process.env.MANIFEST_PATH);
+            if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096)
+              throw new Error('Invalid screenshot stack coverage manifest file');
+            const manifest = JSON.parse(readFileSync(process.env.MANIFEST_PATH, 'utf8'));
+            const number = Number(process.env.PR_NUMBER);
+            if (!manifest || manifest.number !== number || manifest.head !== process.env.HEAD_SHA ||
+                typeof manifest.base !== 'string' || !/^[0-9a-f]{40}$/.test(manifest.base) ||
+                typeof manifest.declaration !== 'string' || /[\r\n]/.test(manifest.declaration) ||
+                !manifest.declaration.startsWith('<!-- copse-screenshot-stack: ') ||
+                !manifest.declaration.endsWith(' -->'))
+              throw new Error('Invalid screenshot stack coverage manifest');
+            const { data: live } = await github.rest.pulls.get({
+              ...context.repo, pull_number: number,
+            });
+            const declarations = [...(live.body || '').matchAll(/<!-- copse-screenshot-stack: [^\n]+ -->/g)];
+            if (declarations.length > 1) throw new Error('Ambiguous live screenshot stack declaration');
+            const current = live.state === 'open' && live.draft === false &&
+              live.head.sha === process.env.HEAD_SHA &&
+              live.head.repo?.full_name === `${context.repo.owner}/${context.repo.repo}` &&
+              declarations[0]?.[0] === manifest.declaration;
+            core.setOutput('current', String(current));
+            if (current) core.setOutput('declaration', manifest.declaration);
+            if (!current) core.notice('Screenshot stack coverage request was superseded; preserving live evidence and statuses.');
+
       # Checkout by the immutable SHA discovered above, never by an
       # attacker-controlled ref. Nothing from this checkout is executed, and no
       # credential is left in it: the one push below carries its own header.
       # Shallow: the compare commit needs nothing but the head, which the remote
       # already has, and full history is GiBs of PNG revisions.
       - uses: actions/checkout@v7.0.1
-        if: steps.discover.outputs.has-artifact == 'true'
+        if: steps.stack-request.outputs.current != 'false' && steps.discover.outputs.has-artifact == 'true'
         with:
           ref: ${{ steps.discover.outputs.head-sha }}
           fetch-depth: 1
           persist-credentials: false
 
       - name: Download the immutable candidate artifact
-        if: steps.discover.outputs.has-artifact == 'true'
+        if: steps.stack-request.outputs.current != 'false' && steps.discover.outputs.has-artifact == 'true'
         uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.discover.outputs.artifact-id }}
@@ -213,7 +259,7 @@ jobs:
           path: ${{ runner.temp }}/screenshot-candidates
 
       - name: Validate and apply candidate PNGs
-        if: steps.discover.outputs.has-artifact == 'true'
+        if: steps.stack-request.outputs.current != 'false' && steps.discover.outputs.has-artifact == 'true'
         id: candidates
         env:
           CANDIDATE_ROOT: ${{ runner.temp }}/screenshot-candidates
@@ -325,7 +371,7 @@ jobs:
       # the validation step above.
       - name: Push the view-only screenshot compare branch
         id: compare
-        if: steps.discover.outputs.has-artifact == 'true'
+        if: steps.stack-request.outputs.current != 'false' && steps.discover.outputs.has-artifact == 'true'
         continue-on-error: true
         env:
           COMPARE_BRANCH: ${{ steps.discover.outputs.compare-branch }}
@@ -390,7 +436,7 @@ jobs:
       # breaks before reaching here.
       - name: Gate the parent on screenshot review
         id: gate
-        if: steps.discover.outputs.gate-sha != ''
+        if: steps.stack-request.outputs.current != 'false' && steps.discover.outputs.gate-sha != ''
         uses: actions/github-script@v9
         env:
           PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
@@ -485,7 +531,7 @@ jobs:
       # Guarded like the compare cleanup below: only a publisher whose parent is
       # still open at its exact head acts.
       - name: Close legacy screenshot review PRs
-        if: steps.discover.outputs.eligible == 'true'
+        if: steps.stack-request.outputs.current != 'false' && steps.discover.outputs.eligible == 'true'
         uses: actions/github-script@v9
         env:
           PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
@@ -524,7 +570,7 @@ jobs:
       # remove evidence for a newer head.
       - name: Delete superseded screenshot compare branches
         id: compare-cleanup
-        if: steps.discover.outputs.eligible == 'true'
+        if: steps.stack-request.outputs.current != 'false' && steps.discover.outputs.eligible == 'true'
         uses: actions/github-script@v9
         env:
           PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
@@ -576,7 +622,7 @@ jobs:
             }
 
       - name: Link screenshot evidence from the parent
-        if: steps.discover.outputs.eligible == 'true'
+        if: steps.stack-request.outputs.current != 'false' && steps.discover.outputs.eligible == 'true'
         uses: actions/github-script@v9
         env:
           PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
@@ -855,7 +901,7 @@ jobs:
             }
 
       - name: Load trusted screenshot stack policy
-        if: success() && steps.discover.outputs.stack-artifact-id != ''
+        if: steps.stack-request.outputs.current != 'false' && success() && steps.discover.outputs.stack-artifact-id != ''
         uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
@@ -866,19 +912,8 @@ jobs:
             scripts/lib/safe-json.mts
           sparse-checkout-cone-mode: false
 
-      - name: Download screenshot stack coverage request
-        if: success() && steps.discover.outputs.stack-artifact-id != ''
-        uses: actions/download-artifact@v8
-        with:
-          artifact-ids: ${{ steps.discover.outputs.stack-artifact-id }}
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
-          merge-multiple: true
-          path: ${{ runner.temp }}/screenshot-stack-coverage
-
       - name: Attest combined screenshot stack coverage
-        if: success() && steps.discover.outputs.stack-artifact-id != ''
+        if: steps.stack-request.outputs.current != 'false' && success() && steps.discover.outputs.stack-artifact-id != ''
         uses: actions/github-script@v9
         env:
           PR_NUMBER: ${{ steps.discover.outputs.parent-number }}
@@ -931,14 +966,30 @@ jobs:
       # linked must not look reviewable, and a missing status reads as "waiting"
       # rather than broken. `decline-screenshots` can still override it.
       - name: Fail the screenshot review closed
-        if: failure() && steps.discover.outputs.gate-sha != ''
+        if: steps.stack-request.outputs.current != 'false' && failure() && steps.discover.outputs.gate-sha != ''
         uses: actions/github-script@v9
         env:
           GATE_SHA: ${{ steps.discover.outputs.gate-sha }}
+          PR_NUMBER: ${{ steps.discover.outputs.parent-number }}
+          STACK_DECLARATION: ${{ steps.stack-request.outputs.declaration }}
           PUBLISHER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
             const { owner, repo } = context.repo;
+            // A declaration can change while this job is publishing. An old
+            // source event must not turn the newer review into an error.
+            if (process.env.STACK_DECLARATION) {
+              const { data: live } = await github.rest.pulls.get({
+                owner, repo, pull_number: Number(process.env.PR_NUMBER),
+              });
+              const declarations = [...(live.body || '').matchAll(/<!-- copse-screenshot-stack: [^\n]+ -->/g)];
+              if (live.state !== 'open' || live.head.sha !== process.env.GATE_SHA ||
+                  declarations.length === 0 || (declarations.length === 1 &&
+                  declarations[0][0] !== process.env.STACK_DECLARATION)) {
+                core.notice('Failed publication was superseded; preserving the live screenshot review.');
+                return;
+              }
+            }
             await github.rest.repos.createCommitStatus({
               owner,
               repo,
