@@ -39,26 +39,7 @@ export const experimentalMarkup = `
               </p>
             </fieldset>
 
-            <fieldset>
-              <legend>Mobile Companion</legend>
-              <p class="field-hint">
-                Open your Copse threads from a phone on the same local network. Choose the network
-                interface your phone uses, pair phones, or turn sharing off. Copse must stay open
-                and this computer must stay awake.
-              </p>
-              <div class="settings-action-row">
-                <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
-                  Set up or manage…
-                </button>
-              </div>
-              <div id="mobile-companion-qr" class="mobile-companion-qr" hidden>
-                <div id="mobile-companion-qr-image" class="mobile-companion-qr-image" aria-hidden="true"></div>
-                <div class="mobile-companion-qr-text">
-                  <p class="field-hint">Scan with your phone's camera to open Copse.</p>
-                  <code id="mobile-companion-qr-url" class="mobile-companion-qr-url"></code>
-                </div>
-              </div>
-            </fieldset>
+            <div id="settings-mobile-companion-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Remote desktop viewer</legend>
