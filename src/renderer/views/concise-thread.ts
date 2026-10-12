@@ -23,6 +23,7 @@ import { formatTodoProgress } from '@shared/todos/todo-logic.ts'
 import { getToolCallLabel, shellCommandLabel } from '@shared/tools/tool-display.ts'
 import { THREAD_PROPOSAL_TOOL } from '@shared/threads/thread-proposal.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
+import { isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { interruptionCause, type InterruptionCause } from './turn-interruption.ts'
 
@@ -245,7 +246,7 @@ function runningToolCall(thread: Pick<Thread, 'messages'>): ToolCall | null {
 }
 
 function shellCommand(tc: ToolCall): string | null {
-  if (tc.name !== 'run_shell' && tc.kind !== 'execute') return null
+  if (!isCopseToolCall(tc, 'run_shell') && tc.kind !== 'execute') return null
   const command = isRecord(tc.args) ? tc.args['command'] : undefined
   return typeof command === 'string' && command.trim() ? shellCommandLabel(command) : null
 }

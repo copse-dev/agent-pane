@@ -1348,6 +1348,63 @@ describe('AgentDispatcher', () => {
     assert.equal(runCount, 1)
   })
 
+  it('charges an agent-started turn to the continuation budget and holds it once exhausted', async () => {
+    const saved: Array<{ turnTreeId: string; continuationUsed: number }> = []
+    const lines: Array<{ phase: string; result?: string; budgetUsed?: number }> = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadEpoch: async () => ({ turnTreeId: 'tree-1', continuationUsed: 4 }),
+        saveEpoch: async (_projectId, _threadId, epoch) => {
+          saved.push(epoch)
+        },
+        appendMachineContinuation: async (_projectId, _threadId, line) => {
+          lines.push({
+            phase: line.phase,
+            ...(line.phase === 'finished' ? { result: line.result } : {}),
+            ...(line.budgetUsed !== undefined ? { budgetUsed: line.budgetUsed } : {}),
+          })
+        },
+      }),
+    )
+
+    const first = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(first.status, 'granted')
+    await first.release()
+    assert.deepEqual(saved, [{ turnTreeId: 'tree-1', continuationUsed: 5 }])
+
+    const second = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(second.status, 'budget-exhausted')
+    assert.equal(saved.length, 1, 'a held turn spends nothing')
+
+    const allowed = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: true,
+    })
+    assert.equal(allowed.status, 'granted')
+    assert.deepEqual(saved.at(-1), { turnTreeId: 'tree-1', continuationUsed: 6 })
+    assert.deepEqual(lines, [
+      { phase: 'started', budgetUsed: 5 },
+      { phase: 'finished', result: 'completed', budgetUsed: 5 },
+      { phase: 'finished', result: 'budget-exhausted', budgetUsed: 5 },
+      { phase: 'started', budgetUsed: 6 },
+    ])
+  })
+
+  it('does not take the dispatch slot for an agent-started turn', async () => {
+    const dispatcher = new AgentDispatcher(host, registry, dependencies())
+    const claim = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(claim.status, 'granted')
+    assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
+    await dispatcher.dispatch(request())
+  })
+
   it('warns when a turn starts with an empty history but a full transcript', async () => {
     const emitted: StreamChunk[] = []
     const dispatcher = new AgentDispatcher(

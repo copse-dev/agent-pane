@@ -14,12 +14,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
-import { getCopseUserDataDir, waitForAgentIdle } from './helpers.ts'
+import { waitForAgentIdle } from './helpers.ts'
 import {
-  E2E_SETTINGS_BASELINE,
   resetUserData,
   seedEmptyProject,
   writeSeedConfig,
+  writeSettings,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { submitComposer } from './helpers/composer.ts'
@@ -56,19 +56,12 @@ describe('git commit approval', () => {
       activeProjectId: PROJECT_ID,
       [`threads:${PROJECT_ID}`]: [],
     })
-    writeFileSync(
-      join(getCopseUserDataDir(), 'settings.json'),
-      JSON.stringify({
-        ...E2E_SETTINGS_BASELINE,
-        onboardingCompleted: true,
-        theme: 'dark',
-        uiTintStrength: 'off',
-        subagentsEnabled: false,
-        model: 'claude-sonnet-4-6',
-        autoRunSandboxCommands: false,
-        safetyClassifierEnabled: false,
-      }),
-    )
+    writeSettings({
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+      autoRunSandboxCommands: false,
+      safetyClassifierEnabled: false,
+    })
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     await browser.reloadSession()
     // Seed the live store too: shutdown of the initial empty session can flush

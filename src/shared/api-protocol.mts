@@ -94,5 +94,5 @@
 // v55 versions host-owned container authentication.
 // v56 versions threads:archive stopProcesses and blocked-running live-work reports.
 // v57 versions approval effect, boundary, and grant-scope details.
-// v58 integrates living plans and roadmap document editing.
+// v58 versions inline Mobile Companion settings endpoints.
 export const API_PROTOCOL_VERSION = 59 as const

@@ -1,5 +1,9 @@
 import { $, browser, expect } from '@wdio/globals'
-import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import {
+  saveAppScreenshot,
+  waitForImagesSettled,
+  waitForSettledLayout,
+} from '../e2e/helpers/screenshot.ts'
 
 // Toggling between the concise and full view — one turn at a time from its
 // footer, or everywhere from Settings — must not move what the reader is looking
@@ -12,7 +16,11 @@ const SELECTED_REPLY = 'concise-multi-reply-2-1'
 async function openScenario(): Promise<void> {
   await browser.url('/?scenario=concise-thread-multi')
   await $('.concise-turn-footer').waitForDisplayed()
-  await browser.pause(300)
+  await browser.execute(async () => {
+    await document.fonts.ready
+  })
+  await waitForImagesSettled('.messages-list')
+  await waitForSettledLayout('.messages-list')
 }
 
 /** Distance from the transcript's top edge to the element, in CSS pixels. */
@@ -144,7 +152,7 @@ describe('concise thread view toggling', () => {
       await $('input[name="conciseThreadsEnabled"]').click()
       await $('.settings-buttons button[type="submit"]').click()
       await $('#settings-dialog').waitForDisplayed({ reverse: true })
-      await browser.pause(200)
+      await waitForSettledLayout('.messages-list')
     }
 
     await flip()

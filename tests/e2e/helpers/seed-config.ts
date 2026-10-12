@@ -36,6 +36,7 @@ const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 const PENDING_CONFIG_PATH = join(USER_DATA, '.e2e-pending-config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
+const PENDING_SETTINGS_PATH = join(USER_DATA, '.e2e-pending-settings.json')
 // A developer may have LM Studio listening on the product's default port. E2E
 // must not discover or query that real service unless a fixture explicitly
 // supplies its own localServerUrl through the supported settings surface.
@@ -252,6 +253,7 @@ export function writeSeedConfig(
 
 export function resetUserData(): void {
   rmSync(PENDING_CONFIG_PATH, { force: true })
+  rmSync(PENDING_SETTINGS_PATH, { force: true })
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
   rmSync(USAGE_EVENTS_PATH, { force: true, recursive: true })
@@ -343,18 +345,18 @@ export function writeSettings(settings: Record<string, unknown>): void {
   // Pin appearance so reference screenshots are deterministic. Most fixtures
   // keep tint off so existing shots do not inherit first-run appearance changes;
   // individual specs can override via `settings`.
-  writeFileSync(
-    SETTINGS_PATH,
-    JSON.stringify({
-      onboardingCompleted: true,
-      theme: 'dark',
-      uiTintStrength: 'off',
-      localServerUrl: E2E_UNREACHABLE_LM_STUDIO_URL,
-      ...E2E_SETTINGS_BASELINE,
-      ...settings,
-    }),
-    'utf8',
-  )
+  const serialized = JSON.stringify({
+    onboardingCompleted: true,
+    theme: 'dark',
+    uiTintStrength: 'off',
+    localServerUrl: E2E_UNREACHABLE_LM_STUDIO_URL,
+    ...E2E_SETTINGS_BASELINE,
+    ...settings,
+  })
+  writeFileSync(SETTINGS_PATH, serialized, 'utf8')
+  // The outgoing app can persist its old settings during reloadSession().
+  // Restore the fixture once in the test launcher after shutdown completes.
+  writeFileSync(PENDING_SETTINGS_PATH, serialized, 'utf8')
 }
 
 /** Pin Electron window size for deterministic e2e reference screenshots. Call before reloadSession(). */

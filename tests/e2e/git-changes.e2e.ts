@@ -363,6 +363,20 @@ describe('git changes viewer', function () {
       assert.equal(painted.font, mono, 'status letters use the mono token, not bare monospace')
     }
 
+    await $('.git-change-row-committed').waitForDisplayed({ timeout: 30_000 })
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            !document
+              .getElementById('git-changes-host')
+              ?.textContent?.includes('Checking committed changes'),
+        ),
+      {
+        timeout: 30_000,
+        timeoutMsg: 'Light Changes list did not finish loading committed changes',
+      },
+    )
     await saveElementScreenshot('#git-changes-host', 'git-changes-list-light.png')
   })
 })
