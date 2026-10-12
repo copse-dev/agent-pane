@@ -14,7 +14,11 @@ import {
 import { setComposerValue } from './helpers/composer.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  prepareE2eScreenshot,
+  savePreparedAppScreenshot,
+  waitForSettledLayout,
+} from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-worktree-branch-title-project'
 const THREAD_ID = 'e2e-worktree-branch-title-abc123'
@@ -94,6 +98,16 @@ describe('automatic worktree branch naming', () => {
     assert.equal(git(worktreeRoot, ['branch', '--show-current']), TITLED_BRANCH)
     server.assertTitleRequested(prompt)
     server.assertComplete()
-    await saveAppScreenshot('thread-worktree-branch-auto-named.png')
+    // Capture framing dispatches resize and gives pending renderer refreshes
+    // time to land. Verify both branch surfaces in that final frame, not only
+    // the footer before framing: CI previously captured the anonymous label
+    // after the rename assertion had already passed.
+    await prepareE2eScreenshot()
+    await waitForSettledLayout('#app')
+    await expect(branchLabel).toHaveText(TITLED_BRANCH)
+    await expect($('.workspace-branch')).toHaveText(TITLED_BRANCH)
+    await savePreparedAppScreenshot('thread-worktree-branch-auto-named.png')
+    await expect(branchLabel).toHaveText(TITLED_BRANCH)
+    await expect($('.workspace-branch')).toHaveText(TITLED_BRANCH)
   })
 })
