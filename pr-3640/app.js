@@ -45389,6 +45389,28 @@ function unscoredPricedModels(extraProviders) {
   }
   return out.sort((a3, b4) => a3.costPerMTok - b4.costPerMTok || a3.id.localeCompare(b4.id));
 }
+function buildSeverelyDominatedList(points) {
+  if (points.length === 0) return [];
+  return [
+    el(
+      "details",
+      { class: "frontier-severely-dominated" },
+      el(
+        "summary",
+        {},
+        `${String(points.length)} models cost at least 4\xD7 more than an equally capable priced model`
+      ),
+      renderBandedModelList(
+        points.map((p2) => ({
+          id: p2.id,
+          intellect: p2.intellect,
+          estimated: p2.intellectEstimated,
+          costPerMTok: p2.costPerMTok
+        }))
+      )
+    )
+  ];
+}
 function buildAuxLists(unpricedList, unscoredList) {
   const out = [];
   if (unpricedList.length > 0) {
@@ -45441,6 +45463,7 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
   let expandPlanCoverageGroup = null;
   let lastUnpriced = [];
   let lastUnscored = [];
+  let lastSeverelyDominated = [];
   let expandChartHost = null;
   let expandTooltip = null;
   let expandDiscoverBtn = null;
@@ -45803,7 +45826,8 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
         costAxis,
         "all"
       ),
-      ...buildAuxLists(lastUnpriced, lastUnscored)
+      ...buildAuxLists(lastUnpriced, lastUnscored),
+      ...buildSeverelyDominatedList(lastSeverelyDominated)
     );
   }
   function syncCostAxisGroup(group, taskCostAvailable) {
@@ -46080,6 +46104,7 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     const dominatedLive = allPoints.filter((p2) => p2.discovery === true && !p2.onFrontier);
     const routedPoints = allPoints.filter((p2) => p2.discovery !== true);
     const severelyDominated = routedPoints.filter((p2) => isSeverelyDominated(p2, routedPoints));
+    lastSeverelyDominated = severelyDominated;
     const points = allPoints.filter(
       (p2) => (p2.discovery !== true || p2.onFrontier) && !severelyDominated.includes(p2)
     );
@@ -46186,27 +46211,7 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
         )
       );
     }
-    if (severelyDominated.length > 0) {
-      liveNoteParts.push(
-        el(
-          "details",
-          { class: "frontier-severely-dominated" },
-          el(
-            "summary",
-            {},
-            `${String(severelyDominated.length)} models cost at least 4\xD7 more than an equally capable priced model`
-          ),
-          renderBandedModelList(
-            severelyDominated.map((p2) => ({
-              id: p2.id,
-              intellect: p2.intellect,
-              estimated: p2.intellectEstimated,
-              costPerMTok: p2.costPerMTok
-            }))
-          )
-        )
-      );
-    }
+    liveNoteParts.push(...buildSeverelyDominatedList(severelyDominated));
     const unscoredList = lastGutters.unscored ?? [];
     const unpricedList = unpricedModels;
     lastUnpriced = unpricedList;
