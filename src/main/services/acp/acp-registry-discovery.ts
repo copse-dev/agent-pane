@@ -11,6 +11,7 @@ import {
 
 const MAX_BYTES = 2 * 1024 * 1024
 const CACHE_MS = 5 * 60 * 1000
+const LOOKUP_BUDGET_MS = 2000
 const text = (max: number): z.ZodString =>
   z
     .string()
@@ -142,44 +143,65 @@ export function createAcpRegistryBrowser(
     const entries: AcpRegistryEntry[] = []
     const ids = new Set<string>()
     const paths = new Map<string, string | null>()
+    // A mounted PATH directory can stall stat/access indefinitely. Bound the
+    // whole detection phase, then keep the registry usable with unknown paths.
+    let lookupsExpired = false
+    let expireLookups: ReturnType<typeof setTimeout> | undefined
+    const lookupDeadline = new Promise<null>((resolve) => {
+      expireLookups = setTimeout(() => {
+        lookupsExpired = true
+        resolve(null)
+      }, LOOKUP_BUDGET_MS)
+    })
     let skipped = 0
-    for (const value of index.agents) {
-      const parsed = entrySchema.safeParse(value)
-      if (!parsed.success || ids.has(parsed.data.id)) {
-        skipped++
-        continue
+    try {
+      for (const value of index.agents) {
+        const parsed = entrySchema.safeParse(value)
+        if (!parsed.success || ids.has(parsed.data.id)) {
+          skipped++
+          continue
+        }
+        const entry = parsed.data
+        ids.add(entry.id)
+        const distribution = entry.distribution
+        const platforms = Object.keys(distribution.binary ?? {}).filter((key) =>
+          /^(darwin|linux|windows)-(aarch64|x86_64)$/.test(key),
+        )
+        const binary =
+          distribution.binary && Object.hasOwn(distribution.binary, target)
+            ? binarySchema.safeParse(distribution.binary[target])
+            : undefined
+        const command = binary?.success ? binaryName(binary.data.cmd) : undefined
+        if (command && !paths.has(command)) {
+          paths.set(
+            command,
+            lookupsExpired
+              ? null
+              : await Promise.race([resolveExecutable(command), lookupDeadline]),
+          )
+        }
+        const website = publicLink(entry.website) ?? publicLink(entry.repository)
+        entries.push({
+          id: entry.id,
+          title: entry.name,
+          version: entry.version,
+          description: entry.description,
+          ...(website ? { website } : {}),
+          packages: [
+            ...(distribution.npx ? [`npm: ${distribution.npx.package}`] : []),
+            ...(distribution.uvx ? [`PyPI: ${distribution.uvx.package}`] : []),
+          ],
+          platforms,
+          ...(command ? { command } : {}),
+          args:
+            binary?.success && command
+              ? binary.data.args
+              : (distribution.npx?.args ?? distribution.uvx?.args ?? []),
+          installedPath: command ? (paths.get(command) ?? null) : null,
+        })
       }
-      const entry = parsed.data
-      ids.add(entry.id)
-      const distribution = entry.distribution
-      const platforms = Object.keys(distribution.binary ?? {}).filter((key) =>
-        /^(darwin|linux|windows)-(aarch64|x86_64)$/.test(key),
-      )
-      const binary =
-        distribution.binary && Object.hasOwn(distribution.binary, target)
-          ? binarySchema.safeParse(distribution.binary[target])
-          : undefined
-      const command = binary?.success ? binaryName(binary.data.cmd) : undefined
-      if (command && !paths.has(command)) paths.set(command, await resolveExecutable(command))
-      const website = publicLink(entry.website) ?? publicLink(entry.repository)
-      entries.push({
-        id: entry.id,
-        title: entry.name,
-        version: entry.version,
-        description: entry.description,
-        ...(website ? { website } : {}),
-        packages: [
-          ...(distribution.npx ? [`npm: ${distribution.npx.package}`] : []),
-          ...(distribution.uvx ? [`PyPI: ${distribution.uvx.package}`] : []),
-        ],
-        platforms,
-        ...(command ? { command } : {}),
-        args:
-          binary?.success && command
-            ? binary.data.args
-            : (distribution.npx?.args ?? distribution.uvx?.args ?? []),
-        installedPath: command ? (paths.get(command) ?? null) : null,
-      })
+    } finally {
+      clearTimeout(expireLookups)
     }
     return {
       entries: entries.sort((a, b) => a.title.localeCompare(b.title)),
