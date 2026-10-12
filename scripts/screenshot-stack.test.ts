@@ -453,6 +453,18 @@ describe('stack coverage attestation', () => {
     assert.equal(f.writes.at(-1)?.sha, TIP)
     assert.equal(f.writes.at(-1)?.description, `Stack coverage ${DIGEST}`)
   })
+  it('preserves an explicit tip decision while refreshing creator-less combined coverage', async () => {
+    const f = fixture()
+    f.github.rest.repos.getCombinedStatusForRef = async ({ ref }): Promise<{ data: unknown }> => ({
+      data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
+    })
+    const result = await attestScreenshotStack(f.github, tipInput, TIP, manifest)
+    assert.equal(result.needsReview, false)
+    assert.deepEqual(
+      f.writes.map((write) => write.context),
+      [STACK_COVERAGE],
+    )
+  })
   it('does not reuse an individual PR review made before combined coverage', async () => {
     const f = fixture()
     f.statuses.set(TIP, [
