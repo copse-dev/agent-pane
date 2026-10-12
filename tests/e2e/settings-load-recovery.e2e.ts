@@ -28,6 +28,10 @@ describe('Settings snapshot recovery', () => {
     await expect($('#settings-save-status')).toHaveText(
       expect.stringContaining('Temporary settings connection failure'),
     )
+    assert.doesNotMatch(
+      await $('#settings-save-status').getText(),
+      /Error invoking|settings:get-snapshot/,
+    )
     await expect($('#settings-dialog button[type="submit"]')).toBeDisabled()
     await saveElementScreenshot('#settings-dialog', 'settings-load-failed.png')
     await $('#settings-load-retry').click()
