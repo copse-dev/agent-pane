@@ -134,7 +134,7 @@ async function statuses(
     // The combined endpoint returns the latest status for each context, rather
     // than walking every historical deferral written on an unchanged SHA.
     // Keep live reads uncached so revoked decisions are observed immediately.
-    const combined = github.rest.repos.getCombinedStatusForRef
+    const combined = github.rest.repos.getCombinedStatusForRef?.bind(github.rest.repos)
     const { data: response } = await (
       combined
         ? combined.bind(github.rest.repos)

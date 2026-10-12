@@ -131,10 +131,13 @@ describe('combined stack review gates', () => {
   it('reads current contexts without traversing status history and observes revocation', async () => {
     const f = fixture()
     let reads = 0
-    f.github.rest.repos.listCommitStatusesForRef = async () => {
+    f.github.rest.repos.listCommitStatusesForRef = async (): Promise<{ data: unknown }> => {
       throw new Error('Historical status endpoint must not be queried')
     }
-    f.github.rest.repos.getCombinedStatusForRef = async ({ ref, page }) => {
+    f.github.rest.repos.getCombinedStatusForRef = async ({
+      ref,
+      page,
+    }): Promise<{ data: unknown }> => {
       assert.equal(page, 1)
       reads += 1
       return { data: { statuses: f.statuses.get(ref) ?? [] } }
@@ -148,7 +151,10 @@ describe('combined stack review gates', () => {
   it('paginates current contexts and fails closed for malformed combined responses', async () => {
     const f = fixture()
     const pages: number[] = []
-    f.github.rest.repos.getCombinedStatusForRef = async ({ ref, page }) => {
+    f.github.rest.repos.getCombinedStatusForRef = async ({
+      ref,
+      page,
+    }): Promise<{ data: unknown }> => {
       pages.push(page)
       return {
         data: {
@@ -161,7 +167,9 @@ describe('combined stack review gates', () => {
     }
     assert.equal((await verifyScreenshotStack(f.github, input))?.approved, true)
     assert.deepEqual(pages, [1, 2])
-    f.github.rest.repos.getCombinedStatusForRef = async () => ({ data: {} })
+    f.github.rest.repos.getCombinedStatusForRef = async (): Promise<{ data: unknown }> => ({
+      data: {},
+    })
     await assert.rejects(verifyScreenshotStack(f.github, input), /statuses unavailable/)
   })
   it('shares immutable ancestry comparisons across a ten-PR stack, not live proof', async () => {
