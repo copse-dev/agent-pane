@@ -21,6 +21,44 @@ const index = (agents: unknown[] = [fixture]): string =>
   JSON.stringify({ version: '1.0.0', agents })
 
 describe('ACP registry discovery', () => {
+  it('bounds stalled executable discovery and does not start more lookups after the deadline', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    let notifyStarted = (): void => {}
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve
+    })
+    const commands: string[] = []
+    const registry = createAcpRegistryBrowser({
+      target: 'darwin-aarch64',
+      fetch: async () =>
+        new Response(
+          index([
+            fixture,
+            {
+              ...fixture,
+              id: 'other-agent',
+              distribution: {
+                binary: { 'darwin-aarch64': { cmd: 'other-agent', args: [] } },
+              },
+            },
+          ]),
+        ),
+      resolveExecutable: (command) => {
+        commands.push(command)
+        notifyStarted()
+        return new Promise(() => {})
+      },
+    })
+    const loading = registry.load()
+    await started
+    t.mock.timers.tick(2000)
+    const listing = await loading
+    assert.equal(listing.entries.length, 2)
+    assert.ok(listing.entries.every((entry) => entry.installedPath === null))
+    assert.deepEqual(commands, ['new-agent'])
+    assert.equal((await registry.load()).entries.length, 2)
+  })
+
   it('uses one fixed public fetch and only resolves declared direct binaries, dropping all grants', async () => {
     const commands: string[] = []
     const registry = createAcpRegistryBrowser({
