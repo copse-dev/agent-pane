@@ -177,6 +177,14 @@ h1 {
 .row:active {
   background: var(--bg-hover);
 }
+.row.selected {
+  border-color: var(--accent);
+  background: var(--bg-selected);
+  border-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-bottom: 0;
+}
 .row-top {
   display: flex;
   justify-content: space-between;
@@ -189,10 +197,9 @@ h1 {
   color: var(--text-secondary);
   white-space: nowrap;
 }
-.state.needs-approval,
-.state.needs-answer {
-  color: var(--change-modified);
-}
+/* The activity panel's own row list keeps needs-approval/needs-answer neutral
+   (only the detail badge and glyph carry colour) — match that restraint here
+   instead of a loud warning-coloured label (docs/ui-taste.md). */
 .state.finished {
   color: var(--change-added);
 }
@@ -376,17 +383,54 @@ h1 {
   color: var(--error);
   font-size: 13px;
 }
+/* Neutral card chrome, same as every other card on this screen (.pair-code,
+   #new-chat-form). The desktop activity panel only tints a short status
+   badge, never a whole card — "neutral unless it reports a status"
+   (docs/ui-taste.md), and this card's title is often the full question, not
+   a status word, so there is no badge-sized place to put the colour. */
 .attention {
   margin: 0 0 20px;
   padding: 15px;
-  border: 1px solid var(--warning);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
+}
+/* The expanded decision reads as the bottom half of the same row box: one
+   continuous border, no separate yellow "attention" card beneath it. */
+#inline-decision {
+  margin: 0 0 7px;
+  padding: 0 15px 15px;
+  border: 1px solid var(--accent);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom-left-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
+  background: var(--bg-selected);
+}
+#inline-decision .attention {
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+/* Answering from the list is the fast path; this stays a plain link so it
+   reads as the slower, more deliberate route back to full context. */
+.open-thread-link {
+  display: block;
+  min-height: 44px;
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  text-align: left;
 }
 .attention-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--change-modified);
+  color: var(--text-primary);
 }
 .attention-body {
   white-space: pre-wrap;

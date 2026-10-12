@@ -1,5 +1,10 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedEmptyProject,
+  seedRoadmapNotes,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -25,7 +30,7 @@ async function selectRoadmapItem(): Promise<void> {
 describe('roadmap document and linked planning prototype', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT, {
+    seedEmptyProject(seedStableWorkspace(), PROJECT, {
       roadmapPlansEnabled: true,
       model: 'claude-sonnet-4-6',
       subagentsEnabled: false,

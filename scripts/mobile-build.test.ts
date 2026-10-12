@@ -58,6 +58,8 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
       })
     }
     let access = 'control'
+    let streamedContent =
+      '# Heading\n\n**Bold** and `code`\n\n- First\n- Second\n\n> Quote\n\n```js\nconst x = 1\n```\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n[Docs](https://example.com)\n\n![Remote](https://example.com/image.png)\n\n<script>alert(1)</script>\n\n[Bad](javascript:alert(1))'
     window.localStorage.setItem('copse-mobile-token', 'test-token')
     Object.defineProperty(window, 'matchMedia', {
       value: (): { matches: boolean; addEventListener(): void } => ({
@@ -92,12 +94,7 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
                   decisions: [],
                   attention: [],
                   messages: [
-                    {
-                      role: 'assistant',
-                      summary: null,
-                      content:
-                        '# Heading\n\n**Bold** and `code`\n\n- First\n- Second\n\n> Quote\n\n```js\nconst x = 1\n```\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n[Docs](https://example.com)\n\n![Remote](https://example.com/image.png)\n\n<script>alert(1)</script>\n\n[Bad](javascript:alert(1))',
-                    },
+                    { role: 'assistant', summary: null, content: streamedContent },
                     { role: 'user', summary: null, content: 'Please **check** this.' },
                     { role: 'error', summary: null, content: '**literal error**\nnext line' },
                   ],
@@ -154,6 +151,20 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     )
     const error = window.document.querySelector('.message-content-plain')
     assert.equal(error?.textContent, '**literal error**\nnext line')
+    const cardsBeforeStream = [...window.document.querySelectorAll('.message')]
+    streamedContent += '\n\nMore streamed text.'
+    poll()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const cardsAfterStream = [...window.document.querySelectorAll('.message')]
+    assert.equal(cardsAfterStream.length, cardsBeforeStream.length)
+    assert.ok(
+      cardsAfterStream.every((card, index) => card === cardsBeforeStream[index]),
+      'reuses the existing message cards instead of tearing them down mid-stream',
+    )
+    assert.ok(
+      content.textContent.includes('More streamed text.'),
+      'patches the new streamed content into the existing node',
+    )
     input.value = 'Follow-up'
     window.document
       .getElementById('composer')
