@@ -170,8 +170,9 @@ export async function writeSummary(options: SummaryOptions): Promise<SummaryResu
 
 /**
  * Raise the model's risk level to what the review's evidence shows. A
- * surfaced high or critical finding makes it High; any surfaced finding makes
- * a Low at least Medium. The evidence never lowers it.
+ * surfaced high or critical finding makes it High; a medium-severity finding
+ * makes a Low at least Medium. Low-severity findings leave the risk unchanged.
+ * The evidence never lowers it.
  */
 export function applyEvidenceFloor(summary: PrSummary, report: ReviewReport | null): PrSummary {
   if (report === null || report.findings.length === 0) return summary
@@ -185,12 +186,12 @@ export function applyEvidenceFloor(summary: PrSummary, report: ReviewReport | nu
       raisedBecause: `the review surfaced ${String(severe)} high-severity ${severe === 1 ? 'issue' : 'issues'}`,
     }
   }
-  if (summary.risk === 'low') {
-    const count = report.findings.length
+  const medium = report.findings.filter((finding) => finding.severity === 'medium').length
+  if (medium > 0 && summary.risk === 'low') {
     return {
       ...summary,
       risk: 'medium',
-      raisedBecause: `the review surfaced ${String(count)} ${count === 1 ? 'issue' : 'issues'}`,
+      raisedBecause: `the review surfaced ${String(medium)} medium-severity ${medium === 1 ? 'issue' : 'issues'}`,
     }
   }
   return summary

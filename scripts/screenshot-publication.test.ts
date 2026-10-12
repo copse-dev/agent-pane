@@ -268,7 +268,10 @@ describe('screenshot publication', () => {
     )
     assert.equal(artifactSteps.length, 4)
     for (const step of artifactSteps)
-      assert.equal(step.if, "steps.discover.outputs.has-artifact == 'true'")
+      assert.equal(
+        step.if,
+        "steps.stack-request.outputs.current != 'false' && steps.discover.outputs.has-artifact == 'true'",
+      )
     for (const name of [
       'Close legacy screenshot review PRs',
       'Delete superseded screenshot compare branches',
@@ -276,7 +279,10 @@ describe('screenshot publication', () => {
     ]) {
       const step = steps.find((candidate) => candidate.name === name)
       assert.ok(step)
-      assert.equal(step.if, "steps.discover.outputs.eligible == 'true'")
+      assert.equal(
+        step.if,
+        "steps.stack-request.outputs.current != 'false' && steps.discover.outputs.eligible == 'true'",
+      )
       assert.equal(step.with?.['github-token'], undefined)
     }
   })
@@ -534,7 +540,10 @@ describe('blocking screenshot review gate', () => {
     const index = (name: string): number => steps.findIndex((step) => step.name === name)
     const gateStep = steps.find((step) => step.name === 'Gate the parent on screenshot review')
     assert.equal(gateStep?.id, 'gate')
-    assert.equal(gateStep.if, "steps.discover.outputs.gate-sha != ''")
+    assert.equal(
+      gateStep.if,
+      "steps.stack-request.outputs.current != 'false' && steps.discover.outputs.gate-sha != ''",
+    )
     assert.ok(
       index('Validate and apply candidate PNGs') < index('Gate the parent on screenshot review'),
     )
@@ -543,7 +552,10 @@ describe('blocking screenshot review gate', () => {
     )
     const failClosed = steps.at(-1)
     assert.equal(failClosed?.name, 'Fail the screenshot review closed')
-    assert.equal(failClosed.if, "failure() && steps.discover.outputs.gate-sha != ''")
+    assert.equal(
+      failClosed.if,
+      "steps.stack-request.outputs.current != 'false' && failure() && steps.discover.outputs.gate-sha != ''",
+    )
     assert.match(z.string().parse(failClosed.with?.['script']), /state: 'error'/)
   })
 })
@@ -1223,5 +1235,122 @@ describe('closing a screenshot parent', () => {
         'heads/screenshots/pr-123/abc123abc123',
       ],
     })
+  })
+})
+
+// A slow source run may finish after a body edit on the same commit. Its
+// publication must not replace the evidence from the current declaration.
+describe('superseded stack publications', () => {
+  const declaration = `<!-- copse-screenshot-stack: #122@${'a'.repeat(40)} tip=#123 -->`
+  const manifest = JSON.stringify({ declaration, number: 123, head: SHA, base: COMPARE_COMMIT })
+  const live = { ...parent(), body: declaration, draft: false }
+
+  async function preflight(
+    text: string,
+    pr = live,
+    file: { symlink?: boolean; size?: number } = {},
+  ): Promise<Map<string, string>> {
+    const outputs = new Map<string, string>()
+    await execute('Reject superseded screenshot stack publications', {
+      context,
+      process: { env: { PR_NUMBER: '123', HEAD_SHA: SHA, MANIFEST_PATH: '/coverage.json' } },
+      core: { ...core, setOutput: (key: string, value: string) => outputs.set(key, value) },
+      github: { rest: { pulls: { get: async () => ({ data: pr }) } } },
+      require: (name: string) => {
+        assert.equal(name, 'node:fs')
+        return {
+          lstatSync: (): {
+            isFile: () => boolean
+            isSymbolicLink: () => boolean
+            size: number
+          } => ({
+            isFile: (): boolean => true,
+            isSymbolicLink: (): boolean => file.symlink ?? false,
+            size: file.size ?? Buffer.byteLength(text),
+          }),
+          readFileSync: (): string => text,
+        }
+      },
+    })
+    return outputs
+  }
+
+  it('admits only the live declaration and head before any publication writes', async () => {
+    const current = await preflight(manifest)
+    assert.equal(current.get('current'), 'true')
+    assert.equal(current.get('declaration'), declaration)
+    for (const changed of [
+      { ...live, body: declaration.replace('a'.repeat(40), 'c'.repeat(40)) },
+      { ...live, body: 'Stack removed' },
+      { ...live, head: { ...live.head, sha: COMPARE_COMMIT } },
+      { ...live, state: 'closed' },
+      { ...live, draft: true },
+    ]) {
+      const result = await preflight(manifest, changed)
+      assert.equal(result.get('current'), 'false')
+      assert.equal(result.has('declaration'), false)
+    }
+  })
+
+  it('keeps malformed, misattributed, oversized and symlinked manifests fail-closed', async () => {
+    for (const text of [
+      'not json',
+      '{}',
+      manifest.replace('"number":123', '"number":124'),
+      manifest.replace(SHA, COMPARE_COMMIT),
+      manifest + ' '.repeat(4097),
+    ])
+      await assert.rejects(preflight(text))
+    await assert.rejects(preflight(manifest, live, { symlink: true }))
+    await assert.rejects(preflight(manifest, { ...live, body: `${declaration}\n${declaration}` }))
+  })
+
+  it('guards every evidence/status mutation and checks staleness before candidate checkout', () => {
+    const preflightIndex = steps.findIndex((step) => step.id === 'stack-request')
+    const candidateCheckout = steps.findIndex(
+      (step) => step.with?.['ref'] === '${{ steps.discover.outputs.head-sha }}',
+    )
+    assert.ok(preflightIndex >= 0 && preflightIndex < candidateCheckout)
+    for (const name of [
+      'Validate and apply candidate PNGs',
+      'Push the view-only screenshot compare branch',
+      'Gate the parent on screenshot review',
+      'Close legacy screenshot review PRs',
+      'Delete superseded screenshot compare branches',
+      'Link screenshot evidence from the parent',
+      'Attest combined screenshot stack coverage',
+      'Fail the screenshot review closed',
+    ])
+      assert.match(
+        steps.find((step) => step.name === name)?.if ?? '',
+        /steps\.stack-request\.outputs\.current != 'false'/,
+        name,
+      )
+  })
+
+  it('does not overwrite a newer review if the declaration changes during a failed publication', async () => {
+    for (const body of [
+      declaration,
+      declaration.replace('a'.repeat(40), 'c'.repeat(40)),
+      'Stack removed',
+    ]) {
+      const writes: unknown[] = []
+      await execute('Fail the screenshot review closed', {
+        context,
+        core,
+        process: { env: { PR_NUMBER: '123', GATE_SHA: SHA, STACK_DECLARATION: declaration } },
+        github: {
+          rest: {
+            pulls: { get: async () => ({ data: { ...live, body } }) },
+            repos: {
+              createCommitStatus: async (payload: unknown) => {
+                writes.push(payload)
+              },
+            },
+          },
+        },
+      })
+      assert.equal(writes.length, body === declaration ? 1 : 0)
+    }
   })
 })
