@@ -5,6 +5,7 @@ import { copseUserDataDir } from '@copse/store-kit/copse-paths.ts'
 import { createKeyringCipher, createMigratingCipher } from '@copse/store-kit/keyring-cipher.ts'
 import { createOsKeyringStore } from '../src/main/services/storage/os-keyring.ts'
 import { setSecretCipher } from '@copse/store-kit/secret-cipher.ts'
+import { joinSharedProfile } from '../src/main/services/storage/profile-ownership.ts'
 import { parseClassifierEvalArgs, writeClassifierEval } from './classifier-eval.ts'
 
 async function main(): Promise<number> {
@@ -14,7 +15,22 @@ async function main(): Promise<number> {
   const userData = copseUserDataDir()
   await stat(join(userData, 'settings.json'))
   process.env['COPSE_PANEL_USER_DATA'] = userData
+  // app-init only names the app and fixes userData. This runner never owns the
+  // profile: it joins as a headless client beside a possibly running desktop,
+  // which refuses device-encrypted profiles and blocks vault maintenance.
   await import('../src/main/app-init.ts')
+  const releaseProfile = joinSharedProfile(userData)
+  try {
+    return await evaluate(args, args.profile)
+  } finally {
+    releaseProfile()
+  }
+}
+
+async function evaluate(
+  args: ReturnType<typeof parseClassifierEvalArgs>,
+  profile: string,
+): Promise<number> {
   await app.whenReady()
   const cipher = createMigratingCipher(createKeyringCipher(createOsKeyringStore()), {
     isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
@@ -32,7 +48,7 @@ async function main(): Promise<number> {
   })
   const { createClassifierSession } =
     await import('../src/main/services/classifiers/classifier-service.ts')
-  const session = createClassifierSession(args.profile)
+  const session = createClassifierSession(profile)
   return writeClassifierEval(args, session.profile, (requests, options) =>
     session.invokeBatch(requests, options),
   )

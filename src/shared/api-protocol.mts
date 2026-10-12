@@ -95,4 +95,5 @@
 // v56 versions threads:archive stopProcesses and blocked-running live-work reports.
 // v57 versions approval effect, boundary, and grant-scope details.
 // v58 versions inline Mobile Companion settings endpoints.
-export const API_PROTOCOL_VERSION = 58 as const
+// v59 integrates the device-bound vault wire changes.
+export const API_PROTOCOL_VERSION = 59 as const
