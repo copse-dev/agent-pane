@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { installMockScenario, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -51,7 +51,7 @@ async function selectPassage(text: string, feedbackVisible = true): Promise<void
 describe('optional thread plan', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT, {
+    seedEmptyProject(seedStableWorkspace(), PROJECT, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

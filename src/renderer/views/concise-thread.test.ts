@@ -60,6 +60,30 @@ function thread(
 }
 
 describe('concise thread model gate', () => {
+  it('names bridged shell activity without relying on the ACP kind', () => {
+    for (const name of [
+      'mcp__copse__run_shell',
+      'mcp.copse.run_shell',
+      'copse.run_shell',
+      'copse-run_shell: Run tests',
+    ]) {
+      const tc = tool({ name, status: 'running', args: { command: 'cd /repo && pnpm test' } })
+      assert.equal(
+        conciseActivityLabel(thread({ messages: [message({ toolCalls: [tc] })] })),
+        'Running pnpm test…',
+      )
+    }
+    const tc = tool({
+      name: 'Run tests',
+      programmaticName: 'copse.run_shell',
+      status: 'running',
+      args: { command: 'pnpm test' },
+    })
+    assert.equal(
+      conciseActivityLabel(thread({ messages: [message({ toolCalls: [tc] })] })),
+      'Running pnpm test…',
+    )
+  })
   it('admits only models scoring above 50 on the canonical scale', () => {
     assert.equal(isConciseThreadModel(CAPABLE), true)
     assert.equal(isConciseThreadModel(`anthropic:${CAPABLE}`), true)

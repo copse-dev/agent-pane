@@ -10,12 +10,15 @@ import { installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 describe('shared UI polish', () => {
+  let fixtureRoot = ''
   let workspaceRoot: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-ui-polish-'))
+    fixtureRoot = mkdtempSync(join(tmpdir(), 'copse-panel-ui-polish-'))
+    workspaceRoot = join(fixtureRoot, 'panel-ui-polish')
+    mkdirSync(workspaceRoot)
     seedEmptyProject(workspaceRoot, 'e2e-ui-polish', {
       model: 'claude-sonnet-4-6',
       roadmapPlansEnabled: true,
@@ -25,7 +28,7 @@ describe('shared UI polish', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(fixtureRoot, { recursive: true, force: true })
   })
 
   it('integrates status, selections, pane rules, and roadmap field spacing', async () => {

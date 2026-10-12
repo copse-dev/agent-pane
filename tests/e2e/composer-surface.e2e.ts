@@ -22,7 +22,7 @@ describe('composer surface', () => {
     it(`keeps the follow-up composer aligned in ${theme} theme`, async () => {
       resetUserData()
       seedFooterBranchFixture(seedBranchWorkspace())
-      writeSettings({ theme })
+      writeSettings({ theme, model: 'claude-sonnet-4-6' })
       await browser.reloadSession()
 
       await $('.prompt-input').waitForDisplayed({ timeout: 30_000 })

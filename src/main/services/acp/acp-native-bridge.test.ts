@@ -916,6 +916,60 @@ describe('startAcpNativeBridge', () => {
     assert.ok(recordArrayOrEmpty(rpcResult(list)['tools']).length > 0)
   })
 
+  it('holds a call while an agent-started turn settles its binding, then runs it', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const executed: string[] = []
+    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+      threadId: 'bridge-thread',
+    })
+    assert.ok(bridge)
+    for (const init of initialized()) await rpc(bridge, init)
+
+    let settle!: (context: ThreadExecutionContext | null) => void
+    bridge.setPendingExecutionContext(
+      new Promise((resolve) => {
+        settle = resolve
+      }),
+    )
+    const held = rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'run_shell', arguments: { command: 'echo held' } },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.deepEqual(executed, [], 'the call must wait for the binding, not run or be rejected')
+
+    const context = worktreeContext('bridge-thread', '/worktrees/example')
+    bridge.setExecutionContext(context)
+    settle(context)
+    const result = await held
+    assert.notEqual(rpcResult(result)['isError'], true)
+    assert.deepEqual(executed, ['run_shell:echo held'])
+    bridge.setExecutionContext(null)
+  })
+
+  it('rejects a held call when the agent-started turn is not approved', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const executed: string[] = []
+    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+      threadId: 'bridge-thread',
+    })
+    assert.ok(bridge)
+    for (const init of initialized()) await rpc(bridge, init)
+
+    bridge.setPendingExecutionContext(Promise.resolve(null))
+    const declined = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'run_shell', arguments: { command: 'echo declined' } },
+    })
+    assert.equal(rpcResult(declined)['isError'], true)
+    assert.match(contentText(declined) ?? '', /was not approved to continue/)
+    assert.deepEqual(executed, [])
+  })
+
   it('keeps concurrent thread bridges resolving their own worktree roots', async () => {
     // Mirrors the advisor-context isolation test: two threads' bridges serving
     // overlapping calls must each see their own turn's root, never the other's.

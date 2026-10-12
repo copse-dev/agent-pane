@@ -62,6 +62,7 @@ import { createModelParametersSection } from './setup/model-parameters-section.t
 import { createUsageSection } from './setup/usage-section.ts'
 import { createAboutSection } from './setup/about-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
+import { createMobileCompanionSection } from './setup/mobile-companion-section.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/canvas-settings.ts'
@@ -364,19 +365,6 @@ async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<
           : String(field.default)
     }
   }
-}
-
-/**
- * Show a scannable QR for Mobile Companion's current URL inline in Settings,
- * next to the native "Set up or manage…" flow. The server generates the QR
- * (via `qrcode`) from the same URL already shown as text, so this adds no new
- * trust claim — it only saves typing the address into the phone's browser.
- */
-async function mountMobileCompanionQr(overlay: HTMLElement, api: ApiClient): Promise<void> {
-  const status = await api.mobile.status()
-  qsRequired(overlay, '#mobile-companion-qr-image').innerHTML = status.qrSvg ?? ''
-  qsRequired(overlay, '#mobile-companion-qr-url').textContent = status.url ?? ''
-  qsRequired(overlay, '#mobile-companion-qr').hidden = !status.url || !status.qrSvg
 }
 
 /** Parse a `number`-kind field's form value, clamping to a non-negative integer. */
@@ -1571,26 +1559,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </div>
             </fieldset>
 
-            <fieldset>
-              <legend>Mobile Companion</legend>
-              <p class="field-hint">
-                Open your Copse threads from a phone on the same local network. Choose the network
-                interface your phone uses, pair phones, or turn sharing off. Copse must stay open
-                and this computer must stay awake.
-              </p>
-              <div class="settings-action-row">
-                <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
-                  Set up or manage…
-                </button>
-              </div>
-              <div id="mobile-companion-qr" class="mobile-companion-qr" hidden>
-                <div id="mobile-companion-qr-image" class="mobile-companion-qr-image" aria-hidden="true"></div>
-                <div class="mobile-companion-qr-text">
-                  <p class="field-hint">Scan with your phone's camera to open Copse.</p>
-                  <code id="mobile-companion-qr-url" class="mobile-companion-qr-url"></code>
-                </div>
-              </div>
-            </fieldset>
+            <div id="settings-mobile-companion-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Remote desktop viewer</legend>
@@ -1897,13 +1866,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const aboutSection = createAboutSection(api)
   qsRequired(overlay, '#settings-about-host').append(aboutSection.root)
 
-  qsRequired<HTMLButtonElement>(overlay, '#mobile-companion-manage').addEventListener(
-    'click',
-    () => {
-      closeSettingsDialog()
-      void api.mobile.manage()
-    },
-  )
+  const mobileCompanionSection = createMobileCompanionSection(api)
+  qsRequired(overlay, '#settings-mobile-companion-host').append(mobileCompanionSection.root)
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
@@ -2211,6 +2175,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           void refreshSources()
         }
         if (id === 'customise' || id === 'experimental') void refreshPlugins()
+        if (id === 'experimental') void mobileCompanionSection.refresh()
         if (id === 'storage') {
           void refreshWorktrees()
           void storageMaintenance.refresh()
@@ -4741,10 +4706,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   overlay.addEventListener('settings-open', () => {
-    void mountMobileCompanionQr(overlay, api).catch((error: unknown) => {
-      qsRequired(overlay, '#mobile-companion-qr').hidden = true
-      console.error('[settings] Could not load Mobile Companion status:', error)
-    })
     appearanceBaseline = currentAppearance()
     appearanceCommitted = false
     resetDirtyState()
@@ -4772,7 +4733,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'permissions') void toolPermissionsPanel.refresh()
     if (openedSection === 'about') void aboutSection.refresh()
-    if (openedSection === 'experimental') void refreshPlugins()
+    if (openedSection === 'experimental') {
+      void refreshPlugins()
+      void mobileCompanionSection.refresh()
+    }
     if (openedSection === 'customise') {
       void refreshSources()
       if (modelFocus) void revealPluginModel?.(modelFocus)
