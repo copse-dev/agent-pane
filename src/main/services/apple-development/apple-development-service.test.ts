@@ -752,7 +752,11 @@ describe('AppleDevelopmentService build output', () => {
     await t.waitFor(
       async () => {
         const { operation } = await service.operation(invocation, queued.id)
-        assert.equal(operation.status, 'succeeded', operation.outcome?.reason)
+        assert.equal(
+          operation.status,
+          'succeeded',
+          operation.outcome?.reason ?? 'Apple operation has not finished successfully',
+        )
       },
       { timeout: 5000 },
     )
