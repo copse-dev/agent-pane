@@ -105,6 +105,8 @@ describe('Changes pane thread retention', function () {
         timeoutMsg: 'Monaco hover scrollbars did not settle after the pointer left',
       },
     )
-    await savePreparedAppScreenshot('git-changes-thread-retention.png')
+    await savePreparedAppScreenshot('git-changes-thread-retention.png', {
+      captureFromViewport: true,
+    })
   })
 })
