@@ -372,6 +372,8 @@ describe('context wheel combined usage hover', () => {
     wheel.update(null, false, { breakdown: null, breakdownRing: false, usage })
 
     assert.equal(wheel.root.hidden, false)
+    assert.equal(wheel.root.hasAttribute('title'), false)
+    assert.equal(wheel.root.getAttribute('aria-label'), usage.header)
     const fill = wheel.root.querySelector('.context-wheel-fill')
     assert.match(fill?.getAttribute('stroke-dasharray') ?? '', /^0 /)
 

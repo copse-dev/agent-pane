@@ -325,7 +325,6 @@ export function createContextWheel(): {
     popoverActive = true
     root.tabIndex = 0
     const usageLine = options?.usageLine?.trim() ?? usage.header
-    root.title = usageLine
     root.setAttribute('aria-label', usageLine)
     composePopover(null)
   }
