@@ -158,9 +158,59 @@ async function statuses(
       const previous = field(latest.get(context), 'id')
       if (typeof previous !== 'number' || id > previous) latest.set(context, status)
     }
-    if (data.length < 100) return latest
+    if (data.length < 100) {
+      if (combined) await hydrateStatusCreators(github, input, ref, latest)
+      return latest
+    }
   }
   throw new StackValidationError('Screenshot stack status pagination limit exceeded')
+}
+
+/** status-simple omits creator; authenticate only the current screenshot proof. */
+async function hydrateStatusCreators(
+  github: StackGitHub,
+  input: Input,
+  ref: string,
+  latest: Map<string, unknown>,
+): Promise<void> {
+  const contexts = new Set(['Screenshot review', STACK_COVERAGE, STACK_DECISION])
+  const pending = new Set<string>()
+  for (const context of contexts) {
+    const status = latest.get(context)
+    if (status && typeof field(field(status, 'creator'), 'id') !== 'number') {
+      pending.add(context)
+    }
+  }
+  if (pending.size === 0) return
+  for (let page = 1; page <= 20; page += 1) {
+    const { data } = await github.rest.repos.listCommitStatusesForRef({
+      owner: input.owner,
+      repo: input.repo,
+      ref,
+      per_page: 100,
+      page,
+    })
+    if (!Array.isArray(data))
+      throw new StackValidationError('Screenshot stack statuses unavailable')
+    for (const status of data) {
+      const context = field(status, 'context')
+      const id = field(status, 'id')
+      if (typeof context !== 'string' || typeof id !== 'number' || !Number.isSafeInteger(id)) {
+        throw new StackValidationError('Invalid screenshot stack status')
+      }
+      if (!contexts.has(context)) continue
+      const previous = field(latest.get(context), 'id')
+      // Equal IDs hydrate the compact record. A newer record must win too,
+      // including a revocation published between the two API reads.
+      if (typeof previous !== 'number' || id >= previous) {
+        latest.set(context, status)
+        pending.delete(context)
+      }
+    }
+    if (pending.size === 0) return
+    if (data.length < 100) break
+  }
+  throw new StackValidationError('Screenshot stack status creators unavailable')
 }
 
 function successful(status: unknown): boolean {

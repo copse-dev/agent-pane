@@ -43,6 +43,11 @@ function status(
 ): { context: string; id: number; description: string; state: string; creator: { id: number } } {
   return { context, id, description, state, creator: { id: author } }
 }
+/** GitHub's combined-status endpoint uses status-simple, which omits creator. */
+function compactStatus(value: unknown): Record<string, unknown> {
+  assert.ok(value !== null && typeof value === 'object')
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'creator'))
+}
 interface Fixture {
   github: StackGitHub
   pulls: Map<number, Record<string, unknown>>
@@ -128,11 +133,22 @@ describe('screenshot stack declarations', () => {
 })
 
 describe('combined stack review gates', () => {
-  it('reads current contexts without traversing status history and observes revocation', async () => {
+  it('hydrates creator-less current statuses without walking unrelated history and observes revocation', async () => {
     const f = fixture()
     let reads = 0
-    f.github.rest.repos.listCommitStatusesForRef = async (): Promise<{ data: unknown }> => {
-      throw new Error('Historical status endpoint must not be queried')
+    let historyReads = 0
+    f.github.rest.repos.listCommitStatusesForRef = async ({
+      ref,
+      page,
+    }): Promise<{ data: unknown }> => {
+      assert.equal(page, 1, 'current proof is found on the first history page')
+      historyReads += 1
+      return {
+        data: [
+          ...(f.statuses.get(ref) ?? []),
+          ...Array.from({ length: 97 }, (_, i) => status(`Other ${String(i)}`, 100 + i)),
+        ],
+      }
     }
     f.github.rest.repos.getCombinedStatusForRef = async ({
       ref,
@@ -140,13 +156,64 @@ describe('combined stack review gates', () => {
     }): Promise<{ data: unknown }> => {
       assert.equal(page, 1)
       reads += 1
-      return { data: { statuses: f.statuses.get(ref) ?? [] } }
+      return { data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) } }
     }
     const policy = memoizeScreenshotStackAncestry(f.github)
     assert.equal((await verifyScreenshotStack(policy, input))?.approved, true)
     f.statuses.set(TIP, [status('Screenshot review', 4, 'Review revoked', 'error')])
     assert.equal((await verifyScreenshotStack(policy, input))?.approved, false)
     assert.equal(reads, 2, 'decision reads remain live despite shared immutable ancestry')
+    assert.equal(historyReads, 2, 'hydrate only the current proof, not unrelated status history')
+  })
+  it('rejects untrusted creators even when compact status states and declaration digests match', async () => {
+    for (const context of ['Screenshot review', STACK_COVERAGE, STACK_DECISION]) {
+      const f = fixture()
+      f.statuses.set(TIP, [
+        status(
+          'Screenshot review',
+          1,
+          undefined,
+          'success',
+          context === 'Screenshot review' ? 123 : 41898282,
+        ),
+        status(
+          STACK_COVERAGE,
+          2,
+          `Stack coverage ${DIGEST}`,
+          'success',
+          context === STACK_COVERAGE ? 123 : 41898282,
+        ),
+        status(
+          STACK_DECISION,
+          3,
+          `Stack decision ${DIGEST}`,
+          'success',
+          context === STACK_DECISION ? 123 : 41898282,
+        ),
+      ])
+      f.github.rest.repos.getCombinedStatusForRef = async ({ ref }) => ({
+        data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
+      })
+      assert.equal((await verifyScreenshotStack(f.github, input))?.approved, false)
+    }
+  })
+  it('observes a newer revocation while hydrating creator identity', async () => {
+    const f = fixture()
+    const snapshot = (f.statuses.get(TIP) ?? []).map(compactStatus)
+    f.github.rest.repos.getCombinedStatusForRef = async () => ({ data: { statuses: snapshot } })
+    f.statuses.set(TIP, [
+      status('Screenshot review', 4, 'Review revoked during hydration', 'error'),
+      ...(f.statuses.get(TIP) ?? []),
+    ])
+    assert.equal((await verifyScreenshotStack(f.github, input))?.approved, false)
+  })
+  it('fails closed when full statuses cannot resolve the current status IDs', async () => {
+    const f = fixture()
+    f.github.rest.repos.getCombinedStatusForRef = async ({ ref }) => ({
+      data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
+    })
+    f.github.rest.repos.listCommitStatusesForRef = async () => ({ data: [] })
+    await assert.rejects(verifyScreenshotStack(f.github, input), /creators unavailable/)
   })
   it('paginates current contexts and fails closed for malformed combined responses', async () => {
     const f = fixture()
