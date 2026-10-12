@@ -189,34 +189,11 @@ export async function saveAppScreenshot(
 }
 
 /** Capture an app shell that the spec has already sized and framed. */
-export async function savePreparedAppScreenshot(
-  filename: string,
-  options: { captureFromViewport?: boolean } = {},
-): Promise<void> {
+export async function savePreparedAppScreenshot(filename: string): Promise<void> {
   const app = await browser.$('#app')
   await app.waitForDisplayed({ timeout: 15_000 })
   await waitForSettledLayout('#app')
-  const path = join(E2E_SCREENSHOT_DIR, filename)
-  if (options.captureFromViewport) {
-    // Element capture can scroll the subject, waking Monaco's scroll chrome
-    // after the spec has waited for it to fade. Crop the settled viewport instead.
-    const bounds = await browser.execute(() => {
-      const rect = document.getElementById('app')?.getBoundingClientRect()
-      if (!rect) throw new Error('App shell is missing')
-      return {
-        x: Math.round(rect.x * devicePixelRatio),
-        y: Math.round(rect.y * devicePixelRatio),
-        width: Math.round(rect.width * devicePixelRatio),
-        height: Math.round(rect.height * devicePixelRatio),
-      }
-    })
-    const viewport = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
-    const cropped = new PNG({ width: bounds.width, height: bounds.height })
-    PNG.bitblt(viewport, cropped, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0)
-    writeFileSync(path, PNG.sync.write(cropped))
-  } else {
-    await app.saveScreenshot(path)
-  }
+  await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
 
 /**

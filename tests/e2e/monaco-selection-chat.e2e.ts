@@ -124,6 +124,6 @@ describe('Monaco selection to chat attachment', () => {
         ),
       { timeout: 3_000, timeoutMsg: 'Monaco scrollbar did not fade before capture' },
     )
-    await savePreparedAppScreenshot(SCREENSHOT, { captureFromViewport: true })
+    await savePreparedAppScreenshot(SCREENSHOT)
   })
 })

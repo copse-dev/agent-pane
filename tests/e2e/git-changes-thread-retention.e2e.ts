@@ -93,20 +93,30 @@ describe('Changes pane thread retention', function () {
     await expect($('.git-change-row.is-selected .git-change-path')).toHaveText('unstaged.ts')
     await prepareE2eScreenshot()
     await parkPointer()
+    let quietSince = 0
     await browser.waitUntil(
-      () =>
-        browser.execute(() =>
-          [...document.querySelectorAll('#git-diff-viewer-host .scrollbar.horizontal')].every(
-            (element) => getComputedStyle(element).opacity === '0',
-          ),
-        ),
+      async () => {
+        const settled = await browser.execute(() => {
+          const host = document.getElementById('git-diff-viewer-host')
+          const bars = [...document.querySelectorAll('#git-diff-viewer-host .scrollbar')]
+          return (
+            Boolean(host?.querySelector('.line-delete') && host.querySelector('.line-insert')) &&
+            bars.length > 0 &&
+            bars.every((element) => getComputedStyle(element).opacity === '0')
+          )
+        })
+        if (!settled) {
+          quietSince = 0
+          return false
+        }
+        if (!quietSince) quietSince = Date.now()
+        return Date.now() - quietSince >= 500
+      },
       {
         timeout: 3_000,
         timeoutMsg: 'Monaco hover scrollbars did not settle after the pointer left',
       },
     )
-    await savePreparedAppScreenshot('git-changes-thread-retention.png', {
-      captureFromViewport: true,
-    })
+    await savePreparedAppScreenshot('git-changes-thread-retention.png')
   })
 })
