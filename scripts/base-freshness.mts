@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { isDirectExecution } from './lib/direct-execution.mts'
-import { setTimeout as sleep } from 'node:timers/promises'
 // Base freshness: does an open pull request's green CI still describe the
 // commit that would actually land?
 //
@@ -317,80 +316,25 @@ type Api = {
   post: (path: string, body: unknown) => Promise<void>
 }
 
-export function githubApi(
-  repository: string,
-  token: string,
-  fetchImpl: typeof fetch = fetch,
-  wait: (ms: number) => Promise<unknown> = sleep,
-): Api {
+export function githubApi(repository: string, token: string, fetchImpl: typeof fetch = fetch): Api {
   const headers = {
     accept: 'application/vnd.github+json',
     authorization: `Bearer ${token}`,
     'x-github-api-version': '2022-11-28',
   }
-  // Share the waiting budget across the fan-out, rather than spending it again
-  // for every candidate. Long primary quota exhaustion needs a later run.
-  let waitBudgetMs = 60_000
-  async function request(path: string, init: RequestInit): Promise<string> {
-    for (let attempt = 0; ; attempt += 1) {
-      const res = await fetchImpl(`${API_ROOT}/repos/${repository}${path}`, init)
-      const body = await res.text()
-      if (res.ok) return body
-      let message = body.slice(0, 1000)
-      try {
-        const decoded: unknown = JSON.parse(body)
-        const detail = field(decoded, 'message')
-        if (typeof detail === 'string') message = detail.slice(0, 1000)
-      } catch {
-        // Non-JSON failures still carry the status and a bounded body excerpt.
-      }
-      const remaining = res.headers.get('x-ratelimit-remaining')
-      const reset = res.headers.get('x-ratelimit-reset')
-      const retryAfter = res.headers.get('retry-after')
-      const requestId = res.headers.get('x-github-request-id')
-      const diagnostic = [
-        `${init.method ?? 'GET'} ${path} -> ${String(res.status)} ${res.statusText}: ${message}`,
-        ...(requestId === null ? [] : [`request_id=${requestId}`]),
-        ...(remaining === null ? [] : [`rate_limit_remaining=${remaining}`]),
-        ...(reset === null ? [] : [`rate_limit_reset=${reset}`]),
-        ...(retryAfter === null ? [] : [`retry_after=${retryAfter}`]),
-      ].join('; ')
-      // Comparison/ref callers deliberately convert read failures to an
-      // unestablished verdict. Keep the API reason visible even on those paths.
-      console.warn(diagnostic)
-      const rateLimited =
-        res.status === 429 ||
-        (res.status === 403 &&
-          (remaining === '0' || retryAfter !== null || /rate limit/i.test(message)))
-      if (!rateLimited || attempt >= 2) throw new Error(diagnostic)
-
-      // Respect GitHub's requested delay. Never shorten it to fit our budget.
-      // Without a header, secondary limits require at least a minute's pause.
-      let delayMs = 60_000
-      if (retryAfter !== null) {
-        const seconds = Number(retryAfter)
-        delayMs = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now()
-      } else if (remaining === '0' && reset !== null) {
-        delayMs = Number(reset) * 1000 - Date.now()
-      }
-      if (!Number.isFinite(delayMs)) throw new Error(diagnostic)
-      delayMs = Math.max(1000, Math.ceil(delayMs))
-      if (delayMs > waitBudgetMs) throw new Error(`${diagnostic}; retry exceeds run wait budget`)
-      waitBudgetMs -= delayMs
-      console.warn(`Retrying ${init.method ?? 'GET'} ${path} in ${String(delayMs)}ms`)
-      await wait(delayMs)
-    }
-  }
   return {
     async get(path): Promise<string> {
-      return await request(path, { headers })
+      const res = await fetchImpl(`${API_ROOT}/repos/${repository}${path}`, { headers })
+      if (!res.ok) throw new Error(`GET ${path} -> ${String(res.status)} ${res.statusText}`)
+      return await res.text()
     },
     async post(path, body): Promise<void> {
-      await request(path, {
+      const res = await fetchImpl(`${API_ROOT}/repos/${repository}${path}`, {
         method: 'POST',
         headers: { ...headers, 'content-type': 'application/json' },
         body: JSON.stringify(body),
       })
+      if (!res.ok) throw new Error(`POST ${path} -> ${String(res.status)} ${res.statusText}`)
     },
   }
 }

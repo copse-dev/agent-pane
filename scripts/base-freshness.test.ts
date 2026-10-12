@@ -12,7 +12,6 @@ import {
   decodeRefSha,
   evaluate,
   evaluateSettled,
-  githubApi,
   listCandidates,
   MAX_COMPARE_FILES,
   MAX_SETTLE_ROUNDS,
@@ -21,126 +20,6 @@ import {
 } from './base-freshness.mts'
 
 const TIP = 'b'.repeat(40)
-
-describe('base freshness GitHub API failures', () => {
-  function client(responses: Response[]): {
-    api: ReturnType<typeof githubApi>
-    waits: number[]
-    requests: RequestInit[]
-  } {
-    const waits: number[] = []
-    const requests: RequestInit[] = []
-    const api = githubApi(
-      'owner/repo',
-      'test-token',
-      async (_url, init) => {
-        requests.push(init ?? {})
-        const response = responses.shift()
-        assert.ok(response, 'unexpected retry')
-        return response
-      },
-      async (ms) => {
-        waits.push(ms)
-      },
-    )
-    return { api, waits, requests }
-  }
-
-  function limited(headers: HeadersInit = {}, status = 403): Response {
-    return new Response(JSON.stringify({ message: 'API rate limit exceeded for installation.' }), {
-      status,
-      statusText: 'Forbidden',
-      headers,
-    })
-  }
-
-  it('reports permission failures with GitHub details without retrying', async () => {
-    const { api, waits, requests } = client([
-      new Response(JSON.stringify({ message: 'Resource not accessible by integration' }), {
-        status: 403,
-        statusText: 'Forbidden',
-        headers: { 'x-github-request-id': 'request-123', 'x-ratelimit-remaining': '50' },
-      }),
-    ])
-    await assert.rejects(api.get('/pulls'), /403 Forbidden: Resource not accessible.*request-123/)
-    assert.equal(requests.length, 1)
-    assert.deepEqual(waits, [])
-  })
-
-  it('recovers a rate-limited listing after Retry-After', async () => {
-    const { api, waits, requests } = client([limited({ 'retry-after': '2' }), new Response('[]')])
-    assert.equal(await api.get('/pulls'), '[]')
-    assert.deepEqual(waits, [2000])
-    assert.equal(requests.length, 2)
-  })
-
-  it('waits for a short primary quota reset', async () => {
-    const { api, waits } = client([
-      limited({
-        'x-ratelimit-remaining': '0',
-        'x-ratelimit-reset': String(Math.ceil(Date.now() / 1000) + 2),
-      }),
-      new Response('[]'),
-    ])
-    assert.equal(await api.get('/pulls'), '[]')
-    assert.equal(waits.length, 1)
-    assert.ok((waits[0] ?? 0) >= 1000 && (waits[0] ?? 0) <= 3000)
-  })
-
-  it('fails promptly for a reset beyond the run budget, retaining reset metadata', async () => {
-    const reset = String(Math.ceil(Date.now() / 1000) + 3600)
-    const { api, waits } = client([
-      limited({ 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': reset }),
-    ])
-    await assert.rejects(api.get('/pulls'), new RegExp(`rate_limit_reset=${reset}.*wait budget`))
-    assert.deepEqual(waits, [])
-  })
-
-  it('bounds retries even when GitHub repeatedly asks for a short wait', async () => {
-    const { api, waits, requests } = client([
-      limited({ 'retry-after': '1' }),
-      limited({ 'retry-after': '1' }),
-      limited({ 'retry-after': '1' }),
-    ])
-    await assert.rejects(api.get('/pulls'), /API rate limit exceeded/)
-    assert.deepEqual(waits, [1000, 1000])
-    assert.equal(requests.length, 3)
-  })
-
-  it('shares the wait budget across candidates and waits a minute for headerless secondary limits', async () => {
-    const { api, waits, requests } = client([limited(), new Response('[]'), limited()])
-    assert.equal(await api.get('/pulls'), '[]')
-    await assert.rejects(api.get('/compare/base...head'), /wait budget/)
-    assert.deepEqual(waits, [60_000])
-    assert.equal(requests.length, 3)
-  })
-
-  it('retries an explicitly rejected check-run POST with the same payload', async () => {
-    const { api, waits, requests } = client([
-      limited({ 'retry-after': '1' }, 429),
-      new Response('{}', { status: 201 }),
-    ])
-    await api.post('/check-runs', { name: CHECK_NAME, head_sha: TIP })
-    assert.deepEqual(waits, [1000])
-    assert.equal(requests[0]?.method, 'POST')
-    assert.deepEqual(requests[0], requests[1])
-  })
-
-  it('does not retry ambiguous transport failures when publishing a check', async () => {
-    let calls = 0
-    const api = githubApi('owner/repo', 'test-token', async () => {
-      calls += 1
-      throw new Error('connection lost')
-    })
-    await assert.rejects(api.post('/check-runs', {}), /connection lost/)
-    assert.equal(calls, 1)
-  })
-
-  it('retains non-JSON failure details', async () => {
-    const { api } = client([new Response('upstream unavailable', { status: 502 })])
-    await assert.rejects(api.get('/pulls'), /502.*upstream unavailable/)
-  })
-})
 
 const candidate: Candidate = {
   number: 42,
