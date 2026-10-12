@@ -94,7 +94,8 @@
 // v55 versions host-owned container authentication.
 // v56 versions threads:archive stopProcesses and blocked-running live-work reports.
 // v57 versions approval effect, boundary, and grant-scope details.
-// v58 integrates explicit local terminal creation targets.
-// v59 integrates machine classifier wire changes.
-// v60 integrates container storage maintenance results.
-export const API_PROTOCOL_VERSION = 60 as const
+// v58 versions inline Mobile Companion settings endpoints.
+// v59 integrates explicit local terminal creation targets.
+// v60 integrates machine classifier wire changes.
+// v61 integrates container storage maintenance results.
+export const API_PROTOCOL_VERSION = 61 as const
