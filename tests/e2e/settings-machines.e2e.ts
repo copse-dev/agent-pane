@@ -13,7 +13,11 @@ import {
   type MachineStoreData,
 } from '../../src/main/services/machines/machine-store.ts'
 import { createKeyringCipher } from '../../src/main/services/storage/keyring-cipher.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  pinTextForCapture,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
@@ -194,7 +198,17 @@ describe('Machines settings', function () {
     await click('.classifier-test')
     await expect($('.classifier-status')).toHaveText(expect.stringContaining('Test succeeded'))
     assert.equal(calls, 1)
-    await saveElementScreenshot('#settings-dialog', 'settings-machines-classifier.png')
+    const liveStatus = await $('.classifier-status').getText()
+    assert.match(liveStatus, /\b\d+ ms\b/)
+    // The real TLS inference measures wall-clock latency; its result and call
+    // count stay asserted while only that measurement is pinned for capture.
+    const restoreLatency = await pinTextForCapture('.classifier-status', /\b\d+ ms\b/, '40 ms')
+    try {
+      await saveElementScreenshot('#settings-dialog', 'settings-machines-classifier.png')
+    } finally {
+      await restoreLatency()
+    }
+    assert.equal(await $('.classifier-status').getText(), liveStatus)
     const result = await browser.execute(async (id) => window.api.classifiers.test(id), remote.id)
     assert.deepEqual(result.answers['color'], {
       type: 'choice',
