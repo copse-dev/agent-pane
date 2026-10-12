@@ -1,5 +1,6 @@
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import { pinDemoClock } from './helpers/fixed-clock.ts'
 
 // A question an agent is blocked on is answered from the Activity home's detail
 // pane, through the ask dialog's own queue: each question with the agent's quick
@@ -8,6 +9,7 @@ import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 
 describe('answering a question from the Activity home', () => {
   before(async () => {
+    await pinDemoClock()
     await browser.url('about:blank')
     await browser.url('/?scenario=activity-home-question')
     await $('#activity-home .activity-row[data-state="needs-answer"]').waitForExist({
