@@ -56,7 +56,10 @@ import { setSecretCipher } from './services/storage/secret-cipher.ts'
 import { createKeyringCipher, createMigratingCipher } from './services/storage/keyring-cipher.ts'
 import { createOsKeyringStore } from './services/storage/os-keyring.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
-import { resumeMobileCompanion, stopMobileCompanion } from './windows/mobile-desktop.ts'
+import {
+  resumeMobileCompanion,
+  stopMobileCompanion,
+} from './services/mobile/mobile-companion-service.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import {

@@ -104,9 +104,19 @@ async function startDemoServer(): Promise<void> {
                   projectName: 'Copse',
                   threadId: 'thread-1',
                   title: 'Review the release',
-                  group: 'needs-you',
-                  state: 'needs-approval',
-                  detail: '1 approval waiting',
+                  group: mobileStep < 2 ? 'needs-you' : 'working',
+                  state:
+                    mobileStep === 0
+                      ? 'needs-approval'
+                      : mobileStep === 1
+                        ? 'needs-answer'
+                        : 'working',
+                  detail:
+                    mobileStep === 0
+                      ? '1 approval waiting'
+                      : mobileStep === 1
+                        ? '1 answer waiting'
+                        : 'Agent running',
                   lastSavedAt: Date.now() - 120_000,
                 },
                 {

@@ -63,19 +63,10 @@ function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
 describe('settings dialog (native <dialog>)', () => {
   let dialog: HTMLDialogElement
   let spy: { showModalCalls: number }
-  let mobileManageCalls: number
 
   beforeEach(() => {
     document.body.innerHTML = ''
-    mobileManageCalls = 0
-    mountSettingsDialog(
-      createStore(),
-      createPendingApi({
-        'mobile.manage': async () => {
-          mobileManageCalls += 1
-        },
-      }),
-    )
+    mountSettingsDialog(createStore(), createPendingApi())
     dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
     spy = shimModal(dialog)
     // openSettingsDialog dispatches 'settings-open' to kick off an async data
@@ -140,14 +131,12 @@ describe('settings dialog (native <dialog>)', () => {
     )
   })
 
-  it('moves Mobile Companion management into Experimental settings', async () => {
+  it('mounts Mobile Companion management inside Experimental settings, not a modal', () => {
     openSettingsDialog('experimental')
-    const button = qsRequired<HTMLButtonElement>(dialog, '#mobile-companion-manage')
-    assert.match(button.textContent, /Set up or manage/)
-    button.click()
-    await Promise.resolve()
-    assert.equal(mobileManageCalls, 1)
-    assert.equal(isSettingsDialogOpen(), false)
+    const toggle = qsRequired<HTMLInputElement>(dialog, 'input[name="mobileCompanionEnabled"]')
+    assert.ok(toggle)
+    assert.equal(dialog.querySelector('#mobile-companion-manage'), null)
+    assert.equal(isSettingsDialogOpen(), true)
   })
 
   it('tells the user auto-approval only applies while the project sandbox is running', () => {
@@ -156,40 +145,6 @@ describe('settings dialog (native <dialog>)', () => {
     assert.match(text, /only while the project sandbox is running/i)
     assert.match(text, /Without a sandbox/i)
     assert.doesNotMatch(text, /write shapes still ask/)
-  })
-})
-
-describe('Mobile Companion QR refresh', () => {
-  it('refreshes on reopen after enabling and clears the QR after stopping', async () => {
-    document.body.replaceChildren()
-    let status: Awaited<ReturnType<ApiClient['mobile']['status']>> = {
-      enabled: false,
-      url: null,
-      qrSvg: null,
-    }
-    const api = createPendingApi({ 'mobile.status': async () => status })
-    mountSettingsDialog(createStore(), api)
-    const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
-    shimModal(dialog)
-    openSettingsDialog('experimental')
-    await Promise.resolve()
-    await Promise.resolve()
-    assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, true)
-    closeSettingsDialog()
-    status = { enabled: true, url: 'https://example.test:42773', qrSvg: '<svg></svg>' }
-    openSettingsDialog('experimental')
-    await Promise.resolve()
-    await Promise.resolve()
-    assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, false)
-    assert.equal(qsRequired(dialog, '#mobile-companion-qr-url').textContent, status.url)
-    closeSettingsDialog()
-    status = { enabled: false, url: null, qrSvg: null }
-    openSettingsDialog('experimental')
-    await Promise.resolve()
-    await Promise.resolve()
-    assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, true)
-    assert.equal(qsRequired(dialog, '#mobile-companion-qr-image').innerHTML, '')
-    closeSettingsDialog()
   })
 })
 
