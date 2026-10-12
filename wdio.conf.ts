@@ -223,6 +223,9 @@ export const config: Options.Testrunner = {
 
     const e2eEnv: Record<string, string> = {
       COPSE_E2E: '1',
+      COPSE_E2E_MOBILE_NETWORK: specs.some((spec) => spec.endsWith('settings-experimental.e2e.ts'))
+        ? '1'
+        : '0',
       COPSE_PANEL_MOCK_LLM: '1',
       COPSE_PANEL_MOCK_GH: '1',
       // Deterministic Claude/Codex plan bars in Settings → Usage (no real OAuth).

@@ -580,6 +580,7 @@ describe('base-freshness.yml workflow invariants', () => {
     assert.match(workflow, /^permissions: \{\}$/m)
     assert.match(workflow, /^ {6}checks: write$/m)
     assert.match(workflow, /^ {6}pull-requests: read$/m)
+    assert.match(workflow, /^ {6}contents: read$/m)
     for (const forbidden of ['contents: write', 'actions: write', 'pull-requests: write']) {
       assert.doesNotMatch(workflow, new RegExp(`^ +${forbidden}$`, 'm'), forbidden)
     }
