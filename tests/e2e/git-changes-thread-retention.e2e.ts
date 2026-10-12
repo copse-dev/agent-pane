@@ -7,7 +7,11 @@ import {
   seedGitChangesFixture,
   writeSeedConfig,
 } from './helpers/seed-config.ts'
-import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  parkPointer,
+  prepareE2eScreenshot,
+  savePreparedAppScreenshot,
+} from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-git-changes-project'
 
@@ -87,6 +91,7 @@ describe('Changes pane thread retention', function () {
       { timeout: 15_000, timeoutMsg: 'working-tree updates should still refresh cached rows' },
     )
     await expect($('.git-change-row.is-selected .git-change-path')).toHaveText('unstaged.ts')
+    await prepareE2eScreenshot()
     await parkPointer()
     await browser.waitUntil(
       () =>
@@ -100,6 +105,6 @@ describe('Changes pane thread retention', function () {
         timeoutMsg: 'Monaco hover scrollbars did not settle after the pointer left',
       },
     )
-    await saveAppScreenshot('git-changes-thread-retention.png')
+    await savePreparedAppScreenshot('git-changes-thread-retention.png')
   })
 })

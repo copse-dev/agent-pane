@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -29,6 +29,7 @@ function git(cwd: string, args: string[]): string {
 }
 
 describe('automatic worktree branch naming', () => {
+  let fixtureRoot = ''
   let projectRoot = ''
   let worktreeRoot = ''
   let server: ConversationServer
@@ -41,7 +42,9 @@ describe('automatic worktree branch naming', () => {
     resetUserData()
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
-    projectRoot = mkdtempSync(join(tmpdir(), 'copse-branch-title-'))
+    fixtureRoot = mkdtempSync(join(tmpdir(), 'copse-branch-title-'))
+    projectRoot = join(fixtureRoot, 'branch-title')
+    mkdirSync(projectRoot)
     worktreeRoot = join(worktreesRoot, PROJECT_ID, THREAD_ID)
     rmSync(worktreeRoot, { recursive: true, force: true })
     git(projectRoot, ['init', '-q', '-b', 'main'])
@@ -79,7 +82,7 @@ describe('automatic worktree branch naming', () => {
   after(async () => {
     resetUserData()
     if (worktreeRoot) rmSync(worktreeRoot, { recursive: true, force: true })
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (projectRoot) rmSync(fixtureRoot, { recursive: true, force: true })
     await server.close()
   })
 
