@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -37,12 +37,17 @@ agent({ name: 'registry-entry-fixture' })
 describe('public agent registry discovery', function () {
   this.timeout(90_000)
   let scratch = ''
+  let ownsScratch = false
   let registryFile = ''
   let executable = ''
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     mkdirSync(join(process.cwd(), '.tmp'), { recursive: true })
-    scratch = mkdtempSync(join(process.cwd(), '.tmp/acp-registry-e2e-'))
+    scratch = join(process.cwd(), '.tmp/acp-registry-e2e-fixture')
+    // The draft and saved command display this path. A random suffix makes
+    // both captures drift; mkdir without recursive also protects existing work.
+    mkdirSync(scratch)
+    ownsScratch = true
     const workspace = join(scratch, 'workspace')
     mkdirSync(workspace)
     writeFileSync(join(workspace, 'README.md'), 'Registry fixture workspace.\n')
@@ -63,7 +68,7 @@ describe('public agent registry discovery', function () {
       'Seed registry fixture',
     ])
     registryFile = join(scratch, 'registry.json')
-    executable = join(scratch, 'agent.mjs')
+    executable = join(workspace, 'agent.mjs')
     writeFileSync(executable, AGENT)
     writeFileSync(
       registryFile,
@@ -101,7 +106,7 @@ describe('public agent registry discovery', function () {
   after(() => {
     writeE2eEnv({ COPSE_E2E_ACP_REGISTRY_FIXTURE: undefined })
     resetUserData()
-    if (scratch) rmSync(scratch, { recursive: true, force: true })
+    if (ownsScratch) rmSync(scratch, { recursive: true, force: true })
   })
 
   it('discovers without executing, reviews a disabled draft, then explicitly enables and runs it', async () => {
@@ -122,7 +127,7 @@ describe('public agent registry discovery', function () {
       expect.stringContaining('Installed status unknown'),
     )
     assert.equal(readFileSync(`${registryFile}.requests`, 'utf8'), 'fetch\n')
-    assert.equal(existsSync(join(scratch, 'launched')), false)
+    assert.equal(existsSync(join(scratch, 'workspace', 'launched')), false)
     const search = await $('[aria-label="Search agent registry"]')
     await search.setValue('absent')
     await expect($('.acp-registry-results')).toHaveText('No agents match your search.')
@@ -156,10 +161,10 @@ describe('public agent registry discovery', function () {
     await form.$('.checkbox-label').scrollIntoView({ block: 'center' })
     await expect(form.$('.checkbox-label input')).toBeDisplayed()
     await saveAppScreenshot('acp-registry-review-enable.png')
-    await form.$('label*=Command').$('input').setValue(process.execPath)
-    await form.$('label*=Arguments').$('textarea').setValue(`${executable}\n--acp`)
+    await form.$('label*=Command').$('input').setValue('node')
+    await form.$('label*=Arguments').$('textarea').setValue('agent.mjs\n--acp')
     await form.$('button=Add agent').click()
-    assert.equal(existsSync(join(scratch, 'launched')), false)
+    assert.equal(existsSync(join(scratch, 'workspace', 'launched')), false)
 
     await $('#settings-close').click()
     await $('.model-picker-trigger').click()
@@ -178,15 +183,15 @@ describe('public agent registry discovery', function () {
     await saveAppScreenshot('acp-registry-saved-disabled.png')
     await card.$('.checkbox-label input').click()
     await expect(card.$('button=Detect models')).toBeDisabled()
-    assert.equal(existsSync(join(scratch, 'launched')), false)
+    assert.equal(existsSync(join(scratch, 'workspace', 'launched')), false)
     await card.$('button=Save').click()
     await expect($('.acp-agent-card').$('button=Detect models')).toBeEnabled()
-    assert.equal(existsSync(join(scratch, 'launched')), false)
+    assert.equal(existsSync(join(scratch, 'workspace', 'launched')), false)
     await $('.acp-agent-card').$('button=Detect models').click()
     await browser.waitUntil(async () =>
       (await $('.acp-agent-card').getText()).includes('no selectable models'),
     )
-    assert.equal(existsSync(join(scratch, 'launched')), true)
+    assert.equal(existsSync(join(scratch, 'workspace', 'launched')), true)
     await $('#settings-close').click()
     await $('.model-picker-trigger').click()
     await $('.model-picker-browse').click()
