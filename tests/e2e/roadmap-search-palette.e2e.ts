@@ -12,12 +12,14 @@ import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/see
 // Choosing one opens the Roadmap pane with that item selected — this spec
 // drives that full path against seeded OKF notes.
 describe('roadmap items in the quick-open palette (Cmd/Ctrl+P)', () => {
+  let tempParent: string
   let workspaceRoot: string
   let knowledgeDir: string
 
   before(async () => {
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-roadmap-search-'))
+    tempParent = mkdtempSync(join(tmpdir(), 'copse-roadmap-search-'))
+    workspaceRoot = join(tempParent, 'roadmap-search')
     mkdirSync(join(workspaceRoot, 'src'), { recursive: true })
     writeFileSync(join(workspaceRoot, 'README.md'), '# Fixture\n', 'utf8')
     knowledgeDir = seedRoadmapNotes('e2e-roadmap-search', [
@@ -42,7 +44,7 @@ describe('roadmap items in the quick-open palette (Cmd/Ctrl+P)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(tempParent, { recursive: true, force: true })
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 

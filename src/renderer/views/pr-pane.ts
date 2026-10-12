@@ -37,7 +37,7 @@ import {
   prMatchesFilter,
   type PrRef,
 } from './pr-pane-list.ts'
-import { startPrCheckFixThread, startPrDiscussThread } from './pr-pane-thread.ts'
+import { prCheckFixDraft, startPrCheckFixThread, startPrDiscussThread } from './pr-pane-thread.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
@@ -1127,6 +1127,17 @@ export function mountPrPane(
         },
         (check, headSha) => {
           if (!prDetails) return
+          const key = prRelationKey(prDetails)
+          const producingThreadId = (prRelationships ?? threadLinks.get(key) ?? []).find((row) =>
+            row.kinds.includes('produced'),
+          )?.threadId
+          if (producingThreadId) {
+            switchThread(store, producingThreadId)
+            void getPromptAttachmentHandlers()?.sendMessage?.(
+              prCheckFixDraft(prDetails, check, headSha),
+            )
+            return
+          }
           startPrCheckFixThread(store, prDetails, check, headSha)
           getPromptAttachmentHandlers()?.focusComposer?.()
         },
