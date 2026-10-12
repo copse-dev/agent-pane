@@ -35,6 +35,44 @@ function rollupChildren(
 }
 
 describe('tool-display', () => {
+  for (const prefix of ['', 'mcp__copse__', 'mcp.copse.', 'copse.', 'copse-']) {
+    it(`preserves edit links, grouping and shell summaries for ${prefix || 'bare'} calls`, () => {
+      const edit = { ...tc('edit', `${prefix}write_file`), args: { path: 'src/app.ts' } }
+      const command = { ...shell('shell', 'cd /repo && pnpm test'), name: `${prefix}run_shell` }
+      assert.equal(getToolEditPath(edit), 'src/app.ts')
+      assert.equal(getToolCallLabel(edit), 'Edited src/app.ts')
+      assert.equal(getToolGroupKey(edit.name), 'writing')
+      assert.deepEqual(shellCommandsFromToolCalls([command]), ['pnpm test'])
+      assert.equal(getToolCallLabel(command), 'pnpm test')
+      if (prefix) {
+        assert.equal(
+          getToolCallLabel({ ...tc('label', command.name), title: command.name }),
+          'Ran command',
+        )
+      }
+    })
+  }
+
+  it('uses programmatic identity for links, labels, grouping and command summaries', () => {
+    const edit = {
+      ...tc('edit', 'Edit'),
+      programmaticName: 'copse.write_file',
+      args: { path: 'src/app.ts' },
+    }
+    assert.equal(getToolEditPath(edit), 'src/app.ts')
+    assert.equal(getToolCallLabel(edit), 'Edited src/app.ts')
+    const items = buildToolCallDisplayItems([edit, { ...edit, id: 'edit-2' }])
+    assert.equal(items[0]?.label, 'Edited files')
+    assert.deepEqual(
+      shellCommandsFromToolCalls([
+        { ...shell('shell', 'pnpm test'), name: 'Run tests', programmaticName: 'copse.run_shell' },
+        { ...shell('other', 'ignore'), name: 'mcp__other__run_shell' },
+        { ...shell('failed', 'ignore', 'error'), name: 'copse.run_shell' },
+      ]),
+      ['pnpm test'],
+    )
+    assert.equal(getToolEditPath({ ...edit, programmaticName: 'mcp__other__write_file' }), null)
+  })
   it('attributes a model-activated skill by name without marking failed or supporting reads as activation', () => {
     const call = { ...tc('skill', 'read_skill'), args: { name: 'style-guide' } }
     assert.equal(getToolCallLabel({ ...call, status: 'running' }), 'Loading skill style-guide')
