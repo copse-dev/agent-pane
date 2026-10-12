@@ -1,5 +1,9 @@
 import { $, $$, browser, expect } from '@wdio/globals'
-import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import {
+  saveAppScreenshot,
+  waitForImagesSettled,
+  waitForSettledLayout,
+} from '../e2e/helpers/screenshot.ts'
 
 // The concise thread view in each state a thread can be in. Each scenario is a
 // seeded transcript (src/shared/demo-concise-states.ts); each test asserts what
@@ -49,7 +53,11 @@ const painted = (all: Row[], kind: Row['kind']): Row[] =>
 async function open(id: string): Promise<void> {
   await browser.url(`/?scenario=concise-state-${id}`)
   await $('.messages-list .msg-user').waitForExist()
-  await browser.pause(300)
+  await browser.execute(async () => {
+    await document.fonts.ready
+  })
+  await waitForImagesSettled('.messages-list')
+  await waitForSettledLayout('.messages-list')
 }
 
 describe('concise thread view states', () => {
@@ -193,11 +201,18 @@ describe('concise thread view states', () => {
 
     await footer.$('button').click()
     await $('.tool-card').waitForDisplayed()
+    await $('.tool-card-rollup > summary').click()
+    const output = $('[data-tool-id="long-suite"]')
+    await output.$('summary').click()
+    await expect(output.$('.tool-result')).toHaveText(expect.stringContaining('test 400'))
     const geometry = await browser.execute(() => {
       const list = document.querySelector<HTMLElement>('.messages-list')!
       return {
         pageOverflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
         listOverflowX: list.scrollWidth > list.clientWidth,
+        outputScrolls: [...document.querySelectorAll<HTMLElement>('.tool-result')].some(
+          (node) => node.scrollHeight > node.clientHeight,
+        ),
         // 400 lines of output must not be laid out at full height in the transcript.
         tallestCard: Math.max(
           ...[...document.querySelectorAll<HTMLElement>('.tool-card')].map(
@@ -208,6 +223,7 @@ describe('concise thread view states', () => {
     })
     expect(geometry.pageOverflowX).toBe(false)
     expect(geometry.listOverflowX).toBe(false)
+    expect(geometry.outputScrolls).toBe(true)
     expect(geometry.tallestCard).toBeLessThan(2_000)
     await saveAppScreenshot('concise-state-long-output-expanded.png')
   })

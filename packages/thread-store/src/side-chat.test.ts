@@ -132,6 +132,23 @@ describe('side chats', () => {
 })
 
 describe('excerptText', () => {
+  it('preserves intraword underscores and literal Markdown inside code spans', () => {
+    const input = 'Use foo_bar_baz and `_raw_ **literal**`'
+    assert.equal(excerptText(input), 'Use foo_bar_baz and _raw_ **literal**')
+    const side = buildSideChatThread(
+      thread('parent', { messages: [message('m1', input, 'assistant')] }),
+      { anchorMessageId: 'm1' },
+    )
+    assert.equal(side?.title, 'Use foo_bar_baz and _raw_ **literal**')
+  })
+
+  it('handles nested formatting and parentheses in link destinations', () => {
+    assert.equal(
+      excerptText('[**the helper**](https://example.com/a_(b)) uses foo_bar_baz'),
+      'the helper uses foo_bar_baz',
+    )
+  })
+
   it('strips links, emphasis, code spans and headers to plain text', () => {
     assert.equal(
       excerptText('[PR #3595](https://example.com/pull/3595) is loaded'),

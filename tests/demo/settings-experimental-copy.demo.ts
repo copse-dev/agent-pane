@@ -3,7 +3,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 const EXPERIMENTAL = '.settings-section[data-section="experimental"]'
-const MOBILE_FIELDSET = `${EXPERIMENTAL} fieldset:has(#mobile-companion-manage)`
+const MOBILE_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="mobileCompanionEnabled"])`
 const VNC_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="vncEnabled"])`
 const DEVELOPER_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="developerMode"])`
 const APPEARANCE = '.settings-section[data-section="appearance"]'
@@ -20,23 +20,27 @@ describe('browser-hosted Experimental settings copy', () => {
     await $(EXPERIMENTAL).waitForDisplayed()
   })
 
-  it('puts Mobile Companion setup and network guidance in Settings', async () => {
+  it('puts Mobile Companion setup and network guidance in Settings, not a modal', async () => {
     const fieldset = $(MOBILE_FIELDSET)
     await expect(fieldset).toBeDisplayed()
-    await expect(fieldset.$('#mobile-companion-manage')).toHaveText('Set up or manage…')
+    await expect(fieldset.$('input[name="mobileCompanionEnabled"]')).toExist()
+    assert.equal(await fieldset.$('#mobile-companion-manage').isExisting(), false)
     const hint = await fieldset.$('.field-hint').getText()
     assert.match(hint, /same local network/)
     assert.match(hint, /must stay awake/)
     assert.doesNotMatch(hint, /\bsecure(?:ly)?\b/i)
 
-    // The demo fixture reports Mobile Companion as enabled and running, so the
-    // pairing QR — a scannable copy of the same URL already shown as text —
-    // renders inline rather than requiring a trip through the native "Set up
-    // or manage…" dialog.
-    const qr = $('#mobile-companion-qr')
+    // The settings-footer scenario reports Mobile Companion as already enabled
+    // and running, so the pairing QR — a scannable copy of the same URL
+    // already shown as text — renders inline.
+    const qr = fieldset.$('#mobile-companion-qr')
     await expect(qr).toBeDisplayed()
-    await expect(qr.$('#mobile-companion-qr-image svg')).toExist()
-    await expect(qr.$('#mobile-companion-qr-url')).toHaveText('https://192.168.1.42:42773')
+    await expect(qr.$('.mobile-companion-qr-image svg')).toExist()
+    await expect(qr.$('.mobile-companion-qr-url')).toHaveText('https://192.168.1.42:42773')
+    const network = fieldset.$('select[name="mobileCompanionAddress"]')
+    await expect(network).toHaveValue('192.168.1.42')
+    await expect(network.$('option:checked')).toHaveText('Wi-Fi — 192.168.1.42')
+    await expect(network).toBeDisabled()
 
     await fieldset.scrollIntoView()
     await saveElementScreenshot(MOBILE_FIELDSET, 'settings-mobile-companion.png')
@@ -138,6 +142,34 @@ describe('browser-hosted Experimental settings copy', () => {
       await expect($(`#plugins-list .plugin-row[data-plugin-id="${id}"]`)).toExist()
     }
     assert.equal(await $$('#advisorModel').length, 1)
+  })
+  it('explains the native trust confirmation before granting a pairing control', async () => {
+    await browser.url('/?scenario=settings-footer')
+    await $('.prompt-input').waitForExist()
+    await browser.execute(() => {
+      const getState = window.api.mobile.getState
+      window.api.mobile.getState = async () => ({
+        ...(await getState()),
+        pairing: { label: 'My phone', code: '123456' },
+      })
+    })
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').$('button[data-section="experimental"]').click()
+    const banner = $(`${MOBILE_FIELDSET} .mobile-companion-pairing-banner`)
+    await expect(banner).toBeDisplayed()
+    await expect(banner.$('.mobile-companion-pairing-code')).toHaveText('123456')
+    await expect(banner.$('.field-hint')).toHaveText(
+      expect.stringContaining('Allow control opens a desktop confirmation of certificate trust.'),
+    )
+    const control = banner.$('button=Allow control')
+    await expect(control).toBeDisabled()
+    await banner.$('input[type="checkbox"]').click()
+    await expect(control).toBeEnabled()
+    await banner.scrollIntoView()
+    await saveElementScreenshot(
+      `${MOBILE_FIELDSET} .mobile-companion-pairing-banner`,
+      'settings-mobile-companion-pairing.png',
+    )
   })
 })
 

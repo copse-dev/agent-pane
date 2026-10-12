@@ -9,6 +9,8 @@ import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
   saveElementScreenshot,
+  prepareE2eScreenshot,
+  waitForImagesSettled,
 } from './helpers/screenshot.ts'
 
 const PROJECT_WORKSPACE_PREFIX = 'copse-image-expand-'
@@ -202,6 +204,14 @@ describe('Screenshot click-to-expand', () => {
     seedGalleryThread(workspaceRoot)
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await waitForImagesSettled('.messages-list', { minImages: 6 })
+    await prepareE2eScreenshot()
+    await browser.execute(() => {
+      const scroller = document.querySelector<HTMLElement>('.conversation-scroll')
+      if (!scroller) throw new Error('Conversation scroll host is missing')
+      scroller.scrollTop = scroller.scrollHeight
+    })
+    await $('.msg-user.is-preview-compact').waitForDisplayed({ timeout: 5_000 })
   })
 
   after(() => {

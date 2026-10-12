@@ -354,7 +354,8 @@ export function writeSettings(settings: Record<string, unknown>): void {
     ...settings,
   })
   writeFileSync(SETTINGS_PATH, serialized, 'utf8')
-  // Restore the fixture after the outgoing app has saved its old settings.
+  // The outgoing app can persist its old settings during reloadSession().
+  // Restore the fixture once in the test launcher after shutdown completes.
   writeFileSync(PENDING_SETTINGS_PATH, serialized, 'utf8')
 }
 
@@ -1736,15 +1737,13 @@ export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
 }
 
 /**
- * A parent thread with a markdown assistant reply, plus a side chat already
- * branched from it, for the "Side chat" chip + panel plain-text title visual eval.
+ * A markdown anchor for creating a side chat through the real message action.
  */
 export function seedSideChatMarkdownFixture(workspaceRoot: string): void {
   const projectId = 'e2e-side-chat-markdown-project'
   const parentId = 'e2e-side-chat-markdown-parent'
-  const sideId = 'e2e-side-chat-markdown-side'
   const anchorId = 'msg-side-chat-anchor'
-  const now = Date.now()
+  const now = 1767225600000
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -1761,22 +1760,12 @@ export function seedSideChatMarkdownFixture(workspaceRoot: string): void {
             id: anchorId,
             role: 'assistant',
             content:
-              '[PR #3595](https://github.com/copse-dev/agent-pane/pull/3595) is loaded at commit abc',
+              '[PR #3595](https://github.com/copse-dev/agent-pane/pull/3595) uses foo_bar_baz at commit `abc`',
             toolCalls: [],
             createdAt: now,
           },
         ],
         todos: [],
-        usage: { inputTokens: 0, outputTokens: 0 },
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: sideId,
-        title: 'PR #3595 is loaded at commit abc',
-        status: 'idle',
-        messages: [],
-        sideChat: { parentThreadId: parentId, anchorMessageId: anchorId },
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
         updatedAt: now,

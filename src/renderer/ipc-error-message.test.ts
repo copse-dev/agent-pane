@@ -1,6 +1,34 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ipcErrorMessage, unwrapIpcErrorText } from './ipc-error-message.ts'
+import {
+  ipcErrorMessage,
+  unwrapIpcErrorText,
+  isUnavailableThreadCheckoutError,
+} from './ipc-error-message.ts'
+
+describe('unavailable checkout errors', () => {
+  it('recognizes the two typed recovery states through Electron wrapping', () => {
+    for (const name of ['ThreadWorktreeOnBaseBranchError', 'ThreadWorktreeDetachedError']) {
+      assert.equal(
+        isUnavailableThreadCheckoutError(
+          new Error(
+            `Error invoking remote method 'git:branch-status': ${name}: checkout unavailable`,
+          ),
+        ),
+        true,
+      )
+    }
+  })
+
+  it('keeps unrelated failures and untyped throws visible', () => {
+    assert.equal(isUnavailableThreadCheckoutError(new Error('disk full')), false)
+    assert.equal(
+      isUnavailableThreadCheckoutError(new Error('ThreadWorktreeMissingError: missing')),
+      false,
+    )
+    assert.equal(isUnavailableThreadCheckoutError('ThreadWorktreeOnBaseBranchError: bad'), false)
+  })
+})
 
 describe('ipcErrorMessage', () => {
   it("strips Electron's remote-method prefix", () => {

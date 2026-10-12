@@ -98,6 +98,46 @@ describe('agent-tasks', () => {
     h = mount()
   })
 
+  it('opens bridged shell tasks without an execute kind, including programmatic names', () => {
+    for (const [i, name] of [
+      'mcp__copse__run_shell',
+      'mcp.copse.run_shell',
+      'copse.run_shell',
+      'copse-run_shell: Run tests',
+    ].entries()) {
+      h.emitChunk('t1', {
+        type: 'tool_call',
+        toolCall: { id: `bridge-${String(i)}`, name, args: { command: 'cd /repo && pnpm test' } },
+      })
+    }
+    h.emitChunk('t1', {
+      type: 'tool_call',
+      toolCall: {
+        id: 'programmatic',
+        name: 'Run tests',
+        programmaticName: 'copse.run_shell',
+        args: { command: 'pnpm test' },
+      },
+    })
+    h.emitChunk('t1', {
+      type: 'tool_call',
+      toolCall: { id: 'other', name: 'mcp__other__run_shell', args: { command: 'ignore' } },
+    })
+    assert.equal(tabs(h).length, 5)
+    assert.ok(
+      tabs(h).every((tab) => tab.querySelector('.agent-task-label')?.textContent === 'pnpm test'),
+    )
+    h.emitChunk('t1', {
+      type: 'tool_result',
+      toolCallId: 'bridge-0',
+      result: 'passed',
+      isError: false,
+    })
+    assert.equal(at(tabs(h), 0).dataset['status'], 'done')
+    assert.match(at(panels(h), 0).textContent, /passed$/)
+    h.dispose()
+  })
+
   it('keeps the left section hidden until the agent runs a shell command', () => {
     assert.equal(section(h).hidden, true)
     startShell(h, 'a', 'npm test')

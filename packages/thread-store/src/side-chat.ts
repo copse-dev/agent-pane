@@ -1,4 +1,5 @@
 import type { Message, SideChatLink, Thread } from './thread-types.ts'
+import { Lexer } from 'marked'
 
 /**
  * Side chats (prototype #3538). A side chat is an ordinary thread (own id, own
@@ -27,18 +28,25 @@ export interface SideChatOptions {
   title?: string
 }
 
-// Strips common inline markdown so a title or context line taken verbatim from
-// a message (often an assistant reply) reads as plain text, not raw source.
+interface ExcerptToken {
+  type: string
+  text?: string
+  tokens?: readonly ExcerptToken[]
+}
+
+function excerptTokenText(token: ExcerptToken): string {
+  if (token.type === 'html') return ''
+  if (token.tokens) return token.tokens.map(excerptTokenText).join('')
+  return token.text ?? ''
+}
+
+// Parse inline Markdown once: regex replacements also consume intraword
+// underscores and reinterpret literal formatting inside code spans.
 function stripInlineMarkdown(text: string): string {
-  return text
-    .replace(/^#{1,6}\s+/, '')
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/`([^`]*)`/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/~~([^~]+)~~/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/_([^_]+)_/g, '$1')
+  const tokens: readonly ExcerptToken[] = Lexer.lexInline(text.replace(/^#{1,6}\s+/, ''), {
+    gfm: true,
+  })
+  return tokens.map(excerptTokenText).join('')
 }
 
 /** Plain-text excerpt of `text`'s first line, for a title or a read-only context line. */
