@@ -29,6 +29,18 @@ describe('primary turn queue notice', () => {
       expect.stringContaining('You can stop this turn while it is queued.'),
     )
     await expect($('.stop-btn')).toBeDisplayed()
+    // Keep the running indicator in the evidence, at a deterministic visible
+    // frame. Capturing its free-running spiral varied with worker scheduling.
+    await expect($('.reasoning-activity-icon')).toBeDisplayed()
+    await browser.execute(async () => {
+      await document.fonts.ready
+      for (const animation of document.querySelector('.reasoning-activity-path')?.getAnimations() ??
+        []) {
+        animation.pause()
+        animation.currentTime = 1250
+      }
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    })
     await saveElementScreenshot('#fixture', 'agent-turn-queue.png', { frame: 'document' })
   })
 })
