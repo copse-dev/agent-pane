@@ -13,6 +13,7 @@ describe('roadmap write handlers without Electron', () => {
     assert.equal(note.body, brief)
     const edited = 'Keep recovery in the form.\r\n\r\n## Constraints\r\nKeep sessions valid.'
     const updated = h.handlers.update(note.id, edited, '', 'ready')
+    assert.ok(updated)
     assert.equal(updated.title, 'Keep recovery in the form.')
     assert.equal(updated.body, edited)
   })
