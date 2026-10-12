@@ -188,6 +188,10 @@
     "label": "The thread Context panel"
   },
   {
+    "id": "thread-context-worktree",
+    "label": "Context identifies a dedicated worktree and its branch"
+  },
+  {
     "id": "side-chat-approval",
     "label": "A side chat asks for approval over its parent thread"
   },
