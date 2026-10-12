@@ -189,9 +189,24 @@ describe('Machines settings', function () {
     await click('.machine-use-model')
     await expect($('.machine-status')).toHaveText(expect.stringContaining('Model connection saved'))
     const configured = await browser.execute(async () => window.api.classifiers.list())
-    const remote = configured[0]?.profile
+    const created = configured[0]?.profile
     assert.equal(configured.length, 1)
-    assert.ok(remote && remote.connection.type === 'machine')
+    assert.ok(created && created.connection.type === 'machine')
+    // Prove the UI created the real paired connection before replacing its
+    // generated identifier through the supported API for deterministic pixels.
+    const remote = { ...created, id: 'machine-fixture' }
+    const stable = await browser.execute(
+      async (original, fixture) => {
+        await window.api.classifiers.save(fixture)
+        return window.api.classifiers.remove(original)
+      },
+      created.id,
+      remote,
+    )
+    assert.deepEqual(
+      stable.map(({ profile }) => profile),
+      [remote],
+    )
     assert.equal(calls, 0)
     await $('#settings-dialog button[data-section="classifiers"]').click()
     await expect($('[name="classifierModel"]')).toHaveAttribute('readonly')
