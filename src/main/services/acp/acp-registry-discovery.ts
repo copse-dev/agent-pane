@@ -65,6 +65,7 @@ function binaryName(value: string): string | undefined {
 export async function findRegistryExecutable(
   command: string,
   searchPath = process.env['PATH'] ?? '',
+  signal?: AbortSignal,
 ): Promise<string | null> {
   if (binaryName(command) !== command) return null
   const extensions =
@@ -73,6 +74,7 @@ export async function findRegistryExecutable(
       : ['']
   for (const directory of searchPath.split(delimiter).filter(isAbsolute).slice(0, 128)) {
     for (const extension of extensions) {
+      if (signal?.aborted) return null
       const path = join(directory, `${command}${extension}`)
       try {
         if (!(await stat(path)).isFile()) continue
@@ -119,13 +121,16 @@ async function readIndex(response: Response): Promise<string> {
 export function createAcpRegistryBrowser(
   deps: {
     fetch?: typeof fetch
-    resolveExecutable?: (command: string) => Promise<string | null>
+    resolveExecutable?: (command: string, signal: AbortSignal) => Promise<string | null>
     target?: string
     now?: () => number
   } = {},
 ): { load: (refresh?: boolean) => Promise<AcpRegistryListing> } {
   const fetchIndex = deps.fetch ?? fetch
-  const resolveExecutable = deps.resolveExecutable ?? findRegistryExecutable
+  const resolveExecutable =
+    deps.resolveExecutable ??
+    ((command: string, signal: AbortSignal): Promise<string | null> =>
+      findRegistryExecutable(command, undefined, signal))
   const target = deps.target ?? hostTarget()
   const now = deps.now ?? Date.now
   let cached: AcpRegistryListing | undefined
@@ -145,11 +150,11 @@ export function createAcpRegistryBrowser(
     const paths = new Map<string, string | null>()
     // A mounted PATH directory can stall stat/access indefinitely. Bound the
     // whole detection phase, then keep the registry usable with unknown paths.
-    let lookupsExpired = false
+    const lookupController = new AbortController()
     let expireLookups: ReturnType<typeof setTimeout> | undefined
     const lookupDeadline = new Promise<null>((resolve) => {
       expireLookups = setTimeout(() => {
-        lookupsExpired = true
+        lookupController.abort()
         resolve(null)
       }, LOOKUP_BUDGET_MS)
     })
@@ -175,9 +180,12 @@ export function createAcpRegistryBrowser(
         if (command && !paths.has(command)) {
           paths.set(
             command,
-            lookupsExpired
+            lookupController.signal.aborted
               ? null
-              : await Promise.race([resolveExecutable(command), lookupDeadline]),
+              : await Promise.race([
+                  resolveExecutable(command, lookupController.signal),
+                  lookupDeadline,
+                ]),
           )
         }
         const website = publicLink(entry.website) ?? publicLink(entry.repository)
