@@ -556,6 +556,24 @@ describe('VNC viewer', function () {
     assert.equal(authenticationUsername, 'remembered-user')
     assert.match(await $('.vnc-status-detail').getText(), /check the Screen Sharing password/i)
     assert.match(await $('.vnc-status-detail').getText(), /password was rejected/i)
+    // The SSH setup entry can push the status below the scrollable device
+    // list. Capture the rejected login's explanation, not just the form.
+    await $('.vnc-controls-panel:not([hidden]) .vnc-status').scrollIntoView({ block: 'end' })
+    const failedStatusFits = await browser.execute(() => {
+      const status = document
+        .querySelector('.vnc-controls-panel:not([hidden]) .vnc-status')!
+        .getBoundingClientRect()
+      const pane = document.querySelector('#pane-files')!.getBoundingClientRect()
+      return {
+        fits: status.top >= pane.top - 1 && status.bottom <= pane.bottom + 1,
+        status: { top: status.top, bottom: status.bottom },
+        pane: { top: pane.top, bottom: pane.bottom },
+      }
+    })
+    assert.ok(
+      failedStatusFits.fits,
+      `the rejected login status must fit in the capture: ${JSON.stringify(failedStatusFits)}`,
+    )
     await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-failed.png')
     const failedMarker = await readVncSeverity(
       '.vnc-controls-panel:not([hidden]) .vnc-status',
