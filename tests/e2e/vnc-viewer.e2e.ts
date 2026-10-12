@@ -927,6 +927,14 @@ describe('VNC viewer', function () {
     await $(`${retryControls} [aria-label="SSH user"]`).setValue('builder')
     await $(`${retryControls} [aria-label="SSH identity file"]`).setValue('~/.ssh/id_ed25519')
     await $(`${retryControls} .vnc-ssh-host-form button[type="submit"]`).click()
+    await browser.waitUntil(async () =>
+      (await $(`${retryControls} .vnc-ssh-host-status`).getText()).includes(
+        'Enable SSH workspaces in Settings',
+      ),
+    )
+    assert.equal(await sshForm.isDisplayed(), true)
+    await browser.execute(async () => window.api.settings.set('sshWorkspaceEnabled', true))
+    await $(`${retryControls} .vnc-ssh-host-form button[type="submit"]`).click()
     await $(
       `${retryControls} .vnc-device-header[data-machine="ssh:build-mac"][aria-expanded="true"]`,
     ).waitForDisplayed({ timeout: 20_000 })
