@@ -1,5 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot, waitForSettledLayout } from '../e2e/helpers/screenshot.ts'
+import { pinDemoClock } from './helpers/fixed-clock.ts'
 
 // The new-thread screen is the Activity view above a docked composer
 // (views/activity-home.ts), laid out after prototypes/new-thread-activity.html.
@@ -72,6 +73,7 @@ async function probeHome(): Promise<HomeProbe | null> {
 
 describe('browser-hosted Activity home', () => {
   before(async () => {
+    await pinDemoClock()
     await browser.url('about:blank')
     await browser.url('/?scenario=activity-home')
     await $('.pane-chat.is-activity-home').waitForExist({ timeout: 30_000 })
