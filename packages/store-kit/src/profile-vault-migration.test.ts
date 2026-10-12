@@ -60,7 +60,7 @@ describe('profile vault migration', () => {
     assert.equal(inventoryVaultStores(settings, {}, legacy), 2)
     const oauth = result.settings['mcpOAuth.server']
     assert.ok(oauth && typeof oauth === 'object')
-    const encoded = Reflect.get(oauth, 'enc')
+    const encoded: unknown = Reflect.get(oauth, 'enc')
     assert.ok(typeof encoded === 'string')
     assert.equal(
       openVaultRecord(
@@ -83,7 +83,9 @@ describe('profile vault migration', () => {
       'synthetic',
     )
     assertMigratedVaultStores(result.settings, {}, manifest)
-    assert.throws(() => assertMigratedVaultStores(settings, {}, manifest), VaultError)
+    assert.throws(() => {
+      assertMigratedVaultStores(settings, {}, manifest)
+    }, VaultError)
     for (const bad of [null, 'broken']) {
       assert.throws(
         () => inventoryVaultStores({ 'mcpOAuth.server': bad }, {}, legacy),
