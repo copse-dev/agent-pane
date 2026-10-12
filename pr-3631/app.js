@@ -29697,19 +29697,21 @@ var init_dialog_shell = __esm({
   }
 });
 
-// packages/std/src/errors.ts
-function errorMessage(err2) {
-  return err2 instanceof Error ? err2.message : String(err2);
-}
-var init_errors3 = __esm({
-  "packages/std/src/errors.ts"() {
+// src/renderer/ipc-error-message.ts
+function unwrapIpcErrorText(text2) {
+  let message2 = text2;
+  for (; ; ) {
+    const next = message2.trimStart().replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
+    if (next === message2) return message2.trim();
+    message2 = next;
   }
-});
-
-// src/shared/errors.ts
-var init_errors4 = __esm({
-  "src/shared/errors.ts"() {
-    init_errors3();
+}
+function ipcErrorMessage(err2, fallback) {
+  if (!(err2 instanceof Error)) return fallback;
+  return unwrapIpcErrorText(err2.message) || fallback;
+}
+var init_ipc_error_message = __esm({
+  "src/renderer/ipc-error-message.ts"() {
   }
 });
 
@@ -29955,21 +29957,19 @@ var init_confirm_dialog = __esm({
   }
 });
 
-// src/renderer/ipc-error-message.ts
-function unwrapIpcErrorText(text2) {
-  let message2 = text2;
-  for (; ; ) {
-    const next = message2.trimStart().replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
-    if (next === message2) return message2.trim();
-    message2 = next;
+// packages/std/src/errors.ts
+function errorMessage(err2) {
+  return err2 instanceof Error ? err2.message : String(err2);
+}
+var init_errors3 = __esm({
+  "packages/std/src/errors.ts"() {
   }
-}
-function ipcErrorMessage(err2, fallback) {
-  if (!(err2 instanceof Error)) return fallback;
-  return unwrapIpcErrorText(err2.message) || fallback;
-}
-var init_ipc_error_message = __esm({
-  "src/renderer/ipc-error-message.ts"() {
+});
+
+// src/shared/errors.ts
+var init_errors4 = __esm({
+  "src/shared/errors.ts"() {
+    init_errors3();
   }
 });
 
@@ -75287,7 +75287,7 @@ function mountSettingsDialog(store2, api2) {
       }
     },
     (id, error62) => {
-      status.textContent = `Could not load ${id}: ${errorMessage(error62)}`;
+      status.textContent = `Could not load ${id}: ${ipcErrorMessage(error62, "Please try again.")}`;
       status.hidden = false;
       overlay.dataset["settingsRefreshFailed"] = id;
     }
@@ -75356,7 +75356,7 @@ function mountSettingsDialog(store2, api2) {
         revealModelSettingsControl(overlay, modelTarget);
     })().catch((error62) => {
       if (mine !== openGeneration || !isSettingsDialogOpen()) return;
-      status.textContent = `Could not load settings: ${errorMessage(error62)}`;
+      status.textContent = `Could not load settings: ${ipcErrorMessage(error62, "Please try again.")}`;
       status.hidden = false;
       loadRetry.hidden = snapshot !== null;
     });
@@ -75431,7 +75431,7 @@ function mountSettingsDialog(store2, api2) {
       }
     })().catch((error62) => {
       if (mine !== openGeneration || !isSettingsDialogOpen()) return;
-      status.textContent = errorMessage(error62);
+      status.textContent = ipcErrorMessage(error62, "Could not save settings. Please try again.");
       status.hidden = false;
     }).finally(() => {
       submitting2 = false;
@@ -75462,7 +75462,7 @@ var init_settings_dialog = __esm({
     init_dialog_shell();
     init_helpers();
     init_icons();
-    init_errors4();
+    init_ipc_error_message();
     init_classifiers_section();
     init_ssh_workspace_section();
     init_tool_permissions_panel();
