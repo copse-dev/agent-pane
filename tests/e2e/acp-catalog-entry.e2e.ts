@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { buildSync } from 'esbuild'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -46,10 +47,19 @@ describe('manual ACP catalog entry', function () {
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    mkdirSync(join(process.cwd(), '.tmp'), { recursive: true })
-    scratch = mkdtempSync(join(process.cwd(), '.tmp/acp-catalog-e2e-'))
+    const workspace = seedStableWorkspace()
+    scratch = mkdtempSync(join(workspace, 'acp-catalog-e2e-'))
     const fixture = join(scratch, 'catalog-acp-agent.mjs')
-    writeFileSync(fixture, ACP_FIXTURE)
+    // CI checks the repository out under home, which the catalog agent's
+    // sandbox hides. Keep the executable and SDK inside its granted workspace
+    // rather than depending on access to the runner's checkout/node_modules.
+    buildSync({
+      stdin: { contents: ACP_FIXTURE, resolveDir: process.cwd(), sourcefile: 'catalog-agent.mjs' },
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      outfile: fixture,
+    })
     command = join(scratch, process.platform === 'win32' ? 'copilot.cmd' : 'copilot')
     // Inject at the executable boundary through the supported Command editor.
     // The real catalog arguments still reach the child; no registration is seeded.
@@ -61,7 +71,7 @@ describe('manual ACP catalog entry', function () {
       { mode: 0o755 },
     )
     resetUserData()
-    seedEmptyProject(seedStableWorkspace(), 'e2e-acp-catalog-entry', {
+    seedEmptyProject(workspace, 'e2e-acp-catalog-entry', {
       windowBounds: { width: 1280, height: 800 },
       registeredAcpAgents: [],
     })
