@@ -171,8 +171,18 @@ export function knownToConfig(known: KnownAcpAgent): AcpAgentConfig {
 
 /** Registry metadata opens a disabled draft in a namespace with no catalog grants. */
 export function registryToDraft(entry: AcpRegistryEntry): AcpAgentConfig {
+  let id = `registry-${entry.id}`
+  if (id.length > 64) {
+    // Keep the readable prefix and include the entire registry identity. This
+    // is a name, not an authentication token; duplicate validation still applies.
+    let hash = 0xcbf29ce484222325n
+    for (const character of entry.id) {
+      hash = BigInt.asUintN(64, (hash ^ BigInt(character.charCodeAt(0))) * 0x100000001b3n)
+    }
+    id = `${id.slice(0, 47)}-${hash.toString(16).padStart(16, '0')}`
+  }
   return {
-    id: `registry-${entry.id}`.slice(0, 64),
+    id,
     title: entry.title,
     command: entry.installedPath ?? entry.command ?? '',
     args: [...entry.args],
