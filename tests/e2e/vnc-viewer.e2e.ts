@@ -651,6 +651,12 @@ describe('VNC viewer', function () {
     assert.equal(await shareButton.getText(), 'Share screenshot')
     assert.equal(await annotateButton.isDisplayed(), true)
     assert.equal(await annotateButton.getAttribute('aria-pressed'), 'false')
+    const captureOverflow = await browser.execute(() =>
+      [...document.querySelectorAll('.vnc-capture-actions > button:not([hidden])')]
+        .filter((button) => button.scrollWidth > button.clientWidth + 1)
+        .map((button) => button.textContent),
+    )
+    assert.deepEqual(captureOverflow, [], 'Desktop capture action labels must remain readable')
     assert.equal(await $('.vnc-controls-host .pane-header-title').isDisplayed(), true)
     assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'localhost')
 
@@ -689,6 +695,11 @@ describe('VNC viewer', function () {
     await shareButton.click()
     const sharedScreen = $('.attachment-chips .image-chip img')
     await sharedScreen.waitForDisplayed({ timeout: 5_000 })
+    await browser.execute(async () => {
+      const image = document.querySelector<HTMLImageElement>('.attachment-chips .image-chip img')
+      if (!image) throw new Error('Missing shared desktop image')
+      await image.decode()
+    })
     assert.match(await sharedScreen.getAttribute('src'), /^data:image\/png;base64,/)
     assert.deepEqual(
       await browser.execute(() => {
@@ -697,8 +708,8 @@ describe('VNC viewer', function () {
       }),
       { width: WIDTH, height: HEIGHT },
     )
-    await saveAppScreenshot('vnc-viewer-shared-screen.png')
     await $('.toast').waitForExist({ reverse: true, timeout: 5_000 })
+    await saveAppScreenshot('vnc-viewer-shared-screen.png')
 
     await annotateButton.click()
     assert.equal(await annotateButton.getAttribute('aria-pressed'), 'true')
@@ -915,6 +926,14 @@ describe('VNC viewer', function () {
     await $(`${retryControls} [aria-label="SSH hostname"]`).setValue('localhost')
     await $(`${retryControls} [aria-label="SSH user"]`).setValue('builder')
     await $(`${retryControls} [aria-label="SSH identity file"]`).setValue('~/.ssh/id_ed25519')
+    await $(`${retryControls} .vnc-ssh-host-form button[type="submit"]`).click()
+    await browser.waitUntil(async () =>
+      (await $(`${retryControls} .vnc-ssh-host-status`).getText()).includes(
+        'Enable SSH workspaces in Settings',
+      ),
+    )
+    assert.equal(await sshForm.isDisplayed(), true)
+    await browser.execute(async () => window.api.settings.set('sshWorkspaceEnabled', true))
     await $(`${retryControls} .vnc-ssh-host-form button[type="submit"]`).click()
     await $(
       `${retryControls} .vnc-device-header[data-machine="ssh:build-mac"][aria-expanded="true"]`,
