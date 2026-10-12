@@ -572,7 +572,20 @@ export class MachineManager {
         controller.abort()
       })
       try {
-        send(await this.evaluate(command.profileId, command.request, controller.signal))
+        const result = await this.evaluate(command.profileId, command.request, controller.signal)
+        // An evaluator can settle after cancellation. Recheck the grant at the
+        // response boundary so a revoked client never receives that result.
+        controller.signal.throwIfAborted()
+        if (
+          !this.data.clients.some(
+            (entry) => entry.id === client.id && entry.token === client.token,
+          ) ||
+          !this.describe().models.some((model) => model.id === command.profileId)
+        ) {
+          response.writeHead(403).end()
+          return
+        }
+        send(result)
       } finally {
         this.active.delete(controller)
       }
