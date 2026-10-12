@@ -14657,6 +14657,9 @@ dialog.activity-panel-overlay {
   .activity-home .activity-panel-body {
     min-height: 200px;
   }
+  .activity-home-caption {
+    display: none;
+  }
 }
 @container chat-pane (max-width: 760px) {
   .activity-home {
