@@ -428,6 +428,63 @@ describe('input bar selection replies', () => {
     assert.equal(composer.textContent, '')
   })
 
+  it('replaces the composer with the given text and sends it through the normal submission path', async () => {
+    const payloads: string[] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('main')],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onRun: async (_projectId, _threadId, payload) => {
+          payloads.push(payload)
+        },
+      }),
+    )
+    await flush()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(composer && handlers?.sendMessage)
+    composer.textContent = 'A draft that should be replaced.'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    assert.equal(await handlers.sendMessage('Fix the failing check.'), true)
+    await flush()
+    assert.equal(payloads.length, 1)
+    assert.match(payloads[0] ?? '', /Fix the failing check\./)
+    assert.doesNotMatch(payloads[0] ?? '', /A draft that should be replaced/)
+    const lastUser = getThreadById(store, 'thread-1')
+      ?.messages.slice()
+      .reverse()
+      .find((message) => message.role === 'user')
+    assert.equal(lastUser?.content, 'Fix the failing check.')
+    assert.equal(composer.textContent, '')
+  })
+
+  it('does not send when there is no active thread', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: null,
+      threads: [],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await flush()
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers?.sendMessage)
+    assert.equal(await handlers.sendMessage('Fix the failing check.'), false)
+  })
+
   it('leaves the quote and reply in the composer when normal sending fails', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
