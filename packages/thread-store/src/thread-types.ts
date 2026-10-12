@@ -535,6 +535,8 @@ export interface Thread {
    * on an unselected thread is surfaced by {@link unreadAt} instead.
    */
   lastPromptAt?: number
+  /** Last turn completion; metadata-only edits must not advance Activity history. */
+  lastSettledAt?: number
   createdAt: number
   updatedAt: number
 }
