@@ -836,7 +836,10 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
       /^ {4}permissions:\n {6}actions: read\n {6}contents: write\n {6}pull-requests: write\n {6}statuses: write$/m,
     )
     assert.match(workflow, /const statusContext = 'Screenshot review';/)
-    assert.match(workflow, /- name: Fail the screenshot review closed\n {8}if: failure\(\)/)
+    assert.match(
+      workflow,
+      /- name: Fail the screenshot review closed\n {8}if: steps\.stack-request\.outputs\.current != 'false' && failure\(\)/,
+    )
     assert.ok(existsSync(resolve('.github/workflows/screenshot-review-labels.yml')))
   })
 

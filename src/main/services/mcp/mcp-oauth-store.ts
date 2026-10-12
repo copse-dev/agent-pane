@@ -88,7 +88,10 @@ export function readMcpOAuthRecord(
   if (!cipher) return null
   let text: string
   try {
-    text = cipher.decryptString(Buffer.from(stored.data.enc, 'base64'))
+    text = cipher.decryptString(Buffer.from(stored.data.enc, 'base64'), {
+      store: 'mcp-oauth',
+      record: settingKey(serverUrl),
+    })
   } catch {
     return null
   }
@@ -120,7 +123,12 @@ export async function writeMcpOAuthRecord(
   }
   const stored: StoredSecret = {
     v: 1,
-    enc: cipher.encryptString(JSON.stringify(normalized)).toString('base64'),
+    enc: cipher
+      .encryptString(JSON.stringify(normalized), {
+        store: 'mcp-oauth',
+        record: settingKey(record.serverUrl),
+      })
+      .toString('base64'),
   }
   await dependencies.write(settingKey(record.serverUrl), stored)
 }

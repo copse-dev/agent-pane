@@ -34,7 +34,14 @@ const manifestSchema = z.strictObject({
 export type VaultManifest = z.infer<typeof manifestSchema>
 export type VaultIdentity = Pick<VaultManifest, 'profileId' | 'keyId'>
 export interface SecretRecordIdentity {
-  store: 'api-key' | 'ssh' | 'vnc-username' | 'vnc-password' | 'vault-challenge'
+  store:
+    | 'api-key'
+    | 'ssh'
+    | 'vnc-username'
+    | 'vnc-password'
+    | 'vault-challenge'
+    | 'mcp-oauth'
+    | 'chatgpt-plan'
   record: string
 }
 export type VaultFailure =

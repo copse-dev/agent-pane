@@ -266,6 +266,13 @@ export interface AcpNativeBridge {
    */
   setExecutionContext: (context: ThreadExecutionContext | null) => void
   /**
+   * A binding that is still being settled for a turn the agent started on its
+   * own (see agent-initiated-turn.ts). Calls that arrive before it resolves wait
+   * for it instead of being rejected; a null result keeps the fail-closed
+   * rejection. Null when no such turn is pending.
+   */
+  setPendingExecutionContext: (pending: Promise<ThreadExecutionContext | null> | null) => void
+  /**
    * Bind the current turn's abort signal so in-flight bridged tools (and their
    * approval prompts) cancel when the turn ends — including the case where the
    * external agent abandons an MCP call and finishes the prompt on its own.
@@ -316,11 +323,37 @@ interface BridgeExecuteContext {
    * than falling back to the shared checkout.
    */
   getExecutionContext: () => ThreadExecutionContext | null
+  /** See {@link AcpNativeBridge.setPendingExecutionContext}. */
+  getPendingExecutionContext: () => Promise<ThreadExecutionContext | null> | null
   getInlineCanvasScope: () => ReturnType<typeof captureInlineCanvasScope>
   networkScopeAlreadyApplies: boolean
   /** The bridge was started for a deferred-worktree thread: offer `request_write_access`. */
   offerWriteAccess: boolean
   recordWorkspaceWrite: (path: string) => void
+}
+
+/** Wait for a pending binding, giving up with the call itself if the agent abandons it. */
+function awaitPendingExecutionContext(
+  pending: Promise<ThreadExecutionContext | null> | null,
+  signal: AbortSignal,
+): Promise<ThreadExecutionContext | null> {
+  if (!pending || signal.aborted) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const onAbort = (): void => {
+      resolve(null)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    void pending.then(
+      (context) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(context)
+      },
+      () => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(null)
+      },
+    )
+  })
 }
 
 /** Paths a successful bridged native edit owns in the post-turn workspace audit. */
@@ -432,16 +465,23 @@ function buildMcpServer(
     // in getAgentExecutionRoot() — the exact wrong-tree write the bound context
     // exists to prevent — so reject every bridged call outright instead.
     // tools/list stays unguarded: agents list at session setup, between turns.
-    const executionContext = ctx.getExecutionContext()
+    const pendingBinding = ctx.getExecutionContext() ? null : ctx.getPendingExecutionContext()
+    const executionContext =
+      ctx.getExecutionContext() ??
+      (await awaitPendingExecutionContext(pendingBinding, extra.signal)) ??
+      ctx.getExecutionContext()
     if (!executionContext) {
       return {
         content: [
           {
             type: 'text',
-            text:
-              `Tool call "${name}" arrived after its agent turn ended; ` +
-              'no thread execution context is bound, so the bridge refuses to run it ' +
-              'against a fallback workspace root.',
+            text: pendingBinding
+              ? `Tool call "${name}" was not run: this turn started without a prompt from ` +
+                'the user and was not approved to continue, so no thread execution context ' +
+                'is bound. Stop, or ask the user to continue.'
+              : `Tool call "${name}" arrived after its agent turn ended; ` +
+                'no thread execution context is bound, so the bridge refuses to run it ' +
+                'against a fallback workspace root.',
           },
         ],
         isError: true,
@@ -639,6 +679,7 @@ export async function startAcpNativeBridge(
   const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
   let turnSignal: AbortSignal | null = null
   let executionContext: ThreadExecutionContext | null = null
+  let pendingExecutionContext: Promise<ThreadExecutionContext | null> | null = null
   let inlineCanvasScope = captureInlineCanvasScope()
   let workspaceWriteObserver: ((path: string) => void) | null = null
   const inflightCalls = new Map<string, (detail: string) => void>()
@@ -678,6 +719,7 @@ export async function startAcpNativeBridge(
         threadId: opts.threadId,
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
         getExecutionContext: () => executionContext,
+        getPendingExecutionContext: () => pendingExecutionContext,
         getInlineCanvasScope: () => inlineCanvasScope,
         networkScopeAlreadyApplies,
         offerWriteAccess,
@@ -726,6 +768,9 @@ export async function startAcpNativeBridge(
     setExecutionContext: (context): void => {
       executionContext = context
       inlineCanvasScope = captureInlineCanvasScope()
+    },
+    setPendingExecutionContext: (pending): void => {
+      pendingExecutionContext = pending
     },
     setTurnSignal: (next): void => {
       turnSignal = next

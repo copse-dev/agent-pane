@@ -2,6 +2,11 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
+  prepareE2eScreenshot,
+  parkPointer,
+  savePreparedAppScreenshot,
+} from './helpers/screenshot.ts'
+import {
   cleanupGitChangesFixture,
   resetUserData,
   seedGitChangesFixture,
@@ -61,7 +66,23 @@ describe('Changes view "Review" gesture', function () {
     expect(placement.afterTitle).toBe(true)
     expect(placement.beforePopout).toBe(true)
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-review-button.png'))
+    await prepareE2eScreenshot()
+    await parkPointer()
+    await $('.git-change-row*=committed.ts').waitForDisplayed({ timeout: 30_000 })
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const host = document.getElementById('git-changes-host')
+          return (
+            Boolean(host && !host.textContent?.includes('Checking committed changes')) &&
+            [...document.querySelectorAll('#git-diff-viewer-host .scrollbar.horizontal')].every(
+              (element) => getComputedStyle(element).opacity === '0',
+            )
+          )
+        }),
+      { timeout: 30_000, timeoutMsg: 'Changes list and diff chrome did not settle' },
+    )
+    await savePreparedAppScreenshot('git-changes-review-button.png')
   })
 
   it('hides Review while the review plugin is off', async () => {

@@ -116,6 +116,28 @@ function transformVaultStores(
       ]),
     )
   }
+  for (const record of Object.keys(settings)) {
+    if (!record.startsWith('mcpOAuth.')) continue
+    settings[record] = migrate(
+      settings[record],
+      { store: 'mcp-oauth', record },
+      false,
+      `saved MCP sign-in “${record}”`,
+    )
+  }
+  if (Object.hasOwn(settings, 'chatgptPlanCredentials')) {
+    const record = 'chatgptPlanCredentials'
+    const value = settings[record]
+    if (typeof value !== 'string') throw new VaultMigrationBlockedError('saved ChatGPT connection')
+    const migrated = migrate(
+      { v: 1, enc: value },
+      { store: 'chatgpt-plan', record },
+      false,
+      'saved ChatGPT connection',
+    )
+    const parsed = secretSchema.parse(migrated)
+    settings[record] = parsed.enc
+  }
   if (Object.hasOwn(sshCredentials, 'hosts')) {
     sshCredentials['hosts'] = Object.fromEntries(
       Object.entries(records(sshCredentials['hosts'], 'ssh-credentials.json “hosts”')).map(
@@ -207,6 +229,14 @@ export function assertMigratedVaultStores(
   for (const root of ['apiKey', 'vncUsername', 'vncPassword']) {
     if (Object.hasOwn(settingsObject, root))
       for (const value of Object.values(object(settingsObject[root]))) inspectRecord(value)
+  }
+  for (const [record, value] of Object.entries(settingsObject)) {
+    if (record.startsWith('mcpOAuth.')) inspectRecord(value)
+  }
+  if (Object.hasOwn(settingsObject, 'chatgptPlanCredentials')) {
+    const value = settingsObject['chatgptPlanCredentials']
+    if (typeof value !== 'string') throw new VaultError('corrupt')
+    inspectRecord({ v: 1, enc: value, plain: false })
   }
   const sshObject = object(ssh)
   if (Object.hasOwn(sshObject, 'hosts'))

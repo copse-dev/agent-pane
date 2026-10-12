@@ -34,8 +34,32 @@ const api: ApiClient = {
     reply: (id, result) => ipcRenderer.invoke('thread-prompts:reply', id, result),
   },
   mobile: {
-    manage: () => ipcRenderer.invoke('mobile:manage'),
-    status: () => ipcRenderer.invoke('mobile:status'),
+    getState: () => ipcRenderer.invoke('mobile:get-state'),
+    onStateChanged: (
+      handler: (state: import('@shared/types/mobile-companion.ts').MobileCompanionState) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        state: import('@shared/types/mobile-companion.ts').MobileCompanionState,
+      ): void => {
+        handler(state)
+      }
+      ipcRenderer.on('mobile:state-changed', listener)
+      return (): void => {
+        ipcRenderer.off('mobile:state-changed', listener)
+      }
+    },
+    enable: (address: string) => ipcRenderer.invoke('mobile:enable', address),
+    disable: () => ipcRenderer.invoke('mobile:disable'),
+    setDeviceAccess: (
+      id: string,
+      access: import('@shared/types/mobile-companion.ts').MobileCompanionAccess,
+    ) => ipcRenderer.invoke('mobile:set-device-access', id, access),
+    revokeDevice: (id: string) => ipcRenderer.invoke('mobile:revoke-device', id),
+    respondPairing: (
+      decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
+    ) => ipcRenderer.invoke('mobile:respond-pairing', decision),
+    revealCertificate: () => ipcRenderer.invoke('mobile:reveal-certificate'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,

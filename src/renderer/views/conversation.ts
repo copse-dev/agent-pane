@@ -121,6 +121,7 @@ import {
 } from '@shared/tools/tool-display.ts'
 import { toolRunForMessage, type ToolRun } from '@shared/tools/tool-runs.ts'
 import { isHostInterruptedToolCall } from '@shared/tools/tool-interruption.ts'
+import { isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
 import { navigateToChange } from '../controller/panels.ts'
 import { mountThreadRoadmapOrigin } from './thread-roadmap-origin.ts'
 import { hydrationFailed, needsHydration } from '../controller/thread-hydration.ts'
@@ -282,7 +283,7 @@ const PATCH_OP_LABEL = { add: 'Added', update: 'Edited', delete: 'Deleted', move
 
 /** Per-file rows for an `apply_patch` card: what each file gets, with line counts. */
 function createPatchFilesSection(tc: ToolCall): HTMLElement | null {
-  if (tc.name !== 'apply_patch') return null
+  if (!isCopseToolCall(tc, 'apply_patch')) return null
   const files = getApplyPatchFiles(tc)
   if (files.length === 0) return null
   return el(
