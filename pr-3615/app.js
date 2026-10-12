@@ -22086,6 +22086,9 @@ function ipcErrorMessage(err2, fallback) {
   if (!(err2 instanceof Error)) return fallback;
   return unwrapIpcErrorText(err2.message) || fallback;
 }
+function isUnavailableThreadCheckoutError(err2) {
+  return err2 instanceof Error && /^ThreadWorktree(?:OnBaseBranch|Detached)Error:/.test(unwrapIpcErrorText(err2.message));
+}
 var init_ipc_error_message = __esm({
   "src/renderer/ipc-error-message.ts"() {
   }
@@ -61944,6 +61947,12 @@ function createAppleDevelopmentPanel(store2, api2, options) {
       if (current === generation) render(owner, state);
     } catch (error62) {
       if (current !== generation) return;
+      if (!options.allowEnrollment && isUnavailableThreadCheckoutError(error62)) {
+        stopPolling();
+        host.replaceChildren();
+        host.hidden = true;
+        return;
+      }
       host.hidden = false;
       host.replaceChildren(
         el(
@@ -61964,6 +61973,7 @@ var init_apple_development_panel = __esm({
   "src/renderer/views/apple-development-panel.ts"() {
     init_helpers();
     init_icons();
+    init_ipc_error_message();
   }
 });
 
@@ -157956,7 +157966,14 @@ var init_activity_home = __esm({
 async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
   const projectId = store2.getState().activeProjectId;
   if (!projectId) return;
-  const { currentBranch } = await api2.git.branchStatus(projectId, threadId);
+  let currentBranch;
+  try {
+    ;
+    ({ currentBranch } = await api2.git.branchStatus(projectId, threadId));
+  } catch (error62) {
+    if (!isUnavailableThreadCheckoutError(error62)) throw error62;
+    return;
+  }
   if (syncThreadGitBranchIfChanged(store2, threadId, currentBranch)) {
     store2.emit("git_branch_changed");
   }
@@ -157964,6 +157981,7 @@ async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
 var init_sync_thread_branch_after_shell = __esm({
   "src/renderer/controller/sync-thread-branch-after-shell.ts"() {
     init_sync_thread_branch();
+    init_ipc_error_message();
   }
 });
 
