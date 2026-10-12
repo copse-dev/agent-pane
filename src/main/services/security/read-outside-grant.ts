@@ -1,4 +1,4 @@
-import { realpathSync, statSync } from 'node:fs'
+import { lstatSync, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { isGuardedYoloActive } from './guarded-yolo.ts'
 
@@ -32,14 +32,25 @@ function inspectPath(path: string): GrantedPath {
       identity: { device: stat.dev, inode: stat.ino, realpath: realpathSync.native(path) },
     }
   } catch {
-    // A missing or inaccessible literal path has no durable identity to approve.
-    // Shell patterns retain their separate exact-token contract.
+    // A missing token can be repeated only while it remains absent. It cannot
+    // grant descendants or acquire authority over a later file or symlink.
     return { directory: false, identity: null }
   }
 }
 
 function stillNamesApprovedPath(path: string, identity: PathIdentity | null): boolean {
-  if (identity === null) return !isLiteralPath(path) && inspectPath(path).identity === null
+  if (identity === null) {
+    try {
+      lstatSync(path)
+      return false
+    } catch (error) {
+      return (
+        error instanceof Error &&
+        Object.hasOwn(error, 'code') &&
+        Reflect.get(error, 'code') === 'ENOENT'
+      )
+    }
+  }
   try {
     const stat = statSync(path, { bigint: true })
     return (
