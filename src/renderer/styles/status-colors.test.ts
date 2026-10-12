@@ -102,6 +102,8 @@ function assertNoStatusFill(css: string, selector: string): void {
  *    alpha channel is read, so no hue is being chosen. The existing ChatGPT
  *    sign-in button also preserves its provider brand: black/white with a
  *    #202020 hover. The selector-level test below pins that exception.
+ *  - mobile-companion.css: the QR card background must stay physically white
+ *    regardless of theme so a camera can scan it; no themeable token applies.
  */
 const ALLOWED_RAW_HEX: Readonly<Record<string, readonly string[]>> = {
   'markdown.css': [
@@ -116,6 +118,7 @@ const ALLOWED_RAW_HEX: Readonly<Record<string, readonly string[]>> = {
   ],
   'video-expand.css': ['#000'],
   'settings.css': ['#000', '#000', '#000', '#202020', '#fff', '#fff', '#fff'],
+  'mobile-companion.css': ['#ffffff'],
 }
 
 function assertApprovedRawHex(file: string, css: string): void {

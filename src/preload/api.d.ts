@@ -181,8 +181,21 @@ export interface DetectedEnvKey {
 export interface ApiClient {
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
-    manage: () => Promise<void>
-    status: () => Promise<import('@shared/types/mobile-companion.ts').MobileCompanionStatus>
+    getState: () => Promise<import('@shared/types/mobile-companion.ts').MobileCompanionState>
+    onStateChanged: (
+      handler: (state: import('@shared/types/mobile-companion.ts').MobileCompanionState) => void,
+    ) => () => void
+    enable: (address: string) => Promise<void>
+    disable: () => Promise<void>
+    setDeviceAccess: (
+      id: string,
+      access: import('@shared/types/mobile-companion.ts').MobileCompanionAccess,
+    ) => Promise<void>
+    revokeDevice: (id: string) => Promise<void>
+    respondPairing: (
+      decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
+    ) => Promise<void>
+    revealCertificate: () => Promise<void>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void

@@ -1,8 +1,37 @@
-/** Mobile Companion's current pairing state, for Settings to render live. */
-export interface MobileCompanionStatus {
+/**
+ * Mobile Companion is managed entirely from Settings > Experimental, including
+ * pairing approval. Control grants additionally require an OS-native trust confirmation. The renderer polls
+ * nothing — the main process pushes a fresh snapshot on every change.
+ */
+export interface MobileCompanionAddress {
+  address: string
+  interfaceName: string
+}
+
+export type MobileCompanionAccess = 'read' | 'control'
+
+export interface MobileCompanionDevice {
+  id: string
+  label: string
+  createdAt: number
+  access: MobileCompanionAccess
+}
+
+/** A phone is mid-pairing and waiting for this Mac to confirm its code. */
+export interface MobileCompanionPairing {
+  label: string
+  code: string
+}
+
+export interface MobileCompanionState {
   enabled: boolean
-  /** The LAN origin to pair with, or `null` when not currently serving. */
+  running: boolean
   url: string | null
-  /** An SVG document encoding `url`, or `null` when `url` is `null`. */
+  /** An SVG document encoding `url`, scanned instead of typed; `null` until generated or when `url` is `null`. */
   qrSvg: string | null
+  rootCertificatePath: string | null
+  addresses: MobileCompanionAddress[]
+  devices: MobileCompanionDevice[]
+  pairing: MobileCompanionPairing | null
+  lastError: string | null
 }

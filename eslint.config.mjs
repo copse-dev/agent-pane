@@ -542,6 +542,32 @@ export default ts.config(
     },
   },
   {
+    // Mobile Companion's phone-served page: plain browser JS bundled by esbuild
+    // (scripts/mobile-build.mts), not part of the TS project graph.
+    files: ['src/mobile/**/*.js'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        fetch: 'readonly',
+        localStorage: 'readonly',
+        crypto: 'readonly',
+        history: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        getComputedStyle: 'readonly',
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      '@typescript-eslint/explicit-module-boundary-types': 'off',
+    },
+  },
+  {
     // Synchronous first-paint theme script copied to dist; not part of the TS project graph.
     files: ['src/renderer/theme-boot.js'],
     extends: [ts.configs.disableTypeChecked],

@@ -308,6 +308,7 @@ describe('callout surfaces', () => {
   // color-mixes over theme tokens, and two of the five severity hues are new
   // and derived separately for light.
   it('reads in both workbenches', async () => {
+    await parkPointer()
     await saveElementScreenshot('.message-reasoning', 'callout-reasoning-dark.png')
     await showCommentary()
     await saveAppScreenshot('callout-surfaces-dark.png')
@@ -315,6 +316,7 @@ describe('callout surfaces', () => {
     await switchTheme('light')
     await $('blockquote.markdown-alert-note').waitForExist({ timeout: 30_000 })
     await openReasoning()
+    await parkPointer()
     await saveElementScreenshot('.message-reasoning', 'callout-reasoning-light.png')
     await showCommentary()
     await saveAppScreenshot('callout-surfaces-light.png')
