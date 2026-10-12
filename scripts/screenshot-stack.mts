@@ -32,6 +32,13 @@ export interface StackGitHub {
         repo: string
         basehead: string
       }): Promise<{ data: unknown }>
+      getCombinedStatusForRef?(input: {
+        owner: string
+        repo: string
+        ref: string
+        per_page: number
+        page: number
+      }): Promise<{ data: unknown }>
       listCommitStatusesForRef(input: {
         owner: string
         repo: string
@@ -124,13 +131,22 @@ async function statuses(
 ): Promise<Map<string, unknown>> {
   const latest = new Map<string, unknown>()
   for (let page = 1; page <= 20; page += 1) {
-    const { data } = await github.rest.repos.listCommitStatusesForRef({
+    // The combined endpoint returns the latest status for each context, rather
+    // than walking every historical deferral written on an unchanged SHA.
+    // Keep live reads uncached so revoked decisions are observed immediately.
+    const combined = github.rest.repos.getCombinedStatusForRef
+    const { data: response } = await (
+      combined
+        ? combined.bind(github.rest.repos)
+        : github.rest.repos.listCommitStatusesForRef.bind(github.rest.repos)
+    )({
       owner: input.owner,
       repo: input.repo,
       ref,
       per_page: 100,
       page,
     })
+    const data = combined ? field(response, 'statuses') : response
     if (!Array.isArray(data))
       throw new StackValidationError('Screenshot stack statuses unavailable')
     for (const status of data) {

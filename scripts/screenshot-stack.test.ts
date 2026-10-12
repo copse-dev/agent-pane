@@ -128,6 +128,42 @@ describe('screenshot stack declarations', () => {
 })
 
 describe('combined stack review gates', () => {
+  it('reads current contexts without traversing status history and observes revocation', async () => {
+    const f = fixture()
+    let reads = 0
+    f.github.rest.repos.listCommitStatusesForRef = async () => {
+      throw new Error('Historical status endpoint must not be queried')
+    }
+    f.github.rest.repos.getCombinedStatusForRef = async ({ ref, page }) => {
+      assert.equal(page, 1)
+      reads += 1
+      return { data: { statuses: f.statuses.get(ref) ?? [] } }
+    }
+    const policy = memoizeScreenshotStackAncestry(f.github)
+    assert.equal((await verifyScreenshotStack(policy, input))?.approved, true)
+    f.statuses.set(TIP, [status('Screenshot review', 4, 'Review revoked', 'error')])
+    assert.equal((await verifyScreenshotStack(policy, input))?.approved, false)
+    assert.equal(reads, 2, 'decision reads remain live despite shared immutable ancestry')
+  })
+  it('paginates current contexts and fails closed for malformed combined responses', async () => {
+    const f = fixture()
+    const pages: number[] = []
+    f.github.rest.repos.getCombinedStatusForRef = async ({ ref, page }) => {
+      pages.push(page)
+      return {
+        data: {
+          statuses:
+            page === 1
+              ? Array.from({ length: 100 }, (_, i) => status(`Other ${String(i)}`, 100 + i))
+              : (f.statuses.get(ref) ?? []),
+        },
+      }
+    }
+    assert.equal((await verifyScreenshotStack(f.github, input))?.approved, true)
+    assert.deepEqual(pages, [1, 2])
+    f.github.rest.repos.getCombinedStatusForRef = async () => ({ data: {} })
+    await assert.rejects(verifyScreenshotStack(f.github, input), /statuses unavailable/)
+  })
   it('shares immutable ancestry comparisons across a ten-PR stack, not live proof', async () => {
     const f = fixture()
     const sha = (number: number): string => number.toString(16).padStart(40, '0')
