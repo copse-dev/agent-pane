@@ -125,7 +125,7 @@ describe('settings styling', function () {
     // The cloud-agent auth cards are parked in a hidden template until a provider
     // chip adopts them, so they are not General groups of their own.
     const generalSubheadings = await $$('.settings-nav-subheading').map((btn) => btn.getText())
-    assert.ok(generalSubheadings.includes('Providers'), 'General lists its Providers group')
+    assert.ok(generalSubheadings.includes('API keys'), 'General lists its API keys group')
     for (const parked of ['Cursor authentication', 'Claude authentication']) {
       assert.ok(!generalSubheadings.includes(parked), `${parked} is not a General group`)
     }
