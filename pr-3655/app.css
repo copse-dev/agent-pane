@@ -17092,12 +17092,14 @@ dialog.activity-panel-overlay {
 }
 .vnc-capture-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--spacing-xs);
 }
 .vnc-capture-actions:has(> button:not([hidden])) > button {
-  flex: 1;
+  flex: 1 1 8rem;
   min-width: 0;
   justify-content: center;
+  white-space: normal;
 }
 .vnc-capture-actions:not(:has(> button:not([hidden]))) {
   display: none;
