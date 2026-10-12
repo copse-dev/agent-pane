@@ -26,7 +26,7 @@ describe('The thread Context panel', () => {
     await expect($('[data-action="archive-thread"]')).toBeEnabled()
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('[data-context-section="repos"] .thread-context-repo')).toHaveText(
-      expect.stringContaining('Primary'),
+      expect.stringContaining('Primary · fix/mermaid-wait'),
     )
     await expect($$('.thread-context-row[data-side-chat-id]')).toBeElementsArrayOfSize(2)
     await expect($('.thread-context-row[data-side-chat-id="sc-side-1"]')).toHaveAttribute(
@@ -112,5 +112,18 @@ describe('The thread Context panel', () => {
     await $('[data-action="archive-thread"]').click()
     await expect($('.chat-row.selected .chat-title')).not.toHaveText(MAIN)
     await saveElementScreenshot('#pane-files', 'thread-context-after-archive.png')
+  })
+  it('identifies a dedicated worktree visibly in a narrow panel', async () => {
+    await browser.url('/?scenario=thread-context-worktree')
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await openContext()
+    await expect($('.thread-context-repo .thread-context-meta')).toHaveText(
+      'Worktree · fix/mermaid-wait',
+    )
+    await expect($('.thread-context-repo')).toHaveAttribute(
+      'data-repo-path',
+      '/demo/widgets/.copse/worktrees/mermaid-wait',
+    )
+    await saveElementScreenshot('#pane-files', 'thread-context-worktree-owner.png')
   })
 })

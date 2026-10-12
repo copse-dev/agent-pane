@@ -84,7 +84,13 @@ function reposSection(model: ThreadContextModel): HTMLElement {
           { class: 'thread-context-main' },
           el('span', { class: 'thread-context-title' }, repo.name),
         ),
-        el('span', { class: 'thread-context-meta' }, 'Primary'),
+        el(
+          'span',
+          { class: 'thread-context-meta' },
+          [repo.checkout === 'worktree' ? 'Worktree' : 'Primary', repo.branch]
+            .filter(Boolean)
+            .join(' · '),
+        ),
       ),
     ),
   )
