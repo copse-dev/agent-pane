@@ -2,6 +2,7 @@ import { el } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { shellCommandLabel } from '@shared/tools/tool-display.ts'
+import { isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
 import { at } from '@shared/array-utils.ts'
 import { isTabVisibleForScope } from './scoped-tabs.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -330,7 +331,7 @@ export function mountAgentTasks(
       // shell commands, surfaced as tool calls with ACP `kind: 'execute'` and the
       // command carried in the title (its `name`) when there's no `command` arg.
       const isAcpShell = chunk.toolCall.kind === 'execute'
-      if (chunk.toolCall.name === 'run_shell' || isAcpShell) {
+      if (isCopseToolCall(chunk.toolCall, 'run_shell') || isAcpShell) {
         const command =
           shellCommandFromArgs(chunk.toolCall.args) ??
           (isAcpShell ? (chunk.toolCall.title ?? chunk.toolCall.name) : null)

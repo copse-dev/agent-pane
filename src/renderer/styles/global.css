@@ -50,6 +50,7 @@
 @import './global/tooltip.css';
 @import './global/pr-link-preview.css';
 @import './global/ssh-workspace.css';
+@import './global/mobile-companion.css';
 @import './global/memories.css';
 @import './global/ports.css';
 @import './global/vnc.css';
