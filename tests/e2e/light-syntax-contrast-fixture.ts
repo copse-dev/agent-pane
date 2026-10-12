@@ -5,13 +5,7 @@
  * does not treat the change as a broad helpers edit and force
  * `check:screenshots` to mark every reference screenshot stale.
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
-import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
-
-const USER_DATA = copseUserDataDir()
-const SETTINGS_PATH = join(USER_DATA, 'settings.json')
+import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
 
 /**
  * A JSON block (attr/string/number/literal tokens) and a TypeScript block
@@ -46,22 +40,8 @@ export function seedSyntaxContrastFixture(workspaceRoot: string, theme: 'light' 
     '```',
   ].join('\n')
   resetUserData()
-  mkdirSync(USER_DATA, { recursive: true })
-  // Mirrors helpers/seed-config.ts's private writeSettings() defaults
-  // (deterministic screenshots, no real LM Studio probe) plus the theme this
-  // fixture pins. Duplicated rather than exported from seed-config.ts so this
-  // spec's fixture stays local and the oracle keeps mapping it to just this
-  // spec.
-  writeFileSync(
-    SETTINGS_PATH,
-    JSON.stringify({
-      onboardingCompleted: true,
-      theme,
-      uiTintStrength: 'off',
-      localServerUrl: 'http://127.0.0.1:1/v1',
-    }),
-    'utf8',
-  )
+  // The shared writer preserves this theme across the outgoing app's shutdown.
+  writeSettings({ theme })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
