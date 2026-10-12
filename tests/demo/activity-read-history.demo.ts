@@ -1,5 +1,6 @@
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import { pinDemoClock } from './helpers/fixed-clock.ts'
 
 // Threads that finished before launch and were already read still list under
 // Recently finished, inside the recency window; older ones stay out. Without this the
@@ -7,6 +8,7 @@ import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 
 describe('Activity home recent history', () => {
   before(async () => {
+    await pinDemoClock()
     await browser.url('about:blank')
     await browser.url('/?scenario=activity-home-read-history')
     await $('#activity-home .activity-row').waitForExist({ timeout: 30_000 })

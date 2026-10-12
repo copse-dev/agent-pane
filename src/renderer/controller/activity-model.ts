@@ -30,8 +30,8 @@ export interface ActivityThread {
   /** Latest completion that happened while the thread was not selected. */
   unreadAt?: number
   /**
-   * Last persisted write to the thread: the best last-activity time that survives
-   * a restart. Only the fallback for when a settled run ended, and only set for a
+   * Persisted completion time (or the captured legacy last-write proxy).
+   * Only the fallback for when a settled run ended, and only set for a
    * thread that has been prompted (see {@link persistedEndedAt}).
    */
   settledAt?: number
@@ -175,7 +175,7 @@ function questionWant(questions: readonly string[]): string {
 /**
  * When a settled thread last ended, for a run this session never watched.
  *
- * Falls back to the persisted last write, but only inside {@link RECENT_WINDOW_MS} (and not
+ * Falls back to the persisted completion, but only inside {@link RECENT_WINDOW_MS} (and not
  * further ahead of the clock than {@link FUTURE_SKEW_MS})
  * and only for a thread that was actually prompted — an untouched draft, or the
  * empty active thread, never ran. The same window applies to a stored `error`: the
@@ -386,13 +386,13 @@ export function foldScheduleRuns(
 
 /**
  * `settledAt` for a thread that ever ran; none for a draft that never did.
+ * Legacy metadata uses its last write until a stable completion proxy is captured.
  * Decided from metadata only (see {@link sidebarHasRun}), never the transcript, so
  * threads written before `lastPromptAt` existed still list without being opened.
  */
 function settledAtOf(thread: RunSignals): Pick<ActivityThread, 'settledAt'> {
-  return thread.updatedAt !== undefined && sidebarHasRun(thread)
-    ? { settledAt: thread.updatedAt }
-    : {}
+  const at = thread.lastSettledAt ?? thread.updatedAt
+  return at !== undefined && sidebarHasRun(thread) ? { settledAt: at } : {}
 }
 
 /**
