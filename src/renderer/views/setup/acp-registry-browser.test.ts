@@ -252,4 +252,18 @@ describe('agent registry browser', () => {
       },
     )
   })
+
+  it('keeps long registry identities distinct, stable and within the config limit', () => {
+    const first = { ...candidate, command: 'community-agent', id: `${'a'.repeat(119)}x` }
+    const second = { ...candidate, command: 'community-agent', id: `${'a'.repeat(119)}y` }
+    const a = registryToDraft(first)
+    const b = registryToDraft(second)
+    assert.notEqual(a.id, b.id)
+    assert.equal(a.id, registryToDraft(first).id)
+    assert.equal(a.id.length, 64)
+    assert.equal(b.id.length, 64)
+    assert.equal(a.enabled, false)
+    assert.equal(b.enabled, false)
+    assert.equal(parseAcpAgentConfigs([a, b]).length, 2)
+  })
 })
