@@ -151,7 +151,11 @@ describe('@-reference past threads (#644)', () => {
     const sentChip = await $('.msg-user .message-text > .transcript-attachment-thread')
     await sentChip.waitForDisplayed({ timeout: 30_000 })
     await expect(sentChip).toHaveText(expect.stringContaining('Auth refactor plan'))
-    await expect(sentChip.$('svg[data-icon="thread"]')).toBeExisting()
+    // Streaming replaces message contents; query from the document so polling
+    // does not retain a detached parent chip.
+    await expect(
+      $('.msg-user .message-text > .transcript-attachment-thread svg[data-icon="thread"]'),
+    ).toBeExisting()
     await expect(
       $('.msg-user .transcript-attachment-row .transcript-attachment-thread'),
     ).not.toBeExisting()

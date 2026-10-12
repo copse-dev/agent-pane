@@ -39,47 +39,56 @@ afterEach(() => {
 })
 
 describe('apply_patch tool card', () => {
-  it('lists each file in the patch with its operation and line counts', () => {
-    const store = createStore()
-    const threadId = createThread(store)
-    const messageId = addMessage(store, threadId, 'assistant', '')
-    addToolCall(store, messageId, {
-      id: 'patch-1',
-      name: 'apply_patch',
-      args: { input: APPLY_PATCH_CARD_INPUT },
-      status: 'done',
-      result: 'apply_patch handled 4 files:\n- Diff staged for src/app.ts.',
-      editStats: { additions: 6, deletions: 3 },
+  for (const identity of [
+    { name: 'apply_patch' },
+    { name: 'mcp__copse__apply_patch' },
+    { name: 'mcp.copse.apply_patch' },
+    { name: 'copse.apply_patch' },
+    { name: 'copse-apply_patch: Update files' },
+    { name: 'Patch files', programmaticName: 'copse.apply_patch' },
+  ]) {
+    it(`lists patch operations and line counts for ${identity.name}`, () => {
+      const store = createStore()
+      const threadId = createThread(store)
+      const messageId = addMessage(store, threadId, 'assistant', '')
+      addToolCall(store, messageId, {
+        id: 'patch-1',
+        ...identity,
+        args: { input: APPLY_PATCH_CARD_INPUT },
+        status: 'done',
+        result: 'apply_patch handled 4 files:\n- Diff staged for src/app.ts.',
+        editStats: { additions: 6, deletions: 3 },
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      mountConversation(host, store, fakeApi())
+
+      const card = host.querySelector<HTMLDetailsElement>('.tool-card')
+      assert.ok(card)
+      // A header click builds the lazily-rendered body before the browser opens it.
+      card.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+      assert.equal(card.querySelector('.tool-name')?.textContent, 'Patched 4 files')
+      const rows = [...card.querySelectorAll<HTMLElement>('.tool-patch-file')]
+      assert.deepEqual(
+        rows.map((row) => [
+          row.dataset['op'],
+          row.dataset['editPath'],
+          row.querySelector('.tool-patch-op')?.textContent,
+          row.querySelector('.tool-stat-add')?.textContent,
+          row.querySelector('.tool-stat-del')?.textContent,
+        ]),
+        [
+          ['update', 'src/app.ts', 'Edited', '+2', '-1'],
+          ['add', 'src/new.ts', 'Added', '+2', '-0'],
+          ['move', 'src/new-name.ts', 'Moved', '+1', '-1'],
+          ['delete', 'src/gone.ts', 'Deleted', undefined, undefined],
+        ],
+      )
+      assert.equal(
+        card.querySelector('.tool-patch-file[data-op="move"] .tool-patch-path')?.textContent,
+        'src/old-name.ts → src/new-name.ts',
+      )
     })
-    const host = document.createElement('div')
-    document.body.append(host)
-    mountConversation(host, store, fakeApi())
-
-    const card = host.querySelector<HTMLDetailsElement>('.tool-card')
-    assert.ok(card)
-    // A header click builds the lazily-rendered body before the browser opens it.
-    card.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-
-    assert.equal(card.querySelector('.tool-name')?.textContent, 'Patched 4 files')
-    const rows = [...card.querySelectorAll<HTMLElement>('.tool-patch-file')]
-    assert.deepEqual(
-      rows.map((row) => [
-        row.dataset['op'],
-        row.dataset['editPath'],
-        row.querySelector('.tool-patch-op')?.textContent,
-        row.querySelector('.tool-stat-add')?.textContent,
-        row.querySelector('.tool-stat-del')?.textContent,
-      ]),
-      [
-        ['update', 'src/app.ts', 'Edited', '+2', '-1'],
-        ['add', 'src/new.ts', 'Added', '+2', '-0'],
-        ['move', 'src/new-name.ts', 'Moved', '+1', '-1'],
-        ['delete', 'src/gone.ts', 'Deleted', undefined, undefined],
-      ],
-    )
-    assert.equal(
-      card.querySelector('.tool-patch-file[data-op="move"] .tool-patch-path')?.textContent,
-      'src/old-name.ts → src/new-name.ts',
-    )
-  })
+  }
 })
