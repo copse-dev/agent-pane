@@ -2,6 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { RequestError } from '@agentclientprotocol/sdk'
 import OpenAI from 'openai'
+import quote from 'shell-quote'
+import { JSDOM } from 'jsdom'
 import { renderMarkdownUnsafe } from '@copse/streaming-markdown'
 import {
   acpTurnInterruptionFor,
@@ -247,6 +249,70 @@ describe('classifyAgentError', () => {
       "This thread's checkout is on its base branch `main` instead of its own branch, so Copse will not run in it: edits would land directly on `main`. Your files are preserved. In the checkout at `/worktrees/project-1/thread-1`, run `git checkout copse/thread-branch` to return to the thread branch (or `git checkout -b <new-branch>` to start a fresh one), then retry.",
     )
     assert.doesNotMatch(result, /^An error occurred:/)
+  })
+
+  it('keeps the rendered recovery command literal for Git branch punctuation', () => {
+    for (const branch of [
+      'copse/feature(with-parens)',
+      "copse/it's-fine",
+      'copse/$USER',
+      'copse/a;false',
+      'copse/`literal`',
+      'copse/``literal``',
+    ]) {
+      const result = classifyAgentError(
+        new ThreadWorktreeOnBaseBranchError({
+          baseBranch: 'main',
+          branch,
+          path: '/worktrees/project-1/thread-1',
+        }),
+      )
+      const dom = new JSDOM(renderMarkdownUnsafe(result))
+      try {
+        const command = Array.from(dom.window.document.querySelectorAll('code')).find((code) =>
+          code.textContent.startsWith('git checkout '),
+        )?.textContent
+        assert.ok(command, branch)
+        assert.deepEqual(quote.parse(command), ['git', 'checkout', branch], branch)
+      } finally {
+        dom.window.close()
+      }
+    }
+  })
+
+  it('keeps Windows recovery commands compatible with the default cmd terminal', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    assert.ok(descriptor)
+    for (const branch of [
+      'copse/thread',
+      'copse/feature(with-parens)',
+      'copse/$USER',
+      'copse/a;false',
+    ]) {
+      let result: string
+      try {
+        Object.defineProperty(process, 'platform', { value: 'win32' })
+        result = classifyAgentError(
+          new ThreadWorktreeOnBaseBranchError({ baseBranch: 'main', branch, path: 'C:/worktrees' }),
+        )
+      } finally {
+        Object.defineProperty(process, 'platform', descriptor)
+      }
+      const dom = new JSDOM(renderMarkdownUnsafe(result))
+      try {
+        const commands = Array.from(dom.window.document.querySelectorAll('code')).map(
+          (code) => code.textContent,
+        )
+        assert.ok(
+          commands.includes(
+            branch === 'copse/thread' ? `git checkout ${branch}` : `git checkout "${branch}"`,
+          ),
+          branch,
+        )
+      } finally {
+        dom.window.close()
+      }
+    }
   })
 
   it('falls back to error message', () => {
