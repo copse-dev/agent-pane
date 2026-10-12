@@ -84,11 +84,13 @@ describe('roadmap document and linked planning prototype', () => {
       expect.stringContaining('Preserve keyboard focus during recovery.'),
     )
     await $('.roadmap-save-btn').click()
-    const saved = await browser.execute(
-      async () =>
-        (await window.api.roadmap.list()).find((item) => item.id === 'session-recovery')?.body,
+    const saved = await browser.execute(async () =>
+      (await window.api.roadmap.list()).find((item) => item.id === 'session-recovery'),
     )
-    await expect(saved).toBe(`${BRIEF}\n\nPreserve keyboard focus during recovery.`)
+    await expect(saved?.body).toBe(`${BRIEF}\n\nPreserve keyboard focus during recovery.`)
+    await expect(saved?.title).toBe(
+      'Let people recover an expired session without losing their work.',
+    )
   })
 
   it('develops a real draft without starting implementation and reopens the same plan', async () => {
