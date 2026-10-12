@@ -191,7 +191,9 @@ describe('combined stack review gates', () => {
           context === STACK_DECISION ? 123 : 41898282,
         ),
       ])
-      f.github.rest.repos.getCombinedStatusForRef = async ({ ref }) => ({
+      f.github.rest.repos.getCombinedStatusForRef = async ({
+        ref,
+      }): Promise<{ data: unknown }> => ({
         data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
       })
       assert.equal((await verifyScreenshotStack(f.github, input))?.approved, false)
@@ -200,7 +202,9 @@ describe('combined stack review gates', () => {
   it('observes a newer revocation while hydrating creator identity', async () => {
     const f = fixture()
     const snapshot = (f.statuses.get(TIP) ?? []).map(compactStatus)
-    f.github.rest.repos.getCombinedStatusForRef = async () => ({ data: { statuses: snapshot } })
+    f.github.rest.repos.getCombinedStatusForRef = async (): Promise<{ data: unknown }> => ({
+      data: { statuses: snapshot },
+    })
     f.statuses.set(TIP, [
       status('Screenshot review', 4, 'Review revoked during hydration', 'error'),
       ...(f.statuses.get(TIP) ?? []),
@@ -209,10 +213,12 @@ describe('combined stack review gates', () => {
   })
   it('fails closed when full statuses cannot resolve the current status IDs', async () => {
     const f = fixture()
-    f.github.rest.repos.getCombinedStatusForRef = async ({ ref }) => ({
+    f.github.rest.repos.getCombinedStatusForRef = async ({ ref }): Promise<{ data: unknown }> => ({
       data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
     })
-    f.github.rest.repos.listCommitStatusesForRef = async () => ({ data: [] })
+    f.github.rest.repos.listCommitStatusesForRef = async (): Promise<{ data: unknown }> => ({
+      data: [],
+    })
     await assert.rejects(verifyScreenshotStack(f.github, input), /creators unavailable/)
   })
   it('paginates current contexts and fails closed for malformed combined responses', async () => {
