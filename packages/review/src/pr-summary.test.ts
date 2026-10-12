@@ -287,12 +287,55 @@ describe('applyEvidenceFloor', () => {
     )
   })
 
-  it('raises Low to Medium for any finding, and never lowers the risk', () => {
-    const raised = applyEvidenceFloor(summary, report([finding('low')]))
+  it('keeps a documentation summary Low while still reporting low-severity issues', () => {
+    const documentationIssue: Finding = {
+      ...finding('low'),
+      anchor: { path: 'docs/plans/new-thread-activity-screen.md', startLine: 4 },
+      claim: 'The summary says every slice merged, but the table marks slice 5 as dropped.',
+    }
+    const review = report([documentationIssue])
+    const unchanged = applyEvidenceFloor(summary, review)
+    assert.equal(unchanged, summary)
+    assert.equal(applyEvidenceFloor(summary, report([finding('low'), finding('low')])), summary)
+    const block = renderSummaryBlock(unchanged, {
+      headCommit: HEAD,
+      toolVersion: '1',
+      report: review,
+    })
+    assert.match(block, /> \*\*Low risk\*\*/)
+    assert.match(block, /The review reported 1 issue\./)
+    assert.doesNotMatch(block, /Raised to/)
+  })
+
+  it('raises Low to Medium for medium-severity findings and counts only those issues', () => {
+    const raised = applyEvidenceFloor(summary, report([finding('low'), finding('medium')]))
     assert.equal(raised.risk, 'medium')
-    assert.equal(raised.raisedBecause, 'the review surfaced 1 issue')
+    assert.equal(raised.raisedBecause, 'the review surfaced 1 medium-severity issue')
+    const block = renderSummaryBlock(raised, { headCommit: HEAD, toolVersion: '1', report: null })
+    assert.match(
+      block,
+      /> Raised to Medium risk because the review surfaced 1 medium-severity issue\./,
+    )
+    const multiple = applyEvidenceFloor(summary, report([finding('medium'), finding('medium')]))
+    assert.equal(multiple.raisedBecause, 'the review surfaced 2 medium-severity issues')
+  })
+
+  it('never lowers a higher model rating', () => {
+    for (const risk of ['medium', 'high'] as const) {
+      const higher: PrSummary = { ...summary, risk }
+      assert.equal(applyEvidenceFloor(higher, report([finding('low')])), higher)
+      assert.equal(applyEvidenceFloor(higher, report([finding('medium')])), higher)
+    }
     const high: PrSummary = { ...summary, risk: 'high' }
-    assert.equal(applyEvidenceFloor(high, report([finding('low')])), high)
+    assert.equal(applyEvidenceFloor(high, report([finding('critical')])), high)
+  })
+
+  it('raises Low directly to High for either high or critical findings', () => {
+    for (const severity of ['high', 'critical'] as const) {
+      const raised = applyEvidenceFloor(summary, report([finding('medium'), finding(severity)]))
+      assert.equal(raised.risk, 'high')
+      assert.equal(raised.raisedBecause, 'the review surfaced 1 high-severity issue')
+    }
   })
 })
 

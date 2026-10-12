@@ -176,6 +176,7 @@ jobs:
               ['repos', 'getCommit'],
               ['repos', 'compareCommitsWithBasehead'],
               ['repos', 'listCommitStatusesForRef'],
+              ['repos', 'getCombinedStatusForRef'],
               ['repos', 'createCommitStatus'],
             ]) {
               if (typeof github.rest[namespace]?.[method] !== 'function') {
