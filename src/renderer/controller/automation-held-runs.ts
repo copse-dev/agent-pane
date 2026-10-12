@@ -1,14 +1,16 @@
-import type { SidebarThread } from './sidebar-thread.ts'
+import { automationRunBlock } from '@shared/automation-run-state.ts'
+import type { RunSignals } from './sidebar-thread.ts'
 
 /**
  * Finished runs of one schedule that still hold a git worktree. A running run
  * owns its checkout legitimately, and a retired one has already let it go, so
  * neither counts: what is left is what can block the schedule's next run.
  */
-export function heldAutomationRuns(runs: readonly SidebarThread[]): SidebarThread[] {
+export function heldAutomationRuns(runs: readonly RunSignals[]): RunSignals[] {
   return runs.filter(
     (run) =>
-      run.status !== 'running' &&
+      automationRunBlock(run) === null &&
+      run.automationPendingStart !== true &&
       run.worktree !== undefined &&
       run.worktree.retiredAt === undefined,
   )

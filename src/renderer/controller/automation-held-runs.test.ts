@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { heldAutomationRuns, heldRunsLabel, heldRunsTooltip } from './automation-held-runs.ts'
 import type { SidebarThread } from './sidebar-thread.ts'
+import { compactSidebarThread } from './sidebar-thread.ts'
 
 function run(id: string, overrides: Partial<SidebarThread> = {}): SidebarThread {
   return {
@@ -47,5 +48,30 @@ describe('heldAutomationRuns', () => {
     assert.equal(heldRunsLabel(2), '2 held')
     assert.match(heldRunsTooltip(1), /^1 finished run still holds a worktree/)
     assert.match(heldRunsTooltip(3), /^3 finished runs still hold a worktree/)
+  })
+
+  it('excludes pending starts before and after sidebar compaction, but includes failed starts', () => {
+    const pending = {
+      ...run('pending'),
+      draftPrompt: 'Check the project.',
+      automation: { scheduleId: 'check', scheduleName: 'Main check', triggeredAt: 1 },
+    }
+    const failed = {
+      ...pending,
+      id: 'failed',
+      automation: { ...pending.automation, startFailedAt: 2 },
+    }
+    assert.deepEqual(heldAutomationRuns([pending]), [])
+    const compacted = compactSidebarThread(pending)
+    assert.deepEqual(heldAutomationRuns([compacted]), [])
+    assert.deepEqual(compactSidebarThread(compacted), compacted)
+    assert.deepEqual(
+      heldAutomationRuns([failed]).map((row) => row.id),
+      ['failed'],
+    )
+    assert.deepEqual(
+      heldAutomationRuns([compactSidebarThread(failed)]).map((row) => row.id),
+      ['failed'],
+    )
   })
 })
