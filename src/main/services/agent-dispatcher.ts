@@ -43,6 +43,7 @@ import { perfMark } from './diagnostics/perf-trace.ts'
 
 export interface AgentDispatchPayload {
   userContent: UserContent
+  executionMode?: 'agent'
   invokedSkills: string[]
   /** Subagent the user invoked with `/name` this turn. */
   invokedAgent?: string
@@ -675,6 +676,7 @@ export class AgentDispatcher {
     })
 
     const options: RunAgentOptions = {
+      ...(payload.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
       invokedSkills: payload.invokedSkills,
       priorTodos: payload.priorTodos,
       ...(payload.invokedAgent !== undefined ? { invokedAgent: payload.invokedAgent } : {}),

@@ -106,6 +106,7 @@ import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
+import { mountAgentExecutionModeControl } from './agent-execution-mode-control.ts'
 import { mountContainerRunControl } from './container-run-control.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
@@ -403,6 +404,11 @@ export function mountInputBar(
   void refreshContainerRunsSetting()
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
+  const executionMode = mountAgentExecutionModeControl(
+    store,
+    () => isAcpModel(footerChatModel()),
+    () => footerOverflow?.update(),
+  )
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
   const checkoutBtn = el('button', {
     type: 'button',
@@ -430,8 +436,13 @@ export function mountInputBar(
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator)
-  footer.append(modelHost, checkoutHost, branchHost)
+  footer.append(modelHost, executionMode.element, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
+    {
+      label: executionMode.menuLabel,
+      hidden: (): boolean => !getActiveThreadId() || !isAcpModel(footerChatModel()),
+      onClick: executionMode.open,
+    },
     {
       label: guardedYolo.menuLabel,
       hidden: (): boolean => !getActiveThreadId(),
@@ -584,6 +595,7 @@ export function mountInputBar(
   const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
     formatCurrentLabel: footerModelDisplayLabel,
     getCurrentRoute: footerResolvedModel,
+    isAgentManaged: () => getActiveThread(store)?.executionMode === 'agent',
     isSshWorkspace: (): boolean => {
       const { activeProjectId, projects } = store.getState()
       if (!activeProjectId) return false
@@ -2736,6 +2748,8 @@ export function mountInputBar(
     }),
     store.on('threads_changed', () => {
       syncComposerThread()
+      executionMode.refresh()
+      footerOverflow.update()
       guardedYolo.refresh()
       containerRun.refresh()
       hideBranchMismatch()
@@ -2840,6 +2854,7 @@ export function mountInputBar(
       modelPicker.destroy()
       footerOverflow.destroy()
       guardedYolo.destroy()
+      executionMode.destroy()
       containerRun.destroy()
       footerCompact.destroy()
       portraitPanelControls.destroy()
