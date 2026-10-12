@@ -115,6 +115,104 @@ describe('createAcpAgentsList (rendered)', () => {
   })
 })
 
+describe('Re-scan (agents and keys in one click)', () => {
+  interface Spy {
+    consent: unknown[]
+    scans: number
+    imports: number
+    imported: number
+  }
+
+  function mount(found: { alreadyConfigured: boolean }[]): {
+    list: ReturnType<typeof createAcpAgentsList>
+    spy: Spy
+  } {
+    const base = createFakeApi()
+    const spy: Spy = { consent: [], scans: 0, imports: 0, imported: 0 }
+    const api: ApiClient = {
+      ...base,
+      settings: {
+        ...base.settings,
+        get: async () => [],
+        set: async (key, value) => {
+          if (key === 'envKeyAutoDetectEnabled') spy.consent.push(value)
+        },
+        scanEnvKeys: async () => {
+          spy.scans += 1
+          return found.map((entry, i) => ({
+            provider: `p${String(i)}`,
+            envVar: `P${String(i)}_API_KEY`,
+            source: '~/.zshrc',
+            masked: 'sk-…abcd',
+            alreadyConfigured: entry.alreadyConfigured,
+          }))
+        },
+        importEnvKeys: async () => {
+          spy.imports += 1
+          return {
+            imported: found
+              .filter((entry) => !entry.alreadyConfigured)
+              .map((_, i) => ({ provider: `p${String(i)}`, source: '~/.zshrc' })),
+            skipped: [],
+          }
+        },
+      },
+    }
+    const list = createAcpAgentsList(api, {
+      onKeysImported: () => {
+        spy.imported += 1
+      },
+    })
+    document.body.append(list.root)
+    return { list, spy }
+  }
+
+  const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
+
+  function status(root: HTMLElement): string {
+    return root.querySelector('[data-testid="acp-scan-status"]')?.textContent ?? ''
+  }
+
+  function clickRescan(root: HTMLElement): void {
+    const button = [...root.querySelectorAll<HTMLButtonElement>('.acp-link')].find(
+      (b) => b.textContent === 'Re-scan',
+    )
+    assert.ok(button)
+    button.click()
+  }
+
+  it('imports new keys it finds and says how many were added', async () => {
+    const { list, spy } = mount([{ alreadyConfigured: false }, { alreadyConfigured: false }])
+    clickRescan(list.root)
+    for (let i = 0; i < 20; i += 1) await tick()
+    assert.deepEqual(spy.consent, [true])
+    assert.equal(spy.imports, 1)
+    assert.equal(spy.imported, 1)
+    assert.match(status(list.root), /Added 2 keys found on this Mac/)
+    list.root.remove()
+  })
+
+  it('does not import when every key is already configured', async () => {
+    const { list, spy } = mount([{ alreadyConfigured: true }])
+    clickRescan(list.root)
+    for (let i = 0; i < 20; i += 1) await tick()
+    assert.equal(spy.imports, 0)
+    assert.equal(spy.imported, 0)
+    assert.match(status(list.root), /Nothing new found/)
+    list.root.remove()
+  })
+
+  it('never reads keys on a background re-check', async () => {
+    const { list, spy } = mount([{ alreadyConfigured: false }])
+    await list.refresh()
+    window.dispatchEvent(new Event('focus'))
+    for (let i = 0; i < 10; i += 1) await tick()
+    assert.equal(spy.scans, 0)
+    assert.deepEqual(spy.consent, [])
+    list.root.remove()
+  })
+})
+
 describe('agent logos', () => {
   it('declare the SVG namespace, or DOMParser yields an element that never paints', () => {
     for (const [brand, svg] of Object.entries(AGENT_LOGO_SVG)) {

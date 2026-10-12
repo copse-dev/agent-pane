@@ -107,7 +107,15 @@ export interface AcpAgentsList {
   refresh: () => Promise<void>
 }
 
-export function createAcpAgentsList(api: ApiClient): AcpAgentsList {
+export interface AcpAgentsListOptions {
+  /** Called after Re-scan imported API keys, so key status elsewhere can refresh. */
+  onKeysImported?: () => void
+}
+
+export function createAcpAgentsList(
+  api: ApiClient,
+  opts: AcpAgentsListOptions = {},
+): AcpAgentsList {
   let configured: AcpAgentConfig[] = []
   let detected = new Map<string, DetectedAcpAgent>()
   let auth = new Map<string, AcpAuthState>()
@@ -136,7 +144,42 @@ export function createAcpAgentsList(api: ApiClient): AcpAgentsList {
     render()
   })
   const rescan = el('button', { type: 'button', class: 'acp-link' }, 'Re-scan')
-  rescan.addEventListener('click', () => void refresh())
+  const scanStatus = el('span', {
+    class: 'field-hint acp-scan-status',
+    'data-testid': 'acp-scan-status',
+  })
+  rescan.addEventListener('click', () => void rescanAll())
+
+  /**
+   * Re-scan is the one explicit scan: it re-checks agents, then reads the
+   * environment and shell start-up files for API keys and imports any that are
+   * new. Clicking it is the opt-in the key scan requires, so the background
+   * re-checks (focus, polling) never reach this path.
+   */
+  async function rescanAll(): Promise<void> {
+    rescan.disabled = true
+    scanStatus.textContent = 'Scanning…'
+    try {
+      await refresh()
+      await api.settings.set('envKeyAutoDetectEnabled', true)
+      const found = await api.settings.scanEnvKeys()
+      const fresh = found.filter((key) => !key.alreadyConfigured)
+      if (fresh.length === 0) {
+        scanStatus.textContent = 'Up to date. Nothing new found.'
+        return
+      }
+      const { imported } = await api.settings.importEnvKeys()
+      scanStatus.textContent =
+        imported.length === 0
+          ? 'Nothing new to import.'
+          : `Added ${String(imported.length)} key${imported.length === 1 ? '' : 's'} found on this Mac. Remove any you don’t want.`
+      if (imported.length > 0) opts.onKeysImported?.()
+    } catch (err) {
+      scanStatus.textContent = err instanceof Error ? err.message : 'Scan failed'
+    } finally {
+      rescan.disabled = false
+    }
+  }
 
   const root = el(
     'fieldset',
@@ -147,7 +190,7 @@ export function createAcpAgentsList(api: ApiClient): AcpAgentsList {
       { class: 'settings-fieldset-desc' },
       'Agents on this machine show up here on their own. Add another any time.',
     ),
-    el('div', { class: 'acp-list-bar' }, rescan),
+    el('div', { class: 'acp-list-bar' }, scanStatus, rescan),
     list,
     el('div', { class: 'acp-add' }, addToggle, menu),
   )

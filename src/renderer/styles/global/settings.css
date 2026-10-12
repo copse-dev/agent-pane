@@ -3311,8 +3311,13 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .acp-list-bar {
   display: flex;
+  align-items: baseline;
   justify-content: flex-end;
+  gap: var(--spacing-md);
   margin-bottom: var(--spacing-sm);
+}
+.acp-scan-status:empty {
+  display: none;
 }
 .acp-row {
   padding: var(--spacing-md);

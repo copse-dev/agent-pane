@@ -55,7 +55,6 @@ import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createAcpAgentsList } from './setup/acp-agents-list.ts'
 import { createProvidersPanel } from './setup/providers-section.ts'
 import { createClassifiersSection } from './setup/classifiers-section.ts'
-import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
@@ -663,8 +662,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <div id="settings-agents-host" class="settings-mount"></div>
 
             <div id="settings-providers-host" class="settings-mount"></div>
-
-            <div id="settings-env-detect-host" class="settings-mount"></div>
 
             <fieldset id="settings-models-section" data-testid="settings-chat-model">
               <legend>Models</legend>
@@ -1751,15 +1748,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
   qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
-  const envKeyDetectSection = createEnvKeyDetectSection(api, {
-    legend: 'Find keys on this Mac',
-    onImported: () => {
-      void cursorKeySection.refreshKeyStatus()
-      void providersPanel.refresh()
-    },
-  })
-  qsRequired(overlay, '#settings-env-detect-host').append(envKeyDetectSection.root)
-
   const cursorKeySection = createApiKeysSection(api, {
     legend: 'Cursor authentication',
     providers: ['cursor'],
@@ -1819,7 +1807,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     cloudAgentOptions: qsRequired(overlay, '#settings-cloud-agent-options'),
   })
   qsRequired(overlay, '#settings-providers-host').append(providersPanel.root)
-  const agentsList = createAcpAgentsList(api)
+  const agentsList = createAcpAgentsList(api, {
+    // Re-scan imports keys it finds in the environment; show them everywhere.
+    onKeysImported: () => {
+      void cursorKeySection.refreshKeyStatus()
+      void providersPanel.refresh()
+    },
+  })
   qsRequired(overlay, '#settings-agents-host').append(agentsList.root)
 
   const makerBlockList = el('div', { class: 'model-maker-block-list' })
@@ -4808,7 +4802,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         await aaKeySection.refreshKeyStatus()
       })
       await refreshStage('provider-sections', async () => {
-        await envKeyDetectSection.refresh()
         await providersPanel.refresh()
         await agentsList.refresh()
       })

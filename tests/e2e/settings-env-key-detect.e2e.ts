@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,13 +6,12 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
-// Visual eval for the opt-in "Find keys on this Mac" scan control in
-// Settings → General. The e2e harness blanks every provider env var (see
-// wdio.conf.ts), so the in-app scan runs end-to-end through the real IPC and
-// deterministically reports an empty result on CI. The detected-rows / import
-// rendering is covered by the component test
-// (src/renderer/views/setup/env-key-detect-section.test.ts).
-describe('environment API-key detection (Settings → General)', () => {
+// Settings → General: the single "Re-scan" link re-checks agents and reads the
+// environment for API keys. The e2e harness blanks every provider env var (see
+// wdio.conf.ts), so the scan runs end-to-end through the real IPC and
+// deterministically reports nothing new. Imported-key rendering is covered by the
+// component test (src/renderer/views/setup/acp-agents-list.test.ts).
+describe('Re-scan finds nothing new in a clean environment (Settings → General)', () => {
   const originalHome = process.env['HOME']
   let cleanHome = ''
 
@@ -32,58 +30,28 @@ describe('environment API-key detection (Settings → General)', () => {
     rmSync(cleanHome, { recursive: true, force: true })
   })
 
-  it('renders the scan control and reports no keys in a clean environment', async () => {
+  it('scans on click and reports the empty result next to the link', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     await $('[aria-label="Settings"]').click()
+    await expect($('.settings-section[data-section="general"]')).toBeDisplayed()
 
-    // General is the default section and hosts the env-detect fieldset.
-    const general = $('.settings-section[data-section="general"]')
-    await expect(general).toBeDisplayed()
+    // The old separate "Find keys on this Mac" box is gone: one control does both.
+    await expect($('#settings-env-detect-host')).not.toExist()
+    const list = $('[data-testid="acp-agents-fieldset"]')
+    await list.waitForExist({ timeout: 15_000 })
+    const status = list.$('[data-testid="acp-scan-status"]')
+    await expect(status).toHaveText('')
 
-    const host = $('#settings-env-detect-host')
-    // #1448 renamed this legend as part of rewriting Settings' copy; the section
-    // itself is unchanged.
-    await expect(host.$('legend=Find keys on this Mac')).toBeDisplayed()
-
-    const scanBtn = host.$('button=Scan environment')
-    await expect(scanBtn).toBeDisplayed()
-    // Import button is hidden until a scan finds an importable key.
-    await expect(host.$('button=Import keys')).not.toBeDisplayed()
-
-    // File paths and environment variable names in the hint are code, set in
-    // the code face rather than the interface font.
-    const hintCode = await browser.execute(() => {
-      const codes = document.querySelectorAll<HTMLElement>(
-        '#settings-env-detect-host .settings-fieldset-desc code',
-      )
-      return [...codes].map((code) => ({
-        text: code.textContent,
-        mono:
-          getComputedStyle(code).fontFamily !==
-          getComputedStyle(code.parentElement ?? code).fontFamily,
-      }))
-    })
-    assert.deepEqual(
-      hintCode.map((code) => code.text),
-      ['~/.zshrc', '~/.bashrc', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'],
-    )
-    assert.ok(
-      hintCode.every((code) => code.mono),
-      'hint code uses a different face from its prose',
-    )
-
-    await saveElementScreenshot('#settings-env-detect-host', 'settings-env-key-detect.png')
-
-    // Clicking Scan is the explicit opt-in; it runs the real scan over the
+    // Clicking Re-scan is the explicit opt-in; it runs the real scan over the
     // (blanked) environment and reports the empty result.
-    await scanBtn.click()
-    const status = host.$('.env-key-actions .key-status')
-    await browser.waitUntil(
-      async () => /no provider keys found/i.test((await status.getText()) ?? ''),
-      { timeout: 10_000, timeoutMsg: 'scan never reported a result' },
-    )
+    await list.$('button=Re-scan').click()
+    await expect(status).toHaveText('Nothing new found', { containing: true })
 
-    assert.equal((await host.$$('.env-key-row')).length, 0)
-    await expect(host.$('button=Import keys')).not.toBeDisplayed()
+    await list.scrollIntoView({ block: 'center' })
+    await browser.pause(200)
+    await saveElementScreenshot(
+      '[data-testid="acp-agents-fieldset"]',
+      'settings-env-key-detect.png',
+    )
   })
 })

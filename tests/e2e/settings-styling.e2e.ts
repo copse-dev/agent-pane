@@ -110,7 +110,7 @@ describe('settings styling', function () {
     // Adjacent groups introduce themselves in one voice (#3065): "Detected
     // settings" used a 12px muted field hint beside Providers' 14px blurb.
     const blurbs = await browser.execute(() =>
-      ['#settings-env-detect-host', '#settings-providers-host'].map((host) => {
+      ['#settings-agents-host', '#settings-providers-host'].map((host) => {
         const blurb = document.querySelector<HTMLElement>(`${host} > fieldset > legend + p`)
         if (!blurb) return null
         const style = getComputedStyle(blurb)
