@@ -207,11 +207,33 @@ export function unscoredPricedModels(
   return out.sort((a, b) => a.costPerMTok - b.costPerMTok || a.id.localeCompare(b.id))
 }
 
+/** Filtered priced models remain reachable from both map views. */
+function buildSeverelyDominatedList(points: readonly FrontierPoint[]): HTMLElement[] {
+  if (points.length === 0) return []
+  return [
+    el(
+      'details',
+      { class: 'frontier-severely-dominated' },
+      el(
+        'summary',
+        {},
+        `${String(points.length)} models cost at least 4× more than an equally capable priced model`,
+      ),
+      renderBandedModelList(
+        points.map((p) => ({
+          id: p.id,
+          intellect: p.intellect,
+          estimated: p.intellectEstimated,
+          costPerMTok: p.costPerMTok,
+        })),
+      ),
+    ),
+  ]
+}
+
 /**
- * The two "below the chart" disclosures: scored-but-unpriced models in intellect
- * bands, and priced-but-unscored models grouped by provider. Shared so the
- * pop-out shows the same lists the inline panel does (its gutter only overlays
- * the top few on the chart itself).
+ * Scored-but-unpriced and priced-but-unscored disclosures shared by both views.
+ * The gutter only overlays the top few models on the chart itself.
  */
 function buildAuxLists(
   unpricedList: readonly CanonicalScoredModel[],
@@ -319,6 +341,7 @@ export function createIntellectFrontierPanel(
   // "below the chart" content the inline panel does.
   let lastUnpriced: readonly CanonicalScoredModel[] = []
   let lastUnscored: readonly { id: string; costPerMTok: number }[] = []
+  let lastSeverelyDominated: readonly FrontierPoint[] = []
   // The open pop-out's chart host + tooltip + toggle buttons (null when closed).
   // render() repaints these in place so the pop-out's own Discover / Show
   // unpriced toggles behave exactly like the inline chart's.
@@ -714,6 +737,7 @@ export function createIntellectFrontierPanel(
         'all',
       ),
       ...buildAuxLists(lastUnpriced, lastUnscored),
+      ...buildSeverelyDominatedList(lastSeverelyDominated),
     )
   }
 
@@ -1064,6 +1088,7 @@ export function createIntellectFrontierPanel(
     const dominatedLive = allPoints.filter((p) => p.discovery === true && !p.onFrontier)
     const routedPoints = allPoints.filter((p) => p.discovery !== true)
     const severelyDominated = routedPoints.filter((p) => isSeverelyDominated(p, routedPoints))
+    lastSeverelyDominated = severelyDominated
     const points = allPoints.filter(
       (p) => (p.discovery !== true || p.onFrontier) && !severelyDominated.includes(p),
     )
@@ -1185,27 +1210,7 @@ export function createIntellectFrontierPanel(
         ),
       )
     }
-    if (severelyDominated.length > 0) {
-      liveNoteParts.push(
-        el(
-          'details',
-          { class: 'frontier-severely-dominated' },
-          el(
-            'summary',
-            {},
-            `${String(severelyDominated.length)} models cost at least 4× more than an equally capable priced model`,
-          ),
-          renderBandedModelList(
-            severelyDominated.map((p) => ({
-              id: p.id,
-              intellect: p.intellect,
-              estimated: p.intellectEstimated,
-              costPerMTok: p.costPerMTok,
-            })),
-          ),
-        ),
-      )
-    }
+    liveNoteParts.push(...buildSeverelyDominatedList(severelyDominated))
     const unscoredList = lastGutters.unscored ?? []
     // The disclosure lists the FULL unpriced set regardless of the gutter
     // toggle (the gutter only overlays the top few on the chart).
