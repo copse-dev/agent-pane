@@ -417,7 +417,9 @@ describe('footer branch status for a detached thread worktree', function () {
     await expect(button).toHaveAttribute('aria-label', `Restore worktree for ${detachedBranch}`)
     await expectOnBranchLine(button)
     await expect($('.toast-error')).not.toExist()
-    await saveElementScreenshot('#input-bar', 'footer-branch-missing-worktree.png')
+    // The recovery controls live in the footer. History hydration and the
+    // optional Changes row above it must not change this focused frame.
+    await saveElementScreenshot('.input-footer', 'footer-branch-missing-worktree.png')
 
     await button.click()
     await expect(button).not.toBeDisplayed({ wait: 20_000 })
@@ -425,6 +427,12 @@ describe('footer branch status for a detached thread worktree', function () {
     await expect($('.footer-branch-label')).toHaveText(detachedBranch)
     expect(git(worktreeRoot, ['rev-parse', 'HEAD'])).toBe(tip)
     await expect($('.toast-error')).not.toExist()
-    await saveElementScreenshot('#input-bar', 'footer-branch-restored-worktree.png')
+    const restored = $(
+      `.toast=Restored worktree for ${detachedBranch}. You can continue this chat.`,
+    )
+    await expect(restored).toBeDisplayed()
+    await restored.waitForExist({ reverse: true, timeout: 10_000 })
+    await expect($('.toast-error')).not.toExist()
+    await saveElementScreenshot('.input-footer', 'footer-branch-restored-worktree.png')
   })
 })
