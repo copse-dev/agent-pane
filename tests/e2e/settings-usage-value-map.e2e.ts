@@ -130,6 +130,26 @@ describe('settings usage model value map cost axis', () => {
     )
     await hiddenOutliers.$('summary').click()
 
+    await fieldset.$('button.frontier-expand').click()
+    const expanded = $('dialog.frontier-expand-dialog')
+    await expect(expanded).toBeDisplayed()
+    assert.equal(
+      await expanded.$('circle.frontier-point[data-model-id="legacy:o1-pro"]').isExisting(),
+      false,
+    )
+    const expandedOutliers = expanded.$('details.frontier-severely-dominated')
+    await expect(expandedOutliers).toBeExisting()
+    await expandedOutliers.$('summary').click()
+    await expect(expandedOutliers).toHaveAttribute('open')
+    await expect(expandedOutliers).toHaveText(expect.stringContaining('o1-pro'))
+    await expect(expandedOutliers).toHaveText(expect.stringContaining('$240'))
+    await saveElementScreenshot(
+      'dialog.frontier-expand-dialog details.frontier-severely-dominated',
+      'settings-usage-value-map-expanded-hidden-routes.png',
+    )
+    await expanded.$('button=Close').click()
+    await expect(expanded).not.toExist()
+
     await taskBtn.click()
     await browser.waitUntil(
       async () => (await chart.getAttribute('data-cost-axis')) === 'perTask',

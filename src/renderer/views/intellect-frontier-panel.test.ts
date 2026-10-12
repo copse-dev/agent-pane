@@ -365,6 +365,14 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(hidden)
     assert.match(hidden.textContent, /o1-pro/)
     assert.doesNotMatch(svg.textContent, /\$240/)
+    panel.root.querySelector<HTMLButtonElement>('button.frontier-expand')?.click()
+    const expanded = panel.root.querySelector('dialog.frontier-expand-dialog')
+    assert.ok(expanded)
+    assert.equal(expanded.querySelector('[data-model-id="huggingface:o1-pro"]'), null)
+    const expandedHidden = expanded.querySelector('details.frontier-severely-dominated')
+    assert.ok(expandedHidden, 'expanded map must retain access to filtered routed models')
+    assert.match(expandedHidden.textContent, /o1-pro/)
+    assert.match(expandedHidden.textContent, /\$240/)
   })
 
   it('shows domination with only the configured paid routes available', async () => {
