@@ -1,5 +1,5 @@
 /** Stage the Git-to-R2 migration without deleting any reference screenshots. */
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import {
   existsSync,
   lstatSync,
@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { isDirectExecution } from './lib/direct-execution.mts'
 import {
   buildScreenshotManifest,
@@ -29,10 +30,12 @@ function required(name: string): string {
   return value
 }
 
-function r2(args: string[]): void {
+const runAws = promisify(execFile)
+
+async function r2(args: string[]): Promise<void> {
   const account = required('SCREENSHOT_R2_ACCOUNT_ID')
   if (!/^[a-f0-9]{32}$/.test(account)) throw new Error('Invalid SCREENSHOT_R2_ACCOUNT_ID')
-  execFileSync(
+  await runAws(
     'aws',
     [
       '--endpoint-url',
@@ -43,7 +46,7 @@ function r2(args: string[]): void {
       ...args,
     ],
     {
-      stdio: ['ignore', 'ignore', 'pipe'],
+      timeout: 180_000,
       env: {
         ...process.env,
         AWS_ACCESS_KEY_ID: required('SCREENSHOT_R2_ACCESS_KEY_ID'),
@@ -92,6 +95,59 @@ export async function screenshotStorage(command: string | undefined): Promise<vo
   const bucket = command === 'upload' || !publicUrl ? required('SCREENSHOT_R2_BUCKET') : ''
   const staging = mkdtempSync(join(tmpdir(), 'copse-screenshots-'))
   try {
+    if (command === 'upload') {
+      const objects = [
+        ...new Map(entries.map(([name, entry]) => [entry.sha256, { name, entry }])).values(),
+      ]
+      const workers = 4
+      let completed = 0
+      console.log(
+        `Uploading and verifying ${String(objects.length)} unique objects with ${String(workers)} workers`,
+      )
+      for (let offset = 0; offset < objects.length; offset += workers) {
+        // Settle the whole batch before deleting staging on failure. No later
+        // batch starts if an object failed upload or integrity verification.
+        const results = await Promise.allSettled(
+          objects.slice(offset, offset + workers).map(async ({ name, entry }) => {
+            const key = screenshotObjectKey(entry)
+            try {
+              await r2([
+                'put-object',
+                '--bucket',
+                bucket,
+                '--key',
+                key,
+                '--body',
+                join(SCREENSHOT_DIRECTORY, name),
+                '--content-type',
+                'image/png',
+                '--cache-control',
+                'public, max-age=31536000, immutable',
+                '--if-none-match',
+                '*',
+              ])
+            } catch (error) {
+              if (!(error instanceof Error) || !/PreconditionFailed/.test(error.message))
+                throw error
+            }
+            const temporary = join(staging, entry.sha256)
+            await r2(['get-object', '--bucket', bucket, '--key', key, temporary])
+            verifyScreenshot(readFileSync(temporary), entry)
+            completed++
+            if (completed <= workers || completed % 25 === 0 || completed === objects.length) {
+              console.log(
+                `Verified ${String(completed)}/${String(objects.length)} objects (${name})`,
+              )
+            }
+          }),
+        )
+        for (const result of results) {
+          if (result.status === 'rejected') throw result.reason
+        }
+      }
+      console.log(`Verified ${String(entries.length)} screenshots in R2`)
+      return
+    }
     const seen = new Set<string>()
     for (const [name, entry] of entries) {
       const key = screenshotObjectKey(entry)
@@ -105,29 +161,7 @@ export async function screenshotStorage(command: string | undefined): Promise<vo
         continue
       }
       if (!seen.has(key)) {
-        if (command === 'upload') {
-          try {
-            r2([
-              'put-object',
-              '--bucket',
-              bucket,
-              '--key',
-              key,
-              '--body',
-              local,
-              '--content-type',
-              'image/png',
-              '--cache-control',
-              'public, max-age=31536000, immutable',
-              '--if-none-match',
-              '*',
-            ])
-          } catch (error) {
-            // Existing immutable objects are verified below, never overwritten.
-            if (!(error instanceof Error) || !/PreconditionFailed/.test(error.message)) throw error
-          }
-        }
-        if (publicUrl && command !== 'upload') {
+        if (publicUrl) {
           const base = new URL(`${publicUrl.replace(/\/$/, '')}/`)
           if (base.protocol !== 'https:') throw new Error('SCREENSHOT_R2_PUBLIC_URL must use HTTPS')
           const response = await fetch(new URL(key, base), { signal: AbortSignal.timeout(60_000) })
@@ -135,7 +169,7 @@ export async function screenshotStorage(command: string | undefined): Promise<vo
             throw new Error(`Screenshot download failed: HTTP ${String(response.status)}`)
           writeFileSync(temporary, Buffer.from(await response.arrayBuffer()))
         } else {
-          r2(['get-object', '--bucket', bucket, '--key', key, temporary])
+          await r2(['get-object', '--bucket', bucket, '--key', key, temporary])
         }
         verifyScreenshot(readFileSync(temporary), entry)
         seen.add(key)

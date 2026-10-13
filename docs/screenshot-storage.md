@@ -30,6 +30,10 @@ Uploads use the R2 S3 endpoint and region `auto`. The upload command validates a
 local manifest entries before writing, uses conditional writes to preserve existing
 hash objects, and downloads each uploaded object to verify its hash and length.
 It never removes local files or changes Git's index.
+Uploads run at most four AWS processes concurrently and report progress after
+the first objects and every 25 verified objects. A failed batch waits for its
+active workers before cleaning up; later batches do not start. Individual AWS
+commands have a three-minute timeout.
 
 For public reads, enable public access on the bucket and set
 `SCREENSHOT_R2_PUBLIC_URL=https://<your bucket's public hostname>.r2.dev`.

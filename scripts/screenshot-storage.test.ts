@@ -103,12 +103,19 @@ const args = process.argv.slice(2);
 fs.appendFileSync('calls.jsonl', JSON.stringify(args) + '\\n');
 if (!args.includes('https://' + 'a'.repeat(32) + '.r2.cloudflarestorage.com')) process.exit(2);
 const operation = args[args.indexOf('s3api') + 1];
+const object = 'objects/' + args[args.indexOf('--key') + 1].split('/').at(-1);
+fs.mkdirSync('objects', { recursive: true });
+fs.appendFileSync('events.log', 'start\\n');
+setTimeout(() => {
+try {
 if (operation === 'put-object') {
   if (args[args.indexOf('--if-none-match') + 1] !== '*') process.exit(2);
-  if (fs.existsSync('object.png')) { console.error('PreconditionFailed'); process.exit(1); }
-  fs.copyFileSync(args[args.indexOf('--body') + 1], 'object.png');
-} else if (operation === 'get-object') fs.copyFileSync('object.png', args.at(-1));
+  if (fs.existsSync(object)) { console.error('PreconditionFailed'); process.exitCode = 1; return; }
+  fs.copyFileSync(args[args.indexOf('--body') + 1], object);
+} else if (operation === 'get-object') fs.copyFileSync(object, args.at(-1));
 else process.exit(2);
+} finally { fs.appendFileSync('events.log', 'end\\n'); }
+}, 100);
 `,
         { mode: 0o755 },
       )
@@ -123,9 +130,45 @@ else process.exit(2);
       await screenshotStorage('upload')
       assert.equal(readFileSync('calls.jsonl', 'utf8').trim().split('\n').length, 4)
       await screenshotStorage('verify')
-      writeFileSync('object.png', 'corrupt remote object')
+      for (let i = 0; i < 9; i++) {
+        writeFileSync(
+          join(SCREENSHOT_DIRECTORY, `unique-${String(i)}.png`),
+          Buffer.concat([png, Buffer.from([i])]),
+        )
+      }
+      writeFileSync(
+        SCREENSHOT_MANIFEST,
+        serializeScreenshotManifest(buildScreenshotManifest(SCREENSHOT_DIRECTORY)),
+      )
+      writeFileSync('events.log', '')
+      await screenshotStorage('upload')
+      let active = 0
+      let peak = 0
+      for (const event of readFileSync('events.log', 'utf8').trim().split('\n')) {
+        active += event === 'start' ? 1 : -1
+        peak = Math.max(peak, active)
+        assert.ok(active >= 0 && active <= 4, `Exceeded concurrency limit: ${String(active)}`)
+      }
+      assert.equal(active, 0)
+      assert.ok(peak > 1, 'AWS processes must overlap')
+      const entry = manifest.screenshots['a.png']
+      assert.ok(entry)
+      const object = join('objects', `${entry.sha256}.png`)
+      writeFileSync(object, 'corrupt remote object')
+      writeFileSync('events.log', '')
       await assert.rejects(screenshotStorage('upload'), /integrity/)
-      assert.equal(readFileSync('object.png', 'utf8'), 'corrupt remote object')
+      assert.equal(readFileSync(object, 'utf8'), 'corrupt remote object')
+      const events = readFileSync('events.log', 'utf8').trim().split('\n')
+      assert.equal(
+        events.filter((event) => event === 'start').length,
+        8,
+        'A failed batch must not start subsequent objects',
+      )
+      assert.equal(
+        events.filter((event) => event === 'start').length,
+        events.filter((event) => event === 'end').length,
+        'All workers must finish before an upload error returns',
+      )
     } finally {
       process.chdir(previous)
       for (const [name, value] of environment) {
