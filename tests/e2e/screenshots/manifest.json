@@ -281,6 +281,18 @@
       "sha256": "1af0bc2c786b68b48352a0f6e04ba0817c022654a9ebb846d0933e8f1e1e3d5d",
       "bytes": 271033
     },
+    "activity-read-history-1600.png": {
+      "sha256": "7fe65ea755361c0d560ea62e67680a732a1ba9e2ffa9815adb3a6749e4ee1762",
+      "bytes": 136460
+    },
+    "activity-read-history-800.png": {
+      "sha256": "832b7b0e97f9ac6cc655f4c21f7235e1f325971e9ce9e514148bf682cae64d53",
+      "bytes": 88328
+    },
+    "activity-read-history.png": {
+      "sha256": "d9ae54544768895a5cb8f911b93f194862bad0e7152912f21b6e9be5c9e31f3e",
+      "bytes": 119115
+    },
     "advisor-denial-readable.png": {
       "sha256": "52838fbba1429c02048566995a4a72554af56d695dcf4eaaac0b7b46db0889b9",
       "bytes": 208317
@@ -572,6 +584,14 @@
     "automation-event-unrun-menu.png": {
       "sha256": "48cd9495a247bf1cbef7934040bf397b109785301e478d5e4572a11e015ff207",
       "bytes": 326302
+    },
+    "automation-held-runs-badge.png": {
+      "sha256": "a5b4207812eed4d65a73f2143cb32094abadc050d1dd3ba7f123a689d992092e",
+      "bytes": 9525
+    },
+    "automation-held-runs-menu.png": {
+      "sha256": "917f0f886a356e8bbac835493394db417d67e3ea57d7599f698b427d76424735",
+      "bytes": 264005
     },
     "automation-manager-modal.png": {
       "sha256": "7340c1e53945f011de0081abf5546bdb9c696d45ddc6d3bc48f515212c4ca3c9",
