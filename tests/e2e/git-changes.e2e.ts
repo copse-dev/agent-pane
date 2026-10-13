@@ -312,6 +312,9 @@ describe('git changes viewer', function () {
       { timeout: 15_000, timeoutMsg: 'expected the committed file to diff as added lines' },
     )
 
+    // Opening the row leaves the pointer over its path. Wait for the ordinary
+    // non-hover view so timing cannot add a path tooltip to the diff capture.
+    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-committed-diff.png'))
   })
 
