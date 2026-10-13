@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -301,6 +309,58 @@ describe('screenshot review packets', () => {
       await assert.rejects(
         collectReview(f.cwd, { ...evidence, head: compare, compare: removed }, f.directory),
         /cannot remove/,
+      )
+    } finally {
+      f.dispose()
+    }
+  })
+
+  it('allows only manifest-derived README image replacements in publisher evidence', async () => {
+    const f = fixture()
+    try {
+      for (const name of ['a.png', 'new.png']) rmSync(join(f.cwd, SCREENSHOT_DIRECTORY, name))
+      const manifest = (bytes: Buffer): string =>
+        JSON.stringify({
+          version: 1,
+          screenshots: {
+            'landing-cupcake-changes.png': { sha256: screenshotHash(bytes), bytes: bytes.length },
+          },
+        })
+      const readme = (bytes: Buffer): string =>
+        `# Copse\n![Preview](https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev/screenshots/sha256/${screenshotHash(bytes)}.png)\n`
+      writeFileSync(join(f.cwd, SCREENSHOT_MANIFEST), manifest(f.changed))
+      writeFileSync(join(f.cwd, 'README.md'), readme(f.changed))
+      const head = f.commit()
+      writeFileSync(join(f.cwd, SCREENSHOT_MANIFEST), manifest(f.candidate))
+      writeFileSync(join(f.cwd, 'README.md'), readme(f.candidate))
+      const compare = f.commit()
+      const evidence = { ...f.evidence, head, compare }
+      const packet = await collectReview(f.cwd, evidence, f.directory, async (entry) =>
+        entry.sha256 === screenshotHash(f.changed) ? f.changed : f.candidate,
+      )
+      assert.equal(packet.items.filter((item) => item.id.startsWith('candidate/')).length, 1)
+      for (const invalid of [readme(f.candidate) + 'unrelated prose\n', readme(f.original)]) {
+        f.git('reset', '--hard', compare)
+        writeFileSync(join(f.cwd, 'README.md'), invalid)
+        f.git('add', 'README.md')
+        f.git('commit', '--amend', '--no-edit', '-q')
+        await assert.rejects(
+          collectReview(f.cwd, { ...evidence, compare: f.git('rev-parse', 'HEAD') }, f.directory),
+          /README changes are not/,
+        )
+      }
+      f.git('reset', '--hard', compare)
+      rmSync(join(f.cwd, 'README.md'))
+      symlinkSync('elsewhere', join(f.cwd, 'README.md'))
+      f.git('add', 'README.md')
+      f.git('commit', '--amend', '--no-edit', '-q')
+      await assert.rejects(
+        collectReview(f.cwd, { ...evidence, compare: f.git('rev-parse', 'HEAD') }, f.directory),
+        /only add or modify screenshot evidence|regular file/,
+      )
+      assert.equal(
+        parseReviewPacket(readFileSync(join(f.directory, 'current.json'), 'utf8')).evidence.compare,
+        compare,
       )
     } finally {
       f.dispose()
