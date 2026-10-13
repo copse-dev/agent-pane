@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 import {
   E2E_SCREENSHOT_DIR,
   pinTextForCapture,
@@ -62,8 +63,45 @@ const SCHEDULER_TICK_TIMEOUT_MS = 30_000
 describe('cron automation trigger', function () {
   // A mock agent turn plus checkout preparation, with headroom for a loaded runner.
   this.timeout(120_000)
+  let previousMockBranch: string | undefined
+
+  async function selectSidebarState(
+    selector: string,
+    attribute: 'selected' | 'expanded',
+  ): Promise<void> {
+    const reached = (): Promise<boolean> =>
+      browser.execute(
+        ({ target, state }) => {
+          const element = document.querySelector(target)
+          return state === 'selected'
+            ? element?.classList.contains('selected') === true
+            : element?.getAttribute('aria-expanded') === 'true'
+        },
+        { target: selector, state: attribute },
+      )
+    await browser.waitUntil(
+      async () => {
+        if (await reached()) return true
+        const element = $(selector)
+        await element.waitForDisplayed({ timeout: 5_000 })
+        try {
+          await element.click()
+        } catch (error) {
+          // Store updates replace sidebar nodes, including immediately after a
+          // successful click. Re-query its desired state before trying again.
+          if (!(error instanceof Error && /stale element/i.test(error.message))) throw error
+        }
+        return reached()
+      },
+      { timeout: 10_000, timeoutMsg: `expected ${selector} to become ${attribute}` },
+    )
+  }
 
   before(async () => {
+    previousMockBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
+    // The scheduled task must query its real isolated checkout. The global
+    // screenshot branch mock also applies to scoped Git IPC and would report work.
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: '' })
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
 
@@ -232,6 +270,7 @@ describe('cron automation trigger', function () {
 
   after(() => {
     resetUserData()
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: previousMockBranch })
   })
 
   it('submits the scheduled prompt and completes a real mock agent turn', async () => {
@@ -275,11 +314,7 @@ describe('cron automation trigger', function () {
     // Automations section starts collapsed either way.
     const regularChat = $('.chat-row[data-thread-id="regular-chat"]')
     await regularChat.waitForExist({ timeout: 15_000 })
-    await regularChat.click()
-    await browser.waitUntil(
-      async () => (await regularChat.getAttribute('class'))?.includes('selected') === true,
-      { timeout: 5_000, timeoutMsg: 'the ordinary chat never became the selected thread' },
-    )
+    await selectSidebarState('.chat-row[data-thread-id="regular-chat"]', 'selected')
 
     const automationGroup = $('.automation-threads-toggle')
     await automationGroup.waitForExist({
@@ -288,7 +323,7 @@ describe('cron automation trigger', function () {
     })
     assert.equal(await automationGroup.getAttribute('aria-expanded'), 'false')
     assert.equal(await automationGroup.$('.automation-threads-count').getText(), '1')
-    await automationGroup.click()
+    await selectSidebarState('.automation-threads-toggle', 'expanded')
 
     const scheduleGroup = $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`)
     await scheduleGroup.waitForExist({ timeout: 5_000 })
@@ -311,7 +346,10 @@ describe('cron automation trigger', function () {
       await scheduleGroup.$('.automation-schedule-toggle').getAttribute('aria-expanded'),
       'false',
     )
-    await scheduleGroup.$('.automation-schedule-toggle').click()
+    await selectSidebarState(
+      `.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"] .automation-schedule-toggle`,
+      'expanded',
+    )
 
     const scheduledRow = scheduleGroup.$('.automation-schedule-runs .chat-row')
     await scheduledRow.waitForExist({ timeout: 5_000 })
@@ -330,7 +368,10 @@ describe('cron automation trigger', function () {
     )
     await saveElementScreenshot('.automation-threads-group', 'automation-thread-group.png')
     await restoreRunTime()
-    await $(`.automation-schedule-runs .chat-row[data-thread-id="${scheduledThreadId}"]`).click()
+    await selectSidebarState(
+      `.automation-schedule-runs .chat-row[data-thread-id="${scheduledThreadId}"]`,
+      'selected',
+    )
 
     const userMessage = $('.msg-user .message-text')
     // Same reasoning as the sibling diagnostic in automation-attention (#1719):
@@ -384,16 +425,29 @@ describe('cron automation trigger', function () {
     // branch once the thread is idle. Keep proving the running task owns its
     // real isolated branch, then pin only its generated suffix for capture.
     await expect($('.stop-btn')).toBeDisplayed()
+    const activeCheckoutBranch = await browser.execute(
+      ({ projectId, threadId }) => window.api.git.currentBranch(projectId, threadId),
+      { projectId: PROJECT_ID, threadId: scheduledThreadId },
+    )
+    assert.match(activeCheckoutBranch ?? '', /^copse\/thread-[a-z0-9]+$/)
     await expect($('.branch-picker-label')).toHaveText(
       expect.stringMatching(/^copse\/thread-[a-z0-9]+$/),
     )
     const activeBranch = await $('.branch-picker-label').getText()
+    assert.equal(activeBranch, activeCheckoutBranch)
+    await expect($('.workspace-branch')).toHaveText(activeBranch)
     const restoreActiveBranch = await pinTextForCapture(
       '.branch-picker-label',
       /^copse\/thread-[a-z0-9]+$/,
       'copse/thread-fixture',
     )
+    let restoreActiveTitlebar = async (): Promise<void> => {}
     try {
+      restoreActiveTitlebar = await pinTextForCapture(
+        '.workspace-branch',
+        /^copse\/thread-[a-z0-9]+$/,
+        'copse/thread-fixture',
+      )
       const restoreActiveRunTime = await pinTextForCapture(
         '.automation-schedule-runs',
         /^Latest · .+$/,
@@ -404,6 +458,7 @@ describe('cron automation trigger', function () {
         await savePreparedAppScreenshot('automation-active.png', async () => {
           await expect($('.stop-btn')).toBeDisplayed()
           await expect($('.branch-picker-label')).toHaveText('copse/thread-fixture')
+          await expect($('.workspace-branch')).toHaveText('copse/thread-fixture')
           await expect(
             $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"] .chat-row`),
           ).toHaveText('Latest · Jan 1, 2026, 12:00 AM')
@@ -412,9 +467,11 @@ describe('cron automation trigger', function () {
         await restoreActiveRunTime()
       }
     } finally {
+      await restoreActiveTitlebar()
       await restoreActiveBranch()
     }
     await expect($('.branch-picker-label')).toHaveText(activeBranch)
+    await expect($('.workspace-branch')).toHaveText(activeBranch)
 
     await scenario.release('review-ready')
     const expectedResponse = 'The CI review is complete; no failures were found.'
@@ -443,14 +500,43 @@ describe('cron automation trigger', function () {
 
     // The real scheduled task creates its isolated branch with a unique suffix.
     // Keep asserting that behavior, then pin only the displayed suffix for capture.
+    await browser.waitUntil(
+      async () => {
+        const branch = await browser.execute(
+          ({ projectId, threadId }) => window.api.git.currentBranch(projectId, threadId),
+          { projectId: PROJECT_ID, threadId: scheduledThreadId },
+        )
+        return /^copse\/ci-review-[a-z0-9]+$/.test(branch ?? '')
+      },
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the settled title to rename the real checkout branch',
+      },
+    )
+    await expect($('.branch-picker-label')).toHaveText(
+      expect.stringMatching(/^copse\/ci-review-[a-z0-9]+$/),
+      { wait: 15_000 },
+    )
     const scheduledBranch = await $('.branch-picker-label').getText()
     assert.match(scheduledBranch, /^copse\/ci-review-[a-z0-9]+$/)
+    const settledCheckoutBranch = await browser.execute(
+      ({ projectId, threadId }) => window.api.git.currentBranch(projectId, threadId),
+      { projectId: PROJECT_ID, threadId: scheduledThreadId },
+    )
+    assert.equal(scheduledBranch, settledCheckoutBranch)
+    await expect($('.workspace-branch')).toHaveText(scheduledBranch)
     const restoreFinalBranch = await pinTextForCapture(
       '.branch-picker-label',
       /^copse\/ci-review-[a-z0-9]+$/,
       'copse/ci-review-fixture',
     )
+    let restoreFinalTitlebar = async (): Promise<void> => {}
     try {
+      restoreFinalTitlebar = await pinTextForCapture(
+        '.workspace-branch',
+        /^copse\/ci-review-[a-z0-9]+$/,
+        'copse/ci-review-fixture',
+      )
       const restoreFinalRunTime = await pinTextForCapture(
         '.automation-schedule-runs',
         /^Latest · .+$/,
@@ -461,6 +547,7 @@ describe('cron automation trigger', function () {
         await savePreparedAppScreenshot('automation-trigger.png', async () => {
           // A sidebar rebuild must not release either independent capture pin.
           await expect($('.branch-picker-label')).toHaveText('copse/ci-review-fixture')
+          await expect($('.workspace-branch')).toHaveText('copse/ci-review-fixture')
           await expect(
             $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"] .chat-row`),
           ).toHaveText('Latest · Jan 1, 2026, 12:00 AM')
@@ -469,8 +556,10 @@ describe('cron automation trigger', function () {
         await restoreFinalRunTime()
       }
     } finally {
+      await restoreFinalTitlebar()
       await restoreFinalBranch()
     }
     await expect($('.branch-picker-label')).toHaveText(scheduledBranch)
+    await expect($('.workspace-branch')).toHaveText(scheduledBranch)
   })
 })
