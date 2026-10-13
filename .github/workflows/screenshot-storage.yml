@@ -1,8 +1,17 @@
 name: Screenshot storage
 
 # Bootstrap the R2 copy before migrating the PNG-based review workflows.
-# Writes are explicitly dispatched; PR code never receives the R2 credentials.
+# Publish accepted PNGs after main changes, or run explicitly for a chosen ref.
+# PR jobs never receive the R2 credentials.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'tests/e2e/screenshots/**'
+      - 'scripts/screenshot-storage.mts'
+      - 'scripts/lib/screenshot-manifest.mts'
+      - 'scripts/lib/safe-json.mts'
+      - '.github/workflows/screenshot-storage.yml'
   workflow_dispatch:
     inputs:
       operation:
@@ -34,7 +43,7 @@ jobs:
           persist-credentials: false
 
       - name: Check upload configuration
-        if: inputs.operation == 'upload'
+        if: github.event_name == 'push' || inputs.operation == 'upload'
         env:
           SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
           SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
@@ -49,11 +58,16 @@ jobs:
 
       - uses: ./.github/actions/setup
 
+      # PNGs remain the reviewed source of truth during the migration. Derive
+      # the upload snapshot from this commit, including accepted PNG-only updates.
+      - name: Generate the manifest from committed screenshots
+        run: pnpm screenshots:manifest
+
       - name: Check the local manifest
         run: pnpm screenshots:check
 
       - name: Upload immutable objects and verify their contents
-        if: inputs.operation == 'upload'
+        if: github.event_name == 'push' || inputs.operation == 'upload'
         env:
           SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
           SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
@@ -73,7 +87,7 @@ jobs:
 
       - name: Summarize verified storage
         env:
-          OPERATION: ${{ inputs.operation }}
+          OPERATION: ${{ inputs.operation || 'upload' }}
         run: |
           {
             echo '### Screenshot storage verified'
