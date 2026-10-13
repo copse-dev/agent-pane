@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -7,6 +15,7 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { FAKE_WINNOW_PIN, writeFakeClassifierTools } from '../helpers/fake-classifier-tools.ts'
+import { withGitInvocationArgs } from '../../src/main/services/security/git-invocation.ts'
 
 /**
  * "Download and run" in the real app: real IPC, the real manager, the real
@@ -21,8 +30,18 @@ const CACHE = join(tmpdir(), 'copse-e2e-classifier-cache')
 const WORK = mkdtempSync(join(tmpdir(), 'copse-e2e-classifier-tools-'))
 const BIN = join(WORK, 'bin')
 const LOG = join(WORK, 'calls.log')
+// Opening the seeded project can inspect its origin and worktree status. Permit
+// only those exact read-only probes and prerequisite versions before approval.
+const DISCOVERY_CALLS = new Set([
+  'git --version',
+  'python3 --version',
+  'uv --version',
+  `git ${withGitInvocationArgs(['remote', 'get-url', 'origin']).join(' ')}`,
+  `git ${withGitInvocationArgs(['rev-parse', '--is-inside-work-tree']).join(' ')}`,
+])
 const KEYS = [
   'PATH',
+  'COPSE_PRESERVE_PATH',
   'COPSE_CLASSIFIER_CACHE',
   'FAKE_LOG',
   'FAKE_GIT_MODE',
@@ -46,8 +65,9 @@ describe('Download and run a local classifier', function () {
   }
 
   const base = {
-    // The app prepends /usr/bin and /bin to a PATH that lacks them, which would put the
-    // real tools ahead of the fakes. Listing them after the fakes leaves nothing to prepend.
+    // This prepared launcher owns PATH; GUI discovery must not prepend the host's
+    // /usr/local/bin git ahead of the process-boundary fixtures.
+    COPSE_PRESERVE_PATH: '1',
     PATH: `${BIN}:/usr/bin:/bin`,
     COPSE_CLASSIFIER_CACHE: CACHE,
     FAKE_LOG: LOG,
@@ -60,6 +80,24 @@ describe('Download and run a local classifier', function () {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     rmSync(CACHE, { recursive: true, force: true })
     writeFakeClassifierTools(BIN)
+    // Kev is a sibling of the Winnow form in the capture. Keep its prerequisite
+    // discovery independent of whether this runner has uv, using the same process
+    // boundary as the fake git/python3 tools. Any actual Kev setup still fails.
+    const fakeUv = join(BIN, 'uv')
+    writeFileSync(
+      fakeUv,
+      `#!${process.execPath}\nconst fs = require('node:fs')
+const args = process.argv.slice(2)
+if (process.env.FAKE_LOG) fs.appendFileSync(process.env.FAKE_LOG, 'uv ' + args.join(' ') + '\\n')
+if (args.length === 1 && args[0] === '--version') {
+  console.log('uv 0.10.0 (fake)')
+} else {
+  process.stderr.write('fake uv: unsupported ' + args.join(' ') + '\\n')
+  process.exit(2)
+}
+`,
+    )
+    chmodSync(fakeUv, 0o755)
     writeFileSync(LOG, '')
   })
 
@@ -124,11 +162,11 @@ describe('Download and run a local classifier', function () {
     await saveElementScreenshot('#confirm-dialog', 'settings-classifiers-install-confirm.png')
     // Declining downloads nothing.
     await $('#confirm-dialog .confirm-dialog-cancel').click()
-    // Detection only asks each tool for its version; nothing is cloned or set up until confirmed.
+    // Prerequisite discovery and the two project probes above do not download or set up anything.
     assert.deepEqual(
       readFileSync(LOG, 'utf8')
         .split('\n')
-        .filter((line) => line && !line.endsWith('--version')),
+        .filter((line) => line && !DISCOVERY_CALLS.has(line)),
       [],
       'nothing was downloaded before the person confirmed',
     )
@@ -183,6 +221,9 @@ describe('Download and run a local classifier', function () {
     const result = await host.$('.classifier-status').getText()
     assert.match(result, /color: red/)
     assert.match(result, /winnow-fake/)
+    await expect($('[data-local-id="kev"]')).toHaveText(
+      expect.stringContaining('Not installed · about 8 GB download'),
+    )
     await saveElementScreenshot(
       '#settings-classifiers-host',
       'settings-classifiers-install-test.png',

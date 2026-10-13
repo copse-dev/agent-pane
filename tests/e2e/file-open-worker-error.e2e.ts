@@ -1,5 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
@@ -22,10 +22,13 @@ async function waitForWorkspace(): Promise<void> {
 
 describe('Opening a code file does not surface worker error toasts', () => {
   let workspaceRoot = ''
+  let cleanupWorkspace: (() => void) | undefined
 
   before(async function () {
     this.timeout(120_000)
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-file-open-worker-'))
+    const fixture = createFixtureDirectory('copse-file-open-worker')
+    workspaceRoot = fixture.root
+    cleanupWorkspace = fixture.cleanup
     writeFileSync(
       join(workspaceRoot, SAMPLE_FILE),
       [
@@ -53,7 +56,7 @@ describe('Opening a code file does not surface worker error toasts', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    cleanupWorkspace?.()
   })
 
   it('shows the file in Monaco with its language worker and no error toast', async () => {

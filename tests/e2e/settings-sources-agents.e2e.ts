@@ -1,6 +1,6 @@
+import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -23,12 +23,15 @@ const AGENT_DESCRIPTION = 'Reviews authentication changes for security regressio
 
 describe('custom agent discovery surfaces', () => {
   let workspaceRoot = ''
+  let cleanupWorkspace: (() => void) | undefined
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
 
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-sources-agents-'))
+    const fixture = createFixtureDirectory('copse-e2e-sources-agents')
+    workspaceRoot = fixture.root
+    cleanupWorkspace = fixture.cleanup
     const agentsDir = join(workspaceRoot, '.cursor', 'agents')
     mkdirSync(agentsDir, { recursive: true })
     writeFileSync(
@@ -59,7 +62,7 @@ describe('custom agent discovery surfaces', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    cleanupWorkspace?.()
   })
 
   it('shows a project agent in Settings and the slash-command picker', async () => {
