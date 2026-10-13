@@ -1,13 +1,14 @@
+import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { readWorktreePreparationPlan } from '../../src/main/services/worktree-preparation-plan.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
 
-const root = mkdtempSync(join(tmpdir(), 'cargo-preparation-approval-'))
+const fixture = createFixtureDirectory('cargo-preparation-approval')
+const { root } = fixture
 describe('automatic Cargo preparation approval', () => {
   before(async () => {
     mkdirSync(join(root, 'src'))
@@ -30,7 +31,7 @@ describe('automatic Cargo preparation approval', () => {
   })
   after(() => {
     resetUserData()
-    rmSync(root, { recursive: true, force: true })
+    fixture.cleanup()
   })
   it('shows the fetch-only Cargo boundary without claiming compilation or execution', async () => {
     const planFingerprint = readWorktreePreparationPlan(root).fingerprint
@@ -54,7 +55,18 @@ describe('automatic Cargo preparation approval', () => {
     const footer = await dialog.$('.approval-footer').getText()
     expect(footer).toContain('project remains read-only')
     expect(footer).toContain('blocked for every subprocess')
-    await saveElementScreenshot('#approval-dialog', 'worktree-preparation-cargo.png')
+    await expect(dialog.$('.approval-footer')).toHaveText(expect.stringContaining(root))
+    // Assert the real permission scope before normalizing only its scratch path.
+    const restorePath = await pinTextForCapture(
+      '.approval-footer',
+      /Project: [^\n]+/,
+      'Project: /tmp/cargo-preparation-approval',
+    )
+    try {
+      await saveElementScreenshot('#approval-dialog', 'worktree-preparation-cargo.png')
+    } finally {
+      await restorePath()
+    }
     await dialog.$('.approval-reject').click()
   })
 })

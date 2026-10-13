@@ -1,13 +1,14 @@
+import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { readWorktreePreparationPlan } from '../../src/main/services/worktree-preparation-plan.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
 
-const root = mkdtempSync(join(tmpdir(), 'python-preparation-approval-'))
+const fixture = createFixtureDirectory('python-preparation-approval')
+const { root } = fixture
 describe('automatic Python preparation approval', () => {
   before(async () => {
     writeFileSync(
@@ -25,7 +26,7 @@ describe('automatic Python preparation approval', () => {
   })
   after(() => {
     resetUserData()
-    rmSync(root, { recursive: true, force: true })
+    fixture.cleanup()
   })
   it('shows the locked uv command and repository-code warning without a declaration', async () => {
     const planFingerprint = readWorktreePreparationPlan(root).fingerprint
@@ -47,7 +48,18 @@ describe('automatic Python preparation approval', () => {
     expect(advice).toContain('executes repository code')
     expect(advice).not.toContain('lifecycle scripts disabled')
     expect(await dialog.$('.approval-footer').getText()).toContain('blocked for every subprocess')
-    await saveElementScreenshot('#approval-dialog', 'worktree-preparation-python.png')
+    await expect(dialog.$('.approval-footer')).toHaveText(expect.stringContaining(root))
+    // Assert the real permission scope before normalizing only its scratch path.
+    const restorePath = await pinTextForCapture(
+      '.approval-footer',
+      /Project: [^\n]+/,
+      'Project: /tmp/python-preparation-approval',
+    )
+    try {
+      await saveElementScreenshot('#approval-dialog', 'worktree-preparation-python.png')
+    } finally {
+      await restorePath()
+    }
     await dialog.$('.approval-reject').click()
   })
 
@@ -74,7 +86,18 @@ describe('automatic Python preparation approval', () => {
     const advice = await dialog.$('.approval-advice').getText()
     expect(advice).toContain('exact SHA-256-locked wheels only')
     expect(advice).toContain('source builds and package build scripts are disabled')
-    await saveElementScreenshot('#approval-dialog', 'worktree-preparation-pip.png')
+    await expect(dialog.$('.approval-footer')).toHaveText(expect.stringContaining(root))
+    // Assert the real permission scope before normalizing only its scratch path.
+    const restorePath = await pinTextForCapture(
+      '.approval-footer',
+      /Project: [^\n]+/,
+      'Project: /tmp/python-preparation-approval',
+    )
+    try {
+      await saveElementScreenshot('#approval-dialog', 'worktree-preparation-pip.png')
+    } finally {
+      await restorePath()
+    }
     await dialog.$('.approval-reject').click()
   })
 })

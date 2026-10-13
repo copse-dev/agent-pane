@@ -108,13 +108,19 @@ describe('Changes chip includes committed branch work', () => {
     await expect($('.follow-up-bubble-changes .follow-up-stat-del')).toHaveText('-1')
     // Set the capture viewport before waiting: resizing can refresh the pane.
     await prepareE2eScreenshot()
-    await browser.waitUntil(
-      async () => !(await $('.git-changes-list').getText()).includes('Checking committed changes'),
-      {
-        timeout: 15_000,
-        timeoutMsg: 'expected committed changes to finish loading before capture',
-      },
-    )
-    await savePreparedAppScreenshot('changes-chip-committed.png')
+    await savePreparedAppScreenshot('changes-chip-committed.png', async () => {
+      // The pane can refresh again while the capture helper settles layout.
+      // Check its observable query completion at the last capture boundary.
+      // Other hidden panes share .git-changes-list and may still be fetching.
+      await expect($('#git-changes-host .git-changes-list .pane-loading')).not.toExist({
+        wait: 15_000,
+      })
+      await expect($('.git-change-row-committed .git-change-path')).toHaveText('example.txt')
+      await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+3')
+      await expect($('.follow-up-bubble-changes .follow-up-stat-del')).toHaveText('-1')
+      await expect($('#git-changes-host .git-changes-list .pane-loading')).not.toExist({
+        wait: 15_000,
+      })
+    })
   })
 })

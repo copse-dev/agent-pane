@@ -54,6 +54,8 @@ interface Managed {
   child?: ChildProcess
   /** Whether the child has been started and not yet exited. */
   alive: boolean
+  /** Startup settles only after the listening server's connection has been saved. */
+  ready: boolean
   progress?: string
   error?: string
   tail: string[]
@@ -241,6 +243,7 @@ export class LocalClassifierManager {
       controller: new AbortController(),
       installing,
       alive: false,
+      ready: false,
       tail: [],
     }
     this.managed.set(id, state)
@@ -317,8 +320,10 @@ export class LocalClassifierManager {
       })
       await this.waitUntilListening(entry.port, state)
       if (!isAlive(state)) return
-      delete state.progress
       await this.ensureProfile(entry)
+      if (!isAlive(state) || state.controller.signal.aborted) return
+      delete state.progress
+      state.ready = true
     } catch (error) {
       this.fail(state, error)
       await this.terminate(state)
@@ -394,7 +399,7 @@ export class LocalClassifierManager {
     const installed = await this.deps.isInstalled(id, entry)
     let phase: LocalClassifierPhase
     if (state?.installing) phase = 'installing'
-    else if (state?.alive) phase = listening ? 'running' : 'starting'
+    else if (state?.alive) phase = listening && state.ready ? 'running' : 'starting'
     else if (listening) phase = 'external'
     else phase = installed ? 'installed' : 'not-installed'
     const missing = phase === 'not-installed' && !listening ? await this.missingPrograms(entry) : []

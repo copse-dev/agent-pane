@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -11,6 +11,27 @@ describe('markdown streaming heading pending', () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-streaming-heading-project', { subagentsEnabled: false })
+    // A persisted user message keeps the real conversation visible. An empty
+    // thread hides it for the Activity idle composer, even if DOM text exists.
+    writeSeedConfig({
+      projects: [{ id: 'e2e-streaming-heading-project', path: process.cwd(), name: 'workspace' }],
+      activeProjectId: 'e2e-streaming-heading-project',
+      expandedProjectId: 'e2e-streaming-heading-project',
+      activeThreadId: 'streaming-heading-thread',
+      'threads:e2e-streaming-heading-project': [
+        {
+          id: 'streaming-heading-thread',
+          title: 'Streaming heading',
+          status: 'idle',
+          createdAt: Date.UTC(2026, 6, 17, 9),
+          updatedAt: Date.UTC(2026, 6, 17, 9),
+          messages: [
+            { id: 'streaming-prompt', role: 'user', content: 'Show the streaming heading state.' },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+        },
+      ],
+    })
     await browser.reloadSession()
   })
 
@@ -19,7 +40,8 @@ describe('markdown streaming heading pending', () => {
   })
 
   it('renders pending ### headings without raw hash markers', async () => {
-    await $('.messages-list').waitForExist({ timeout: 30_000 })
+    await $('.messages-list').waitForDisplayed({ timeout: 30_000 })
+    await expect($('.msg-user .message-text')).toHaveText('Show the streaming heading state.')
 
     const result = await browser.execute(() => {
       const list = document.querySelector('.messages-list')
@@ -52,6 +74,12 @@ describe('markdown streaming heading pending', () => {
     expect(result.headingLevel).toBe('3')
     expect(result.hasRawHashes).toBe(false)
 
+    const visibleState = $('.stream-pending-heading')
+    await visibleState.waitForDisplayed({ timeout: 5_000 })
+    await expect(visibleState).toHaveText(expect.stringContaining('Architecture Highlights'))
+    const bounds = await visibleState.getSize()
+    expect(bounds.width).toBeGreaterThan(0)
+    expect(bounds.height).toBeGreaterThan(0)
     await saveAppScreenshot('markdown-streaming-heading-pending.png')
   })
 })
