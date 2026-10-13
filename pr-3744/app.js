@@ -81648,7 +81648,7 @@ function createDemoApi(scenario, options = {}) {
       fetchProviderModels: () => resolved2({ ok: false, models: [], error: "Unavailable in demo" }),
       refreshHuggingFaceModels: () => resolved2({ ok: false, count: 0, error: "Unavailable in demo" })
     },
-    appIcon: { apply: resolvedVoid },
+    appIcon: { apply: resolvedVoid, setAutomationMode: resolvedVoid },
     about: {
       getInfo: () => resolved2({ version: "demo", report: null }),
       openLicenseFile: resolvedVoid
@@ -159147,10 +159147,39 @@ var init_agent = __esm({
 });
 
 // src/renderer/controller/automation-appearance.ts
-function attachAutomationAppearance(testAutomation, root = document.documentElement) {
-  root.toggleAttribute(AUTOMATION_ACTIVE_ATTRIBUTE, testAutomation);
+function hasRunningAutomation(threads, backgroundThreads) {
+  return [...threads, ...backgroundThreads.map(({ thread }) => thread)].some(
+    (thread) => thread.automation !== void 0 && thread.status === "running"
+  );
+}
+function attachAutomationAppearance(store2, api2, root = document.documentElement) {
+  let active2 = null;
+  const sync = () => {
+    const state = store2.getState();
+    const next = hasRunningAutomation(state.threads, state.backgroundThreads);
+    if (next === active2) return;
+    active2 = next;
+    root.toggleAttribute(AUTOMATION_ACTIVE_ATTRIBUTE, next);
+    void api2.setAutomationMode(next).catch((error62) => {
+      console.error("[automations] Failed to apply transient appearance:", error62);
+    });
+  };
+  const unsubs = [
+    store2.on("thread_status_changed", sync),
+    store2.on("threads_changed", sync),
+    store2.on("workspace_changed", sync)
+  ];
+  sync();
   return () => {
+    unsubs.forEach((unsubscribe) => {
+      unsubscribe();
+    });
     root.removeAttribute(AUTOMATION_ACTIVE_ATTRIBUTE);
+    if (active2 === true) {
+      void api2.setAutomationMode(false).catch((error62) => {
+        console.error("[automations] Failed to restore the native app icon:", error62);
+      });
+    }
   };
 }
 var AUTOMATION_ACTIVE_ATTRIBUTE;
@@ -169589,7 +169618,6 @@ async function boot() {
   const mobileReady = new Promise((resolve) => {
     mobileRestored = resolve;
   });
-  attachAutomationAppearance(Object.hasOwn(window, "__copseE2e"));
   if (!popoutMode) {
     startAgentController(store, api);
     attachAutosave(store, api);
@@ -169600,6 +169628,7 @@ async function boot() {
       openSettings: openModelSettings
     });
     attachAutomationController(store, api);
+    attachAutomationAppearance(store, api.appIcon);
     attachPrPanelFollow(store, api);
     startExternalCursorAgentSync(store, api);
   } else {
