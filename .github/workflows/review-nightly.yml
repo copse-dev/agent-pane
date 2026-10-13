@@ -187,7 +187,7 @@ jobs:
           printf '{"pr":%s,"headSha":"%s","baseRef":"%s"}\n' "$PR_NUMBER" "$HEAD_SHA" "$BASE_REF" > ground/meta.json
           bash packages/review/ci/ground-as-cell-user.sh
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         with:
           name: copse-review-nightly-ground-${{ needs.select.outputs.number }}
           path: ground/
@@ -378,7 +378,7 @@ jobs:
             --sarif findings.sarif \
             --events findings.events.jsonl
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: copse-review-nightly-findings-${{ needs.select.outputs.number }}

@@ -437,7 +437,7 @@ jobs:
 
       - name: Preserve screenshot stack coverage request
         if: steps.screenshot-stack.outputs.tip == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: screenshot-stack-coverage-${{ github.run_id }}
           path: screenshot-stack-coverage.json
@@ -860,7 +860,7 @@ jobs:
       # The console gets the `dot` reporter (see scripts/run-tests.mts) so a
       # failure is reachable through the job-log API's ~5000-line tail. This is
       # the full TAP for the same run, for when you want the passing detail too.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: always()
         continue-on-error: true
         with:
@@ -875,7 +875,7 @@ jobs:
       # Diagnostic HTML only — coverage:ci / coverage-gate already decided pass/fail.
       # Org artifact-storage quota must not fail the merge gate after a green suite
       # (seen on #1074: CreateArtifact quota error after 0 unit failures).
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: always()
         continue-on-error: true
         with:
@@ -982,7 +982,7 @@ jobs:
       - run: >-
           node scripts/semantic-search-bench.mts --backend gortex --gate
           --min-recall 0.65 --max-p95-ms 3000 --json bench-semantic.json
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: always()
         continue-on-error: true
         with:
@@ -1015,7 +1015,7 @@ jobs:
       - run: >-
           npm run eval:steer -- --provider mock --repeats 1
           --out bench-results/steer-mock --require-gates
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: always()
         continue-on-error: true
         with:
@@ -1052,7 +1052,7 @@ jobs:
           LM_STUDIO_MODEL: ${{ vars.LM_STUDIO_MODEL }}
           LM_STUDIO_API_KEY: ${{ secrets.LM_STUDIO_API_KEY }}
         run: npm run bench:agent -- --tasks benchmarks/tasks/swe-bench --gate
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: always()
         continue-on-error: true
         with:
@@ -1088,7 +1088,7 @@ jobs:
           npm run eval:doctrine -- --provider lmstudio --repeats 3
           --sections tools,workingStyle,gitBranchSafety
           --out bench-results/doctrine
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: always()
         continue-on-error: true
         with:
@@ -1165,7 +1165,7 @@ jobs:
           npm run --silent analyze:thread -- "$artifact" \
             tests/e2e/scenarios/git-ci-first-class-tools.json > "$report"
           cat "$report"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: always()
         continue-on-error: true
         with:
@@ -1229,7 +1229,7 @@ jobs:
             done
           done
           exit "$failed"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: always()
         continue-on-error: true
         with:
@@ -1300,7 +1300,7 @@ jobs:
             cp "$f" "changed/tests/e2e/screenshots/"
           done
           echo "Collected ${#files[@]} browser screenshot(s)"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: >-
           success() && github.event_name == 'pull_request' &&
           needs.precheck.outputs.mode != 'skip'
@@ -1309,7 +1309,7 @@ jobs:
           path: changed/
           include-hidden-files: true
           if-no-files-found: error
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: demo-failure-artifacts
@@ -1317,7 +1317,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
       - run: tar -cf dist.tar dist
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         with:
           name: dist-tar
           path: dist.tar
@@ -1950,7 +1950,7 @@ jobs:
             cp "$f" "changed/tests/e2e/screenshots/"
           done
           echo "Collected ${#files[@]} changed screenshot(s) for shard ${{ matrix.shard }}"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: success() && github.event_name == 'pull_request'
         with:
           name: screenshots-shard-${{ matrix.shard }}
@@ -1964,7 +1964,7 @@ jobs:
           retention-days: 3
       # Keep successful responsiveness measurements too; timing is report-only
       # while fixed-worker base/head variance is being calibrated.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: responsiveness-shard-${{ matrix.shard }}
@@ -1975,7 +1975,7 @@ jobs:
       # plus the per-attempt cgroup/process snapshot above. The latter is still
       # available when ChromeDriver is too dead to capture browser artifacts.
       # Skipped only when a hard runner OOM kills the whole job before this step.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         if: failure()
         continue-on-error: true
         with:
@@ -2103,7 +2103,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload immutable screenshot candidates
         if: steps.candidates.outputs.count != '0'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: reference-screenshot-candidates-${{ github.run_id }}
           # Preserve the repository-relative tree so extracting over a checkout

@@ -169,7 +169,7 @@ jobs:
           echo "- void trials: ${voids}" >> "$GITHUB_STEP_SUMMARY"
           cat trial-summary.jsonl
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         with:
           name: skillsbench-capsules-${{ inputs.fetch_capsules }}
           path: |

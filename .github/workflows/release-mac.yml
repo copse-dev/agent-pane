@@ -350,7 +350,7 @@ jobs:
           mv "$metadata" "release/$UPDATE_CHANNEL-mac.$TARGET_ARCH.yml"
       - name: Enforce the per-client size budget
         run: node scripts/check-macos-release-size.mts release ${{ matrix.arch }}
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         with:
           name: copse-macos-${{ needs.preflight.outputs.release_sha }}-${{ matrix.arch }}
           path: |
@@ -404,7 +404,7 @@ jobs:
       # Keep the already-compressed architecture packages in their separate
       # artifacts. This tiny third artifact contains only the exact assembled
       # feeds, checksums, and notes the publisher will add beside them.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v6
         with:
           name: copse-macos-${{ needs.preflight.outputs.release_sha }}-metadata
           path: |
