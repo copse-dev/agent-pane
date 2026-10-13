@@ -53928,6 +53928,266 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
+// src/renderer/views/setup/mobile-companion-section.ts
+function createMobileCompanionSection(api2) {
+  const status = el("span", { class: "mobile-companion-status" });
+  const enabledInput = el("input", { type: "checkbox", name: "mobileCompanionEnabled" });
+  const addressSelect = el("select", { name: "mobileCompanionAddress" });
+  const addressHint = el("p", { class: "field-hint" });
+  const connectionInfo = el("div", { class: "mobile-companion-connection" });
+  const qrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
+  const qrUrl = el("code", { class: "mobile-companion-qr-url" });
+  const qrHost = el(
+    "div",
+    { id: "mobile-companion-qr", class: "mobile-companion-qr", hidden: true },
+    qrImage,
+    el(
+      "div",
+      { class: "mobile-companion-qr-text" },
+      el("p", { class: "field-hint" }, "Scan with your phone's camera to open Copse."),
+      qrUrl
+    )
+  );
+  const pairingHost = el("div", { class: "mobile-companion-pairing" });
+  const deviceList = el("div", { class: "mobile-companion-device-list" });
+  let lastPairingKey = null;
+  let lastDevicesKey = null;
+  function renderAddresses(state) {
+    const previous = addressSelect.value;
+    clear(addressSelect);
+    for (const candidate of state.addresses) {
+      addressSelect.append(
+        el(
+          "option",
+          { value: candidate.address },
+          `${candidate.interfaceName} \u2014 ${candidate.address}`
+        )
+      );
+    }
+    if (state.addresses.some((candidate) => candidate.address === previous))
+      addressSelect.value = previous;
+    const disabled = state.addresses.length === 0 || state.enabled;
+    if (disabled) addressSelect.setAttribute("disabled", "");
+    else addressSelect.removeAttribute("disabled");
+    addressHint.textContent = state.addresses.length === 0 ? "Connect this Mac to a private Wi-Fi or wired network first." : "Pick the interface your phone is on \u2014 usually Wi-Fi. Turn Mobile Companion off to change it.";
+  }
+  function renderConnection(state) {
+    clear(connectionInfo);
+    if (!state.enabled) {
+      qrHost.hidden = true;
+      return;
+    }
+    if (!state.running || !state.url) {
+      qrHost.hidden = true;
+      connectionInfo.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          "Enabled, but its local server is not running yet. Copse retries automatically while it is open."
+        )
+      );
+      return;
+    }
+    connectionInfo.append(
+      el("p", {}, "Open ", el("strong", {}, state.url), " on your phone."),
+      el(
+        "p",
+        { class: "field-hint" },
+        "Transfer the trust certificate directly to your phone and install it there for a verified connection \u2014 it can only vouch for private-network addresses, never a website. Remove it from the phone\u2019s certificate settings when you no longer need it."
+      )
+    );
+    if (state.rootCertificatePath) {
+      const revealBtn = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary" },
+        "Reveal certificate\u2026"
+      );
+      revealBtn.addEventListener("click", () => {
+        void api2.mobile.revealCertificate();
+      });
+      connectionInfo.append(revealBtn);
+    }
+    connectionInfo.append(qrHost);
+    if (state.qrSvg) {
+      qrImage.innerHTML = state.qrSvg;
+      qrUrl.textContent = state.url;
+      qrHost.hidden = false;
+    } else {
+      qrHost.hidden = true;
+    }
+  }
+  function pairingKey(state) {
+    return state.pairing ? `${state.pairing.label}:${state.pairing.code}` : null;
+  }
+  function renderPairing(state) {
+    const key = pairingKey(state);
+    if (key === lastPairingKey) return;
+    lastPairingKey = key;
+    clear(pairingHost);
+    const pairing = state.pairing;
+    if (!pairing) return;
+    const trustInput = el("input", { type: "checkbox" });
+    const controlBtn = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-primary", disabled: true },
+      "Allow control"
+    );
+    const readBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Read only");
+    const denyBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Deny");
+    trustInput.addEventListener("change", () => {
+      controlBtn.toggleAttribute("disabled", !trustInput.checked);
+    });
+    readBtn.addEventListener("click", () => {
+      void api2.mobile.respondPairing("read");
+    });
+    controlBtn.addEventListener("click", () => {
+      if (trustInput.checked) void api2.mobile.respondPairing("control");
+    });
+    denyBtn.addEventListener("click", () => {
+      void api2.mobile.respondPairing("deny");
+    });
+    pairingHost.append(
+      el(
+        "div",
+        { class: "mobile-companion-pairing-banner" },
+        el("p", {}, "Does this code appear on ", el("strong", {}, pairing.label), "?"),
+        el("p", { class: "mobile-companion-pairing-code" }, pairing.code),
+        el(
+          "p",
+          { class: "field-hint" },
+          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Allow control opens a desktop confirmation of certificate trust."
+        ),
+        el(
+          "label",
+          { class: "checkbox-label" },
+          trustInput,
+          " The Copse Local Root is installed and trusted on this phone"
+        ),
+        el("div", { class: "settings-action-row" }, denyBtn, readBtn, controlBtn)
+      )
+    );
+  }
+  function deviceRow(device) {
+    const row2 = el("div", { class: "mobile-companion-device-row" });
+    const summary = el(
+      "div",
+      { class: "mobile-companion-device-summary" },
+      el("strong", {}, device.label),
+      ` \u2014 ${device.access === "control" ? "Chat and run control" : "Read only"}`
+    );
+    const actions = el("div", { class: "mobile-companion-device-actions" });
+    if (device.access === "control") {
+      const toReadBtn = el("button", { type: "button" }, "Make read only");
+      toReadBtn.addEventListener("click", () => {
+        void api2.mobile.setDeviceAccess(device.id, "read");
+      });
+      actions.append(toReadBtn);
+    } else {
+      const trustInput = el("input", { type: "checkbox" });
+      const toControlBtn = el("button", { type: "button", disabled: true }, "Allow control");
+      trustInput.addEventListener("change", () => {
+        toControlBtn.toggleAttribute("disabled", !trustInput.checked);
+      });
+      toControlBtn.addEventListener("click", () => {
+        if (trustInput.checked) void api2.mobile.setDeviceAccess(device.id, "control");
+      });
+      actions.append(
+        el(
+          "label",
+          { class: "checkbox-label mobile-companion-trust-label" },
+          trustInput,
+          " Trusted"
+        ),
+        toControlBtn
+      );
+    }
+    const revokeBtn = el(
+      "button",
+      { type: "button", class: "mobile-companion-device-revoke" },
+      "Revoke"
+    );
+    revokeBtn.addEventListener("click", () => {
+      void api2.mobile.revokeDevice(device.id);
+    });
+    actions.append(revokeBtn);
+    row2.append(summary, actions);
+    return row2;
+  }
+  function renderDevices(state) {
+    const key = JSON.stringify(state.devices);
+    if (key === lastDevicesKey) return;
+    lastDevicesKey = key;
+    clear(deviceList);
+    if (state.devices.length === 0) {
+      deviceList.append(el("p", { class: "field-hint" }, "No phones are paired."));
+      return;
+    }
+    deviceList.append(
+      el(
+        "p",
+        { class: "field-hint" },
+        "Revoking access takes effect immediately. If you installed the Copse Local Root on that phone, remove it in the phone\u2019s certificate settings too."
+      )
+    );
+    for (const device of state.devices) deviceList.append(deviceRow(device));
+  }
+  function applyState(state) {
+    enabledInput.checked = state.enabled;
+    renderAddresses(state);
+    renderConnection(state);
+    renderPairing(state);
+    renderDevices(state);
+    if (state.lastError) setInlineStatus(status, "error", state.lastError);
+    else status.replaceChildren();
+  }
+  enabledInput.addEventListener("change", () => {
+    void (async () => {
+      if (enabledInput.checked) {
+        const address = addressSelect.value;
+        if (!address) {
+          enabledInput.checked = false;
+          return;
+        }
+        await api2.mobile.enable(address);
+      } else {
+        await api2.mobile.disable();
+      }
+      await refresh();
+    })();
+  });
+  async function refresh() {
+    const state = await api2.mobile.getState();
+    applyState(state);
+  }
+  api2.mobile.onStateChanged((state) => {
+    applyState(state);
+  });
+  const root = el(
+    "fieldset",
+    {},
+    el("legend", {}, "Mobile Companion"),
+    el(
+      "p",
+      { class: "field-hint" },
+      "Open your Copse threads from a phone on the same local network. Choose the network interface your phone uses, pair phones, or turn sharing off. Copse must stay open and this computer must stay awake."
+    ),
+    el("label", { class: "checkbox-label" }, enabledInput, " Enable Mobile Companion"),
+    el("label", {}, "Network ", addressSelect),
+    addressHint,
+    connectionInfo,
+    pairingHost,
+    deviceList,
+    status
+  );
+  return { root, refresh };
+}
+var init_mobile_companion_section = __esm({
+  "src/renderer/views/setup/mobile-companion-section.ts"() {
+    init_helpers();
+    init_inline_status();
+  }
+});
+
 // packages/agent/src/plugins/automations-plugin.ts
 var AUTOMATIONS_PLUGIN_ID, automationsPlugin;
 var init_automations_plugin = __esm({
@@ -69663,12 +69923,6 @@ async function loadSimpleFields(form, api2) {
     }
   }
 }
-async function mountMobileCompanionQr(overlay, api2) {
-  const status = await api2.mobile.status();
-  qsRequired(overlay, "#mobile-companion-qr-image").innerHTML = status.qrSvg ?? "";
-  qsRequired(overlay, "#mobile-companion-qr-url").textContent = status.url ?? "";
-  qsRequired(overlay, "#mobile-companion-qr").hidden = !status.url || !status.qrSvg;
-}
 function parseNonNegativeInt(value, fallback) {
   const n2 = Number.parseInt(value, 10);
   return Number.isFinite(n2) && n2 >= 0 ? n2 : fallback;
@@ -70759,26 +71013,7 @@ function mountSettingsDialog(store2, api2) {
               </div>
             </fieldset>
 
-            <fieldset>
-              <legend>Mobile Companion</legend>
-              <p class="field-hint">
-                Open your Copse threads from a phone on the same local network. Choose the network
-                interface your phone uses, pair phones, or turn sharing off. Copse must stay open
-                and this computer must stay awake.
-              </p>
-              <div class="settings-action-row">
-                <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
-                  Set up or manage\u2026
-                </button>
-              </div>
-              <div id="mobile-companion-qr" class="mobile-companion-qr" hidden>
-                <div id="mobile-companion-qr-image" class="mobile-companion-qr-image" aria-hidden="true"></div>
-                <div class="mobile-companion-qr-text">
-                  <p class="field-hint">Scan with your phone's camera to open Copse.</p>
-                  <code id="mobile-companion-qr-url" class="mobile-companion-qr-url"></code>
-                </div>
-              </div>
-            </fieldset>
+            <div id="settings-mobile-companion-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Remote desktop viewer</legend>
@@ -71066,13 +71301,8 @@ function mountSettingsDialog(store2, api2) {
   qsRequired(overlay, "#settings-usage-host").append(usageSection.root);
   const aboutSection = createAboutSection(api2);
   qsRequired(overlay, "#settings-about-host").append(aboutSection.root);
-  qsRequired(overlay, "#mobile-companion-manage").addEventListener(
-    "click",
-    () => {
-      closeSettingsDialog();
-      void api2.mobile.manage();
-    }
-  );
+  const mobileCompanionSection = createMobileCompanionSection(api2);
+  qsRequired(overlay, "#settings-mobile-companion-host").append(mobileCompanionSection.root);
   const navBtns = overlay.querySelectorAll(".settings-nav-btn");
   const sections = overlay.querySelectorAll(".settings-section");
   const contentEl = qsRequired(overlay, ".settings-content");
@@ -71298,6 +71528,7 @@ function mountSettingsDialog(store2, api2) {
           void refreshSources();
         }
         if (id === "customise" || id === "experimental") void refreshPlugins();
+        if (id === "experimental") void mobileCompanionSection.refresh();
         if (id === "storage") {
           void refreshWorktrees();
           void storageMaintenance.refresh();
@@ -73222,10 +73453,6 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     });
   }
   overlay.addEventListener("settings-open", () => {
-    void mountMobileCompanionQr(overlay, api2).catch((error62) => {
-      qsRequired(overlay, "#mobile-companion-qr").hidden = true;
-      console.error("[settings] Could not load Mobile Companion status:", error62);
-    });
     appearanceBaseline = currentAppearance();
     appearanceCommitted = false;
     resetDirtyState();
@@ -73250,7 +73477,10 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
     if (openedSection === "about") void aboutSection.refresh();
-    if (openedSection === "experimental") void refreshPlugins();
+    if (openedSection === "experimental") {
+      void refreshPlugins();
+      void mobileCompanionSection.refresh();
+    }
     if (openedSection === "customise") {
       void refreshSources();
       if (modelFocus) void revealPluginModel?.(modelFocus);
@@ -73599,6 +73829,7 @@ var init_settings_dialog = __esm({
     init_usage_section();
     init_about_section();
     init_ssh_workspace_section();
+    init_mobile_companion_section();
     init_dist();
     init_automations_plugin();
     init_canvas_settings();
@@ -77727,7 +77958,7 @@ function approvalRiskScenario(id, request) {
     approvalRequests: [request]
   };
 }
-var FIXED_TIME, SIDE_CHATS_MAIN_ID, SIDE_CHATS_OTHER_ID, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, SIDE_CHATS_THREADS, DEMO_SCENARIOS;
+var FIXED_TIME, SIDE_CHATS_MAIN_ID, SIDE_CHATS_OTHER_ID, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, MOBILE_COMPANION_DEMO_URL, MOBILE_COMPANION_DEMO_QR_SVG, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, SIDE_CHATS_THREADS, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
@@ -77739,6 +77970,8 @@ var init_demo_scenarios = __esm({
     SIDE_CHATS_OTHER_ID = "3c1f0a52-8b3e-4d7a-9f10-2a6b7c8d9e01";
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
+    MOBILE_COMPANION_DEMO_URL = "https://192.168.1.42:42773";
+    MOBILE_COMPANION_DEMO_QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27 27" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h27v27H0z"/><path stroke="#000000" d="M1 1.5h7m3 0h3m1 0h1m3 0h7M1 2.5h1m5 0h1m3 0h1m1 0h1m2 0h1m2 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m1 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h2m2 0h2m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m1 0h1m5 0h2m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m1 0h2m2 0h3m1 0h1m1 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h3m4 0h1M1 9.5h1m1 0h5m2 0h2m1 0h2m2 0h1m1 0h5M2 10.5h2m1 0h1m2 0h1m1 0h1m1 0h3m1 0h2m1 0h1m4 0h1M1 11.5h2m3 0h2m1 0h1m1 0h2m4 0h3m1 0h2m1 0h2M3 12.5h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m7 0h1M3 13.5h1m2 0h5m1 0h1m2 0h2m1 0h4m1 0h3M1 14.5h2m1 0h2m3 0h2m2 0h1m2 0h7m1 0h1M1 15.5h1m1 0h1m1 0h5m1 0h1m6 0h1m1 0h3m1 0h2M1 16.5h1m2 0h2m4 0h2m1 0h3m1 0h2m1 0h1m4 0h1M1 17.5h1m1 0h2m2 0h2m1 0h2m1 0h1m3 0h5m1 0h1M9 18.5h1m1 0h1m4 0h2m3 0h2M1 19.5h7m3 0h3m3 0h1m1 0h1m1 0h1m1 0h3M1 20.5h1m5 0h1m1 0h1m2 0h1m4 0h1m3 0h2m1 0h2M1 21.5h1m1 0h3m1 0h1m1 0h4m3 0h10M1 22.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m6 0h2m2 0h1M1 23.5h1m1 0h3m1 0h1m1 0h1m4 0h3m1 0h1m1 0h3m2 0h1M1 24.5h1m5 0h1m5 0h2m4 0h5m1 0h1M1 25.5h7m1 0h1m1 0h1m1 0h1m1 0h11"/></svg>';
     DEMO_CODEX_ACP_AGENT = {
       id: "codex-acp",
       title: "Codex",
@@ -79087,6 +79320,7 @@ var init_demo_scenarios = __esm({
           theme: "dark",
           uiTintStrength: "off"
         },
+        mobileCompanion: { url: MOBILE_COMPANION_DEMO_URL, qrSvg: MOBILE_COMPANION_DEMO_QR_SVG },
         threads: [
           {
             id: "demo-settings-footer-thread",
@@ -80688,9 +80922,25 @@ function createDemoApi(scenario, options = {}) {
   );
   const api2 = {
     mobile: {
-      manage: async () => {
+      getState: () => resolved2({
+        enabled: scenario.mobileCompanion !== void 0,
+        running: scenario.mobileCompanion !== void 0,
+        url: scenario.mobileCompanion?.url ?? null,
+        qrSvg: scenario.mobileCompanion?.qrSvg ?? null,
+        rootCertificatePath: null,
+        addresses: scenario.mobileCompanion ? [{ address: new URL(scenario.mobileCompanion.url).hostname, interfaceName: "Wi-Fi" }] : [],
+        devices: [],
+        pairing: null,
+        lastError: null
+      }),
+      onStateChanged: () => () => {
       },
-      status: () => resolved2(MOBILE_COMPANION_DEMO_STATUS),
+      enable: () => resolvedVoid(),
+      disable: () => resolvedVoid(),
+      setDeviceAccess: () => resolvedVoid(),
+      revokeDevice: () => resolvedVoid(),
+      respondPairing: () => resolvedVoid(),
+      revealCertificate: () => resolvedVoid(),
       onChat: () => () => {
       },
       reply: async () => {
@@ -81725,7 +81975,7 @@ function createDemoApi(scenario, options = {}) {
   };
   return api2;
 }
-var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray, MOBILE_COMPANION_DEMO_QR_SVG, MOBILE_COMPANION_DEMO_STATUS;
+var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
     init_thread_pr_relations2();
@@ -82003,12 +82253,6 @@ var init_demo_api = __esm({
       }
     ];
     emptyArray = () => Promise.resolve([]);
-    MOBILE_COMPANION_DEMO_QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27 27" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h27v27H0z"/><path stroke="#000000" d="M1 1.5h7m3 0h3m1 0h1m3 0h7M1 2.5h1m5 0h1m3 0h1m1 0h1m2 0h1m2 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m1 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h2m2 0h2m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m1 0h1m5 0h2m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m1 0h2m2 0h3m1 0h1m1 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h3m4 0h1M1 9.5h1m1 0h5m2 0h2m1 0h2m2 0h1m1 0h5M2 10.5h2m1 0h1m2 0h1m1 0h1m1 0h3m1 0h2m1 0h1m4 0h1M1 11.5h2m3 0h2m1 0h1m1 0h2m4 0h3m1 0h2m1 0h2M3 12.5h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m7 0h1M3 13.5h1m2 0h5m1 0h1m2 0h2m1 0h4m1 0h3M1 14.5h2m1 0h2m3 0h2m2 0h1m2 0h7m1 0h1M1 15.5h1m1 0h1m1 0h5m1 0h1m6 0h1m1 0h3m1 0h2M1 16.5h1m2 0h2m4 0h2m1 0h3m1 0h2m1 0h1m4 0h1M1 17.5h1m1 0h2m2 0h2m1 0h2m1 0h1m3 0h5m1 0h1M9 18.5h1m1 0h1m4 0h2m3 0h2M1 19.5h7m3 0h3m3 0h1m1 0h1m1 0h1m1 0h3M1 20.5h1m5 0h1m1 0h1m2 0h1m4 0h1m3 0h2m1 0h2M1 21.5h1m1 0h3m1 0h1m1 0h4m3 0h10M1 22.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m6 0h2m2 0h1M1 23.5h1m1 0h3m1 0h1m1 0h1m4 0h3m1 0h1m1 0h3m2 0h1M1 24.5h1m5 0h1m5 0h2m4 0h5m1 0h1M1 25.5h7m1 0h1m1 0h1m1 0h1m1 0h11"/></svg>';
-    MOBILE_COMPANION_DEMO_STATUS = {
-      enabled: true,
-      url: "https://192.168.1.42:42773",
-      qrSvg: MOBILE_COMPANION_DEMO_QR_SVG
-    };
   }
 });
 
