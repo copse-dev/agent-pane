@@ -1,3 +1,4 @@
+import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { el, clear } from '../../dom/helpers.ts'
@@ -17,12 +18,15 @@ export { slugifyHostId, upsertHost, removeHost } from './ssh-host-helpers.ts'
 
 export interface SshWorkspaceSection {
   root: HTMLFieldSetElement
-  refresh: () => Promise<void>
+  refresh: (signal?: AbortSignal) => Promise<void>
+  load: (snapshot: SettingsSnapshot) => void
+  collect: (data: FormData, dirty: ReadonlySet<string>) => SettingsUpdate
 }
 
 export interface SshWorkspaceSectionOptions {
   /** Fired after a live-persisted setting change (enable toggle, host key policy). */
   onChanged?: () => void
+  deferOrdinaryWrites?: boolean
 }
 
 export function createSshWorkspaceSection(
@@ -144,12 +148,14 @@ export function createSshWorkspaceSection(
     idInput.disabled = true
   }
 
-  async function renderHosts(): Promise<void> {
+  async function renderHosts(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return
     clear(hostList)
     const [rawHosts, credentialHostIds] = await Promise.all([
       api.settings.get('sshWorkspaceHosts'),
       api.sshWorkspace.listCredentialHostIds(),
     ])
+    if (signal?.aborted) return
     const list = parseSshWorkspaceHosts(rawHosts)
     const credentialHosts = new Set(credentialHostIds)
     if (list.length === 0) {
@@ -254,21 +260,32 @@ export function createSshWorkspaceSection(
   })
 
   enabledInput.addEventListener('change', () => {
+    if (opts.deferOrdinaryWrites) return
     void api.settings.set('sshWorkspaceEnabled', enabledInput.checked).then(() => {
       opts.onChanged?.()
     })
   })
   strictSelect.addEventListener('change', () => {
+    if (opts.deferOrdinaryWrites) return
     void api.settings.set('sshStrictHostKeys', strictSelect.value).then(() => {
       opts.onChanged?.()
     })
   })
 
-  async function refresh(): Promise<void> {
-    enabledInput.checked = (await api.settings.get('sshWorkspaceEnabled')) === true
-    const strict = await api.settings.get('sshStrictHostKeys')
-    strictSelect.value = strict === 'strict' ? 'strict' : 'accept-new'
-    await renderHosts()
+  function load(snapshot: SettingsSnapshot): void {
+    enabledInput.checked = snapshot.sshWorkspaceEnabled === true
+    strictSelect.value = snapshot.sshStrictHostKeys === 'strict' ? 'strict' : 'accept-new'
+  }
+  async function refresh(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return
+    if (!opts.deferOrdinaryWrites) {
+      const enabled = await api.settings.get('sshWorkspaceEnabled')
+      const strict = await api.settings.get('sshStrictHostKeys')
+      if (signal?.aborted) return
+      enabledInput.checked = enabled === true
+      strictSelect.value = strict === 'strict' ? 'strict' : 'accept-new'
+    }
+    await renderHosts(signal)
   }
 
   const importBtn = el(
@@ -319,5 +336,17 @@ export function createSshWorkspaceSection(
     status,
   )
 
-  return { root, refresh }
+  return {
+    root,
+    refresh,
+    load,
+    collect: (data, dirty): SettingsUpdate => ({
+      ...(dirty.has('sshWorkspaceEnabled')
+        ? { sshWorkspaceEnabled: data.has('sshWorkspaceEnabled') }
+        : {}),
+      ...(dirty.has('sshStrictHostKeys')
+        ? { sshStrictHostKeys: strictSelect.value === 'strict' ? 'strict' : 'accept-new' }
+        : {}),
+    }),
+  }
 }

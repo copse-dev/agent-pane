@@ -1,6 +1,7 @@
 import type { ContextBreakdown, ContextSegmentKey, ContextSnapshot } from '@shared/types'
 import type { FooterUsageTooltipModel } from '@shared/usage/footer-usage-tooltip.ts'
-import { appendUsageSections } from './footer-usage-popover.ts'
+import type { ThreadClassifierUse } from '@shared/usage/classifier-use.ts'
+import { appendClassifierSection, appendUsageSections } from './footer-usage-popover.ts'
 
 const RADIUS = 6
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
@@ -42,6 +43,8 @@ export interface ContextWheelOptions {
    * stays visible as an empty ring so usage still has an anchor.
    */
   usage?: FooterUsageTooltipModel | null
+  /** What the classifiers did for this thread; shown beneath usage when any was asked. */
+  classifierUse?: ThreadClassifierUse | null
   /**
    * When true the multi-arc breakdown ring replaces the live snapshot fill
    * (pre-send / fresh threads). When false the measured snapshot ring stays,
@@ -100,6 +103,7 @@ export function createContextWheel(): {
 
   let popoverActive = false
   let currentUsage: FooterUsageTooltipModel | null = null
+  let currentClassifierUse: ThreadClassifierUse | null = null
   let hovered = false
   let focused = false
 
@@ -179,6 +183,7 @@ export function createContextWheel(): {
       popover.append(divider)
     }
     appendUsageSections(popover, currentUsage)
+    if (currentClassifierUse) appendClassifierSection(popover, currentClassifierUse)
   }
 
   function renderBreakdown(breakdown: ContextBreakdown): void {
@@ -215,14 +220,6 @@ export function createContextWheel(): {
       renderPopover(breakdown)
     })
 
-    const lines = segments.map(
-      (s) =>
-        `${s.label}: ${formatTokenCount(s.tokens)} (${String(pctOf(s.tokens, contextWindow))}%)`,
-    )
-    root.title = [
-      `Context: ${formatTokenCount(totalTokens)} / ${formatTokenCount(contextWindow)} (${String(pct)}%)`,
-      ...lines,
-    ].join('\n')
     root.setAttribute(
       'aria-label',
       `Estimated context ${String(pct)}% of window, ${formatTokenCount(
@@ -281,19 +278,17 @@ export function createContextWheel(): {
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`,
     )
     setFillState(ratio)
-    // The title and aria-label quote the same figures as the hover beside the
+    // The aria-label quotes the same figures as the hover popover beside the
     // ring: when a part-by-part breakdown is shown it counts the whole window,
-    // while the snapshot counts the conversation budget, and quoting one in
-    // the label and the other in the hover made one control disagree with itself.
+    // while the snapshot counts the conversation budget, and quoting the wrong
+    // one would make the control disagree with itself.
     const shownBreakdown = options?.breakdown
     const labelled =
       shownBreakdown && shownBreakdown.totalTokens > 0 && shownBreakdown.contextWindow > 0
         ? { tokens: shownBreakdown.totalTokens, budget: shownBreakdown.contextWindow }
         : { tokens: snapshot.conversationTokens, budget: snapshot.conversationBudget }
     const pct = pctOf(labelled.tokens, labelled.budget)
-    const contextLine = `Context: ${formatTokenCount(labelled.tokens)} / ${formatTokenCount(labelled.budget)} (${String(pct)}%)`
     const usageLine = options?.usageLine?.trim()
-    root.title = usageLine ? `${contextLine}\n${usageLine}` : contextLine
     const ariaUsage = usageLine ? `; ${usageLine}` : ''
     root.setAttribute(
       'aria-label',
@@ -330,7 +325,6 @@ export function createContextWheel(): {
     popoverActive = true
     root.tabIndex = 0
     const usageLine = options?.usageLine?.trim() ?? usage.header
-    root.title = usageLine
     root.setAttribute('aria-label', usageLine)
     composePopover(null)
   }
@@ -341,6 +335,7 @@ export function createContextWheel(): {
     options?: ContextWheelOptions,
   ): void {
     currentUsage = options?.usage ?? null
+    currentClassifierUse = options?.classifierUse ?? null
     const breakdown = options?.breakdown
     if (
       !running &&

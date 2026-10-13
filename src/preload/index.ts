@@ -1098,6 +1098,7 @@ const api: ApiClient = {
       ipcRenderer.invoke('remote-agent:refresh-imported-thread', projectId, threadId),
   },
   acp: {
+    browseRegistry: (refresh?: boolean) => ipcRenderer.invoke('acp:browse-registry', refresh),
     detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),
     probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
@@ -1187,6 +1188,8 @@ const api: ApiClient = {
   },
   usage: {
     getSummary: () => ipcRenderer.invoke('usage:get-summary'),
+    getThreadClassifierUse: (projectId, threadId) =>
+      ipcRenderer.invoke('usage:get-thread-classifier-use', projectId, threadId),
     getPlanUsage: (force?: boolean) => ipcRenderer.invoke('usage:get-plan-usage', force),
     getPlanWorthIt: () => ipcRenderer.invoke('usage:get-plan-worth-it'),
     setClaudePlanMonthlyFee: (fee: number | null) =>
@@ -1579,7 +1582,12 @@ const api: ApiClient = {
     create: (
       cols: number,
       rows: number,
-      meta: { label?: string; projectId: string; threadId: string | null },
+      meta: {
+        label?: string
+        projectId: string
+        threadId: string | null
+        executionTarget?: 'local'
+      },
     ) => ipcRenderer.invoke('terminal:create', cols, rows, meta),
     write: (sessionId: string, data: string) =>
       ipcRenderer.invoke('terminal:write', sessionId, data),

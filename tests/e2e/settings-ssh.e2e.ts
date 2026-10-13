@@ -19,8 +19,8 @@ describe('SSH settings section', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-settings-ssh')
-    // Start disabled so we can prove the live toggle adds the remote action
-    // to the project menu without clicking Save.
+    // Start disabled to prove Cancel discards the ordinary enabled draft,
+    // while Save adds the remote action to the project menu.
     seedSshWorkspaceSettings({ enabled: false })
     await browser.reloadSession()
   })
@@ -162,9 +162,20 @@ describe('SSH settings section', () => {
 
     await saveElementScreenshot('#settings-dialog', 'settings-ssh-workspace.png')
 
-    // Cancel closes without the form Save path — the live toggle must still
-    // have emitted settings_changed so the project menu gains its remote action.
+    // Cancel discards ordinary preferences while dedicated host edits persist.
     await $('#settings-cancel').click()
+    await expect(addProjectButton).toHaveAttribute('data-tooltip', 'New project or open a folder')
+    await addProjectButton.click()
+    await expect($('.context-menu-item*=Open remote project')).not.toBeExisting()
+    await browser.keys('Escape')
+    await $('[aria-label="Settings"]').click()
+    await $('.settings-nav-btn[data-section="ssh"]').click()
+    const savedToggle = $('.settings-section[data-section="ssh"] input[name="sshWorkspaceEnabled"]')
+    assert.equal(await savedToggle.isSelected(), false)
+    await savedToggle.click()
+    assert.equal(await savedToggle.isSelected(), true)
+    await $('#settings-dialog button[type="submit"]').click()
+    await expect($('#settings-dialog')).not.toBeDisplayed()
     await expect(addProjectButton).toHaveAttribute(
       'data-tooltip',
       'New project, open a folder, or connect remotely',
