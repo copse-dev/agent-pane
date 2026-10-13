@@ -67,21 +67,34 @@ export async function publicScreenshot(entry: ScreenshotEntry): Promise<Buffer> 
 }
 
 export async function hydrateScreenshots(
-  options: { history?: boolean; restore?: boolean; cwd?: string; verifyRemote?: boolean } = {},
+  options: {
+    history?: boolean
+    restore?: boolean
+    cwd?: string
+    verifyRemote?: boolean
+    // Restrict hydration/restoration to these names, including their HEAD
+    // comparison baselines when the working manifest has already changed.
+    names?: string[]
+  } = {},
 ): Promise<void> {
   const cwd = options.cwd ?? process.cwd()
   const path = join(cwd, SCREENSHOT_MANIFEST)
   if (!existsSync(path)) return // Old checkouts and non-screenshot fixtures.
   const manifest = parseScreenshotManifest(readFileSync(path, 'utf8'))
   const entries = new Map<string, { entry: ScreenshotEntry; name: string }>()
-  const names = options.history
-    ? changedLocalScreenshots(SCREENSHOT_DIRECTORY, cwd).map((path) =>
-        path.slice(SCREENSHOT_DIRECTORY.length + 1),
-      )
-    : Object.keys(manifest.screenshots)
+  const names =
+    options.names ??
+    (options.history
+      ? changedLocalScreenshots(SCREENSHOT_DIRECTORY, cwd).map((path) =>
+          path.slice(SCREENSHOT_DIRECTORY.length + 1),
+        )
+      : Object.keys(manifest.screenshots))
+  const headManifest = options.names ? manifestAtRef('HEAD', cwd) : null
   for (const name of names) {
     const entry = manifest.screenshots[name]
     if (entry) entries.set(entry.sha256, { entry, name })
+    const headEntry = headManifest?.screenshots[name]
+    if (headEntry) entries.set(headEntry.sha256, { entry: headEntry, name })
   }
   if (options.history) {
     const main = nonEmptyStringOr(process.env['SCREENSHOT_MAIN_REF']?.trim(), 'origin/main')
@@ -133,7 +146,9 @@ export async function hydrateScreenshots(
   }
   if (options.restore !== false) {
     mkdirSync(join(cwd, SCREENSHOT_DIRECTORY), { recursive: true })
-    for (const [name, entry] of Object.entries(manifest.screenshots)) {
+    for (const name of options.names ?? Object.keys(manifest.screenshots)) {
+      const entry = manifest.screenshots[name]
+      if (!entry) continue
       const local = join(cwd, SCREENSHOT_DIRECTORY, name)
       if (existsSync(local)) continue // Preserve rendered candidates.
       const bytes = cachedScreenshot(entry, cwd)

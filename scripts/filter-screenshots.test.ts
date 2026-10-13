@@ -116,6 +116,7 @@ it('walks each contested range once for a batch while preserving manual, main an
     save()
     git('checkout', '-q', 'batch')
     for (const name of names) writeFileSync(join(directory, name), blue)
+    writeFileSync(join(directory, 'bot.png'), white)
     writeFileSync(join(directory, 'new.png'), green)
     const script = join(cwd, 'scripts/filter-screenshots.mjs')
     buildSync({
@@ -137,28 +138,82 @@ it('walks each contested range once for a batch while preserving manual, main an
         GIT_TRACE: trace,
         SCREENSHOT_MAIN_REF: 'main',
         SCREENSHOT_SCOPE: 'off',
-        SCREENSHOT_FLAP_LOOKBACK: '0',
+        SCREENSHOT_FLAP_LOOKBACK: '4',
         UPDATE_SCREENSHOTS_LABEL: 'false',
         GITHUB_OUTPUT: '',
       },
     })
     assert.match(
       output,
-      /15 changed, 2 kept \(real\), 0 ignored \(noise\), 0 held \(flapping\), 13 held \(contested\)/,
+      /15 changed, 1 kept \(real\), 0 ignored \(noise\), 1 held \(flapping\), 13 held \(contested\)/,
     )
-    assert.match(output, /keep\s+tests\/e2e\/screenshots\/bot\.png/)
+    assert.match(output, /flap\s+tests\/e2e\/screenshots\/bot\.png/)
     assert.match(output, /keep\s+tests\/e2e\/screenshots\/new\.png/)
     const walks = readFileSync(trace, 'utf8')
       .split('\n')
       .filter((line) => line.includes('--format=%H %an'))
     assert.equal(walks.length, 2, 'range traversal must be independent of the screenshot count')
-    for (const name of names) assert.deepEqual(readFileSync(join(directory, name)), blue)
+    const histories = readFileSync(trace, 'utf8')
+      .split('\n')
+      .filter(
+        (line) => line.includes('log ') && line.includes('--format=%H') && !line.includes('%an'),
+      )
+    assert.equal(
+      histories.length,
+      2,
+      'only the bot-owned real change needs hydration and flap history',
+    )
+    for (const line of histories) assert.match(line, /screenshots\/bot\.png/)
+    for (const name of names)
+      assert.deepEqual(readFileSync(join(directory, name)), name === 'bot.png' ? white : blue)
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
 })
 
 describe('classifyScreenshotChange', () => {
+  it('loads history only for comparable real changes and preserves eager verdicts', () => {
+    const white = solid(100, 100, WHITE)
+    const red = solid(100, 100, RED)
+    const priors = [prior(red)]
+    const cases: {
+      old: Buffer | null
+      next: Buffer
+      contested?: { branchTouched: boolean; mainTouched: boolean }
+      inScope?: boolean
+      loads: number
+    }[] = [
+      { old: null, next: red, loads: 0 },
+      { old: white, next: white, loads: 0 },
+      { old: white, next: withFlippedPixels(100, 100, WHITE, 5), loads: 0 },
+      { old: white, next: red, contested: { branchTouched: true, mainTouched: false }, loads: 0 },
+      { old: white, next: red, contested: { branchTouched: false, mainTouched: true }, loads: 0 },
+      { old: white, next: red, inScope: false, loads: 0 },
+      { old: white, next: solid(120, 100, RED), loads: 0 },
+      { old: white, next: Buffer.from('invalid PNG'), loads: 0 },
+      { old: white, next: red, loads: 1 },
+      { old: white, next: solid(100, 100, BLUE), loads: 1 },
+    ]
+    for (const item of cases) {
+      let loads = 0
+      const actual = classifyScreenshotChange(
+        item.old,
+        item.next,
+        () => {
+          loads++
+          return priors
+        },
+        OPTS,
+        item.contested,
+        item.inScope,
+      )
+      assert.deepEqual(
+        actual,
+        classifyScreenshotChange(item.old, item.next, priors, OPTS, item.contested, item.inScope),
+      )
+      assert.equal(loads, item.loads, actual.reason)
+    }
+  })
   it('keeps a brand-new screenshot with no baseline', () => {
     const v = classifyScreenshotChange(null, solid(100, 100, RED), [], OPTS)
     assert.equal(v.decision, 'keep')

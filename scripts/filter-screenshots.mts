@@ -295,8 +295,9 @@ function isNoise(diff: { diffPixels: number; ratio: number }, opts: ClassifyOpti
 }
 
 /**
- * Pure classification of one re-rendered shot. `priorRenders` are recent committed
- * renders of the same shot (see priorCommittedRenders); pass [] to disable flap
+ * Classification of one re-rendered shot. `priorRenders` are recent committed
+ * renders of the same shot (see priorCommittedRenders), optionally loaded lazily
+ * only when flap detection is needed; pass [] to disable flap
  * detection. `contested` marks a deliberate committed baseline (see contestedInfo);
  * pass null/undefined when uncontested. `inScope` is the ownership verdict (see
  * lib/screenshot-scope.mts); pass undefined to disable scoping. Kept pure (bytes
@@ -305,7 +306,7 @@ function isNoise(diff: { diffPixels: number; ratio: number }, opts: ClassifyOpti
 export function classifyScreenshotChange(
   oldBytes: Buffer | null,
   newBytes: Buffer,
-  priorRenders: PriorRender[],
+  priorRenders: PriorRender[] | (() => PriorRender[]),
   opts: ClassifyOptions,
   contested?: ContestedInfo | null,
   inScope?: boolean,
@@ -369,7 +370,7 @@ export function classifyScreenshotChange(
   // A real change versus HEAD. If it matches a recent committed render of this
   // same shot, the shot is flapping between already-committed states (#609):
   // committing again would just re-trigger CI and bring the other state back.
-  for (const prior of priorRenders) {
+  for (const prior of typeof priorRenders === 'function' ? priorRenders() : priorRenders) {
     const priorPng = decode(prior.bytes)
     if (!priorPng) continue
     const vsPrior = diffPixels(priorPng, newPng, opts.colorThreshold)
@@ -400,6 +401,7 @@ function classify(
   path: string,
   scope: ScreenshotScope,
   contestedInfo: (path: string) => ContestedInfo | null,
+  loadHistory: (path: string, headBytes: Buffer | null) => PriorRender[],
 ): PathVerdict {
   const oldBytes = committedBytes(path)
   let newBytes: Buffer
@@ -410,14 +412,13 @@ function classify(
     // commit job's own diff simply finds nothing for it.
     return { path, decision: 'keep', reason: 'unreadable in working tree' }
   }
-  const priorRenders = priorCommittedRenders(path, oldBytes, FLAP_LOOKBACK)
   // Only an existing baseline can be contested; skip the git history walk for
   // brand-new shots.
   const contested = oldBytes ? contestedInfo(path) : null
   const verdict = classifyScreenshotChange(
     oldBytes,
     newBytes,
-    priorRenders,
+    () => loadHistory(path, oldBytes),
     {
       colorThreshold: COLOR_THRESHOLD,
       ignoreRatio: IGNORE_RATIO,
@@ -497,7 +498,7 @@ function emitEmptyReport(keptCount: number): void {
   emitOutput('out-of-scope-json', '[]')
 }
 
-export function main(): void {
+export async function main(): Promise<void> {
   const changed = changedScreenshots()
   if (changed.length === 0) {
     console.log('screenshot filter: no changed reference screenshots')
@@ -522,7 +523,27 @@ export function main(): void {
   const scope = process.env['SCREENSHOT_SCOPE'] === 'off' ? unscoped() : computeScreenshotScope()
 
   const contestedInfo = contestedLookup()
-  const verdicts = changed.map((p) => classify(p, scope, contestedInfo))
+  const names = (paths: string[]): string[] => paths.map((path) => path.split('/').pop() ?? '')
+  await hydrateScreenshots({ names: names(changed), restore: false })
+  // Classify against HEAD first. Only comparable, in-scope real changes need
+  // historical objects or Git walks; noise and protected baselines are final.
+  const needsHistory = new Set<string>()
+  let verdicts = changed.map((path) =>
+    classify(path, scope, contestedInfo, (pending) => {
+      if (FLAP_LOOKBACK > 0) needsHistory.add(pending)
+      return []
+    }),
+  )
+  if (needsHistory.size > 0) {
+    await hydrateScreenshots({ names: names([...needsHistory]), history: true, restore: false })
+    verdicts = verdicts.map((verdict) =>
+      needsHistory.has(verdict.path)
+        ? classify(verdict.path, scope, contestedInfo, (path, bytes) =>
+            priorCommittedRenders(path, bytes, FLAP_LOOKBACK),
+          )
+        : verdict,
+    )
+  }
   const kept = verdicts.filter((v) => v.decision === 'keep')
   const ignored = verdicts.filter((v) => v.decision === 'ignore')
   const flapping = verdicts.filter((v) => v.decision === 'flap')
@@ -611,12 +632,8 @@ export function main(): void {
 // Run only when invoked directly (`node scripts/filter-screenshots.mts`), not when
 // imported by the unit test.
 if (isDirectExecution(import.meta.url, 'filter-screenshots')) {
-  hydrateScreenshots({ history: true, restore: false })
-    .then(() => {
-      main()
-    })
-    .catch((error: unknown) => {
-      console.error(error)
-      process.exitCode = 1
-    })
+  main().catch((error: unknown) => {
+    console.error(error)
+    process.exitCode = 1
+  })
 }
