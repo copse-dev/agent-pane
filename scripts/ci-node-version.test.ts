@@ -59,9 +59,17 @@ test('every setup-node action uses .nvmrc as its version source', () => {
       invocationCount++
       const location = `${file}:${String(index + 1)}`
       const step = lines.slice(index, index + 8).join('\n')
+      const trustedPublisher = file === '.github/workflows/publish-screenshot-candidates.yml'
+      if (trustedPublisher) {
+        const source = lines.join('\n')
+        assert.match(source, /ref: \$\{\{ github\.workflow_sha \}\}/)
+        assert.match(source, /path: \.screenshot-policy/)
+      }
       assert.match(
         step,
-        /node-version-file:\s*['"]?\.nvmrc['"]?/,
+        trustedPublisher
+          ? /node-version-file:\s*['"]?\.screenshot-policy\/\.nvmrc['"]?/
+          : /node-version-file:\s*['"]?\.nvmrc['"]?/,
         `${location} must specify node-version-file: .nvmrc`,
       )
       assert.doesNotMatch(step, /node-version:\s*/, `${location} must not hardcode a Node version`)
