@@ -83,8 +83,8 @@ describe('classifyAgentError', () => {
     assert.match(out, /Technical details[\s\S]*ACP error -32603 \(Internal error\)/)
     assert.match(out, /authentication_failed/)
     assert.doesNotMatch(out, /^An error occurred:/)
-    // First-run guidance would send the user the wrong way here.
-    assert.doesNotMatch(out, /claude setup-token/)
+    // `setup-token` mints an inference-only token; it is never the fix.
+    assert.doesNotMatch(out, /setup-token/)
   })
 
   it("turns Cursor's rejected session into actionable sign-in guidance", () => {
