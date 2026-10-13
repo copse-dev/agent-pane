@@ -380,16 +380,41 @@ describe('cron automation trigger', function () {
       'strong',
     )
     assert.deepEqual((await editorSurfacePaint([])).token, [45, 39, 26])
-    const restoreActiveRunTime = await pinTextForCapture(
-      '.automation-schedule-runs',
-      /^Latest · .+$/,
-      'Latest · Jan 1, 2026, 12:00 AM',
+    // The response is still held: thread-naming only renames the initial
+    // branch once the thread is idle. Keep proving the running task owns its
+    // real isolated branch, then pin only its generated suffix for capture.
+    await expect($('.stop-btn')).toBeDisplayed()
+    await expect($('.branch-picker-label')).toHaveText(
+      expect.stringMatching(/^copse\/thread-[a-z0-9]+$/),
+    )
+    const activeBranch = await $('.branch-picker-label').getText()
+    const restoreActiveBranch = await pinTextForCapture(
+      '.branch-picker-label',
+      /^copse\/thread-[a-z0-9]+$/,
+      'copse/thread-fixture',
     )
     try {
-      await saveAppScreenshot('automation-active.png')
+      const restoreActiveRunTime = await pinTextForCapture(
+        '.automation-schedule-runs',
+        /^Latest · .+$/,
+        'Latest · Jan 1, 2026, 12:00 AM',
+      )
+      try {
+        await prepareE2eScreenshot()
+        await savePreparedAppScreenshot('automation-active.png', async () => {
+          await expect($('.stop-btn')).toBeDisplayed()
+          await expect($('.branch-picker-label')).toHaveText('copse/thread-fixture')
+          await expect(
+            $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"] .chat-row`),
+          ).toHaveText('Latest · Jan 1, 2026, 12:00 AM')
+        })
+      } finally {
+        await restoreActiveRunTime()
+      }
     } finally {
-      await restoreActiveRunTime()
+      await restoreActiveBranch()
     }
+    await expect($('.branch-picker-label')).toHaveText(activeBranch)
 
     await scenario.release('review-ready')
     const expectedResponse = 'The CI review is complete; no failures were found.'
