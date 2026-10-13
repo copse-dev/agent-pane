@@ -8,7 +8,7 @@ import {
   resetUserData,
   seedGitChangesFixture,
 } from './helpers/seed-config.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, saveElementScreenshot } from './helpers/screenshot.ts'
 import { switchTheme, tokenColour } from './helpers/theme.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -148,6 +148,10 @@ describe('git changes viewer', function () {
         ),
       { timeout: 15_000, timeoutMsg: 'expected the staged.ts diff to show its change' },
     )
+    await browser.waitUntil(
+      async () => !(await $('#git-changes-host').getText()).includes('Checking committed changes'),
+      { timeout: 30_000, timeoutMsg: 'expected the committed changes query to complete' },
+    )
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-list.png'))
 
     // Section titles reflect staged vs unstaged counts. CSS uppercases the text,
@@ -204,7 +208,20 @@ describe('git changes viewer', function () {
         timeoutMsg: 'expected an unwatched external change to appear automatically',
       },
     )
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-external-refresh.png'))
+    await saveElementScreenshot('#app', 'git-changes-external-refresh.png', {
+      frame: 'document',
+      beforeCapture: async () => {
+        await parkPointer()
+        await expect($('#git-changes-host .pane-loading')).not.toExist({ wait: 30_000 })
+        const externalPath = $('#git-changes-host').$('.git-change-path*=external-change.ts')
+        await expect(externalPath).toBeDisplayed()
+        await expect(externalPath).toHaveText('external-change.ts')
+        await waitForDiffOf('staged.ts')
+        // The retained rows are available while the committed query refreshes.
+        // Check completion after the viewer wait, immediately before capture.
+        await expect($('#git-changes-host .pane-loading')).not.toExist({ wait: 30_000 })
+      },
+    })
 
     // Opening the panel auto-selects the first changed file (staged.ts).
     // Re-query after the external refresh: it replaces the row DOM, so handles
@@ -295,6 +312,9 @@ describe('git changes viewer', function () {
       { timeout: 15_000, timeoutMsg: 'expected the committed file to diff as added lines' },
     )
 
+    // Opening the row leaves the pointer over its path. Wait for the ordinary
+    // non-hover view so timing cannot add a path tooltip to the diff capture.
+    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-committed-diff.png'))
   })
 

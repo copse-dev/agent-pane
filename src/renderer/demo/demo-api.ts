@@ -1247,7 +1247,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       refreshHuggingFaceModels: () =>
         resolved({ ok: false, count: 0, error: 'Unavailable in demo' }),
     },
-    appIcon: { apply: resolvedVoid, setAutomationMode: resolvedVoid },
+    appIcon: { apply: resolvedVoid },
     about: {
       getInfo: () => resolved({ version: 'demo', report: null }),
       openLicenseFile: resolvedVoid,

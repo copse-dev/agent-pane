@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { mkdirSync, rmSync } from 'node:fs'
+import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { $, $$, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -12,12 +11,15 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 // its pane, so this seeds far more rows than the other roadmap specs.
 describe('roadmap category accordion (alignment + scroll)', () => {
   let workspaceRoot: string
+  let cleanupWorkspace: (() => void) | undefined
   let knowledgeDir: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-accordion-'))
+    const fixture = createFixtureDirectory('copse-panel-roadmap-accordion')
+    workspaceRoot = fixture.root
+    cleanupWorkspace = fixture.cleanup
     const bugItems = Array.from({ length: 60 }, (_, i) => ({
       id: `e2e-accordion-bug-${String(i)}`,
       title: `Bug item ${String(i)}`,
@@ -40,7 +42,7 @@ describe('roadmap category accordion (alignment + scroll)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    cleanupWorkspace?.()
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 

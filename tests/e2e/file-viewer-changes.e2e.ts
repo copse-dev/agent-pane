@@ -1,6 +1,6 @@
+import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
@@ -20,8 +20,7 @@ const PROJECT_ID = 'e2e-file-viewer-changes-project'
 const CHANGED_FILE = 'sample.ts'
 const CLEAN_FILE = 'clean.ts'
 
-function seedGitWorkspace(): string {
-  const repoRoot = mkdtempSync(join(tmpdir(), 'copse-file-viewer-changes-'))
+function seedGitWorkspace(repoRoot: string): void {
   const git = (...args: string[]): Buffer =>
     execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
 
@@ -55,8 +54,6 @@ function seedGitWorkspace(): string {
     ].join('\n'),
     'utf8',
   )
-
-  return repoRoot
 }
 
 async function waitForWorkspace(): Promise<void> {
@@ -83,10 +80,14 @@ async function openFileFromTree(fileName: string): Promise<void> {
 
 describe('file viewer Changes view', () => {
   let workspaceRoot = ''
+  let cleanupWorkspace: (() => void) | undefined
 
   before(async function () {
     this.timeout(120_000)
-    workspaceRoot = seedGitWorkspace()
+    const fixture = createFixtureDirectory('copse-file-viewer-changes')
+    workspaceRoot = fixture.root
+    cleanupWorkspace = fixture.cleanup
+    seedGitWorkspace(workspaceRoot)
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
@@ -98,7 +99,7 @@ describe('file viewer Changes view', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    cleanupWorkspace?.()
   })
 
   it('offers browser opening from the file tree before opening a file', async () => {
@@ -229,6 +230,10 @@ describe('file viewer Changes view', () => {
   for (const theme of ['dark', 'light'] as const) {
     it(`paints the editor and diff from --bg-base under Strong + Copse (${theme})`, async function () {
       this.timeout(90_000)
+      // Exercise the user's Copse tint without the test-session amber override.
+      await browser.execute(() =>
+        document.documentElement.removeAttribute('data-automation-active'),
+      )
       await applyAppearanceViaSettings({
         theme,
         tintColor: COPSE_TINT_COLOR,

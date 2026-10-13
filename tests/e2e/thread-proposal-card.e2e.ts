@@ -1,6 +1,8 @@
 import { installMockScenario } from './helpers/mock-scenario.ts'
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { $, browser, expect } from '@wdio/globals'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -10,6 +12,8 @@ import {
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { describeThreadChanges } from '../../src/shared/git/thread-change-summary.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 // Visual eval for the model-proposed-thread card (`propose_thread`). The card's
 // DOM, its three states and the start/dismiss wiring are covered at component
@@ -155,12 +159,21 @@ describe('a proposed thread without an isolated checkout', () => {
 })
 
 describe('starting a proposed thread in an isolated checkout', () => {
+  let projectId = ''
+  let previousMockBranch: string | undefined
   before(async () => {
     resetUserData()
-    seedThreadProposalFixture(seedStableWorkspace())
+    previousMockBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
+    // End-of-turn branch sync must observe this real isolated checkout, not
+    // the suite's fixed branch label used for unrelated screenshot fixtures.
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: '' })
+    projectId = seedThreadProposalFixture(seedStableWorkspace()).projectId
     await browser.reloadSession()
   })
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: previousMockBranch })
+  })
 
   it('starts the mock agent only after creating the worktree', async () => {
     await $('.thread-proposal-start').waitForDisplayed({ timeout: 10_000 })
@@ -188,6 +201,47 @@ describe('starting a proposed thread in an isolated checkout', () => {
       { timeout: 30_000, timeoutMsg: 'the isolated proposal did not reach the mock agent' },
     )
     await waitForAgentIdle()
+    const proposedThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    assert.ok(proposedThreadId)
+    const proposedThreads = await browser.execute(
+      (id) => window.api.threads.loadProject(id),
+      projectId,
+    )
+    const proposedThread = proposedThreads.find((thread) => thread.id === proposedThreadId)
+    assert.ok(proposedThread?.worktree, 'the started proposal owns an isolated checkout')
+    assert.equal(proposedThread.worktreeChoice, 'worktree')
+    assert.equal(proposedThread.gitBranch, proposedThread.worktree.branch)
+    const liveBranch = await browser.execute(
+      ({ projectId, threadId }) => window.api.git.currentBranch(projectId, threadId),
+      { projectId, threadId: proposedThreadId },
+    )
+    assert.match(liveBranch ?? '', /^copse\//, 'branch IPC observes the isolated checkout')
+    // The mock response does not edit files. Give this isolated checkout real,
+    // deterministic work instead of depending on whether its baseline commit
+    // happens to be considered unpushed in the runner's Git environment.
+    assert.equal(
+      execFileSync('git', ['ls-files', '--error-unmatch', 'README.md'], {
+        cwd: proposedThread.worktree.path,
+        encoding: 'utf8',
+      }).trim(),
+      'README.md',
+    )
+    const readmePath = join(proposedThread.worktree.path, 'README.md')
+    const readme = readFileSync(readmePath, 'utf8')
+    assert.match(readme, /^# Workspace\n/)
+    writeFileSync(readmePath, `${readme}\nProposal checkout ready for review.\n`, 'utf8')
+    const [changes] = await browser.execute(
+      (ref) => window.api.git.threadChangeSummary([ref], { fresh: true }),
+      { projectId, threadId: proposedThreadId },
+    )
+    assert.equal(changes?.dirty, true, 'the real isolated checkout contains the fixture edit')
+    const changesLabel = describeThreadChanges(changes ?? null)
+    assert.ok(changesLabel, 'the fixture edit has a changes badge')
+    // Rehydrate the renderer so its sidebar starts with a fresh summary after
+    // the external fixture edit, rather than waiting for its 30-second cache.
+    // Main and the completed mock scenario stay alive.
+    await browser.refresh()
+    await $('.messages-list').waitForExist({ timeout: 30_000 })
     // Progress refreshes can replace the source thread's sidebar row between
     // WebDriver's lookup and click. Retry only that stale-node race, always
     // resolving a fresh row; any other click failure remains a real failure.
@@ -208,6 +262,19 @@ describe('starting a proposed thread in an isolated checkout', () => {
     )
     await expect($('.thread-proposal')).toHaveAttribute('data-proposal-status', 'started')
     await expect($('.thread-proposal-state')).toHaveText(expect.stringContaining('Thread started'))
+    // The sidebar reads this summary asynchronously after the run settles.
+    // Wait for its real badge rather than capturing either side of that race.
+    const proposedRow = $(`.chat-row[data-thread-id="${proposedThreadId}"]`)
+    await expect(proposedRow.$('.chat-title')).toHaveText(proposedThread.title)
+    await expect(proposedRow.$('.chat-changes-status')).toHaveAttribute('aria-label', changesLabel)
+    const titleFits = await browser.execute((id) => {
+      const row = document.querySelector(`.chat-row[data-thread-id="${id}"]`)
+      const title = row?.querySelector('.chat-title')
+      const badge = row?.querySelector('.chat-changes-status')
+      if (!title || !badge) throw new Error('The isolated proposal sidebar row is incomplete')
+      return title.getBoundingClientRect().right <= badge.getBoundingClientRect().left + 1
+    }, proposedThreadId)
+    assert.ok(titleFits, 'the title truncates before its changes badge rather than overlapping it')
     // Returning to the source can rehydrate and replace its card. Capture the
     // persistent app shell, not a WebDriver reference to that replaceable node.
     await saveAppScreenshot('thread-proposal-started-isolated.png')
