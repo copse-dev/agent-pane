@@ -14,7 +14,12 @@ const stepSchema = z.object({
 })
 const workflow = z
   .object({
-    on: z.object({ workflow_dispatch: z.unknown() }).strict(),
+    on: z
+      .object({
+        workflow_dispatch: z.unknown(),
+        push: z.object({ branches: z.array(z.string()), paths: z.array(z.string()) }),
+      })
+      .strict(),
     permissions: z.object({ contents: z.literal('read') }).strict(),
     jobs: z.object({
       storage: z.object({
@@ -26,6 +31,26 @@ const workflow = z
   .parse(load(readFileSync('.github/workflows/screenshot-storage.yml', 'utf8')))
 
 describe('screenshot storage workflow', () => {
+  it('automatically publishes only accepted main screenshots, without PR triggers', () => {
+    assert.deepEqual(workflow.on.push.branches, ['main'])
+    assert.ok(workflow.on.push.paths.includes('tests/e2e/screenshots/**'))
+    assert.ok(workflow.on.push.paths.includes('.github/workflows/screenshot-storage.yml'))
+    assert.ok(!Object.hasOwn(workflow.on, 'pull_request'))
+    assert.ok(!Object.hasOwn(workflow.on, 'pull_request_target'))
+    const generation = workflow.jobs.storage.steps.find(
+      (step) => step.run === 'pnpm screenshots:manifest',
+    )
+    assert.ok(generation)
+    assert.equal(generation.if, undefined)
+    const check = workflow.jobs.storage.steps.findIndex(
+      (step) => step.run === 'pnpm screenshots:check',
+    )
+    const generate = workflow.jobs.storage.steps.findIndex(
+      (step) => step.run === 'pnpm screenshots:manifest',
+    )
+    assert.ok(generate >= 0 && generate < check)
+  })
+
   it('keeps R2 credentials out of checkout, dependency installation, and public verification', () => {
     const { env, steps } = workflow.jobs.storage
     assert.ok(!Object.hasOwn(env, 'SCREENSHOT_R2_ACCESS_KEY_ID'))
@@ -39,7 +64,7 @@ describe('screenshot storage workflow', () => {
     )
     for (const step of credentialSteps) {
       assert.ok(step.env)
-      assert.equal(step.if, "inputs.operation == 'upload'")
+      assert.equal(step.if, "github.event_name == 'push' || inputs.operation == 'upload'")
       assert.equal(
         step.env['SCREENSHOT_R2_ACCESS_KEY_ID'],
         '${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}',

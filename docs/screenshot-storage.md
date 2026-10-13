@@ -49,16 +49,21 @@ The workflow defaults to bucket `copse-screenshots` and public URL
 `https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev`; override them with matching
 repository secrets or variables if necessary.
 
-Once the workflow and manifest are on GitHub, open **Actions → Screenshot storage
-→ Run workflow**, select the branch containing this migration, and choose `upload`.
-The job checks the manifest, uploads each unique object, verifies the S3 bytes,
-and saves the verified manifest as run evidence. It does not commit or delete PNGs.
+The **Screenshot storage** workflow runs automatically when screenshot references
+or storage tooling change on `main`. It also supports **Actions → Screenshot storage
+→ Run workflow → upload** for a selected branch.
+Uploads first generate a fresh manifest from the committed PNGs, check it, upload
+each unique object, verify the S3 bytes, and save the manifest as run evidence.
+Accepted PNG-only updates are therefore published without a manual dispatch or
+manifest refresh. The verified artifact records the manifest for that exact commit;
+generation does not commit the manifest back to Git. PNGs remain authoritative
+until the review workflow cutover. The job does not delete PNGs.
 Choose `verify` to check the public copy later, without passing upload credentials.
 The upload job uses the AWS CLI v2 provided by GitHub's hosted Ubuntu runner.
 
 GitHub Actions secrets cannot be read back into a local Codex environment.
-Uploads run on GitHub; no local secret copy is needed. The workflow is manually
-dispatched and has read-only Git permissions. R2 upload credentials are scoped to
+Uploads run on GitHub; no local secret copy is needed. The workflow is
+triggered only by `main` changes or an explicit dispatch and has read-only Git permissions. R2 upload credentials are scoped to
 the preflight and upload steps rather than dependency installation.
 
 ### Local commands
