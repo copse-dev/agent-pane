@@ -1,6 +1,15 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { buildSync } from 'esbuild'
 import { PNG } from 'pngjs'
+import {
+  screenshotHash,
+  serializeScreenshotManifest,
+  type ScreenshotManifest,
+} from './lib/screenshot-manifest.mts'
 import {
   classifyScreenshotChange,
   type ClassifyOptions,
@@ -48,6 +57,106 @@ const WHITE: [number, number, number] = [255, 255, 255]
 const RED: [number, number, number] = [255, 0, 0]
 const BLUE: [number, number, number] = [0, 0, 255]
 const GREEN: [number, number, number] = [0, 255, 0]
+
+it('walks each contested range once for a batch while preserving manual, main and bot ownership', () => {
+  mkdirSync(resolve('.tmp'), { recursive: true })
+  const cwd = mkdtempSync(resolve('.tmp/filter-batch-'))
+  const git = (...args: string[]): string =>
+    execFileSync(
+      'git',
+      ['-c', 'user.name=Reviewer', '-c', 'user.email=reviewer@example.com', ...args],
+      {
+        cwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    ).trim()
+  try {
+    const directory = join(cwd, 'tests/e2e/screenshots')
+    const cache = join(cwd, '.cache/screenshots/sha256')
+    mkdirSync(directory, { recursive: true })
+    mkdirSync(cache, { recursive: true })
+    mkdirSync(join(cwd, 'scripts'))
+    const white = solid(30, 30, WHITE)
+    const red = solid(30, 30, RED)
+    const blue = solid(30, 30, BLUE)
+    const green = solid(30, 30, GREEN)
+    const entry = (bytes: Buffer): ScreenshotManifest['screenshots'][string] => ({
+      sha256: screenshotHash(bytes),
+      bytes: bytes.length,
+    })
+    for (const bytes of [white, red, blue, green])
+      writeFileSync(join(cache, `${screenshotHash(bytes)}.png`), bytes)
+    const names = [
+      ...Array.from({ length: 12 }, (_, i) => `manual-${String(i)}.png`),
+      'main.png',
+      'bot.png',
+    ]
+    const manifest: ScreenshotManifest = {
+      version: 1,
+      screenshots: Object.fromEntries(names.map((name) => [name, entry(white)])),
+    }
+    const save = (author?: string): void => {
+      writeFileSync(join(directory, 'manifest.json'), serializeScreenshotManifest(manifest))
+      git('add', 'tests/e2e/screenshots/manifest.json')
+      git('commit', '-qm', 'Accept references', ...(author ? ['--author', author] : []))
+    }
+    git('init', '-q')
+    git('checkout', '-qb', 'batch')
+    save()
+    git('branch', 'main')
+    for (const name of names.filter((name) => name.startsWith('manual-')))
+      manifest.screenshots[name] = entry(red)
+    save()
+    manifest.screenshots['bot.png'] = entry(red)
+    save('github-actions[bot] <bot@example.com>')
+    git('checkout', '-q', 'main')
+    for (const name of names) manifest.screenshots[name] = entry(white)
+    manifest.screenshots['main.png'] = entry(green)
+    save()
+    git('checkout', '-q', 'batch')
+    for (const name of names) writeFileSync(join(directory, name), blue)
+    writeFileSync(join(directory, 'new.png'), green)
+    const script = join(cwd, 'scripts/filter-screenshots.mjs')
+    buildSync({
+      entryPoints: [resolve('scripts/filter-screenshots.mts')],
+      outfile: script,
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      packages: 'external',
+      alias: { '@shared': resolve('src/shared') },
+      logLevel: 'silent',
+    })
+    const trace = join(cwd, 'git.trace')
+    const output = execFileSync(process.execPath, [script, '--dry-run'], {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_TRACE: trace,
+        SCREENSHOT_MAIN_REF: 'main',
+        SCREENSHOT_SCOPE: 'off',
+        SCREENSHOT_FLAP_LOOKBACK: '0',
+        UPDATE_SCREENSHOTS_LABEL: 'false',
+        GITHUB_OUTPUT: '',
+      },
+    })
+    assert.match(
+      output,
+      /15 changed, 2 kept \(real\), 0 ignored \(noise\), 0 held \(flapping\), 13 held \(contested\)/,
+    )
+    assert.match(output, /keep\s+tests\/e2e\/screenshots\/bot\.png/)
+    assert.match(output, /keep\s+tests\/e2e\/screenshots\/new\.png/)
+    const walks = readFileSync(trace, 'utf8')
+      .split('\n')
+      .filter((line) => line.includes('--format=%H %an'))
+    assert.equal(walks.length, 2, 'range traversal must be independent of the screenshot count')
+    for (const name of names) assert.deepEqual(readFileSync(join(directory, name)), blue)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
 
 describe('classifyScreenshotChange', () => {
   it('keeps a brand-new screenshot with no baseline', () => {
