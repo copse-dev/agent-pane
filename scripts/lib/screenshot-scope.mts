@@ -1,3 +1,4 @@
+import { screenshotChangesInRange } from './screenshot-git.mts'
 /**
  * Screenshot ownership — which reference shots a diff is allowed to rewrite.
  *
@@ -38,9 +39,6 @@ import { execFileSync } from 'node:child_process'
 import { computeScreenshotGate, changedFiles } from '../test-oracle.mts'
 
 export const SCREENSHOT_DIR = 'tests/e2e/screenshots'
-
-/** Commits authored by this identity are CI's own refreshes, never deliberate. */
-const BOT_AUTHOR = 'github-actions[bot]'
 
 export interface ScreenshotScope {
   /** False when the base ref is missing — callers must not filter on scope. */
@@ -88,25 +86,7 @@ export function ownsScreenshot(scope: ScreenshotScope, path: string): boolean {
  * separate walks are unambiguous.
  */
 function branchOwnedScreenshots(mergeBase: string, cwd: string): Set<string> {
-  const out = new Set<string>()
-  const lines = git(
-    ['log', '--format=%H %an', `${mergeBase}..HEAD`, '--', SCREENSHOT_DIR],
-    cwd,
-  ).split('\n')
-  for (const line of lines) {
-    const sep = line.indexOf(' ')
-    if (sep <= 0) continue
-    const sha = line.slice(0, sep)
-    const author = line.slice(sep + 1).trim()
-    if (author === BOT_AUTHOR) continue
-    for (const f of git(['show', '--format=', '--name-only', sha, '--', SCREENSHOT_DIR], cwd).split(
-      '\n',
-    )) {
-      const t = f.trim()
-      if (t.toLowerCase().endsWith('.png')) out.add(screenshotName(t))
-    }
-  }
-  return out
+  return new Set([...screenshotChangesInRange(`${mergeBase}..HEAD`, cwd, true)].map(screenshotName))
 }
 
 /**

@@ -1,99 +1,88 @@
 # Screenshot storage in R2
 
-The migration starts with a versioned SHA-256 manifest at
-`tests/e2e/screenshots/manifest.json`. Each entry records the PNG's hash and byte
-length; its immutable R2 key is `screenshots/sha256/<hash>.png`. Identical PNGs
-share one object. Keep objects referenced by older manifests for historical review.
+Git tracks `tests/e2e/screenshots/manifest.json`, not reference PNGs. Each entry
+records a SHA-256 hash and byte length. Its immutable public object is
+`screenshots/sha256/<hash>.png`; identical images share an object. Keep objects
+referenced by older manifests so historical review and flap detection still work.
 
-## Current migration stage
+## Reads and tests
 
-The storage commands prepare and verify the R2 copy. PNGs are still tracked:
-the existing candidate publication, selection, freshness, ownership, flap detection,
-and README workflows currently depend on PNG blobs in Git. Do not remove or ignore
-the PNGs until those consumers have migrated. Uploading alone does not change that
-contract. No bucket or credentials are embedded in the manifest.
+Public reads require no credentials or AWS CLI. The default bucket URL is
+`https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev`.
+`SCREENSHOT_R2_PUBLIC_URL` can override it with another HTTPS public endpoint.
 
-## Configure storage
+WebdriverIO and the e2e runner hydrate references before running tests. Missing
+files are restored from the manifest; existing rendered candidates are preserved.
+Every download and cache hit is checked against its hash and byte length. The
+ignored `.cache/screenshots/sha256` cache deduplicates reads. Downloads run four
+at a time and report progress. CI caches these immutable objects and requires a
+separate baseline hydration/check job, including for screenshot-only changes.
 
-Install a current AWS CLI v2 with conditional `s3api put-object --if-none-match`
-support. Create an R2 bucket named `copse-screenshots` and a bucket-scoped Object Read & Write API token.
-Set these variables in your local environment or CI secrets (never commit them):
+The noise filter compares per-image manifest hashes and prepares historical R2
+objects before classifying candidates. Older commits that still contain PNGs
+remain readable from Git. Reference PNGs in the working tree are ignored.
+
+## Upload credentials
+
+Uploads require a bucket-scoped R2 Object Read & Write token's **S3 access key ID**
+and **secret access key**. The Cloudflare API “Token value” is not used. Store these
+in GitHub Actions secrets, never in Git:
 
 ```text
 SCREENSHOT_R2_ACCOUNT_ID=<Cloudflare account ID>
-SCREENSHOT_R2_BUCKET=copse-screenshots
 SCREENSHOT_R2_ACCESS_KEY_ID=<R2 S3 access key ID>
 SCREENSHOT_R2_SECRET_ACCESS_KEY=<R2 S3 secret access key>
 ```
 
-Uploads use the R2 S3 endpoint and region `auto`. The upload command validates all
-local manifest entries before writing, uses conditional writes to preserve existing
-hash objects, and downloads each uploaded object to verify its hash and length.
-It never removes local files or changes Git's index.
-Uploads run at most four AWS processes concurrently and report progress after
-the first objects and every 25 verified objects. A failed batch waits for its
-active workers before cleaning up; later batches do not start. Individual AWS
-commands have a three-minute timeout.
+The account ID also accepts a repository variable. The bucket defaults to
+`copse-screenshots`, overridable with `SCREENSHOT_R2_BUCKET`. Local uploads need
+these environment variables and AWS CLI v2 with conditional put-object support.
+Uploads use conditional writes and verify each object's S3 bytes. They run four
+AWS processes at a time, with progress and a three-minute command timeout.
 
-For public reads, enable public access on the bucket and set
-`SCREENSHOT_R2_PUBLIC_URL=https://<your bucket's public hostname>.r2.dev`.
-No custom domain is required; a public custom domain can also be used. Download and verify
-then require no credentials or AWS CLI. Omit the public URL to read privately
-through the S3 API with bucket-scoped read credentials. Upload verification always
-uses S3, avoiding public cache propagation delays.
+## CI review and acceptance
 
-## Commands
+CI collects changed rendered PNGs as an artifact. The trusted candidate publisher
+validates the artifact, builds the new hashes, uploads and verifies its R2 objects,
+and then publishes a compare commit containing only manifest updates and any
+corresponding README screenshot URL replacement. R2 credentials are scoped to
+that upload step. Pull-request code and dependency installation do not receive
+them; policy scripts come from the trusted workflow revision.
 
-### GitHub Actions
-
-Store `SCREENSHOT_R2_ACCESS_KEY_ID` and `SCREENSHOT_R2_SECRET_ACCESS_KEY` under
-**Settings → Secrets and variables → Actions → Repository secrets**. Store
-`SCREENSHOT_R2_ACCOUNT_ID` there too (a repository variable is also supported).
-The workflow defaults to bucket `copse-screenshots` and public URL
-`https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev`; override them with matching
-repository secrets or variables if necessary.
-
-The **Screenshot storage** workflow runs automatically when screenshot references
-or storage tooling change on `main`. It also supports **Actions → Screenshot storage
-→ Run workflow → upload** for a selected branch.
-Uploads first generate a fresh manifest from the committed PNGs, check it, upload
-each unique object, verify the S3 bytes, and save the manifest as run evidence.
-Accepted PNG-only updates are therefore published without a manual dispatch or
-manifest refresh. The verified artifact records the manifest for that exact commit;
-generation does not commit the manifest back to Git. PNGs remain authoritative
-until the review workflow cutover. The job does not delete PNGs.
-Choose `verify` to check the public copy later, without passing upload credentials.
-The upload job uses the AWS CLI v2 provided by GitHub's hosted Ubuntu runner.
-
-GitHub Actions secrets cannot be read back into a local Codex environment.
-Uploads run on GitHub; no local secret copy is needed. The workflow is
-triggered only by `main` changes or an explicit dispatch and has read-only Git permissions. R2 upload credentials are scoped to
-the preflight and upload steps rather than dependency installation.
-
-### Local commands
+The parent PR comment shows immutable R2 before/after previews. Accept-all and
+checkbox selection retain their head, permission, and compare-tree checks.
+Selection commits only the selected entries, preserving the remaining baselines.
+For manual acceptance of a reviewed subset:
 
 ```bash
-pnpm screenshots:manifest  # Generate a deterministic manifest from local PNGs
-pnpm screenshots:check     # Verify local hashes and detect stale/missing entries
-pnpm screenshots:upload   # Upload deduplicated immutable objects, then verify
-pnpm screenshots:verify   # Verify all remote objects without changing local files
-pnpm screenshots:download # Restore missing PNGs and verify their contents
+git fetch origin screenshot-compare/pr-<N>/<sha12>
+pnpm screenshots:accept --from FETCH_HEAD <name>.png <other-name>.png
+# Inspect, then commit the manifest and README changes.
 ```
 
-Download refuses to overwrite a file whose bytes differ from the manifest, so a
-freshly rendered candidate is preserved. All downloads are checked before being
-installed. The manifest contains filenames, hashes and lengths, never signed URLs.
+Manual acceptance verifies selected public objects before updating metadata.
+The storage workflow verifies accepted manifests on main. Its manual `upload`
+operation hydrates the selected manifest before uploading; `verify` needs no
+upload credentials. The manifest is authoritative and is not regenerated on main.
 
-## Cutover and Git cleanup
+## Local commands
 
-After configuring R2, uploading and verifying every reference, migrate the Git
-consumers together: hydrate references in CI, compare manifest entries for screenshot
-changes, resolve historical hashes through R2, publish R2 previews, and commit only
-selected manifest updates during acceptance. Update README image URLs at cutover.
-Then untrack the reference PNGs and ignore the local hydrated copies. Scope cleanup
-to reference screenshots; application assets and image fixtures stay in Git.
+```bash
+pnpm screenshots:hydrate  # Restore missing references; verify cached/downloaded bytes
+pnpm screenshots:changed # List rendered PNGs that differ from the committed hashes
+pnpm screenshots:manifest # Merge rendered hashes into the manifest; update README image URL
+pnpm screenshots:check   # Check all local files against the manifest
+pnpm screenshots:upload  # Upload immutable objects and verify their S3 bytes
+pnpm screenshots:verify  # Verify every public R2 object without changing local PNGs
+```
 
-Untracking removes PNGs from future commits; it does not reduce existing Git
-history. Purging historical blobs requires a coordinated history rewrite, changes
-commit IDs and affects existing branches and clones. Do that separately after the
-R2 copy and historical retention requirements have been verified.
+For a locally accepted update, hydrate, run the focused tests and noise filter,
+inspect the images, refresh the manifest, upload, then commit metadata. Missing
+local files do not delete manifest entries. Never commit the ignored PNGs.
+
+## Git cleanup
+
+The cutover untracks reference PNGs without changing their pixels. Application
+assets and image fixtures remain in Git. This removes PNGs from future commits;
+it does not reduce existing Git history. A historical blob purge is a separate,
+coordinated history rewrite affecting commit IDs, existing branches, and clones.

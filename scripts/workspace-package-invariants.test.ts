@@ -243,7 +243,13 @@ describe('workspace package resolution', () => {
     // Scheduled workflows run without `pnpm install`, so these scripts cannot resolve
     // `@copse/std` and import its source leaf by path instead.
     const installFree = new Set(
-      ['scripts/acp-v2-watch.mts', 'scripts/lib/cloud-hosts.mts'].map((file) => resolve(file)),
+      [
+        'scripts/acp-v2-watch.mts',
+        'scripts/lib/cloud-hosts.mts',
+        // Clean-checkout R2 hydration and trusted review run without an install.
+        'scripts/lib/screenshot-manifest.mts',
+        'scripts/lib/screenshot-hydration.mts',
+      ].map((file) => resolve(file)),
     )
     for (const file of sourceFiles('scripts')) {
       if (installFree.has(resolve(file))) continue

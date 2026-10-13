@@ -1,26 +1,66 @@
 import { createHash } from 'node:crypto'
 import { lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { z } from 'zod'
-import { decodeWithSchema, safeJsonParse } from './safe-json.mts'
+import { isRecord } from '../../packages/std/src/unknown-value.ts'
+import { safeJsonParse } from './safe-json.mts'
 
 export const SCREENSHOT_DIRECTORY = 'tests/e2e/screenshots'
 export const SCREENSHOT_MANIFEST = `${SCREENSHOT_DIRECTORY}/manifest.json`
-const nameSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*\.png$/)
-const entrySchema = z
-  .object({
-    sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    bytes: z.number().int().positive(),
-  })
-  .strict()
-const manifestSchema = z
-  .object({
-    version: z.literal(1),
-    screenshots: z.record(nameSchema, entrySchema),
-  })
-  .strict()
-export type ScreenshotManifest = z.infer<typeof manifestSchema>
-export type ScreenshotEntry = z.infer<typeof entrySchema>
+export const SCREENSHOT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\.png$/
+export const SCREENSHOT_PUBLIC_URL = 'https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev'
+export interface ScreenshotEntry {
+  sha256: string
+  bytes: number
+}
+export interface ScreenshotManifest {
+  version: 1
+  screenshots: Record<string, ScreenshotEntry>
+}
+
+function decodeManifest(value: unknown): ScreenshotManifest | null {
+  if (
+    !isRecord(value) ||
+    value['version'] !== 1 ||
+    Object.keys(value).length !== 2 ||
+    !isRecord(value['screenshots'])
+  )
+    return null
+  const screenshots: Record<string, ScreenshotEntry> = {}
+  const entries = Object.entries(value['screenshots'])
+  if (entries.length > 4096) return null
+  let total = 0
+  for (const [name, entry] of entries) {
+    if (
+      !SCREENSHOT_NAME.test(name) ||
+      !isRecord(entry) ||
+      Object.keys(entry).length !== 2 ||
+      typeof entry['sha256'] !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(entry['sha256']) ||
+      typeof entry['bytes'] !== 'number' ||
+      !Number.isSafeInteger(entry['bytes']) ||
+      entry['bytes'] <= 0 ||
+      entry['bytes'] > 16777216
+    )
+      return null
+    total += entry['bytes']
+    if (total > 536870912) return null
+    screenshots[name] = { sha256: entry['sha256'], bytes: entry['bytes'] }
+  }
+  return { version: 1, screenshots }
+}
+
+export function changedManifestNames(
+  before: ScreenshotManifest,
+  after: ScreenshotManifest,
+): string[] {
+  return [...new Set([...Object.keys(before.screenshots), ...Object.keys(after.screenshots)])]
+    .filter(
+      (name) =>
+        before.screenshots[name]?.sha256 !== after.screenshots[name]?.sha256 ||
+        before.screenshots[name]?.bytes !== after.screenshots[name]?.bytes,
+    )
+    .sort()
+}
 
 export function screenshotHash(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex')
@@ -31,7 +71,7 @@ export function screenshotObjectKey(entry: ScreenshotEntry): string {
 }
 
 export function parseScreenshotManifest(text: string): ScreenshotManifest {
-  const parsed = safeJsonParse(text, decodeWithSchema(manifestSchema))
+  const parsed = text.length <= 2 * 1024 * 1024 ? safeJsonParse(text, decodeManifest) : null
   if (!parsed) throw new Error('Invalid screenshot manifest')
   return parsed
 }
@@ -47,10 +87,10 @@ export function buildScreenshotManifest(directory: string): ScreenshotManifest {
   for (const name of readdirSync(directory)
     .filter((name) => name.endsWith('.png'))
     .sort()) {
-    nameSchema.parse(name)
+    if (!SCREENSHOT_NAME.test(name)) throw new Error(`Invalid screenshot name: ${name}`)
     const path = join(directory, name)
     const stat = lstatSync(path)
-    if (!stat.isFile() || stat.isSymbolicLink())
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16777216)
       throw new Error(`Not a regular screenshot: ${name}`)
     const bytes = readFileSync(path)
     if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {

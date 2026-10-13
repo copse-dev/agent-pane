@@ -1,3 +1,4 @@
+import { hydrateScreenshots } from './scripts/lib/screenshot-hydration.mts'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from './packages/std/src/safe-json.ts'
 import type { Server } from 'node:http'
@@ -41,6 +42,7 @@ const contentTypes: Readonly<Record<string, string>> = {
 }
 
 async function startDemoServer(): Promise<void> {
+  await hydrateScreenshots()
   let mobileStep = 0
   let mobileText = ''
   const mobileSession = '11111111-1111-4111-8111-111111111111'

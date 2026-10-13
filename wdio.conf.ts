@@ -1,3 +1,4 @@
+import { hydrateScreenshots } from './scripts/lib/screenshot-hydration.mts'
 import type { Options } from '@wdio/types'
 import { browser } from '@wdio/globals'
 import electronBinary from 'electron'
@@ -56,6 +57,9 @@ let e2eUserDataDir: string | null = null
 let cleanupE2eUserDataDir: (() => void) | null = null
 
 export const config: Options.Testrunner = {
+  onPrepare: async () => {
+    await hydrateScreenshots()
+  },
   runner: 'local',
   // Preserve v9's first-match `$` behavior for the existing fixture selectors.
   strictSelectors: false,

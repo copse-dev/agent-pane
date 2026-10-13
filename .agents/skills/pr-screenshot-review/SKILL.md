@@ -1,6 +1,6 @@
 ---
 name: pr-screenshot-review
-description: Review screenshot evidence for a Copse PR, distinguish intentional changes and unrelated rendering drift from visual breakage, and decide which PNGs to commit, decline, or accept all. Use when given a PR to assess its screenshot candidates or resolve screenshot review.
+description: Review screenshot evidence for a Copse PR, distinguish intentional changes and unrelated rendering drift from visual breakage, and decide which screenshot hashes to commit, decline, or accept all. Use when given a PR to assess its screenshot candidates or resolve screenshot review.
 ---
 
 # PR screenshot review
@@ -35,7 +35,7 @@ coverage; it does not inspect images for you.
 2. Locate the bot comment marked `<!-- copse-e2e-screenshot-review -->`. Verify its evidence belongs
    to the live head. The compare branch is `screenshot-compare/pr-<N>/<head-sha12>`; resolve it to an
    immutable commit. Verify that commit has exactly one parent, the reviewed head, and changes only
-   added/modified PNGs under `tests/e2e/screenshots/`. Reject stale or mismatched evidence.
+   changed hashes in `tests/e2e/screenshots/manifest.json` (or legacy PNGs). Reject stale or mismatched evidence.
 3. Get the complete candidate list from that commit or the matching immutable artifact
    `reference-screenshot-candidates-<run-id>`. The comment previews at most 20 candidates and lists
    at most 100 selection checkboxes. Neither is necessarily the full set. Check the artifact's run
@@ -84,7 +84,7 @@ Record one classification and an explicit commit/leave/fix/unresolved action for
 
 | Classification              | Evidence required                                                                                                                   | Action                                                                                                   |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Intentional update          | Visible change follows the PR's intended behavior and relevant code/spec; surrounding UI remains correct.                           | Commit the CI PNG if the head reference needs updating.                                                  |
+| Intentional update          | Visible change follows the PR's intended behavior and relevant code/spec; surrounding UI remains correct.                           | Accept the CI image hash if the head reference needs updating.                                           |
 | Unrelated, understood drift | The same variation is reproduced on base or evidenced on unrelated PRs, with a concrete benign cause and no lost behavior.          | Leave the reference unchanged on a feature PR; decline that candidate.                                   |
 | Capture instability         | Live values, async state, font loading, animation, inconsistent viewport, or alternating historical renders explain the difference. | Fix fixture synchronization/mocking or capture environment, then rerun; do not baseline the instability. |
 | Breakage                    | Missing/wrong UI, overlap, clipping, unreadable text, unintended wrapping/geometry, wrong state, or a failed behavioral assertion.  | Block acceptance and name the product/spec fix.                                                          |
@@ -144,12 +144,12 @@ force-push, or write a success status directly. Use the repository workflows:
   can trigger it. Use a structured API argument or a body file to preserve the Markdown exactly.
   If the requested subset is absent from the capped list, use the manual path instead.
 - Manual fallback: in an isolated checkout of the reviewed PR head, fetch the verified compare
-  branch, extract only reviewed PNGs from its pinned commit, inspect the staged file list, and
+  branch, run `pnpm screenshots:accept --from <pinned-commit> <reviewed-name>.png ...`, inspect the manifest/README diff, and
   commit/push when authorized. Follow repository validation requirements. Use CI Linux renders;
   never replace references with local macOS captures. Forks or artifact-only publications require
   this path and verified run provenance, since there may be no compare branch or label workflow.
 
-After acting, wait for the decision workflow and inspect its result. Verify the expected PNG-only
+After acting, wait for the decision workflow and inspect its result. Verify the expected manifest/README-only
 commit/subset or no-commit decline, the resulting head, and the `Screenshot review` status. Report
 CI separately, including pending checks; a label submission is not proof of success. A changed
 head or refused workflow requires renewed inspection, not repeated blind label application.
