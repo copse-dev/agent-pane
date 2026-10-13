@@ -1016,7 +1016,7 @@ tool errors. On by default; Settings → Appearance → Concise threads
 turns it off. Hiding is only acceptable while these hold:
 
 - **Every abridged turn has an exit.** A finished turn carries a quiet footer under it (`Show steps ›
-3 tool calls +5 −3`) that opens that one turn in full and closes it again; the running turn opens
+  3 tool calls +5 −3`) that opens that one turn in full and closes it again; the running turn opens
   from its activity row. Opening is UI-only state, never persisted, and a turn the user opened stays
   open after it finishes — nothing collapses under their pointer.
 - **What the hidden cards said that nothing else says moves to the footer.** A Stop's "Interrupted by
