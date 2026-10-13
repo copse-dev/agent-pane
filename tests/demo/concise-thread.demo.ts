@@ -180,6 +180,20 @@ describe('concise thread view', () => {
     expect(state.reasoningTrails).toBe(1)
     expect(state.screenshots).toBe(1)
     expect(state.texts.length).toBeGreaterThan(1)
+    await $('.tool-result-preview-image').waitForDisplayed()
+    // Cover the completed reply and screenshot footer before the separate top view.
+    await browser.execute(() => {
+      const list = document.querySelector('.messages-list')
+      list?.scrollTo({ top: list.scrollHeight, behavior: 'instant' })
+    })
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const list = document.querySelector('.messages-list')
+          return !!list && Math.abs(list.scrollHeight - list.clientHeight - list.scrollTop) < 2
+        }),
+      { timeout: 5000, timeoutMsg: 'full transcript must settle at its completed reply' },
+    )
     await saveAppScreenshot('concise-thread-full.png')
     // The steps the concise view hides sit above the fold; capture them too.
     await browser.execute(() => {

@@ -196,6 +196,37 @@ export async function savePreparedAppScreenshot(filename: string): Promise<void>
   await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
 
+/** Capture native webviews without ChromeDriver's element-capture rescaling. */
+export async function saveAppViewportScreenshot(filename: string): Promise<void> {
+  await withCaptureFrame(async () => {
+    await prepareE2eScreenshot()
+    await waitForSettledLayout('#app')
+    const bounds = await browser.execute(() => {
+      const rect = document.getElementById('app')?.getBoundingClientRect()
+      if (!rect) throw new Error('App shell is missing')
+      return {
+        x: Math.round(rect.x * devicePixelRatio),
+        y: Math.round(rect.y * devicePixelRatio),
+        width: Math.round(rect.width * devicePixelRatio),
+        height: Math.round(rect.height * devicePixelRatio),
+      }
+    })
+    const viewport = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+    if (
+      bounds.x < 0 ||
+      bounds.y < 0 ||
+      bounds.width <= 0 ||
+      bounds.height <= 0 ||
+      bounds.x + bounds.width > viewport.width ||
+      bounds.y + bounds.height > viewport.height
+    )
+      throw new Error('App shell extends beyond the captured viewport')
+    const cropped = new PNG({ width: bounds.width, height: bounds.height })
+    PNG.bitblt(viewport, cropped, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0)
+    writeFileSync(join(E2E_SCREENSHOT_DIR, filename), PNG.sync.write(cropped))
+  })
+}
+
 /**
  * Maximize chat width and relax overflow clipping so message/table captures are
  * not truncated by the projects sidebar or pane overflow.
