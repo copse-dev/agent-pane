@@ -39,6 +39,8 @@ import {
   type ReviewPacket,
 } from './lib/screenshot-review-records.mts'
 
+import { updateScreenshotReadme } from './lib/screenshot-review-manifest.mts'
+
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024
 const IMAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\.png$/
 const DEFAULT_R2 = 'https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev'
@@ -245,6 +247,7 @@ export async function collectReview(
         !path ||
         !['A', 'M'].includes(status ?? '') ||
         (path !== SCREENSHOT_MANIFEST &&
+          !(path === 'README.md' && status === 'M') &&
           !(
             path.startsWith(`${SCREENSHOT_DIRECTORY}/`) &&
             IMAGE_NAME.test(path.slice(SCREENSHOT_DIRECTORY.length + 1))
@@ -253,6 +256,22 @@ export async function collectReview(
     })
   )
     throw new Error('Compare commit must only add or modify screenshot evidence')
+  if (changes.includes('M\tREADME.md')) {
+    for (const ref of [evidence.head, evidence.compare]) {
+      if (!git(cwd, ['ls-tree', ref, '--', 'README.md']).toString().startsWith('100644 blob '))
+        throw new Error('Compare README must be a regular file')
+    }
+    const before = parseScreenshotManifest(
+      git(cwd, ['show', `${evidence.head}:${SCREENSHOT_MANIFEST}`]).toString(),
+    )
+    const after = parseScreenshotManifest(
+      git(cwd, ['show', `${evidence.compare}:${SCREENSHOT_MANIFEST}`]).toString(),
+    )
+    const beforeText = git(cwd, ['show', `${evidence.head}:README.md`]).toString()
+    const afterText = git(cwd, ['show', `${evidence.compare}:README.md`]).toString()
+    if (afterText !== updateScreenshotReadme(beforeText, before, after))
+      throw new Error('Compare README changes are not the accepted screenshot hash updates')
+  }
   const base = snapshot(cwd, evidence.base),
     head = snapshot(cwd, evidence.head),
     compare = snapshot(cwd, evidence.compare)
