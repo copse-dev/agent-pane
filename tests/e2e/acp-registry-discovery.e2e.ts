@@ -203,6 +203,8 @@ describe('public agent registry discovery', function () {
       (await $('.messages-list').getText()).includes('Registry fixture completed.'),
     )
     await waitForAgentIdle(15_000)
-    await saveElementScreenshot('.messages-list', 'acp-registry-fixture-turn.png')
+    // The transcript flexes with the composer; capture the verified agent
+    // result itself so its reference does not depend on spare transcript height.
+    await saveElementScreenshot('.msg-assistant', 'acp-registry-fixture-turn.png')
   })
 })
