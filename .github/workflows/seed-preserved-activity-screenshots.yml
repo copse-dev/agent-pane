@@ -1,0 +1,109 @@
+name: Seed preserved Activity screenshot objects
+
+# One-time recovery for #3744. Remove after public-object verification succeeds.
+on:
+  push:
+    branches: [recovery/sidebar-activity-3702]
+    paths: [.github/workflows/seed-preserved-activity-screenshots.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seed-preserved-activity-screenshots
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Read pinned trusted storage policy from main
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: cf2ccce60f13371af4a369f3685288f5ff8a24e6
+          path: .bootstrap-policy
+          persist-credentials: false
+          sparse-checkout: |
+            .nvmrc
+            scripts/lib
+            scripts/screenshot-storage.mts
+            packages/std/src
+            tests/e2e/screenshots/manifest.json
+          sparse-checkout-cone-mode: false
+
+      - name: Read the pinned recovery manifest as data
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: 467e855839c453f21255a0b898386a323f369f56
+          path: .bootstrap-recovery
+          persist-credentials: false
+          sparse-checkout: tests/e2e/screenshots/manifest.json
+          sparse-checkout-cone-mode: false
+
+      - name: Read the preserved original PNGs as data
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: 46f725038f5130cedeb2b2c99de3e45d466df9af
+          path: .bootstrap-source
+          persist-credentials: false
+          sparse-checkout: tests/e2e/screenshots/activity-home-*.png
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .bootstrap-policy/.nvmrc
+
+      - name: Validate exactly the twelve preserved manifest changes
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          import { changedManifestNames, parseScreenshotManifest, serializeScreenshotManifest, verifyScreenshot } from './.bootstrap-policy/scripts/lib/screenshot-manifest.mts'
+          const baseline = parseScreenshotManifest(readFileSync('.bootstrap-policy/tests/e2e/screenshots/manifest.json', 'utf8'))
+          const recovery = parseScreenshotManifest(readFileSync('.bootstrap-recovery/tests/e2e/screenshots/manifest.json', 'utf8'))
+          const names = changedManifestNames(baseline, recovery)
+          assert.equal(names.length, 12)
+          const directory = join(process.env.RUNNER_TEMP, 'preserved-activity')
+          mkdirSync(directory, { recursive: true })
+          const screenshots = {}
+          for (const name of names) {
+            assert.match(name, /^activity-home-[a-z-]+\.png$/)
+            const source = join('.bootstrap-source/tests/e2e/screenshots', name)
+            const stat = lstatSync(source)
+            assert.ok(stat.isFile() && !stat.isSymbolicLink())
+            const bytes = readFileSync(source)
+            const entry = recovery.screenshots[name]
+            verifyScreenshot(bytes, entry)
+            writeFileSync(join(directory, name), bytes)
+            screenshots[name] = entry
+            console.log(`${name}: verified ${entry.sha256} (${entry.bytes} bytes)`)
+          }
+          writeFileSync(join(process.env.RUNNER_TEMP, 'preserved-activity-manifest.json'), serializeScreenshotManifest({ version: 1, screenshots }))
+          NODE
+
+      - name: Upload with the existing trusted storage implementation
+        env:
+          SCREENSHOT_R2_ACCOUNT_ID: ${{ secrets.SCREENSHOT_R2_ACCOUNT_ID || vars.SCREENSHOT_R2_ACCOUNT_ID }}
+          SCREENSHOT_R2_BUCKET: ${{ secrets.SCREENSHOT_R2_BUCKET || vars.SCREENSHOT_R2_BUCKET || 'copse-screenshots' }}
+          SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
+          SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
+        run: |
+          node .bootstrap-policy/scripts/screenshot-storage.mts upload \
+            --dir "$RUNNER_TEMP/preserved-activity" \
+            --manifest "$RUNNER_TEMP/preserved-activity-manifest.json"
+
+      - name: Verify all twelve public objects without write credentials
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          import { parseScreenshotManifest } from './.bootstrap-policy/scripts/lib/screenshot-manifest.mts'
+          import { publicScreenshot } from './.bootstrap-policy/scripts/lib/screenshot-hydration.mts'
+          const manifest = parseScreenshotManifest(readFileSync(join(process.env.RUNNER_TEMP, 'preserved-activity-manifest.json'), 'utf8'))
+          for (const [name, entry] of Object.entries(manifest.screenshots)) {
+            await publicScreenshot(entry)
+            console.log(`${name}: public bytes and SHA-256 verified`)
+          }
+          NODE
