@@ -63,6 +63,20 @@ describe('ACP authentication error presentation', () => {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
     await $('.provider-chip[data-provider="anthropic"]').click()
+    // Provider discovery can find a host client outside PATH and offer its
+    // adapter. Decline through the real UI before reviewing sign-in guidance.
+    const approval = $('#approval-dialog')
+    const offeredInstall = await approval.waitForDisplayed({ timeout: 10_000 }).then(
+      () => true,
+      () => false,
+    )
+    if (offeredInstall) {
+      await expect(approval.$('.approval-heading')).toHaveText(
+        'Install software to connect your coding agents?',
+      )
+      await approval.$('.approval-reject').click()
+      await expect(approval).not.toBeDisplayed()
+    }
     const signIn = await $('.acp-cmd-row*=Sign in')
     await expect(signIn.$('.acp-cmd')).toHaveText('claude auth login')
     const note = await $('.acp-known-agent-note')
