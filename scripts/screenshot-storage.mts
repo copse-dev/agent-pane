@@ -1,3 +1,5 @@
+import { updateScreenshotReadme } from './lib/screenshot-review-manifest.mts'
+import { acceptScreenshotManifest } from './lib/screenshot-accept.mts'
 /** Stage the Git-to-R2 migration without deleting any reference screenshots. */
 import { execFile } from 'node:child_process'
 import {
@@ -13,6 +15,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { hydrateScreenshots } from './lib/screenshot-hydration.mts'
+import { changedLocalScreenshots } from './lib/screenshot-git.mts'
 import { isDirectExecution } from './lib/direct-execution.mts'
 import {
   buildScreenshotManifest,
@@ -20,6 +24,8 @@ import {
   SCREENSHOT_DIRECTORY,
   SCREENSHOT_MANIFEST,
   serializeScreenshotManifest,
+  changedManifestNames,
+  type ScreenshotManifest,
   screenshotObjectKey,
   verifyScreenshot,
 } from './lib/screenshot-manifest.mts'
@@ -58,32 +64,83 @@ async function r2(args: string[]): Promise<void> {
   )
 }
 
-export async function screenshotStorage(command: string | undefined): Promise<void> {
+export async function screenshotStorage(
+  command: string | undefined,
+  options: { directory?: string; manifestPath?: string } = {},
+): Promise<void> {
+  const directory = options.directory ?? SCREENSHOT_DIRECTORY
+  const manifestPath = options.manifestPath ?? SCREENSHOT_MANIFEST
+  if (command === 'accept') {
+    const index = process.argv.indexOf('--from')
+    const ref = process.argv[index + 1]
+    const names = process.argv.slice(index + 2)
+    if (index < 0 || !ref || !names.length)
+      throw new Error('Usage: screenshots:accept --from <ref> <name.png> ...')
+    await acceptScreenshotManifest(ref, names)
+    return
+  }
+  if (
+    command === 'verify' &&
+    (process.env['SCREENSHOT_R2_PUBLIC_URL'] || !process.env['SCREENSHOT_R2_ACCESS_KEY_ID'])
+  ) {
+    await hydrateScreenshots({ restore: false, verifyRemote: true })
+    return
+  }
+  if (command === 'validate') {
+    const manifest = parseScreenshotManifest(readFileSync(manifestPath, 'utf8'))
+    console.log(`Validated ${String(Object.keys(manifest.screenshots).length)} screenshot hashes`)
+    return
+  }
+  if (command === 'hydrate') {
+    await hydrateScreenshots({
+      history: process.argv.includes('--history'),
+      restore: !process.argv.includes('--history'),
+    })
+    return
+  }
+  if (command === 'changed') {
+    for (const path of changedLocalScreenshots(directory)) console.log(path)
+    return
+  }
   if (command === 'manifest') {
-    writeFileSync(
-      SCREENSHOT_MANIFEST,
-      serializeScreenshotManifest(buildScreenshotManifest(SCREENSHOT_DIRECTORY)),
+    const before: ScreenshotManifest = existsSync(manifestPath)
+      ? parseScreenshotManifest(readFileSync(manifestPath, 'utf8'))
+      : { version: 1, screenshots: {} }
+    const rendered = buildScreenshotManifest(directory)
+    const after = parseScreenshotManifest(
+      serializeScreenshotManifest({
+        version: 1,
+        screenshots: { ...before.screenshots, ...rendered.screenshots },
+      }),
     )
+    writeFileSync(manifestPath, serializeScreenshotManifest(after))
+    if (directory === SCREENSHOT_DIRECTORY && existsSync('README.md'))
+      writeFileSync(
+        'README.md',
+        updateScreenshotReadme(readFileSync('README.md', 'utf8'), before, after),
+      )
     console.log(
-      `Wrote ${SCREENSHOT_MANIFEST}; PNGs remain tracked until the review workflow migrates.`,
+      `Recorded ${String(changedManifestNames(before, after).length)} screenshot hash changes; upload before committing the manifest`,
     )
     return
   }
   if (!['check', 'upload', 'download', 'verify'].includes(command ?? '')) {
-    throw new Error('Usage: screenshot-storage.mts manifest|check|upload|download|verify')
+    throw new Error(
+      'Usage: screenshot-storage.mts manifest|check|upload|download|verify|hydrate|changed|validate|accept',
+    )
   }
-  const manifest = parseScreenshotManifest(readFileSync(SCREENSHOT_MANIFEST, 'utf8'))
+  const manifest = parseScreenshotManifest(readFileSync(manifestPath, 'utf8'))
   const entries = Object.entries(manifest.screenshots)
   if (command === 'check' || command === 'upload') {
     // Validate the complete input before any remote writes.
     for (const [name, entry] of entries) {
-      const path = join(SCREENSHOT_DIRECTORY, name)
+      const path = join(directory, name)
       if (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink())
         throw new Error(`Not a regular screenshot: ${name}`)
       verifyScreenshot(readFileSync(path), entry)
     }
     if (command === 'check') {
-      const actual = buildScreenshotManifest(SCREENSHOT_DIRECTORY)
+      const actual = buildScreenshotManifest(directory)
       if (serializeScreenshotManifest(actual) !== serializeScreenshotManifest(manifest)) {
         throw new Error('Screenshot manifest is stale; run pnpm screenshots:manifest')
       }
@@ -118,7 +175,7 @@ export async function screenshotStorage(command: string | undefined): Promise<vo
                 '--key',
                 key,
                 '--body',
-                join(SCREENSHOT_DIRECTORY, name),
+                join(directory, name),
                 '--content-type',
                 'image/png',
                 '--cache-control',
@@ -151,7 +208,7 @@ export async function screenshotStorage(command: string | undefined): Promise<vo
     const seen = new Set<string>()
     for (const [name, entry] of entries) {
       const key = screenshotObjectKey(entry)
-      const local = join(SCREENSHOT_DIRECTORY, name)
+      const local = join(directory, name)
       const temporary = join(staging, entry.sha256)
       if (command === 'download' && existsSync(local)) {
         if (!lstatSync(local).isFile() || lstatSync(local).isSymbolicLink())
@@ -175,8 +232,8 @@ export async function screenshotStorage(command: string | undefined): Promise<vo
         seen.add(key)
       }
       if (command === 'download') {
-        mkdirSync(SCREENSHOT_DIRECTORY, { recursive: true })
-        const pending = join(SCREENSHOT_DIRECTORY, `.${name}.download`)
+        mkdirSync(directory, { recursive: true })
+        const pending = join(directory, `.${name}.download`)
         writeFileSync(pending, readFileSync(temporary), { flag: 'wx' })
         renameSync(pending, local)
       }
@@ -190,7 +247,14 @@ export async function screenshotStorage(command: string | undefined): Promise<vo
 }
 
 if (isDirectExecution(import.meta.url, 'screenshot-storage')) {
-  screenshotStorage(process.argv[2]).catch((error: unknown) => {
+  screenshotStorage(process.argv[2], {
+    ...(process.argv.includes('--dir')
+      ? { directory: process.argv[process.argv.indexOf('--dir') + 1] ?? '' }
+      : {}),
+    ...(process.argv.includes('--manifest')
+      ? { manifestPath: process.argv[process.argv.indexOf('--manifest') + 1] ?? '' }
+      : {}),
+  }).catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : 'Screenshot storage failed')
     process.exitCode = 1
   })

@@ -1,4 +1,5 @@
 /** Base-change planning only: never dispatch CI, execute a test, or authorize a merge. */
+import { manifestChangedPaths } from './screenshot-git.mts'
 import { execFileSync } from 'node:child_process'
 import {
   ciExcludedSpecs,
@@ -61,11 +62,11 @@ function commit(ref: string): string {
 
 function diff(from: string, to: string): string[] {
   // Disabling rename folding preserves both old and new paths.
-  return git(['diff', '--name-only', '--no-renames', '-z', from, to, '--'])
+  const paths = git(['diff', '--name-only', '--no-renames', '-z', from, to, '--'])
     .toString('utf8')
     .split('\0')
     .filter(Boolean)
-    .sort()
+  return [...new Set([...paths, ...manifestChangedPaths(from, to)])].sort()
 }
 
 /** Bulk read immutable blobs, never checking out or executing candidate code. */

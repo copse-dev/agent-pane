@@ -37,18 +37,14 @@ describe('screenshot storage workflow', () => {
     assert.ok(workflow.on.push.paths.includes('.github/workflows/screenshot-storage.yml'))
     assert.ok(!Object.hasOwn(workflow.on, 'pull_request'))
     assert.ok(!Object.hasOwn(workflow.on, 'pull_request_target'))
-    const generation = workflow.jobs.storage.steps.find(
-      (step) => step.run === 'pnpm screenshots:manifest',
+    assert.ok(!workflow.jobs.storage.steps.some((step) => step.run === 'pnpm screenshots:manifest'))
+    const validate = workflow.jobs.storage.steps.findIndex(
+      (step) => step.run === 'node scripts/screenshot-storage.mts validate',
     )
-    assert.ok(generation)
-    assert.equal(generation.if, undefined)
-    const check = workflow.jobs.storage.steps.findIndex(
-      (step) => step.run === 'pnpm screenshots:check',
+    const verify = workflow.jobs.storage.steps.findIndex(
+      (step) => step.run === 'pnpm screenshots:verify',
     )
-    const generate = workflow.jobs.storage.steps.findIndex(
-      (step) => step.run === 'pnpm screenshots:manifest',
-    )
-    assert.ok(generate >= 0 && generate < check)
+    assert.ok(validate >= 0 && verify > validate)
   })
 
   it('keeps R2 credentials out of checkout, dependency installation, and public verification', () => {
@@ -64,7 +60,10 @@ describe('screenshot storage workflow', () => {
     )
     for (const step of credentialSteps) {
       assert.ok(step.env)
-      assert.equal(step.if, "github.event_name == 'push' || inputs.operation == 'upload'")
+      assert.equal(
+        step.if,
+        "github.event_name == 'workflow_dispatch' && inputs.operation == 'upload'",
+      )
       assert.equal(
         step.env['SCREENSHOT_R2_ACCESS_KEY_ID'],
         '${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}',
@@ -78,13 +77,15 @@ describe('screenshot storage workflow', () => {
     assert.equal(checkout?.with?.['persist-credentials'], false)
     const verify = steps.find((step) => step.run === 'pnpm screenshots:verify')
     assert.ok(verify)
-    assert.equal(verify.if, "inputs.operation == 'verify'")
+    assert.equal(verify.if, "github.event_name == 'push' || inputs.operation == 'verify'")
     assert.equal(verify.env, undefined)
   })
 
   it('checks local integrity before upload and saves evidence only after remote verification', () => {
     const { steps } = workflow.jobs.storage
-    const check = steps.findIndex((step) => step.run === 'pnpm screenshots:check')
+    const check = steps.findIndex(
+      (step) => step.run === 'node scripts/screenshot-storage.mts validate',
+    )
     const upload = steps.findIndex((step) => step.run === 'pnpm screenshots:upload')
     const verify = steps.findIndex((step) => step.run === 'pnpm screenshots:verify')
     const artifact = steps.findIndex((step) => step.uses?.startsWith('actions/upload-artifact@'))

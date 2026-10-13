@@ -18,7 +18,7 @@ Copse has no hosted backend of its own. Connect your preferred cloud provider di
   <a href="https://github.com/copse-dev/agent-pane/issues">Issues</a>
 </p>
 
-![Copse building a site: the project, the agent conversation, and its proposed changes ready to accept](tests/e2e/screenshots/landing-cupcake-changes.png)
+![Copse building a site: the project, the agent conversation, and its proposed changes ready to accept](https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev/screenshots/sha256/8b4c5a46f271ef9f14cde9d79a228504886f6f7fab3f1632fbad24c463dbedfe.png)
 
 > Copse is in public beta. The signed, notarized app runs on macOS 26 or newer, on Apple Silicon and Intel Macs. Linux and Windows can be used for source development, but are not supported release targets yet.
 

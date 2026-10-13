@@ -73,12 +73,7 @@ finish() {
     echo "exit=${code}"
   } > "${staging}/run-info.txt"
   if cd "${TREE}" 2>/dev/null; then
-    mapfile -t shots < <(
-      {
-        git diff --name-only -- tests/e2e/screenshots/
-        git ls-files --others --exclude-standard -- tests/e2e/screenshots/
-      } 2>/dev/null | sort -u
-    )
+    mapfile -t shots < <(node scripts/screenshot-storage.mts changed)
     for f in "${shots[@]}"; do
       [[ -n "${f}" && -f "${f}" ]] || continue
       cp "${f}" "${staging}/tests/e2e/screenshots/"
