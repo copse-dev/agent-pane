@@ -1,0 +1,85 @@
+name: Screenshot storage
+
+# Bootstrap the R2 copy before migrating the PNG-based review workflows.
+# Writes are explicitly dispatched; PR code never receives the R2 credentials.
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Upload and verify current references, or verify the public copy
+        type: choice
+        options:
+          - upload
+          - verify
+        default: upload
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screenshot-storage
+  cancel-in-progress: false
+
+jobs:
+  storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SCREENSHOT_R2_ACCOUNT_ID: ${{ secrets.SCREENSHOT_R2_ACCOUNT_ID || vars.SCREENSHOT_R2_ACCOUNT_ID }}
+      SCREENSHOT_R2_BUCKET: ${{ secrets.SCREENSHOT_R2_BUCKET || vars.SCREENSHOT_R2_BUCKET || 'copse-screenshots' }}
+      SCREENSHOT_R2_PUBLIC_URL: ${{ vars.SCREENSHOT_R2_PUBLIC_URL || secrets.SCREENSHOT_R2_PUBLIC_URL || 'https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check upload configuration
+        if: inputs.operation == 'upload'
+        env:
+          SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
+          SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
+        run: |
+          for name in SCREENSHOT_R2_ACCOUNT_ID SCREENSHOT_R2_BUCKET SCREENSHOT_R2_ACCESS_KEY_ID SCREENSHOT_R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Set the $name repository secret before uploading."
+              exit 1
+            fi
+          done
+          aws --version
+
+      - uses: ./.github/actions/setup
+
+      - name: Check the local manifest
+        run: pnpm screenshots:check
+
+      - name: Upload immutable objects and verify their contents
+        if: inputs.operation == 'upload'
+        env:
+          SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
+          SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
+        run: pnpm screenshots:upload
+
+      - name: Verify public objects without credentials
+        if: inputs.operation == 'verify'
+        run: pnpm screenshots:verify
+
+      - name: Save the verified manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-screenshot-manifest-${{ github.run_id }}
+          path: tests/e2e/screenshots/manifest.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Summarize verified storage
+        env:
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          {
+            echo '### Screenshot storage verified'
+            echo
+            echo "Operation: $OPERATION"
+            echo "Commit: $GITHUB_SHA"
+            echo
+            echo 'The artifact pins the verified manifest. Reference PNGs remain tracked until the screenshot review workflow cutover.'
+          } >> "$GITHUB_STEP_SUMMARY"

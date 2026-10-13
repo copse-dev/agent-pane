@@ -119,7 +119,12 @@
     "dist:mac": "pnpm run prepare:gortex:mac && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
     "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run prepare:gortex:mac && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
     "check:local": "pnpm run check:e2e-syntax && pnpm run typecheck && pnpm run type-coverage && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm run check:e2e-exclusions",
-    "check": "pnpm run check:local && pnpm test"
+    "check": "pnpm run check:local && pnpm test",
+    "screenshots:manifest": "node scripts/screenshot-storage.mts manifest",
+    "screenshots:check": "node scripts/screenshot-storage.mts check",
+    "screenshots:upload": "node scripts/screenshot-storage.mts upload",
+    "screenshots:verify": "node scripts/screenshot-storage.mts verify",
+    "screenshots:download": "node scripts/screenshot-storage.mts download"
   },
   "build": {
     "appId": "dev.copse.app",
