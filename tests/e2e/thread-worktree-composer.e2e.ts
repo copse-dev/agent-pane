@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { existsSync, mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-thread-worktree-composer'
 
 describe('first-message checkout composer', () => {
   let workspaceRoot = ''
+  let cleanupWorkspace = () => {}
 
   beforeEach(() => {
     process.env['COPSE_PANEL_MOCK_LLM'] = '1'
@@ -21,7 +21,10 @@ describe('first-message checkout composer', () => {
   before(async function () {
     this.timeout(120_000)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-thread-worktree-composer-'))
+    const fixture = createFixtureDirectory('copse-thread-worktree-composer')
+    workspaceRoot = fixture.root
+    cleanupWorkspace = fixture.cleanup
+    assert.ok(existsSync(workspaceRoot), 'the non-Git fixture directory exists')
     resetUserData()
     // Deliberately not a Git repository: explicit isolation must surface a
     // retryable inline error without dispatching the first prompt.
@@ -32,7 +35,7 @@ describe('first-message checkout composer', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    cleanupWorkspace()
     delete process.env['COPSE_PANEL_MOCK_LLM']
     delete process.env['ANTHROPIC_API_KEY']
     delete process.env['OPENAI_API_KEY']

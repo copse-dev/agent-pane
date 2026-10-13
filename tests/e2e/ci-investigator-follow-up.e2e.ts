@@ -1,7 +1,6 @@
+import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { delimiter } from 'node:path'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import {
   completeMockTurn,
@@ -14,13 +13,19 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 describe('CI investigator follow-up', () => {
   const originalPath = process.env['PATH']
   let workspace = ''
+  let cleanupWorkspace: (() => void) | undefined
   let fixtureBin = ''
+  let cleanupBin: (() => void) | undefined
 
   before(async function () {
     this.timeout(120_000)
     resetUserData()
-    workspace = mkdtempSync(join(tmpdir(), 'copse-follow-up-investigate-ci-'))
-    fixtureBin = mkdtempSync(join(tmpdir(), 'copse-follow-up-gh-'))
+    const fixture = createFixtureDirectory('copse-follow-up-investigate-ci')
+    workspace = fixture.root
+    cleanupWorkspace = fixture.cleanup
+    const bin = createFixtureDirectory('copse-follow-up-gh')
+    fixtureBin = bin.root
+    cleanupBin = bin.cleanup
     seedCleanFeatureBranch(workspace)
     writeFailingPrGhFixture(fixtureBin)
     writeE2eEnv({
@@ -42,8 +47,8 @@ describe('CI investigator follow-up', () => {
       PATH: originalPath,
     })
     resetUserData()
-    if (workspace) rmSync(workspace, { recursive: true, force: true })
-    if (fixtureBin) rmSync(fixtureBin, { recursive: true, force: true })
+    cleanupWorkspace?.()
+    cleanupBin?.()
   })
 
   it('names the available investigate_ci tool in the failing-CI bubble', async () => {
@@ -52,6 +57,18 @@ describe('CI investigator follow-up', () => {
     await ciBubble.waitForDisplayed({ timeout: 30_000 })
     await expect(ciBubble).toHaveText('Investigate CI failure')
 
+    await browser.waitUntil(
+      async () =>
+        browser.execute(async () => {
+          const status = await window.api.index.status()
+          return (
+            status.fileIndex.phase !== 'building' &&
+            status.semantic.phase !== 'building' &&
+            document.querySelector('.footer-indexing')?.getAttribute('data-state') !== 'building'
+          )
+        }),
+      { timeout: 30_000, timeoutMsg: 'expected workspace indexing to finish before capture' },
+    )
     await saveAppScreenshot('follow-up-suggestions-investigate-ci.png')
     await scenario.assertComplete()
   })

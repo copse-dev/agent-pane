@@ -15,6 +15,10 @@ const PLUGIN_ID = 'personal.browser-fixture'
 const MODEL_ID = 'browser'
 const PROJECT_ID = 'e2e-selected-plugin-browser'
 
+interface BrowserGuest extends HTMLElement {
+  executeJavaScript<T>(script: string): Promise<T>
+}
+
 async function closeServer(server: Server | null): Promise<void> {
   if (!server) return
   await new Promise<void>((resolve, reject) => {
@@ -38,7 +42,7 @@ describe('selected plugin browser behavior', function () {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       response.end(`<!doctype html>
         <html>
-          <head><title>Personal reference desk</title></head>
+          <head><title>Personal reference desk</title><style>body{background:#fff;color:#222}</style></head>
           <body>
             <h1>Personal reference desk</h1>
             <p>This local page stands in for an explicitly declared website.</p>
@@ -148,6 +152,16 @@ describe('selected plugin browser behavior', function () {
     const address = await addressInput.getValue()
     assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/reference$/)
 
+    const pageAppearance = await browser.execute(async () => {
+      const guest = document.querySelector<BrowserGuest>('.browser-tab-panel.is-active webview')
+      if (!guest) throw new Error('expected the reference page guest')
+      return guest.executeJavaScript<{ title: string; color: string; background: string }>(
+        '({title: document.querySelector("h1").textContent, color: getComputedStyle(document.body).color, background: getComputedStyle(document.body).backgroundColor})',
+      )
+    })
+    assert.equal(pageAppearance.title, 'Personal reference desk')
+    assert.equal(pageAppearance.color, 'rgb(34, 34, 34)')
+    assert.equal(pageAppearance.background, 'rgb(255, 255, 255)')
     await waitForActiveThreadTitle()
     await assertBrowserAddressFieldRoomy()
     await saveElementScreenshot('#app', 'selected-plugin-browser-tab.png')

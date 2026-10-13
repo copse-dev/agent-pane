@@ -28,6 +28,8 @@ interface Fixture {
   uninstalled: string[]
   /** When set, every port probe waits for it, to hold an operation at its first await. */
   portGate: Promise<void> | null
+  profileSaveGate: Promise<void> | null
+  profileSaveStarted: boolean
 }
 
 const children: Array<ReturnType<typeof spawn>> = []
@@ -64,6 +66,8 @@ function fixture(): Fixture {
     },
     listProfiles: () => state.profiles,
     saveProfile: async (profile) => {
+      state.profileSaveStarted = true
+      await state.profileSaveGate
       state.saved.push(profile)
       state.profiles = [...state.profiles, profile]
     },
@@ -83,6 +87,8 @@ function fixture(): Fixture {
     freeBytes: null,
     uninstalled: [],
     portGate: null,
+    profileSaveGate: null,
+    profileSaveStarted: false,
   }
   return state
 }
@@ -156,6 +162,31 @@ describe('LocalClassifierManager', () => {
     assert.equal((await winnow(f)).phase, 'external')
     assert.equal(children.length, 0)
   })
+
+  for (const operation of ['install', 'start'] as const) {
+    it(`keeps ${operation} starting until the preset connection is saved`, async () => {
+      const f = fixture()
+      if (operation === 'start') f.installed.add('winnow')
+      let finishSave = (): void => {}
+      f.profileSaveGate = new Promise<void>((resolve) => {
+        finishSave = resolve
+      })
+      try {
+        await f.manager[operation]('winnow')
+        const connecting = await until(f, () => f.profileSaveStarted)
+        assert.ok(f.listening.has(WINNOW_PORT), 'the server is already accepting connections')
+        assert.equal(connecting.phase, 'starting', 'the renderer must keep polling during the save')
+        assert.equal(connecting.saved, false)
+        assert.equal(f.saved.length, 0)
+        finishSave()
+        const running = await until(f, (status) => status.phase === 'running')
+        assert.equal(running.saved, true)
+        assert.equal(f.saved[0]?.id, 'winnow')
+      } finally {
+        finishSave()
+      }
+    })
+  }
 
   it('records a failed setup and lets the person retry', async () => {
     const f = fixture()
