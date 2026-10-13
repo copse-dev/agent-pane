@@ -1,3 +1,10 @@
+import { hydrateScreenshots } from './lib/screenshot-hydration.mts'
+import {
+  changedLocalScreenshots,
+  screenshotAtRef,
+  screenshotHistory,
+  screenshotChangesInRange,
+} from './lib/screenshot-git.mts'
 /**
  * Reference-screenshot variance filter — drop sub-threshold render noise and
  * break the render-flap ping-pong (#609).
@@ -87,7 +94,7 @@
  */
 import { isDirectExecution } from './lib/direct-execution.mts'
 import { execFileSync } from 'node:child_process'
-import { appendFileSync, readFileSync } from 'node:fs'
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
@@ -182,14 +189,7 @@ function git(args: string[]): string {
 
 /** The committed (HEAD) bytes of a path, or null when it didn't exist there. */
 function committedBytes(path: string): Buffer | null {
-  try {
-    return execFileSync('git', ['show', `HEAD:${path}`], {
-      cwd: ROOT,
-      maxBuffer: 256 * 1024 * 1024,
-    })
-  } catch {
-    return null
-  }
+  return screenshotAtRef(path, 'HEAD', ROOT)
 }
 
 /**
@@ -215,33 +215,21 @@ function priorCommittedRenders(
   const refs = git(['rev-parse', '--verify', '--quiet', MAIN_REF]).trim()
     ? ['HEAD', MAIN_REF]
     : ['HEAD']
-  const shas = git(['log', '-n', String(lookback * 2 + 6), '--format=%H', ...refs, '--', path])
-    .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean)
   const out: PriorRender[] = []
   const seen = new Set<string>()
   if (headBytes) seen.add(createHash('sha1').update(headBytes).digest('hex'))
-  for (const sha of shas) {
+  for (const item of screenshotHistory(path, refs, lookback + 1, ROOT)) {
     if (out.length >= lookback) break
-    let bytes: Buffer
-    try {
-      bytes = execFileSync('git', ['show', `${sha}:${path}`], {
-        cwd: ROOT,
-        maxBuffer: 256 * 1024 * 1024,
-      })
-    } catch {
-      continue
-    }
+    const bytes = screenshotAtRef(path, item.sha, ROOT)
+    if (!bytes) continue
     const key = createHash('sha1').update(bytes).digest('hex')
     if (seen.has(key)) continue
     seen.add(key)
-    out.push({ sha, bytes })
+    out.push({ sha: item.sha, bytes })
   }
   return out
 }
 
-const BOT_AUTHOR = 'github-actions[bot]'
 const MAIN_REF = nonEmptyStringOr(process.env['SCREENSHOT_MAIN_REF'], 'origin/main')
 
 let mergeBaseCache: string | null | undefined
@@ -265,13 +253,8 @@ function mergeBaseWithMain(): string | null {
 function contestedInfo(path: string): ContestedInfo | null {
   const mb = mergeBaseWithMain()
   if (!mb) return null
-  const branchTouched = git(['log', '--format=%an', `${mb}..HEAD`, '--', path])
-    .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .some((author) => author !== BOT_AUTHOR)
-  const mainTouched =
-    git(['log', '-n', '1', '--format=%H', `${mb}..${MAIN_REF}`, '--', path]).trim() !== ''
+  const branchTouched = screenshotChangesInRange(`${mb}..HEAD`, ROOT, true).has(path)
+  const mainTouched = screenshotChangesInRange(`${mb}..${MAIN_REF}`, ROOT).has(path)
   if (!branchTouched && !mainTouched) return null
   return { branchTouched, mainTouched }
 }
@@ -399,18 +382,7 @@ export function classifyScreenshotChange(
 
 /** Reference PNGs changed in the working tree (modified or newly added). */
 function changedScreenshots(): string[] {
-  const out = new Set<string>()
-  for (const f of git(['diff', '--name-only', '--', SCREENSHOT_DIR]).split('\n')) {
-    const t = f.trim()
-    if (t) out.add(t)
-  }
-  for (const f of git(['ls-files', '--others', '--exclude-standard', '--', SCREENSHOT_DIR]).split(
-    '\n',
-  )) {
-    const t = f.trim()
-    if (t) out.add(t)
-  }
-  return [...out].filter((f) => f.toLowerCase().endsWith('.png'))
+  return changedLocalScreenshots(SCREENSHOT_DIR, ROOT)
 }
 
 type PathVerdict = Verdict & { path: string }
@@ -564,7 +536,10 @@ export function main(): void {
   // Revert the noise shots so the commit job never stages them.
   for (const v of ignored) {
     console.log(`  ignore ${v.path} (${String(v.diffPixels)} px, ${pct(v.ratio)})`)
-    if (!DRY_RUN) git(['checkout', 'HEAD', '--', v.path])
+    if (!DRY_RUN) {
+      const bytes = committedBytes(v.path)
+      if (bytes) writeFileSync(resolve(ROOT, v.path), bytes)
+    }
   }
 
   // Revert the flapping shots too — committing them again would re-trigger CI and
@@ -573,7 +548,10 @@ export function main(): void {
     console.log(
       `  flap   ${v.path} (${String(v.diffPixels)} px vs HEAD, matches ${v.matchedSha.slice(0, 7)} within ${String(v.matchedPixels)} px)`,
     )
-    if (!DRY_RUN) git(['checkout', 'HEAD', '--', v.path])
+    if (!DRY_RUN) {
+      const bytes = committedBytes(v.path)
+      if (bytes) writeFileSync(resolve(ROOT, v.path), bytes)
+    }
   }
 
   // Revert contested shots — the committed baseline is deliberate (hand-committed
@@ -582,7 +560,10 @@ export function main(): void {
   for (const v of contested) {
     const detail = v.diffPixels !== undefined ? `${String(v.diffPixels)} px vs HEAD` : 'differs'
     console.log(`  hold   ${v.path} (contested: ${v.reason}; ${detail})`)
-    if (!DRY_RUN) git(['checkout', 'HEAD', '--', v.path])
+    if (!DRY_RUN) {
+      const bytes = committedBytes(v.path)
+      if (bytes) writeFileSync(resolve(ROOT, v.path), bytes)
+    }
   }
 
   // Revert out-of-scope shots: the e2e tier re-rendered them (a broad selection
@@ -593,7 +574,10 @@ export function main(): void {
   for (const v of outOfScope) {
     const detail = v.diffPixels !== undefined ? `${String(v.diffPixels)} px vs HEAD` : 'differs'
     console.log(`  scope  ${v.path} (out of scope: ${v.reason}; ${detail})`)
-    if (!DRY_RUN) git(['checkout', 'HEAD', '--', v.path])
+    if (!DRY_RUN) {
+      const bytes = committedBytes(v.path)
+      if (bytes) writeFileSync(resolve(ROOT, v.path), bytes)
+    }
   }
 
   emitOutput('ignored-count', String(ignored.length))
@@ -612,4 +596,13 @@ export function main(): void {
 
 // Run only when invoked directly (`node scripts/filter-screenshots.mts`), not when
 // imported by the unit test.
-if (isDirectExecution(import.meta.url, 'filter-screenshots')) main()
+if (isDirectExecution(import.meta.url, 'filter-screenshots')) {
+  hydrateScreenshots({ history: true, restore: false })
+    .then(() => {
+      main()
+    })
+    .catch((error: unknown) => {
+      console.error(error)
+      process.exitCode = 1
+    })
+}

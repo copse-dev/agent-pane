@@ -541,7 +541,7 @@ Non-negotiable controls, all fail-closed, on every request and every SSE connect
   `frame-ancestors` is ignored in meta CSP (and absent anyway):
   `Content-Security-Policy: … frame-ancestors 'none'`, `X-Frame-Options: DENY`,
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control:
-no-store`. Without these, an attacker page frames the decision screen and overlays a
+  no-store`. Without these, an attacker page frames the decision screen and overlays a
   transparent button on Approve — one tap approves a shell command.
 - **401 before reading any body** (the one thing the ACP bridge gets exactly right), a
   hard body-size cap, `server.maxConnections`, header and idle timeouts, and a temporary
