@@ -250,13 +250,22 @@ function mergeBaseWithMain(): string | null {
  * isn't available, in which case contested detection is disabled and the
  * pre-existing behaviour applies.
  */
-function contestedInfo(path: string): ContestedInfo | null {
-  const mb = mergeBaseWithMain()
-  if (!mb) return null
-  const branchTouched = screenshotChangesInRange(`${mb}..HEAD`, ROOT, true).has(path)
-  const mainTouched = screenshotChangesInRange(`${mb}..${MAIN_REF}`, ROOT).has(path)
-  if (!branchTouched && !mainTouched) return null
-  return { branchTouched, mainTouched }
+function contestedLookup(): (path: string) => ContestedInfo | null {
+  // The two ranges are invariant throughout one filter run. Walking the whole
+  // batch history for every image made large recoveries exceed CI's time limit.
+  // Keep this cache local to main(), so another invocation reads fresh history.
+  let branchChanges: Set<string> | undefined
+  let mainChanges: Set<string> | undefined
+  return (path) => {
+    const mb = mergeBaseWithMain()
+    if (!mb) return null
+    branchChanges ??= screenshotChangesInRange(`${mb}..HEAD`, ROOT, true)
+    mainChanges ??= screenshotChangesInRange(`${mb}..${MAIN_REF}`, ROOT)
+    const branchTouched = branchChanges.has(path)
+    const mainTouched = mainChanges.has(path)
+    if (!branchTouched && !mainTouched) return null
+    return { branchTouched, mainTouched }
+  }
 }
 
 function decode(bytes: Buffer): PNG | null {
@@ -387,7 +396,11 @@ function changedScreenshots(): string[] {
 
 type PathVerdict = Verdict & { path: string }
 
-function classify(path: string, scope: ScreenshotScope): PathVerdict {
+function classify(
+  path: string,
+  scope: ScreenshotScope,
+  contestedInfo: (path: string) => ContestedInfo | null,
+): PathVerdict {
   const oldBytes = committedBytes(path)
   let newBytes: Buffer
   try {
@@ -508,7 +521,8 @@ export function main(): void {
   // is the manual override (a local run comparing renders across a rewrite).
   const scope = process.env['SCREENSHOT_SCOPE'] === 'off' ? unscoped() : computeScreenshotScope()
 
-  const verdicts = changed.map((p) => classify(p, scope))
+  const contestedInfo = contestedLookup()
+  const verdicts = changed.map((p) => classify(p, scope, contestedInfo))
   const kept = verdicts.filter((v) => v.decision === 'keep')
   const ignored = verdicts.filter((v) => v.decision === 'ignore')
   const flapping = verdicts.filter((v) => v.decision === 'flap')
