@@ -138,9 +138,9 @@ describe('per-model generation parameters', () => {
     const labels = await verbosity.$$('option').map((option) => option.getText())
     await expect(labels).toEqual([
       "Model default (don't send)",
-      'Low — terse answers',
+      'Low, terse answers',
       'Medium',
-      'High — thorough answers',
+      'High, thorough answers',
     ])
     await expect(verbosity).toHaveValue('')
     await browser.execute(() => {

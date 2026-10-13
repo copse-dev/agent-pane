@@ -15,6 +15,8 @@ import {
   noteSafetyModelTimeout,
 } from './safety-model-cooldown.ts'
 import { resolveSafetyScreeningModel } from './safety-screening-model.ts'
+import type { ClassifierSubject } from '@shared/usage/classifier-use.ts'
+import { recordClassifierCall } from './classifier-call-log.ts'
 
 /**
  * One screening attempt. `problem` separates "the configured screener cannot
@@ -25,11 +27,23 @@ import { resolveSafetyScreeningModel } from './safety-screening-model.ts'
 export interface Screening<T> {
   verdict: T | null
   problem: SafetyModelProblem | null
+  /** The model or classifier connection that was asked; absent when nothing was. */
+  engine?: string
+  /** Tokens that attempt consumed, when the engine reported them. */
+  usage?: { inputTokens: number; outputTokens: number }
+  /** How long the engine took, measured around the request itself. */
+  latencyMs?: number
+  /** The engine ran out of its screening budget. */
+  timedOut?: boolean
 }
 
 export interface ScreeningRequest<T> {
   /** The safety model's instructions. */
   systemPrompt: string
+  /** What is being screened, for the thread's classifier-use report. */
+  subject: ClassifierSubject
+  /** The verdict's short label for that report, e.g. `sandbox` or `risky`. */
+  verdictLabel: (verdict: T) => string
   /** What is being screened, as the safety model's user message. */
   content: string
   /** The trust boundary for the safety model's freeform reply. */
@@ -51,6 +65,23 @@ export interface ScreeningRequest<T> {
 export async function screenWithSafetyModel<T>(
   request: ScreeningRequest<T>,
 ): Promise<Screening<T>> {
+  const screening = await attemptScreening(request)
+  // One line per engine call — not per attempt: a disabled screener, a missing
+  // model or a cooldown never asked anything, so there is nothing to report.
+  if (screening.engine !== undefined) {
+    recordClassifierCall({
+      subject: request.subject,
+      engine: screening.engine,
+      verdictLabel: screening.verdict === null ? null : request.verdictLabel(screening.verdict),
+      latencyMs: screening.latencyMs ?? 0,
+      usage: screening.usage,
+      ...(screening.timedOut ? { timedOut: true } : {}),
+    })
+  }
+  return screening
+}
+
+async function attemptScreening<T>(request: ScreeningRequest<T>): Promise<Screening<T>> {
   if (!getSetting<boolean>('safetyClassifierEnabled', true)) return { verdict: null, problem: null }
 
   const classifierId = screeningClassifierId()
@@ -73,10 +104,16 @@ export async function screenWithSafetyModel<T>(
     return { verdict: null, problem }
   }
 
+  let started = Date.now()
+  // Whether the request itself went out. Building the provider can fail first
+  // (a bare `lmstudio:` with no model loaded), and that asked nothing.
+  let asked = false
   try {
     // A classification, not a reasoning task: cap the depth so a deeply-tuned
     // chat model reused here doesn't bill like the work it was tuned for.
     const provider = await buildProvider(model, undefined, { maxReasoning: 'low' })
+    started = Date.now()
+    asked = true
     const { text, usage } = await completeMessagesWithUsage(
       provider,
       [
@@ -90,13 +127,25 @@ export async function screenWithSafetyModel<T>(
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({ model, source: 'safety-classifier', ...usage })
     }
-    return { verdict: request.parse(text), problem: null }
+    return {
+      verdict: request.parse(text),
+      problem: null,
+      engine: model,
+      latencyMs: Date.now() - started,
+      ...(usage.inputTokens || usage.outputTokens
+        ? { usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens } }
+        : {}),
+    }
   } catch (err) {
+    const latencyMs = Date.now() - started
     // A model too slow to finish is worth remembering, so the next call does
     // not buy the same budget of nothing. Other failures say nothing about speed.
-    if (!isScreeningTimeout(err, request.signal)) return { verdict: null, problem: null }
+    if (!isScreeningTimeout(err, request.signal)) {
+      if (!asked) return { verdict: null, problem: null }
+      return { verdict: null, problem: null, engine: model, latencyMs }
+    }
     const timedOut = noteSafetyModelTimeout(model, FETCH_TIMEOUTS.safetyClassification)
     reportSafetyModelProblem(timedOut)
-    return { verdict: null, problem: timedOut }
+    return { verdict: null, problem: timedOut, engine: model, latencyMs, timedOut: true }
   }
 }

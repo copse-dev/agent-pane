@@ -85,6 +85,7 @@ import {
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
 import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
+import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
 import {
@@ -224,6 +225,7 @@ import {
   type ThreadHistoryEditRuntime,
 } from '../services/thread-history-edit.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
+import { browseAcpRegistry } from '../services/acp/acp-registry-discovery.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   listExternalEditors,
@@ -1848,6 +1850,13 @@ export function registerAllHandlers(
     setAutomationAppIconMode(enabled, mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
   ipcMain.handle('usage:get-summary', () => getUsageSummary())
+  // What the classifiers (shell guard, tier screen, terminal-read screen) did for one
+  // thread: calls, verdicts, latency and tokens, from the thread's decision log.
+  ipcMain.handle('usage:get-thread-classifier-use', (event, ...rawArgs: unknown[]) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), rawArgs)
+    return getThreadClassifierUse(projectId, threadId)
+  })
   ipcMain.handle('usage:get-plan-usage', async (_event, force: unknown) => {
     const refresh = parseIpcArgs(z.boolean().optional(), [force])
     return loadPlanUsageSnapshotAndSample({ force: refresh === true })
@@ -3439,6 +3448,11 @@ export function registerAllHandlers(
   ipcMain.handle('acp:detect-agents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()
+  })
+  ipcMain.handle('acp:browse-registry', (event, refresh: unknown) => {
+    assertMainFrameSender(event, win)
+    const force = parseIpcArgs(z.boolean().optional(), [refresh])
+    return browseAcpRegistry(force)
   })
   ipcMain.handle('acp:probe-agent', (event, agentId: unknown) => {
     assertMainFrameSender(event, win)

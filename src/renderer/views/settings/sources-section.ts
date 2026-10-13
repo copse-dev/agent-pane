@@ -30,6 +30,7 @@ export function createSourcesSection({
   onHeadingsChanged,
 }: SourcesSectionOptions): SourcesSection {
   let generation = 0
+  let lifecycleEpoch = 0
   const skillSources = mountSkillsSources({ root, api, makeSourceRow })
   /**
    * Rows for Settings → Sources → Agents: what Copse found, what it skipped, and
@@ -161,6 +162,7 @@ export function createSourcesSection({
     btn: HTMLButtonElement,
     result: HTMLElement,
   ): Promise<void> {
+    const epoch = lifecycleEpoch
     btn.disabled = true
     btn.textContent = 'Testing…'
     result.hidden = false
@@ -179,16 +181,20 @@ export function createSourcesSection({
         ...(h.sandbox !== undefined ? { sandbox: h.sandbox } : {}),
       }
       const res = await api.hooks.test(req)
+      if (epoch !== lifecycleEpoch) return
       renderHookTestResult(result, res)
     } catch {
+      if (epoch !== lifecycleEpoch) return
       result.innerHTML = ''
       const err = document.createElement('div')
       err.className = 'hook-test-summary hook-test-error'
       err.textContent = 'Dry-run failed to start.'
       result.append(err)
     } finally {
-      btn.disabled = false
-      btn.textContent = 'Test'
+      if (epoch === lifecycleEpoch) {
+        btn.disabled = false
+        btn.textContent = 'Test'
+      }
     }
   }
 
@@ -284,6 +290,7 @@ export function createSourcesSection({
    * rather than as formatted prose that could hide its own markup.
    */
   function openInstructionFile(file: ProjectInstructionSummary): void {
+    const epoch = lifecycleEpoch
     const session = openAttachmentPreview({
       kind: 'text',
       title: file.name,
@@ -293,12 +300,14 @@ export function createSourcesSection({
     void api.instructions
       .read(file.path)
       .then((content) => {
+        if (epoch !== lifecycleEpoch) return
         const text = document.createElement('pre')
         text.className = 'attachment-preview-text'
         text.textContent = content
         session.setContent(text)
       })
       .catch((error: unknown) => {
+        if (epoch !== lifecycleEpoch) return
         session.setStatus(errorMessage(error))
       })
   }
@@ -316,7 +325,9 @@ export function createSourcesSection({
    * confirmation dialog rather than dropped.
    */
   async function trustWorkspaceFromBadge(button: HTMLButtonElement): Promise<void> {
+    const epoch = lifecycleEpoch
     const unsandboxed = await api.workspace.unsandboxedProjectHooks().catch(() => [])
+    if (epoch !== lifecycleEpoch) return
     const detail = [
       'Its instruction files join the system prompt, and the MCP servers and hooks it defines are allowed to run.',
       unsandboxed.length > 0
@@ -332,7 +343,7 @@ export function createSourcesSection({
       detail,
       confirmLabel: 'Trust workspace',
     })
-    if (!confirmed) return
+    if (!confirmed || epoch !== lifecycleEpoch) return
     button.disabled = true
     const statusEl = qsRequired(root, '#sources-reload-status')
     statusEl.textContent = 'Trusting workspace…'
@@ -347,6 +358,7 @@ export function createSourcesSection({
     )
     await refreshSources()
     const result = await pending
+    if (epoch !== lifecycleEpoch) return
     if ('statuses' in result) applyWorkspaceTrusted(result.statuses)
     // The row was rebuilt above, so the failed badge is already clickable again;
     // this says why nothing happened.
@@ -495,6 +507,7 @@ export function createSourcesSection({
     refresh: refreshSources,
     invalidate: (): void => {
       generation += 1
+      lifecycleEpoch += 1
       skillSources.invalidate()
     },
   }

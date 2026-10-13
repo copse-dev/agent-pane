@@ -81,8 +81,10 @@ describe('ci.yml workflow invariants', () => {
     // This bound replaces #3355's rule that the explainer specs never share a
     // worker, which stood in for it.
     const weights = readShardWeights()
+    const recorded = [...weights.values()].sort((a, b) => a - b)
+    const unrecorded = recorded[Math.floor(recorded.length / 2)] ?? 0
     const loads = buckets.map((bucket) =>
-      bucket.reduce((sum, spec) => sum + (weights.get(spec) ?? 0), 0),
+      bucket.reduce((sum, spec) => sum + (weights.get(spec) ?? unrecorded), 0),
     )
     assert.ok(
       Math.max(...loads) - Math.min(...loads) < 30,

@@ -45,12 +45,14 @@ describe('@-reference past threads (#644)', () => {
 
     await saveAppScreenshot('thread-reference-picker-open.png')
 
-    await threadItem.click()
+    await $('.mention-picker .mention-item-thread').click()
     const chip = await $('.prompt-input .inline-thread-chip')
     await chip.waitForDisplayed({ timeout: 10_000 })
     await expect(chip).toHaveText(expect.stringContaining('Auth refactor plan'))
-    await expect(chip.$('svg.thread-chip-icon[data-icon="thread"]')).toBeExisting()
-    await expect(chip.$('svg[data-icon="close"]')).toBeExisting()
+    await expect(
+      $('.prompt-input .inline-thread-chip svg.thread-chip-icon[data-icon="thread"]'),
+    ).toBeExisting()
+    await expect($('.prompt-input .inline-thread-chip svg[data-icon="close"]')).toBeExisting()
     await expect($('.attachment-chips .thread-chip')).not.toBeExisting()
     await expect($('.mention-picker')).not.toBeDisplayed()
 
