@@ -1,0 +1,58 @@
+name: Upload preserved Chat recovery references
+on:
+  push:
+    branches: [recovery/chat-composer-r2-3656]
+    paths: [.github/workflows/chat-recovery-r2.yml, .github/chat-recovery-r2.json]
+permissions:
+  contents: read
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          path: request
+          persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: c350094854540e302a6b682c2ed3d87c8ff337bc
+          path: policy
+          persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: 14780b34781f5d111ac85f51a3d9d2406314beca
+          path: source
+          persist-credentials: false
+          sparse-checkout: tests/e2e/screenshots
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Verify exact preserved bytes and upload with pinned main policy
+        working-directory: policy
+        env:
+          SCREENSHOT_R2_ACCOUNT_ID: ${{ secrets.SCREENSHOT_R2_ACCOUNT_ID || vars.SCREENSHOT_R2_ACCOUNT_ID }}
+          SCREENSHOT_R2_BUCKET: ${{ secrets.SCREENSHOT_R2_BUCKET || vars.SCREENSHOT_R2_BUCKET || 'copse-screenshots' }}
+          SCREENSHOT_R2_PUBLIC_URL: ${{ vars.SCREENSHOT_R2_PUBLIC_URL || secrets.SCREENSHOT_R2_PUBLIC_URL || 'https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev' }}
+          SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
+          SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
+        run: |
+          mkdir -p ../selected
+          node --input-type=module <<'JS'
+          import { readFileSync, copyFileSync } from 'node:fs';
+          import { parseScreenshotManifest, verifyScreenshot } from './scripts/lib/screenshot-manifest.mts';
+          import { screenshotStorage } from './scripts/screenshot-storage.mts';
+          const manifestPath = '../request/.github/chat-recovery-r2.json';
+          const manifest = parseScreenshotManifest(readFileSync(manifestPath, 'utf8'));
+          for (const [name, entry] of Object.entries(manifest.screenshots)) {
+            const path = '../source/tests/e2e/screenshots/' + name;
+            verifyScreenshot(readFileSync(path), entry);
+            copyFileSync(path, '../selected/' + name);
+          }
+          await screenshotStorage('upload', { directory: '../selected', manifestPath });
+          JS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: verified-chat-recovery-manifest
+          path: request/.github/chat-recovery-r2.json
+          retention-days: 90
