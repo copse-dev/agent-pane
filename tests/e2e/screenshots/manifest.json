@@ -42,8 +42,8 @@
       "bytes": 226339
     },
     "acp-auto-install-approval.png": {
-      "sha256": "f10cc5d0a900293894f9ee2b887610942ccb79c1c85b7aa20b760e5f461f2cc5",
-      "bytes": 260987
+      "sha256": "4497ba83bf2ba42cdf3f47be4975bd30d98745d78fcc4575803b9fe21021bd74",
+      "bytes": 259849
     },
     "acp-catalog-model-labels.png": {
       "sha256": "323ec5edc4070742efa08957c14ccb8254da02407f04a833626083eb47412fc9",
@@ -66,12 +66,12 @@
       "bytes": 172251
     },
     "acp-copilot-manual-setup.png": {
-      "sha256": "b2784c258b75a2448cc4ce46f5018112728f08e1afc013c0f0edc7dd070af534",
-      "bytes": 65386
+      "sha256": "e9d1521f665a9b66f324c30258924ba5979ffa9b7abfc4d9177289481ab7c829",
+      "bytes": 97784
     },
     "acp-copilot-model-picker.png": {
-      "sha256": "7f4d860d16c12ca3e90ea954f0e4a5ddd0e6f212da267f08a4a265b878df9e71",
-      "bytes": 14237
+      "sha256": "86e450496cd3fd416f5c081790a02794b0ba7d24bce36c1cf5dc2be35006da44",
+      "bytes": 24757
     },
     "acp-gpt-model-labels.png": {
       "sha256": "c5fd10c94377c47ad10b4d67f80eb1b54f81a19d5d399d14fd55fad1cf70d022",
@@ -86,8 +86,8 @@
       "bytes": 251936
     },
     "acp-mixed-bootstrap-approval.png": {
-      "sha256": "d4d4e7a57a6cf637e094e5d2a6c1c078225713ec3f526a81f8ec1816ff58175d",
-      "bytes": 257889
+      "sha256": "055b8ca7b4ae9d56e3a38c3e27b88ad71f9d357ce3567c8b34ffc822db0512b4",
+      "bytes": 256747
     },
     "acp-network-scope-approval.png": {
       "sha256": "f8ebd1ff96f77939aa852cd84993094c19abdd9126df7d6ef874683c19fa1e18",
@@ -102,24 +102,24 @@
       "bytes": 285225
     },
     "acp-registry-browser.png": {
-      "sha256": "ee49a214abaafee91f655993eb35f8e5d9ab42ddcbdf6ced2aa11fa4ae647b73",
-      "bytes": 98146
+      "sha256": "e5b8697f43cc554ab66fb13c7350eb77cb9896ad35d870e4929114b024800a46",
+      "bytes": 96061
     },
     "acp-registry-fixture-turn.png": {
-      "sha256": "dc1ce20415454561c446f086ada9bfd03ece9e8f0d343de2c553e7cd39ac5c06",
-      "bytes": 184955
+      "sha256": "17b76f5109ef64fe92d99651190da40a8cd6b13725164356aacf49560fc7883d",
+      "bytes": 92706
     },
     "acp-registry-review-enable.png": {
-      "sha256": "d3fb37c378d2e7c03be9c142748f8435675e09d64751b02a3ff61b1b866ac0ab",
-      "bytes": 221440
+      "sha256": "9b2e6734b6136a3067d48b6f67722cdbc22a711f0732633ee79edf4cfb390dac",
+      "bytes": 213556
     },
     "acp-registry-review.png": {
-      "sha256": "35c1b0214856b5764559bc4d1f8f99a684e590d5773cf7402574a07c327d299a",
-      "bytes": 166313
+      "sha256": "13643bff6cef420949654277b83beea653153d176e688db025f85b4c49fb9ca9",
+      "bytes": 179164
     },
     "acp-registry-saved-disabled.png": {
-      "sha256": "ce5e4ce7015734c4571ea4a1b08453744b2539d12659b793aafad8b59e044eaf",
-      "bytes": 203907
+      "sha256": "8ef889e0e418d35bec6aae8f73d038c98a4fafca71e76be17017018cc37dade3",
+      "bytes": 174216
     },
     "acp-resource-file-reference.png": {
       "sha256": "ae720624ea8b7272b5b06df3f065d7d8a1edd91badd102f3a9b923da43804fe5",
@@ -154,8 +154,8 @@
       "bytes": 237318
     },
     "acp-sfw-bootstrap-approval.png": {
-      "sha256": "b25abc153bfbf278972517ee8bddeb5f07f2fe5f8cc3128931369bd93c38bab4",
-      "bytes": 253530
+      "sha256": "dee195f1d576bbb2072777a291f13b45f505eb0127956f251943a36b24cb1fb7",
+      "bytes": 252299
     },
     "acp-shell-title.png": {
       "sha256": "6fe3c9c435c9b4d7e9dffe968f0d681ebac60d67323cfc1cc2c47a19d5af2d86",
@@ -330,16 +330,16 @@
       "bytes": 208317
     },
     "advisor-pair-hint-any.png": {
-      "sha256": "31859da31254923399da7cf1d528d1b5ec1cd629c9977eefaf7afb15e31a70cb",
-      "bytes": 97591
+      "sha256": "937876f98abb127cc5f65789f107d5717aa36f4d8604ddb4c336265d604a5910",
+      "bytes": 97587
     },
     "advisor-pair-hint-good.png": {
-      "sha256": "32284c60001cdb643c59aebbdc3f79d0e728e53bfc06de8c0eddb254bf48bb52",
-      "bytes": 95581
+      "sha256": "31f6b278a1599d616b3519dd80bd33a0195df6547b0fd505bd4e0f52739381cf",
+      "bytes": 95577
     },
     "advisor-pair-hint-warn.png": {
-      "sha256": "6fab2ebcfdf8a01b26d8fcf4e911c7673e127cdf046f285ec5f8900f0c71edca",
-      "bytes": 97901
+      "sha256": "c87047b7f7e164dab0b8684788772ed028ec3e50b2cfebea423a228dd1d85097",
+      "bytes": 97896
     },
     "agent-avatars-active.png": {
       "sha256": "1f61a2a52bbbebe0b306a69ce89e7be0b04e69eb330883610101462ed0da21ef",
@@ -1002,16 +1002,16 @@
       "bytes": 342194
     },
     "classifier-use-hover.png": {
-      "sha256": "60fdb5fc1c881b808bcd25ea2d92d0c5b82e386361e51bf03ec6e725d9aa3bf4",
-      "bytes": 304872
+      "sha256": "32565da1b52b2cac76eb09d0b84f4648052ddf5363699258a2839ff18bc75da9",
+      "bytes": 311390
     },
     "claude-login-after-settings.png": {
       "sha256": "c7866a149a0c380d5d1389c4668c8096ea91414be7bb291f143100bcc749e29d",
       "bytes": 39806
     },
     "claude-login-deferred-settings.png": {
-      "sha256": "2c99d7a7f2af25a0597f7a57395d90fe97b0c727f17513c00e5c5b3e33dd2d79",
-      "bytes": 250768
+      "sha256": "88ab9061185c1fec681ec343686ef8a18d86f39a0e7db467f08e05bd427289ec",
+      "bytes": 250670
     },
     "claude-opus-5-5-effort.png": {
       "sha256": "62a16a1f03a4a95bf4471a52bb6836a176b14de26b56d05d45c959c033dc0e0c",
@@ -1022,16 +1022,16 @@
       "bytes": 21371
     },
     "claude-sign-in.png": {
-      "sha256": "b0a006ac287660b97816bf139ecc1e51612a3c5e21729abf5dd1e6d853b2d1c8",
-      "bytes": 54249
+      "sha256": "059c9eaacb25c185475a383f09905f3f0af8057186845e60a3b7981df9740e42",
+      "bytes": 93068
     },
     "close-confirm-working-thread.png": {
       "sha256": "7ce69d2daffe969df308670d7d0c0e20d3d034fcb64dad4807dadcebf2c8d5bf",
       "bytes": 42886
     },
     "cmd-w-settings-dialog-safe.png": {
-      "sha256": "33a3c3b97bd50da5bbc119f9e468b26ae9a5ccc058e89fdeb8f55b36b0185ab7",
-      "bytes": 262051
+      "sha256": "1820620cd30ec6210e9ac6c131c64bc6531dd4b7aa6c2f8a0f0742e1efcb21f2",
+      "bytes": 260906
     },
     "code-block-run-hover-browser.png": {
       "sha256": "3ae483689cf9172b1fc50b861c6c33332da517f59d17603a79015d905d47b914",
@@ -1196,6 +1196,10 @@
     "context-usage-mixed.png": {
       "sha256": "9c47e00ba6c160d8b46139528d47228755b8271a34ecfd698a9941c78d38b1fe",
       "bytes": 31706
+    },
+    "context-usage-only.png": {
+      "sha256": "0a2f5082fe18a765b7aa803793ae425e2b86d206755ae6002368f6f93deb4186",
+      "bytes": 17451
     },
     "context-usage-running.png": {
       "sha256": "4dae83fb03355ece41289cdc750d829ba1cfeaf6f3d05fccc65330e5af0b323b",
@@ -2294,8 +2298,8 @@
       "bytes": 20991
     },
     "openrouter-settings-fields.png": {
-      "sha256": "8562edb9d5c6e3d7dd838a859cf2aff68ee2f9995a076a2506863a9ba17e0cd0",
-      "bytes": 244377
+      "sha256": "30440e157b39319fafc4c6ec558640de78382fe36980aebc273893854ccb57e2",
+      "bytes": 243237
     },
     "outside-sandbox-long-command-approval.png": {
       "sha256": "f813bfe353524277c7cddb9cb9d08cc201c09fc2fe189ed605a1048434e0c460",
@@ -2390,12 +2394,12 @@
       "bytes": 226339
     },
     "plain-language-install-approval.png": {
-      "sha256": "5562048b51e31232d838a85db344e56845018cbdac2cec8f59cf4417564047af",
-      "bytes": 258808
+      "sha256": "496dce12979762f63bbf9695c6b5891f7d784bd93c19428fd345e3e4eba2b08e",
+      "bytes": 257673
     },
     "plain-language-settings-codex-agent.png": {
-      "sha256": "562a9089367de6644c41e77b6501d0a52cf82efabcf15abd21fb9e026a74f8bb",
-      "bytes": 241717
+      "sha256": "a800bbde071c8bb0e045198df590c65fe563aba31a06fecd37514386334d13d0",
+      "bytes": 240649
     },
     "plugin-hook-loading.png": {
       "sha256": "c104bb3b1c4a9a90a7441137b5d88a308a6ec8c932aeb568e96b4d7376ec00dd",
@@ -2754,8 +2758,8 @@
       "bytes": 43398
     },
     "provider-settings-recovery.png": {
-      "sha256": "a301b81dbb2d59213b97063acdd379071454d49eb430fd2a23f3a366e96b01b1",
-      "bytes": 250054
+      "sha256": "0b643dbebb105d5f6319be65549c7550f4cf5c1ccae2f42042dd8c44bbcf644e",
+      "bytes": 255112
     },
     "provider-turn-recovery.png": {
       "sha256": "7fec7572797a6f47b6b9f6816a3218b1f2c88f448bdbadf484bbbe1ad07d6bd7",
@@ -2770,8 +2774,8 @@
       "bytes": 13661
     },
     "queued-actions-row.png": {
-      "sha256": "bac7e549533657f99764559611f9dd436bdd46f8c3067db61d18889a191830f6",
-      "bytes": 13797
+      "sha256": "8a8250491a667fdc5e9d496cdf1b0b71c6f9cdfaa35c98267d674d729bbaf2f1",
+      "bytes": 13728
     },
     "queued-held-actions-row.png": {
       "sha256": "7982b6d02044b5efd28dcac08c8764735cfd2c0a556cdb335be7f6d7d0b1dd50",
@@ -2798,8 +2802,8 @@
       "bytes": 272594
     },
     "queued-model-picker-menu.png": {
-      "sha256": "cd2bc19fc7b236a157490d08234cbd687dd48cc4e7a47d7189e6506743ce9e92",
-      "bytes": 17260
+      "sha256": "2ea42a1361ecbeb1b4e34a389e40a1af6ba8ca32278cbdff3369f29cc64abb52",
+      "bytes": 13909
     },
     "queued-model-picker.png": {
       "sha256": "da1d6575f3b56c805a9688f28779b6eb7e6e96b8e740661910d2ce9d413fdec3",
@@ -3142,12 +3146,12 @@
       "bytes": 18790
     },
     "settings-advisor-model.png": {
-      "sha256": "71dc41fa50eac63b96351db3095bc2cd6f74d88015bacfecc0e61037f64c9257",
-      "bytes": 45893
+      "sha256": "7450bd23b80ea1713eb1df6340af7e8b5ba823e55c91c0b09d1d474e16a98c92",
+      "bytes": 46155
     },
     "settings-agents-md-plugin.png": {
-      "sha256": "91c25af079a64c96af84d89e5858784856ff35c83a28ab53b820f3ba7c0e2580",
-      "bytes": 273935
+      "sha256": "c124400b385d56235576c49d6fa4342a933acbf1419785fb2aa0192502da8880",
+      "bytes": 272758
     },
     "settings-alerts.png": {
       "sha256": "13c2a4b10f33802ff298d80c9e88a0d9d8df0a934889034a2f83c66d0861620e",
@@ -3174,12 +3178,12 @@
       "bytes": 70889
     },
     "settings-balanced-included-choice.png": {
-      "sha256": "32dd87360b874e1e25416484ac87baf13b56d122eecd4c7189956d9bf6ee5ae5",
-      "bytes": 107105
+      "sha256": "1d8b2502bb14b2b7b1a56538c96fd168f26299c1c87dc02236a0ff965997a11d",
+      "bytes": 104374
     },
     "settings-balanced-included-selected.png": {
-      "sha256": "fcdcdef86c14e756131974699a78469b9b892f28b2680b2fe528fa723948b514",
-      "bytes": 106009
+      "sha256": "0034ea73d1a077452ab98de6244230202f38dc84a912b04caa96567c6203c10f",
+      "bytes": 100524
     },
     "settings-blocked-model-makers.png": {
       "sha256": "0b244bde0db7a1c3b4d7fd859a849f458ad57e7583a71c0d895225e2731de599",
@@ -3198,8 +3202,8 @@
       "bytes": 57381
     },
     "settings-capture-footer-reframed.png": {
-      "sha256": "49802b5e94d7b1c9b7d78ffbf6f9790a42cf1456ed901239532d83d403e6a1c9",
-      "bytes": 61792
+      "sha256": "04c161e6ba4a4aceb93359ace5b9f6ebf4687ee0a1e8e64c47272977e24ac90e",
+      "bytes": 64053
     },
     "settings-chat-model-automatic-rules.png": {
       "sha256": "a15b671e886812782980d73cd8ac888d655b4792a568476dea531db566b680f7",
@@ -3214,8 +3218,8 @@
       "bytes": 94232
     },
     "settings-chatgpt-plan.png": {
-      "sha256": "39ce1282034d4c856bf87cc9cb77a48cb86d29201344635c1cda5c7f239a4b3e",
-      "bytes": 241354
+      "sha256": "eae1ff6ce4d5a1fcf990802d5b5b4a40677ac738e2badd40e4f5bf10c54df389",
+      "bytes": 240227
     },
     "settings-classifiers-background.png": {
       "sha256": "78e97295607438886526a4e49d37ce76041f734fc50f30b65ffb9039a544152f",
@@ -3286,8 +3290,8 @@
       "bytes": 13872
     },
     "settings-classifiers-options.png": {
-      "sha256": "17aecb6907951259777b68414e7186ac941fd28ef734114b1eff80d3b3c54e3a",
-      "bytes": 58871
+      "sha256": "e965de6ef4cc05c72e280f01dba61178871c92ba67486dae205e77d95dfb3254",
+      "bytes": 57973
     },
     "settings-classifiers-screening.png": {
       "sha256": "722c8f56ee501e3d90d38f13d6ac061bb4ac6b6abab7910a487b7a574fa5acfc",
@@ -3298,40 +3302,40 @@
       "bytes": 156775
     },
     "settings-composition-general.png": {
-      "sha256": "b4f8c9bd34502a9b92bf26aea6355bc3019460f9542afa94d02c3bfcd6c36ad6",
-      "bytes": 247253
+      "sha256": "d55d16a45d0e11eff55cbb7f8531b911225ca09022c08052b358676b3f6cac05",
+      "bytes": 257889
     },
     "settings-composition-invalid-save.png": {
-      "sha256": "fa41b017d832277c8e52fad9b448652b3046f9b13b974f7487f615dd3a4260ee",
-      "bytes": 218159
+      "sha256": "65d155dc4bcdab9e53752b2409c0f3379359afab1edcd63d93e4d3b587a5c866",
+      "bytes": 227204
     },
     "settings-composition-models.png": {
-      "sha256": "89a972cf41bd35d80ef8785407b80af3dfc73b97f062f720ca7b29cf02f17ba5",
-      "bytes": 244821
+      "sha256": "4084475b8acd3e3a26904bea7755c535f002189a9168aee6811754b9c824a6c0",
+      "bytes": 249326
     },
     "settings-composition-packs.png": {
-      "sha256": "71ccb4bc74107bdc66d9ec29e160a458bf6856d9c37b48dd2d723d118741cc61",
-      "bytes": 243771
+      "sha256": "b55ee55ed701a664be252971e52603a1fbcd3b1095c43d0e26b3a92a6e179e3d",
+      "bytes": 250502
     },
     "settings-composition-source-folders.png": {
-      "sha256": "3cdf92bcd5d8669897e1bdfe69c47003235685ce74c9e16c380f767b24454f81",
-      "bytes": 263735
+      "sha256": "2a162a97ddebfa1b6a0386d52511dde7567a8cea5d66108cd4ab8af2c8464004",
+      "bytes": 267449
     },
     "settings-composition-sources.png": {
-      "sha256": "e6857237c1d31ad040f322d3264a0ba202f41ee6078ba560091b8b0a233e97c6",
-      "bytes": 241788
+      "sha256": "2d49b8de5df5355d8822e069dcdad2ad5169ce8830100983efe2ab44dcdf78db",
+      "bytes": 249154
     },
     "settings-composition-sticky-footer.png": {
-      "sha256": "6beaaa277c1e1006f7025d290f682a55506f565e4eb2d4f22db328602da2585a",
-      "bytes": 176740
+      "sha256": "d75118634be63153f96d637b790e4490d72f0af0d1ee537abd15c1329678681b",
+      "bytes": 181677
     },
     "settings-container-runs-egress-copy.png": {
       "sha256": "3550f5c1f4f4a3f25714a56be7b2becb53b0e176b79f9163254ab73bf9a2d69e",
       "bytes": 32845
     },
     "settings-content-full-width-scroll.png": {
-      "sha256": "41d418a8ac32bf55261d31fe7aedab718e266bcf79d0225aebe285c4438b39cb",
-      "bytes": 96615
+      "sha256": "424f4b7b97753b5f549d08c00e6d79f35769bd51cb46fbff98ce227e59428e5c",
+      "bytes": 93897
     },
     "settings-cursor-agents-hint.png": {
       "sha256": "74bc114fae0cc54949f8d5dc6b82d4abb0f9ae1f8f97f562ac21d9d48924e42a",
@@ -3358,16 +3362,16 @@
       "bytes": 48789
     },
     "settings-demo-traffic-lights.png": {
-      "sha256": "41d418a8ac32bf55261d31fe7aedab718e266bcf79d0225aebe285c4438b39cb",
-      "bytes": 96615
+      "sha256": "424f4b7b97753b5f549d08c00e6d79f35769bd51cb46fbff98ce227e59428e5c",
+      "bytes": 93897
     },
     "settings-devtools-shortcut-plugin.png": {
       "sha256": "20a4e335e7034b0212227296bb845d51aa5c456acd69467633a7126158c228f4",
       "bytes": 35977
     },
     "settings-env-key-detect.png": {
-      "sha256": "a11ad32e670b9e12e24902568c69ceb79e128ec28bb0fded66c3d7733b05e910",
-      "bytes": 43379
+      "sha256": "a5c102c9325acd67af14eab0a2d526ded3b5482c6c841de8a60ecd77d7792b7e",
+      "bytes": 43495
     },
     "settings-experimental-concise-threads.png": {
       "sha256": "3c031344b72911da6fd8eb0cca1a2794f694ee15a194356351dfc70e6d90d9ca",
@@ -3390,8 +3394,8 @@
       "bytes": 232932
     },
     "settings-explainers-browse-recovery.png": {
-      "sha256": "dc809b2dde9981968da1bce5f54cd8862cf3220c0d45abb9198b69d1de7d081c",
-      "bytes": 68071
+      "sha256": "870633effa91d34bcb401b47c5f0d6a914df9ca8d132617f15d3eff4b014dc9d",
+      "bytes": 67425
     },
     "settings-explainers-entry.png": {
       "sha256": "ff25c07567be8edf7afca18caed78bfee3bf2e9cfec5b43e47aea2852fa24c83",
@@ -3402,12 +3406,12 @@
       "bytes": 70975
     },
     "settings-footer-no-overlap.png": {
-      "sha256": "1443d7fbb27d9919ac5c518558e5900f7e4f20821bf0635b0fe92c7f8963ca75",
-      "bytes": 104501
+      "sha256": "94a393689fa0170d666036c84f753bc24c728d8e80bdb5bdf3554ac936bb5c1b",
+      "bytes": 103712
     },
     "settings-footer-scroll-reserve.png": {
-      "sha256": "0a004ca0bf4e53a85bafc0fe8d5fa04080dbd17b78c903094164ed05a2fb80af",
-      "bytes": 67845
+      "sha256": "fe0c1a0318333c8b3726d46279b050d242a0f4febd4c4716e2f36843ce07a7f1",
+      "bytes": 66724
     },
     "settings-general-model-routing.png": {
       "sha256": "4bff7390efbcc7409e8e96c7a05e3cdf2fcff303f10084391407e04986f1ed3d",
@@ -3422,20 +3426,20 @@
       "bytes": 357068
     },
     "settings-load-failed.png": {
-      "sha256": "7c11f9108eccd9c34862547a96ffbb27e49836e3ee48fda545e444696552a113",
-      "bytes": 254215
+      "sha256": "730608667ab779847053e3d5740577ff493b602d1b73d8e189b825633e35c78f",
+      "bytes": 253056
     },
     "settings-load-recovered.png": {
-      "sha256": "8a6cf858df4dd774d498fdbb5476690bfe941edf34f3181482fbf2e8314d36f9",
-      "bytes": 258579
+      "sha256": "721e6b3287da3852e49f10ce874c4f9fa544b3684667f9e02ce80163365def87",
+      "bytes": 257237
     },
     "settings-local-models-connection.png": {
       "sha256": "10f275162716bb24d5ea829eb15637e7dc5f083da5679755790bae3b5af8ff68",
       "bytes": 208309
     },
     "settings-local-server-detect.png": {
-      "sha256": "5ef0005c71a4d5501473caac92f2af4820db28a613771e825fa5f1f5a74987d4",
-      "bytes": 36073
+      "sha256": "8d3011c8604105538bca8c4d174f82568e309b4a90f5a7925b88a1113ff4775f",
+      "bytes": 40529
     },
     "settings-mcp-lens.png": {
       "sha256": "0eefebb9c7bf67a544eb744703e5d15ac63faa8726949f4cbafe4fa4bc32371c",
@@ -3478,12 +3482,12 @@
       "bytes": 96516
     },
     "settings-model-picker-anchored.png": {
-      "sha256": "9a3bc8aee0a3516a878721188fa1de6c882add388cdec9ae25a196ce620ac808",
-      "bytes": 281090
+      "sha256": "0aa2ee1301aa169647754e73ffc980470476184e872c7eb2049d2140f36a5a14",
+      "bytes": 285818
     },
     "settings-model-picker-flipped.png": {
-      "sha256": "659d59ea4a7cf8df07916e0171cc8fd95cbbd310e70d5a0f6f48bb463e541d87",
-      "bytes": 299683
+      "sha256": "f41258a6aca32b468ebe8fe5dc4d24637042f296adc93af7d71a2190492e0829",
+      "bytes": 304288
     },
     "settings-model-picker-narrow.png": {
       "sha256": "9dac0730905901716b0fd6f0b4d44f54e714c8201381d8922fd517762c0941c8",
@@ -3494,28 +3498,28 @@
       "bytes": 196857
     },
     "settings-model-picker-short-surface.png": {
-      "sha256": "b6806c8aa1984e667043d74bf9647ac2276cad04fb7dc551c0be7ba3c1276f12",
-      "bytes": 195159
+      "sha256": "3dc223ba7e0cc61448a8f95ce8d0edca66717c7608c6b7e787d9e26283cc8268",
+      "bytes": 198821
     },
     "settings-openai-codex-expanded.png": {
-      "sha256": "c7104feae275d176ca8a7e545f17737e696fcc62d03363da39e2bc16d9ab45bc",
-      "bytes": 242030
+      "sha256": "4a040060af679288d2a5c473171b25db9685ebce0c97d3189179f076aa1dad82",
+      "bytes": 240955
     },
     "settings-openai-service-tier.png": {
       "sha256": "cad0b971ec28743c6f61f72e8516f02a6b14beed0d6f0163bc5ccd733a7b14b1",
       "bytes": 44164
     },
     "settings-partial-save-error.png": {
-      "sha256": "704d3d82ba72544f7931a9a64fa284e4c61d80936655c405aad87645d41c32a4",
-      "bytes": 100265
+      "sha256": "6bd7fa6d140d41d8bd6cb253a2697a57e990e80c1210e8bebc6ac3329fcc10ed",
+      "bytes": 125093
     },
     "settings-partial-save-restored.png": {
-      "sha256": "193366c71d3820ee19f1105f05fab0c1f6329dfde4c82e1a36f2d5c96292552b",
-      "bytes": 92215
+      "sha256": "c4c28e6cc82a9d999bc1396fc1a7fd2fbfe0d158c92d0bb2bae158eb8f8df9d9",
+      "bytes": 98216
     },
     "settings-perplexity-agent-provider.png": {
-      "sha256": "0a44dc1fb76f632f1b498c9b005b0c5b02e7909d7f842b35007c72c26f97ee19",
-      "bytes": 271941
+      "sha256": "a0c51ec75c01614aaa2c0dc61642d0c6c0e2ff66ebf129a80641661305d1ae3e",
+      "bytes": 270710
     },
     "settings-pii-redaction-plugin.png": {
       "sha256": "54e9128a1f6e953e07ac32bc68a3fa41b8131b90f2e7d954df4abd038005114a",
@@ -3534,8 +3538,8 @@
       "bytes": 17019
     },
     "settings-plugins-agent-plugin.png": {
-      "sha256": "0a635ad3a528e140550eb9a826976aa5974fb9b1a9674deea1887cf41a4bf53b",
-      "bytes": 243341
+      "sha256": "cf3ad4cdc407605b6967e59f5b7c773d752b21d2758f2749946e0273b8532a55",
+      "bytes": 243307
     },
     "settings-plugins.png": {
       "sha256": "a86ca3fc23376c24c5c9532df5b3c6ce1731f2e69320a8547aea9d04b2a6ac8c",
@@ -3550,24 +3554,24 @@
       "bytes": 167773
     },
     "settings-qwen-code.png": {
-      "sha256": "3bc5282d106133659f0199594ef87374e20ce03b2b10748f102e95b1ba57c53a",
-      "bytes": 234831
+      "sha256": "4174bdff7296de8edf82e4acef12a7f5ed97c683c12528065f045e495542debb",
+      "bytes": 247388
     },
     "settings-read-terminal.png": {
       "sha256": "0a62605042da8a49577de014cf10d466802a4d1394ef8e879c44b67d5b854449",
       "bytes": 257784
     },
     "settings-save-no-error.png": {
-      "sha256": "785bd174ad5e571d04b86b2490aa57aeeeef239b1f0b6152e03c78cfdf1cbf36",
-      "bytes": 259254
+      "sha256": "a7c58a40db3124dd1822acc818e8c9565274e2acf8c37c39de546b42429067cb",
+      "bytes": 257893
     },
     "settings-saved-provider-key.png": {
       "sha256": "48d8a6b7522599ad60838be32b28529c5757d30df21479b2f30dc35dd5565dac",
       "bytes": 174258
     },
     "settings-search-recovery.png": {
-      "sha256": "7d7f6e361827402001173b55c7931155e86b59d52a3dfaf6b44f6ba75d0c7bc0",
-      "bytes": 87661
+      "sha256": "81acd2977de8d563d9b8c530b9efe7c514fb0d4a7435f3fec8b4d8f05dc46d3a",
+      "bytes": 93923
     },
     "settings-select-chevron.png": {
       "sha256": "b60e7e34c0921d59dc395413eced171cbd3c20f7359648340c4b30a65cfdeaf2",
@@ -3578,16 +3582,16 @@
       "bytes": 55572
     },
     "settings-shell-security.png": {
-      "sha256": "c8b0ec97120ac09a397c3228e1cae9f2d5332faa55f3ac765ced4d5b06c16a6c",
-      "bytes": 184287
+      "sha256": "63a85c3cc8ab8e918f37ea13763bf81df70435225d766bf198b7fbd000aaa505",
+      "bytes": 182994
     },
     "settings-site-building-plugin.png": {
       "sha256": "ed008ec1619a8966603a9c8eab4f94d91d7169b11970e8208dc70f4fe159603a",
       "bytes": 33614
     },
     "settings-sources-agents.png": {
-      "sha256": "dfd50cf3a4bf6c7ccda5b6bf873c09b93f68ea2dc241327f7c51b12f46c47926",
-      "bytes": 46489
+      "sha256": "3ff9c577e903b6def4a8b87fc56debc79380a86b14563061ed55d7ff9419c902",
+      "bytes": 46515
     },
     "settings-sources-claude-hooks.png": {
       "sha256": "58c5a1e9b98e37bf769525564d6b3b8257d63dbbfb03e8645dae6f39e0604f2d",
@@ -3618,16 +3622,16 @@
       "bytes": 218293
     },
     "settings-sources-long-title-keyboard.png": {
-      "sha256": "794caa90cfb4d4fb0e3c4a9a5ea3d03e1186bf20d23dbbdb26a0ab7d6d0d5d70",
-      "bytes": 34090
+      "sha256": "7ade6a223833d52443e0fcd35c4de928c02fecb63d8e74fbd7c2a5b2a73eab16",
+      "bytes": 34077
     },
     "settings-sources-long-title-pointer.png": {
-      "sha256": "f67512002d390edf21fc95e12ad9f40a7bb013e2a96e2b8e17892ad3ca33bb5b",
-      "bytes": 33334
+      "sha256": "3137a409728c00da73dcdbeb2152b38d68970f9f2eb729485324cf6562046067",
+      "bytes": 33321
     },
     "settings-sources-long-title-resting.png": {
-      "sha256": "f67512002d390edf21fc95e12ad9f40a7bb013e2a96e2b8e17892ad3ca33bb5b",
-      "bytes": 33334
+      "sha256": "3137a409728c00da73dcdbeb2152b38d68970f9f2eb729485324cf6562046067",
+      "bytes": 33321
     },
     "settings-sources-nested-instructions.png": {
       "sha256": "27e4b1e962ae05d7166c8d4a43ec6fc865e6bf245472fa20aaa030117b693c30",
@@ -3658,8 +3662,8 @@
       "bytes": 116711
     },
     "settings-ssh-host-form.png": {
-      "sha256": "cb4d5e551ccaff6cf4d82395c102fff46cbbf42ef2069e73e0fd30cda0d09512",
-      "bytes": 51320
+      "sha256": "27d755579eaf624baefae9f5a102aeabed45d0a452d1417f1460a833860ef868",
+      "bytes": 51314
     },
     "settings-ssh-invalid-port.png": {
       "sha256": "a1572078d31cce49df1c82caa04847cc0caed9014e0b7242ff47b18f0733d5b1",
@@ -3674,32 +3678,32 @@
       "bytes": 150726
     },
     "settings-storage-maintenance-cleaned.png": {
-      "sha256": "9e05abac51a6226015ff57aa6b34061356bf35d1b0687805aecd1b516af6d73a",
-      "bytes": 124173
+      "sha256": "d7f8f2ec780fb7d2132f2589cc6722c3971725e07b65e94fed51cb6b8bc8264c",
+      "bytes": 102385
     },
     "settings-storage-maintenance-confirm.png": {
-      "sha256": "42629aa49fcaaea87e5d4abf977e26c386a473dd52858995c51d22a705b1ab5f",
-      "bytes": 42505
+      "sha256": "8a82fd203545fd34d9de795026de6d20ac5f228b0a910d6c4147dfa523d42bc0",
+      "bytes": 43160
     },
     "settings-storage-maintenance.png": {
-      "sha256": "dd4785bedea09007a0645e4b7ecae70a5f36ba444f4f10c9387a06e94c643ae1",
-      "bytes": 124034
+      "sha256": "43b34140b0a704402e18b164bc6c10e6a9da7986664e742cbc4622c2e00af79f",
+      "bytes": 102749
     },
     "settings-storage-project-a-worktrees.png": {
-      "sha256": "3fd97720a4763175b1b0b992dbad11a4ef2f0af0e74c0220a95768879e6324c0",
-      "bytes": 268680
+      "sha256": "87190459d79c2510fec18ab06923edbfee26e7fd484aeb9bfdacc5fa52a3d93d",
+      "bytes": 263969
     },
     "settings-storage-project-b-worktrees.png": {
-      "sha256": "f5e7a35cf0a43fe907776cae82620ad1ac6b4b7130fc7aa2f40a88185b328e20",
-      "bytes": 269059
+      "sha256": "a4b524f02d41e0a45fc153e58d60dad21eed9083a8f1cb10799ed6488c933814",
+      "bytes": 264326
     },
     "settings-storage-project-picker.png": {
-      "sha256": "31bed1e13a332ccce154bfa7fd760245b9cc963c45bea447fd8de26528a91bd8",
-      "bytes": 111414
+      "sha256": "90d2ef53b57cd94dadd485ec09288ab2660fbc07cdd702c38d3ddc78c6d49859",
+      "bytes": 109587
     },
     "settings-storage.png": {
-      "sha256": "91d604efd13f3b633f0401c7cc23f670c9d5bad6a8a3d4e83f46330f868e135b",
-      "bytes": 256907
+      "sha256": "5fefbac848160c164faa07617f966e3a91a9edf4d7d95720df251bf30d26f369",
+      "bytes": 250539
     },
     "settings-styling-appearance.png": {
       "sha256": "ff292faf3575e38fe5b816c7dc023a0bc556a81297f0864fc3dd0d16095c5b7d",
@@ -3710,20 +3714,20 @@
       "bytes": 193754
     },
     "settings-styling-general.png": {
-      "sha256": "33a3c3b97bd50da5bbc119f9e468b26ae9a5ccc058e89fdeb8f55b36b0185ab7",
-      "bytes": 262051
+      "sha256": "1820620cd30ec6210e9ac6c131c64bc6531dd4b7aa6c2f8a0f0742e1efcb21f2",
+      "bytes": 260906
     },
     "settings-styling-nav-subheadings.png": {
       "sha256": "9d38fa3a1149ce88064b48d4da2762745440f60977033db0eea8c9417b633bfe",
       "bytes": 253697
     },
     "settings-styling-plugin-settings-open.png": {
-      "sha256": "e03eebb053aec22781fae3ad76c96fe2e431a2ffef42a8cf6dda23455991269e",
-      "bytes": 255924
+      "sha256": "7e83252ff2f25e09faa692d460fb665702946892d3015da70c18b9510af27fe2",
+      "bytes": 254574
     },
     "settings-styling-plugins.png": {
-      "sha256": "8b506a17032faa8db79073d8fa729a6ba6b6e6fb7bf3e869fa8c0ea97a4ee1c6",
-      "bytes": 263563
+      "sha256": "b8d506f25d812d4b22163123f7c2fe266547315032eaaccc43b7717c04eb2e60",
+      "bytes": 262309
     },
     "settings-terminal-history-toggle-off.png": {
       "sha256": "cf12bb9bc6b59ae31634ce6c661d8ab1ddb9314ebb8a9fcdcf3dec903b99f2ff",
@@ -3734,12 +3738,12 @@
       "bytes": 167773
     },
     "settings-thread-style-selection.png": {
-      "sha256": "703a77c98fa350dfdab97fa3f5b82b2d37f70d2adb2eb0113961be3aaecfe15a",
-      "bytes": 259103
+      "sha256": "c08c047107d870cf5f7131e1d95920e215ad131c9d7ba06238cfbb6e26339d12",
+      "bytes": 257741
     },
     "settings-tool-permissions.png": {
-      "sha256": "90b095e17d1d11cd97645019e0316ca0a707fd0db63be836fd102f09ec9fa6d0",
-      "bytes": 134553
+      "sha256": "ce7811a7bc67dab26963c619e97c0b46a89cd19c557572874c884339581a9aec",
+      "bytes": 134426
     },
     "settings-trusted-ssh-hosts.png": {
       "sha256": "baaccf295e3c5c68ef070b4be58a6076973f779d38ace3d13700b8cbafac2b7a",
@@ -3754,43 +3758,43 @@
       "bytes": 27880
     },
     "settings-usage-codex-chatpass.png": {
-      "sha256": "ece61f1db5fdd5d641d49142dd12a19419c5f74f52ece587970f7f8663e5c34f",
-      "bytes": 233366
+      "sha256": "43aea231cf0e221e5ed3e3e1e5ad9139c566576e17ede588a7ae4ffa11805b81",
+      "bytes": 233375
     },
     "settings-usage-cursor-credits.png": {
-      "sha256": "61d9492101db886a2f27340722f560aaeaa393b97e4917ebfeedaef4d69c178a",
-      "bytes": 240208
+      "sha256": "8f0ec122859c9a910bc7e072e101693d92981bcd093d48f9f283c9cf5b433b4f",
+      "bytes": 240194
     },
     "settings-usage-frontier-tooltip.png": {
-      "sha256": "13c556488b13f2a516a27b5323a2b895ce853b54250510c27f0f6b56b0485655",
-      "bytes": 285698
+      "sha256": "4f1691239ecd774d882f361d67039d745755f731188a81956e0490437b91c650",
+      "bytes": 284570
     },
     "settings-usage-model-details-pinned.png": {
-      "sha256": "c2e2df3f52ee05bb3f8f0ef319b06c1900250c2b9d7925c3e95ccf9af414c313",
-      "bytes": 75907
+      "sha256": "bcbc388c08dd049cc6b31ae5ca5f548671dc323d5f67069b385123cb47f65d50",
+      "bytes": 76978
     },
     "settings-usage-period-tabs.png": {
       "sha256": "7f4a4cb05bd21f5220fe8a6285433e39f9c97c570eb1d4d83ac530549006ed91",
       "bytes": 7811
     },
     "settings-usage-plan-auth-errors.png": {
-      "sha256": "2c88118be5cb78b5c594968536cc8be5a38ae2fd3a79372a65093f56662522b8",
-      "bytes": 207483
+      "sha256": "687c3d42f89b301d53f98ad3de54dddaca0f81a2c7b900269e5a02d322cc00ff",
+      "bytes": 206396
     },
     "settings-usage-plan-limits.png": {
-      "sha256": "f3899810f125d9e9b25a512a40e226a522ad4ffc45730c984026d9c1dc620d19",
-      "bytes": 237823
+      "sha256": "dba6a9a1fa51c7f5f011ba6ebedb3dcf4461b7eadd92c31f314ca68b629c67f4",
+      "bytes": 237795
     },
     "settings-usage-plan-token-expired.png": {
-      "sha256": "716bebd8fa51215293e9b53802a10b1636e116dab9a76490b83e11c060a9ef0c",
-      "bytes": 253499
+      "sha256": "4b03dc27bb32a692171e27a8fc8db329b7306ac47a9d932db8b282527d19f643",
+      "bytes": 252419
     },
     "settings-usage-plan-unconfirmed.png": {
       "sha256": "fc4bfb5fde32d070534ace8f85469c11a1c469ce647ad66dd1b003e6ed8c4aef",
       "bytes": 206781
     },
     "settings-usage-plan-worth-it-inference.png": {
-      "sha256": "655622a0add74a42b78fa256545dd10fb665b1f931228c4dc152cc5caeb22ae2",
+      "sha256": "3530a5064a7390228c021383ed264fbdab42801c9bd828f8a446a8e18c463a8b",
       "bytes": 102478
     },
     "settings-usage-plan-worth-it.png": {
@@ -3802,48 +3806,52 @@
       "bytes": 42025
     },
     "settings-usage-value-map-card-link.png": {
-      "sha256": "c503cbaa472d3b73e040cda309e2e4f3dfde792ae18af1b23f22b7d29305a5b3",
-      "bytes": 214463
+      "sha256": "75d584640ecc5c8430438ccdd2f2c05fd587918180a4c2bcc8cd5c08ea7078b3",
+      "bytes": 214523
     },
     "settings-usage-value-map-discovery.png": {
-      "sha256": "d28210386f952b647b1e291bac8ded6200dccbfac0346635b6821b7da2f9b61c",
-      "bytes": 155725
+      "sha256": "d30fcee1127634eb6d8176a76f635d3bcda6cd9e43ff18f79012e20239836ee1",
+      "bytes": 79726
+    },
+    "settings-usage-value-map-expanded-hidden-routes.png": {
+      "sha256": "eecb307afc31fd9f453f1b4490e44876d7b737595ee6e8e886e77ff32b450041",
+      "bytes": 18494
     },
     "settings-usage-value-map-hidden-routes.png": {
       "sha256": "5add875f6c299fd7345ff53415d448a316c1beae7f99f6154861d308a266e679",
       "bytes": 12923
     },
     "settings-usage-value-map-mtok.png": {
-      "sha256": "c131002f4b4f980c551954aa6dddc690b4e287b2249f2fc0ba1fbd9ecccbf848",
-      "bytes": 158820
+      "sha256": "0ce369550fbf2ad0f2144e01ba665c9d6d6305dab558f29f0a958802dc9def3c",
+      "bytes": 61334
     },
     "settings-usage-value-map-privacy.png": {
-      "sha256": "a4ebc5b0d2f4bb7b62def130a95364dd5903cbfdba44546b374ca33a7a9b9f18",
-      "bytes": 134820
+      "sha256": "7adb2cf1918f7490dc8ee7b7553cb5f22fea01c3e3c0ba47bd25757d54902d1a",
+      "bytes": 134825
     },
     "settings-usage-value-map-task-controls.png": {
-      "sha256": "d28469ddbc6ba35061ab5cac584815c26d85959ded0c4a120367d0ca32be942e",
-      "bytes": 14505
+      "sha256": "134b7c884df70c32ab32f00648df311a7bb95ae780cd6844c4321cbf3632d362",
+      "bytes": 15145
     },
     "settings-usage-value-map-task.png": {
-      "sha256": "da333292c9588e5bd7545cb4d6f03bcc9d2af05b11f62bdefbf1b52dde5d2706",
-      "bytes": 55708
+      "sha256": "0811cc4f05c1fc83d32936a2beaf1c3588794af3c4d4e848e409fa964047a123",
+      "bytes": 61843
     },
     "settings-usage-value-map-zdr.png": {
-      "sha256": "82292bc83a20d5cd86e50cebbb29e1db3a1a3ccbfcdbc9c8e67d3c1bcefa4fe8",
-      "bytes": 134820
+      "sha256": "7eae2d427c495c721d625a46eb39799b33242528eb5594389dc1ad0f299c195c",
+      "bytes": 134825
     },
     "settings-value-map-codex-sol-launch.png": {
-      "sha256": "5f3f97ce5a5198a7a7bbdc61dbe247a0b7f629413e23ac5aa20d725f3a25e503",
+      "sha256": "1d1b4f7784a053994fb8cbdb6c34c8ccfdb1467c0b34318e7320dbd5c588bb06",
       "bytes": 142218
     },
     "settings-value-map-plan-routes.png": {
-      "sha256": "ffc9c7726c07f96d6b5fb4d7759dc3358d2d8c9cc813fb1357fc234ea9e91d3a",
-      "bytes": 142775
+      "sha256": "bfd29089fa5e1f7b7cb4b81935efd2ca1cd8709af7e95590f6bec2362190d38c",
+      "bytes": 145534
     },
     "settings-worktree-actions.png": {
-      "sha256": "d3a00408313546f96b870fedf5053522fa4813d3cdf9422aad1b79c9a46ba80c",
-      "bytes": 279871
+      "sha256": "b86c25e99e2891858d42dcb4a91c9ad747ae2a0b384920ab68ab97426ab68ec8",
+      "bytes": 276158
     },
     "settings-worktree-bulk-selection.png": {
       "sha256": "35503a298f9108d6143485a9bd0c209f51d04748de45658692b4d2d591ad319b",
@@ -3858,24 +3866,24 @@
       "bytes": 118625
     },
     "settings-worktree-cleanup-confirm.png": {
-      "sha256": "2c4c645c5b70815115e3d99284316d33a31c2eb73ce0b1c1145bef19de8d2647",
-      "bytes": 242526
+      "sha256": "1cb39778cf60d2c3d520ca7ce202a1d5a72cb4315d7dbb71fef6c5a598be31ea",
+      "bytes": 237872
     },
     "settings-worktree-cleanup-pending.png": {
-      "sha256": "ad9d5a3c21146bdf8ff935e3f9a26e30f2641a50220a5ff424127fb0e0a6247a",
-      "bytes": 256697
+      "sha256": "742aa0c00f9f2d57ae4e796d34f913cf060e53db7ebc2aac8cf6f3962ed2145d",
+      "bytes": 252026
     },
     "settings-worktree-cleanup-stopped.png": {
       "sha256": "725ffc2e15bca8429999ceea25b4eeb76b39a3b25bc037ddaf966927161c4773",
       "bytes": 53594
     },
     "settings-worktree-edits.png": {
-      "sha256": "bd5b43e8082ee11c8b7402f51e6569ca30c12c68318a228098fcd424e01ae2d9",
-      "bytes": 300575
+      "sha256": "cf2cc467b94e5e47979c494c697cd94af0dc71066dad3a2c25f2ced111b32808",
+      "bytes": 299098
     },
     "settings-zdr-provider-presets.png": {
-      "sha256": "0d0ae9c928dd031ec4af1aa9d29b9909344c98393271001ad95e4b1bb6214f10",
-      "bytes": 262503
+      "sha256": "54e3d3cabe131cc6c9b345d6bd8f32dcd0156dbbc438fb7de1249af54f041d04",
+      "bytes": 261277
     },
     "shell-mention-chip.png": {
       "sha256": "6de938acc057b20b7b67f7847af8f6b1bf0b11a10b6b8155f411e608ea91b105",
@@ -4134,8 +4142,8 @@
       "bytes": 24091
     },
     "ssh-config-alias-collision.png": {
-      "sha256": "8111be5fae2098f6aaad93896500fdd209eefc0ec01e71b705a8ec59bfb01d06",
-      "bytes": 231249
+      "sha256": "95a017148a1d5898dfd6d19311c2eff878b9e0bd9fe438297e30940a49a1a281",
+      "bytes": 217805
     },
     "ssh-project-add-menu.png": {
       "sha256": "f2aeb6182f9e87b7cd12de145092aa264b96932767043df4ef679226dc749eb8",
@@ -4614,8 +4622,8 @@
       "bytes": 350716
     },
     "two-step-stop-armed.png": {
-      "sha256": "acac932914af03cc16823fbc19b6452870b3da122eedd354beacce71af7c2cf2",
-      "bytes": 23063
+      "sha256": "edf14932fe5403e9a6c6ff713ab9de2bff81d1063affe8c70e856ab56702589f",
+      "bytes": 22148
     },
     "ui-kit-confirm-dialog-light.png": {
       "sha256": "1bc2397d253bd39ffffcef46791f13140dfaa59e447151566e228ecffbfd4f04",
@@ -4658,8 +4666,8 @@
       "bytes": 41168
     },
     "usage-sign-in-local-terminal.png": {
-      "sha256": "14132a9f465cc9cfc93615fcafa149b12fe663dd37fb95b62d903d282d90b6c5",
-      "bytes": 288175
+      "sha256": "505dc7f6832fcd18560bae07cb0aaff87276513c7ef19b6a76061eb7c32d08fc",
+      "bytes": 17102
     },
     "user-prompt-fill-dark.png": {
       "sha256": "02f0949d1eb6589108754a4ac6d10986b6174e52801dc23ea29b9a12f30eadf7",
