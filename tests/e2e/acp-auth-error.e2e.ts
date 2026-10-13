@@ -1,6 +1,8 @@
 import { $, browser, expect } from '@wdio/globals'
+import { join } from 'node:path'
 import { resetUserData, seedAcpAuthErrorFixture } from './helpers/seed-config.ts'
 import { saveElementScreenshot, savePreparedElementScreenshot } from './helpers/screenshot.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 /**
  * Where each env-var hint rendered: inside the numbered sign-in steps (the
@@ -20,6 +22,8 @@ async function hintPlacement(messageId: string) {
 }
 
 describe('ACP authentication error presentation', () => {
+  const originalPath = process.env['PATH']
+  const originalPreservePath = process.env['COPSE_PRESERVE_PATH']
   // Screenshot preparation changes the frame and overflow. Each recovery path
   // needs a fresh viewport so one capture cannot clip the next message's prose.
   beforeEach(async () => {
@@ -27,6 +31,16 @@ describe('ACP authentication error presentation', () => {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
+    // This fixture exercises sign-in guidance, not installed host CLIs. A host
+    // Codex binary can otherwise trigger a late adapter-install approval over
+    // the Claude panel after its text assertions have already passed.
+    writeE2eEnv({
+      COPSE_PRESERVE_PATH: '1',
+      PATH:
+        process.platform === 'win32'
+          ? join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32')
+          : '/usr/bin:/bin',
+    })
     seedAcpAuthErrorFixture(process.cwd())
     await browser.reloadSession()
     await $('[data-message-id="msg-assistant-acp-auth"] .message-text').waitForExist({
@@ -41,6 +55,7 @@ describe('ACP authentication error presentation', () => {
   })
 
   after(() => {
+    writeE2eEnv({ COPSE_PRESERVE_PATH: originalPreservePath, PATH: originalPath })
     resetUserData()
   })
 
@@ -55,6 +70,7 @@ describe('ACP authentication error presentation', () => {
     await expect(note).toHaveText(expect.stringContaining('ANTHROPIC_API_KEY'))
     await expect(note).not.toHaveText(expect.stringContaining('claude-agent-acp'))
     await expect(signIn).not.toHaveText(expect.stringContaining('--sso'))
+    await expect($('#approval-dialog')).not.toBeDisplayed()
     await saveElementScreenshot(
       '.provider-capability:has(.acp-known-agent-note)',
       'claude-sign-in.png',
