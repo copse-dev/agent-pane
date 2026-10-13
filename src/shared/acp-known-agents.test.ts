@@ -6,8 +6,26 @@ import {
   RETIRED_ACP_AGENTS,
   KNOWN_ACP_AGENTS,
 } from './acp-known-agents.ts'
+import { acpPlanProvider } from './acp.ts'
 
 describe('KNOWN_ACP_AGENTS', () => {
+  it('offers Copilot as a confined manual stdio agent without assuming subscription billing', () => {
+    const copilot = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'github-copilot-cli')
+    assert.ok(copilot)
+    assert.equal(copilot.command, 'copilot')
+    assert.deepEqual(copilot.args, ['--acp', '--stdio'])
+    assert.equal(copilot.setup, 'copilot login')
+    assert.equal(copilot.autoInstall, undefined)
+    assert.equal(copilot.preset, undefined)
+    assert.equal(copilot.installPackage, undefined)
+    assert.equal(copilot.sandboxedPermissionMode, undefined)
+    assert.deepEqual(copilot.sandbox, {
+      allowedDomains: ['github.com', 'api.github.com', '*.githubcopilot.com'],
+      homeDirs: ['.copilot', '.cache/copilot', 'Library/Caches/copilot'],
+    })
+    assert.equal(acpPlanProvider(copilot), null)
+  })
+
   it('launches Gemini CLI with the canonical --acp flag, not the deprecated alias', () => {
     // `--acp` landed in @google/gemini-cli 0.33.0 and is what the ACP registry
     // lists for agent id `gemini`. `--experimental-acp` still works as a

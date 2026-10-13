@@ -24,6 +24,13 @@
           0
         ]
       },
+      "acp:browse-registry": {
+        "api": "acp.browseRegistry",
+        "args": [
+          0,
+          1
+        ]
+      },
       "acp:detect-agents": {
         "api": "acp.detectAgents",
         "args": [
