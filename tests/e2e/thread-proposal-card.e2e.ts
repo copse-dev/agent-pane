@@ -13,6 +13,7 @@ import {
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { describeThreadChanges } from '../../src/shared/git/thread-change-summary.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 // Visual eval for the model-proposed-thread card (`propose_thread`). The card's
 // DOM, its three states and the start/dismiss wiring are covered at component
@@ -159,12 +160,20 @@ describe('a proposed thread without an isolated checkout', () => {
 
 describe('starting a proposed thread in an isolated checkout', () => {
   let projectId = ''
+  let previousMockBranch: string | undefined
   before(async () => {
     resetUserData()
+    previousMockBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
+    // End-of-turn branch sync must observe this real isolated checkout, not
+    // the suite's fixed branch label used for unrelated screenshot fixtures.
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: '' })
     projectId = seedThreadProposalFixture(seedStableWorkspace()).projectId
     await browser.reloadSession()
   })
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: previousMockBranch })
+  })
 
   it('starts the mock agent only after creating the worktree', async () => {
     await $('.thread-proposal-start').waitForDisplayed({ timeout: 10_000 })
@@ -202,6 +211,11 @@ describe('starting a proposed thread in an isolated checkout', () => {
     assert.ok(proposedThread?.worktree, 'the started proposal owns an isolated checkout')
     assert.equal(proposedThread.worktreeChoice, 'worktree')
     assert.equal(proposedThread.gitBranch, proposedThread.worktree.branch)
+    const liveBranch = await browser.execute(
+      ({ projectId, threadId }) => window.api.git.currentBranch(projectId, threadId),
+      { projectId, threadId: proposedThreadId },
+    )
+    assert.match(liveBranch ?? '', /^copse\//, 'branch IPC observes the isolated checkout')
     // The mock response does not edit files. Give this isolated checkout real,
     // deterministic work instead of depending on whether its baseline commit
     // happens to be considered unpushed in the runner's Git environment.
