@@ -55141,11 +55141,12 @@ var init_branch_ci_editor = __esm({
 });
 
 // src/renderer/views/automation-retained-worktrees.ts
+function describeRetainedWorktree(run2, name = run2.title) {
+  const paths = run2.paths?.length ? ` (${run2.paths.join(", ")})` : "";
+  return `\u201C${name}\u201D ${REASON_LABEL[run2.reason]}${paths}`;
+}
 function describeRetainedWorktrees(retained) {
-  return retained.map((run2) => {
-    const paths = run2.paths?.length ? ` (${run2.paths.join(", ")})` : "";
-    return `\u201C${run2.title}\u201D ${REASON_LABEL[run2.reason]}${paths}`;
-  }).join("; ");
+  return retained.map((run2) => describeRetainedWorktree(run2)).join("; ");
 }
 var REASON_LABEL;
 var init_automation_retained_worktrees = __esm({
@@ -56090,6 +56091,7 @@ function setMessageTurnOutcome(store2, threadId, messageId, turnOutcome) {
     messages: thread.messages.map(
       (message2) => message2.id === messageId ? { ...message2, turnOutcome } : message2
     ),
+    lastSettledAt: turnOutcome.endedAt,
     updatedAt: Date.now()
   }));
   store2.emit("threads_changed");
@@ -56171,7 +56173,11 @@ function setQueuePaused(store2, threadId, paused) {
   store2.emit("threads_changed");
 }
 function setThreadStatus(store2, threadId, status) {
-  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, status }));
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    status,
+    ...t2.status === "running" && status !== "running" ? { lastSettledAt: Date.now() } : {}
+  }));
   store2.emit("thread_status_changed", threadId, status);
 }
 function setThreadTitle(store2, threadId, title, options) {
@@ -56186,7 +56192,12 @@ function setThreadWorkingBrief(store2, threadId, workingBrief) {
   store2.emit("threads_changed");
 }
 function setThreadGitBranch(store2, threadId, branch) {
-  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, gitBranch: branch, updatedAt: Date.now() }));
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    gitBranch: branch,
+    ...t2.status !== "running" ? { lastSettledAt: t2.lastSettledAt ?? t2.updatedAt } : {},
+    updatedAt: Date.now()
+  }));
   store2.emit("threads_changed");
 }
 function applyRenamedThreadWorktree(store2, threadId, worktree) {
@@ -57420,7 +57431,9 @@ function saveProjectGroups(api2, groups) {
   return serializedSet(api2, KEY_PROJECT_GROUPS, groups);
 }
 async function loadThreads(api2, projectId) {
-  const threads = sortThreadsNewestFirst(await api2.threads.loadProject(projectId));
+  const threads = sortThreadsNewestFirst(await api2.threads.loadProject(projectId)).map(
+    (thread) => thread.status !== "running" && thread.lastSettledAt === void 0 ? { ...thread, lastSettledAt: thread.updatedAt } : thread
+  );
   const metas = /* @__PURE__ */ new Map();
   for (const t2 of threads) metas.set(t2.id, metaOf(t2));
   persistedMeta.set(projectId, metas);
@@ -57934,6 +57947,19 @@ var init_thread_pr_status2 = __esm({
   }
 });
 
+// src/shared/automation-run-state.ts
+function automationRunBlock(thread) {
+  if (thread.status === "running") return "running";
+  if (Boolean(thread.draftPrompt?.trim()) && thread.automation?.startFailedAt === void 0) {
+    return "pending-start";
+  }
+  return null;
+}
+var init_automation_run_state = __esm({
+  "src/shared/automation-run-state.ts"() {
+  }
+});
+
 // src/renderer/controller/sidebar-thread.ts
 function sidebarPrRefs(thread) {
   const cached2 = [...thread.prRefs ?? [], ...(thread.prProductions ?? []).map((item) => item.pr)];
@@ -57962,18 +57988,32 @@ function sidebarLastPromptAt(thread) {
   }
   return void 0;
 }
+function sidebarHasRun(thread) {
+  if (thread.lastPromptAt !== void 0) return true;
+  if (thread.everRan !== void 0) return thread.everRan;
+  if (thread.workingBrief !== void 0 || thread.autoTitleCount !== void 0) return true;
+  return (thread.usage?.inputTokens ?? 0) + (thread.usage?.outputTokens ?? 0) > 0;
+}
 function compactSidebarThread(thread) {
   const lastPromptAt = sidebarLastPromptAt(thread);
   return {
     id: thread.id,
     title: thread.title,
     ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
+    ...thread.updatedAt !== void 0 ? { updatedAt: thread.updatedAt } : {},
+    ...thread.lastSettledAt !== void 0 ? { lastSettledAt: thread.lastSettledAt } : {},
     ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
     status: thread.status,
+    // A prompt found in the loaded transcript counts too, matching the `lastPromptAt` kept above.
+    everRan: lastPromptAt !== void 0 || sidebarHasRun(thread),
     ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
     ...thread.sideChat ? { sideChat: thread.sideChat } : {},
     ...thread.automation ? { automation: thread.automation } : {},
+    ...thread.automation ? {
+      automationPendingStart: thread.automationPendingStart === true || automationRunBlock(thread) === "pending-start"
+    } : {},
+    ...thread.worktree ? { worktree: thread.worktree } : {},
     ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {},
     prRefs: sidebarPrRefs(thread),
     ...thread.prProductions ? { prProductions: thread.prProductions } : {}
@@ -57984,6 +58024,7 @@ var init_sidebar_thread = __esm({
     init_github_pr_url2();
     init_thread_pr_status2();
     init_thread_sort();
+    init_automation_run_state();
   }
 });
 
@@ -58625,8 +58666,8 @@ function supersedePendingSwitch() {
 }
 function getSidebarThreads(store2, projectId) {
   const { activeProjectId, threads } = store2.getState();
-  const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
-  return withoutSideChats(list).filter((t2) => t2.archivedAt == null);
+  const list = projectId === activeProjectId ? withoutSideChats(threads) : withoutSideChats(threadCache.get(projectId) ?? []);
+  return list.filter((t2) => t2.archivedAt == null);
 }
 function getSideChatUnreadParents(store2, projectId) {
   const { activeProjectId, threads } = store2.getState();
@@ -80323,6 +80364,49 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home-read-history",
+        label: "Activity home listing threads that finished before launch",
+        project: project("demo-activity-history-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the empty active one. Everything else is idle, read, and
+        // finished before this launch, so only the persisted write time puts it in
+        // Recently finished. Times follow the real clock because the recency window
+        // does; the last thread is older than the window and must stay out.
+        threads: [
+          {
+            id: "demo-activity-history-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          ...[
+            ["refactor", "Refactor auth", "idle", 36e5 * 2],
+            ["flaky", "Fix the flaky sandbox test", "error", 36e5 * 30],
+            ["copy", "Update onboarding copy", "idle", 36e5 * 24 * 4],
+            // Legacy-shaped: written before lastPromptAt existed, so it only has usage.
+            ["legacy", "Port the settings page", "idle", 36e5 * 24 * 2],
+            ["ancient", "Rename the config keys", "idle", 36e5 * 24 * 30]
+          ].map(([slug2, title, status, ago], index) => ({
+            id: `demo-activity-history-${slug2}`,
+            title,
+            status,
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 1200, outputTokens: 300 },
+            createdAt: Date.now() - ago - 6e4,
+            updatedAt: Date.now() - ago,
+            ...slug2 === "legacy" ? {} : { lastPromptAt: Date.now() - ago - 3e4 - index }
+          }))
+        ]
+      },
+      {
         id: "activity-home-empty",
         label: "Activity home with nothing to list",
         project: project("demo-activity-home-empty-project"),
@@ -81771,6 +81855,7 @@ function createDemoApi(scenario, options = {}) {
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      cleanupRuns: unsupported,
       listBranchCi: emptyArray,
       upsertBranchCi: unsupported,
       removeBranchCi: unsupported,
@@ -84750,6 +84835,24 @@ var init_automation_dialog = __esm({
   }
 });
 
+// src/renderer/controller/automation-held-runs.ts
+function heldAutomationRuns(runs) {
+  return runs.filter(
+    (run2) => automationRunBlock(run2) === null && run2.automationPendingStart !== true && run2.worktree !== void 0 && run2.worktree.retiredAt === void 0
+  );
+}
+function heldRunsLabel(count) {
+  return `${String(count)} held`;
+}
+function heldRunsTooltip(count) {
+  return `${String(count)} finished run${count === 1 ? " still holds" : "s still hold"} a worktree. Right-click for Clean up finished runs.`;
+}
+var init_automation_held_runs = __esm({
+  "src/renderer/controller/automation-held-runs.ts"() {
+    init_automation_run_state();
+  }
+});
+
 // packages/thread-store/src/fork-thread.ts
 function forkThreadTitle(title) {
   const base = title.trim() || "New Thread";
@@ -85160,7 +85263,14 @@ function questionWant(questions) {
   const extra = questions.length > 1 ? ` (+${String(questions.length - 1)} more)` : "";
   return `${truncateText(first, WANT_MAX_CHARS - extra.length)}${extra}`;
 }
+function persistedEndedAt(thread, now) {
+  const at3 = thread.settledAt;
+  if (at3 === void 0) return void 0;
+  const age = now - at3;
+  return age <= RECENT_WINDOW_MS && age >= -FUTURE_SKEW_MS ? at3 : void 0;
+}
 function deriveActivity(input2) {
+  const now = input2.now ?? Date.now();
   const byId = new Map(input2.threads.map((thread) => [thread.id, thread]));
   const needsYou = [
     ...input2.approvals.map((req) => ({
@@ -85230,7 +85340,7 @@ function deriveActivity(input2) {
       );
     } else {
       const recentStartFailure = thread.schedule && thread.failure?.startFailed && thread.failure.at > (input2.now ?? 0) - 864e5 ? thread.failure.at : void 0;
-      const endedAt = run2?.endedAt ?? thread.unreadAt ?? recentStartFailure;
+      const endedAt = run2?.endedAt ?? thread.unreadAt ?? recentStartFailure ?? persistedEndedAt(thread, now);
       if (endedAt === void 0) continue;
       if (thread.status === "error") {
         const row2 = threadRow(thread, "failed", "Ended with an error", endedAt);
@@ -85305,6 +85415,10 @@ function foldScheduleRuns(recent, scheduleOf) {
   folds.sort((a3, b4) => a3.state === b4.state ? 0 : a3.state === "failed" ? -1 : 1);
   return { folds, rest: recent.filter((row2) => !folded.has(row2)) };
 }
+function settledAtOf(thread) {
+  const at3 = thread.lastSettledAt ?? thread.updatedAt;
+  return at3 !== void 0 && sidebarHasRun(thread) ? { settledAt: at3 } : {};
+}
 function failureField(automation) {
   const failure2 = automation.failure;
   if (!failure2) return {};
@@ -85328,6 +85442,7 @@ function collectActivityThreads(store2) {
         title: thread.title,
         status: thread.status,
         ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
+        ...settledAtOf(thread),
         projectId: project2.id,
         projectName,
         ...thread.automation ? {
@@ -85349,6 +85464,7 @@ function collectActivityThreads(store2) {
       title: carried.thread.title,
       status: carried.thread.status,
       ...carried.thread.unreadAt !== void 0 ? { unreadAt: carried.thread.unreadAt } : {},
+      ...settledAtOf(carried.thread),
       projectId: project2.id,
       projectName: projectDisplayName(project2),
       ...carried.thread.automation ? {
@@ -85404,13 +85520,16 @@ function formatAgeLong(elapsedMs) {
   if (elapsedMs < DAY) return unit(Math.floor(elapsedMs / HOUR), "hour");
   return unit(Math.floor(elapsedMs / DAY), "day");
 }
-var RECENT_ROW_LIMIT, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
+var RECENT_ROW_LIMIT, RECENT_WINDOW_MS, FUTURE_SKEW_MS, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
     init_types();
     init_automation_failure();
     init_projects();
+    init_sidebar_thread();
     RECENT_ROW_LIMIT = 10;
+    RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1e3;
+    FUTURE_SKEW_MS = 24 * 60 * 60 * 1e3;
     SCHEDULE_FOLD_AT = 2;
     WANT_MAX_CHARS = 140;
     UNTITLED_THREAD = "New thread";
@@ -88165,7 +88284,42 @@ function startRunNow(api2, target) {
     );
   });
 }
-function automationMenuEntries(api2, target, openSetup) {
+function runWhenLabel(triggeredAt) {
+  return triggeredAt ? new Date(triggeredAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "Unknown time";
+}
+async function cleanUpScheduleRuns(store2, api2, target) {
+  try {
+    const result = await api2.automations.cleanupRuns(target.project.id, target.scheduleId);
+    const freed = result.released.length;
+    const freedText = `${String(freed)} worktree${freed === 1 ? "" : "s"}`;
+    if (result.retained.length === 0) {
+      showToast(
+        freed === 0 ? `Nothing to clean up for \u201C${target.scheduleName}\u201D.` : `Freed ${freedText} for \u201C${target.scheduleName}\u201D.`
+      );
+      return;
+    }
+    const known = new Map(getSidebarThreads(store2, target.project.id).map((t2) => [t2.id, t2]));
+    const lines = result.retained.map((run2) => {
+      const when = runWhenLabel(known.get(run2.threadId)?.automation?.triggeredAt);
+      return `\u2022 ${describeRetainedWorktree(run2, `${run2.title} \xB7 ${when}`)}`;
+    });
+    const first = result.retained[0];
+    const opened = await showConfirmDialog({
+      message: `${String(result.retained.length)} run${result.retained.length === 1 ? "" : "s"} of \u201C${target.scheduleName}\u201D still hold${result.retained.length === 1 ? "s" : ""} a worktree`,
+      detail: `${freed > 0 ? `Freed ${freedText}. ` : ""}These need a decision from you, so they were left alone:
+${lines.join("\n")}`,
+      confirmLabel: result.retained.length === 1 ? "Open run" : "Open first run",
+      cancelLabel: "Close"
+    });
+    if (opened && first) switchProjectThread(store2, api2, target.project.id, first.threadId);
+  } catch (error62) {
+    showErrorToast(
+      `Could not clean up \u201C${target.scheduleName}\u201D`,
+      ipcErrorMessage(error62, "The cleanup could not finish")
+    );
+  }
+}
+function automationMenuEntries(api2, target, openSetup, cleanUp) {
   const eventAutomation = getCachedEventAutomations(target.project.id).some(
     (definition) => definition.id === target.scheduleId
   );
@@ -88180,6 +88334,7 @@ function automationMenuEntries(api2, target, openSetup) {
   return [
     { heading: target.scheduleName },
     ...runEntries,
+    ...cleanUp ? [{ label: "Clean up finished runs\u2026", onSelect: cleanUp }] : [],
     {
       label: "Automation setup\u2026",
       onSelect: openSetup
@@ -88495,7 +88650,10 @@ function mountProjectsPane(root, store2, api2) {
   const threadChangeKey = (projectId, threadId) => `${projectId}\0${threadId}`;
   let threadChangeRendered = [];
   function refreshThreadChanges(refs, opts = {}) {
-    const batch = refs.filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId))).slice(0, THREAD_CHANGE_MAX_PER_PASS);
+    const pending = refs.filter(
+      (ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId))
+    );
+    const batch = pending.slice(0, THREAD_CHANGE_MAX_PER_PASS);
     if (batch.length === 0) return;
     const generation = threadChangeGeneration;
     for (const ref of batch) threadChangeInFlight.add(threadChangeKey(ref.projectId, ref.threadId));
@@ -88509,12 +88667,17 @@ function mountProjectsPane(root, store2, api2) {
         if (!sameThreadChangeSummary(previous?.summary ?? null, summary)) {
           changed = true;
         }
-        if (needsCleanupOnly && (!previous || Date.now() - previous.at > THREAD_CHANGE_TTL_MS)) {
-          changed = true;
-        }
+        if (needsCleanupOnly && !previous) changed = true;
         threadChangeCache.set(key, { summary, at: Date.now() });
       }
-      if (changed && generation === threadChangeGeneration) render(true);
+      if (generation !== threadChangeGeneration) return;
+      if (changed) render(true);
+      const now = Date.now();
+      const rest = pending.slice(batch.length).filter(({ projectId, threadId }) => {
+        const cached2 = threadChangeCache.get(threadChangeKey(projectId, threadId));
+        return !cached2 || now - cached2.at > THREAD_CHANGE_TTL_MS;
+      });
+      refreshThreadChanges(rest, opts);
     };
     void api2.git.threadChangeSummary(batch, opts).then(settle2, () => {
       settle2([]);
@@ -88690,7 +88853,6 @@ function mountProjectsPane(root, store2, api2) {
   }
   function recheckStaleThreadChanges() {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-    if (needsCleanupOnly) render();
     const now = Date.now();
     refreshThreadChanges(
       threadChangeRendered.filter(({ projectId, threadId }) => {
@@ -88727,7 +88889,7 @@ function mountProjectsPane(root, store2, api2) {
     if (thread.status === "running") return false;
     if (project2.sshHost) return false;
     const cached2 = threadChangeCache.get(threadChangeKey(project2.id, thread.id));
-    if (!cached2 || Date.now() - cached2.at > THREAD_CHANGE_TTL_MS) return true;
+    if (!cached2) return true;
     return describeThreadChanges(cached2.summary) !== null;
   }
   function renderMissingNotice(project2) {
@@ -89116,6 +89278,18 @@ function mountProjectsPane(root, store2, api2) {
     const threadChangeWanted = [];
     const threadChangeSeen = [];
     const threadChangeSeenKeys = /* @__PURE__ */ new Set();
+    const matchesCleanupFilter = (project2, thread) => {
+      if (threadNeedsCleanup(project2, thread)) return true;
+      const key = threadChangeKey(project2.id, thread.id);
+      const cached2 = threadChangeCache.get(key);
+      if (cached2 && thread.status !== "running" && !project2.sshHost) {
+        const ref = { projectId: project2.id, threadId: thread.id };
+        threadChangeSeen.push(ref);
+        threadChangeSeenKeys.add(key);
+        if (Date.now() - cached2.at > THREAD_CHANGE_TTL_MS) threadChangeWanted.push(ref);
+      }
+      return false;
+    };
     syncFilterControls();
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
@@ -89242,6 +89416,18 @@ function mountProjectsPane(root, store2, api2) {
                 });
               }
             },
+            ...heldAutomationRuns([thread]).length > 0 ? [
+              {
+                label: "Clean up finished runs\u2026",
+                onSelect: () => {
+                  void cleanUpScheduleRuns(store2, api2, {
+                    project: project2,
+                    scheduleName: thread.automation?.scheduleName ?? thread.title,
+                    scheduleId
+                  });
+                }
+              }
+            ] : [],
             {
               label: "Automation setup\u2026",
               onSelect: () => {
@@ -89505,6 +89691,21 @@ function mountProjectsPane(root, store2, api2) {
             projectSuffix,
             el("span", { class: "automation-schedule-count" }, `${String(runs.length)} runs`)
           );
+          const heldRuns = heldAutomationRuns(runs);
+          if (heldRuns.length > 0) {
+            scheduleToggle.querySelector(".automation-schedule-count")?.before(
+              el(
+                "span",
+                {
+                  class: "automation-schedule-held",
+                  role: "img",
+                  "aria-label": heldRunsTooltip(heldRuns.length),
+                  title: heldRunsTooltip(heldRuns.length)
+                },
+                heldRunsLabel(heldRuns.length)
+              )
+            );
+          }
           if (runs.some((thread) => thread.status === "running")) {
             const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
             status.setAttribute("role", "img");
@@ -89545,7 +89746,10 @@ function mountProjectsPane(root, store2, api2) {
                 },
                 () => {
                   openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
-                }
+                },
+                heldRuns.length > 0 ? () => {
+                  void cleanUpScheduleRuns(store2, api2, { project: project2, scheduleName, scheduleId });
+                } : void 0
               )
             );
           });
@@ -89784,7 +89988,7 @@ function mountProjectsPane(root, store2, api2) {
       ) : sidebarThreads;
       const conversationThreads = orderSidebarThreads(
         matchingThreads.filter(
-          (thread) => thread.automation === void 0 && (!needsCleanupOnly || threadNeedsCleanup(project2, thread))
+          (thread) => thread.automation === void 0 && (!needsCleanupOnly || matchesCleanupFilter(project2, thread))
         ),
         // A filter's matches stay newest first; the chosen order is for the browse list.
         isFiltering ? "activity" : store2.getState().sidebarThreadSort,
@@ -89884,7 +90088,7 @@ function mountProjectsPane(root, store2, api2) {
         if (project2.missing) continue;
         owners.set(project2.id, project2);
         for (const thread of getSidebarThreads(store2, project2.id)) {
-          if (thread.automation === void 0 && (!needsCleanupOnly || threadNeedsCleanup(project2, thread))) {
+          if (thread.automation === void 0 && (!needsCleanupOnly || matchesCleanupFilter(project2, thread))) {
             rows.push({ projectId: project2.id, thread });
           }
         }
@@ -90132,6 +90336,8 @@ var init_projects_pane = __esm({
     init_ipc_error_message();
     init_confirm_dialog();
     init_toast();
+    init_automation_held_runs();
+    init_automation_retained_worktrees();
     init_fork_thread3();
     init_thread_filter();
     init_thread_sort();
@@ -97942,7 +98148,12 @@ function commitThreadModelSelection(store2, api2, threadId, by, from, to) {
   if (from === to) return;
   store2.setState({
     threads: store2.getState().threads.map(
-      (thread) => thread.id === threadId ? { ...thread, model: to, updatedAt: Date.now() } : thread
+      (thread) => thread.id === threadId ? {
+        ...thread,
+        model: to,
+        ...thread.status !== "running" ? { lastSettledAt: thread.lastSettledAt ?? thread.updatedAt } : {},
+        updatedAt: Date.now()
+      } : thread
     )
   });
   store2.emit("threads_changed");

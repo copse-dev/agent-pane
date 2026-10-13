@@ -1409,6 +1409,15 @@ copse-ui-field input[type=password],
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.automation-schedule-held {
+  flex: none;
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--warning, currentColor);
+  border-radius: var(--radius-sm);
+  color: var(--warning, var(--text-secondary));
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
 .automation-schedule-count {
   margin-left: auto;
   color: var(--text-muted);
@@ -14616,8 +14625,11 @@ dialog.activity-panel-overlay {
   .activity-home .activity-panel-body {
     min-height: 200px;
   }
+  .activity-home-caption {
+    display: none;
+  }
 }
-@container chat-pane (max-width: 640px) {
+@container chat-pane (max-width: 760px) {
   .activity-home {
     padding-top: 16px;
   }
