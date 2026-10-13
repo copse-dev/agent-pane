@@ -57,6 +57,8 @@ let cleanupE2eUserDataDir: (() => void) | null = null
 
 export const config: Options.Testrunner = {
   runner: 'local',
+  // Preserve v9's first-match `$` behavior for the existing fixture selectors.
+  strictSelectors: false,
   // Keep the runner + chromedriver logs instead of discarding them. When a spec
   // dies with "Unable to connect to http://localhost:PORT", that message is the
   // symptom; the driver's own log is the only place the cause is written down.
@@ -75,7 +77,7 @@ export const config: Options.Testrunner = {
   // scripts/run-e2e.mts owns headless Linux's Xvfb lifecycle so it can size the
   // framebuffer for the pinned 2x DPR. WDIO's built-in Xvfb uses 1280x1024,
   // which leaves only 640x512 logical pixels and changes the app's layout.
-  autoXvfb: false,
+  displayServerEnabled: false,
   capabilities: [
     {
       browserName: 'chrome',

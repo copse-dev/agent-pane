@@ -38,7 +38,7 @@ behavioural change:
   hallucination the verified-context block fixes — so context is full by default and the
   executor can only enrich it.
 - **Result shape.** Advice is normalized into the native `advisor_result` `{ text,
-stop_reason? }` union, with an `advisor_redacted_result` branch reserved for parity.
+  stop_reason? }` union, with an `advisor_redacted_result` branch reserved for parity.
 - **Bare advisor.** The advisor runs with no tools and no context management; only the
   advice text reaches the executor.
 - **Truncation marker.** On a `max_tokens` stop the rendered advice carries the same

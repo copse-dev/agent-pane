@@ -329,7 +329,7 @@ rendered colour, case, and corner.
 Approval is a workbench decision surface, not a debug dump:
 
 - Titles are **questions in plain language** (`Mark pull request ready for review?`, `Run package
-install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action: …` prefixes.
+  install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action: …` prefixes.
 - Bodies lead with the **thing at stake** (PR target, command, origin). Pretty-printed JSON args
   are a last-resort fallback when the gate cannot summarize, not the default.
 - Buttons use `.ui-btn*` via `uiActions` (Approve = primary, Reject = secondary). Do not paint
