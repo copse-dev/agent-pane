@@ -139,6 +139,7 @@ describe('manual ACP catalog entry', function () {
     await waitForAgentIdle(15_000)
     const transcript = await $('.messages-list').getText()
     assert.ok(transcript.includes('Catalog fixture turn completed.'))
-    await saveElementScreenshot('.messages-list', 'acp-copilot-fixture-turn.png')
+    // The completed response owns this assertion; workspace diff discovery is asynchronous.
+    await saveElementScreenshot('.msg-assistant', 'acp-copilot-fixture-turn.png')
   })
 })

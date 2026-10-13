@@ -1,0 +1,96 @@
+name: Seed reviewed Settings-batch screenshot objects
+
+# One-time recovery for #3745. Remove after public-object verification succeeds.
+on:
+  push:
+    branches: [recovery/settings-providers-3640]
+    paths: [.github/workflows/seed-reviewed-batch-screenshots.yml]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: seed-reviewed-batch-screenshots
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Read pinned trusted storage policy from main
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: cfc6b8ffe59e1d9e1d04632554c882965312bf6a
+          path: .bootstrap-policy
+          persist-credentials: false
+          sparse-checkout: |
+            .nvmrc
+            scripts/lib
+            scripts/screenshot-storage.mts
+            packages/std/src
+            packages/std/package.json
+            tests/e2e/screenshots/manifest.json
+          sparse-checkout-cone-mode: false
+
+      - name: Download the 102 reviewed current-head CI candidates as data
+        uses: actions/download-artifact@v7
+        with:
+          repository: copse-dev/agent-pane
+          run-id: 38435549619
+          artifact-ids: 11834635077,11834430541,11834365709,11833913014,11833863458,11833578692,11833328640,11833242423,11833144815
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          path: .bootstrap-source
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .bootstrap-policy/.nvmrc
+
+      - name: Validate exactly the 102 reviewed image hashes
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          import { parseScreenshotManifest, serializeScreenshotManifest, verifyScreenshot } from './.bootstrap-policy/scripts/lib/screenshot-manifest.mts'
+          const reviewed = parseScreenshotManifest('{"version":1,"screenshots":{"context-usage-only.png":{"sha256":"0a2f5082fe18a765b7aa803793ae425e2b86d206755ae6002368f6f93deb4186","bytes":17451},"settings-advisor-model.png":{"sha256":"7450bd23b80ea1713eb1df6340af7e8b5ba823e55c91c0b09d1d474e16a98c92","bytes":46155},"settings-balanced-included-choice.png":{"sha256":"1d8b2502bb14b2b7b1a56538c96fd168f26299c1c87dc02236a0ff965997a11d","bytes":104374},"settings-balanced-included-selected.png":{"sha256":"0034ea73d1a077452ab98de6244230202f38dc84a912b04caa96567c6203c10f","bytes":100524},"settings-capture-footer-reframed.png":{"sha256":"04c161e6ba4a4aceb93359ace5b9f6ebf4687ee0a1e8e64c47272977e24ac90e","bytes":64053},"settings-content-full-width-scroll.png":{"sha256":"424f4b7b97753b5f549d08c00e6d79f35769bd51cb46fbff98ce227e59428e5c","bytes":93897},"settings-demo-traffic-lights.png":{"sha256":"424f4b7b97753b5f549d08c00e6d79f35769bd51cb46fbff98ce227e59428e5c","bytes":93897},"settings-footer-no-overlap.png":{"sha256":"94a393689fa0170d666036c84f753bc24c728d8e80bdb5bdf3554ac936bb5c1b","bytes":103712},"settings-footer-scroll-reserve.png":{"sha256":"fe0c1a0318333c8b3726d46279b050d242a0f4febd4c4716e2f36843ce07a7f1","bytes":66724},"settings-partial-save-error.png":{"sha256":"6bd7fa6d140d41d8bd6cb253a2697a57e990e80c1210e8bebc6ac3329fcc10ed","bytes":125093},"settings-partial-save-restored.png":{"sha256":"c4c28e6cc82a9d999bc1396fc1a7fd2fbfe0d158c92d0bb2bae158eb8f8df9d9","bytes":98216},"settings-search-recovery.png":{"sha256":"81acd2977de8d563d9b8c530b9efe7c514fb0d4a7435f3fec8b4d8f05dc46d3a","bytes":93923},"settings-storage-project-picker.png":{"sha256":"90d2ef53b57cd94dadd485ec09288ab2660fbc07cdd702c38d3ddc78c6d49859","bytes":109587},"settings-tool-permissions.png":{"sha256":"ce7811a7bc67dab26963c619e97c0b46a89cd19c557572874c884339581a9aec","bytes":134426},"acp-auto-install-approval.png":{"sha256":"4497ba83bf2ba42cdf3f47be4975bd30d98745d78fcc4575803b9fe21021bd74","bytes":259849},"acp-mixed-bootstrap-approval.png":{"sha256":"055b8ca7b4ae9d56e3a38c3e27b88ad71f9d357ce3567c8b34ffc822db0512b4","bytes":256747},"acp-sfw-bootstrap-approval.png":{"sha256":"dee195f1d576bbb2072777a291f13b45f505eb0127956f251943a36b24cb1fb7","bytes":252299},"settings-chatgpt-plan.png":{"sha256":"eae1ff6ce4d5a1fcf990802d5b5b4a40677ac738e2badd40e4f5bf10c54df389","bytes":240227},"settings-openai-codex-expanded.png":{"sha256":"4a040060af679288d2a5c473171b25db9685ebce0c97d3189179f076aa1dad82","bytes":240955},"settings-shell-security.png":{"sha256":"63a85c3cc8ab8e918f37ea13763bf81df70435225d766bf198b7fbd000aaa505","bytes":182994},"settings-ssh-host-form.png":{"sha256":"27d755579eaf624baefae9f5a102aeabed45d0a452d1417f1460a833860ef868","bytes":51314},"settings-usage-plan-auth-errors.png":{"sha256":"687c3d42f89b301d53f98ad3de54dddaca0f81a2c7b900269e5a02d322cc00ff","bytes":206396},"plain-language-install-approval.png":{"sha256":"496dce12979762f63bbf9695c6b5891f7d784bd93c19428fd345e3e4eba2b08e","bytes":257673},"plain-language-settings-codex-agent.png":{"sha256":"a800bbde071c8bb0e045198df590c65fe563aba31a06fecd37514386334d13d0","bytes":240649},"queued-actions-row.png":{"sha256":"8a8250491a667fdc5e9d496cdf1b0b71c6f9cdfaa35c98267d674d729bbaf2f1","bytes":13728},"queued-model-picker-menu.png":{"sha256":"2ea42a1361ecbeb1b4e34a389e40a1af6ba8ca32278cbdff3369f29cc64abb52","bytes":13909},"settings-classifiers-options.png":{"sha256":"e965de6ef4cc05c72e280f01dba61178871c92ba67486dae205e77d95dfb3254","bytes":57973},"settings-explainers-browse-recovery.png":{"sha256":"870633effa91d34bcb401b47c5f0d6a914df9ca8d132617f15d3eff4b014dc9d","bytes":67425},"settings-thread-style-selection.png":{"sha256":"c08c047107d870cf5f7131e1d95920e215ad131c9d7ba06238cfbb6e26339d12","bytes":257741},"settings-usage-codex-chatpass.png":{"sha256":"43aea231cf0e221e5ed3e3e1e5ad9139c566576e17ede588a7ae4ffa11805b81","bytes":233375},"settings-usage-value-map-privacy.png":{"sha256":"7adb2cf1918f7490dc8ee7b7553cb5f22fea01c3e3c0ba47bd25757d54902d1a","bytes":134825},"settings-usage-value-map-zdr.png":{"sha256":"7eae2d427c495c721d625a46eb39799b33242528eb5594389dc1ad0f299c195c","bytes":134825},"settings-env-key-detect.png":{"sha256":"a5c102c9325acd67af14eab0a2d526ded3b5482c6c841de8a60ecd77d7792b7e","bytes":43495},"settings-sources-long-title-keyboard.png":{"sha256":"7ade6a223833d52443e0fcd35c4de928c02fecb63d8e74fbd7c2a5b2a73eab16","bytes":34077},"settings-sources-long-title-pointer.png":{"sha256":"3137a409728c00da73dcdbeb2152b38d68970f9f2eb729485324cf6562046067","bytes":33321},"settings-sources-long-title-resting.png":{"sha256":"3137a409728c00da73dcdbeb2152b38d68970f9f2eb729485324cf6562046067","bytes":33321},"settings-styling-general.png":{"sha256":"1820620cd30ec6210e9ac6c131c64bc6531dd4b7aa6c2f8a0f0742e1efcb21f2","bytes":260906},"settings-styling-plugin-settings-open.png":{"sha256":"7e83252ff2f25e09faa692d460fb665702946892d3015da70c18b9510af27fe2","bytes":254574},"settings-styling-plugins.png":{"sha256":"b8d506f25d812d4b22163123f7c2fe266547315032eaaccc43b7717c04eb2e60","bytes":262309},"two-step-stop-armed.png":{"sha256":"edf14932fe5403e9a6c6ff713ab9de2bff81d1063affe8c70e856ab56702589f","bytes":22148},"claude-sign-in.png":{"sha256":"059c9eaacb25c185475a383f09905f3f0af8057186845e60a3b7981df9740e42","bytes":93068},"cmd-w-settings-dialog-safe.png":{"sha256":"1820620cd30ec6210e9ac6c131c64bc6531dd4b7aa6c2f8a0f0742e1efcb21f2","bytes":260906},"settings-agents-md-plugin.png":{"sha256":"c124400b385d56235576c49d6fa4342a933acbf1419785fb2aa0192502da8880","bytes":272758},"settings-plugins-agent-plugin.png":{"sha256":"cf3ad4cdc407605b6967e59f5b7c773d752b21d2758f2749946e0273b8532a55","bytes":243307},"settings-usage-value-map-discovery.png":{"sha256":"d30fcee1127634eb6d8176a76f635d3bcda6cd9e43ff18f79012e20239836ee1","bytes":79726},"settings-usage-value-map-expanded-hidden-routes.png":{"sha256":"eecb307afc31fd9f453f1b4490e44876d7b737595ee6e8e886e77ff32b450041","bytes":18494},"settings-usage-value-map-mtok.png":{"sha256":"0ce369550fbf2ad0f2144e01ba665c9d6d6305dab558f29f0a958802dc9def3c","bytes":61334},"settings-usage-value-map-task-controls.png":{"sha256":"134b7c884df70c32ab32f00648df311a7bb95ae780cd6844c4321cbf3632d362","bytes":15145},"settings-usage-value-map-task.png":{"sha256":"0811cc4f05c1fc83d32936a2beaf1c3588794af3c4d4e848e409fa964047a123","bytes":61843},"settings-worktree-edits.png":{"sha256":"cf2cc467b94e5e47979c494c697cd94af0dc71066dad3a2c25f2ced111b32808","bytes":299098},"acp-registry-browser.png":{"sha256":"e5b8697f43cc554ab66fb13c7350eb77cb9896ad35d870e4929114b024800a46","bytes":96061},"acp-registry-fixture-turn.png":{"sha256":"17b76f5109ef64fe92d99651190da40a8cd6b13725164356aacf49560fc7883d","bytes":92706},"acp-registry-review-enable.png":{"sha256":"9b2e6734b6136a3067d48b6f67722cdbc22a711f0732633ee79edf4cfb390dac","bytes":213556},"acp-registry-review.png":{"sha256":"13643bff6cef420949654277b83beea653153d176e688db025f85b4c49fb9ca9","bytes":179164},"acp-registry-saved-disabled.png":{"sha256":"8ef889e0e418d35bec6aae8f73d038c98a4fafca71e76be17017018cc37dade3","bytes":174216},"settings-perplexity-agent-provider.png":{"sha256":"a0c51ec75c01614aaa2c0dc61642d0c6c0e2ff66ebf129a80641661305d1ae3e","bytes":270710},"settings-qwen-code.png":{"sha256":"4174bdff7296de8edf82e4acef12a7f5ed97c683c12528065f045e495542debb","bytes":247388},"settings-sources-agents.png":{"sha256":"3ff9c577e903b6def4a8b87fc56debc79380a86b14563061ed55d7ff9419c902","bytes":46515},"settings-storage-maintenance-cleaned.png":{"sha256":"d7f8f2ec780fb7d2132f2589cc6722c3971725e07b65e94fed51cb6b8bc8264c","bytes":102385},"settings-storage-maintenance-confirm.png":{"sha256":"8a82fd203545fd34d9de795026de6d20ac5f228b0a910d6c4147dfa523d42bc0","bytes":43160},"settings-storage-maintenance.png":{"sha256":"43b34140b0a704402e18b164bc6c10e6a9da7986664e742cbc4622c2e00af79f","bytes":102749},"settings-zdr-provider-presets.png":{"sha256":"54e3d3cabe131cc6c9b345d6bd8f32dcd0156dbbc438fb7de1249af54f041d04","bytes":261277},"usage-sign-in-local-terminal.png":{"sha256":"505dc7f6832fcd18560bae07cb0aaff87276513c7ef19b6a76061eb7c32d08fc","bytes":17102},"advisor-pair-hint-any.png":{"sha256":"937876f98abb127cc5f65789f107d5717aa36f4d8604ddb4c336265d604a5910","bytes":97587},"advisor-pair-hint-good.png":{"sha256":"31f6b278a1599d616b3519dd80bd33a0195df6547b0fd505bd4e0f52739381cf","bytes":95577},"advisor-pair-hint-warn.png":{"sha256":"c87047b7f7e164dab0b8684788772ed028ec3e50b2cfebea423a228dd1d85097","bytes":97896},"classifier-use-hover.png":{"sha256":"32565da1b52b2cac76eb09d0b84f4648052ddf5363699258a2839ff18bc75da9","bytes":311390},"claude-login-deferred-settings.png":{"sha256":"88ab9061185c1fec681ec343686ef8a18d86f39a0e7db467f08e05bd427289ec","bytes":250670},"openrouter-settings-fields.png":{"sha256":"30440e157b39319fafc4c6ec558640de78382fe36980aebc273893854ccb57e2","bytes":243237},"settings-local-server-detect.png":{"sha256":"8d3011c8604105538bca8c4d174f82568e309b4a90f5a7925b88a1113ff4775f","bytes":40529},"settings-save-no-error.png":{"sha256":"a7c58a40db3124dd1822acc818e8c9565274e2acf8c37c39de546b42429067cb","bytes":257893},"settings-storage-project-a-worktrees.png":{"sha256":"87190459d79c2510fec18ab06923edbfee26e7fd484aeb9bfdacc5fa52a3d93d","bytes":263969},"settings-storage-project-b-worktrees.png":{"sha256":"a4b524f02d41e0a45fc153e58d60dad21eed9083a8f1cb10799ed6488c933814","bytes":264326},"settings-usage-plan-token-expired.png":{"sha256":"4b03dc27bb32a692171e27a8fc8db329b7306ac47a9d932db8b282527d19f643","bytes":252419},"settings-worktree-actions.png":{"sha256":"b86c25e99e2891858d42dcb4a91c9ad747ae2a0b384920ab68ab97426ab68ec8","bytes":276158},"settings-worktree-cleanup-confirm.png":{"sha256":"1cb39778cf60d2c3d520ca7ce202a1d5a72cb4315d7dbb71fef6c5a598be31ea","bytes":237872},"settings-worktree-cleanup-pending.png":{"sha256":"742aa0c00f9f2d57ae4e796d34f913cf060e53db7ebc2aac8cf6f3962ed2145d","bytes":252026},"acp-copilot-manual-setup.png":{"sha256":"e9d1521f665a9b66f324c30258924ba5979ffa9b7abfc4d9177289481ab7c829","bytes":97784},"acp-copilot-model-picker.png":{"sha256":"86e450496cd3fd416f5c081790a02794b0ba7d24bce36c1cf5dc2be35006da44","bytes":24757},"settings-composition-general.png":{"sha256":"d55d16a45d0e11eff55cbb7f8531b911225ca09022c08052b358676b3f6cac05","bytes":257889},"settings-composition-invalid-save.png":{"sha256":"65d155dc4bcdab9e53752b2409c0f3379359afab1edcd63d93e4d3b587a5c866","bytes":227204},"settings-composition-models.png":{"sha256":"4084475b8acd3e3a26904bea7755c535f002189a9168aee6811754b9c824a6c0","bytes":249326},"settings-composition-packs.png":{"sha256":"b55ee55ed701a664be252971e52603a1fbcd3b1095c43d0e26b3a92a6e179e3d","bytes":250502},"settings-composition-source-folders.png":{"sha256":"2a162a97ddebfa1b6a0386d52511dde7567a8cea5d66108cd4ab8af2c8464004","bytes":267449},"settings-composition-sources.png":{"sha256":"2d49b8de5df5355d8822e069dcdad2ad5169ce8830100983efe2ab44dcdf78db","bytes":249154},"settings-composition-sticky-footer.png":{"sha256":"d75118634be63153f96d637b790e4490d72f0af0d1ee537abd15c1329678681b","bytes":181677},"settings-storage.png":{"sha256":"5fefbac848160c164faa07617f966e3a91a9edf4d7d95720df251bf30d26f369","bytes":250539},"settings-usage-cursor-credits.png":{"sha256":"8f0ec122859c9a910bc7e072e101693d92981bcd093d48f9f283c9cf5b433b4f","bytes":240194},"settings-usage-frontier-tooltip.png":{"sha256":"4f1691239ecd774d882f361d67039d745755f731188a81956e0490437b91c650","bytes":284570},"settings-usage-plan-limits.png":{"sha256":"dba6a9a1fa51c7f5f011ba6ebedb3dcf4461b7eadd92c31f314ca68b629c67f4","bytes":237795},"settings-value-map-codex-sol-launch.png":{"sha256":"1d1b4f7784a053994fb8cbdb6c34c8ccfdb1467c0b34318e7320dbd5c588bb06","bytes":142218},"settings-value-map-plan-routes.png":{"sha256":"bfd29089fa5e1f7b7cb4b81935efd2ca1cd8709af7e95590f6bec2362190d38c","bytes":145534},"provider-settings-recovery.png":{"sha256":"0b643dbebb105d5f6319be65549c7550f4cf5c1ccae2f42042dd8c44bbcf644e","bytes":255112},"settings-load-failed.png":{"sha256":"730608667ab779847053e3d5740577ff493b602d1b73d8e189b825633e35c78f","bytes":253056},"settings-load-recovered.png":{"sha256":"721e6b3287da3852e49f10ce874c4f9fa544b3684667f9e02ce80163365def87","bytes":257237},"settings-model-picker-anchored.png":{"sha256":"0aa2ee1301aa169647754e73ffc980470476184e872c7eb2049d2140f36a5a14","bytes":285818},"settings-model-picker-flipped.png":{"sha256":"f41258a6aca32b468ebe8fe5dc4d24637042f296adc93af7d71a2190492e0829","bytes":304288},"settings-model-picker-short-surface.png":{"sha256":"3dc223ba7e0cc61448a8f95ce8d0edca66717c7608c6b7e787d9e26283cc8268","bytes":198821},"settings-usage-model-details-pinned.png":{"sha256":"bcbc388c08dd049cc6b31ae5ca5f548671dc323d5f67069b385123cb47f65d50","bytes":76978},"settings-usage-plan-worth-it-inference.png":{"sha256":"3530a5064a7390228c021383ed264fbdab42801c9bd828f8a446a8e18c463a8b","bytes":102478},"settings-usage-value-map-card-link.png":{"sha256":"75d584640ecc5c8430438ccdd2f2c05fd587918180a4c2bcc8cd5c08ea7078b3","bytes":214523},"ssh-config-alias-collision.png":{"sha256":"95a017148a1d5898dfd6d19311c2eff878b9e0bd9fe438297e30940a49a1a281","bytes":217805}}}')
+          const directory = join(process.env.RUNNER_TEMP, 'reviewed-settings')
+          mkdirSync(directory, { recursive: true })
+          for (const [name, entry] of Object.entries(reviewed.screenshots)) {
+            const source = join('.bootstrap-source/tests/e2e/screenshots', name)
+            const stat = lstatSync(source)
+            assert.ok(stat.isFile() && !stat.isSymbolicLink())
+            const bytes = readFileSync(source)
+            verifyScreenshot(bytes, entry)
+            writeFileSync(join(directory, name), bytes)
+            console.log(`${name}: verified ${entry.sha256} (${entry.bytes} bytes)`)
+          }
+          writeFileSync(join(process.env.RUNNER_TEMP, 'reviewed-settings-manifest.json'), serializeScreenshotManifest(reviewed))
+          NODE
+
+      - name: Upload with the existing trusted storage implementation
+        env:
+          SCREENSHOT_R2_ACCOUNT_ID: ${{ secrets.SCREENSHOT_R2_ACCOUNT_ID || vars.SCREENSHOT_R2_ACCOUNT_ID }}
+          SCREENSHOT_R2_BUCKET: ${{ secrets.SCREENSHOT_R2_BUCKET || vars.SCREENSHOT_R2_BUCKET || 'copse-screenshots' }}
+          SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
+          SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
+        run: |
+          node .bootstrap-policy/scripts/screenshot-storage.mts upload \
+            --dir "$RUNNER_TEMP/reviewed-settings" \
+            --manifest "$RUNNER_TEMP/reviewed-settings-manifest.json"
+
+      - name: Verify all 102 public objects without write credentials
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          import { parseScreenshotManifest } from './.bootstrap-policy/scripts/lib/screenshot-manifest.mts'
+          import { publicScreenshot } from './.bootstrap-policy/scripts/lib/screenshot-hydration.mts'
+          const manifest = parseScreenshotManifest(readFileSync(join(process.env.RUNNER_TEMP, 'reviewed-settings-manifest.json'), 'utf8'))
+          for (const [name, entry] of Object.entries(manifest.screenshots)) {
+            await publicScreenshot(entry)
+            console.log(`${name}: public bytes and SHA-256 verified`)
+          }
+          NODE
