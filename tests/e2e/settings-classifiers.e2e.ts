@@ -11,7 +11,11 @@ import { copseUserDataDir } from '@copse/store-kit/copse-paths.ts'
 import { createServer, type Server } from 'node:http'
 import type { listClassifierProfiles } from '../../src/main/services/classifiers/classifier-service.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  pinTextForCapture,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
@@ -228,7 +232,29 @@ describe('classifier connections settings', () => {
     await assertKitButtonChrome('#settings-classifiers-host .classifier-save', 'primary')
     await assertKitButtonChrome('#settings-classifiers-host .classifier-test', 'secondary')
     await assertKitButtonChrome('#settings-classifiers-host .classifier-remove', 'danger')
-    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers.png')
+    const successStatusSelector = '#settings-classifiers-host .classifier-status'
+    const actualSuccessStatus = await $(successStatusSelector).getText()
+    assert.match(
+      actualSuccessStatus,
+      /^Test succeeded · color: red · \d+ ms · kev-fixture-1$/,
+      'the real explicit inference must report its measured latency and fixture result',
+    )
+    // Request timing varies by host; pin only its displayed duration after proving
+    // the real result, authorization and request count, then restore the measurement.
+    const restoreDuration = await pinTextForCapture(
+      successStatusSelector,
+      /(?<=^Test succeeded · color: red · )\d+ ms(?= · kev-fixture-1$)/,
+      '18 ms',
+    )
+    try {
+      await expect($(successStatusSelector)).toHaveText(
+        'Test succeeded · color: red · 18 ms · kev-fixture-1',
+      )
+      await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers.png')
+    } finally {
+      await restoreDuration()
+    }
+    await expect($(successStatusSelector)).toHaveText(actualSuccessStatus)
     await host.$('[name="classifierUrl"]').setValue('https://example.com/v1')
     await expect(host.$('.classifier-destination-note')).toBeDisplayed()
     await expect(host.$('.classifier-destination-note')).toHaveText(
