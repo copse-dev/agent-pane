@@ -111,6 +111,10 @@ if (process.env.COPSE_E2E_SECRET_STORAGE === 'unavailable') {
   }
 }
 
+if (process.env.COPSE_E2E_SETTINGS_SNAPSHOT_FAILURE === '1') {
+  require('./settings-snapshot-failure-fixture.cjs').install()
+}
+
 // Notifications, the Dock badge and window hiding are OS chrome; see the fixture.
 if (process.env.COPSE_E2E_NATIVE_ALERTS) {
   require('./native-alerts-fixture.cjs').install(process.env.COPSE_E2E_NATIVE_ALERTS)
@@ -121,6 +125,10 @@ if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_GIT_COMMITTED_BARRIER
   require('./git-committed-barrier-fixture.cjs').install(
     process.env.COPSE_E2E_GIT_COMMITTED_BARRIER,
   )
+}
+
+if (process.env.COPSE_E2E_ACP_REGISTRY_FIXTURE) {
+  require('./acp-registry-fixture.cjs').install(process.env.COPSE_E2E_ACP_REGISTRY_FIXTURE)
 }
 
 require('../../../dist/main/index.js')

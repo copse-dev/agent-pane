@@ -97,7 +97,7 @@ export function remoteAcpAuthRequiredHint(
   if (!target) return null
   return new Error(
     `The "${agentId}" agent on ${target.hostId} has no model-provider credentials. ` +
-      `Either log the agent's CLI in once on that host (e.g. \`claude /login\` over SSH), ` +
+      `Either log the agent's CLI in once on that host (e.g. \`claude auth login\` over SSH), ` +
       `or add its API key (e.g. ANTHROPIC_API_KEY) to the agent's environment in ` +
       `Settings → General → Providers — Copse will offer to forward it securely to the host. ` +
       `If you previously declined forwarding, restart Copse to be asked again.`,

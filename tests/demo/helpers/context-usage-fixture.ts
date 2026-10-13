@@ -48,16 +48,21 @@ const usage = buildFooterUsageTooltip(
 )
 const wheel = createContextWheel()
 wheel.update(
-  {
-    contextWindow: 200_000,
-    conversationBudget: 100_000,
-    conversationTokens: 50_000,
-    fillRatio: 0.5,
-    updatedAt: 1,
-  },
+  mode === 'usage-only'
+    ? null
+    : {
+        contextWindow: 200_000,
+        conversationBudget: 100_000,
+        conversationTokens: 50_000,
+        fillRatio: 0.5,
+        updatedAt: 1,
+      },
   false,
   {
-    breakdown: composeContextBreakdown({ system: 1800, history: 5000 }, 200_000),
+    breakdown:
+      mode === 'usage-only'
+        ? null
+        : composeContextBreakdown({ system: 1800, history: 5000 }, 200_000),
     breakdownRing: false,
     usage,
   },

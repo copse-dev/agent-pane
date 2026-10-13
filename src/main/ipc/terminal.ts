@@ -5,6 +5,7 @@ import { ensureTerminalPermitted } from '../services/security/permission-gate.ts
 import { resolveThreadTerminalExecutionContext } from '../services/thread-execution-context.ts'
 import { getProjectRoot } from '../services/workspace.ts'
 import { z } from 'zod'
+import { homedir } from 'node:os'
 import {
   assertMainFrameSender,
   parseIpcArgs,
@@ -31,6 +32,7 @@ const terminalCreateSchema = z.tuple([
     label: z.string().max(200).optional(),
     projectId: zProjectId,
     threadId: zThreadId.nullable(),
+    executionTarget: z.literal('local').optional(),
   }),
 ])
 
@@ -46,18 +48,26 @@ function normalizeMeta(meta: {
   label?: string | undefined
   projectId?: string | undefined
   threadId?: string | null | undefined
+  executionTarget?: 'local' | undefined
 }): TerminalSessionMeta {
   const out: TerminalSessionMeta = {}
   if (meta.label !== undefined) out.label = meta.label
   if (meta.projectId !== undefined) out.projectId = meta.projectId
   if (meta.threadId !== undefined) out.threadId = meta.threadId
+  if (meta.executionTarget !== undefined) out.executionTarget = meta.executionTarget
   return out
 }
 
 async function resolveTerminalRoot(meta: {
   projectId: string
   threadId: string | null
+  executionTarget?: 'local' | undefined
 }): Promise<{ root: string; checkoutMode: 'shared' | 'worktree' }> {
+  if (meta.executionTarget === 'local') {
+    if (!getProjectRoot(meta.projectId))
+      throw new Error(`Cannot resolve project "${meta.projectId}"`)
+    return { root: homedir(), checkoutMode: 'shared' }
+  }
   if (meta.threadId) {
     const context = await resolveThreadTerminalExecutionContext(meta.projectId, meta.threadId)
     return { root: context.root, checkoutMode: context.checkoutMode }
@@ -93,7 +103,9 @@ export function initTerminal(win: BrowserWindow): () => void {
     // a pop-out showed the approval and the main window silently held the
     // passphrase prompt until it timed out (#2507).
     return runWithRendererPromptTarget(event.sender, async () => {
-      const permitted = await ensureTerminalPermitted()
+      const permitted = await ensureTerminalPermitted(
+        meta.executionTarget === 'local' ? { remoteTarget: false } : {},
+      )
       if (!permitted) throw new Error('Terminal access was not approved')
       const create = async (): Promise<{
         sessionId: string

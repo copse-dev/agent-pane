@@ -1137,6 +1137,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     acp: {
+      browseRegistry: () => resolved({ entries: [], fetchedAt: Date.now(), skipped: 0 }),
       detectAgents: emptyArray,
       probeAgent: unsupported,
       autoSetup: () =>
@@ -1272,6 +1273,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           ledgerEventCount: 0,
         })
       },
+      getThreadClassifierUse: () => resolved({ calls: 0, rows: [] }),
       getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME }),
       getPlanWorthIt: () =>
         resolved({

@@ -21,7 +21,7 @@ import type {
 import type { PluginSummary, PluginsListResult } from '@shared/types/plugins.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
-import { mountSettingsDialog } from './settings-dialog.ts'
+import { mountSettingsDialog, openSettingsDialog } from './settings-dialog.ts'
 
 function registryPlugin(id: string, enabled: boolean): PluginSummary {
   return {
@@ -65,6 +65,7 @@ function stubApi(
   overrides: Readonly<Record<string, (...args: never[]) => unknown>> = {},
 ): ApiClient {
   return createPendingApi({
+    'settings.getSnapshot': () => Promise.resolve({}),
     'instructions.list': () => Promise.resolve([]),
     'cursorRules.list': () => Promise.resolve([]),
     'skills.sources': () =>
@@ -86,6 +87,7 @@ async function openCustomise(
 ): Promise<HTMLElement> {
   document.body.innerHTML = ''
   mountSettingsDialog(createStore(), api)
+  openSettingsDialog('customise')
   const btn = document.querySelector<HTMLButtonElement>(
     '.settings-nav-btn[data-section="customise"]',
   )

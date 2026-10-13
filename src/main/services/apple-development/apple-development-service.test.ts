@@ -739,7 +739,7 @@ describe('AppleDevelopmentService build output', () => {
     })
   }
 
-  it("keeps a finished operation's output in a file, not in config.json", async () => {
+  it("keeps a finished operation's output in a file, not in config.json", async (t) => {
     const output = 'Compiling DemoApp\nBuild succeeded'
     const service = newService(output, () => 'operation-1')
     const configured = await configure(service)
@@ -749,9 +749,18 @@ describe('AppleDevelopmentService build output', () => {
       expectedRevision: configured.revision,
       requestId: 'build-1',
     })
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await t.waitFor(
+      async () => {
+        const { operation } = await service.operation(invocation, queued.id)
+        assert.equal(
+          operation.status,
+          'succeeded',
+          operation.outcome?.reason ?? 'Apple operation has not finished successfully',
+        )
+      },
+      { timeout: 5000 },
+    )
 
-    assert.equal((await service.operation(invocation, queued.id)).operation.status, 'succeeded')
     assert.equal(await storageReadFile(logFile(queued.id)), output)
     assert.equal((await service.operation(invocation, queued.id)).text, output)
     assert.equal(
