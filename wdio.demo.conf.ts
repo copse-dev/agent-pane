@@ -259,6 +259,8 @@ function stopDemoServer(): Promise<void> {
 }
 
 export const config: Options.Testrunner = {
+  // Preserve v9's first-match `$` behavior for the existing fixture selectors.
+  strictSelectors: false,
   runner: 'local',
   // The check fleet runs several PR build jobs concurrently. WebdriverIO's
   // default shared /tmp cache lets one interrupted download leave another job

@@ -157,7 +157,7 @@ command list.
   like `tee`, `cp` and `mv` into it (a truncating redirect used to be a hard deny, which made
   `cat > /etc/x` stricter than `tee /etc/x` for the same effect);
   destruction of backups and recovery state (`vssadmin delete shadows`, `tmutil
-delete`, `journalctl --vacuum-*`, `bcdedit … recoveryenabled No`); disabling host
+  delete`, `journalctl --vacuum-*`, `bcdedit … recoveryenabled No`); disabling host
   security controls (`csrutil disable`, `setenforce 0`, `Set-MpPreference -Disable*`);
   account and registry-hive removal; signals that take out the whole session
   (`kill -9 -1`, `pkill -u`); host shutdown and fork bombs; and attempts to rewrite
@@ -179,7 +179,7 @@ delete`, `journalctl --vacuum-*`, `bcdedit … recoveryenabled No`); disabling h
   `redis-cli FLUSHALL` — and exfiltration of local secrets over the network, which
   this mode deliberately permits (credential scrubbing covers the child environment,
   not files on disk). Also unmodelled: system package removal (`apt-get remove
---purge libc6`), which can brick a host but whose safe forms are too common to
+  --purge libc6`), which can brick a host but whose safe forms are too common to
   prompt on.
 
 - Lexing, wrapper unwrapping, and the interpreter/script/inline-flag tables are shared

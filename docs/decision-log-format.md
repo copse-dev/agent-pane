@@ -62,7 +62,7 @@ Optional argv / Guarded-YOLO extras live next to tool results:
 
 - **User approvals/denials** — every `requestApproval`
   ([`approval.ts`](../src/main/services/approval.ts)) is recorded as an `actor:
-"user"` event, so all shell / MCP / web / browser / GitHub-write / custom-tool
+  "user"` event, so all shell / MCP / web / browser / GitHub-write / custom-tool
   / port-binding / PII / model-compare prompts are captured in one place, along
   with the `remember` grant.
 - **Guarded YOLO** — shell authorizations write the same `decision` line (cause

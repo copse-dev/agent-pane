@@ -11,9 +11,12 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function expectPickerContainment(): Promise<void> {
   // Filtering resizes the popup; let CSS anchor fallbacks settle before measuring it.
-  await browser.executeAsync((done) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => done()))
-  })
+  await browser.execute(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      }),
+  )
   const geometry = await browser.execute(() => {
     const menu = document.querySelector<HTMLElement>('.branch-picker-menu')
     const filter = menu?.querySelector<HTMLElement>('.branch-picker-filter')

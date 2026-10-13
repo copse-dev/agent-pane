@@ -76,7 +76,7 @@ missing.
 **What has been ruled out.** The plumbing above ASRT is correct:
 
 - the `fs:*` IPC handlers resolve `root` through `resolveThreadExecutionContext(projectId,
-threadId)`, i.e. the thread's worktree root, not the project root;
+  threadId)`, i.e. the thread's worktree root, not the project root;
 - `getOrSpawn(root)` retires and respawns the worker when the root changes
   (`sandbox-fs-server.ts`), so no stale worker serves the wrong root;
 - `fsWorkerSandboxOverlay` builds on `workspaceSandboxOverlay`, which has explicit
