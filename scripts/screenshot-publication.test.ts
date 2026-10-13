@@ -753,6 +753,7 @@ function applyCandidates(env: { FOCUS_SCREENSHOTS: string; FOCUS_SPECS: string }
     const checkout = join(root, 'checkout')
     const candidates = join(root, 'candidates')
     const runnerTemp = join(root, 'runner')
+    writeFile(checkout, 'package.json', JSON.stringify({ type: 'commonjs' }))
     mkdirSync(runnerTemp)
     writeFile(checkout, 'tests/e2e/screenshots/existing.png', PNG)
     writeFile(
@@ -769,6 +770,7 @@ function applyCandidates(env: { FOCUS_SCREENSHOTS: string; FOCUS_SPECS: string }
       'scripts/lib/screenshot-review-manifest.mts',
       'scripts/lib/safe-json.mts',
       'scripts/lib/direct-execution.mts',
+      'packages/std/package.json',
       'packages/std/src/unknown-value.ts',
       'packages/std/src/nullish.ts',
     ]) {
