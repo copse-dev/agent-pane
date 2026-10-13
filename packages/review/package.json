@@ -18,7 +18,7 @@
     "@copse/agent": "workspace:*",
     "@copse/llm": "workspace:*",
     "@copse/std": "workspace:*",
-    "js-yaml": "5.4.2",
+    "js-yaml": "5.4.3",
     "zod": "^4.5.4"
   }
 }

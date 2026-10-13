@@ -118,13 +118,16 @@ describe('Mermaid same-environment rendering parity', () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'mermaid-parity')
     await browser.reloadSession()
-    const loaded = await browser.executeAsync((done) => {
-      const script = document.createElement('script')
-      script.src = new URL('./mermaid-parity.js', location.href).href
-      script.onload = () => done(true)
-      script.onerror = () => done(false)
-      document.head.append(script)
-    })
+    const loaded = await browser.execute(
+      () =>
+        new Promise<boolean>((resolve) => {
+          const script = document.createElement('script')
+          script.src = new URL('./mermaid-parity.js', location.href).href
+          script.onload = () => resolve(true)
+          script.onerror = () => resolve(false)
+          document.head.append(script)
+        }),
+    )
     expect(loaded).toBe(true)
   })
   after(async () => {
@@ -134,15 +137,14 @@ describe('Mermaid same-environment rendering parity', () => {
   })
   for (const [name, source] of cases) {
     it(`compares ${name}`, async () => {
-      await browser.executeAsync(
-        (source, name, done) => {
+      await browser.execute(
+        (source, name) =>
           Reflect.get(window, 'mermaidParity')
             .pair(source, name)
             .then(
-              () => done(true),
-              (e: unknown) => done(String(e)),
-            )
-        },
+              () => true,
+              (e: unknown) => String(e),
+            ),
         source,
         name,
       )
@@ -174,9 +176,7 @@ describe('Mermaid same-environment rendering parity', () => {
     })
   }
   it('streams to a final frame and repeatedly expands and closes it', async () => {
-    const result = await browser.executeAsync((done) =>
-      Reflect.get(window, 'mermaidParity').stream().then(done),
-    )
+    const result = await browser.execute(() => Reflect.get(window, 'mermaidParity').stream())
     expect(result.prematureFrames).toBe(0)
     expect(result.frames).toBe(1)
     expect(result.text).toContain('After diagram.')
@@ -200,9 +200,7 @@ describe('Mermaid same-environment rendering parity', () => {
     report.expansionMs = timings
   })
   it('renders a conversation with ten diagrams', async () => {
-    const result = await browser.executeAsync((done) =>
-      Reflect.get(window, 'mermaidParity').many(10).then(done),
-    )
+    const result = await browser.execute(() => Reflect.get(window, 'mermaidParity').many(10))
     report.many = result
     expect(result.frames).toBe(10)
     expect(result.fallbacks).toBe(0)

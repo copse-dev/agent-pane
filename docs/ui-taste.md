@@ -329,7 +329,7 @@ rendered colour, case, and corner.
 Approval is a workbench decision surface, not a debug dump:
 
 - Titles are **questions in plain language** (`Mark pull request ready for review?`, `Run package
-install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action: …` prefixes.
+  install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action: …` prefixes.
 - Bodies lead with the **thing at stake** (PR target, command, origin). Pretty-printed JSON args
   are a last-resort fallback when the gate cannot summarize, not the default.
 - Buttons use `.ui-btn*` via `uiActions` (Approve = primary, Reject = secondary). Do not paint
@@ -1520,6 +1520,19 @@ than the card. Differences from the overlay are listed under each point below.
 
 - **Grouped by claim on attention, not recency.** Needs you → Working → Recently finished.
   An empty Needs you still says so ("Nothing needs you right now.") above the other groups.
+- **Recently finished includes what ended before launch.** A settled thread is listed when
+  this session watched it end, it finished unread while another thread was open, or its
+  persisted completion (`lastSettledAt`) is within the last 7 days (`RECENT_WINDOW_MS`; a time more than a day ahead of the clock is
+  treated as bad data, not recent), read or
+  not; the cap of ten still applies. A thread that never ran (a draft, the empty active
+  thread) never lists; "ran" is read from metadata alone (`lastPromptAt`, else recorded token
+  usage, a working brief or an auto-title pass), so threads written before `lastPromptAt`
+  existed list without being opened. A stored `error` status survives restarts, so it shows as Failed only
+  when seen this session or inside that same window — an older one is simply left out, never
+  shown as a fresh failure. Otherwise a user whose threads are all complete would see an empty
+  Activity home.
+  Legacy threads use their last write as an initial proxy, captured before metadata edits;
+  subsequent turn completions replace it. Model or branch edits do not restart the completion age.
 - **A schedule's settled runs fold.** In Recently finished, two or more settled runs of one
   automation schedule become one row (clock glyph, the schedule name, "Done" or "Failed" and
   the run count) that opens out into the runs; clean finishes and failures fold apart, so a

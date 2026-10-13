@@ -47,6 +47,8 @@
  */
 import { isDirectExecution } from './lib/direct-execution.mts'
 import { execFileSync } from 'node:child_process'
+import { manifestChangedPaths } from './lib/screenshot-git.mts'
+import { SCREENSHOT_MANIFEST } from './lib/screenshot-manifest.mts'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { safeJsonParse } from './lib/safe-json.mts'
@@ -270,6 +272,8 @@ export function changedFiles(base: string): string[] | null {
   }
   // Deleted paths still affect their old consumers. They must not disappear
   // from the change set merely because the current tree cannot read them.
+  if (set.has(SCREENSHOT_MANIFEST))
+    for (const path of manifestChangedPaths(mergeBase, undefined, ROOT)) set.add(path)
   return [...set]
 }
 

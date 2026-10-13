@@ -1,3 +1,4 @@
+import * as manifestReview from './lib/screenshot-review-manifest.mts'
 import { createHash } from 'node:crypto'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -29,8 +30,45 @@ const steps = workflow.jobs.select.steps
 async function execute(name: string, bindings: Record<string, unknown>): Promise<void> {
   const script = z.string().parse(steps.find((step) => step.name === name)?.with?.['script'])
   assert.doesNotMatch(script, /\$\{\{/)
-  const execution: unknown = runInNewContext(`(async () => {\n${script}\n})()`, bindings)
+  const execution: unknown = runInNewContext(`(async () => {\n${script}\n})()`, {
+    ...bindings,
+    require: (name: string) =>
+      name.endsWith('screenshot-review-manifest.mts') ? manifestReview : { createHash },
+  })
   await execution
+}
+
+const shotHash = (key: string): string => createHash('sha256').update(key).digest('hex')
+function manifestBlob(file_sha: string): {
+  data: { content: string; encoding: string; size: number }
+} {
+  const entries: [string, string][] =
+    file_sha === 'manifest-before'
+      ? [
+          ['a.png', 'a1'],
+          ['b.png', 'b1'],
+        ]
+      : [
+          ['a.png', 'a2'],
+          ['b.png', 'b1'],
+          ['c.png', 'c1'],
+        ]
+  const text = JSON.stringify({
+    version: 1,
+    screenshots: Object.fromEntries(
+      entries.map(([name, key]): [string, { sha256: string; bytes: number }] => [
+        name,
+        { sha256: shotHash(key), bytes: 1 },
+      ]),
+    ),
+  })
+  return {
+    data: {
+      content: Buffer.from(text).toString('base64'),
+      encoding: 'base64',
+      size: Buffer.byteLength(text),
+    },
+  }
 }
 
 const HEAD = 'abc123abc123abc123abc123abc123abc123abc1'
@@ -51,11 +89,11 @@ const layout = new Map<string, Entry[]>([
   ['head-root', [tree('tests', 'head-tests')]],
   ['head-tests', [tree('e2e', 'head-e2e')]],
   ['head-e2e', [tree('screenshots', 'head-shots')]],
-  ['head-shots', [blob('a.png', 'a1'), blob('b.png', 'b1')]],
+  ['head-shots', [blob('manifest.json', 'manifest-before')]],
   ['compare-root', [tree('tests', 'compare-tests')]],
   ['compare-tests', [tree('e2e', 'compare-e2e')]],
   ['compare-e2e', [tree('screenshots', 'compare-shots')]],
-  ['compare-shots', [blob('a.png', 'a2'), blob('b.png', 'b1'), blob('c.png', 'c1')]],
+  ['compare-shots', [blob('manifest.json', 'manifest-after')]],
 ])
 
 function commentBody(
@@ -143,6 +181,7 @@ async function validate(scenario: Scenario = {}): Promise<Map<string, string>> {
                     parents: (scenario.parents ?? [HEAD]).map((sha) => ({ sha })),
                   },
                 },
+          getBlob: async ({ file_sha }: { file_sha: string }) => manifestBlob(file_sha),
           getTree: async ({ tree_sha }: { tree_sha: string }) => {
             const entries = layout.get(tree_sha)
             assert.ok(entries, tree_sha)
@@ -190,8 +229,8 @@ describe('screenshot review selection', () => {
     const outputs = await validate({ body: commentBody({ ticked: ['a.png', 'c.png'] }) })
     assert.equal(outputs.get('outcome'), 'accept')
     assert.deepEqual(JSON.parse(outputs.get('selected') ?? ''), [
-      { name: 'a.png', sha: 'a2' },
-      { name: 'c.png', sha: 'c1' },
+      { name: 'a.png', sha256: shotHash('a2'), bytes: 1 },
+      { name: 'c.png', sha256: shotHash('c1'), bytes: 1 },
     ])
     assert.equal(outputs.get('candidates'), '2')
     assert.equal(outputs.get('head-tree'), 'head-root')
@@ -212,14 +251,14 @@ describe('screenshot review selection', () => {
       [{ compareRef: null }, /no compare commit/],
       [{ parents: ['0'.repeat(40)] }, /not a single commit/],
       // b.png is identical in both trees, so it is not a candidate.
-      [{ body: commentBody({ ticked: ['b.png'] }) }, /not a changed candidate/],
+      [{ body: commentBody({ ticked: ['b.png'] }) }, /not a changed screenshot candidate/],
       [
         {
           body: commentBody({ ticked: [] })
             .replace('`c.png`', '`nope.png`')
             .replace('[ ] `nope', '[x] `nope'),
         },
-        /not a changed candidate/,
+        /not a changed screenshot candidate/,
       ],
     ]
     for (const [scenario, pattern] of cases) {
@@ -233,7 +272,9 @@ describe('screenshot review selection', () => {
   it('ignores ticks outside the review block and non-PNG names', async () => {
     const body = `- [x] \`c.png\`\n${commentBody({ ticked: ['a.png'] }).replace('`b.png`', '`../x.txt`')}`
     const outputs = await validate({ body })
-    assert.deepEqual(JSON.parse(outputs.get('selected') ?? ''), [{ name: 'a.png', sha: 'a2' }])
+    assert.deepEqual(JSON.parse(outputs.get('selected') ?? ''), [
+      { name: 'a.png', sha256: shotHash('a2'), bytes: 1 },
+    ])
   })
 })
 
@@ -259,7 +300,7 @@ async function recordSelection(
         OUTCOME: 'accept',
         PUSHED: 'true',
         COMMIT: COMPARE,
-        SELECTED: JSON.stringify([{ name: 'a.png', sha: 'a2' }]),
+        SELECTED: JSON.stringify([{ name: 'a.png', sha256: shotHash('a2'), bytes: 1 }]),
         CANDIDATES: '2',
         ...env,
       },

@@ -413,7 +413,11 @@ export function saveProjectGroups(api: ApiClient, groups: ProjectGroup[]): Promi
 }
 
 export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
-  const threads = sortThreadsNewestFirst(await api.threads.loadProject(projectId))
+  const threads = sortThreadsNewestFirst(await api.threads.loadProject(projectId)).map((thread) =>
+    thread.status !== 'running' && thread.lastSettledAt === undefined
+      ? { ...thread, lastSettledAt: thread.updatedAt }
+      : thread,
+  )
   // Seed the persisted-metadata baseline so the autosave doesn't re-create these
   // (they're already on disk) but still detects later deletions and removed keys.
   const metas = new Map<string, ThreadMeta>()

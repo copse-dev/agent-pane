@@ -26,7 +26,7 @@ shared with the chat linker:
   basename). Only resolved paths become links, so arbitrary words never light
   up. Results are cached and kept warm from terminal output.
 - **Activate** — cmd/ctrl-click calls `openWorkspaceFile(store, api, path,
-reveal)`. Paths are resolved **relative to the workspace root** (the shell's
+  reveal)`. Paths are resolved **relative to the workspace root** (the shell's
   starting cwd).
 
 ## 1. Line/column navigation (shipped)

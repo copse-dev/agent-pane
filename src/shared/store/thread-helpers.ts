@@ -987,6 +987,7 @@ export function setMessageTurnOutcome(
     messages: thread.messages.map((message) =>
       message.id === messageId ? { ...message, turnOutcome } : message,
     ),
+    lastSettledAt: turnOutcome.endedAt,
     updatedAt: Date.now(),
   }))
   store.emit('threads_changed')
@@ -1110,7 +1111,11 @@ export function setThreadStatus(
   threadId: string,
   status: 'idle' | 'running' | 'error',
 ): void {
-  patchThreadAnywhere(store, threadId, (t) => ({ ...t, status }))
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    status,
+    ...(t.status === 'running' && status !== 'running' ? { lastSettledAt: Date.now() } : {}),
+  }))
   store.emit('thread_status_changed', threadId, status)
 }
 
@@ -1143,7 +1148,12 @@ export function setThreadWorkingBrief(
 }
 
 export function setThreadGitBranch(store: AppStore, threadId: string, branch: string): void {
-  patchThreadAnywhere(store, threadId, (t) => ({ ...t, gitBranch: branch, updatedAt: Date.now() }))
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    gitBranch: branch,
+    ...(t.status !== 'running' ? { lastSettledAt: t.lastSettledAt ?? t.updatedAt } : {}),
+    updatedAt: Date.now(),
+  }))
   store.emit('threads_changed')
 }
 

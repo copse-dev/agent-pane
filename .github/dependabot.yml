@@ -34,6 +34,13 @@ updates:
         patterns:
           - '@napi-rs/keyring'
           - '@napi-rs/keyring-*'
+      # WDIO's runner, framework, reporters and browser API share a major.
+      # Keep the matcher package with them, including major updates.
+      webdriverio:
+        patterns:
+          - '@wdio/*'
+          - 'webdriverio'
+          - 'expect-webdriverio'
       npm-minor-patch:
         patterns:
           - '*'

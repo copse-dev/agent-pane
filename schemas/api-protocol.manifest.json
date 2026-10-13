@@ -381,6 +381,13 @@
           2
         ]
       },
+      "automations:cleanup-runs": {
+        "api": "automations.cleanupRuns",
+        "args": [
+          2,
+          2
+        ]
+      },
       "automations:event-history": {
         "api": "automations.eventHistory",
         "args": [
