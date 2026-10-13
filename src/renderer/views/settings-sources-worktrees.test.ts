@@ -18,7 +18,7 @@ import {
   clickActiveConfirmDialogConfirm,
   mountConfirmDialog,
 } from './confirm-dialog.ts'
-import { mountSettingsDialog } from './settings-dialog.ts'
+import { mountSettingsDialog, openSettingsDialog } from './settings-dialog.ts'
 
 const HOUR = 60 * 60 * 1000
 
@@ -140,6 +140,7 @@ async function openWorktrees(
   document.body.innerHTML = ''
   mountConfirmDialog()
   mountSettingsDialog(createStore({ activeProjectId, projects }), api)
+  openSettingsDialog('storage')
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
     '.settings-nav-btn[data-section="storage"]',
   )

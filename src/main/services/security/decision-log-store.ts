@@ -174,6 +174,27 @@ function collectThreadDecisionEvents(projectId: string): DecisionEvent[] {
   return out
 }
 
+/**
+ * Read one thread's decisions, oldest first. Callers must pass ids that already
+ * satisfy the `[\w-]` id schema: they become path segments.
+ */
+export function readThreadDecisionLog(
+  projectId: string,
+  threadId: string,
+): Promise<DecisionEvent[]> {
+  return runSerialized(queueKey(projectId), () => {
+    const raw = safeRead(join(projectStoreDir(projectId), threadId, 'events.jsonl'))
+    if (raw === null) return []
+    const out: DecisionEvent[] = []
+    for (const entry of parseSpineEntries(raw)) {
+      if (entry.line?.type !== 'decision') continue
+      const { detail: _d, turnId: _t, step: _s, ...event } = entry.line
+      out.push(event)
+    }
+    return out
+  })
+}
+
 /** Read a project's decisions from every thread spine, newest-last. */
 export function readDecisionLog(projectId: string): Promise<DecisionEvent[]> {
   return runSerialized(queueKey(projectId), () => {

@@ -73,14 +73,12 @@ export interface KnownAcpAgent {
    * that the agent actually advertises this mode, so a stale value is harmless.
    */
   sandboxedPermissionMode?: string
-  /** Shell command that authenticates the agent / mints a token (e.g. `claude setup-token`). */
+  /** Shell command that authenticates the agent (e.g. `claude auth login`). */
   setup?: string
   /**
-   * Shell command that refreshes an *existing but expired* sign-in. Distinct from
-   * {@link setup}: minting a fresh long-lived token (`claude setup-token`) is the
-   * first-run path, while an expired OAuth session is fixed by signing in again
-   * (`claude /login`). Falls back to {@link setup} when absent — see
-   * `acpReauthCommand`.
+   * Shell command that renews an existing but expired sign-in when the agent
+   * needs a different command from first-time setup. Falls back to {@link setup}
+   * when absent — see `acpReauthCommand`.
    */
   reauth?: string
   /** Where to read more about the agent. */
@@ -192,7 +190,7 @@ export const RETIRED_ACP_AGENTS: readonly RetiredAcpAgent[] = [
     },
     sandboxedPermissionMode: 'acceptEdits',
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
-    note: "Zed's adapter for Claude Code. Sign in with `claude /login` or set `ANTHROPIC_API_KEY`.",
+    note: "Zed's adapter for Claude Code. Sign in with `claude auth login` or set `ANTHROPIC_API_KEY`.",
   },
 ]
 
@@ -211,6 +209,27 @@ export function findAcpCatalogEntry(id: string): KnownAcpAgent | undefined {
 }
 
 export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
+  {
+    id: 'qwen-code',
+    title: 'Qwen Code',
+    command: 'qwen',
+    args: ['--acp'],
+    envHints: ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL'],
+    install: 'npm install -g @qwen-code/qwen-code',
+    installPackage: '@qwen-code/qwen-code',
+    autoInstall: true,
+    sandbox: {
+      // Reference traces observed only loopback calls to the local provider
+      // fixture. Keep external access closed until the user adds their endpoint.
+      allowedDomains: [],
+      homeDirs: ['.qwen'],
+    },
+    setup: 'qwen',
+    reauth: 'qwen',
+    docsUrl:
+      'https://github.com/copse-dev/agent-pane/blob/main/docs/acp-qwen-findings.md#hosted-endpoint-configuration',
+    note: 'Run `qwen`, then `/auth` to configure a provider, or set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`. Hosted providers also need the network setup described in Documentation. Qwen OAuth’s free tier has ended.',
+  },
   {
     id: 'gemini',
     title: 'Gemini CLI',
@@ -281,10 +300,13 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*', '/tmp/claude'],
     },
     sandboxedPermissionMode: 'acceptEdits',
-    setup: 'claude setup-token',
-    reauth: 'claude /login',
+    // setup-token only prints a token; it does not save the login this
+    // desktop setup needs. Use the dedicated login command and leave the
+    // account method to the login flow rather than forcing SSO or Console.
+    setup: 'claude auth login',
+    reauth: 'claude auth login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
-    note: 'Runs Claude Code through its agent SDK. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`).',
+    note: 'Runs Claude Code. Sign in with `claude auth login` (or `ANTHROPIC_API_KEY`).',
   },
   {
     id: 'cursor',
@@ -351,6 +373,31 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     reauth: 'codex login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/codex-acp',
     note: 'Runs OpenAI Codex. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`.',
+  },
+  {
+    id: 'github-copilot-cli',
+    title: 'GitHub Copilot CLI',
+    command: 'copilot',
+    args: ['--acp', '--stdio'],
+    envHints: ['COPILOT_GITHUB_TOKEN'],
+    install: 'npm install -g @github/copilot',
+    // Manual catalog entry: npm distribution alone does not qualify an agent
+    // for automatic install, registration, upgrades, or model probes.
+    sandbox: {
+      // GitHub's documented auth/API endpoints. BYOK and GHE data-residency
+      // endpoints require an explicit per-agent override; no registry grants.
+      allowedDomains: ['github.com', 'api.github.com', '*.githubcopilot.com'],
+      homeDirs: ['.copilot', '.cache/copilot', 'Library/Caches/copilot'],
+      // No extra system scratch or keychain grant; retain Copse's own TMPDIR.
+    },
+    setup: 'copilot login',
+    reauth: 'copilot login',
+    docsUrl: 'https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server',
+    note:
+      'Manual setup; the coding-agent connection is in public preview. npm installation requires Node.js 22+. ' +
+      'Sign in with `copilot login` or set `COPILOT_GITHUB_TOKEN`. GitHub-hosted models ' +
+      'use your Copilot plan and usage limits; BYOK is billed by your model provider ' +
+      'and needs a custom sandbox endpoint.',
   },
 ]
 

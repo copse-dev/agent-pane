@@ -853,7 +853,12 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
   // such as Claude Code. Re-allow only the literal parent — never `home/**` —
   // whenever an agent declares home-scoped state. Without this, the narrower
   // `.claude` allowance is insufficient and `claude auth status` fails EPERM.
-  const homeReadPaths = configuredHomePaths.length > 0 ? [home, ...configuredHomePaths] : []
+  // On Linux a parent read bind shadows writable checkouts beneath home.
+  // Keep the metadata-only parent grant on platforms that support it.
+  const homeReadPaths =
+    configuredHomePaths.length > 0
+      ? [...(listingOnlyDirEntriesSupported() ? [home] : []), ...configuredHomePaths]
+      : []
   const scratchPaths = (sandbox.scratchPaths ?? [])
     .flatMap(expandScratchPath)
     .flatMap((abs) => [abs, `${abs}/**`])
