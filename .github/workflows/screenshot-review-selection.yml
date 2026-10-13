@@ -61,6 +61,7 @@ jobs:
             scripts/lib
             scripts/screenshot-candidates.mts
             scripts/screenshot-storage.mts
+            packages/std/package.json
             packages/std/src/unknown-value.ts
             packages/std/src/nullish.ts
           sparse-checkout-cone-mode: false
