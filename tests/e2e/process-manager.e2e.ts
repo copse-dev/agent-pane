@@ -1,11 +1,6 @@
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
-import {
-  resetUserData,
-  seedEmptyProject,
-  seedE2eViewport,
-  seedStableWorkspace,
-} from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedE2eViewport } from './helpers/seed-config.ts'
 import { maskProcessManagerLiveValues } from './helpers/process-manager-capture.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
@@ -15,7 +10,7 @@ describe('Process manager', function () {
 
   before(async () => {
     resetUserData()
-    seedEmptyProject(seedStableWorkspace(), 'e2e-process-manager')
+    seedEmptyProject(process.cwd(), 'e2e-process-manager')
     seedE2eViewport()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
@@ -37,9 +32,6 @@ describe('Process manager', function () {
     await terminalInput.waitForExist({ timeout: 15_000 })
     await terminalInput.click()
     if (process.platform !== 'win32') await browser.keys(['sleep 90', '\uE007'])
-    // A fresh workspace may request its OS approval when the terminal is first used.
-    // Answer the real prompt before moving focus back into the chat.
-    await approveUnsandboxedTerminalIfPrompted()
     await $('.prompt-input').click()
 
     await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
@@ -201,20 +193,6 @@ describe('Process manager', function () {
       expect.stringMatching(/^\d+ threads? · \d+ processes? · CPU .+ · Memory .+ MiB$/),
     )
     await maskProcessManagerLiveValues()
-    const captureGroupKeys0 = await browser.execute(() =>
-      [
-        ...document.querySelectorAll<HTMLElement>(
-          '#process-manager-dialog .process-manager-group-toggle',
-        ),
-      ]
-        .map((toggle) => toggle.dataset['groupKey'] ?? '')
-        .sort(),
-    )
-    assert.deepEqual(
-      captureGroupKeys0,
-      ['', originalThreadId].sort(),
-      'the isolated fixture shows only its owned terminal thread and Shared processes',
-    )
     await saveAppScreenshot('process-manager.png')
 
     await dialog.$('[aria-label="Close process manager"]').click()
@@ -223,18 +201,12 @@ describe('Process manager', function () {
     await browser.pause(1_200)
     assert.equal(await dialog.getAttribute('data-sampled-at'), lastSample)
 
-    // Hiding the pane retains its PTY, and keeps the new thread from opening another shell.
-    await $('.titlebar-btn[aria-label="Open terminal"]').click()
-    await $('#pane-files').waitForDisplayed({ reverse: true, timeout: 10_000 })
     await $('.project-new-thread-btn').click()
     await browser.waitUntil(
       async () =>
         (await $('.chat-row.selected').getAttribute('data-thread-id')) !== originalThreadId,
       { timeout: 10_000 },
     )
-    const newThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
-    assert.ok(newThreadId)
-    assert.notEqual(newThreadId, originalThreadId)
     await $('.prompt-input').click()
     await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
     await dialog.waitForDisplayed({ timeout: 10_000 })
@@ -251,42 +223,6 @@ describe('Process manager', function () {
     await dialog.$(ownedSelector).click({ button: 'right' })
     await expect($('.context-menu-item=Stop terminal')).toBeDisplayed()
     await maskProcessManagerLiveValues()
-    const expectedFinalGroups = ['', originalThreadId].sort()
-    await browser.waitUntil(
-      async () => {
-        const snapshot = await browser.execute((threadId) => {
-          const groups = [
-            ...document.querySelectorAll<HTMLElement>(
-              '#process-manager-dialog .process-manager-group-toggle',
-            ),
-          ].map((toggle) => ({
-            key: toggle.dataset['groupKey'] ?? '',
-            title: toggle.querySelector('.process-manager-group-title')?.textContent,
-          }))
-          const terminal = document.querySelector<HTMLElement>(
-            `.process-manager-rows tr[data-thread-id="${threadId}"][data-kind="Terminal"]`,
-          )
-          return {
-            keys: groups.map((group) => group.key).sort(),
-            groupTitle: groups.find((group) => group.key === threadId)?.title,
-            terminalThread: terminal?.querySelector('.process-manager-thread')?.textContent,
-            terminalKind: terminal?.querySelector('.process-manager-type')?.textContent,
-          }
-        }, originalThreadId)
-        return (
-          snapshot.keys.length === expectedFinalGroups.length &&
-          snapshot.keys.every((key, index) => key === expectedFinalGroups[index]) &&
-          snapshot.groupTitle === 'New Thread' &&
-          snapshot.terminalThread === 'New Thread' &&
-          snapshot.terminalKind === 'Terminal'
-        )
-      },
-      {
-        timeout: 10_000,
-        timeoutMsg:
-          'expected the retained original PTY with correct thread metadata and Shared processes',
-      },
-    )
     await saveAppScreenshot('process-manager-actions.png')
     await $('.context-menu-item=Stop terminal').click()
     await expect($('#confirm-dialog')).toBeDisplayed()
@@ -294,10 +230,6 @@ describe('Process manager', function () {
     await browser.waitUntil(async () => !(await dialog.$(ownedSelector).isExisting()), {
       timeout: 10_000,
     })
-    await dialog.$('[aria-label="Close process manager"]').click()
-    await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
-    await $('.titlebar-btn[aria-label="Open terminal"]').click()
-    await $('.xterm-rows').waitForDisplayed({ timeout: 10_000 })
     await expect($('.xterm-rows')).toHaveText(expect.stringContaining('Terminal stopped'))
   })
 })

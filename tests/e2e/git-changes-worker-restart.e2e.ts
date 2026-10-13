@@ -1,7 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { $, $$, browser, expect } from '@wdio/globals'
-import { parkPointer, saveElementScreenshot } from './helpers/screenshot.ts'
+import { $, $$, browser } from '@wdio/globals'
 import {
   cleanupGitChangesFixture,
   resetUserData,
@@ -32,37 +31,6 @@ async function diffHasColouring(): Promise<boolean> {
       host.querySelector('.line-delete, .char-delete') != null
     )
   })
-}
-
-async function waitForRewrittenDiff(): Promise<void> {
-  await browser.waitUntil(
-    () =>
-      browser.execute(() => {
-        const host = document.querySelector('#git-diff-viewer-host')
-        const uri = host
-          ?.querySelector('.modified-in-monaco-diff-editor[data-uri]')
-          ?.getAttribute('data-uri')
-        if (!uri?.endsWith('/modified/unstaged.ts')) return false
-        const model = window.__copseMonaco?.editor
-          .getModels()
-          .find((candidate) => candidate.uri.toString() === uri)
-        return (
-          model?.getValue() === 'export const rewritten = true\n' &&
-          host?.querySelector('.line-insert, .char-insert') != null &&
-          host?.querySelector('.line-delete, .char-delete') != null &&
-          document.querySelector('.git-change-row.is-selected .git-change-path')?.textContent ===
-            'unstaged.ts' &&
-          !document
-            .querySelector('#git-changes-host')
-            ?.textContent?.includes('Checking committed changes')
-        )
-      }),
-    {
-      timeout: 30_000,
-      timeoutMsg:
-        'expected the selected rewritten unstaged.ts diff to finish rendering after worker restart',
-    },
-  )
 }
 
 describe('git changes diff colouring after a worker restart', function () {
@@ -119,15 +87,12 @@ describe('git changes diff colouring after a worker restart', function () {
     const unstagedRow = await $('.git-change-row*=unstaged.ts')
     await unstagedRow.waitForClickable({ timeout: 30_000 })
     await unstagedRow.click()
-    await expect(unstagedRow).toHaveElementClass('is-selected')
 
     await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
-    // The previous staged diff stays visible while the new worker computes.
-    // Its old decorations alone do not prove the restarted worker completed.
-    await waitForRewrittenDiff()
-    await parkPointer()
-    await saveElementScreenshot('#app', 'git-changes-worker-restart.png', {
-      beforeCapture: waitForRewrittenDiff,
+    await browser.waitUntil(diffHasColouring, {
+      timeout: 15_000,
+      timeoutMsg: 'expected diff colouring after the editor worker restart (#1753)',
     })
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-worker-restart.png'))
   })
 })

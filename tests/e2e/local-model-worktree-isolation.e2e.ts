@@ -1,7 +1,15 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -27,7 +35,6 @@ function git(cwd: string, args: string[]): string {
 }
 
 describe('local provider default worktree isolation', () => {
-  let cleanupWorkspace = () => {}
   let projectRoot = ''
   let allocatedWorktree = ''
   let model: ScriptedModelServer | null = null
@@ -39,9 +46,7 @@ describe('local provider default worktree isolation', () => {
 
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
-    const fixture = createFixtureDirectory('copse-local-model-worktree')
-    projectRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    projectRoot = mkdtempSync(join(tmpdir(), 'copse-local-model-worktree-'))
     git(projectRoot, ['init', '-q', '--initial-branch=main'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
@@ -89,7 +94,7 @@ describe('local provider default worktree isolation', () => {
       }
     }
     if (model) await model.stop()
-    cleanupWorkspace()
+    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
   })
 
   it('routes a real local-provider tool write into a default isolated worktree', async function () {

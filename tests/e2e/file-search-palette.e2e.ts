@@ -1,5 +1,5 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -10,13 +10,10 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 // should reveal the explorer and load the file into the viewer.
 describe('file search palette (Cmd/Ctrl+P quick open)', () => {
   let workspaceRoot: string
-  let cleanupWorkspace: (() => void) | undefined
 
   before(async () => {
     resetUserData()
-    const fixture = createFixtureDirectory('copse-file-search')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-file-search-'))
     mkdirSync(join(workspaceRoot, 'src'), { recursive: true })
     writeFileSync(join(workspaceRoot, 'README.md'), '# Fixture\n', 'utf8')
     writeFileSync(join(workspaceRoot, 'src', 'zebra-widget.ts'), 'export const zebra = 1\n', 'utf8')
@@ -28,7 +25,7 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
+    rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
   it('opens on Cmd/Ctrl+P, lists matches while typing, and opens the chosen file', async () => {

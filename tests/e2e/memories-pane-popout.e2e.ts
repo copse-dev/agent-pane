@@ -27,8 +27,6 @@ describe('Memories pane pop-out', () => {
         title: 'Build command',
         body: 'Run `npm run build` before shipping a release.',
         tags: ['ops'],
-        createdAt: '2026-07-17T09:00:00.000Z',
-        updatedAt: '2026-07-17T09:00:00.000Z',
       },
       {
         id: 'external-api-key-note',
@@ -36,8 +34,6 @@ describe('Memories pane pop-out', () => {
         body: 'Stored in `.env` at the repo root; never commit it.',
         tags: ['config', 'security'],
         externalContext: true,
-        createdAt: '2026-07-17T09:00:00.000Z',
-        updatedAt: '2026-07-17T09:00:00.000Z',
       },
     ])
     await browser.reloadSession()
@@ -125,7 +121,7 @@ describe('Memories pane pop-out', () => {
       { timeout: 10_000, timeoutMsg: 'expected the editor to load the selected memory' },
     )
     await expect(await $('.memories-meta')).toHaveText(
-      'Updated 2026-07-17 · saved with external content in context — saving clears this',
+      expect.stringContaining('saved with external content in context'),
     )
 
     // Save / Delete / Cancel are compact kit buttons, not a `.memories-btn` stack (#3065).

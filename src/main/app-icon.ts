@@ -13,7 +13,7 @@ import { getElectronAppVersion, getElectronBuildCommit } from './services/electr
 
 /** Bundled next to main (dist/assets after build/dev copy). */
 const assetsDir = join(__dirname, '../assets')
-const automationMode = __COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1'
+let automationMode = false
 
 function resolveVariantDir(variant: AppIconVariant): string {
   return join(assetsDir, 'icons', variant)
@@ -97,4 +97,9 @@ export function applyAppIcon(windows: BrowserWindow[] = []): void {
   if (windowIcon) {
     app.dock?.setIcon(windowIcon)
   }
+}
+
+export function setAutomationAppIconMode(active: boolean, windows: BrowserWindow[] = []): void {
+  automationMode = active
+  applyAppIcon(windows)
 }

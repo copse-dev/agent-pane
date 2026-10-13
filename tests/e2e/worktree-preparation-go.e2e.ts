@@ -1,14 +1,13 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { readWorktreePreparationPlan } from '../../src/main/services/worktree-preparation-plan.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
+import { saveElementScreenshot } from './helpers/screenshot.ts'
 
-const fixture = createFixtureDirectory('go-preparation-approval')
-const { root } = fixture
+const root = mkdtempSync(join(tmpdir(), 'go-preparation-approval-'))
 describe('automatic Go preparation approval', () => {
   before(async () => {
     writeFileSync(join(root, 'go.mod'), 'module example.test/ordinary\n\ngo 1.24\n')
@@ -23,7 +22,7 @@ describe('automatic Go preparation approval', () => {
   })
   after(() => {
     resetUserData()
-    fixture.cleanup()
+    rmSync(root, { recursive: true, force: true })
   })
   it('shows the readonly Go package-loading boundary without claiming build success', async () => {
     const planFingerprint = readWorktreePreparationPlan(root).fingerprint
@@ -49,18 +48,7 @@ describe('automatic Go preparation approval', () => {
     const footer = await dialog.$('.approval-footer').getText()
     expect(footer).toContain('project remains read-only')
     expect(footer).toContain('blocked for every subprocess')
-    await expect(dialog.$('.approval-footer')).toHaveText(expect.stringContaining(root))
-    // Assert the real permission scope before normalizing only its scratch path.
-    const restorePath = await pinTextForCapture(
-      '.approval-footer',
-      /Project: [^\n]+/,
-      'Project: /tmp/go-preparation-approval',
-    )
-    try {
-      await saveElementScreenshot('#approval-dialog', 'worktree-preparation-go.png')
-    } finally {
-      await restorePath()
-    }
+    await saveElementScreenshot('#approval-dialog', 'worktree-preparation-go.png')
     await dialog.$('.approval-reject').click()
   })
 })

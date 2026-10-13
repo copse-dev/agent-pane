@@ -1,4 +1,3 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import {
   expectAssistantReply,
   installMockScenario,
@@ -16,7 +15,7 @@ import {
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
-import { parkPointer, saveElementScreenshot, waitForImagesSettled } from './helpers/screenshot.ts'
+import { saveElementScreenshot, waitForImagesSettled } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -81,15 +80,12 @@ describe('git changes image preview', function () {
   this.timeout(90_000)
 
   let repoRoot = ''
-  let cleanupRepo: (() => void) | undefined
   let proposedRoot = ''
 
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const fixture = createFixtureDirectory('copse-panel-git-img')
-    cleanupRepo = fixture.cleanup
-    repoRoot = seedGitImageChangesFixture(fixture.root)
+    repoRoot = seedGitImageChangesFixture()
     // Checkout preparation needs a real default ref, independent of host Git defaults.
     execFileSync('git', ['branch', '-M', 'main'], { cwd: repoRoot, stdio: 'pipe' })
     execFileSync('git', ['config', 'init.defaultBranch', 'main'], { cwd: repoRoot, stdio: 'pipe' })
@@ -99,7 +95,7 @@ describe('git changes image preview', function () {
 
   after(() => {
     resetUserData()
-    cleanupRepo?.()
+    if (repoRoot) cleanupGitChangesFixture(repoRoot)
     if (proposedRoot) cleanupGitChangesFixture(proposedRoot)
   })
 
@@ -111,12 +107,6 @@ describe('git changes image preview', function () {
     await expect(paths).toContain('unstaged.png')
     await expect(paths).toContain('new.png')
 
-    await browser.waitUntil(
-      async () => !(await $('#git-changes-host').getText()).includes('Checking committed changes'),
-      { timeout: 30_000, timeoutMsg: 'expected the committed changes query to complete' },
-    )
-    await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
-    await waitForImagesSettled('#git-diff-viewer-host', { minImages: 2 })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-list.png'))
 
     await clickChange('staged.png')
@@ -126,7 +116,6 @@ describe('git changes image preview', function () {
       gte: 2,
     })
     await expect($('#git-diff-viewer-host .monaco-diff-editor')).not.toBeDisplayed()
-    await waitForImagesSettled('#git-diff-viewer-host', { minImages: 2 })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-staged.png'))
 
     const stagedAfter = await $(
@@ -139,7 +128,6 @@ describe('git changes image preview', function () {
     const expandedImg = await $('.image-expand-image')
     await expect(expandedImg).toExist()
     await expect(expandedImg).toHaveAttribute('src', stagedAfterSrc ?? '')
-    await waitForImagesSettled('dialog.attachment-preview-dialog[open]', { minImages: 1 })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expand.png'))
     await $('.attachment-preview-close').click()
     await browser.waitUntil(
@@ -201,7 +189,6 @@ describe('git changes image preview', function () {
     await preview.waitForDisplayed({ timeout: 5_000 })
     await expect(preview.$('.attachment-preview-title')).toHaveText('staged.png (before)')
     await expect(preview.$('.image-expand-image')).toHaveAttribute('src', beforeSrc ?? '')
-    await waitForImagesSettled('dialog.attachment-preview-dialog[open]', { minImages: 1 })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expanded.png'))
 
     await browser.keys('Escape')
@@ -250,8 +237,6 @@ describe('git changes image preview', function () {
     await expect($('#git-diff-viewer-host .git-image-diff-label')).toHaveText(
       expect.stringMatching(/^after$/i),
     )
-    await waitForImagesSettled('#git-diff-viewer-host', { minImages: 1 })
-    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-untracked.png'))
   })
 

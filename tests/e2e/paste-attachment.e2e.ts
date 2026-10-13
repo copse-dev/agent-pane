@@ -1,5 +1,5 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
@@ -50,14 +50,11 @@ async function chipCorner(selector: string): Promise<string | null> {
 }
 
 describe('Pasting text into the composer', () => {
-  let cleanupWorkspace = () => {}
   let workspaceRoot = ''
 
   before(async function () {
     this.timeout(120_000)
-    const fixture = createFixtureDirectory('copse-paste-attachment')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-paste-attachment-'))
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
@@ -69,7 +66,7 @@ describe('Pasting text into the composer', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace()
+    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
   it('keeps a short multi-line paste inline instead of folding it into a chip', async () => {

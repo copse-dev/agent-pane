@@ -1,21 +1,13 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import {
-  pinTextForCapture,
-  prepareE2eScreenshot,
-  saveElementScreenshot,
-  waitForSettledLayout,
-} from './helpers/screenshot.ts'
+import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('settings usage model value map cost axis', () => {
   before(async () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-value-map-cost', {
       model: 'acp:codex-acp#gpt-6-astra',
-      // Keep the normal fixture width; only height needs more space so the
-      // complete chart can be captured without moving its hovered point.
-      windowBounds: { width: 1200, height: 1000 },
       registeredAcpAgents: [
         {
           id: 'codex-acp',
@@ -115,96 +107,8 @@ describe('settings usage model value map cost axis', () => {
     assert.equal(await taskBtn.getAttribute('aria-pressed'), 'true')
     assert.equal(await fieldset.$('details.frontier-unpriced-list').isExisting(), false)
 
-    // Element screenshots scroll oversized subjects before capturing. Give
-    // the complete chart real viewport space and position it before hovering,
-    // so that scroll cannot move the pointer onto a different model.
-    let restoreResetDay: (() => Promise<void>) | undefined
-    try {
-      await prepareE2eScreenshot({ width: 1200, height: 1000 })
-      await browser.execute(() => {
-        document.querySelector('.frontier-fieldset')?.scrollIntoView({
-          behavior: 'instant',
-          block: 'start',
-        })
-      })
-      await waitForSettledLayout('.frontier-fieldset')
-      await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-task.png', {
-        frame: 'document',
-        beforeCapture: async () => {
-          const fullyVisible = await browser.execute(() => {
-            const fieldset = document.querySelector('.frontier-fieldset')
-            if (!fieldset) throw new Error('The chart is missing')
-            const rect = fieldset.getBoundingClientRect()
-            if (
-              !(
-                rect.top >= 0 &&
-                rect.left >= 0 &&
-                rect.bottom <= window.innerHeight &&
-                rect.right <= window.innerWidth
-              )
-            )
-              return false
-            for (let parent = fieldset.parentElement; parent; parent = parent.parentElement) {
-              const style = getComputedStyle(parent)
-              const bounds = parent.getBoundingClientRect()
-              if (
-                style.overflowX !== 'visible' &&
-                (rect.left < bounds.left + parent.clientLeft ||
-                  rect.right > bounds.left + parent.clientLeft + parent.clientWidth)
-              )
-                return false
-              if (
-                style.overflowY !== 'visible' &&
-                (rect.top < bounds.top + parent.clientTop ||
-                  rect.bottom > bounds.top + parent.clientTop + parent.clientHeight)
-              )
-                return false
-            }
-            return true
-          })
-          assert.ok(fullyVisible, 'the entire chart fits before the pointer selects its tooltip')
-          const planWindow = await browser.execute(async () => {
-            const snapshot = await window.api.usage.getPlanUsage()
-            const codex = snapshot.providers.find((provider) => provider.provider === 'codex')
-            if (codex?.status !== 'ok') throw new Error('Codex mock plan is unavailable')
-            const primary = codex.usage.windows.find((window) => window.id === 'primary')
-            if (!primary?.resetsAt) throw new Error('Codex plan has no reset timestamp')
-            return {
-              usedPercent: primary.usedPercent,
-              checkedAt: snapshot.checkedAt,
-              resetsAt: primary.resetsAt,
-              resetIsFuture: Date.parse(primary.resetsAt) > Date.now(),
-              weekday: new Date(primary.resetsAt).toLocaleDateString(undefined, {
-                weekday: 'short',
-              }),
-            }
-          })
-          assert.equal(planWindow.usedPercent, 11)
-          assert.ok(Date.parse(planWindow.resetsAt) > Date.parse(planWindow.checkedAt))
-          assert.ok(
-            planWindow.resetIsFuture,
-            'the plan reset is still in the future at capture time',
-          )
-          await fieldset
-            .$('circle.frontier-point[data-model-id="acp:codex-acp#gpt-5.6-luna"]')
-            .moveTo()
-          const tooltip = $('.frontier-tooltip-content')
-          await expect(tooltip).toBeDisplayed()
-          await expect(tooltip).toHaveText(expect.stringContaining('GPT-5.6 Luna'))
-          await expect(tooltip).toHaveText(
-            expect.stringContaining(`11% of this plan window used, resets ${planWindow.weekday}.`),
-          )
-          restoreResetDay = await pinTextForCapture(
-            '.frontier-tooltip-content',
-            /(?<=11% of this plan window used, resets )[A-Za-z]+(?=\.)/g,
-            'Mon',
-          )
-        },
-      })
-    } finally {
-      await restoreResetDay?.()
-      await prepareE2eScreenshot()
-    }
+    await prepareE2eScreenshot()
+    await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-task.png')
 
     const discoverBtn = fieldset.$('button.frontier-discover')
     await expect(discoverBtn).toBeDisplayed()

@@ -1,26 +1,24 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { join } from 'node:path'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('titlebar panel icons', () => {
   let workspaceRoot: string
-  let cleanupWorkspace = () => {}
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const fixture = createFixtureDirectory('copse-panel-titlebar-icons')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-titlebar-icons-'))
     seedEmptyProject(workspaceRoot, 'e2e-titlebar-icons-project')
     await browser.reloadSession()
   })
 
   after(() => {
     resetUserData()
-    cleanupWorkspace()
+    rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
   it('shows consistent outline icons on the panel controls', async () => {
@@ -85,49 +83,6 @@ describe('titlebar panel icons', () => {
       if (!dragRegion) throw new Error('Missing titlebar drag region')
       dragRegion.style.flex = '0 0 16px'
     })
-    // Observe readiness after framing: resizing can trigger the titlebar ResizeObserver.
-    // The controls' outer box is fixed, so checking that box alone misses late
-    // font metrics and individual label/icon movement inside it.
-    await saveElementScreenshot(
-      '#titlebar .titlebar-panel-controls',
-      'titlebar-outline-icons.png',
-      {
-        beforeCapture: async () => {
-          await browser.execute(async () => {
-            const host = document.querySelector('#titlebar .titlebar-panel-controls')
-            if (!host) throw new Error('Missing titlebar panel controls')
-            host.getBoundingClientRect()
-            await document.fonts.ready
-            await new Promise<void>((resolve, reject) => {
-              let previous = ''
-              let stableFrames = 0
-              const deadline = performance.now() + 5_000
-              const sample = (): void => {
-                if (performance.now() > deadline) {
-                  reject(new Error('Titlebar labels and icons did not settle before capture'))
-                  return
-                }
-                const nodes = [host, ...host.querySelectorAll('button, span, svg')]
-                const geometry = nodes
-                  .map((node) => {
-                    const rect = node.getBoundingClientRect()
-                    return [rect.x, rect.y, rect.width, rect.height].join(',')
-                  })
-                  .join(';')
-                if (document.fonts.status === 'loaded' && geometry === previous) {
-                  stableFrames += 1
-                } else {
-                  stableFrames = 0
-                }
-                previous = geometry
-                if (stableFrames >= 3) resolve()
-                else requestAnimationFrame(sample)
-              }
-              requestAnimationFrame(sample)
-            })
-          })
-        },
-      },
-    )
+    await saveElementScreenshot('#titlebar .titlebar-panel-controls', 'titlebar-outline-icons.png')
   })
 })

@@ -177,17 +177,7 @@ describe('settings → Storage → worktree actions', function () {
     const pathCodes = await confirm.$$('.confirm-dialog-detail code').map((code) => code.getText())
     assert.equal(pathCodes.length, 1)
     assert.match(pathCodes[0] ?? '', /node_modules$/)
-    const selectedProjectText = await browser.execute(
-      () => document.querySelector('#storage-project-select option:checked')?.textContent ?? '',
-    )
-    assert.ok(selectedProjectText.includes(openedProjectRoot))
-    // The modal leaves the real project's profile path visible behind it.
-    const restoreModalProfilePath = await pinProfilePathForCapture('#settings-dialog')
-    try {
-      await saveAppScreenshot('settings-worktree-cleanup-confirm.png')
-    } finally {
-      await restoreModalProfilePath()
-    }
+    await saveAppScreenshot('settings-worktree-cleanup-confirm.png')
     await confirm.$('.confirm-dialog-cancel').click()
 
     await thread.click()

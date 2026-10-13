@@ -1,6 +1,8 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -8,7 +10,6 @@ import { resetUserData, seedMachineTurnAttributionFixture } from './helpers/seed
 
 describe('machine turn attribution', function () {
   this.timeout(90_000)
-  let cleanupWorkspace = () => {}
   let workspaceRoot: string
 
   before(async () => {
@@ -16,16 +17,14 @@ describe('machine turn attribution', function () {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
-    const fixture = createFixtureDirectory('copse-machine-attribution')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-machine-attribution-'))
     seedMachineTurnAttributionFixture(workspaceRoot)
     await browser.reloadSession()
   })
 
   after(() => {
     resetUserData()
-    cleanupWorkspace()
+    rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
   it('labels a machine prompt and makes the submit action queue during a running turn', async () => {

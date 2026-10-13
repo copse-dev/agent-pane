@@ -189,14 +189,10 @@ export async function saveAppScreenshot(
 }
 
 /** Capture an app shell that the spec has already sized and framed. */
-export async function savePreparedAppScreenshot(
-  filename: string,
-  beforeCapture?: () => Promise<void>,
-): Promise<void> {
+export async function savePreparedAppScreenshot(filename: string): Promise<void> {
   const app = await browser.$('#app')
   await app.waitForDisplayed({ timeout: 15_000 })
   await waitForSettledLayout('#app')
-  await beforeCapture?.()
   await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
 
@@ -381,7 +377,7 @@ export async function waitForSettledLayout(
 export async function saveElementScreenshot(
   selector: string,
   filename: string,
-  options: { frame?: 'app' | 'document'; beforeCapture?: () => Promise<void> } = {},
+  options: { frame?: 'app' | 'document' } = {},
 ): Promise<void> {
   await withCaptureFrame(async () => {
     // Scrolling web documents cannot reach subjects below an app-sized clip.
@@ -392,18 +388,19 @@ export async function saveElementScreenshot(
     // Resolve inside the page: a transcript update can replace `el` between
     // waitForDisplayed and execute, and WebDriver cannot revive an execute arg.
     const saved = await browser.execute(recentreClippedCapture, selector, '#app')
-    try {
-      // Settle by selector, then re-resolve: a subject that re-rendered while the
-      // page settled (a tool card whose transcript updated once more) is a fresh
-      // node by now, and the handle taken above would be stale.
-      await waitForSettledLayout(selector)
-      await options.beforeCapture?.()
-      const subject = await browser.$(selector)
-      await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
-    } finally {
-      // Capture assertions can fail too; always hand the page back as it was.
-      if (saved) await browser.execute(restoreScrollAfterCapture, selector, saved)
+    if (saved) {
+      // Let the scroll settle before capturing, as the prepare step does.
+      await browser.pause(100)
     }
+    // Settle by selector, then re-resolve: a subject that re-rendered while the
+    // page settled (a tool card whose transcript updated once more) is a fresh
+    // node by now, and the handle taken above would be stale.
+    await waitForSettledLayout(selector)
+    const subject = await browser.$(selector)
+    await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+    // Hand the page back exactly as the caller left it — the scroll was for the
+    // capture, and specs keep interacting with the page afterwards.
+    if (saved) await browser.execute(restoreScrollAfterCapture, selector, saved)
   })
 }
 
@@ -432,13 +429,10 @@ export async function pinTextForCapture(
   pattern: RegExp,
   replacement: string,
 ): Promise<() => Promise<void>> {
-  const result = await browser.execute(
+  const count = await browser.execute(
     (sel: string, source: string, flags: string, next: string) => {
-      type Pin = { id: number; observer: MutationObserver; pinned: Map<Text, string> }
-      const win = window as unknown as {
-        __copsePinnedText?: Pin[]
-        __copseCapturePinId?: number
-      }
+      type Pin = { observer: MutationObserver; pinned: Map<Text, string> }
+      const win = window as unknown as { __copsePinnedText?: Pin }
       const re = new RegExp(source, flags)
       const pinned = new Map<Text, string>()
       const apply = (): number => {
@@ -463,41 +457,37 @@ export async function pinTextForCapture(
         return matched
       }
       const first = apply()
-      const id = (win.__copseCapturePinId ?? 0) + 1
-      win.__copseCapturePinId = id
-      if (first === 0) return { count: first, id }
       const observer = new MutationObserver(() => {
         observer.disconnect()
         apply()
         observer.observe(document.body, { subtree: true, childList: true, characterData: true })
       })
       observer.observe(document.body, { subtree: true, childList: true, characterData: true })
-      win.__copsePinnedText ??= []
-      win.__copsePinnedText.push({ id, observer, pinned })
-      return { count: first, id }
+      win.__copsePinnedText?.observer.disconnect()
+      win.__copsePinnedText = { observer, pinned }
+      return first
     },
     selector,
     pattern.source,
     pattern.flags,
     replacement,
   )
-  if (result.count === 0) {
+  if (count === 0) {
     throw new Error(
       `pinTextForCapture: nothing under ${selector} matched ${String(pattern)} — the value it exists to hide is not there, so the capture would not be pinning anything`,
     )
   }
   return async () => {
-    await browser.execute((id: number) => {
-      type Pin = { id: number; observer: MutationObserver; pinned: Map<Text, string> }
-      const win = window as unknown as { __copsePinnedText?: Pin[] }
-      const pin = win.__copsePinnedText?.find((candidate) => candidate.id === id)
+    await browser.execute(() => {
+      type Pin = { observer: MutationObserver; pinned: Map<Text, string> }
+      const win = window as unknown as { __copsePinnedText?: Pin }
+      const pin = win.__copsePinnedText
       if (!pin) return
       pin.observer.disconnect()
       // A node the page has since replaced already shows the live text.
       for (const [node, text] of pin.pinned) if (node.isConnected) node.data = text
-      win.__copsePinnedText = win.__copsePinnedText?.filter((candidate) => candidate.id !== id)
-      if (win.__copsePinnedText?.length === 0) delete win.__copsePinnedText
-    }, result.id)
+      delete win.__copsePinnedText
+    })
   }
 }
 

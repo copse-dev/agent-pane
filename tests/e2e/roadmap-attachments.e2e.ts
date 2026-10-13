@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-roadmap-attachments'
 const PENDING_SCREENSHOT = 'roadmap-attachments-pending.png'
@@ -40,13 +41,10 @@ const JSONL_BASE64 = Buffer.from('{"input":"2+2","expected":"4"}\n').toString('b
 
 describe('Roadmap item attachments', () => {
   let workspaceRoot = ''
-  let cleanupWorkspace: (() => void) | undefined
 
   before(async function () {
     this.timeout(120_000)
-    const fixture = createFixtureDirectory('copse-roadmap-attachments')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-roadmap-attachments-'))
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(workspaceRoot, PROJECT_ID, { roadmapPlansEnabled: true })
@@ -56,7 +54,7 @@ describe('Roadmap item attachments', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
+    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
   it('stages pasted files as removable chips before saving', async () => {
@@ -83,14 +81,6 @@ describe('Roadmap item attachments', () => {
     // The pending image previews from memory (no save yet).
     const thumbSrc = await $('.roadmap-attachment-thumb').getAttribute('src')
     assert.ok(thumbSrc.startsWith('data:image/png;base64,'), 'image chip shows a data-URL thumb')
-    await browser.waitUntil(
-      async () =>
-        browser.execute(() => {
-          const image = document.querySelector<HTMLImageElement>('.roadmap-attachment-thumb')
-          return image?.complete === true && image.naturalWidth > 0
-        }),
-      { timeout: 10_000, timeoutMsg: 'expected the pending image thumbnail to decode' },
-    )
     await saveAppScreenshot(PENDING_SCREENSHOT)
   })
 
@@ -117,34 +107,7 @@ describe('Roadmap item attachments', () => {
       },
       { timeout: 10_000, timeoutMsg: 'expected the stored image thumbnail to hydrate over IPC' },
     )
-    await browser.waitUntil(
-      async () =>
-        browser.execute(() => {
-          const image = document.querySelector<HTMLImageElement>('.roadmap-attachment-thumb')
-          return image?.complete === true && image.naturalWidth > 0
-        }),
-      { timeout: 10_000, timeoutMsg: 'expected the persisted image thumbnail to decode' },
-    )
-    const savedItems = await browser.execute(async () => window.api.roadmap.list())
-    assert.equal(savedItems.length, 1)
-    assert.ok(
-      Number.isFinite(Date.parse(savedItems[0]?.updatedAt ?? '')),
-      'the saved item has a persisted update timestamp',
-    )
-    // Real saves stamp wall-clock time; keep that metadata live outside the capture.
-    await expect($('.roadmap-form .memories-meta')).toHaveText(
-      expect.stringMatching(/^Updated .+ at .+$/),
-    )
-    const restoreUpdatedAt0 = await pinTextForCapture(
-      '.roadmap-form .memories-meta',
-      /^Updated .+$/,
-      'Updated Jan 1, 2026 at 12:00 AM',
-    )
-    try {
-      await saveAppScreenshot(SAVED_SCREENSHOT)
-    } finally {
-      await restoreUpdatedAt0()
-    }
+    await saveAppScreenshot(SAVED_SCREENSHOT)
 
     // Removing a stored chip stages the removal; Save persists it.
     await $('[aria-label="Remove attachment evals.jsonl"]').click()

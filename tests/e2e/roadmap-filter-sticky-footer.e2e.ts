@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync } from 'node:fs'
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -14,15 +15,12 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 // it, so rows keep their own scroll and stay clickable while it is open.
 describe('roadmap filter panel is a sticky footer, not an overlay', () => {
   let workspaceRoot: string
-  let cleanupWorkspace: (() => void) | undefined
   let knowledgeDir: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const fixture = createFixtureDirectory('copse-roadmap-filter-footer')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-roadmap-filter-footer-'))
     knowledgeDir = seedRoadmapNotes(
       'e2e-roadmap-filter-footer',
       Array.from({ length: 6 }, (_, i) => ({
@@ -40,7 +38,7 @@ describe('roadmap filter panel is a sticky footer, not an overlay', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
+    rmSync(workspaceRoot, { recursive: true, force: true })
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 

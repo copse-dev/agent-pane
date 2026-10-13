@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { $, $$, browser } from '@wdio/globals'
 import { assertNeutralBadge, readBadgeStyles, signalColours } from './helpers/badge-style.ts'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
@@ -9,15 +9,12 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('roadmap category grouping and filters', () => {
   let workspaceRoot: string
-  let cleanupWorkspace: (() => void) | undefined
   let knowledgeDir: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const fixture = createFixtureDirectory('copse-panel-roadmap-categories')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-categories-'))
     knowledgeDir = seedRoadmapNotes('e2e-roadmap-category-filter', [
       {
         id: 'bug-high',
@@ -60,7 +57,7 @@ describe('roadmap category grouping and filters', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
+    rmSync(workspaceRoot, { recursive: true, force: true })
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 

@@ -199,6 +199,13 @@
           0
         ]
       },
+      "app-icon:set-automation-mode": {
+        "api": "appIcon.setAutomationMode",
+        "args": [
+          1,
+          1
+        ]
+      },
       "app-run:cancel": {
         "api": "appRun.cancel",
         "args": [

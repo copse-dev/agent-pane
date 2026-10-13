@@ -1,5 +1,5 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
@@ -54,11 +54,11 @@ async function dropVideoOnComposer(name: string, byteLength: number): Promise<vo
 }
 
 describe('Attaching a video to the chat', () => {
-  const fixture = createFixtureDirectory('copse-video-attachment')
-  const workspaceRoot = fixture.root
+  let workspaceRoot = ''
 
   before(async function () {
     this.timeout(120_000)
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-video-attachment-'))
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
@@ -73,7 +73,7 @@ describe('Attaching a video to the chat', () => {
 
   after(() => {
     resetUserData()
-    fixture.cleanup()
+    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
   it('shows a dropped video as a film chip with its size, not an image thumbnail', async () => {

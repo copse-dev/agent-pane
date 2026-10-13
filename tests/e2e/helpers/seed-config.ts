@@ -871,8 +871,6 @@ export function seedMemoryNotes(
     body: string
     tags?: string[]
     externalContext?: boolean
-    createdAt?: string
-    updatedAt?: string
   }[],
 ): string {
   const knowledgeDir = join(copseDataRoot(), 'knowledge', projectId)
@@ -887,8 +885,8 @@ export function seedMemoryNotes(
       `id: ${note.id}`,
       `title: "${note.title}"`,
       `tags: [${(note.tags ?? []).join(', ')}]`,
-      `createdAt: ${note.createdAt ?? iso}`,
-      `updatedAt: ${note.updatedAt ?? iso}`,
+      `createdAt: ${iso}`,
+      `updatedAt: ${iso}`,
       ...(note.externalContext ? ['externalContext: "true"'] : []),
       '---',
       '',
@@ -3776,9 +3774,8 @@ const GIT_IMAGE_FIXTURES = join(process.cwd(), 'tests/e2e/fixtures')
  * Git repo with staged/unstaged/untracked image changes for the Changes panel
  * image preview e2e. Returns the repo path for cleanup.
  */
-export function seedGitImageChangesFixture(
-  repoRoot = mkdtempSync(join(tmpdir(), 'copse-panel-git-img-')),
-): string {
+export function seedGitImageChangesFixture(): string {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'copse-panel-git-img-'))
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
 
   git('init', '-q')
