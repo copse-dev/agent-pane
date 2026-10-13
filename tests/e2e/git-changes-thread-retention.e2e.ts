@@ -7,7 +7,7 @@ import {
   seedGitChangesFixture,
   writeSeedConfig,
 } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, prepareE2eScreenshot, E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-git-changes-project'
 
@@ -87,6 +87,62 @@ describe('Changes pane thread retention', function () {
       { timeout: 15_000, timeoutMsg: 'working-tree updates should still refresh cached rows' },
     )
     await expect($('.git-change-row.is-selected .git-change-path')).toHaveText('unstaged.ts')
-    await saveAppScreenshot('git-changes-thread-retention.png')
+    await prepareE2eScreenshot()
+    await parkPointer()
+    let quietSince = 0
+    await browser.waitUntil(
+      async () => {
+        const settled = await browser.execute(() => {
+          const host = document.getElementById('git-diff-viewer-host')
+          const bars = [...document.querySelectorAll('#git-diff-viewer-host .scrollbar')]
+          return (
+            Boolean(host?.querySelector('.line-delete') && host.querySelector('.line-insert')) &&
+            bars.length > 0 &&
+            bars.every((element) => getComputedStyle(element).opacity === '0')
+          )
+        })
+        if (!settled) {
+          quietSince = 0
+          return false
+        }
+        if (!quietSince) quietSince = Date.now()
+        return Date.now() - quietSince >= 500
+      },
+      {
+        timeout: 3_000,
+        timeoutMsg: 'Monaco hover scrollbars did not settle after the pointer left',
+      },
+    )
+    const clip = await browser.execute(() => {
+      const rect = document.getElementById('app')?.getBoundingClientRect()
+      if (!rect) throw new Error('App shell is missing')
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 }
+    })
+    // Capture the settled surface directly. WebDriver's element screenshot can
+    // scroll/resize the page again and wake Monaco chrome after our wait.
+    const screenshot: unknown = await browser.sendCommandAndGetResult('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+      clip,
+    })
+    if (
+      typeof screenshot !== 'object' ||
+      screenshot === null ||
+      !('data' in screenshot) ||
+      typeof screenshot.data !== 'string'
+    ) {
+      throw new Error('Chromium did not return screenshot bytes')
+    }
+    const stillSettled = await browser.execute(() =>
+      [...document.querySelectorAll('#git-diff-viewer-host .scrollbar')].every(
+        (element) => getComputedStyle(element).opacity === '0',
+      ),
+    )
+    expect(stillSettled).toBe(true)
+    writeFileSync(
+      join(E2E_SCREENSHOT_DIR, 'git-changes-thread-retention.png'),
+      Buffer.from(screenshot.data, 'base64'),
+    )
   })
 })
