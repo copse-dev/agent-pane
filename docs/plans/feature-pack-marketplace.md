@@ -75,7 +75,7 @@ validation, activation, permissions, and lifecycle.
    [`../adding-a-plugin.md`](../adding-a-plugin.md)).
 6. **Prompt trust is forced for user packs.** Marketplace-installed prompt blocks
    are always untrusted data framing, even if the pack file claims `"trust":
-"trusted"`.
+   "trusted"`.
 7. **Pin by content, update explicitly.** Default install records a content hash
    (and signature when present). Auto-update is opt-in per pack or channel;
    rollback restores the previous pin. Fail closed when verification fails.

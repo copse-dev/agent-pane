@@ -300,7 +300,7 @@ it:
 - **Fix the docs that recommend it.**
   [`acp-setup-guide.md`](../acp-setup-guide.md) currently presents it as
   "Option A … (recommended for you)" with an `npm install -g
-@zed-industries/claude-code-acp` line, and
+  @zed-industries/claude-code-acp` line, and
   [`acp-over-ssh.md`](acp-over-ssh.md) uses it as the remote-install example.
   Both now point users at a deprecated package.
 
@@ -408,7 +408,7 @@ token, `create-pull-request`:
    introducing a second number for the same idea. Never follow a prerelease
    dist-tag; skip versions marked deprecated.
 2. **Stage and install.** Regenerate the lock entry, then `npm ci
---ignore-scripts` into a scratch tree with `ignore-scripts=true` written into
+   --ignore-scripts` into a scratch tree with `ignore-scripts=true` written into
    the staged `.npmrc`, so a nested config cannot re-enable lifecycle scripts.
 3. **Static gates** — no agent, no secrets, no model spend:
    - **Integrity.** `npm ci` fails closed on any tarball whose hash does not

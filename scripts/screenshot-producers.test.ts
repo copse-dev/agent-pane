@@ -1,3 +1,4 @@
+import { parseScreenshotManifest, SCREENSHOT_MANIFEST } from './lib/screenshot-manifest.mts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -148,7 +149,9 @@ describe('committed reference screenshots', () => {
   )
 
   it('each have a producer under tests/ or scripts/', () => {
-    const shots = readdirSync(SCREENSHOT_DIR).filter((name) => name.endsWith('.png'))
+    const shots = Object.keys(
+      parseScreenshotManifest(readFileSync(SCREENSHOT_MANIFEST, 'utf8')).screenshots,
+    )
     const patterns = sources.flatMap((path) => producerPatterns(readFileSync(path, 'utf8')))
     assert.deepEqual(
       unproducedScreenshots(shots, patterns),

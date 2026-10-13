@@ -1,3 +1,4 @@
+import { hydrateScreenshots } from './lib/screenshot-hydration.mts'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { shouldUseLinuxVirtualDisplay } from '../tests/e2e/helpers/display-mode.mts'
@@ -28,6 +29,8 @@ const commandArgs = needsVirtualDisplay
       ...wdioArgs,
     ]
   : wdioArgs
+
+await hydrateScreenshots()
 
 const result = spawnSync(command, commandArgs, {
   cwd: process.cwd(),
