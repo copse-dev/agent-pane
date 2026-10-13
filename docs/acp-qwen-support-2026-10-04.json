@@ -1,0 +1,16 @@
+{
+  "generatedBy": "npm run probe:acp",
+  "probedAt": "2026-10-04T12:18:28.268Z",
+  "host": "linux 6.18.44 (2b6dc4994e92)",
+  "reports": [
+    {
+      "agentId": "qwen-code",
+      "title": "Qwen Code",
+      "command": "qwen",
+      "args": ["--acp"],
+      "requestedProtocolVersion": 1,
+      "ok": false,
+      "error": "Authentication required: Use Qwen Code CLI to authenticate first."
+    }
+  ]
+}
