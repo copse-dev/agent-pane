@@ -1,0 +1,96 @@
+name: Seed reviewed first-batch screenshot objects
+
+# One-time recovery for #3744. Remove after public-object verification succeeds.
+on:
+  push:
+    branches: [recovery/sidebar-activity-3702]
+    paths: [.github/workflows/seed-reviewed-batch-screenshots.yml]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: seed-reviewed-batch-screenshots
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Read pinned trusted storage policy from main
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: cf2ccce60f13371af4a369f3685288f5ff8a24e6
+          path: .bootstrap-policy
+          persist-credentials: false
+          sparse-checkout: |
+            .nvmrc
+            scripts/lib
+            scripts/screenshot-storage.mts
+            packages/std/src
+            packages/std/package.json
+            tests/e2e/screenshots/manifest.json
+          sparse-checkout-cone-mode: false
+
+      - name: Download the five reviewed current-head CI candidates as data
+        uses: actions/download-artifact@v7
+        with:
+          repository: copse-dev/agent-pane
+          run-id: 38397797475
+          artifact-ids: 11816440734
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          path: .bootstrap-source
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .bootstrap-policy/.nvmrc
+
+      - name: Validate exactly the five reviewed image hashes
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          import { parseScreenshotManifest, serializeScreenshotManifest, verifyScreenshot } from './.bootstrap-policy/scripts/lib/screenshot-manifest.mts'
+          const reviewed = parseScreenshotManifest('{"screenshots": {"activity-read-history-1600.png": {"bytes": 136460, "sha256": "7fe65ea755361c0d560ea62e67680a732a1ba9e2ffa9815adb3a6749e4ee1762"}, "activity-read-history-800.png": {"bytes": 88328, "sha256": "832b7b0e97f9ac6cc655f4c21f7235e1f325971e9ce9e514148bf682cae64d53"}, "activity-read-history.png": {"bytes": 119115, "sha256": "d9ae54544768895a5cb8f911b93f194862bad0e7152912f21b6e9be5c9e31f3e"}, "automation-held-runs-badge.png": {"bytes": 9525, "sha256": "a5b4207812eed4d65a73f2143cb32094abadc050d1dd3ba7f123a689d992092e"}, "automation-held-runs-menu.png": {"bytes": 264005, "sha256": "917f0f886a356e8bbac835493394db417d67e3ea57d7599f698b427d76424735"}}, "version": 1}')
+          const directory = join(process.env.RUNNER_TEMP, 'preserved-activity')
+          mkdirSync(directory, { recursive: true })
+          for (const [name, entry] of Object.entries(reviewed.screenshots)) {
+            const source = join('.bootstrap-source/tests/e2e/screenshots', name)
+            const stat = lstatSync(source)
+            assert.ok(stat.isFile() && !stat.isSymbolicLink())
+            const bytes = readFileSync(source)
+            verifyScreenshot(bytes, entry)
+            writeFileSync(join(directory, name), bytes)
+            console.log(`${name}: verified ${entry.sha256} (${entry.bytes} bytes)`)
+          }
+          writeFileSync(join(process.env.RUNNER_TEMP, 'preserved-activity-manifest.json'), serializeScreenshotManifest(reviewed))
+          NODE
+
+      - name: Upload with the existing trusted storage implementation
+        env:
+          SCREENSHOT_R2_ACCOUNT_ID: ${{ secrets.SCREENSHOT_R2_ACCOUNT_ID || vars.SCREENSHOT_R2_ACCOUNT_ID }}
+          SCREENSHOT_R2_BUCKET: ${{ secrets.SCREENSHOT_R2_BUCKET || vars.SCREENSHOT_R2_BUCKET || 'copse-screenshots' }}
+          SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
+          SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
+        run: |
+          node .bootstrap-policy/scripts/screenshot-storage.mts upload \
+            --dir "$RUNNER_TEMP/preserved-activity" \
+            --manifest "$RUNNER_TEMP/preserved-activity-manifest.json"
+
+      - name: Verify all five public objects without write credentials
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          import { parseScreenshotManifest } from './.bootstrap-policy/scripts/lib/screenshot-manifest.mts'
+          import { publicScreenshot } from './.bootstrap-policy/scripts/lib/screenshot-hydration.mts'
+          const manifest = parseScreenshotManifest(readFileSync(join(process.env.RUNNER_TEMP, 'preserved-activity-manifest.json'), 'utf8'))
+          for (const [name, entry] of Object.entries(manifest.screenshots)) {
+            await publicScreenshot(entry)
+            console.log(`${name}: public bytes and SHA-256 verified`)
+          }
+          NODE
