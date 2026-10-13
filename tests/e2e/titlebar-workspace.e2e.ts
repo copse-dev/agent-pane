@@ -1,5 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { mkdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -7,19 +7,22 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 describe('titlebar workspace name', () => {
+  let cleanupWorkspace = () => {}
   let workspaceRoot: string
 
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-titlebar-'))
+    const fixture = createFixtureDirectory('copse-panel-titlebar')
+    workspaceRoot = fixture.root
+    cleanupWorkspace = fixture.cleanup
     seedEmptyProject(workspaceRoot, 'e2e-titlebar-project')
     await browser.reloadSession()
   })
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    cleanupWorkspace()
   })
 
   it('shows the active project folder name after restoring on launch', async () => {

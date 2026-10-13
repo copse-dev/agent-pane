@@ -6,7 +6,7 @@ import { delimiter, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { readSeededSettings, resetUserData, seedOnboardingFixture } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
 
 // The happy path with real detections, made deterministic by injecting them:
 // two provider keys through the electron-shell env file (bootstrap.cjs applies
@@ -50,6 +50,7 @@ describe('onboarding: scan finds keys and local servers', () => {
   const lmServer = modelServer('e2e-lm-model')
   const originalPath = process.env['PATH']
   let agentBinDir = ''
+  let lmPort = 0
 
   before(async function () {
     this.timeout(120_000)
@@ -57,7 +58,7 @@ describe('onboarding: scan finds keys and local servers', () => {
     // must own the real port; LM Studio's probe honours localServerUrl, so its
     // fixture takes any free port.
     await listen(janServer, 1337, 'Jan (or something else on its port)')
-    const lmPort = await listen(lmServer, 0, 'unused')
+    lmPort = await listen(lmServer, 0, 'unused')
     // Exercise normal PATH-based ACP discovery against a controlled fixture so
     // the checklist and its screenshot don't depend on the runner's installs.
     agentBinDir = mkdtempSync(join(tmpdir(), 'copse-onboarding-agent-'))
@@ -124,7 +125,19 @@ describe('onboarding: scan finds keys and local servers', () => {
     // (The row's `data-kind="acp-agent"` is an identifier, not copy.)
     expect(await overlay.getText()).not.toMatch(/\b(?:ACP|JSON-RPC|stdio|harness)\b/)
 
-    await saveAppScreenshot('onboarding-scan-results.png')
+    // Prove the real discovery URL before normalizing only its allocated port
+    // for the capture. Keep the service bound to a free port for parallel runs.
+    expect(await lmRow.getText()).toContain(`http://127.0.0.1:${String(lmPort)}/v1`)
+    const restorePort = await pinTextForCapture(
+      row('local-server', 'lmstudio'),
+      /http:\/\/127\.0\.0\.1:\d+\/v1/g,
+      'http://127.0.0.1:1234/v1',
+    )
+    try {
+      await saveAppScreenshot('onboarding-scan-results.png')
+    } finally {
+      await restorePort()
+    }
   })
 
   it('finish imports what stayed ticked and writes relative-selector defaults', async function () {

@@ -1,6 +1,6 @@
+import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { setComposerValue } from './helpers/composer.ts'
@@ -19,7 +19,7 @@ const STDIO_SERVER = join(process.cwd(), 'tests/e2e/fixtures/mock-mcp-server.mts
 const HTTP_SERVER = join(process.cwd(), 'tests/e2e/fixtures/http-mcp-server.mts')
 const HTTP_TOKEN = 'mcp-e2e-token'
 const INITIAL_HTTP_TOKEN = process.env['MCP_HTTP_TOKEN']
-const temporaryWorkspaces: string[] = []
+const cleanupWorkspaces: (() => void)[] = []
 
 function isolatedMcpConfigPath(): string {
   const root = process.env['COPSE_PANEL_USER_DATA']
@@ -32,8 +32,9 @@ function stdioServerEntry(): Record<string, unknown> {
 }
 
 async function createWorkspace(id: string, mcpServers: Record<string, unknown>): Promise<string> {
-  const workspace = await mkdtemp(join(tmpdir(), `copse-mcp-${id}-`))
-  temporaryWorkspaces.push(workspace)
+  const fixture = createFixtureDirectory(`copse-mcp-${id}`)
+  const workspace = fixture.root
+  cleanupWorkspaces.push(fixture.cleanup)
   await mkdir(join(workspace, '.cursor'), { recursive: true })
   await writeFile(join(workspace, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers }), 'utf8')
   return workspace
@@ -75,11 +76,7 @@ async function startWorkspace(id: string, mcpServers: Record<string, unknown>): 
 
 async function cleanupMcpFixtures(): Promise<void> {
   await rm(isolatedMcpConfigPath(), { force: true })
-  await Promise.all(
-    temporaryWorkspaces
-      .splice(0)
-      .map((workspace) => rm(workspace, { recursive: true, force: true })),
-  )
+  for (const cleanup of cleanupWorkspaces.splice(0)) cleanup()
 }
 
 // Keep earlier workspaces alive while Electron shuts down between tests. Deleting

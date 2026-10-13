@@ -7,8 +7,10 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import {
   E2E_SCREENSHOT_DIR,
   pinTextForCapture,
+  prepareE2eScreenshot,
   saveAppScreenshot,
   saveElementScreenshot,
+  savePreparedAppScreenshot,
 } from './helpers/screenshot.ts'
 import {
   resetUserData,
@@ -414,15 +416,36 @@ describe('cron automation trigger', function () {
     )
     assert.deepEqual((await editorSurfacePaint([])).token, [45, 39, 26])
 
-    const restoreFinalRunTime = await pinTextForCapture(
-      '.automation-schedule-runs',
-      /^Latest · .+$/,
-      'Latest · Jan 1, 2026, 12:00 AM',
+    // The real scheduled task creates its isolated branch with a unique suffix.
+    // Keep asserting that behavior, then pin only the displayed suffix for capture.
+    const scheduledBranch = await $('.branch-picker-label').getText()
+    assert.match(scheduledBranch, /^copse\/ci-review-[a-z0-9]+$/)
+    const restoreFinalBranch = await pinTextForCapture(
+      '.branch-picker-label',
+      /^copse\/ci-review-[a-z0-9]+$/,
+      'copse/ci-review-fixture',
     )
     try {
-      await saveAppScreenshot('automation-trigger.png')
+      const restoreFinalRunTime = await pinTextForCapture(
+        '.automation-schedule-runs',
+        /^Latest · .+$/,
+        'Latest · Jan 1, 2026, 12:00 AM',
+      )
+      try {
+        await prepareE2eScreenshot()
+        await savePreparedAppScreenshot('automation-trigger.png', async () => {
+          // A sidebar rebuild must not release either independent capture pin.
+          await expect($('.branch-picker-label')).toHaveText('copse/ci-review-fixture')
+          await expect(
+            $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"] .chat-row`),
+          ).toHaveText('Latest · Jan 1, 2026, 12:00 AM')
+        })
+      } finally {
+        await restoreFinalRunTime()
+      }
     } finally {
-      await restoreFinalRunTime()
+      await restoreFinalBranch()
     }
+    await expect($('.branch-picker-label')).toHaveText(scheduledBranch)
   })
 })

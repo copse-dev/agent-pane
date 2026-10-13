@@ -1,5 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
@@ -41,11 +41,14 @@ async function waitForWorkspace(): Promise<void> {
 }
 
 describe('Monaco python multi-line f-string highlighting', () => {
+  let cleanupWorkspace = () => {}
   let workspaceRoot = ''
 
   before(async function () {
     this.timeout(120_000)
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-monaco-fstring-'))
+    const fixture = createFixtureDirectory('copse-monaco-fstring')
+    workspaceRoot = fixture.root
+    cleanupWorkspace = fixture.cleanup
     writeFileSync(join(workspaceRoot, SAMPLE_FILE), SAMPLE_LINES.join('\n'), 'utf8')
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
@@ -58,7 +61,7 @@ describe('Monaco python multi-line f-string highlighting', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    cleanupWorkspace()
   })
 
   it('keeps code after the f-string tokenized as code, not string', async () => {
