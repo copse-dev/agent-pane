@@ -68,6 +68,8 @@ describe('roadmap resolution check failure', () => {
     assert.ok(explanation.length > 0, 'the failure explains itself in the body')
     assert.doesNotMatch(explanation, /^\s*$/)
 
+    await errorBox.scrollIntoView({ block: 'center' })
+    assert.equal(await errorBox.isDisplayed({ withinViewport: true }), true)
     await saveAppScreenshot('roadmap-review-failure.png')
   })
 })
