@@ -1,11 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { delimiter, join } from 'node:path'
-import {
-  resetUserData,
-  seedAcpAuthErrorFixture,
-  seedE2eViewport,
-  seedEmptyProject,
-} from './helpers/seed-config.ts'
+import { resetUserData, seedAcpAuthErrorFixture, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot, savePreparedElementScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
@@ -59,11 +54,11 @@ describe('plain-language copy: Settings and the install approval', () => {
       ).join(delimiter),
     })
     seedEmptyProject(process.cwd(), 'e2e-plain-language', {
+      windowBounds: { width: 1280, height: 800 },
       registeredAcpAgents: [
         { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
       ],
     })
-    seedE2eViewport({ width: 1280, height: 800 })
     await browser.reloadSession()
   })
 
@@ -75,7 +70,7 @@ describe('plain-language copy: Settings and the install approval', () => {
   it('asks to install “software to connect your coding agents” and names the Codex card for what it is', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
-    await $('.acp-row[data-agent="codex-acp"] button=Options').click()
+    await $('.acp-row[data-agent="codex-acp"]').$('button=Options').click()
 
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 10_000 })

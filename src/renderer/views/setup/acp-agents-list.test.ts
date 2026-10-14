@@ -115,6 +115,35 @@ describe('createAcpAgentsList (rendered)', () => {
   })
 })
 
+describe('agent Options setup boundary', () => {
+  it('edits a custom agent without requesting unrelated preset installations', async () => {
+    const base = createFakeApi()
+    let setupCalls = 0
+    const api: ApiClient = {
+      ...base,
+      settings: { ...base.settings, get: async () => [mine] },
+      acp: {
+        ...base.acp,
+        autoSetup: async () => {
+          setupCalls += 1
+          return { installed: [], upgraded: [], registered: [], modelsDetected: [], failed: [] }
+        },
+      },
+    }
+    const list = createAcpAgentsList(api)
+    document.body.append(list.root)
+    await list.refresh()
+    const options = list.root.querySelector<HTMLButtonElement>('.acp-row[data-agent="mine"] button')
+    assert.ok(options)
+    options.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.ok(list.root.querySelector('.acp-agent-card'))
+    assert.equal(setupCalls, 0)
+    list.reset()
+    list.root.remove()
+  })
+})
+
 describe('Re-scan (agents and keys in one click)', () => {
   interface Spy {
     consent: unknown[]

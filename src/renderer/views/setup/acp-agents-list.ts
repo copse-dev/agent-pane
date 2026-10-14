@@ -245,7 +245,7 @@ export function createAcpAgentsList(
       openId = open ? '' : model.id
       menuOpen = false
       render()
-      if (openId && !autoSetupRun) {
+      if (openId && !autoSetupRun && KNOWN_ACP_AGENTS.some((agent) => agent.id === openId)) {
         autoSetupRun = true
         void panel.refresh().then(() => refresh())
       }
