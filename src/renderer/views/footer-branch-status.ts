@@ -470,6 +470,7 @@ export function mountFooterBranchStatus(
     try {
       if (current.state === 'missing') {
         await api.git.restoreWorktree(owner.projectId, owner.threadId)
+        store.emit('thread_checkout_changed', owner.threadId)
         showToast(`Restored worktree for ${current.branch}. You can continue this chat.`)
         store.emit('git_branch_changed')
         return

@@ -10,10 +10,10 @@ import {
 } from './helpers/seed-config.ts'
 import { seedBranchWorkspace } from './helpers/branch-workspace.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitPrompt } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -424,6 +424,10 @@ describe('footer branch status for a detached thread worktree', function () {
     // optional Changes row above it must not change this focused frame.
     await saveElementScreenshot('.input-footer', 'footer-branch-missing-worktree.png')
 
+    await setComposerValue('Keep this draft while restoring the checkout.')
+    await submitPrompt()
+    await expect($('.composer-checkout-error')).toBeDisplayed()
+
     await button.click()
     await expect(button).not.toBeDisplayed({ wait: 20_000 })
     await expect($(`[data-thread-id="${detachedThreadId}"]`)).toHaveElementClass('selected')
@@ -437,5 +441,8 @@ describe('footer branch status for a detached thread worktree', function () {
     await restored.waitForExist({ reverse: true, timeout: 10_000 })
     await expect($('.toast-error')).not.toExist()
     await saveElementScreenshot('.input-footer', 'footer-branch-restored-worktree.png')
+    await expect($('.composer-checkout-error')).not.toBeDisplayed()
+    await expect($('.prompt-input')).toHaveText('Keep this draft while restoring the checkout.')
+    await saveAppScreenshot('footer-branch-restored-composer.png')
   })
 })

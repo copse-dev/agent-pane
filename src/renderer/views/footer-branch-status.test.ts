@@ -221,21 +221,27 @@ describe('footer branch status', () => {
     it('restores a missing checkout from its own thread and clears the recovery action', async () => {
       let restored = false
       const calls: string[] = []
-      const host = mountDetached({
-        branchStatus: async () => {
-          if (!restored) throw new Error('Thread worktree is missing')
-          return { currentBranch: 'copse/thread-branch', pr: null }
+      const store = detachedStore()
+      const checkoutChanges: string[] = []
+      store.on('thread_checkout_changed', (threadId) => checkoutChanges.push(threadId))
+      const host = mountDetached(
+        {
+          branchStatus: async () => {
+            if (!restored) throw new Error('Thread worktree is missing')
+            return { currentBranch: 'copse/thread-branch', pr: null }
+          },
+          worktreeAttachment: async () => ({
+            state: 'missing',
+            branch: 'copse/thread-branch',
+            reason: null,
+          }),
+          restoreWorktree: async (projectId, threadId) => {
+            calls.push(`${projectId}/${threadId}`)
+            restored = true
+          },
         },
-        worktreeAttachment: async () => ({
-          state: 'missing',
-          branch: 'copse/thread-branch',
-          reason: null,
-        }),
-        restoreWorktree: async (projectId, threadId) => {
-          calls.push(`${projectId}/${threadId}`)
-          restored = true
-        },
-      })
+        store,
+      )
       await settle()
       const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
       assert.equal(button.hidden, false)
@@ -245,6 +251,7 @@ describe('footer branch status', () => {
       await settle()
       await settle()
       assert.deepEqual(calls, ['project-1/thread-1'])
+      assert.deepEqual(checkoutChanges, ['thread-1'])
       assert.equal(button.hidden, true)
       assert.match(document.querySelector('.toast-info')?.textContent ?? '', /continue this chat/)
     })
