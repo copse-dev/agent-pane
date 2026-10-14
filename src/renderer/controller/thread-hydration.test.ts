@@ -239,3 +239,31 @@ test('evicts old transcripts but never the active or running ones', async () => 
   assert.equal(state.threads.find((t) => t.id === 't11')?.messagesLoaded, true, 'newest kept')
   detach()
 })
+
+test('side chats of the active thread stay resident past the budget', async () => {
+  const store = createStore()
+  const api = createFakeApi()
+  const loading: ApiClient = {
+    ...api,
+    threads: {
+      ...api.threads,
+      loadMessages: (_p: string, threadId: string) => Promise.resolve([message(threadId)]),
+    },
+  }
+  const link = { parentThreadId: 'main', anchorMessageId: 'm1' }
+  const threads = [
+    unloaded('main'),
+    unloaded('side', { sideChat: link }),
+    ...Array.from({ length: 12 }, (_, i) => unloaded(`t${String(i)}`)),
+  ]
+  store.setState({ activeProjectId: 'p', activeThreadId: 'main', threads })
+  const detach = attachThreadHydration(store, loading)
+
+  await ensureThreadMessages('p', 'side')
+  for (let i = 0; i < 12; i++) await ensureThreadMessages('p', `t${String(i)}`)
+
+  const state = store.getState()
+  assert.equal(state.threads.find((t) => t.id === 'side')?.messagesLoaded, true)
+  assert.ok(state.threads.filter((t) => t.messagesLoaded === true).length <= 10)
+  detach()
+})
