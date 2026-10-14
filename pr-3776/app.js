@@ -53805,19 +53805,17 @@ function createModelsAgentsList(api2, opts = {}) {
   async function readKeyStatus() {
     const ids = [...keysPanel.providerIds(), ...OTHER_KEY_PROVIDERS.map((entry) => entry.id)];
     const results = await Promise.all(
-      ids.map(
-        async (id) => {
-          try {
-            const [stored, atRest] = await Promise.all([
-              api2.settings.getKey(id),
-              api2.settings.getKeyEncrypted(id)
-            ]);
-            return { id, stored, atRest };
-          } catch {
-            return { id, stored: false, atRest: null };
-          }
+      ids.map(async (id) => {
+        try {
+          const [stored, atRest] = await Promise.all([
+            api2.settings.getKey(id),
+            api2.settings.getKeyEncrypted(id)
+          ]);
+          return { id, stored, atRest };
+        } catch {
+          return { id, stored: false, atRest: null };
         }
-      )
+      })
     );
     storedKeys.clear();
     encrypted.clear();
