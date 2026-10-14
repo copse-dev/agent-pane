@@ -89,7 +89,7 @@ async function openPortraitChrome(): Promise<void> {
   })
   await browser.waitUntil(
     async () => {
-      const overflow = await $('.portrait-panel-overflow')
+      const overflow = await $('.portrait-panel-bar .portrait-panel-overflow')
       return !(await overflow.isExisting()) || !(await overflow.isDisplayed())
     },
     { timeout: 5_000, timeoutMsg: 'expected all portrait panel modes to fit without overflow' },
@@ -150,7 +150,7 @@ describe('portrait panel controls row', () => {
 
     const portraitBar = await $('.portrait-panel-bar')
     await expect(portraitBar).toBeDisplayed()
-    await expect($('.portrait-panel-overflow')).not.toBeDisplayed()
+    await expect($('.portrait-panel-bar .portrait-panel-overflow')).not.toBeDisplayed()
 
     const labeled = [
       { label: 'Toggle right panel', text: 'Panel' },
@@ -364,7 +364,7 @@ describe('portrait panel controls row', () => {
     await setProjectsWidth(420)
     await browser.waitUntil(
       async () => {
-        const overflow = await $('.portrait-panel-overflow')
+        const overflow = await $('.portrait-panel-bar .portrait-panel-overflow')
         return overflow.isExisting() && (await overflow.isDisplayed())
       },
       { timeout: 5_000, timeoutMsg: 'expected portrait panel overflow trigger when cramped' },
@@ -382,20 +382,20 @@ describe('portrait panel controls row', () => {
       'portrait-panel-controls-overflow.png',
     )
 
-    await $('.portrait-panel-overflow-trigger').click()
-    const menu = await $('.portrait-panel-overflow-menu')
+    await $('.portrait-panel-bar .portrait-panel-overflow-trigger').click()
+    const menu = await $('.portrait-panel-bar .portrait-panel-overflow-menu')
     await expect(menu).toBeDisplayed()
-    const items = await $$('.portrait-panel-overflow-item')
+    const items = await $$('.portrait-panel-bar .portrait-panel-overflow-item')
     expect(items.length).toBeGreaterThan(0)
     const labels = await browser.execute(() =>
-      Array.from(document.querySelectorAll('.portrait-panel-overflow-item')).map((el) =>
-        (el.textContent ?? '').trim(),
-      ),
+      Array.from(
+        document.querySelectorAll('.portrait-panel-bar .portrait-panel-overflow-item'),
+      ).map((el) => (el.textContent ?? '').trim()),
     )
     expect(labels).toContain('Browser')
 
     await savePortraitElementScreenshot(
-      '.portrait-panel-overflow-menu',
+      '.portrait-panel-bar .portrait-panel-overflow-menu',
       'portrait-panel-controls-overflow-open.png',
     )
 

@@ -58,6 +58,17 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
     const firstName = await $('.file-search-item .file-search-name')
     await expect(firstName).toHaveText(expect.stringContaining('zebra-widget.ts'))
 
+    // Keep the focused caret visible instead of capturing either blink phase.
+    // Electron's pinned Chromium supports a steady caret without blurring the
+    // search field or hiding its focus state.
+    const steadyCaret = await browser.execute(() => {
+      const field = document.querySelector<HTMLElement>('.file-search-input')
+      if (!field || !CSS.supports('caret-animation', 'manual')) return false
+      field.style.setProperty('caret-animation', 'manual')
+      return getComputedStyle(field).getPropertyValue('caret-animation') === 'manual'
+    })
+    expect(steadyCaret).toBe(true)
+    await expect(input).toBeFocused()
     await saveAppScreenshot('file-search-palette.png')
 
     // Choosing the match closes the palette, opens the explorer, and loads the

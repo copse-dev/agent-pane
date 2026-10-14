@@ -14,6 +14,27 @@ import { switchTheme, tokenColour } from './helpers/theme.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
+// Pointer movement cancels row tooltip timers; Monaco scrollbars fade afterward.
+async function waitForDiffHoverChrome(): Promise<void> {
+  await parkPointer()
+  let quietSince = 0
+  await browser.waitUntil(
+    async () => {
+      const settled = await browser.execute(() => {
+        const bars = [...document.querySelectorAll('#git-diff-viewer-host .scrollbar')]
+        return bars.length > 0 && bars.every((bar) => getComputedStyle(bar).opacity === '0')
+      })
+      if (!settled) {
+        quietSince = 0
+        return false
+      }
+      if (!quietSince) quietSince = Date.now()
+      return Date.now() - quietSince >= 500
+    },
+    { timeout: 3_000, timeoutMsg: 'Monaco hover scrollbars did not settle after the pointer left' },
+  )
+}
+
 async function waitForComposer(): Promise<void> {
   await $('.prompt-input').waitForExist({ timeout: 60_000 })
 }
@@ -150,6 +171,7 @@ describe('git changes viewer', function () {
       { timeout: 15_000, timeoutMsg: 'expected the staged.ts diff to show its change' },
     )
     await waitForGitChangesSettled()
+    await waitForDiffHoverChrome()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-list.png'))
 
     // Section titles reflect staged vs unstaged counts. CSS uppercases the text,
@@ -299,6 +321,7 @@ describe('git changes viewer', function () {
     )
 
     await parkPointer()
+    await waitForDiffHoverChrome()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-committed-diff.png'))
   })
 
