@@ -813,19 +813,17 @@ export function createModelsAgentsList(
   async function readKeyStatus(): Promise<void> {
     const ids = [...keysPanel.providerIds(), ...OTHER_KEY_PROVIDERS.map((entry) => entry.id)]
     const results = await Promise.all(
-      ids.map(
-        async (id): Promise<{ id: string; stored: boolean; atRest: boolean | null }> => {
-          try {
-            const [stored, atRest] = await Promise.all([
-              api.settings.getKey(id),
-              api.settings.getKeyEncrypted(id),
-            ])
-            return { id, stored, atRest }
-          } catch {
-            return { id, stored: false, atRest: null }
-          }
-        },
-      ),
+      ids.map(async (id): Promise<{ id: string; stored: boolean; atRest: boolean | null }> => {
+        try {
+          const [stored, atRest] = await Promise.all([
+            api.settings.getKey(id),
+            api.settings.getKeyEncrypted(id),
+          ])
+          return { id, stored, atRest }
+        } catch {
+          return { id, stored: false, atRest: null }
+        }
+      }),
     )
     storedKeys.clear()
     encrypted.clear()
