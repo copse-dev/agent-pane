@@ -86953,7 +86953,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
         // Portrait bar omits `.titlebar-btn` so existing e2e / click helpers that
         // target `.titlebar-btn[aria-label=…]` stay uniquely on the titlebar.
         class: [
-          opts.enableOverflow ? "portrait-panel-btn" : "titlebar-btn",
+          opts.enableOverflow && opts.overflowPlacement !== "below" ? "portrait-panel-btn" : "titlebar-btn",
           "titlebar-text-btn",
           keepLabel ? "" : "titlebar-compact-icon"
         ].filter(Boolean).join(" "),
@@ -87029,7 +87029,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
         "data-tooltip": "More panel modes",
         // The overflow trigger lives in the bottom portrait bar, so its tooltip
         // needs the space above it.
-        "data-tooltip-placement": "top"
+        "data-tooltip-placement": opts.overflowPlacement === "below" ? "bottom" : "top"
       },
       moreHorizontalIcon("ui-icon ui-icon-sm"),
       overflowBadge
@@ -87062,12 +87062,25 @@ function mountPanelModeControls(store2, api2, opts = {}) {
         const gap = Number.parseFloat(styles.columnGap || styles.gap || "0") || 0;
         const padL = Number.parseFloat(styles.paddingLeft) || 0;
         const padR = Number.parseFloat(styles.paddingRight) || 0;
-        const containerWidth = Math.max(0, controls.clientWidth - padL - padR);
+        const siblings = [...controls.children].filter(
+          (child) => child !== overflowWrap && !child.hasAttribute("data-panel-control") && child.getBoundingClientRect().width > 0
+        );
+        const reservedWidth = siblings.reduce(
+          (sum, child) => sum + child.getBoundingClientRect().width + gap,
+          0
+        );
+        const containerWidth = Math.max(0, controls.clientWidth - padL - padR - reservedWidth);
         const widths = eligible.map((btn) => btn.getBoundingClientRect().width);
         overflowWrap.hidden = false;
         const overflowWidth = overflowTrigger.getBoundingClientRect().width;
         overflowWrap.hidden = true;
-        const hideCount = countPortraitPanelOverflow(widths, gap, containerWidth, overflowWidth, 1);
+        const hideCount = countPortraitPanelOverflow(
+          widths,
+          gap,
+          containerWidth,
+          overflowWidth,
+          opts.overflowPlacement === "below" ? 0 : 1
+        );
         if (hideCount === 0) {
           syncOverflowBadge([]);
           return;
@@ -87099,9 +87112,19 @@ function mountPanelModeControls(store2, api2, opts = {}) {
       syncOverflow?.();
     });
     observer.observe(controls);
+    const observeChildren = () => {
+      for (const child of controls.children) observer.observe(child);
+    };
+    observeChildren();
+    const childrenObserver = new MutationObserver(() => {
+      observeChildren();
+      syncOverflow?.();
+    });
+    childrenObserver.observe(controls, { childList: true });
     cleanups.push(() => {
       cancelAnimationFrame(overflowFrame);
       observer.disconnect();
+      childrenObserver.disconnect();
     });
   }
   function syncPanelBtns() {
@@ -87304,9 +87327,20 @@ var init_panel_mode_controls = __esm({
 // src/renderer/views/titlebar-compact.ts
 function titlebarNeedsCompact(titlebar) {
   const wasCompact = titlebar.classList.contains(TITLEBAR_COMPACT_CLASS);
+  const overflowed = [...titlebar.querySelectorAll("[data-portrait-overflow]")];
+  const controls = titlebar.querySelector(".titlebar-panel-controls");
+  const alignment = controls?.style.justifyContent ?? "";
+  if (controls) controls.style.justifyContent = "flex-start";
+  overflowed.forEach((button) => {
+    button.removeAttribute("data-portrait-overflow");
+  });
   titlebar.classList.remove(TITLEBAR_COMPACT_CLASS);
   const needsCompact = titlebar.scrollWidth > titlebar.clientWidth;
   titlebar.classList.toggle(TITLEBAR_COMPACT_CLASS, wasCompact);
+  overflowed.forEach((button) => {
+    button.setAttribute("data-portrait-overflow", "");
+  });
+  if (controls) controls.style.justifyContent = alignment;
   return needsCompact;
 }
 function bindTitlebarCompactLayout(titlebar, observedContents) {
@@ -87493,7 +87527,9 @@ function mountTitlebar(root, store2, api2) {
   leftCluster.append(sidebarBtn, workspaceName, sshTarget, workspaceBranch);
   const dragRegion = el("div", { class: "titlebar-drag" });
   const panelControls = mountPanelModeControls(store2, api2, {
-    alwaysShowLabels: /* @__PURE__ */ new Set(["explorer"])
+    alwaysShowLabels: /* @__PURE__ */ new Set(["explorer"]),
+    enableOverflow: true,
+    overflowPlacement: "below"
   });
   const openInEditor = mountOpenInEditor(panelControls.element, store2, api2);
   const firstBtn = panelControls.element.firstElementChild;

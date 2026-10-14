@@ -4133,6 +4133,37 @@ html.is-popout .thread-context-close {
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
+#titlebar .titlebar-panel-controls {
+  flex: 1 1 0;
+  justify-content: flex-end;
+  min-width: 0;
+}
+#titlebar .titlebar-drag {
+  flex: 0 0 var(--spacing-lg);
+}
+#titlebar .titlebar-panel-controls > [data-portrait-overflow] {
+  display: none;
+}
+#titlebar .titlebar-panel-controls > * {
+  flex-shrink: 0;
+}
+#titlebar .portrait-panel-overflow-menu {
+  top: calc(100% + 4px);
+  bottom: auto;
+}
+#titlebar .titlebar-left {
+  min-width: 0;
+  flex-shrink: 0;
+  max-width: 40%;
+}
+#titlebar .workspace-name,
+#titlebar .workspace-ssh-target,
+#titlebar .workspace-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .titlebar-btn-icon {
   flex-shrink: 0;
   display: inline-flex;
@@ -18495,7 +18526,7 @@ dialog.activity-panel-overlay {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
-.roadmap-viewer {
+.roadmap-viewer:has(> .roadmap-form:not([hidden])) {
   padding: 0;
   overflow: hidden;
 }
