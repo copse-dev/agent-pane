@@ -1101,6 +1101,7 @@ const api: ApiClient = {
     browseRegistry: (refresh?: boolean) => ipcRenderer.invoke('acp:browse-registry', refresh),
     detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),
     probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
+    authStatus: (ids: string[]) => ipcRenderer.invoke('acp:auth-status', ids),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
   },
   classifiers: {

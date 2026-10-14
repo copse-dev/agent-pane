@@ -62,7 +62,8 @@ describe('ACP authentication error presentation', () => {
   it('shows the dedicated Claude sign-in command in setup without adapter jargon', async () => {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
-    await $('.provider-chip[data-provider="anthropic"]').click()
+    await $('[data-testid="acp-add-toggle"]').click()
+    await $('.acp-add-row[data-agent="claude-acp"]').$('button=Set up').click()
     // Provider discovery can find a host client outside PATH and offer its
     // adapter. Decline through the real UI before reviewing sign-in guidance.
     const approval = $('#approval-dialog')
@@ -85,10 +86,7 @@ describe('ACP authentication error presentation', () => {
     await expect(note).not.toHaveText(expect.stringContaining('claude-agent-acp'))
     await expect(signIn).not.toHaveText(expect.stringContaining('--sso'))
     await expect($('#approval-dialog')).not.toBeDisplayed()
-    await saveElementScreenshot(
-      '.provider-capability:has(.acp-known-agent-note)',
-      'claude-sign-in.png',
-    )
+    await saveElementScreenshot('.acp-add-menu .provider-form', 'claude-sign-in.png')
   })
 
   it('leads with recovery and keeps opaque ACP diagnostics subordinate', async () => {

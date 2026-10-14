@@ -41,15 +41,6 @@ describe('Cursor Cloud Agent settings list hint', () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     await $('[aria-label="Settings"]').click()
 
-    await $('#settings-providers-host .provider-chip[data-provider="openai"]').click()
-    const approval = $('#approval-dialog')
-    await approval.waitForDisplayed({ timeout: 10_000 })
-    await expect(approval.$('.approval-heading')).toHaveText(
-      'Install software to connect your coding agents?',
-    )
-    await approval.$('.approval-reject').click()
-    await expect(approval).not.toBeDisplayed()
-
     const general = $('.settings-section[data-section="general"]')
     await expect(general).toBeDisplayed()
 
@@ -77,21 +68,16 @@ describe('Cursor Cloud Agent settings list hint', () => {
     await expect(link).toHaveAttribute('href', CURSOR_AGENTS_WEB_URL)
     await expect(link).toHaveAttribute('target', '_blank')
 
-    // Install / sign-in command rows: Copy is a kit chip like "Re-scan device".
-    await assertKitButtonChrome('#settings-dialog .acp-cmd-copy', 'secondary')
     // The nested auth card's title sits inside the card, not on its top edge.
     await assertLegendInsideCard('Cursor authentication')
 
-    // The Cursor agent's setup note names its commands as inline code rather
-    // than showing raw backtick delimiters.
-    const note = general.$('.acp-known-agent-note')
-    await expect(note).toBeDisplayed()
-    assert.doesNotMatch(await note.getText(), /`/)
-    assert.deepEqual(await note.$$('code').map((code) => code.getText()), [
-      'cursor-agent acp',
-      'cursor-agent login',
-    ])
-
+    // Cursor is not installed on this PATH, so it is offered under Add an agent
+    // with a copyable install command.
+    await $('[data-testid="acp-add-toggle"]').click()
+    const addRow = $('.acp-add-row[data-agent="cursor"]')
+    await expect(addRow).toBeDisplayed()
+    await assertKitButtonChrome('.acp-add-row[data-agent="cursor"] button', 'secondary')
+    const approval = $('#approval-dialog')
     await expect(approval).not.toBeDisplayed()
     await browser.pause(100)
     await saveElementScreenshot('#settings-dialog', 'settings-cursor-agents-hint.png')

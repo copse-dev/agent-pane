@@ -1141,6 +1141,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       browseRegistry: () => resolved({ entries: [], fetchedAt: Date.now(), skipped: 0 }),
       detectAgents: emptyArray,
       probeAgent: unsupported,
+      authStatus: emptyArray,
       autoSetup: () =>
         resolved({
           installed: [],

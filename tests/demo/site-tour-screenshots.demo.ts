@@ -112,7 +112,7 @@ describe('copse.dev feature tour screenshots', () => {
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
     await dialog.waitForDisplayed()
-    await dialog.$('button.settings-nav-subheading=Providers').click()
+    await dialog.$('button.settings-nav-subheading=API keys').click()
     await dialog.$('.provider-chip=Anthropic').click()
     // Chips re-render on selection, so look the active one up afresh.
     await expect(dialog.$('.provider-chip.active')).toHaveText('Anthropic')

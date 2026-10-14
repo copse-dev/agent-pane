@@ -75,7 +75,7 @@ describe('plain-language copy: Settings and the install approval', () => {
   it('asks to install “software to connect your coding agents” and names the Codex card for what it is', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
-    await $('#settings-providers-host .provider-chip[data-provider="openai"]').click()
+    await $('.acp-row[data-agent="codex-acp"] button=Options').click()
 
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 10_000 })
@@ -91,19 +91,11 @@ describe('plain-language copy: Settings and the install approval', () => {
     await dialog.$('.approval-reject').click()
     await expect(dialog).not.toBeDisplayed()
 
-    const codexCard = $('.openai-connection-card[data-connection="codex"]')
-    await expect(codexCard.$('h4')).toHaveText('Codex agent')
-    await expect(codexCard).toHaveText('Codex’s agent, running on this machine.', {
-      containing: true,
-    })
-    await $('[data-testid="openai-codex-details"] summary').click()
-    await expect($('[data-testid="openai-codex-details"] summary')).toHaveText(
-      'Configure Codex agent',
-      { containing: true },
-    )
-
-    await expectPlainLanguage('#settings-providers-host')
-    await $('#settings-providers-host').scrollIntoView()
+    const codexCard = $('.acp-row[data-agent="codex-acp"]')
+    await expect(codexCard.$('.acp-row-name strong')).toHaveText('Codex')
+    await expect(codexCard.$('.acp-agent-card')).toBeDisplayed()
+    await expectPlainLanguage('#settings-agents-host')
+    await $('#settings-agents-host').scrollIntoView()
     await saveAppScreenshot('plain-language-settings-codex-agent.png')
   })
 })
