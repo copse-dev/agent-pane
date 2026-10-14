@@ -48,6 +48,14 @@ function escapeRegExp(text: string): string {
 function producerPatterns(src: string): RegExp[] {
   const literals = stringLiterals(src)
   const patterns: RegExp[] = []
+  // This helper writes the named first view and at most seven continuation
+  // views. Only its actual filename argument owns these bounded suffixes;
+  // importing the helper must not grant ownership to unrelated PNG literals.
+  for (const m of src.matchAll(
+    /\bsaveSettingsSection\(\s*(?:'[^']*'|"[^"]*"|`[^`]*`|[A-Z][A-Z0-9_]*)\s*,\s*['"`]([\w-]+)\.png['"`]/g,
+  )) {
+    if (m[1] !== undefined) patterns.push(new RegExp(`^${escapeRegExp(m[1])}-page-[2-8]\\.png$`))
+  }
   let ownsFileLiterals = false
   for (const literal of literals) {
     if (!literal.endsWith('.png')) continue
@@ -93,6 +101,34 @@ function repoFiles(root: string): string[] {
 }
 
 describe('producerPatterns', () => {
+  it('owns bounded Settings continuation views only for the helper call filename', () => {
+    const src = [
+      "await saveSettingsSection('fieldset:has(#hooks)', 'settings-hooks.png')",
+      "await saveSettingsSection(\n FIELDSET_SELECTOR,\n 'settings-history.png',\n)",
+      "await saveAppScreenshot('ordinary.png')",
+    ].join('\n')
+    assert.deepEqual(
+      unproducedScreenshots(
+        [
+          'settings-hooks.png',
+          'settings-hooks-page-2.png',
+          'settings-history-page-8.png',
+          'settings-hooks-page-1.png',
+          'settings-hooks-page-9.png',
+          'ordinary-page-2.png',
+          'unrelated-page-2.png',
+        ],
+        producerPatterns(src),
+      ),
+      [
+        'ordinary-page-2.png',
+        'settings-hooks-page-1.png',
+        'settings-hooks-page-9.png',
+        'unrelated-page-2.png',
+      ],
+    )
+  })
+
   it('matches plain and path-qualified literals exactly', () => {
     const patterns = producerPatterns(
       'await saveAppScreenshot(\'alpha-one.png\')\njoin(DIR, `beta.png`)\n"tests/e2e/screenshots/gamma.png"',
