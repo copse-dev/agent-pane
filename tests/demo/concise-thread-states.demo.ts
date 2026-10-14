@@ -1,5 +1,6 @@
 import { $, $$, browser, expect } from '@wdio/globals'
 import {
+  parkPointer,
   saveAppScreenshot,
   waitForImagesSettled,
   waitForSettledLayout,
@@ -174,6 +175,7 @@ describe('concise thread view states', () => {
 
     await footer.$('button').click()
     await expect($('.tool-card-subagent')).toBeDisplayed()
+    await parkPointer()
     await saveAppScreenshot('concise-state-subagent-expanded.png')
   })
 

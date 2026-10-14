@@ -103,7 +103,13 @@ describe('Roadmap item attachments', () => {
     pinRoadmapDisplayTimestamp(PROJECT_ID)
     await $('.roadmap-refresh-btn').click()
     await browser.waitUntil(
-      async () => (await $('.roadmap-form > .memories-meta').getText()).includes('2026-01-15'),
+      () =>
+        browser.execute(
+          () =>
+            document
+              .querySelector('.roadmap-form .memories-meta')
+              ?.textContent?.includes('2026-01-15') ?? false,
+        ),
       { timeout: 10_000, timeoutMsg: 'expected the pinned roadmap display date' },
     )
 
