@@ -1,7 +1,6 @@
 name: Screenshot storage
 
-# Bootstrap the R2 copy before migrating the PNG-based review workflows.
-# Publish accepted PNGs after main changes, or run explicitly for a chosen ref.
+# Verify accepted manifest objects after main changes, or upload explicitly.
 # PR jobs never receive the R2 credentials.
 on:
   push:
@@ -43,7 +42,7 @@ jobs:
           persist-credentials: false
 
       - name: Check upload configuration
-        if: github.event_name == 'push' || inputs.operation == 'upload'
+        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'upload'
         env:
           SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
           SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
@@ -58,27 +57,26 @@ jobs:
 
       - uses: ./.github/actions/setup
 
-      # PNGs remain the reviewed source of truth during the migration. Derive
-      # the upload snapshot from this commit, including accepted PNG-only updates.
-      - name: Generate the manifest from committed screenshots
-        run: pnpm screenshots:manifest
+      - name: Validate the committed manifest
+        run: node scripts/screenshot-storage.mts validate
 
-      - name: Check the local manifest
-        run: pnpm screenshots:check
+      - name: Hydrate references for an explicit upload
+        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'upload'
+        run: pnpm screenshots:hydrate
 
       - name: Upload immutable objects and verify their contents
-        if: github.event_name == 'push' || inputs.operation == 'upload'
+        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'upload'
         env:
           SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
           SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
         run: pnpm screenshots:upload
 
       - name: Verify public objects without credentials
-        if: inputs.operation == 'verify'
+        if: github.event_name == 'push' || inputs.operation == 'verify'
         run: pnpm screenshots:verify
 
       - name: Save the verified manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: verified-screenshot-manifest-${{ github.run_id }}
           path: tests/e2e/screenshots/manifest.json
@@ -87,7 +85,7 @@ jobs:
 
       - name: Summarize verified storage
         env:
-          OPERATION: ${{ inputs.operation || 'upload' }}
+          OPERATION: ${{ inputs.operation || 'verify' }}
         run: |
           {
             echo '### Screenshot storage verified'
@@ -95,5 +93,5 @@ jobs:
             echo "Operation: $OPERATION"
             echo "Commit: $GITHUB_SHA"
             echo
-            echo 'The artifact pins the verified manifest. Reference PNGs remain tracked until the screenshot review workflow cutover.'
+            echo 'The artifact pins the verified manifest. Reference PNGs are hydrated from R2; only the manifest is tracked in Git.'
           } >> "$GITHUB_STEP_SUMMARY"

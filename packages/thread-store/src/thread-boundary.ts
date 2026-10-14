@@ -92,6 +92,8 @@ export function parseThreadMetaValue(value: unknown): ThreadMeta | null {
     typeof value['title'] !== 'string' ||
     (value['status'] !== 'idle' && value['status'] !== 'running' && value['status'] !== 'error') ||
     (value['unreadAt'] !== undefined && typeof value['unreadAt'] !== 'number') ||
+    (value['lastSettledAt'] !== undefined &&
+      (typeof value['lastSettledAt'] !== 'number' || !Number.isFinite(value['lastSettledAt']))) ||
     typeof value['createdAt'] !== 'number' ||
     typeof value['updatedAt'] !== 'number'
   ) {

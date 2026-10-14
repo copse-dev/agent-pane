@@ -1,5 +1,5 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -7,9 +7,11 @@ import { readWorktreePreparationPlan } from '../../src/main/services/worktree-pr
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
-const root = mkdtempSync(join(tmpdir(), 'python-preparation-approval-'))
+const root = join(tmpdir(), 'copse-e2e', 'python-preparation-approval')
 describe('automatic Python preparation approval', () => {
   before(async () => {
+    rmSync(root, { recursive: true, force: true })
+    mkdirSync(root, { recursive: true })
     writeFileSync(
       join(root, 'pyproject.toml'),
       '[project]\nname="ordinary-python-app"\nversion="0.1.0"\nrequires-python=">=3.11"\ndependencies=[]\n',

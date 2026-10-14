@@ -3,6 +3,12 @@ import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedHookCardsFixture } from './helpers/seed-config.ts'
 
+import {
+  prepareE2eScreenshot,
+  saveElementScreenshot,
+  waitForSettledLayout,
+} from './helpers/screenshot.ts'
+
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 // G1 hook-card visual eval (decision 10). Hook executions, deny/ask decisions,
@@ -117,6 +123,27 @@ describe('hook cards in the transcript', function () {
       expect.stringMatching(/"permission": "deny"|"permission":"deny"/),
     )
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'hook-card-inspector.png'))
+    // Frame the actual expanded inspector, including both recorded payloads.
+    await prepareE2eScreenshot({ width: 1280, height: 1400 })
+    await denyCard.scrollIntoView({ block: 'center' })
+    await waitForSettledLayout('.hook-card[data-hook-run="hr-deny"]')
+    const visible = await browser.execute(() => {
+      const card = document.querySelector('.hook-card[data-hook-run="hr-deny"]')
+      if (!card) return false
+      const rect = card.getBoundingClientRect()
+      return (
+        rect.top >= 0 &&
+        rect.bottom <= innerHeight &&
+        [rect.top + 8, rect.bottom - 8].every((y) =>
+          [rect.left + 8, rect.right - 8].every((x) =>
+            card.contains(document.elementFromPoint(x, y)),
+          ),
+        )
+      )
+    })
+    expect(visible).toBe(true)
+    await saveElementScreenshot('.hook-card[data-hook-run="hr-deny"]', 'hook-card-inspector.png', {
+      frame: 'document',
+    })
   })
 })

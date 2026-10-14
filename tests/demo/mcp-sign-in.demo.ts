@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { saveElementScreenshot, waitForSettledLayout } from '../e2e/helpers/screenshot.ts'
 
 describe('browser-hosted MCP server sign-in', () => {
   before(async () => {
@@ -9,6 +9,10 @@ describe('browser-hosted MCP server sign-in', () => {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog button[data-section="mcp"]').click()
     await $('#mcp-server-list .mcp-server-row').waitForDisplayed()
+    await browser.execute(async () => {
+      await document.fonts.ready
+    })
+    await waitForSettledLayout('#mcp-server-list')
   })
 
   // Rows are re-rendered on every state change, so look the row up each time.
@@ -53,6 +57,8 @@ describe('browser-hosted MCP server sign-in', () => {
     await expect(waiting.$('.mcp-server-detail')).toHaveText(
       'Continue in your browser to finish signing in.',
     )
+    await expect(waiting.$('.mcp-server-detail')).toBeDisplayed()
+    await waitForSettledLayout('#mcp-server-list')
     await saveElementScreenshot('#mcp-server-list', 'mcp-sign-in-waiting.png')
 
     await waiting.$('.mcp-auth-btn').click()

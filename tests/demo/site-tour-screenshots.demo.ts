@@ -1,7 +1,7 @@
 import { $, $$, browser, expect } from '@wdio/globals'
 import { collectErrorToasts } from '../e2e/helpers/assert-no-error-toasts.ts'
 import { setComposerValue } from '../e2e/helpers/composer.ts'
-import { E2E_VIEWPORT, saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import { E2E_VIEWPORT, saveAppScreenshot, waitForSettledLayout } from '../e2e/helpers/screenshot.ts'
 
 /**
  * The copse.dev feature tour and spotlight cards (`site/index.html`) show these
@@ -116,6 +116,23 @@ describe('copse.dev feature tour screenshots', () => {
     await dialog.$('.provider-chip=Anthropic').click()
     // Chips re-render on selection, so look the active one up afresh.
     await expect(dialog.$('.provider-chip.active')).toHaveText('Anthropic')
+    // Selecting the chip can interrupt the first smooth scroll. Navigate again
+    // after the provider panel has rendered, and require the actual destination
+    // before capturing rather than sampling whichever animation frame arrived.
+    await dialog.$('button.settings-nav-subheading=Providers').click()
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const panel = document.querySelector('#settings-providers-host > fieldset')
+          const content = document.querySelector('#settings-dialog .settings-content')
+          if (!panel || !content) return false
+          return (
+            Math.abs(panel.getBoundingClientRect().top - content.getBoundingClientRect().top) < 1
+          )
+        }),
+      { timeoutMsg: 'expected Providers navigation to reach the top of the settings scrollport' },
+    )
+    await waitForSettledLayout('#settings-dialog .settings-content')
     await settleCapture()
     await expectCleanCapture()
     await saveAppScreenshot('site-tour-provider-settings.png')

@@ -1,8 +1,8 @@
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -17,14 +17,15 @@ describe('machine turn attribution', function () {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-machine-attribution-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-machine-attribution-')), 'workspace')
+    mkdirSync(workspaceRoot)
     seedMachineTurnAttributionFixture(workspaceRoot)
     await browser.reloadSession()
   })
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('labels a machine prompt and makes the submit action queue during a running turn', async () => {

@@ -413,7 +413,7 @@ const api: ApiClient = {
       handler: (req: {
         id: string
         threadId?: string
-        questions: { question: string; options?: string[] }[]
+        questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
       }) => void,
     ) => {
       const listener = (
@@ -421,7 +421,7 @@ const api: ApiClient = {
         req: {
           id: string
           threadId?: string
-          questions: { question: string; options?: string[] }[]
+          questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
         },
       ): void => {
         handler(req)
@@ -790,6 +790,17 @@ const api: ApiClient = {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
   },
+  plans: {
+    get: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('plans:get', projectId, threadId),
+    revision: (projectId: string, threadId: string, planId: string, revision: number) =>
+      ipcRenderer.invoke('plans:revision', projectId, threadId, planId, revision),
+    change: (
+      projectId: string,
+      threadId: string,
+      change: import('@copse/thread-store/plan-schema.ts').PlanChange,
+    ) => ipcRenderer.invoke('plans:change', projectId, threadId, change),
+  },
   threads: {
     storageSize: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:storage-size', projectId, threadId),
@@ -1087,6 +1098,7 @@ const api: ApiClient = {
       ipcRenderer.invoke('remote-agent:refresh-imported-thread', projectId, threadId),
   },
   acp: {
+    browseRegistry: (refresh?: boolean) => ipcRenderer.invoke('acp:browse-registry', refresh),
     detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),
     probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
@@ -1176,6 +1188,8 @@ const api: ApiClient = {
   },
   usage: {
     getSummary: () => ipcRenderer.invoke('usage:get-summary'),
+    getThreadClassifierUse: (projectId, threadId) =>
+      ipcRenderer.invoke('usage:get-thread-classifier-use', projectId, threadId),
     getPlanUsage: (force?: boolean) => ipcRenderer.invoke('usage:get-plan-usage', force),
     getPlanWorthIt: () => ipcRenderer.invoke('usage:get-plan-worth-it'),
     setClaudePlanMonthlyFee: (fee: number | null) =>
@@ -1469,6 +1483,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('automations:remove', projectId, scheduleId),
     runNow: (projectId: string, scheduleId: string) =>
       ipcRenderer.invoke('automations:run-now', projectId, scheduleId),
+    cleanupRuns: (projectId: string, scheduleId: string) =>
+      ipcRenderer.invoke('automations:cleanup-runs', projectId, scheduleId),
     listBranchCi: (projectId: string) =>
       ipcRenderer.invoke('automations:list-branch-ci', projectId),
     upsertBranchCi: (projectId: string, input: unknown) =>
@@ -1566,7 +1582,12 @@ const api: ApiClient = {
     create: (
       cols: number,
       rows: number,
-      meta: { label?: string; projectId: string; threadId: string | null },
+      meta: {
+        label?: string
+        projectId: string
+        threadId: string | null
+        executionTarget?: 'local'
+      },
     ) => ipcRenderer.invoke('terminal:create', cols, rows, meta),
     write: (sessionId: string, data: string) =>
       ipcRenderer.invoke('terminal:write', sessionId, data),

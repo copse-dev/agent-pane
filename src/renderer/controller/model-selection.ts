@@ -16,11 +16,18 @@ export function commitThreadModelSelection(
 ): void {
   if (from === to) return
   store.setState({
-    threads: store
-      .getState()
-      .threads.map((thread) =>
-        thread.id === threadId ? { ...thread, model: to, updatedAt: Date.now() } : thread,
-      ),
+    threads: store.getState().threads.map((thread) =>
+      thread.id === threadId
+        ? {
+            ...thread,
+            model: to,
+            ...(thread.status !== 'running'
+              ? { lastSettledAt: thread.lastSettledAt ?? thread.updatedAt }
+              : {}),
+            updatedAt: Date.now(),
+          }
+        : thread,
+    ),
   })
   store.emit('threads_changed')
 

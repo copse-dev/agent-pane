@@ -48,6 +48,27 @@ describe('app frame after resizing', () => {
     expect(offsets.map((node) => node.scrollLeft)).toEqual([0, 0, 0, 0])
     expect(offsets.map((node) => node.left)).toEqual([0, 0, 0, 0])
     await expect($('#titlebar')).toHaveElementClass('is-titlebar-compact')
+    const composer = await browser.execute(() => {
+      const editor = document.querySelector<HTMLElement>('.prompt-input')!
+      const send = document.querySelector<HTMLElement>('.submit-row')!
+      const bounds = editor.getBoundingClientRect()
+      const style = getComputedStyle(editor)
+      return {
+        textWidth: bounds.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        editorBottom: bounds.bottom,
+        actionsTop: send.getBoundingClientRect().top,
+        footerFits: [...document.querySelectorAll<HTMLElement>('.input-footer button')]
+          .filter((button) => button.checkVisibility())
+          .every((button) => {
+            const rect = button.getBoundingClientRect()
+            const footer = button.closest('.input-footer')!.getBoundingClientRect()
+            return rect.left >= footer.left && rect.right <= footer.right
+          }),
+      }
+    })
+    expect(composer.textWidth).toBeGreaterThan(90)
+    expect(composer.actionsTop).toBeGreaterThanOrEqual(composer.editorBottom)
+    expect(composer.footerFits).toBe(true)
     await saveAppScreenshot('resize-clipping-narrow.png', { width: 760, height: 800 })
 
     await browser.execute(() => {

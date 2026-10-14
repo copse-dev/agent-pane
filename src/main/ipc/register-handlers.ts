@@ -5,6 +5,7 @@ import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
+import { registerPlanHandlers } from './plan-handlers.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
 import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
@@ -85,6 +86,7 @@ import {
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
 import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
+import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
 import {
@@ -186,6 +188,7 @@ import { browserPaneSessionSchema, decodeBrowserPaneSession } from '../windows/m
 import {
   measureThreadStorage,
   backfillThreadPrRefs,
+  getLatestThreadPlan,
   loadProjectThreadMetas,
   loadThreadMessages,
   createThread,
@@ -224,6 +227,7 @@ import {
   type ThreadHistoryEditRuntime,
 } from '../services/thread-history-edit.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
+import { browseAcpRegistry } from '../services/acp/acp-registry-discovery.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   listExternalEditors,
@@ -659,6 +663,17 @@ export function registerAllHandlers(
   // closed, and a second main window can outlive it.
   const primaryWebContentsId = win.webContents.id
 
+  // Reserve container starts before asynchronous preflight, so plan writes and
+  // container launches cannot pass each other's idle check.
+  const startingContainerThreads = new Set<string>()
+  registerPlanHandlers(
+    win,
+    (projectId, threadId) =>
+      isDispatcherThreadActive(projectId, threadId) ||
+      listRunningThreadIds().includes(threadId) ||
+      startingContainerThreads.has(threadId) ||
+      getContainerRunService().isActive(threadId),
+  )
   const processManagerSnapshot = createProcessManagerSampler(
     () => app.getAppMetrics(),
     processManagerLabels,
@@ -1848,6 +1863,13 @@ export function registerAllHandlers(
     setAutomationAppIconMode(enabled, mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
   ipcMain.handle('usage:get-summary', () => getUsageSummary())
+  // What the classifiers (shell guard, tier screen, terminal-read screen) did for one
+  // thread: calls, verdicts, latency and tokens, from the thread's decision log.
+  ipcMain.handle('usage:get-thread-classifier-use', (event, ...rawArgs: unknown[]) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), rawArgs)
+    return getThreadClassifierUse(projectId, threadId)
+  })
   ipcMain.handle('usage:get-plan-usage', async (_event, force: unknown) => {
     const refresh = parseIpcArgs(z.boolean().optional(), [force])
     return loadPlanUsageSnapshotAndSample({ force: refresh === true })
@@ -1951,22 +1973,41 @@ export function registerAllHandlers(
   // Unattended container runs (docs/plans/thread-in-container.md). The
   // renderer sends the prompt, the model and the budgets; the main process
   // resolves the checkout, the provider and its key, and owns the run.
-  ipcMain.handle('container:run-thread', (event, request: unknown) => {
+  ipcMain.handle('container:run-thread', async (event, request: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(containerRunRequestSchema, [request])
-    return getContainerRunService().start({
-      projectId: parsed.projectId,
-      threadId: parsed.threadId,
-      prompt: parsed.prompt,
-      model: parsed.model,
-      budgets: parsed.budgets,
-      ...(parsed.useAgentLogin !== undefined ? { useAgentLogin: parsed.useAgentLogin } : {}),
-      ...(parsed.installDependencies !== undefined
-        ? { installDependencies: parsed.installDependencies }
-        : {}),
-      ...(parsed.continueFrom !== undefined ? { continueFrom: parsed.continueFrom } : {}),
-      ...(parsed.continueContext !== undefined ? { continueContext: parsed.continueContext } : {}),
-    })
+    const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [
+      parsed.projectId,
+      parsed.threadId,
+    ])
+    if (startingContainerThreads.has(threadId))
+      throw new Error('A container run is already starting')
+    startingContainerThreads.add(threadId)
+    try {
+      const activePlan = await getLatestThreadPlan(projectId, threadId)
+      if (activePlan && activePlan.meta.status !== 'abandoned') {
+        throw new Error(
+          'Container runs cannot enforce the plan workflow. End the plan before starting a container run.',
+        )
+      }
+      return await getContainerRunService().start({
+        projectId,
+        threadId,
+        prompt: parsed.prompt,
+        model: parsed.model,
+        budgets: parsed.budgets,
+        ...(parsed.useAgentLogin !== undefined ? { useAgentLogin: parsed.useAgentLogin } : {}),
+        ...(parsed.installDependencies !== undefined
+          ? { installDependencies: parsed.installDependencies }
+          : {}),
+        ...(parsed.continueFrom !== undefined ? { continueFrom: parsed.continueFrom } : {}),
+        ...(parsed.continueContext !== undefined
+          ? { continueContext: parsed.continueContext }
+          : {}),
+      })
+    } finally {
+      startingContainerThreads.delete(threadId)
+    }
   })
   // Why each model could not run in a container, or null when it could — the
   // resolver's own answer, so the dialog's greyed rows never disagree with a
@@ -2780,6 +2821,18 @@ export function registerAllHandlers(
     },
   )
 
+  ipcMain.handle(
+    'automations:cleanup-runs',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      return getAutomationService().cleanupRuns(projectId, scheduleId)
+    },
+  )
+
   ipcMain.handle('automations:list-branch-ci', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
@@ -3427,6 +3480,11 @@ export function registerAllHandlers(
   ipcMain.handle('acp:detect-agents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()
+  })
+  ipcMain.handle('acp:browse-registry', (event, refresh: unknown) => {
+    assertMainFrameSender(event, win)
+    const force = parseIpcArgs(z.boolean().optional(), [refresh])
+    return browseAcpRegistry(force)
   })
   ipcMain.handle('acp:probe-agent', (event, agentId: unknown) => {
     assertMainFrameSender(event, win)

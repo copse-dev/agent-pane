@@ -46,6 +46,7 @@ import type {
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
+  AutomationCleanupResult,
   AutomationSchedulerHealth,
   AutomationTriggerEvent,
   BranchCiAutomation,
@@ -396,7 +397,7 @@ export interface ApiClient {
       handler: (req: {
         id: string
         threadId?: string
-        questions: { question: string; options?: string[] }[]
+        questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
       }) => void,
     ) => () => void
     onAskUserCancelled: (handler: (req: { id: string }) => void) => () => void
@@ -596,6 +597,23 @@ export interface ApiClient {
     ) => Promise<void>
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
+  }
+  plans: {
+    get: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
+    revision: (
+      projectId: string,
+      threadId: string,
+      planId: string,
+      revision: number,
+    ) => Promise<string | null>
+    change: (
+      projectId: string,
+      threadId: string,
+      change: import('@copse/thread-store/plan-schema.ts').PlanChange,
+    ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
   }
   threads: {
     storageSize: (
@@ -866,6 +884,10 @@ export interface ApiClient {
     ) => Promise<import('@shared/types').Message | null>
   }
   acp: {
+    /** Explicit, read-only browsing of the public ACP registry. Never starts agents. */
+    browseRegistry: (
+      refresh?: boolean,
+    ) => Promise<import('@shared/acp-registry.ts').AcpRegistryListing>
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
     detectAgents: () => Promise<DetectedAcpAgent[]>
     /**
@@ -1014,6 +1036,11 @@ export interface ApiClient {
   }
   usage: {
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
+    /** Classifier calls, verdicts, latency and tokens a thread caused (its decision log). */
+    getThreadClassifierUse: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/usage/classifier-use.ts').ThreadClassifierUse>
     getPlanUsage: (force?: boolean) => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
     getPlanWorthIt: () => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
     setClaudePlanMonthlyFee: (
@@ -1258,6 +1285,8 @@ export interface ApiClient {
     upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
+    /** Remove every finished run's checkout that is safe to remove; report the runs that must stay. */
+    cleanupRuns: (projectId: string, scheduleId: string) => Promise<AutomationCleanupResult>
     listBranchCi: (projectId: string) => Promise<BranchCiAutomation[]>
     upsertBranchCi: (
       projectId: string,
@@ -1348,7 +1377,12 @@ export interface ApiClient {
     create: (
       cols: number,
       rows: number,
-      meta: { label?: string; projectId: string; threadId: string | null },
+      meta: {
+        label?: string
+        projectId: string
+        threadId: string | null
+        executionTarget?: 'local'
+      },
     ) => Promise<{ sessionId: string; checkoutMode: 'shared' | 'worktree' }>
     write: (sessionId: string, data: string) => Promise<void>
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>

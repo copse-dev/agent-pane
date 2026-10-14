@@ -64,6 +64,8 @@ function cleanupEvalRunDirs(): void {
 }
 
 export const config: Options.Testrunner = {
+  // Preserve v9's first-match `$` behavior for the existing fixture selectors.
+  strictSelectors: false,
   runner: 'local',
   specs: ['./tests/e2e/agent-eval-drive.e2e.ts'],
   maxInstances: 1,
@@ -75,7 +77,7 @@ export const config: Options.Testrunner = {
   connectionRetryTimeout: 120_000,
   // scripts/run-e2e.mts owns Linux's virtual-display lifecycle so it can make
   // a real display available before Electron starts.
-  autoXvfb: false,
+  displayServerEnabled: false,
   capabilities: [
     {
       browserName: 'chrome',

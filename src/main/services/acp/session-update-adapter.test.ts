@@ -980,4 +980,23 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
     }
     assert.deepEqual(sessionUpdateToStreamChunks(update), [])
   })
+
+  it('does not leak unnegotiated child-session updates into the main transcript', () => {
+    const updates: SessionUpdate[] = [
+      { sessionUpdate: 'subagent_update', sessionId: 'child-session', title: 'Child task' },
+      {
+        sessionUpdate: 'session_message',
+        messageId: 'child-message',
+        senderSessionId: 'child-session',
+        content: [{ type: 'text', text: 'Child message' }],
+      },
+      {
+        sessionUpdate: 'session_message_chunk',
+        messageId: 'child-message',
+        senderSessionId: 'child-session',
+        content: { type: 'text', text: 'Child chunk' },
+      },
+    ]
+    for (const update of updates) assert.deepEqual(sessionUpdateToStreamChunks(update), [])
+  })
 })

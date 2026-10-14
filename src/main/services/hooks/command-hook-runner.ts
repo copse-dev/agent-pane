@@ -1,3 +1,5 @@
+import type { CommandHookResult } from '@copse/agent/hooks/command-executor.ts'
+import { isPlanningRun } from '../thread-plan-context.ts'
 /**
  * App binding for the command-hook runner in `@copse/hooks-dialects`. The
  * package runner reports each execution to a caller-supplied sink; this wrapper
@@ -26,9 +28,32 @@ export function createCommandHookRunner(opts?: {
   recordingSnapshot?: HookRunRecordingSnapshot | null
 }): ReturnType<typeof createPackageRunner> {
   const snapshot = opts?.recordingSnapshot
-  return createPackageRunner({
+  const runner = createPackageRunner({
     record: (input) => {
       recordCommandHookRun(input, snapshot)
     },
   })
+  const planning = isPlanningRun()
+  return {
+    async run(hook, payload, context): Promise<CommandHookResult> {
+      if (!planning && !isPlanningRun()) return runner.run(hook, payload, context)
+      const message = 'Command hooks are unavailable during draft planning.'
+      recordCommandHookRun(
+        {
+          event: hook.event,
+          hookId: hook.id,
+          startedAt: Date.now(),
+          durationMs: 0,
+          exitCode: null,
+          parseOk: false,
+          decision: { permission: 'deny' },
+          stdin: '',
+          stdout: '',
+          stderr: message,
+        },
+        snapshot,
+      )
+      return { outcome: { decision: 'deny', agentMessage: message }, failed: false }
+    },
+  }
 }

@@ -1,3 +1,4 @@
+import { mountThreadPlanControl } from './thread-plan-dialog.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
@@ -61,7 +62,8 @@ import { initSkillPicker } from './skill-picker.ts'
 import { mountFooterIndexStatus } from './footer-index-status.ts'
 import { mergeInvocables, resolveInvocation } from '@shared/invocation/parse-invocation.ts'
 import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
-import type { ContextBreakdown, TranscriptAttachment, UserContent } from '@shared/types'
+import type { ContextBreakdown, Thread, TranscriptAttachment, UserContent } from '@shared/types'
+import type { ThreadClassifierUse } from '@shared/usage/classifier-use.ts'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import type { AgentSummary } from '@shared/types/agents.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
@@ -400,6 +402,16 @@ export function mountInputBar(
   containerRunMounted = true
   updateTargetPicker()
   void refreshContainerRunsSetting()
+  const planControl = mountThreadPlanControl(api, store, async (threadId, text): Promise<void> => {
+    if (getActiveThreadId() !== threadId)
+      throw new Error('Select the plan’s task before continuing.')
+    const context = composer.expandedValue().trim()
+    composer.value = context ? `${text}\n\nAdditional context:\n${context}` : text
+    persistComposerDraft()
+    // Use the ordinary checkout, attachment, submission and draft-consumption path.
+    // If preflight needs attention, the complete prompt stays ready in the composer.
+    await submit()
+  })
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
@@ -429,7 +441,7 @@ export function mountInputBar(
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator)
-  footer.append(modelHost, checkoutHost, branchHost)
+  footer.append(modelHost, checkoutHost, branchHost, planControl.button)
   footerOverflow = mountFooterOverflow(footer, [
     {
       label: guardedYolo.menuLabel,
@@ -778,13 +790,10 @@ export function mountInputBar(
   let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
   let automaticCheckoutPreviewSeq = 0
 
-  // The picker's label carries the route as well as the name (`Title — Model`
-  // for an agent, `… · local` for LM Studio). These sentences name the model
-  // only — and the ones that care about local already say so in words — so the
-  // route half is dropped rather than read out as "Describe locally with
-  // qwen/… · local".
+  // Action text and description attribution use the undecorated name supplied
+  // by the option owner. Parsing punctuation would truncate custom model names.
   function shortModelLabel(option: ModelOption): string {
-    const name = option.label.split(' — ')[0] ?? option.label
+    const name = option.shortLabel ?? option.label
     return name.endsWith(LOCAL_MODEL_SUFFIX) ? name.slice(0, -LOCAL_MODEL_SUFFIX.length) : name
   }
 
@@ -1534,6 +1543,87 @@ export function mountInputBar(
     contextFitWarning.hidden = false
   }
 
+  // What the classifiers did for the active thread. It lives in the thread's
+  // decision log in main, so it is fetched over IPC — only when something that
+  // can add a classifier call has moved (the thread, its status, a new message,
+  // or a new tool call on the last one), never per streamed chunk. Some calls
+  // land with no such event: the shell-tier shadow check is fire-and-forget and
+  // records after its answer arrives, so the hover also re-reads when it opens.
+  let classifierUse: ThreadClassifierUse | null = null
+  let classifierUseKey = ''
+  // Which project's thread the figures belong to; thread ids alone are not unique across projects.
+  let classifierUseOwner: string | null = null
+  let classifierUseSeq = 0
+  let classifierUseInFlight = false
+  // Whether the pending read was started by the hover itself. One that was not
+  // can have missed a call recorded since, so a hover during it asks again once
+  // it settles; one that was already covers what the hover wants.
+  let classifierUseInFlightForced = false
+  let classifierUseRereadQueued = false
+
+  function refreshClassifierUse(thread: Thread | undefined, force = false): void {
+    const projectId = store.getState().activeProjectId
+    if (!thread || projectId === null) {
+      classifierUse = null
+      classifierUseKey = ''
+      classifierUseOwner = null
+      classifierUseSeq++
+      // Whatever was pending is superseded and will not clear the flag itself.
+      classifierUseInFlight = false
+      classifierUseRereadQueued = false
+      return
+    }
+    const last = thread.messages.at(-1)
+    const key = `${projectId}:${thread.id}:${thread.status}:${String(thread.messages.length)}:${String(last?.toolCalls.length ?? 0)}`
+    if (force && classifierUseInFlight) {
+      if (!classifierUseInFlightForced) classifierUseRereadQueued = true
+      return
+    }
+    if (!force && key === classifierUseKey) return
+    // Another thread's figures must not show while this one's are in flight.
+    const owner = `${projectId}:${thread.id}`
+    if (owner !== classifierUseOwner) classifierUse = null
+    classifierUseOwner = owner
+    classifierUseKey = key
+    const seq = ++classifierUseSeq
+    classifierUseInFlight = true
+    classifierUseInFlightForced = force
+    classifierUseRereadQueued = false
+    // A hover that arrived during this read asks once more, after it has painted.
+    const settle = (): void => {
+      classifierUseInFlight = false
+      if (!classifierUseRereadQueued) return
+      classifierUseRereadQueued = false
+      refreshClassifierUse(getActiveThread(store), true)
+    }
+    api.usage.getThreadClassifierUse(projectId, thread.id).then(
+      (use) => {
+        // A newer fetch (or a thread switch) has superseded this answer, and the
+        // flag now belongs to that newer fetch.
+        if (seq !== classifierUseSeq) return
+        // A re-read that finds the same figures must not repaint: a repaint drops
+        // the wheel's tabindex, which blurs it and closes a keyboard-opened hover.
+        // A thread that asked no classifier shows nothing, the same as before the
+        // answer arrived, so that answer needs no repaint either.
+        const next = use.calls > 0 ? use : null
+        if (JSON.stringify(next) !== JSON.stringify(classifierUse)) {
+          classifierUse = next
+          updateFooter()
+        }
+        settle()
+      },
+      () => {
+        if (seq === classifierUseSeq) settle()
+      },
+    )
+  }
+
+  const rereadClassifierUse = (): void => {
+    refreshClassifierUse(getActiveThread(store), true)
+  }
+  contextWheel.root.addEventListener('mouseenter', rereadClassifierUse)
+  contextWheel.root.addEventListener('focusin', rereadClassifierUse)
+
   function updateFooter(): void {
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
@@ -1543,6 +1633,7 @@ export function mountInputBar(
     // dynamic-default resolver): refresh it, which for ACP drops it instead.
     if (lastBreakdown && !breakdown) scheduleContextEstimate(0)
     const usage = usageViews()
+    refreshClassifierUse(thread)
     const snapshot = thread?.contextSnapshot
     const snapshotUsable =
       !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01
@@ -1571,6 +1662,7 @@ export function mountInputBar(
     contextWheel.update(snapshot, running, {
       usageLine: usage?.detail ?? null,
       usage: usage?.tooltip ?? null,
+      classifierUse,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource:
@@ -2424,7 +2516,14 @@ export function mountInputBar(
     thumb.width = 40
     thumb.height = 40
     // Same shared lightbox as transcript/roadmap thumbs — openable before send.
-    attachImageExpand(thumb, 'Attached image')
+    attachImageExpand(thumb, 'Attached image', undefined, undefined, (png) => {
+      if (!attachedImages.includes(entry)) return false
+      entry.dataUrl = png
+      entry.mimeType = 'image/png'
+      thumb.src = png
+      scheduleContextEstimate()
+      return true
+    })
     const remove = document.createElement('button')
     remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
@@ -2816,6 +2915,7 @@ export function mountInputBar(
       footerOverflow.destroy()
       guardedYolo.destroy()
       containerRun.destroy()
+      planControl.destroy()
       footerCompact.destroy()
       portraitPanelControls.destroy()
       branchControl.destroy()

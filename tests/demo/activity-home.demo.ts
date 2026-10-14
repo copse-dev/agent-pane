@@ -1,5 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
-import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import { saveAppScreenshot, waitForSettledLayout } from '../e2e/helpers/screenshot.ts'
+import { pinDemoClock } from './helpers/fixed-clock.ts'
 
 // The new-thread screen is the Activity view above a docked composer
 // (views/activity-home.ts), laid out after prototypes/new-thread-activity.html.
@@ -72,6 +73,7 @@ async function probeHome(): Promise<HomeProbe | null> {
 
 describe('browser-hosted Activity home', () => {
   before(async () => {
+    await pinDemoClock()
     await browser.url('about:blank')
     await browser.url('/?scenario=activity-home')
     await $('.pane-chat.is-activity-home').waitForExist({ timeout: 30_000 })
@@ -108,8 +110,8 @@ describe('browser-hosted Activity home', () => {
     expect(probe.captionBottom).toBeLessThanOrEqual(probe.inputTop + 1)
     expect(probe.inputTop - probe.bodyBottom).toBeLessThanOrEqual(56)
     expect(probe.panePaddingBottom).toBe('0px')
-    // Docked, the composer keeps its own 1px border (the idle, centred one has none).
-    expect(probe.composerBorder).toBe('1px')
+    // Both docked and idle composers use the same borderless card surface.
+    expect(probe.composerBorder).toBe('0px')
     expect(probe.overflowsSideways).toBe(false)
     expect(probe.conversationDisplay).toBe('none')
     // Opening the screen must leave the caret in the composer, not in the list.
@@ -322,13 +324,20 @@ describe('browser-hosted Activity home', () => {
       const probe = await browser.execute(() => {
         const approve = document.querySelector('#activity-home .activity-approve')
         const input = document.getElementById('input-bar')
+        const card = document.querySelector('#activity-home .activity-panel-body')
         return {
+          approveTop: approve?.getBoundingClientRect().top ?? 0,
           approveBottom: approve?.getBoundingClientRect().bottom ?? 0,
           inputTop: input?.getBoundingClientRect().top ?? 0,
+          cardTop: card?.getBoundingClientRect().top ?? 0,
+          cardBottom: card?.getBoundingClientRect().bottom ?? 0,
         }
       })
       await saveAppScreenshot('activity-home-short.png')
+      await expect($('#activity-home .activity-home-caption')).not.toBeDisplayed()
       expect(probe.approveBottom).toBeLessThanOrEqual(probe.inputTop + 1)
+      expect(probe.approveTop).toBeGreaterThanOrEqual(probe.cardTop)
+      expect(probe.approveBottom).toBeLessThanOrEqual(probe.cardBottom + 1)
     } finally {
       await browser.setWindowSize(before.width, before.height)
     }
@@ -376,44 +385,86 @@ describe('browser-hosted Activity home', () => {
   })
 
   it('never clips the action bar at the widths the pane divider leaves the chat pane', async () => {
+    const before = await browser.getWindowSize()
+    const frame = await browser.execute(() => ({
+      width: window.outerWidth - window.innerWidth,
+      height: window.outerHeight - window.innerHeight,
+    }))
     await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
     await $('#pane-files').waitForDisplayed()
     const paneWidth = async (): Promise<number> =>
       browser.execute(
         () => document.getElementById('pane-chat')?.getBoundingClientRect().width ?? 0,
       )
+    const probeAt = async (
+      target: number,
+    ): Promise<{ pane: number; clipped: boolean; columns: number }> => {
+      const current = await paneWidth()
+      await $('#resizer-files').dragAndDrop({ x: Math.round(target - current), y: 0 })
+      await waitForSettledLayout('#pane-chat')
+      return browser.execute(() => {
+        const body = document.querySelector('#activity-home .activity-panel-body')
+        const controls = [
+          '#activity-home .activity-open-thread',
+          '#activity-home .activity-reject',
+          '#activity-home .activity-approve',
+        ].map((selector) => document.querySelector(selector)?.getBoundingClientRect())
+        const frame = body?.getBoundingClientRect()
+        const pane = document.getElementById('pane-chat')?.getBoundingClientRect()
+        return {
+          pane: Math.round(pane?.width ?? 0),
+          clipped: controls.some(
+            (box) => !box || !frame || box.left < frame.left - 1 || box.right > frame.right + 1,
+          ),
+          columns: body ? getComputedStyle(body).gridTemplateColumns.split(' ').length : 0,
+        }
+      })
+    }
     const widths: number[] = []
     try {
-      // Through the product's own divider, as a user would: 641px is just past the
-      // stacking breakpoint, 345px is the narrowest the divider allows.
-      for (const target of [700, 641, 560, 450, 345]) {
-        const current = await paneWidth()
-        await $('#resizer-files').dragAndDrop({ x: Math.round(target - current), y: 0 })
-        await browser.pause(150)
-        const probe = await browser.execute(() => {
-          const body = document.querySelector('#activity-home .activity-panel-body')
-          const controls = [
-            '#activity-home .activity-open-thread',
-            '#activity-home .activity-reject',
-            '#activity-home .activity-approve',
-          ].map((selector) => document.querySelector(selector)?.getBoundingClientRect())
-          const frame = body?.getBoundingClientRect()
-          const pane = document.getElementById('pane-chat')?.getBoundingClientRect()
-          return {
-            pane: Math.round(pane?.width ?? 0),
-            clipped: controls.some(
-              (box) => !box || !frame || box.left < frame.left - 1 || box.right > frame.right + 1,
-            ),
-          }
-        })
+      // Below the stacking breakpoint the list column no longer has a 285px
+      // floor to fall back on, so a two-column layout here would mean every
+      // extra pixel of squeeze lands on the detail pane alone (the bug this
+      // sweep exists to catch: the heading wraps one word per line well before
+      // anything actually clips).
+      //
+      // At the default 1280 window the projects rail and files panel leave the
+      // chat pane capped around 738px — below the breakpoint — so reaching a
+      // genuine two-column width needs a wider window first; 345px, the
+      // narrowest the divider allows, needs the default width back; a wider
+      // window raises the divider's own floor well past it.
+      await browser.setWindowSize(1780 + frame.width, 800 + frame.height)
+      for (const target of [900, 761, 700]) {
+        const probe = await probeAt(target)
         widths.push(probe.pane)
         expect(probe.clipped).toBe(false)
+        expect(probe.columns).toBe(probe.pane <= 760 ? 1 : 2)
+        // 700 sat just past the *old* 640px breakpoint: the list held its 285px
+        // floor and every extra pixel of squeeze landed on the detail column
+        // alone, wrapping the heading one word per line well short of actually
+        // clipping. Screenshot the now-stacked result for review — the full
+        // widened window, or prepareE2eScreenshot's default 1280px clamp would
+        // shrink #app and undo the divider position just set above.
+        if (target === 700) {
+          await saveAppScreenshot('activity-home-formerly-squeezed.png', {
+            width: 1780,
+            height: 800,
+          })
+        }
+      }
+      await browser.setWindowSize(before.width, before.height)
+      for (const target of [560, 450, 345]) {
+        const probe = await probeAt(target)
+        widths.push(probe.pane)
+        expect(probe.clipped).toBe(false)
+        expect(probe.columns).toBe(probe.pane <= 760 ? 1 : 2)
       }
       // The sweep must have reached the widths that clipped, or it proves nothing.
-      expect(widths.some((width) => width >= 620 && width <= 680)).toBe(true)
+      expect(widths.some((width) => width >= 740 && width <= 780)).toBe(true)
       expect(widths.some((width) => width <= 400)).toBe(true)
     } finally {
       await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
+      await browser.setWindowSize(before.width, before.height)
     }
   })
 })

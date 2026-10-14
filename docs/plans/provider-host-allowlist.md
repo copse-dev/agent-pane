@@ -82,7 +82,7 @@ attacker-controlled host via a **malicious or tampered custom-provider
 - Settings sync / import or a hand-edited settings store seeds a custom provider
   whose `baseUrl` points at `evil.example`. The next completion, key
   validation, or model fetch ships the configured key (as `Authorization:
-Bearer`) and prompt/transcript to that host.
+  Bearer`) and prompt/transcript to that host.
 - A social-engineered "add this provider" with a look-alike host.
 
 The mitigation is a host check at every seam where a custom `baseUrl` becomes a
@@ -232,7 +232,7 @@ Concretely:
   synced after the model was selected): `assertProviderHostAllowed` throws in
   `createExtraCloudProvider`. The thrown `Error` should carry an actionable
   message — `Provider host "evil.example" is not approved. Re-add it in Settings
-→ Providers.` — surfaced through the same chat/run error path that already
+  → Providers.` — surfaced through the same chat/run error path that already
   renders provider-not-configured errors from `createProvider` (it throws plain
   `Error`s today, e.g. "Anthropic is not configured…"). No partial request is
   sent: the check runs before the SDK client is constructed.

@@ -40,6 +40,7 @@ const successfulPr = {
   ANY_CANCELLED: 'false',
   PRECHECK_RESULT: 'success',
   CHECK_RESULT: 'success',
+  BASELINES_RESULT: 'success',
   MERGE_GROUP: 'false',
   BUILD_RESULT: 'success',
   REVIEW_CELL_REQUIRED: 'false',
@@ -77,6 +78,7 @@ describe('required CI gate bindings', () => {
       ANY_CANCELLED: "${{ contains(needs.*.result, 'cancelled') }}",
       PRECHECK_RESULT: '${{ needs.precheck.result }}',
       CHECK_RESULT: '${{ needs.check.result }}',
+      BASELINES_RESULT: '${{ needs.screenshot-baselines.result }}',
       MERGE_GROUP: "${{ github.event_name == 'merge_group' }}",
       BUILD_RESULT: '${{ needs.build.result }}',
       REVIEW_CELL_REQUIRED: '${{ needs.precheck.outputs.review_cell_required }}',
@@ -248,4 +250,11 @@ describe('required CI gate decisions', { skip: process.platform === 'win32' }, (
       assert.equal(gate({ E2E_RESULT: result }), 1)
     }
   })
+})
+
+it('rejects missing R2 baselines even for skip mode and fork CI', () => {
+  for (const result of ['failure', 'cancelled', 'skipped', '']) {
+    assert.equal(gate({ BASELINES_RESULT: result, MODE: 'skip' }), 1)
+    assert.equal(gate({ BASELINES_RESULT: result, FORK_PR: 'true' }), 1)
+  }
 })

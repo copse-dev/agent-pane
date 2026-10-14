@@ -22,12 +22,8 @@ function roadmapOriginIcon(): SVGSVGElement {
  * opens the Roadmap pane with that item selected, the reverse of the
  * `.roadmap-thread-chip` the item's own row shows to jump *to* the thread.
  *
- * Hidden for any thread with no roadmap origin (the common case), and for a
- * thread whose item has since been superseded — the item's `thread` field
- * only ever holds the *most recently started* thread (restamped on every
- * "Start thread"), so if two threads were started from the same item, only
- * the newer one keeps this link; the older thread quietly stops showing it
- * rather than pointing at the wrong item.
+ * Hidden for tasks without a roadmap origin. Earlier attempts keep their
+ * back-link when another task is started from the same item.
  */
 export function mountThreadRoadmapOrigin(
   store: AppStore,

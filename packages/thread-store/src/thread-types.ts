@@ -351,6 +351,12 @@ export interface Thread {
    */
   messagesLoaded?: boolean
   /**
+   * A committed plan (including an ended plan) makes this a used task even with
+   * no messages or composer draft. Derived from the spine on load and set after
+   * a successful plan save. Session-only; never persisted in meta.json.
+   */
+  hasSavedPlan?: boolean
+  /**
    * GitHub PRs linked from this thread, cached on its metadata.
    *
    * Derived from PR links in message text plus {@link remoteAgentLink} — that
@@ -535,6 +541,8 @@ export interface Thread {
    * on an unselected thread is surfaced by {@link unreadAt} instead.
    */
   lastPromptAt?: number
+  /** Last turn completion; metadata-only edits must not advance Activity history. */
+  lastSettledAt?: number
   createdAt: number
   updatedAt: number
 }
