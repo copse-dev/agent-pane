@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, mkdirSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, mkdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -10,6 +10,30 @@ import {
 } from './profile-vault-access.ts'
 
 describe('vault profile ownership', () => {
+  it(
+    'rejects an existing client directory accessible by other users',
+    {
+      skip: process.platform === 'win32',
+    },
+    () => {
+      const path = mkdtempSync(join(tmpdir(), 'copse-vault-access-'))
+      try {
+        const clients = join(path, '.vault-clients')
+        mkdirSync(clients)
+        chmodSync(clients, 0o777)
+        assert.throws(() => registerVaultProfileClient(path), /corrupt/)
+        assert.throws(() => acquireVaultMaintenance(path), /corrupt/)
+        assert.equal(statSync(clients).mode & 0o777, 0o777)
+        chmodSync(clients, 0o700)
+        const release = registerVaultProfileClient(path)
+        assert.throws(() => acquireVaultMaintenance(path), /Close headless/)
+        release()
+        acquireVaultMaintenance(path)()
+      } finally {
+        rmSync(path, { recursive: true, force: true })
+      }
+    },
+  )
   it('prevents migration beside existing clients and new clients during migration', () => {
     const path = mkdtempSync(join(tmpdir(), 'copse-vault-access-'))
     try {

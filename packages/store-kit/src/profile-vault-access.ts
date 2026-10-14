@@ -18,6 +18,13 @@ function clientsDirectory(profile: string): string {
   mkdirSync(path, { recursive: true, mode: 0o700 })
   const stat = lstatSync(path)
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new VaultError('corrupt')
+  // mkdir's mode applies only to a new directory. An existing directory must
+  // not let another user inspect or replace the leases used for exclusion.
+  if (
+    process.platform !== 'win32' &&
+    ((stat.mode & 0o777) !== 0o700 || stat.uid !== process.getuid?.())
+  )
+    throw new VaultError('corrupt')
   return path
 }
 /** Headless clients register before opening stores and keep their lease until exit. */
