@@ -113,6 +113,9 @@ describe('Activity panel', function () {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
+    // The panel observes run-start events even while closed. Starting before
+    // it mounts leaves the working row with an unknown age in the capture.
+    await $('#activity-panel').waitForExist({ timeout: 30_000 })
   })
 
   after(() => {
@@ -180,6 +183,7 @@ describe('Activity panel', function () {
     const workingRow = $(rowSelector('working', AUDIT_THREAD))
     await expect(workingRow).toBeDisplayed()
     await expect(workingRow.$('.activity-state')).toHaveText('Running')
+    await expect(workingRow.$('time.activity-age')).toBeExisting()
     assert.deepEqual(
       await $$('#activity-panel .activity-group').map((group) => group.getAttribute('data-group')),
       ['needs-you', 'working', 'recent'],
