@@ -26,22 +26,33 @@ describe('app frame after resizing', () => {
       const editor = titlebar.querySelector<HTMLElement>('.open-in-editor')!
       editor.removeAttribute('hidden')
       titlebar.querySelector<HTMLElement>('.open-in-editor-label')!.textContent = 'Open in Terminal'
-      // A resize can make the full titlebar overflow before its next-frame
-      // compact measurement runs. Focus/scroll requests must not pan the app.
+      // Recreate the transient measurement frame: all panel actions are revealed
+      // and left-aligned before compact/overflow planning runs. Merely removing
+      // the compact class leaves the previous overflow plan hiding its buttons.
+      // Focus/scroll requests during this frame must not pan the app.
       titlebar.classList.remove('is-titlebar-compact')
+      const panelControls = titlebar.querySelector<HTMLElement>('.titlebar-panel-controls')!
+      const alignment = panelControls.style.justifyContent
+      panelControls.style.justifyContent = 'flex-start'
+      for (const button of panelControls.querySelectorAll('[data-portrait-overflow]')) {
+        button.removeAttribute('data-portrait-overflow')
+      }
       const controls = [
         ...titlebar.querySelectorAll<HTMLElement>('.titlebar-panel-controls button'),
       ]
       const control = controls.filter((button) => button.checkVisibility()).at(-1)!
       control.focus()
       control.scrollIntoView({ block: 'nearest', inline: 'end' })
-      return [document.documentElement, document.body, app, body].map((node) => ({
+      const offsets = [document.documentElement, document.body, app, body].map((node) => ({
         id: node.id || node.tagName,
         left: node.getBoundingClientRect().left,
         scrollLeft: node.scrollLeft,
         width: node.clientWidth,
         scrollWidth: node.scrollWidth,
       }))
+      panelControls.style.justifyContent = alignment
+      window.dispatchEvent(new Event('resize'))
+      return offsets
     })
     const page = offsets.find((node) => node.id === 'app')!
     expect(page.scrollWidth).toBeGreaterThan(page.width)
