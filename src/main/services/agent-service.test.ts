@@ -1336,16 +1336,27 @@ it('queued primary turns remain stoppable from mobile without launching a provid
 it('Stop during admitted model preflight cannot be overwritten by a new controller', async () => {
   const threadId = `preflight-stop-${randomUUID()}`
   const chunks: StreamChunk[] = []
-  const pending = agentService.runAgent(
-    threadId,
-    'Do the work',
-    [],
+  const pending = runWithThreadExecutionContext(
     {
-      emit: (_id, chunk) => {
-        chunks.push(chunk)
-      },
+      projectId: 'preflight-tests',
+      threadId,
+      projectRoot: process.cwd(),
+      root: process.cwd(),
+      checkoutMode: 'shared',
+      branch: null,
     },
-    new ToolRegistry(),
+    () =>
+      agentService.runAgent(
+        threadId,
+        'Do the work',
+        [],
+        {
+          emit: (_id, chunk) => {
+            chunks.push(chunk)
+          },
+        },
+        new ToolRegistry(),
+      ),
   )
   const runId = agentService.mobileRunId(threadId)
   assert.ok(runId)
@@ -1357,4 +1368,43 @@ it('Stop during admitted model preflight cannot be overwritten by a new controll
   assert.deepEqual(chunks, [{ type: 'done', stopReason: 'cancelled' }])
   assert.deepEqual(result.usage, { inputTokens: 0, outputTokens: 0 })
   assert.equal(agentService.mobileRunId(threadId), null)
+})
+
+it('preserves an independent model preflight error when Stop races with it', async () => {
+  const threadId = `preflight-error-stop-${randomUUID()}`
+  const previous = getSetting<string[]>('blockedModelMakers', [])
+  const chunks: StreamChunk[] = []
+  await setSetting('blockedModelMakers', ['xai'])
+  try {
+    const pending = runWithThreadExecutionContext(
+      {
+        projectId: 'preflight-tests',
+        threadId,
+        projectRoot: process.cwd(),
+        root: process.cwd(),
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        agentService.runAgent(
+          threadId,
+          'Do the work',
+          [],
+          {
+            emit: (_id, chunk) => {
+              chunks.push(chunk)
+            },
+          },
+          new ToolRegistry(),
+          { model: 'openrouter:x-ai/grok-4.5' },
+        ),
+    )
+    await Promise.resolve()
+    agentService.abortAgent(threadId)
+    await assert.rejects(pending, /xAI models are blocked/)
+    assert.deepEqual(chunks, [])
+    assert.ok(!agentService.listRunningThreadIds().includes(threadId))
+  } finally {
+    await setSetting('blockedModelMakers', previous)
+  }
 })

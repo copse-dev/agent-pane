@@ -16,6 +16,26 @@ const noQueue = (): void => {
 }
 
 describe('primary turn admission', () => {
+  it('preserves the abort reason so callers can distinguish cancellation from failure', async () => {
+    const scheduler = new AgentTurnScheduler(1)
+    const hold = latch()
+    const first = scheduler.run(signal(), noQueue, () => hold.promise)
+    const controller = new AbortController()
+    const queued = scheduler.run(
+      controller.signal,
+      () => {},
+      async () => {
+        assert.fail('cancelled turn must not start')
+      },
+    )
+    controller.abort('send_now')
+    try {
+      await assert.rejects(queued, (error: unknown) => error === controller.signal.reason)
+    } finally {
+      hold.release()
+      await first
+    }
+  })
   it('starts at most the configured number, admits FIFO and releases on failure', async () => {
     const scheduler = new AgentTurnScheduler(1)
     const hold = latch()

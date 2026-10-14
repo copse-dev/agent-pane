@@ -843,7 +843,8 @@ export async function runAgent(
       },
     )
   } catch (error) {
-    if (phase.preflightComplete || !admission.signal.aborted) throw error
+    if (phase.preflightComplete || !admission.signal.aborted || error !== admission.signal.reason)
+      throw error
     host.emit(threadId, { type: 'done', stopReason: 'cancelled' })
     return {
       usage: { inputTokens: 0, outputTokens: 0 },

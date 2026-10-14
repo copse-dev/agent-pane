@@ -15,7 +15,7 @@ export function parseMaxActiveTurns(value: string | undefined): number {
 interface Waiter {
   signal: AbortSignal
   resolve: () => void
-  reject: (reason: Error) => void
+  reject: (reason: unknown) => void
   abort: () => void
 }
 
@@ -65,7 +65,7 @@ export class AgentTurnScheduler {
           const index = this.queue.indexOf(waiter)
           if (index !== -1) this.queue.splice(index, 1)
           signal.removeEventListener('abort', waiter.abort)
-          reject(rejectionError(signal.reason))
+          reject(signal.reason)
         },
       }
       this.queue.push(waiter)
@@ -87,7 +87,7 @@ export class AgentTurnScheduler {
       if (!waiter) break
       waiter.signal.removeEventListener('abort', waiter.abort)
       if (waiter.signal.aborted) {
-        waiter.reject(rejectionError(waiter.signal.reason))
+        waiter.reject(waiter.signal.reason)
         continue
       }
       this.active++
