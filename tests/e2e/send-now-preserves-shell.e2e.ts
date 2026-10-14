@@ -86,7 +86,12 @@ describe('Send now preserves a running shell', function () {
     await browser.waitUntil(
       async () => {
         const dialog = $('#approval-dialog')
-        if ((await dialog.isExisting()) && (await dialog.getProperty('open')) === true)
+        if (
+          (await dialog.isExisting()) &&
+          (await browser.execute(
+            () => document.querySelector<HTMLDialogElement>('#approval-dialog')?.open === true,
+          ))
+        )
           await dialog.$('.approval-approve').click()
         return existsSync(READY)
       },
@@ -146,7 +151,11 @@ describe('Send now preserves a running shell', function () {
       await submitPrompt()
       const dialog = $('#approval-dialog')
       await browser.waitUntil(
-        async () => (await dialog.isExisting()) && (await dialog.getProperty('open')) === true,
+        async () =>
+          (await dialog.isExisting()) &&
+          (await browser.execute(
+            () => document.querySelector<HTMLDialogElement>('#approval-dialog')?.open === true,
+          )),
         {
           timeout: 15_000,
           interval: 100,
@@ -154,11 +163,17 @@ describe('Send now preserves a running shell', function () {
         },
       )
       await expect(dialog).toHaveText(expect.stringContaining('rm -rf .e2e-rm-timeout-output'))
-      await browser.waitUntil(async () => (await dialog.getProperty('open')) !== true, {
-        timeout: 135_000,
-        interval: 500,
-        timeoutMsg: 'the dangerous rm prompt stalled the run',
-      })
+      await browser.waitUntil(
+        async () =>
+          await browser.execute(
+            () => document.querySelector<HTMLDialogElement>('#approval-dialog')?.open !== true,
+          ),
+        {
+          timeout: 135_000,
+          interval: 500,
+          timeoutMsg: 'the dangerous rm prompt stalled the run',
+        },
+      )
       await expectAssistantReply(
         'The safety confirmation timed out. I will continue with safer work and rewrite the cleanup command.',
       )
