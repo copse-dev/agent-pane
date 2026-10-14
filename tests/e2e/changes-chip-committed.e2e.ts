@@ -9,6 +9,7 @@ import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { prepareE2eScreenshot, savePreparedAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { waitForGitChangesSettled } from './helpers/git-changes-settled.ts'
 
 describe('Changes chip includes committed branch work', () => {
   let temporaryRoot = ''
@@ -108,13 +109,7 @@ describe('Changes chip includes committed branch work', () => {
     await expect($('.follow-up-bubble-changes .follow-up-stat-del')).toHaveText('-1')
     // Set the capture viewport before waiting: resizing can refresh the pane.
     await prepareE2eScreenshot()
-    await browser.waitUntil(
-      async () => !(await $('.git-changes-list').getText()).includes('Checking committed changes'),
-      {
-        timeout: 15_000,
-        timeoutMsg: 'expected committed changes to finish loading before capture',
-      },
-    )
+    await waitForGitChangesSettled()
     await savePreparedAppScreenshot('changes-chip-committed.png')
   })
 })

@@ -14,6 +14,14 @@ declare global {
 export async function withFrozenAnimations(capture: () => Promise<void>): Promise<void> {
   await browser.execute(() => {
     if (window.e2eCaptureAnimations) throw new Error('Nested animation capture')
+    if (!CSS.supports('caret-animation', 'manual')) {
+      throw new Error('Capture browser must support a steady visible caret')
+    }
+    const caretStyle = document.createElement('style')
+    caretStyle.id = 'e2e-capture-steady-caret'
+    // Keep the focused caret visible, rather than hiding a real editing affordance.
+    caretStyle.textContent = '* { caret-animation: manual !important; }'
+    document.head.append(caretStyle)
     window.e2eCaptureAnimations = document
       .getAnimations()
       .filter((animation) => animation.effect?.getTiming().iterations === Infinity)
@@ -40,6 +48,7 @@ export async function withFrozenAnimations(capture: () => Promise<void>): Promis
         if (playing) animation.play()
       }
       delete window.e2eCaptureAnimations
+      document.getElementById('e2e-capture-steady-caret')?.remove()
     })
   }
 }

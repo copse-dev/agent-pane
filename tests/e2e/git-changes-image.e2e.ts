@@ -16,6 +16,7 @@ import {
 } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { parkPointer, saveElementScreenshot, waitForImagesSettled } from './helpers/screenshot.ts'
+import { waitForGitChangesSettled } from './helpers/git-changes-settled.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -108,6 +109,7 @@ describe('git changes image preview', function () {
     await expect(paths).toContain('new.png')
 
     await parkPointer()
+    await waitForGitChangesSettled()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-list.png'))
 
     await clickChange('staged.png')
