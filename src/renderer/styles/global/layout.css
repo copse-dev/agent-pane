@@ -2617,14 +2617,17 @@ summary.pr-check-group-heading::-webkit-details-marker {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  /* Transparent canvas artefacts expose this surface. The headless mirror
-     captures against the resolved value of the same token. The text colour is
-     read back and injected into such guests (browser-pane.ts), since host CSS
-     does not inherit into a webview. */
-  background: var(--bg-base);
+  /* Ordinary pages use the browser's light default canvas. A transparent page
+     must not put its default black text on Copse's dark app surface. */
+  background: var(--browser-page-background);
   color: var(--text-primary);
   -webkit-app-region: no-drag;
   position: relative;
+}
+.browser-webview-host.is-canvas {
+  /* Inline Canvas artefacts deliberately share the app surface; browser-pane
+     also supplies its foreground when their roots are transparent. */
+  background: var(--bg-base);
 }
 .browser-webview {
   flex: 1;
