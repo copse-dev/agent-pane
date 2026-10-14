@@ -33,6 +33,22 @@ describe('Coding agents list in Settings', () => {
         : `#!${process.execPath}\nimport(${JSON.stringify(agentModule.href)})\n`,
     )
     if (!windows) chmodSync(executable, 0o755)
+    // The adapter being installed does not establish CLI authentication. Give
+    // the real status subprocess an explicit logged-out answer at its boundary.
+    const statusModule = join(fixtureBin, 'codex-status.cjs')
+    writeFileSync(
+      statusModule,
+      "if (process.argv.slice(2).join(' ') !== 'login status') process.exit(2)\n" +
+        "process.stderr.write('Not logged in\\n')\nprocess.exitCode = 1\n",
+    )
+    const statusExecutable = join(fixtureBin, windows ? 'codex.cmd' : 'codex')
+    writeFileSync(
+      statusExecutable,
+      windows
+        ? `@echo off\r\n"${process.execPath}" "${statusModule}" %*\r\n`
+        : `#!${process.execPath}\nrequire(${JSON.stringify(statusModule)})\n`,
+    )
+    if (!windows) chmodSync(statusExecutable, 0o755)
     writeE2eEnv({
       COPSE_PRESERVE_PATH: '1',
       CODEX_HOME: join(fixtureBin, 'empty-codex-home'),
@@ -91,13 +107,14 @@ describe('Coding agents list in Settings', () => {
       `codex-acp not detected: ${JSON.stringify(probe)}`,
     )
     assert.ok(
-      probe.auth.some((entry) => entry.id === 'codex-acp' && entry.state !== 'unknown'),
-      `codex-acp has no sign-in state: ${JSON.stringify(probe)}`,
+      probe.auth.some((entry) => entry.id === 'codex-acp' && entry.state === 'signed-out'),
+      `codex-acp must report its explicit logged-out status: ${JSON.stringify(probe)}`,
     )
 
     // The status chip shares the row with the agent name, whatever its width.
     const chip = codex.$('.acp-row-chip')
     await chip.waitForExist({ timeout: 15_000 })
+    await expect(chip).toHaveText('Needs sign-in')
     const geometry = await browser.execute(() => {
       const name = document.querySelector('.acp-row[data-agent="codex-acp"] .acp-row-name strong')
       const chipEl = document.querySelector('.acp-row[data-agent="codex-acp"] .acp-row-chip')

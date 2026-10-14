@@ -80,26 +80,40 @@ describe('detectAcpAuthStatus environment boundary', () => {
         assert.equal(env['OPENAI_API_KEY'], undefined)
         return deps({ env })
       })
-      assert.deepEqual(result, [{ id: 'codex-acp', state: 'signed-out' }])
+      assert.deepEqual(result, [{ id: 'codex-acp', state: 'unknown' }])
     } finally {
       if (previous === undefined) Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
       else process.env['OPENAI_API_KEY'] = previous
     }
   })
 
-  it('uses the configured Codex home and treats unrecognised CLI output as unknown', async () => {
-    let inspected = ''
-    await probeAcpAuth(
-      'codex-acp',
-      deps({
-        env: { CODEX_HOME: '/custom/codex' },
-        fileExists: async (path) => {
-          inspected = path
-          return false
-        },
-      }),
-    )
-    assert.equal(inspected, '/custom/codex/auth.json')
+  it('keeps failed Codex probes unknown regardless of credential-file presence', async () => {
+    for (const code of ['ENOENT', 'EACCES', 'ETIMEDOUT']) {
+      for (const exists of [false, true]) {
+        let inspected = false
+        assert.equal(
+          await probeAcpAuth(
+            'codex-acp',
+            deps({
+              env: { CODEX_HOME: '/custom/codex' },
+              exec: async () => {
+                throw Object.assign(new Error('status failed'), { code })
+              },
+              fileExists: async () => {
+                inspected = true
+                return exists
+              },
+            }),
+          ),
+          'unknown',
+          `${code} with credential file ${exists ? 'present' : 'absent'}`,
+        )
+        assert.equal(inspected, false, 'failed status must not infer login from a file')
+      }
+    }
+  })
+
+  it('treats unrecognised CLI output as unknown', async () => {
     assert.equal(
       await probeAcpAuth('cursor', deps({ exec: async () => 'Unexpected help text' })),
       'unknown',

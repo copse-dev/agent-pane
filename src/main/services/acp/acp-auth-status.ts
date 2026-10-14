@@ -59,13 +59,9 @@ const CHECKS: Readonly<Record<string, (deps: AcpAuthProbeDeps) => Promise<AcpAut
       if (/logged in using/i.test(out)) return 'signed-in'
       return 'unknown'
     } catch {
-      // An adapter may exist without the CLI. File presence alone is not a
-      // login: credentials can be empty, expired, or use a different store.
-      return (await deps.fileExists(
-        join(deps.env['CODEX_HOME'] ?? join(deps.home, '.codex'), 'auth.json'),
-      ))
-        ? 'unknown'
-        : 'signed-out'
+      // A missing CLI, timeout or execution failure cannot establish logout.
+      // Credential-file absence is not proof either: the CLI owns its store.
+      return 'unknown'
     }
   },
   gemini: async (deps) =>
