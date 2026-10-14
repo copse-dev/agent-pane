@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -11,6 +11,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 describe('Coding agents list in Settings', () => {
   const originalPath = process.env['PATH']
   const originalPreservePath = process.env['COPSE_PRESERVE_PATH']
+  const originalCodexHome = process.env['CODEX_HOME']
   let fixtureBin = ''
 
   before(async function () {
@@ -18,7 +19,9 @@ describe('Coding agents list in Settings', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     // Only Codex is "installed"; Claude, Gemini and Cursor must land in the Add menu.
-    fixtureBin = mkdtempSync(join(tmpdir(), 'copse-acp-list-bin-'))
+    // The detected executable path is visible in the row: keep it stable.
+    fixtureBin = join(tmpdir(), 'copse-e2e-acp-agents-list-bin')
+    mkdirSync(fixtureBin, { recursive: true })
     const agentModule = pathToFileURL(join(process.cwd(), 'tests/fixtures/mock-acp-agent.mjs'))
     const windows = process.platform === 'win32'
     const executable = join(fixtureBin, windows ? 'codex-acp.cmd' : 'codex-acp')
@@ -31,6 +34,7 @@ describe('Coding agents list in Settings', () => {
     if (!windows) chmodSync(executable, 0o755)
     writeE2eEnv({
       COPSE_PRESERVE_PATH: '1',
+      CODEX_HOME: join(fixtureBin, 'empty-codex-home'),
       PATH: [
         fixtureBin,
         ...(windows
@@ -49,7 +53,11 @@ describe('Coding agents list in Settings', () => {
   })
 
   after(() => {
-    writeE2eEnv({ COPSE_PRESERVE_PATH: originalPreservePath, PATH: originalPath })
+    writeE2eEnv({
+      COPSE_PRESERVE_PATH: originalPreservePath,
+      PATH: originalPath,
+      CODEX_HOME: originalCodexHome,
+    })
     resetUserData()
     if (fixtureBin) rmSync(fixtureBin, { recursive: true, force: true })
   })
@@ -142,7 +150,6 @@ describe('Coding agents list in Settings', () => {
     )
     assert.deepEqual(unpainted, [], 'logos in the Add menu must render')
     await $('[data-testid="acp-agents-fieldset"]').scrollIntoView({ block: 'center' })
-    await browser.pause(200)
     await saveElementScreenshot(
       '[data-testid="acp-agents-fieldset"]',
       'settings-acp-agents-list.png',
