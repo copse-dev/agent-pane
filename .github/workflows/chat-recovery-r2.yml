@@ -1,10 +1,11 @@
-name: Upload preserved Chat recovery references
+name: Upload reviewed Chat recovery references
 on:
   push:
     branches: [recovery/chat-composer-r2-3656]
-    paths: [.github/workflows/chat-recovery-r2.yml, .github/chat-recovery-r2.json]
+    paths: [.github/workflows/chat-recovery-r2.yml, .github/chat-recovery-r2.json, .github/chat-recovery-provenance.json]
 permissions:
   contents: read
+  actions: read
 jobs:
   upload:
     runs-on: ubuntu-latest
@@ -16,19 +17,74 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v7.0.1
         with:
-          ref: c350094854540e302a6b682c2ed3d87c8ff337bc
+          ref: df0677d2017c5834ba0a018d4acc1f21563358bc
           path: policy
           persist-credentials: false
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: 14780b34781f5d111ac85f51a3d9d2406314beca
-          path: source
-          persist-credentials: false
-          sparse-checkout: tests/e2e/screenshots
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - name: Verify exact preserved bytes and upload with pinned main policy
+      - name: Verify successful CI provenance and exact archive bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 <<'PY'
+          import hashlib, io, json, os, pathlib, stat, urllib.request, zipfile
+          root = pathlib.Path('request/.github')
+          provenance = json.loads((root / 'chat-recovery-provenance.json').read_text())
+          selected = json.loads((root / 'chat-recovery-r2.json').read_text())['screenshots']
+          api = 'https://api.github.com/repos/copse-dev/agent-pane/'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'}
+          def get(path):
+              with urllib.request.urlopen(urllib.request.Request(api + path, headers=headers)) as response:
+                  return json.load(response)
+          run = get('actions/runs/' + str(provenance['run']))
+          assert run['head_sha'] == provenance['head'] and run['conclusion'] == 'success'
+          assert run['repository']['full_name'] == 'copse-dev/agent-pane'
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect)
+          destination = pathlib.Path('selected')
+          destination.mkdir()
+          found = set()
+          for artifact in provenance['artifacts']:
+              meta = get('actions/artifacts/' + str(artifact['id']))
+              for key in ('id', 'name', 'digest', 'size_in_bytes'):
+                  assert meta[key] == artifact[key], key
+              assert not meta['expired'] and meta['workflow_run']['id'] == provenance['run']
+              assert meta['workflow_run']['head_sha'] == provenance['head']
+              request = urllib.request.Request(api + 'actions/artifacts/' + str(artifact['id']) + '/zip', headers=headers)
+              try:
+                  opener.open(request)
+                  raise RuntimeError('Expected signed artifact redirect')
+              except urllib.error.HTTPError as response:
+                  assert response.code == 302
+                  location = response.headers['Location']
+              assert location.startswith('https://')
+              with urllib.request.urlopen(location) as response:
+                  archive = response.read()
+              assert len(archive) == artifact['size_in_bytes']
+              assert 'sha256:' + hashlib.sha256(archive).hexdigest() == artifact['digest']
+              with zipfile.ZipFile(io.BytesIO(archive)) as source:
+                  for info in source.infolist():
+                      path = pathlib.PurePosixPath(info.filename)
+                      assert not path.is_absolute() and '..' not in path.parts
+                      assert not stat.S_ISLNK(info.external_attr >> 16)
+                      name = path.name
+                      if name not in selected:
+                          continue
+                      assert name not in found and name.endswith('.png')
+                      data = source.read(info)
+                      assert data.startswith(b'\x89PNG\r\n\x1a\n')
+                      assert len(data) == selected[name]['bytes']
+                      assert hashlib.sha256(data).hexdigest() == selected[name]['sha256']
+                      (destination / name).write_bytes(data)
+                      found.add(name)
+              print('Verified artifact', artifact['id'], artifact['digest'])
+          assert found == set(selected), sorted(set(selected) - found)
+          print('Verified', len(found), 'reviewed PNG references from successful pinned CI')
+          PY
+      - name: Upload verified PNGs with pinned main policy
         working-directory: policy
         env:
           SCREENSHOT_R2_ACCOUNT_ID: ${{ secrets.SCREENSHOT_R2_ACCOUNT_ID || vars.SCREENSHOT_R2_ACCOUNT_ID }}
@@ -37,22 +93,21 @@ jobs:
           SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
           SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
         run: |
-          mkdir -p ../selected
           node --input-type=module <<'JS'
-          import { readFileSync, copyFileSync } from 'node:fs';
+          import { readFileSync } from 'node:fs';
           import { parseScreenshotManifest, verifyScreenshot } from './scripts/lib/screenshot-manifest.mts';
           import { screenshotStorage } from './scripts/screenshot-storage.mts';
           const manifestPath = '../request/.github/chat-recovery-r2.json';
           const manifest = parseScreenshotManifest(readFileSync(manifestPath, 'utf8'));
           for (const [name, entry] of Object.entries(manifest.screenshots)) {
-            const path = '../source/tests/e2e/screenshots/' + name;
-            verifyScreenshot(readFileSync(path), entry);
-            copyFileSync(path, '../selected/' + name);
+            verifyScreenshot(readFileSync('../selected/' + name), entry);
           }
           await screenshotStorage('upload', { directory: '../selected', manifestPath });
           JS
       - uses: actions/upload-artifact@v7
         with:
           name: verified-chat-recovery-manifest
-          path: request/.github/chat-recovery-r2.json
+          path: |
+            request/.github/chat-recovery-r2.json
+            request/.github/chat-recovery-provenance.json
           retention-days: 90
