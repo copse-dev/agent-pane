@@ -11632,6 +11632,136 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   color: var(--error);
   font-size: var(--font-size-sm);
 }
+.acp-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.acp-list-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+.acp-scan-status:empty {
+  display: none;
+}
+.acp-row {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+}
+.acp-row:last-child {
+  border-bottom: 0;
+}
+.acp-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+.acp-row-head > button,
+.acp-row-head > .acp-logo {
+  flex: none;
+}
+.acp-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.acp-row-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+}
+.acp-row-desc {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+.acp-row-extra,
+.acp-row-options {
+  margin-top: var(--spacing-md);
+}
+.acp-row-chip {
+  padding: 1px var(--spacing-sm);
+  border-radius: var(--badge-radius);
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+.acp-row-chip.ok {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+}
+.acp-row-chip.warn {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+.acp-logo {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-muted);
+  font-weight: 700;
+}
+.acp-logo svg {
+  width: 20px;
+  height: 20px;
+}
+.acp-logo[data-brand=claude] {
+  background: #d97757;
+}
+.acp-logo[data-brand=codex],
+.acp-logo[data-brand=cursor],
+.acp-logo[data-brand=gemini] {
+  background: #fff;
+}
+.acp-logo[data-brand=codex] {
+  border: 0;
+}
+.acp-logo[data-brand=codex] svg {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+.acp-link {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  padding: 2px 4px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.acp-link:hover {
+  color: var(--text-primary);
+}
+.acp-empty {
+  padding: var(--spacing-lg);
+  color: var(--text-muted);
+  text-align: center;
+}
+.acp-add {
+  margin-top: var(--spacing-md);
+}
+.acp-add-menu {
+  margin-top: var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.acp-add-menu[hidden] {
+  display: none;
+}
+.acp-add-menu .provider-panel-embedded {
+  padding: var(--spacing-md);
+}
+.acp-add-menu .provider-panel-embedded > .provider-actions:first-child {
+  display: none;
+}
 .profile-vault-controls {
   display: grid;
   justify-items: start;
