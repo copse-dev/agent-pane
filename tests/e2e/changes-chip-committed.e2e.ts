@@ -111,29 +111,55 @@ describe('Changes chip includes committed branch work', () => {
       // the committed row to stay settled beyond it, after capture framing.
       // Viewport capture avoids element screenshot resizing after this wait.
       let settledSince = 0
-      await browser.waitUntil(
-        async () => {
-          const settled = await browser.execute(() => {
-            const list = document.querySelector('.git-changes-list')
-            return (
-              list?.querySelector('.git-change-row-committed .git-change-path')?.textContent ===
-                'example.txt' && !(list.textContent ?? '').includes('Checking committed changes')
-            )
+      await browser
+        .waitUntil(
+          async () => {
+            const settled = await browser.execute(() => {
+              const list = document.querySelector('#git-changes-host .git-changes-list')
+              return (
+                list?.querySelector('.git-change-row-committed .git-change-path')?.textContent ===
+                  'example.txt' &&
+                !list.querySelector('.pane-loading') &&
+                !(list.textContent ?? '').includes('Checking committed changes')
+              )
+            })
+            if (!settled) {
+              settledSince = 0
+              return false
+            }
+            settledSince ||= Date.now()
+            return Date.now() - settledSince >= 750
+          },
+          {
+            timeout: 15_000,
+            interval: 100,
+            timeoutMsg: 'expected committed changes to remain settled beyond the watcher debounce',
+          },
+        )
+        .catch(async (error: unknown) => {
+          const snapshot = await browser.execute(() => {
+            const host = document.querySelector('#git-changes-host')
+            const list = host?.querySelector('.git-changes-list')
+            return {
+              hostPresent: Boolean(host),
+              listPresent: Boolean(list),
+              paths: [...(list?.querySelectorAll('.git-change-path') ?? [])].map(
+                (path) => path.textContent,
+              ),
+              pending: [...(list?.querySelectorAll('.pane-loading') ?? [])].map(
+                (row) => row.textContent,
+              ),
+              text: list?.textContent,
+            }
           })
-          if (!settled) {
-            settledSince = 0
-            return false
-          }
-          settledSince ||= Date.now()
-          return Date.now() - settledSince >= 750
-        },
-        {
-          timeout: 15_000,
-          interval: 100,
-          timeoutMsg: 'expected committed changes to remain settled beyond the watcher debounce',
-        },
-      )
+          throw new Error(`Changes capture readiness failed: ${JSON.stringify(snapshot)}`, {
+            cause: error,
+          })
+        })
     })
-    assert.doesNotMatch(await $('.git-changes-list').getText(), /Checking committed changes/)
+    assert.doesNotMatch(
+      await $('#git-changes-host .git-changes-list').getText(),
+      /Checking committed changes/,
+    )
   })
 })

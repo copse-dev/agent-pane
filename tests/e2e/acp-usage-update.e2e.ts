@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { appendFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
   resetUserData,
@@ -18,6 +20,13 @@ describe('ACP usage_update context wheel', () => {
     // branch and edits must not determine a context-usage screenshot's badge.
     const workspace = seedStableWorkspace()
     assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: workspace }).toString(), '')
+    // Capture a deliberate, settled changes badge rather than assuming the
+    // checkout stays clean while the app initializes its project integrations.
+    appendFileSync(join(workspace, 'README.md'), '\nContext usage screenshot fixture.\n')
+    assert.equal(
+      execFileSync('git', ['status', '--porcelain'], { cwd: workspace }).toString(),
+      ' M README.md\n',
+    )
     seedAcpUsageUpdateFixture(workspace)
     await browser.reloadSession()
   })
@@ -52,7 +61,7 @@ describe('ACP usage_update context wheel', () => {
     await expect(popover.$('.footer-usage-popover-header')).toHaveText('Usage · 829 tokens')
     await expect(
       $('.chat-row[data-thread-id="e2e-acp-usage-update-thread"] .chat-changes-status'),
-    ).not.toExist()
+    ).toHaveAttribute('aria-label', 'Uncommitted changes')
 
     await saveAppScreenshot('acp-usage-update-context.png')
   })
