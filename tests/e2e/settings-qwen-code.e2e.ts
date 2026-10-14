@@ -34,22 +34,9 @@ describe('Qwen Code setup guidance', () => {
     this.timeout(60_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
-    const chip = $('.provider-chip[data-provider="qwen-code"]')
-    await chip.waitForExist({ timeout: 15_000 })
-    await chip.click()
-    const form = $('.provider-form')
-    // Opening a provider can offer to install missing curated adapters. Keep
-    // that separate real approval flow closed for this guidance-only eval.
-    const approval = $('#approval-dialog')
-    const offeredInstall = await approval.waitForDisplayed({ timeout: 5000 }).then(
-      () => true,
-      () => false,
-    )
-    if (offeredInstall) {
-      await expect(approval.$('.approval-heading')).toHaveText('Install ACP adapters globally?')
-      await approval.$('.approval-reject').click()
-      await expect(approval).not.toBeDisplayed()
-    }
+    await $('[data-testid="acp-add-toggle"]').click()
+    await $('.acp-add-row[data-agent="qwen-code"]').$('button=Set up').click()
+    const form = $('.acp-add-menu .provider-form')
     await expect(form.$('.provider-form-title')).toHaveText(expect.stringContaining('Qwen Code'))
     const rows = await form.$$('.acp-cmd-row').getElements()
     assert.deepEqual(await rows.map((row) => row.$('.acp-cmd-label').getText()), [

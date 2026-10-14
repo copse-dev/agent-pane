@@ -122,6 +122,8 @@ describe('roadmap review badges', () => {
     await expect(reviewBox).toHaveText(expect.stringContaining('review: likely'))
     await expect(reviewBox).toHaveText(expect.stringContaining('theme initialization'))
 
+    await reviewBox.scrollIntoView({ block: 'center' })
+    assert.equal(await reviewBox.isDisplayed({ withinViewport: true }), true)
     await saveAppScreenshot('roadmap-review-badges.png')
   })
 })

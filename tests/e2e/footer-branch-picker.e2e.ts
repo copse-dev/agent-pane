@@ -233,6 +233,18 @@ describe('footer branch picker', () => {
     const filter = menu.$('.branch-picker-filter')
     await filter.setValue(longBranch)
     await expect(menu.$('.branch-picker-option-label')).toHaveText(longBranch, { wait: 2000 })
+    // Pin the editing position before capture; native input scrolling otherwise
+    // races the frame resize and alternates between the prefix and suffix.
+    await filter.click()
+    await browser.keys('Home')
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const input = document.querySelector<HTMLInputElement>('.branch-picker-filter')
+          return input?.selectionStart === 0 && input.scrollLeft === 0
+        }),
+      { timeout: 5_000, timeoutMsg: 'branch filter did not settle at its prefix' },
+    )
     await expectPickerContainment()
     await saveAppScreenshot('footer-branch-picker-long-filter.png')
     await expectPickerContainment()

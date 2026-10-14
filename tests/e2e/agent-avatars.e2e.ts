@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setComposerValue } from './helpers/composer.ts'
+import { withFrozenAnimations } from './helpers/frozen-animations.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
@@ -274,6 +275,32 @@ describe('riso avatars in agent chat', () => {
       true,
     )
     expect(await active.getSize()).toEqual({ width: 28, height: 28 })
+    // The live spinner must stay visible but use a reproducible phase in captures.
+    const spinner = await $('.agent-activity:not([hidden]) .reasoning-activity-icon')
+    await spinner.waitForDisplayed()
+    await withFrozenAnimations(async () => {
+      expect(
+        await browser.execute(() => {
+          const path = document.querySelector(
+            '.agent-activity:not([hidden]) .reasoning-activity-path',
+          )
+          return path ? getComputedStyle(path).opacity : null
+        }),
+      ).toBe('1')
+      const frozen = await spinner.saveScreenshot(join(framesDir, 'spinner-frozen.png'))
+      await browser.pause(150)
+      expect(
+        (await spinner.saveScreenshot(join(framesDir, 'spinner-frozen-next.png'))).equals(frozen),
+      ).toBe(true)
+    })
+    expect(
+      await browser.execute(() =>
+        document
+          .querySelector('.agent-activity:not([hidden]) .reasoning-activity-icon')
+          ?.getAnimations({ subtree: true })
+          .some((animation) => animation.playState === 'running'),
+      ),
+    ).toBe(true)
     await saveAppScreenshot('agent-avatars-active.png')
 
     await browser.execute(() => {

@@ -114,6 +114,7 @@ describe('Debug trace', function () {
       `Debug: ${THREAD_TITLE}`,
     )
 
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
     await saveAppScreenshot('debug-trace-composer.png')
   })
 })

@@ -394,7 +394,10 @@ describe('portrait panel controls row', () => {
     )
     expect(labels).toContain('Browser')
 
-    await savePortraitElementScreenshot('#input-bar', 'portrait-panel-controls-overflow-open.png')
+    await savePortraitElementScreenshot(
+      '.portrait-panel-bar .portrait-panel-overflow-menu',
+      'portrait-panel-controls-overflow-open.png',
+    )
 
     const browserItem = await menu.$('.portrait-panel-overflow-item*=Browser')
     await browserItem.waitForClickable({ timeout: 5_000 })

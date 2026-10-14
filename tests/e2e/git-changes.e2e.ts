@@ -9,6 +9,7 @@ import {
   seedGitChangesFixture,
 } from './helpers/seed-config.ts'
 import { parkPointer, saveElementScreenshot } from './helpers/screenshot.ts'
+import { waitForGitChangesSettled } from './helpers/git-changes-settled.ts'
 import { switchTheme, tokenColour } from './helpers/theme.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -169,6 +170,7 @@ describe('git changes viewer', function () {
         ),
       { timeout: 15_000, timeoutMsg: 'expected the staged.ts diff to show its change' },
     )
+    await waitForGitChangesSettled()
     await waitForDiffHoverChrome()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-list.png'))
 
@@ -226,6 +228,7 @@ describe('git changes viewer', function () {
         timeoutMsg: 'expected an unwatched external change to appear automatically',
       },
     )
+    await waitForGitChangesSettled()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-external-refresh.png'))
 
     // Opening the panel auto-selects the first changed file (staged.ts).
@@ -317,6 +320,7 @@ describe('git changes viewer', function () {
       { timeout: 15_000, timeoutMsg: 'expected the committed file to diff as added lines' },
     )
 
+    await parkPointer()
     await waitForDiffHoverChrome()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-committed-diff.png'))
   })

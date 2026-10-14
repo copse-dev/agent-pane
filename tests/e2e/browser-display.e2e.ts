@@ -11,6 +11,7 @@ import {
 } from './helpers/seed-config.ts'
 import { startBrowserPageFixture } from './helpers/browser-page-fixture.ts'
 import { assertBrowserAddressFieldRoomy } from './helpers/text-fit.ts'
+import { withFrozenAnimations } from './helpers/frozen-animations.ts'
 import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
@@ -114,6 +115,17 @@ describe('browser panel display', () => {
     expect(Math.abs(chromeAlign.headerBottom - chromeAlign.toolbarBottom)).toBeLessThanOrEqual(1)
     expect(chromeAlign.viewerBorderTop).toBe('0px')
 
+    const caretAnimation = () =>
+      browser.execute(() => {
+        const input = document.querySelector('.browser-url-input')
+        if (!input) throw new Error('missing browser URL input')
+        return getComputedStyle(input).getPropertyValue('caret-animation')
+      })
+    const originalCaretAnimation = await caretAnimation()
+    await withFrozenAnimations(async () => {
+      expect(await caretAnimation()).toBe('manual')
+    })
+    expect(await caretAnimation()).toBe(originalCaretAnimation)
     await saveElementScreenshot('#pane-files', 'browser-mode-empty.png')
     // Crop the Tabs | toolbar seam so band alignment is reviewable.
     await prepareE2eScreenshot()

@@ -606,7 +606,7 @@ async function runAcpAgentTurn(
   const agent = getAcpAgent(options.agentId)
   if (!agent) {
     throw new Error(
-      `The coding agent "${options.agentId}" is not configured or is disabled. Add it in Settings → General → Providers.`,
+      `The coding agent "${options.agentId}" is not configured or is disabled. Add it in Settings → General → Coding agents.`,
     )
   }
 
