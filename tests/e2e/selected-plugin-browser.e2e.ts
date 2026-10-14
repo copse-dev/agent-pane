@@ -148,6 +148,19 @@ describe('selected plugin browser behavior', function () {
     const address = await addressInput.getValue()
     assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/reference$/)
 
+    const surface = await browser.execute(() => {
+      const host = document.querySelector('.browser-tab-panel.is-active .browser-webview-host')!
+      return {
+        background: getComputedStyle(host).backgroundColor,
+        canvas: host.classList.contains('is-canvas'),
+      }
+    })
+    assert.equal(surface.canvas, false, 'a declared website is an ordinary browser page')
+    assert.equal(
+      surface.background,
+      'rgb(255, 255, 255)',
+      'default black page text needs a light browser surface',
+    )
     await waitForActiveThreadTitle()
     await assertBrowserAddressFieldRoomy()
     await saveElementScreenshot('#app', 'selected-plugin-browser-tab.png')
