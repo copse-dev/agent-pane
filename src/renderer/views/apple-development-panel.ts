@@ -9,6 +9,7 @@ import type {
 import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
 import { refreshIcon } from '../dom/icons.ts'
+import { isUnavailableThreadCheckoutError } from '../ipc-error-message.ts'
 
 interface ApplePanelOptions {
   allowEnrollment: boolean
@@ -560,6 +561,12 @@ export function createAppleDevelopmentPanel(
       if (current === generation) render(owner, state)
     } catch (error) {
       if (current !== generation) return
+      if (!options.allowEnrollment && isUnavailableThreadCheckoutError(error)) {
+        stopPolling()
+        host.replaceChildren()
+        host.hidden = true
+        return
+      }
       host.hidden = false
       host.replaceChildren(
         el(

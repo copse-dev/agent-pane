@@ -341,13 +341,17 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
     case 'session_info_update':
       return null
     // These v1 exports are explicitly unstable. Copse advertises neither plan
-    // entities, notices, nor compaction capability, so receiving them is non-conforming;
+    // entities, notices, compaction, child sessions, nor session-message capability,
+    // so receiving them is non-conforming;
     // they remain deferred until their lifecycle has a host-owned model.
     case 'plan_update':
     case 'plan_removed':
     case 'notice':
     case 'compaction_update':
     case 'compaction_summary_chunk':
+    case 'subagent_update':
+    case 'session_message':
+    case 'session_message_chunk':
       return null
   }
 }

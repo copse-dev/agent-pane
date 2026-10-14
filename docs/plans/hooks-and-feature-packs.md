@@ -78,7 +78,7 @@ revisiting this document, not silently diverging in an implementation PR.
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
    follow-ups, bounded background-task completion wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
-   originating turn tree), ACP unfinished-turn recovery, post-turn remediation cycles,
+   originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. **In-loop nudges do not count**
    (truncation-continue, finalize, loop, and
    reasoning-runaway nudges are mid-turn message pushes inside one `runAgentLoop`
@@ -100,6 +100,17 @@ revisiting this document, not silently diverging in an implementation PR.
    entirely; only an explicit human action (send-now / release) submits it, and that
    human action starts a fresh turn tree with a reset budget. Plus a visible thread
    note. `COPSE_HOOK_DEPTH` env guard prevents hook→Copse recursion.
+   An ACP agent can resume itself after its prompt returned (a background-task notification
+   re-enters the model; the adapter tags the turn `_claude/origin: task-notification`), so Copse
+   never dispatched that turn. The update pump (`startAcpUpdatePump`) treats agent work arriving
+   with no prompt outstanding as such a turn, and `agent-initiated-turn.ts` charges it to this
+   budget through `AgentDispatcher.claimAgentInitiatedTurn` before binding the thread's
+   persisted execution context to the bridge. Bridged calls wait on that decision; they are
+   never run unbound. When the budget is exhausted the turn is **held** and the user is asked
+   whether to let it continue: Allow still counts against the budget, Stop leaves every
+   bridged call rejected. Unlike `dispatchMachine` it does not take the thread's dispatch slot
+   (Copse is not running the turn), and the binding ends on the adapter's end-of-turn marker,
+   on the next Copse prompt, on session dispose, or after 15 idle minutes.
    A host-native background completion wake has no editable hook message to queue:
    the main-process dispatcher waits for the owning foreground run to release the
    thread, then grants at dispatch time against the latest epoch and spent count it
@@ -437,6 +448,16 @@ revisiting this document, not silently diverging in an implementation PR.
     reviewer, specialists, and explorers read the same awaited post-turn
     workspace snapshot; moving review into the background or granting execution
     tools requires one immutable per-review snapshot shared by every participant.
+
+30. **Draft planning denies command execution at the host runner.** The optional
+    thread-plan capability context is fixed for a turn. Its tool allowlist is
+    enforced before permission hooks; command hooks themselves receive a recorded
+    policy denial without spawning, including when their runtime failure policy is
+    open. This is an intentional permission outcome, not a command failure or a
+    dialect exception. A runner captured for a detached draft hook retains that
+    restriction. Approved implementation starts a new human turn through the normal
+    dispatcher and restores the ordinary hook and tool permission contracts. No
+    ad hoc continuation, pending-message channel or hook event is introduced.
 
 ## Target architecture
 

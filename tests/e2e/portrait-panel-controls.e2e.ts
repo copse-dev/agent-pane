@@ -18,7 +18,8 @@ async function savePortraitElementScreenshot(selector: string, filename: string)
 
 /** Wide enough for all labeled modes at a normal projects width on CI fonts. */
 const PORTRAIT_WIDTH = 920
-const PORTRAIT_HEIGHT = 1180
+// Fits the CI display at 2x scale so the bottom mode strip is captured whole.
+const PORTRAIT_HEIGHT = 1000
 
 async function setProjectsWidth(px: number): Promise<void> {
   await browser.execute((width) => {
@@ -97,7 +98,7 @@ async function openPortraitChrome(): Promise<void> {
 
 async function openEmptyThreadPortraitChrome(): Promise<void> {
   resetUserData()
-  seedEmptyProject(seedStableWorkspace(), 'e2e-portrait-panel-centered', {
+  seedEmptyProject(seedStableWorkspace(), 'e2e-portrait-right-panel-project', {
     okfMemoriesEnabled: true,
     roadmapPlansEnabled: true,
     rightPanelPosition: 'bottom',

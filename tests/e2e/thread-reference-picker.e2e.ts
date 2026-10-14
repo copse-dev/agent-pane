@@ -45,12 +45,14 @@ describe('@-reference past threads (#644)', () => {
 
     await saveAppScreenshot('thread-reference-picker-open.png')
 
-    await threadItem.click()
+    await $('.mention-picker .mention-item-thread').click()
     const chip = await $('.prompt-input .inline-thread-chip')
     await chip.waitForDisplayed({ timeout: 10_000 })
     await expect(chip).toHaveText(expect.stringContaining('Auth refactor plan'))
-    await expect(chip.$('svg.thread-chip-icon[data-icon="thread"]')).toBeExisting()
-    await expect(chip.$('svg[data-icon="close"]')).toBeExisting()
+    await expect(
+      $('.prompt-input .inline-thread-chip svg.thread-chip-icon[data-icon="thread"]'),
+    ).toBeExisting()
+    await expect($('.prompt-input .inline-thread-chip svg[data-icon="close"]')).toBeExisting()
     await expect($('.attachment-chips .thread-chip')).not.toBeExisting()
     await expect($('.mention-picker')).not.toBeDisplayed()
 
@@ -151,7 +153,11 @@ describe('@-reference past threads (#644)', () => {
     const sentChip = await $('.msg-user .message-text > .transcript-attachment-thread')
     await sentChip.waitForDisplayed({ timeout: 30_000 })
     await expect(sentChip).toHaveText(expect.stringContaining('Auth refactor plan'))
-    await expect(sentChip.$('svg[data-icon="thread"]')).toBeExisting()
+    // Streaming replaces message contents; query from the document so polling
+    // does not retain a detached parent chip.
+    await expect(
+      $('.msg-user .message-text > .transcript-attachment-thread svg[data-icon="thread"]'),
+    ).toBeExisting()
     await expect(
       $('.msg-user .transcript-attachment-row .transcript-attachment-thread'),
     ).not.toBeExisting()

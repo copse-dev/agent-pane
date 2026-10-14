@@ -177,7 +177,7 @@ list is the design, the exact encoding is Phase 1's to settle:
   challenged it and lost.
 - **evidence** — an ordered list of `{ kind, command, exitCode, excerpt }` or
   `{ kind: 'reproducer', testPath, failsOnHead, passesOnBase }` or `{ kind: 'citation',
-path, lines }`.
+  path, lines }`.
 - **verdict** — `confirmed` | `refuted` | `unverified`, with the reason.
 - **remedy** — optional minimal patch.
 

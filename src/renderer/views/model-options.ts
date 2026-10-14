@@ -96,6 +96,8 @@ const KNOWN_TEXT_ONLY_MISTRAL_MODELS = [
 export interface ModelOption {
   value: string
   label: string
+  /** Undecorated model name for action text and generated-description attribution. */
+  shortLabel?: string
   group?: string
   disabled?: boolean
   /** Billing coverage of this concrete route; automatic/placeholder rows omit it. */
@@ -146,7 +148,7 @@ async function pluginModelOptions(
           {
             value: pluginModelValue(plugin.id, route.id),
             label: `${route.label}${selectedWhileDisabled ? ' (plugin disabled)' : ''}`,
-            group: route.group ?? `${plugin.name} — personal plugin`,
+            group: route.group ?? `${plugin.name}: personal plugin`,
             ...(route.supportsImages !== undefined ? { supportsImages: route.supportsImages } : {}),
             ...(selectedWhileDisabled ? { disabled: true } : {}),
           },
@@ -178,13 +180,14 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
       // Agents that label models by family alone keep the version in the
       // description, which is both what the row shows and what resolves.
       for (const model of models) {
-        const label = acpModelChoiceLabel(model)
+        const label = acpModelChoiceLabel(model, ': ')
         const versioned = acpModelVersionName(model.description)
         const hint = agentModelIntellectHint(model.value, versioned, model.label, label)
         options.push({
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
-          label: hint ? `${label} — ${hint}` : label,
+          label: hint ? `${label}: ${hint}` : label,
+          shortLabel: label,
           group,
         })
       }
@@ -232,7 +235,7 @@ async function openRouterOptions(
     const zdrOnly = (await api.settings.get('openRouterZdrOnly')) !== false
     const allowTraining = (await api.settings.get('openRouterAllowTraining')) === true
     const note = pickerPrivacyNote(openRouterDataPolicy(zdrOnly, allowTraining))
-    group = note ? `${OPENROUTER_GROUP} — ${note}` : `${OPENROUTER_GROUP} (ZDR routing)`
+    group = note ? `${OPENROUTER_GROUP}: ${note}` : `${OPENROUTER_GROUP} (ZDR routing)`
   } catch {
     /* keep the plain heading */
   }
@@ -241,7 +244,7 @@ async function openRouterOptions(
   try {
     liveModels = await api.openRouter.models()
   } catch {
-    /* network error — fall through to custom/current only */
+    /* network error: fall through to custom/current only */
   }
 
   let customId = ''
@@ -266,7 +269,8 @@ async function openRouterOptions(
     const hint = cloudId ? cloudModelIntellectHint(cloudId) : modelIntellectHint(id)
     entries.push({
       value,
-      label: hint ? `${label} — ${hint}` : label,
+      label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group,
       ...(supportsImages !== undefined ? { supportsImages } : {}),
       ...(free ? { coverage: 'free' } : {}),
@@ -318,7 +322,7 @@ function extraProviderOptions(
   // plans, DeepSeek) or whose retention depends on a routed partner (Hugging
   // Face) directly in the group heading. Local servers never carry a note.
   const note = provider.local ? null : pickerPrivacyNote(dataPolicyForProvider(provider))
-  const group = note ? `${provider.label} — ${note}` : provider.label
+  const group = note ? `${provider.label}: ${note}` : provider.label
 
   const seen = new Set<string>()
   const entries: ModelOption[] = []
@@ -340,7 +344,8 @@ function extraProviderOptions(
           : undefined
     entries.push({
       value,
-      label: hint ? `${label} — ${hint}` : label,
+      label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group,
       ...(supportsImages !== undefined ? { supportsImages } : {}),
     })
@@ -397,7 +402,7 @@ async function remoteAgentOptions(
     try {
       liveModels = await api.remoteAgent.models()
     } catch {
-      /* network error — fall through to default / current only */
+      /* network error: fall through to default / current only */
     }
 
     const seen = new Set<string>()
@@ -421,7 +426,7 @@ async function remoteAgentOptions(
       const hint = agentModelIntellectHint(model.id, vendorLabel, label)
       add(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
-        hint ? `${label} — ${hint}` : label,
+        hint ? `${label}: ${hint}` : label,
       )
     }
     const currentSelection = parseRemoteAgentModelSelection(current)
@@ -453,7 +458,7 @@ async function remoteAgentOptions(
       const hint = modelIntellectHint(id)
       add(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, id),
-        hint ? `${label} — ${hint}` : label,
+        hint ? `${label}: ${hint}` : label,
       )
     }
     const currentSelection = parseRemoteAgentModelSelection(current)
@@ -502,14 +507,14 @@ export async function fetchModelOptions(
   if (opts.includeAgentModels !== false) {
     options.push({
       value: MATCH_PROMPT_MODEL_SELECTOR,
-      label: 'Match task — Chooses a suitable model from your prompt',
+      label: 'Match task: Chooses a suitable model from your prompt',
       group: 'Automatic',
     })
   }
   if (opts.includeBestValue === true) {
     options.push({
       value: BEST_VALUE_CHAT_MODEL,
-      label: `${BEST_VALUE_CHAT_MODEL_LABEL} — auto from plan / price frontier`,
+      label: `${BEST_VALUE_CHAT_MODEL_LABEL}: auto from plan / price frontier`,
       group: 'Automatic',
     })
     // The Settings chat model can also be a rule, not just a pinned model: offer
@@ -521,7 +526,7 @@ export async function fetchModelOptions(
       if (choice.group !== 'Automatic') continue
       options.push({
         value: choice.value,
-        label: `${choice.label} — ${choice.description}`,
+        label: `${choice.label}: ${choice.description}`,
         group: choice.group,
       })
     }
@@ -573,7 +578,8 @@ export async function fetchModelOptions(
     const hint = cloudModelIntellectHint(value)
     options.push({
       value,
-      label: hint ? `${label} — ${hint}` : label,
+      label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group: cloudGroup,
       supportsImages: true,
     })
@@ -654,7 +660,8 @@ export async function fetchModelOptions(
     const label = getLocalModelCapability(id)?.label ?? modelDisplayName(id)
     options.push({
       value: `lmstudio:${id}`,
-      label: hint ? `${label} — ${hint}` : label,
+      label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group: lmGroup,
       ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
     })
@@ -695,7 +702,7 @@ export async function fetchModelOptions(
         label: sshWorkspace
           ? `${modelDisplayLabel(current)} (unavailable on SSH)`
           : configuredButUnlisted
-            ? `${configuredAgent.title} — ${staleModel} (not currently advertised)`
+            ? `${configuredAgent.title}: ${staleModel} (not currently advertised)`
             : configuredAgent
               ? `${configuredAgent.title} (disabled)`
               : `${modelDisplayLabel(current)} (not configured)`,
@@ -751,7 +758,7 @@ export async function fetchModelOptions(
   if (concreteCount === 0) {
     visibleOptions.push({
       value: '',
-      label: 'No models available — add a provider or API key in Settings',
+      label: 'No models available: add a provider or API key in Settings',
       disabled: true,
     })
   }
@@ -773,7 +780,7 @@ export async function fetchSmallTasksModelOptions(
   current: string,
 ): Promise<ModelOption[]> {
   return [
-    autoModelOption('(auto — prefer local, fall back to chat model)'),
+    autoModelOption('(auto: prefer local, fall back to chat model)'),
     ...(await fetchModelOptions(api, current)),
   ]
 }
@@ -785,7 +792,7 @@ export async function fetchSmallTasksModelOptions(
 export async function fetchRoleModelOptions(
   api: ModelOptionsApi,
   current: string,
-  autoLabel = '(auto — prefer on-device)',
+  autoLabel = '(auto: prefer on-device)',
 ): Promise<ModelOption[]> {
   return [
     autoModelOption(autoLabel),
@@ -813,7 +820,7 @@ function automaticModelChoices(): ModelOption[] {
     .filter((choice) => choice.group !== 'By role')
     .map((choice) => ({
       value: choice.value,
-      label: `${choice.label} — ${choice.description}`,
+      label: `${choice.label}: ${choice.description}`,
       group: choice.group,
     }))
 }
@@ -829,7 +836,7 @@ function automaticModelChoices(): ModelOption[] {
  */
 export function localModelOptions(
   models: readonly string[],
-  autoLabel = '(auto — first loaded model)',
+  autoLabel = '(auto: first loaded model)',
   current = '',
 ): ModelOption[] {
   const options = [autoModelOption(autoLabel), ...models.map((id) => ({ value: id, label: id }))]
@@ -862,7 +869,7 @@ const PINNED_GROUP = 'Currently pinned'
 export function dynamicModelOptions(current: string, autoLabel?: string): ModelOption[] {
   const options: ModelOption[] = dynamicModelChoices().map((choice) => ({
     value: choice.value,
-    label: `${choice.label} — ${choice.description}`,
+    label: `${choice.label}: ${choice.description}`,
     group: choice.group,
   }))
   // A field whose blank value means something ("reviewer A follows the chat

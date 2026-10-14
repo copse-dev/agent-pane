@@ -107,6 +107,24 @@ describe('landing cupcake walkthrough', () => {
     }))
     expect(previewLayout.viewportWidth).toBeGreaterThan(780)
     expect(previewLayout.columns.split(' ')).toHaveLength(2)
+    // The preview has its own document: root capture preparation cannot settle
+    // its floating cupcake, pulsing dot or ticker. Pin those animations only
+    // after exercising the live signup, so capture timing cannot change pixels.
+    const animationState = await browser.execute(() => {
+      const animations = document.getAnimations()
+      for (const animation of animations) {
+        animation.pause()
+        animation.currentTime = 0
+      }
+      return {
+        count: animations.length,
+        settled: animations.every(
+          (animation) => animation.playState === 'paused' && animation.currentTime === 0,
+        ),
+      }
+    })
+    expect(animationState.count).toBeGreaterThan(0)
+    expect(animationState.settled).toBe(true)
     await browser.switchFrame(null)
 
     const expand = $('.browser-toolbar .pane-popout-btn')

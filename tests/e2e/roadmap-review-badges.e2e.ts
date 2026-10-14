@@ -36,8 +36,8 @@ function seedRoadmapNote(
   // Orphan notes (seeded as bare files with no index entry) are healed in
   // (createdAt, id) order, so distinct createdAt values keep the row order
   // deterministic regardless of readdir order. Callers pass ordered timestamps.
-  const createdAt = input.createdAt ?? new Date().toISOString()
-  const now = new Date().toISOString()
+  const createdAt = input.createdAt ?? '2026-01-01T00:00:00.000Z'
+  const now = createdAt
   // `copseDataRoot()` honours the harness's `COPSE_DIR`; a hardcoded `~/.copse`
   // would write where the app no longer looks. Same rule as `seedRoadmapNotes`.
   const dir = join(copseDataRoot(), 'knowledge', knowledgeNamespace(workspaceRoot), 'roadmap')
@@ -60,12 +60,15 @@ function seedRoadmapNote(
 }
 
 describe('roadmap review badges', () => {
+  let fixtureRoot = ''
   let workspaceRoot: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-roadmap-review-'))
+    fixtureRoot = mkdtempSync(join(tmpdir(), 'copse-roadmap-review-'))
+    workspaceRoot = join(fixtureRoot, 'roadmap-review')
+    mkdirSync(workspaceRoot)
     seedEmptyProject(workspaceRoot, 'e2e-roadmap-review', {
       model: 'claude-sonnet-4-6',
       roadmapPlansEnabled: true,
@@ -95,7 +98,7 @@ describe('roadmap review badges', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(fixtureRoot, { recursive: true, force: true })
   })
 
   it('shows the review button and persisted review verdict badges', async () => {
@@ -113,6 +116,7 @@ describe('roadmap review badges', () => {
 
     await $('.roadmap-row').click()
     await $('.roadmap-row.is-selected').waitForDisplayed({ timeout: 5_000 })
+    await $('.roadmap-details > summary').click()
     const reviewBox = $('.roadmap-review-result')
     await expect(reviewBox).toBeDisplayed()
     await expect(reviewBox).toHaveText(expect.stringContaining('review: likely'))

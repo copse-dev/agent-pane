@@ -1,3 +1,4 @@
+import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import { escapeHtml } from '@copse/streaming-markdown'
 import { errorMessage } from '@shared/errors.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
@@ -6,7 +7,8 @@ import { uiField } from '../../ui/index.ts'
 
 export interface GhCliSection {
   root: HTMLElement
-  refreshStatus: () => Promise<void>
+  refreshStatus: (signal?: AbortSignal) => Promise<void>
+  load: (snapshot: SettingsSnapshot) => void
 }
 
 const BACKEND_OPTIONS: Array<{ value: 'auto' | 'cli' | 'api'; label: string }> = [
@@ -15,7 +17,10 @@ const BACKEND_OPTIONS: Array<{ value: 'auto' | 'cli' | 'api'; label: string }> =
   { value: 'api', label: 'GitHub API (token)' },
 ]
 
-export function createGhCliSection(api: ApiClient): GhCliSection {
+export function createGhCliSection(
+  api: ApiClient,
+  options: { deferOrdinaryWrites?: boolean } = {},
+): GhCliSection {
   const statusEl = el('div', { class: 'setup-detection-status gh-cli-status' })
 
   const backendSelect = el('select', {
@@ -25,11 +30,12 @@ export function createGhCliSection(api: ApiClient): GhCliSection {
   for (const option of BACKEND_OPTIONS) {
     backendSelect.append(el('option', { value: option.value }, option.label))
   }
-  void api.settings.get('githubBackend').then((value) => {
-    backendSelect.value = value === 'cli' || value === 'api' ? value : 'auto'
-  })
+  if (!options.deferOrdinaryWrites)
+    void api.settings.get('githubBackend').then((value) => {
+      backendSelect.value = value === 'cli' || value === 'api' ? value : 'auto'
+    })
   backendSelect.addEventListener('change', () => {
-    void api.settings.set('githubBackend', backendSelect.value)
+    if (!options.deferOrdinaryWrites) void api.settings.set('githubBackend', backendSelect.value)
   })
   const backendField = uiField({
     label: 'Backend',
@@ -37,10 +43,12 @@ export function createGhCliSection(api: ApiClient): GhCliSection {
     className: 'gh-backend-field',
   })
 
-  async function refreshStatus(): Promise<void> {
+  async function refreshStatus(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return
     statusEl.textContent = 'Checking GitHub CLI…'
     try {
       const status = await api.gh.status()
+      if (signal?.aborted) return
       if (!status.installed) {
         statusEl.innerHTML =
           '<strong>Not installed.</strong> Install <a href="https://cli.github.com/" target="_blank" rel="noopener noreferrer">GitHub CLI</a> to browse pull requests and use PR tools in chat.'
@@ -55,6 +63,7 @@ export function createGhCliSection(api: ApiClient): GhCliSection {
       const user = status.username ? `@${escapeHtml(status.username)}` : 'your GitHub account'
       statusEl.innerHTML = `<strong>Ready.</strong> Signed in as ${user}. Pull request links in chat open in the PRs panel.`
     } catch (err) {
+      if (signal?.aborted) return
       statusEl.textContent = errorMessage(err)
     }
   }
@@ -87,5 +96,11 @@ export function createGhCliSection(api: ApiClient): GhCliSection {
     backendField,
   )
 
-  return { root, refreshStatus }
+  return {
+    root,
+    refreshStatus,
+    load: (snapshot): void => {
+      backendSelect.value = snapshot.githubBackend ?? 'auto'
+    },
+  }
 }

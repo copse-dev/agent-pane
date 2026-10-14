@@ -10,6 +10,9 @@ import {
   type AgentDispatchRequest,
 } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
+import { getRunPlan } from './thread-plan-context.ts'
+import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
+import type { TodoItem } from '@shared/types/todo.ts'
 
 const host: AgentHost<StreamChunk> = { emit: () => undefined }
 const registry = new ToolRegistry()
@@ -48,6 +51,7 @@ function dependencies(
     appendMachineContinuation: async () => undefined,
     now: () => 100,
     createId: () => 'audit-id',
+    loadPlan: async () => null,
     prepareExecutionContext: async () => context,
     transcriptLength: async () => 0,
     run: async (_threadId, userContent, priorMessages) => ({
@@ -68,6 +72,50 @@ describe('AgentDispatcher', () => {
 
     dispatcher.endThreadHistoryEdit('project-1', 'thread-1')
     await dispatcher.dispatch(request())
+  })
+
+  it('uses the committed plan while isolating draft turns from execution todos', async () => {
+    const plan: StoredThreadPlan = {
+      meta: {
+        planId: 'plan-1',
+        threadId: context.threadId,
+        title: 'Review scope',
+        status: 'draft',
+        currentRevision: 2,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      body: 'The committed draft',
+      contentHash: 'hash',
+      comments: [],
+      approval: null,
+      completion: null,
+    }
+    const todos: TodoItem[] = [
+      { id: 'existing', content: 'Implement the earlier task', status: 'pending' },
+    ]
+    let turns = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadPlan: async () => plan,
+        run: async (_threadId, _userContent, messages, _host, _registry, options) => {
+          turns++
+          assert.equal(getRunPlan(), plan)
+          assert.deepEqual(options.priorTodos, [])
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+        },
+      }),
+    )
+    await dispatcher.dispatch(
+      request({
+        payload: { userContent: 'Refine the scope', invokedSkills: [], priorTodos: todos },
+      }),
+    )
+    assert.equal(turns, 1)
+    assert.equal(todos[0]?.status, 'pending')
+    assert.equal(getRunPlan(), null)
   })
 
   it('loads history once and commits each completed turn', async () => {
@@ -1298,6 +1346,63 @@ describe('AgentDispatcher', () => {
       'budget-exhausted',
     )
     assert.equal(runCount, 1)
+  })
+
+  it('charges an agent-started turn to the continuation budget and holds it once exhausted', async () => {
+    const saved: Array<{ turnTreeId: string; continuationUsed: number }> = []
+    const lines: Array<{ phase: string; result?: string; budgetUsed?: number }> = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadEpoch: async () => ({ turnTreeId: 'tree-1', continuationUsed: 4 }),
+        saveEpoch: async (_projectId, _threadId, epoch) => {
+          saved.push(epoch)
+        },
+        appendMachineContinuation: async (_projectId, _threadId, line) => {
+          lines.push({
+            phase: line.phase,
+            ...(line.phase === 'finished' ? { result: line.result } : {}),
+            ...(line.budgetUsed !== undefined ? { budgetUsed: line.budgetUsed } : {}),
+          })
+        },
+      }),
+    )
+
+    const first = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(first.status, 'granted')
+    await first.release()
+    assert.deepEqual(saved, [{ turnTreeId: 'tree-1', continuationUsed: 5 }])
+
+    const second = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(second.status, 'budget-exhausted')
+    assert.equal(saved.length, 1, 'a held turn spends nothing')
+
+    const allowed = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: true,
+    })
+    assert.equal(allowed.status, 'granted')
+    assert.deepEqual(saved.at(-1), { turnTreeId: 'tree-1', continuationUsed: 6 })
+    assert.deepEqual(lines, [
+      { phase: 'started', budgetUsed: 5 },
+      { phase: 'finished', result: 'completed', budgetUsed: 5 },
+      { phase: 'finished', result: 'budget-exhausted', budgetUsed: 5 },
+      { phase: 'started', budgetUsed: 6 },
+    ])
+  })
+
+  it('does not take the dispatch slot for an agent-started turn', async () => {
+    const dispatcher = new AgentDispatcher(host, registry, dependencies())
+    const claim = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(claim.status, 'granted')
+    assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
+    await dispatcher.dispatch(request())
   })
 
   it('warns when a turn starts with an empty history but a full transcript', async () => {

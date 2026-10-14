@@ -10,6 +10,7 @@ import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import type { GhPrDetails } from './types/git.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
+import { CONCISE_SCREENSHOT, CONCISE_STATE_SCENARIOS } from './demo-concise-states.ts'
 import { BRIDGED_TOOL_SCENARIOS } from './demo-bridged-tools.ts'
 import {
   browserApprovalDetails,
@@ -22,6 +23,12 @@ const SIDE_CHATS_MAIN_ID = '7b3e9a10-5c2d-4f6e-8a41-0d9c2b7e5f13'
 const SIDE_CHATS_OTHER_ID = '3c1f0a52-8b3e-4d7a-9f10-2a6b7c8d9e01'
 const FOOTER_INPUT_TOKENS = 50_000
 const FOOTER_OUTPUT_TOKENS = 1_800
+const MOBILE_COMPANION_DEMO_URL = 'https://192.168.1.42:42773'
+// Pre-rendered rather than generated, so the demo bundle never needs the
+// `qrcode` package: this is fixture data for its
+// `QRCode.toString(url, { type: 'svg', margin: 1 })` output on the URL above.
+const MOBILE_COMPANION_DEMO_QR_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27 27" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h27v27H0z"/><path stroke="#000000" d="M1 1.5h7m3 0h3m1 0h1m3 0h7M1 2.5h1m5 0h1m3 0h1m1 0h1m2 0h1m2 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m1 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h2m2 0h2m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m1 0h1m5 0h2m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m1 0h2m2 0h3m1 0h1m1 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h3m4 0h1M1 9.5h1m1 0h5m2 0h2m1 0h2m2 0h1m1 0h5M2 10.5h2m1 0h1m2 0h1m1 0h1m1 0h3m1 0h2m1 0h1m4 0h1M1 11.5h2m3 0h2m1 0h1m1 0h2m4 0h3m1 0h2m1 0h2M3 12.5h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m7 0h1M3 13.5h1m2 0h5m1 0h1m2 0h2m1 0h4m1 0h3M1 14.5h2m1 0h2m3 0h2m2 0h1m2 0h7m1 0h1M1 15.5h1m1 0h1m1 0h5m1 0h1m6 0h1m1 0h3m1 0h2M1 16.5h1m2 0h2m4 0h2m1 0h3m1 0h2m1 0h1m4 0h1M1 17.5h1m1 0h2m2 0h2m1 0h2m1 0h1m3 0h5m1 0h1M9 18.5h1m1 0h1m4 0h2m3 0h2M1 19.5h7m3 0h3m3 0h1m1 0h1m1 0h1m1 0h3M1 20.5h1m5 0h1m1 0h1m2 0h1m4 0h1m3 0h2m1 0h2M1 21.5h1m1 0h3m1 0h1m1 0h4m3 0h10M1 22.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m6 0h2m2 0h1M1 23.5h1m1 0h3m1 0h1m1 0h1m4 0h3m1 0h1m1 0h3m2 0h1M1 24.5h1m5 0h1m5 0h2m4 0h5m1 0h1M1 25.5h7m1 0h1m1 0h1m1 0h1m1 0h11"/></svg>'
 
 const DEMO_CODEX_ACP_AGENT = {
   id: 'codex-acp',
@@ -97,6 +104,13 @@ export interface DemoScenario {
    * selected device's "Signed in as …" details and its forget action.
    */
   vncSavedLogin?: { readonly username: string }
+  /**
+   * Mobile Companion already enabled and serving at `url`, so Settings >
+   * Experimental shows the live connection text and pairing QR without the
+   * browser demo running a real local server. `qrSvg` stands in for what the
+   * main process would generate server-side (via `qrcode`) from that same URL.
+   */
+  mobileCompanion?: { readonly url: string; readonly qrSvg: string }
   /**
    * A container run already attached to the first thread, so the composer
    * banner and the run dialog's status face render without Docker.
@@ -390,23 +404,6 @@ const PROPOSED_DIFF_TRACE: DemoTrace = {
   ],
 }
 
-// A stand-in browser capture for the concise-thread scenarios: the screenshot a
-// tool returned is the "work output" that view keeps on screen.
-const CONCISE_SCREENSHOT = `data:image/svg+xml;base64,${btoa(
-  [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270">',
-    '<rect width="480" height="270" fill="#f4f1ea"/>',
-    '<rect width="480" height="36" fill="#2f3a2f"/>',
-    '<text x="16" y="23" font-family="sans-serif" font-size="14" fill="#fff">Settings</text>',
-    '<rect x="16" y="56" width="200" height="14" rx="3" fill="#c9c2b3"/>',
-    '<rect x="16" y="84" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
-    '<rect x="16" y="140" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
-    '<rect x="384" y="210" width="80" height="32" rx="6" fill="#4f7a4f"/>',
-    '<text x="405" y="231" font-family="sans-serif" font-size="13" fill="#fff">Save</text>',
-    '</svg>',
-  ].join(''),
-)}`
-
 /**
  * One finished turn — narration, reads, a failed then retried command, a
  * screenshot and a closing summary — attributed to `model`, so the same
@@ -624,7 +621,7 @@ function conciseMultiTurnMessages(model: string): Thread['messages'] {
   ]
 }
 
-/** `enabled` is the experimental Concise threads setting; on unless a scenario opts out. */
+/** `enabled` is the Concise threads setting; on unless a scenario opts out. */
 function conciseThreadScenario(
   id: string,
   label: string,
@@ -645,6 +642,9 @@ function conciseThreadScenario(
       uiTintStrength: 'off',
       model,
       conciseThreadsEnabled: enabled,
+      // An opt-out stored on a profile that has already seen the default flip;
+      // without the marker, startup would clear it as a pre-default `false`.
+      ...(enabled ? {} : { conciseThreadsDefaultMigrated: true }),
     },
     threads: [
       {
@@ -1629,6 +1629,24 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    // The real shipped catalog (not sample copy) for an existing profile.
+    id: 'product-announcements-shipped',
+    label: 'Product announcements — shipped catalog',
+    project: project('demo-announcements-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', acknowledgedProductAnnouncements: [] },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
     id: 'product-announcements-existing',
     label: 'Product announcements — existing',
     project: project('demo-announcements-project'),
@@ -1834,6 +1852,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       theme: 'dark',
       uiTintStrength: 'off',
     },
+    mobileCompanion: { url: MOBILE_COMPANION_DEMO_URL, qrSvg: MOBILE_COMPANION_DEMO_QR_SVG },
     threads: [
       {
         id: 'demo-settings-footer-thread',
@@ -2846,6 +2865,51 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'activity-home-read-history',
+    label: 'Activity home listing threads that finished before launch',
+    project: project('demo-activity-history-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first thread is the empty active one. Everything else is idle, read, and
+    // finished before this launch, so only the persisted write time puts it in
+    // Recently finished. Times follow the real clock because the recency window
+    // does; the last thread is older than the window and must stay out.
+    threads: [
+      {
+        id: 'demo-activity-history-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      ...(
+        [
+          ['refactor', 'Refactor auth', 'idle', 3_600_000 * 2],
+          ['flaky', 'Fix the flaky sandbox test', 'error', 3_600_000 * 30],
+          ['copy', 'Update onboarding copy', 'idle', 3_600_000 * 24 * 4],
+          // Legacy-shaped: written before lastPromptAt existed, so it only has usage.
+          ['legacy', 'Port the settings page', 'idle', 3_600_000 * 24 * 2],
+          ['ancient', 'Rename the config keys', 'idle', 3_600_000 * 24 * 30],
+        ] as const
+      ).map(([slug, title, status, ago], index) => ({
+        id: `demo-activity-history-${slug}`,
+        title,
+        status,
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 1200, outputTokens: 300 },
+        createdAt: Date.now() - ago - 60_000,
+        updatedAt: Date.now() - ago,
+        ...(slug === 'legacy' ? {} : { lastPromptAt: Date.now() - ago - 30_000 - index }),
+      })),
+    ],
+  },
+  {
     id: 'activity-home-empty',
     label: 'Activity home with nothing to list',
     project: project('demo-activity-home-empty-project'),
@@ -3196,7 +3260,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   ),
   conciseThreadScenario(
     'concise-thread-disabled',
-    'Full thread view for a capable model while the experiment is off',
+    'Full thread view for a capable model while Concise threads is off',
     'claude-opus-5-5',
     { enabled: false },
   ),
@@ -3262,6 +3326,8 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
   ...SITE_TOUR_SCENARIOS,
+  // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
+  ...CONCISE_STATE_SCENARIOS,
   approvalRiskScenario('approval-web-url', {
     id: 'web-url',
     title: 'Allow web origin?',

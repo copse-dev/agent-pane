@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -14,7 +14,8 @@ describe('roadmap form buttons', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-buttons-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-buttons-')), 'workspace')
+    mkdirSync(workspaceRoot, { recursive: true })
     seedEmptyProject(workspaceRoot, 'e2e-roadmap-buttons', {
       model: 'claude-sonnet-4-6',
       roadmapPlansEnabled: true,
@@ -24,7 +25,7 @@ describe('roadmap form buttons', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('keeps action buttons compact instead of stretching across the panel', async () => {

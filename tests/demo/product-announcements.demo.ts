@@ -30,6 +30,29 @@ async function assertFits(): Promise<void> {
   assert.ok(layout.overflow <= 1)
 }
 
+describe('shipped product announcement catalog', () => {
+  it('announces concise threads to an existing profile and links to the setting', async () => {
+    await load('shipped')
+    await $('#product-announcement-dialog').waitForDisplayed()
+    await browser.execute(async () => {
+      await document.fonts.ready
+    })
+    await expect($('#product-announcement-title')).toHaveText('Concise threads are now on')
+    await expect($('.product-announcement-progress')).toHaveText('')
+    await assertFits()
+    await saveElementScreenshot('#product-announcement-dialog', 'product-announcement-concise.png')
+    await $('#product-announcement-dialog .ui-btn-secondary').click()
+    await $('#settings-dialog').waitForDisplayed()
+    await expect($('input[name="conciseThreadsEnabled"]')).toBeExisting()
+    assert.deepEqual(
+      await browser.execute(async () =>
+        window.api.settings.get('acknowledgedProductAnnouncements'),
+      ),
+      ['concise-threads-default-v1'],
+    )
+  })
+})
+
 describe('shipped product announcement component', () => {
   it('shows an existing user queue and navigates to real Appearance settings', async () => {
     await load('existing')

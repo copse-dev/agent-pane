@@ -5,6 +5,7 @@ export type TerminalCreateMeta = {
   label?: string
   projectId: string
   threadId: string | null
+  executionTarget?: 'local'
 }
 
 export type TerminalCreateResult = Awaited<ReturnType<ApiClient['terminal']['create']>>

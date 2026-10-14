@@ -2,6 +2,7 @@ import { createThreadResource } from '../thread-resource-fence.ts'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { homedir } from 'node:os'
 import type { IDisposable, IPty } from 'node-pty'
 import { spawnPtyInProjectSandbox } from '../../project-sandbox/index.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
@@ -29,6 +30,8 @@ interface PtyListeners {
 }
 
 export interface TerminalSessionMeta {
+  /** Explicit local console, independent of the active project's SSH placement. */
+  executionTarget?: 'local'
   label?: string
   threadId?: string | null
   /**
@@ -298,11 +301,12 @@ async function spawnShell(
   executionRoot?: string,
 ): Promise<TerminalSession> {
   const shell = defaultShell()
-  const cwd = sessionCwd(executionRoot)
+  const cwd = meta?.executionTarget === 'local' ? homedir() : sessionCwd(executionRoot)
   const ptyProcess = await spawnPtyInProjectSandbox(shell, {
     cols,
     rows,
     cwd,
+    ...(meta?.executionTarget === 'local' ? { executionTarget: { kind: 'local' } } : {}),
     env: { ...envForRendererChildProcess(), ...terminalHistoryEnv(shell, meta?.projectId) },
     // User-initiated Shells tabs run outside the project seatbelt; agent shell
     // confinement stays on run_shell / run_background (#662, #812).

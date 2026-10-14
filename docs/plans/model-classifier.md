@@ -52,7 +52,7 @@ real lever on quality and spend.
   `settings-writable.ts`, UI in the Experimental section of `settings-dialog.ts`.
 - **Classifier** `src/main/services/providers/model-classifier.ts` — a pure
   `classifyModelForTask()` heuristic returning `{ band, intellect, model, confidence,
-rationale }`. Task demand is expressed on the app's shared **model intellect scale**
+  rationale }`. Task demand is expressed on the app's shared **model intellect scale**
   (`packages/llm/src/model-intellect.ts`, see
   [`advisor-strategy.md`](./advisor-strategy.md)): bands `low` / `mid` / `top` are
   derived from the annotated distribution, and each band's representative model

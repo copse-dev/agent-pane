@@ -1,6 +1,11 @@
+import {
+  screenshotHash,
+  serializeScreenshotManifest,
+  SCREENSHOT_PUBLIC_URL,
+} from './lib/screenshot-manifest.mts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -46,10 +51,18 @@ const SHA = 'abc123abc123abc123abc123abc123abc123abc1'
 const COMPARE_BRANCH = 'screenshot-compare/pr-123/abc123abc123'
 const COMPARE_URL = `https://github.com/copse-dev/agent-pane/compare/${SHA}...${COMPARE_BRANCH}`
 const COMPARE_COMMIT = 'def456def456def456def456def456def456def4'
-const RAW = 'https://github.com/copse-dev/agent-pane/raw'
+const RAW = `${SCREENSHOT_PUBLIC_URL}/screenshots/sha256`
+const previewHash = (name: string, old = false): string =>
+  screenshotHash(Buffer.from(`${old ? 'before:' : 'after:'}${name}`))
 
-function candidateNames(entries: { name: string; new: boolean }[]): string {
-  return JSON.stringify(entries)
+function candidateNames(entries: { name: string; new: boolean; focus?: boolean }[]): string {
+  return JSON.stringify(
+    entries.map((entry) => ({
+      ...entry,
+      sha256: previewHash(entry.name),
+      ...(entry.new ? {} : { beforeSha256: previewHash(entry.name, true) }),
+    })),
+  )
 }
 
 interface Parent {
@@ -252,7 +265,7 @@ describe('screenshot publication', () => {
   it('never opens a PR or mints an App token', () => {
     assert.doesNotMatch(
       JSON.stringify(steps),
-      /create-pull-request|create-github-app-token|app-token|secrets\.|pulls\.create\b/,
+      /create-pull-request|create-github-app-token|app-token|pulls\.create\b/,
     )
   })
 
@@ -263,6 +276,7 @@ describe('screenshot publication', () => {
         (['actions/checkout@v7.0.1', 'actions/download-artifact@v8'].includes(step.uses ?? '') &&
           ![
             'Load trusted screenshot stack policy',
+            'Load trusted screenshot storage policy',
             'Download screenshot stack coverage request',
           ].includes(step.name ?? '')),
     )
@@ -739,8 +753,32 @@ function applyCandidates(env: { FOCUS_SCREENSHOTS: string; FOCUS_SPECS: string }
     const checkout = join(root, 'checkout')
     const candidates = join(root, 'candidates')
     const runnerTemp = join(root, 'runner')
+    writeFile(checkout, 'package.json', JSON.stringify({ type: 'commonjs' }))
     mkdirSync(runnerTemp)
     writeFile(checkout, 'tests/e2e/screenshots/existing.png', PNG)
+    writeFile(
+      checkout,
+      'tests/e2e/screenshots/manifest.json',
+      serializeScreenshotManifest({
+        version: 1,
+        screenshots: { 'existing.png': { sha256: screenshotHash(PNG), bytes: PNG.length } },
+      }),
+    )
+    for (const file of [
+      'scripts/screenshot-candidates.mts',
+      'scripts/lib/screenshot-manifest.mts',
+      'scripts/lib/screenshot-review-manifest.mts',
+      'scripts/lib/safe-json.mts',
+      'scripts/lib/direct-execution.mts',
+      'packages/std/package.json',
+      'packages/std/src/unknown-value.ts',
+      'packages/std/src/nullish.ts',
+    ]) {
+      const target = join(checkout, '.screenshot-policy', file)
+      mkdirSync(dirname(target), { recursive: true })
+      cpSync(file, target)
+    }
+
     writeFile(
       checkout,
       'tests/e2e/pane.e2e.ts',
@@ -786,10 +824,31 @@ describe('screenshot candidate validation', () => {
     assert.match(output, /^count=4$/m)
     const names = /^names=(.*)$/m.exec(output)?.[1] ?? ''
     assert.deepEqual(JSON.parse(names), [
-      { name: 'spec-named.png', new: true, focus: true },
-      { name: 'z-touched.png', new: true, focus: true },
-      { name: 'a-drift.png', new: true, focus: false },
-      { name: 'existing.png', new: false, focus: false },
+      {
+        name: 'spec-named.png',
+        new: true,
+        focus: true,
+        sha256: screenshotHash(Buffer.concat([PNG, Buffer.from('spec-named.png')])),
+      },
+      {
+        name: 'z-touched.png',
+        new: true,
+        focus: true,
+        sha256: screenshotHash(Buffer.concat([PNG, Buffer.from('z-touched.png')])),
+      },
+      {
+        name: 'a-drift.png',
+        new: true,
+        focus: false,
+        sha256: screenshotHash(Buffer.concat([PNG, Buffer.from('a-drift.png')])),
+      },
+      {
+        name: 'existing.png',
+        new: false,
+        focus: false,
+        sha256: screenshotHash(Buffer.concat([PNG, Buffer.from('existing.png')])),
+        beforeSha256: screenshotHash(PNG),
+      },
     ])
   })
 
@@ -873,7 +932,7 @@ describe('parent screenshot evidence comment', () => {
       ),
       body,
     )
-    assert.ok(body.includes(`git checkout ${COMPARE_COMMIT} -- tests/e2e/screenshots/<name>.png`))
+    assert.ok(body.includes(`pnpm screenshots:accept --from ${COMPARE_COMMIT} <name>.png`))
     assert.match(body, /actions\/runs\/99\/artifacts\/42/)
     assert.match(body, /abc123abc123/)
     assert.match(body, /expires at `2026-09-27 03:11:41 UTC`/)
@@ -903,10 +962,10 @@ describe('parent screenshot evidence comment', () => {
     assert.deepEqual(rows, [
       '| Screenshot | Before | After |',
       '| --- | --- | --- |',
-      `| \`a-changed.png\` | <img src="${RAW}/${SHA}/tests/e2e/screenshots/a-changed.png" width="360"> | ` +
-        `<img src="${RAW}/${COMPARE_COMMIT}/tests/e2e/screenshots/a-changed.png" width="360"> |`,
+      `| \`a-changed.png\` | <img src="${RAW}/${previewHash('a-changed.png', true)}.png" width="360"> | ` +
+        `<img src="${RAW}/${previewHash('a-changed.png')}.png" width="360"> |`,
       `| \`b-new.png\` | *new* | ` +
-        `<img src="${RAW}/${COMPARE_COMMIT}/tests/e2e/screenshots/b-new.png" width="360"> |`,
+        `<img src="${RAW}/${previewHash('b-new.png')}.png" width="360"> |`,
     ])
     assert.doesNotMatch(
       body,
@@ -949,7 +1008,7 @@ describe('parent screenshot evidence comment', () => {
     const body =
       (
         await publish({
-          CANDIDATE_NAMES: JSON.stringify([...drift, ...touched]),
+          CANDIDATE_NAMES: candidateNames([...drift, ...touched]),
           CANDIDATE_COUNT: '32',
         })
       ).bodies[0] ?? ''
@@ -974,7 +1033,7 @@ describe('parent screenshot evidence comment', () => {
     const body =
       (
         await publish({
-          CANDIDATE_NAMES: JSON.stringify([{ name: 'touched.png', new: false, focus: true }]),
+          CANDIDATE_NAMES: candidateNames([{ name: 'touched.png', new: false, focus: true }]),
           CANDIDATE_COUNT: '1',
         })
       ).bodies[0] ?? ''
@@ -1030,7 +1089,10 @@ describe('parent screenshot evidence comment', () => {
     for (const env of [{ COMPARE_COMMIT: COMPARE_BRANCH }, { COMPARE_COMMIT: '' }]) {
       const body = (await publish(env)).bodies[0] ?? ''
       assert.doesNotMatch(body, /\| Screenshot \||<img|cherry-pick|compare\//, JSON.stringify(env))
-      assert.match(body, /download the artifact and commit the intended PNGs/)
+      assert.match(
+        body,
+        /download the artifact, upload intended PNGs, and commit their manifest hashes/,
+      )
     }
   })
 
@@ -1083,14 +1145,11 @@ describe('parent screenshot evidence comment', () => {
     assert.ok(at >= 0, body)
     assert.equal(
       lines[at + 1],
-      `  <img src="${RAW}/${SHA}/tests/e2e/screenshots/a-changed.png" width="360"> ` +
-        `<img src="${RAW}/${COMPARE_COMMIT}/tests/e2e/screenshots/a-changed.png" width="360">`,
+      `  <img src="${RAW}/${previewHash('a-changed.png', true)}.png" width="360"> ` +
+        `<img src="${RAW}/${previewHash('a-changed.png')}.png" width="360">`,
     )
     assert.equal(lines[at + 2], '- [ ] `b-new.png` *(new)*')
-    assert.equal(
-      lines[at + 3],
-      `  <img src="${RAW}/${COMPARE_COMMIT}/tests/e2e/screenshots/b-new.png" width="360">`,
-    )
+    assert.equal(lines[at + 3], `  <img src="${RAW}/${previewHash('b-new.png')}.png" width="360">`)
     assert.doesNotMatch(body, /\| Screenshot \|/)
   })
 
@@ -1127,7 +1186,10 @@ describe('parent screenshot evidence comment', () => {
     assert.match(bodies[0] ?? '', /Changed reference candidates for `abc123abc123` are in/)
     assert.match(bodies[0] ?? '', /actions\/runs\/99\/artifacts\/42/)
     assert.doesNotMatch(bodies[0] ?? '', /compare\/|cherry-pick|<img/)
-    assert.match(bodies[0] ?? '', /download the artifact and commit the intended PNGs/)
+    assert.match(
+      bodies[0] ?? '',
+      /download the artifact, upload intended PNGs, and commit their manifest hashes/,
+    )
   })
 
   it('deletes the just-pushed compare branch and posts no stale link when the parent advances', async () => {

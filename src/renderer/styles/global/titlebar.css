@@ -16,16 +16,14 @@
   transform: translateX(-50%);
   z-index: 30;
   flex-shrink: 0;
-  /* Frosted, not opaque: a solid --bg-base slab over the chat reads as a black
-     bounding box clipping transcript that scrolls behind the floating card.
-     Same rule as `.settings-buttons` — cover without hiding. Wash + blur live
-     on ::before so .prompt-input / footer children stay sharp. */
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  /* Cast the docked composer's shadow up onto the chat gradient so it reads
-     as floating above the conversation. */
-  box-shadow: var(--shadow-composer);
+  /* Give the composer its own surface above the chat gradient. Its shadow
+     separates the card without a visible outline. */
+  --composer-radius: 16px;
+  --composer-shadow: var(--shadow-lg);
+  background: var(--bg-muted);
+  border: 0;
+  border-radius: var(--composer-radius);
+  box-shadow: var(--composer-shadow);
   /* #2489: the card is anchored to the pane's bottom edge and grows upward
      with its content (advisory strips, chips, the draft, the footer). Without
      a cap on the *whole card* a long draft could push the top of the card —
@@ -45,16 +43,8 @@
   display: flex;
   flex-direction: column;
 }
-#input-bar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  z-index: 0;
-  background: color-mix(in srgb, var(--bg-base) 78%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+[data-theme='light'] #input-bar {
+  --composer-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
 }
 #input-bar > * {
   position: relative;

@@ -1,6 +1,8 @@
 import { $, browser, expect } from '@wdio/globals'
+import { join } from 'node:path'
 import { resetUserData, seedAcpAuthErrorFixture } from './helpers/seed-config.ts'
-import { savePreparedElementScreenshot } from './helpers/screenshot.ts'
+import { saveElementScreenshot, savePreparedElementScreenshot } from './helpers/screenshot.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 /**
  * Where each env-var hint rendered: inside the numbered sign-in steps (the
@@ -20,6 +22,8 @@ async function hintPlacement(messageId: string) {
 }
 
 describe('ACP authentication error presentation', () => {
+  const originalPath = process.env['PATH']
+  const originalPreservePath = process.env['COPSE_PRESERVE_PATH']
   // Screenshot preparation changes the frame and overflow. Each recovery path
   // needs a fresh viewport so one capture cannot clip the next message's prose.
   beforeEach(async () => {
@@ -27,6 +31,16 @@ describe('ACP authentication error presentation', () => {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
+    // This fixture exercises sign-in guidance, not installed host CLIs. A host
+    // Codex binary can otherwise trigger a late adapter-install approval over
+    // the Claude panel after its text assertions have already passed.
+    writeE2eEnv({
+      COPSE_PRESERVE_PATH: '1',
+      PATH:
+        process.platform === 'win32'
+          ? join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32')
+          : '/usr/bin:/bin',
+    })
     seedAcpAuthErrorFixture(process.cwd())
     await browser.reloadSession()
     await $('[data-message-id="msg-assistant-acp-auth"] .message-text').waitForExist({
@@ -41,14 +55,47 @@ describe('ACP authentication error presentation', () => {
   })
 
   after(() => {
+    writeE2eEnv({ COPSE_PRESERVE_PATH: originalPreservePath, PATH: originalPath })
     resetUserData()
+  })
+
+  it('shows the dedicated Claude sign-in command in setup without adapter jargon', async () => {
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
+    await $('.provider-chip[data-provider="anthropic"]').click()
+    // Provider discovery can find a host client outside PATH and offer its
+    // adapter. Decline through the real UI before reviewing sign-in guidance.
+    const approval = $('#approval-dialog')
+    const offeredInstall = await approval.waitForDisplayed({ timeout: 10_000 }).then(
+      () => true,
+      () => false,
+    )
+    if (offeredInstall) {
+      await expect(approval.$('.approval-heading')).toHaveText(
+        'Install software to connect your coding agents?',
+      )
+      await approval.$('.approval-reject').click()
+      await expect(approval).not.toBeDisplayed()
+    }
+    const signIn = await $('.acp-cmd-row*=Sign in')
+    await expect(signIn.$('.acp-cmd')).toHaveText('claude auth login')
+    const note = await $('.acp-known-agent-note')
+    await expect(note).toHaveText(expect.stringContaining('claude auth login'))
+    await expect(note).toHaveText(expect.stringContaining('ANTHROPIC_API_KEY'))
+    await expect(note).not.toHaveText(expect.stringContaining('claude-agent-acp'))
+    await expect(signIn).not.toHaveText(expect.stringContaining('--sso'))
+    await expect($('#approval-dialog')).not.toBeDisplayed()
+    await saveElementScreenshot(
+      '.provider-capability:has(.acp-known-agent-note)',
+      'claude-sign-in.png',
+    )
   })
 
   it('leads with recovery and keeps opaque ACP diagnostics subordinate', async () => {
     const message = await $('[data-message-id="msg-assistant-acp-auth"] .message-text')
     const warning = await message.$('.markdown-alert-warning')
     await expect(warning.$('strong')).toHaveText('Claude sign-in expired')
-    await expect(message.$('ol code')).toHaveText('claude /login')
+    await expect(message.$('ol code')).toHaveText('claude auth login')
     await expect(message.$('pre code')).toHaveText(
       expect.stringContaining('ACP error -32603 (Internal error)'),
     )
@@ -91,7 +138,7 @@ describe('ACP authentication error presentation', () => {
     expect(layout.diagnosticLinePitch).toBeLessThanOrEqual(24)
 
     const hints = await hintPlacement('msg-assistant-acp-auth')
-    expect(hints.inSteps).toEqual(['claude /login'])
+    expect(hints.inSteps).toEqual(['claude auth login'])
     expect(hints.inNote).toEqual(['ANTHROPIC_API_KEY'])
 
     await savePreparedElementScreenshot(
