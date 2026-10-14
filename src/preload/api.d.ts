@@ -179,6 +179,16 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  threadPrompts: {
+    revokeAccess: (threadId: string, access: 'read' | 'send') => Promise<void>
+    onPrompt: (
+      handler: (command: import('@shared/thread-prompt.ts').ThreadPromptCommand) => void,
+    ) => () => void
+    reply: (
+      id: string,
+      result: import('@shared/thread-prompt.ts').ThreadPromptResult,
+    ) => Promise<void>
+  }
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
     getState: () => Promise<import('@shared/types/mobile-companion.ts').MobileCompanionState>
