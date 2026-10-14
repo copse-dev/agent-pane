@@ -36,6 +36,7 @@ describe('markdown conformance quick wins', () => {
     expect(dom.codeTexts).toContain('foo ` bar')
     expect(dom.codeTexts).toContain('code')
 
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
     await saveAppScreenshot('markdown-conformance-quickwins.png')
   })
 })
