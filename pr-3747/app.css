@@ -83,6 +83,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   font-display: swap;
 }
 :root {
+  --browser-page-background: #ffffff;
   --tint-hue: #244c25;
   --tint-amount: 4%;
   --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #1e1e1e);
@@ -3300,10 +3301,13 @@ summary.pr-check-group-heading::-webkit-details-marker {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  background: var(--bg-base);
+  background: var(--browser-page-background);
   color: var(--text-primary);
   -webkit-app-region: no-drag;
   position: relative;
+}
+.browser-webview-host.is-canvas {
+  background: var(--bg-base);
 }
 .browser-webview {
   flex: 1;
@@ -7662,6 +7666,27 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   border-top: 1px solid var(--border);
   border-radius: 0 0 var(--composer-radius) var(--composer-radius);
 }
+@container chat-pane (max-width: 300px) {
+  .input-footer {
+    flex-wrap: wrap;
+  }
+  .prompt-input,
+  .prompt-input.with-stop {
+    padding: var(--spacing-md);
+    min-width: 0;
+  }
+  .attach-btn {
+    top: auto;
+    bottom: var(--spacing-md);
+  }
+  .submit-row {
+    position: static;
+    align-self: stretch;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    margin: 0 var(--spacing-md) var(--spacing-md) 40px;
+  }
+}
 .portrait-panel-bar {
   display: none;
   position: absolute;
@@ -7793,7 +7818,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .footer-model-host,
 .footer-branch-host {
   flex: 1 1 0;
-  min-width: 0;
+  min-width: 32px;
   max-width: max-content;
 }
 .footer-model-host .model-picker {
@@ -7804,12 +7829,16 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .footer-checkout-host {
   position: relative;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 32px;
 }
 .footer-checkout-host[hidden] {
   display: none;
 }
 .footer-checkout-btn {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: 0;
   border-radius: var(--radius);
   padding: 1px 4px;
@@ -8305,6 +8334,31 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .footer-usage-popover-dot.is-error {
   background: var(--danger);
+}
+.footer-usage-popover-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.footer-usage-popover-pill {
+  font-size: var(--font-size-2xs);
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+}
+.footer-usage-popover-pill.is-ok {
+  border-color: color-mix(in srgb, var(--success) 50%, var(--border));
+}
+.footer-usage-popover-pill.is-warn {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+}
+.footer-usage-popover-row.is-classifier {
+  align-items: flex-start;
+}
+.footer-usage-popover-row.is-classifier + .footer-usage-popover-row.is-classifier {
+  margin-top: 4px;
 }
 .footer-usage-popover-value {
   color: var(--text-muted);
@@ -8888,7 +8942,8 @@ dialog.settings-overlay::backdrop {
       transparent 0%,
       #000 45%);
 }
-.settings-buttons button {
+.settings-buttons button,
+#settings-save-status {
   -webkit-app-region: no-drag;
   position: relative;
   z-index: 1;
@@ -9671,7 +9726,9 @@ dialog.settings-overlay::backdrop {
   z-index: 30;
   pointer-events: auto;
   width: max-content;
-  max-width: 360px;
+  max-width: min(360px, 100%);
+  max-height: 70vh;
+  overflow: auto;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -9682,6 +9739,23 @@ dialog.settings-overlay::backdrop {
 }
 .frontier-tooltip[hidden] {
   display: none;
+}
+.frontier-tooltip[data-pinned=true] {
+  padding-right: 32px;
+}
+.frontier-tooltip-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 2px 4px;
+}
+.frontier-tooltip-close:hover {
+  color: var(--text-primary);
 }
 .frontier-tooltip .tt-title {
   font-size: var(--font-size-sm);
@@ -9759,6 +9833,10 @@ dialog.settings-overlay::backdrop {
 }
 .frontier-cost-axis .frontier-btn:last-child {
   border-radius: 0 var(--radius) var(--radius) 0;
+}
+.frontier-cost-axis .frontier-btn:has(+ .frontier-btn[hidden]) {
+  border-top-right-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
 }
 .frontier-expand-dialog {
   position: relative;
@@ -9876,6 +9954,47 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
+.acp-registry-browser {
+  margin-bottom: var(--spacing-md);
+}
+.acp-registry-content,
+.acp-registry-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  min-width: 0;
+}
+.acp-registry-content[hidden] {
+  display: none;
+}
+.acp-registry-controls,
+.acp-registry-entry-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+.acp-registry-controls input {
+  flex: 1;
+  min-width: 160px;
+}
+.acp-registry-results {
+  max-height: 360px;
+  overflow-y: auto;
+}
+.acp-registry-entry {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.acp-registry-entry p {
+  margin: var(--spacing-sm) 0;
+}
+.acp-registry-package code {
+  white-space: pre-wrap;
+}
 .acp-detect-results {
   display: flex;
   flex-direction: column;
@@ -9981,13 +10100,16 @@ dialog.settings-overlay::backdrop {
   min-width: 0;
   word-break: break-word;
 }
-.sources-row:hover:has(.sources-row-hover-detail) .sources-row-title,
-.sources-row:focus-within:has(.sources-row-hover-detail) .sources-row-title {
-  flex: 0 1 auto;
+.sources-row:has(.sources-row-hover-detail) .sources-row-title {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: normal;
+}
+.sources-row:hover:has(.sources-row-hover-detail) .sources-row-title,
+.sources-row:focus-within:has(.sources-row-hover-detail) .sources-row-title {
+  flex: 0 1 auto;
+  max-width: 50%;
 }
 .sources-badge-warning {
   color: var(--warning, #d29922);
@@ -10084,12 +10206,6 @@ dialog.settings-overlay::backdrop {
 .storage-project-path {
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
-}
-.sources-row[data-worktree-path] .sources-row-title {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: normal;
 }
 .sources-worktree-size {
   font-variant-numeric: tabular-nums;
@@ -11413,6 +11529,12 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 #sources-skills-status {
   margin-left: var(--spacing-sm);
+}
+#settings-save-status {
+  margin-right: auto;
+  min-width: 0;
+  color: var(--error);
+  font-size: var(--font-size-sm);
 }
 
 /* src/renderer/styles/global/onboarding.css */
