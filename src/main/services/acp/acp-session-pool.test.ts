@@ -195,6 +195,28 @@ describe('acp-session-pool', () => {
     assert.equal(acpSessionPoolSize(), 2)
   })
 
+  it('starts a new agent session when the thread changes execution mode', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const createTransport = makeResumableTransportFactory(log)
+    const first = await acquireAcpSession({
+      threadId: 'mode-thread',
+      config: CONFIG,
+      createTransport,
+    })
+    await runAcpSessionPrompt(first.entry.open, 'managed', undefined)
+
+    const switched = await acquireAcpSession({
+      threadId: 'mode-thread',
+      config: { ...CONFIG, executionMode: 'agent' },
+      createTransport,
+    })
+    assert.equal(switched.fresh, true)
+    assert.equal(switched.handover, null)
+    await runAcpSessionPrompt(switched.entry.open, 'native', undefined)
+    assert.equal(log.spawns, 2)
+    assert.notEqual(log.promptSessions[0], log.promptSessions[1])
+  })
+
   it('waits for the old agent transport to stop before reattaching its session', async () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
     const underlying = makeResumableTransportFactory(log)
