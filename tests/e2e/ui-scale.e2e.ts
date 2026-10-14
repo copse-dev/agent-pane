@@ -4,7 +4,9 @@ import { resetUserData, seedConversationVisualHierarchyFixture } from './helpers
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
+  saveAppViewportScreenshot,
   saveElementScreenshot,
+  waitForSettledLayout,
 } from './helpers/screenshot.ts'
 
 interface UiScaleSnapshot {
@@ -82,6 +84,39 @@ async function visualViewportSnapshot(): Promise<VisualViewportSnapshot | null> 
       offsetLeft: viewport.offsetLeft,
       offsetTop: viewport.offsetTop,
     }
+  })
+}
+
+// Compare scale at a fixed transcript position. Settings focus and the capture
+// resize can otherwise leave the transcript scrolled under its sticky prompt.
+async function saveScaleComparisonScreenshot(filename: string): Promise<void> {
+  await saveAppViewportScreenshot(filename, async () => {
+    await browser.execute(() => {
+      const transcript = document.querySelector<HTMLElement>('.messages-list')
+      if (!transcript) throw new Error('missing scale comparison transcript')
+      transcript.scrollTo({ top: 0, behavior: 'instant' })
+    })
+    await waitForSettledLayout('.messages-list')
+    const geometry = await browser.execute(() => {
+      const transcript = document.querySelector<HTMLElement>('.messages-list')
+      const prompt = document.querySelector('[data-message-id="msg-user-hierarchy"]')
+      const result = document.querySelector(
+        '[data-message-id="msg-assistant-result"] .message-text p',
+      )
+      if (!transcript || !prompt || !result) throw new Error('missing scale comparison content')
+      return {
+        scrollTop: transcript.scrollTop,
+        viewportTop: transcript.getBoundingClientRect().top,
+        viewportBottom: transcript.getBoundingClientRect().bottom,
+        promptBottom: prompt.getBoundingClientRect().bottom,
+        resultTop: result.getBoundingClientRect().top,
+        resultBottom: result.getBoundingClientRect().bottom,
+      }
+    })
+    expect(geometry.scrollTop).toBe(0)
+    expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.promptBottom)
+    expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.viewportTop)
+    expect(geometry.resultBottom).toBeLessThanOrEqual(geometry.viewportBottom)
   })
 }
 
@@ -167,7 +202,7 @@ describe('interface scale (--ui-scale)', () => {
     expect(scaled?.todoHeaderFontSize).toBe('13.75px')
     expect(scaled?.fontSizeSmPx).toBe('15px')
     expect(scaled?.fontSize2xsPx).toBe('12.5px')
-    await saveAppScreenshot('ui-scale-125.png')
+    await saveScaleComparisonScreenshot('ui-scale-125.png')
     await saveElementScreenshot('.input-footer', 'ui-scale-125-composer-footer.png')
   })
 
@@ -209,6 +244,6 @@ describe('interface scale (--ui-scale)', () => {
       timeout: 10_000,
       timeoutMsg: 'expected Ctrl+= to bump uiScale from 1.25 to 1.35',
     })
-    await saveAppScreenshot('ui-scale-keyboard-135.png')
+    await saveScaleComparisonScreenshot('ui-scale-keyboard-135.png')
   })
 })

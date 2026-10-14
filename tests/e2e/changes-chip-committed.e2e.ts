@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
-import { prepareE2eScreenshot, savePreparedAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppViewportScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
@@ -106,15 +106,34 @@ describe('Changes chip includes committed branch work', () => {
     await expect($('.git-change-row-committed .git-change-path')).toHaveText('example.txt')
     await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+3')
     await expect($('.follow-up-bubble-changes .follow-up-stat-del')).toHaveText('-1')
-    // Set the capture viewport before waiting: resizing can refresh the pane.
-    await prepareE2eScreenshot()
-    await browser.waitUntil(
-      async () => !(await $('.git-changes-list').getText()).includes('Checking committed changes'),
-      {
-        timeout: 15_000,
-        timeoutMsg: 'expected committed changes to finish loading before capture',
-      },
-    )
-    await savePreparedAppScreenshot('changes-chip-committed.png')
+    await saveAppViewportScreenshot('changes-chip-committed.png', async () => {
+      // A clean frame can precede the pane's 500ms watcher debounce. Require
+      // the committed row to stay settled beyond it, after capture framing.
+      // Viewport capture avoids element screenshot resizing after this wait.
+      let settledSince = 0
+      await browser.waitUntil(
+        async () => {
+          const settled = await browser.execute(() => {
+            const list = document.querySelector('.git-changes-list')
+            return (
+              list?.querySelector('.git-change-row-committed .git-change-path')?.textContent ===
+                'example.txt' && !(list.textContent ?? '').includes('Checking committed changes')
+            )
+          })
+          if (!settled) {
+            settledSince = 0
+            return false
+          }
+          settledSince ||= Date.now()
+          return Date.now() - settledSince >= 750
+        },
+        {
+          timeout: 15_000,
+          interval: 100,
+          timeoutMsg: 'expected committed changes to remain settled beyond the watcher debounce',
+        },
+      )
+    })
+    assert.doesNotMatch(await $('.git-changes-list').getText(), /Checking committed changes/)
   })
 })

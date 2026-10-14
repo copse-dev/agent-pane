@@ -107,7 +107,41 @@ describe('git changes image preview', function () {
     await expect(paths).toContain('unstaged.png')
     await expect(paths).toContain('new.png')
 
+    // Rows render before the automatically selected staged image attaches.
+    await $('#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]').waitForDisplayed(
+      { timeout: 30_000 },
+    )
+    await waitForImagesSettled('#git-diff-viewer-host', { minImages: 2 })
     await parkPointer()
+    // A settled frame can precede the 500ms watcher debounce. Keep the
+    // expected rows visible without pending work beyond that debounce.
+    let settledSince = 0
+    await browser.waitUntil(
+      async () => {
+        const settled = await browser.execute(() => {
+          const list = document.querySelector('.git-changes-list')
+          const paths = [...(list?.querySelectorAll('.git-change-path') ?? [])].map(
+            (path) => path.textContent,
+          )
+          return (
+            ['staged.png', 'unstaged.png', 'new.png'].every((path) => paths.includes(path)) &&
+            !list?.querySelector('.pane-loading') &&
+            !(list?.textContent ?? '').includes('Checking committed changes')
+          )
+        })
+        if (!settled) {
+          settledSince = 0
+          return false
+        }
+        settledSince ||= Date.now()
+        return Date.now() - settledSince >= 750
+      },
+      {
+        timeout: 15_000,
+        interval: 100,
+        timeoutMsg: 'expected image change rows to remain settled beyond the watcher debounce',
+      },
+    )
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-list.png'))
 
     await clickChange('staged.png')
@@ -117,6 +151,7 @@ describe('git changes image preview', function () {
       gte: 2,
     })
     await expect($('#git-diff-viewer-host .monaco-diff-editor')).not.toBeDisplayed()
+    await waitForImagesSettled('#git-diff-viewer-host', { minImages: 2 })
     await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-staged.png'))
 
@@ -237,11 +272,14 @@ describe('git changes image preview', function () {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-unstaged.png'))
 
     await clickChange('new.png')
-    await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
+    await $('#git-diff-viewer-host .git-image-diff-img[alt="new.png (after)"]').waitForDisplayed({
+      timeout: 30_000,
+    })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize(1)
     await expect($('#git-diff-viewer-host .git-image-diff-label')).toHaveText(
       expect.stringMatching(/^after$/i),
     )
+    await waitForImagesSettled('#git-diff-viewer-host', { minImages: 1 })
     await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-untracked.png'))
   })

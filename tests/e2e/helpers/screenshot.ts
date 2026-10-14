@@ -197,10 +197,14 @@ export async function savePreparedAppScreenshot(filename: string): Promise<void>
 }
 
 /** Capture native webviews without ChromeDriver's element-capture rescaling. */
-export async function saveAppViewportScreenshot(filename: string): Promise<void> {
+export async function saveAppViewportScreenshot(
+  filename: string,
+  beforeCapture?: () => Promise<void>,
+): Promise<void> {
   await withCaptureFrame(async () => {
     await prepareE2eScreenshot()
     await waitForSettledLayout('#app')
+    await beforeCapture?.()
     const bounds = await browser.execute(() => {
       const rect = document.getElementById('app')?.getBoundingClientRect()
       if (!rect) throw new Error('App shell is missing')

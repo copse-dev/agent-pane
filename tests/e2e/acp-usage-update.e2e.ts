@@ -1,5 +1,11 @@
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedAcpUsageUpdateFixture } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedAcpUsageUpdateFixture,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('ACP usage_update context wheel', () => {
@@ -8,7 +14,11 @@ describe('ACP usage_update context wheel', () => {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
-    seedAcpUsageUpdateFixture(process.cwd())
+    // The sidebar asynchronously reports unlanded work. The source checkout's
+    // branch and edits must not determine a context-usage screenshot's badge.
+    const workspace = seedStableWorkspace()
+    assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: workspace }).toString(), '')
+    seedAcpUsageUpdateFixture(workspace)
     await browser.reloadSession()
   })
 
@@ -40,6 +50,9 @@ describe('ACP usage_update context wheel', () => {
     await expect(popover.$('.context-wheel-popover-note')).toHaveText('Reported by the agent')
     await expect(popover.$$('.context-wheel-popover-row')).toBeElementsArrayOfSize(0)
     await expect(popover.$('.footer-usage-popover-header')).toHaveText('Usage · 829 tokens')
+    await expect(
+      $('.chat-row[data-thread-id="e2e-acp-usage-update-thread"] .chat-changes-status'),
+    ).not.toExist()
 
     await saveAppScreenshot('acp-usage-update-context.png')
   })
