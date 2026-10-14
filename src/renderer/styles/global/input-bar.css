@@ -696,7 +696,7 @@
 .footer-model-host,
 .footer-branch-host {
   flex: 1 1 0;
-  min-width: 0;
+  min-width: 32px;
   max-width: max-content;
 }
 .footer-model-host .model-picker {
@@ -707,12 +707,16 @@
 }
 .footer-checkout-host {
   position: relative;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 32px;
 }
 .footer-checkout-host[hidden] {
   display: none;
 }
 .footer-checkout-btn {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: 0;
   border-radius: var(--radius);
   padding: 1px 4px;
