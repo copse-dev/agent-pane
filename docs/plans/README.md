@@ -17,6 +17,10 @@ Status meanings:
 - **Reference** — background that other plans cite; nothing to implement. Dates faster than
   a design does, so check its compiled-on date before relying on it.
 
+Recovery throughput follow-ups: [Recovery lessons and development throughput](recovery-throughput.md)
+(**Partial / deferred**, 14 October 2026): shipped recovery tooling, remaining screenshot
+and CI proposals, and a bounded next-agent brief.
+
 Full issue/PR-status audit: **2026-07-21**. Architecture-related entries were
 refreshed from `main` at `a2880354f` on **2026-09-09**; this does not re-audit
 live issue status for unrelated roadmap work. Use the
