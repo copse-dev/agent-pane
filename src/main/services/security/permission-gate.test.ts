@@ -117,6 +117,44 @@ function underAutomation<T>(fn: () => T): T {
 }
 
 describe('package command approval scope', () => {
+  it('runs the direct typecheck contained and explicitly names an agent escape request', async () => {
+    setPermissionGateForTests(null)
+    const root = mkdtempSync(join(tmpdir(), 'local-typecheck-'))
+    const restore = setWorkspaceRootForTest(root)
+    const command =
+      './node_modules/.bin/tsc --noEmit -p tsconfig.node.json 2>&1 | tail -60; echo "NODE_EXIT=$?"'
+    const requests: Array<{ title: string; cause?: string; scope?: string }> = []
+    setSetting('safetyClassifierEnabled', false)
+    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    setApprovalHandler(async ({ title, cause, scope }) => {
+      requests.push({ title, ...(cause ? { cause } : {}), ...(scope ? { scope } : {}) })
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted(command, {
+          sandboxEnabled: true,
+          autoRun: true,
+          executionRoot: root,
+        }),
+        true,
+      )
+      assert.deepEqual(requests, [])
+      assert.equal(await promptExpectedSandboxBlock(command, ['opaque local executable']), false)
+      assert.deepEqual(requests, [
+        {
+          title: 'Agent requests sandbox escape',
+          cause: 'shell-expected-sandbox-block',
+          scope: 'external',
+        },
+      ])
+    } finally {
+      restore()
+      setApprovalHandler(null)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   for (const command of ['npm install example-package', 'npx example-package']) {
     it(`records unsandboxed ${command} as external`, async () => {
       setPermissionGateForTests(null)
@@ -1955,7 +1993,7 @@ describe('turn-tree shell replay leases', () => {
     }
   })
 
-  it('offers bounded external replay only for opaque local execution', async () => {
+  it('keeps opaque local execution replay inside the sandbox', async () => {
     shellReplayLeaseStore.clear()
     const requests: Array<{ lease: boolean; defaultLease: boolean; scope?: string }> = []
     setApprovalHandler(async (request) => {
@@ -1984,7 +2022,7 @@ describe('turn-tree shell replay leases', () => {
       )
 
       assert.deepEqual(requests, [
-        { lease: true, defaultLease: false, scope: 'external' },
+        { lease: true, defaultLease: true, scope: 'sandbox' },
         { lease: false, defaultLease: false, scope: 'sandbox' },
         { lease: false, defaultLease: false, scope: 'external' },
       ])
@@ -3068,7 +3106,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
           'git fetch origin main',
           ['cached signature match'],
           undefined,
-          { requireInteractiveApproval: true },
+          { source: 'prior-denial' },
         ),
         false,
       )
