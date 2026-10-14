@@ -47,6 +47,10 @@ conversation-access prompt. Its own transcript remains readable. File read guard
 the shell classifier and the sandbox read mount use the same thread-scoped permission;
 the chat store is never writable through these grants.
 
+Local shell reads also check each named target's symlink destination before reusing an
+outside-project path grant. A file or directory alias into another thread still requires
+conversation-read consent; revoking that consent leaves the outside-path grant insufficient.
+
 `list_threads` searches conversation titles and summaries and returns paths for the existing
 read tools. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
 approval. Reading never grants sending. Both grants are persisted in main-owned settings,

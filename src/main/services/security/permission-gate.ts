@@ -1288,7 +1288,19 @@ export async function ensureShellCommandPermitted(
     const chatRoot = await getChatStoreRoot()
     if (
       chatRoot &&
-      readAnalysis.resolvedTargets.some((path) => needsOtherThreadRead(path, chatRoot))
+      readAnalysis.resolvedTargets.some((path) => {
+        if (needsOtherThreadRead(path, chatRoot)) return true
+        // Outside-path consent cannot substitute for conversation consent.
+        // The sandbox read overlay also resolves symlinks, so inspect the same
+        // destination before a named-path grant can authorize this read.
+        try {
+          return needsOtherThreadRead(realpathSync.native(path), chatRoot)
+        } catch {
+          // Missing/unreadable targets cannot expose a transcript. Lexical
+          // chat-store paths were already checked above, including missing ones.
+          return false
+        }
+      })
     ) {
       if (!(await ensureThreadAccess('read', opts.signal))) return false
     }
