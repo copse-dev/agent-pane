@@ -56,20 +56,6 @@ export const experimentalMarkup = `
             </fieldset>
 
             <fieldset>
-              <legend>Concise threads</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="conciseThreadsEnabled" />
-                Hide tool details and reasoning from highly capable models
-              </label>
-              <p class="field-hint">
-                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning, and the
-                tool errors the model recovers from stay hidden; while it works, you see what it
-                is doing now. Other models always show the full thread.
-              </p>
-            </fieldset>
-
-            <fieldset>
               <legend>Deferred worktrees</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="deferredWorktreesEnabled" />
@@ -167,7 +153,6 @@ export const experimentalFields: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'conciseThreadsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },

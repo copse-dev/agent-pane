@@ -329,6 +329,14 @@ describe('VNC viewer', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const onboardingClose = $('#onboarding-close')
     if (await onboardingClose.isDisplayed()) await onboardingClose.click()
+    // This fixture configures a live session instead of using writeSettings,
+    // so acknowledge any startup announcement through its normal UI.
+    const announcement = $('#product-announcement-dialog')
+    if (await announcement.isExisting()) {
+      await announcement.waitForDisplayed({ timeout: 10_000 })
+      await announcement.$('button.ui-btn-primary').click()
+      await announcement.waitForExist({ reverse: true, timeout: 10_000 })
+    }
     // The titlebar mounted before the live fixture enabled this experimental
     // setting. Mirror its normal settings_changed reconciliation without a
     // second Electron session, which is unreliable on local macOS WebDriver.
@@ -487,6 +495,9 @@ describe('VNC viewer', function () {
       })
     }
     await assertCheckboxBesideLabel('.vnc-remember-password')
+    await browser.execute(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    })
     await saveElementScreenshot('.vnc-auth-panel', 'vnc-viewer-remember-password-row.png')
     if (!secureCredentialStorage) {
       await browser.execute(() => {

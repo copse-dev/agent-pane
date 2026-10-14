@@ -4,7 +4,7 @@ import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 // The same seeded turn — narration, reads, an edit, a failed-then-passing test
 // run, a screenshot and a summary — rendered for a model above the concise gate
 // and for one below it, plus the capable model mid-run and with the
-// experimental setting off. Asserts what each view paints and leaves each as a
+// Concise threads setting off. Asserts what each view paints and leaves each as a
 // reviewable capture.
 
 interface TranscriptState {
@@ -180,6 +180,20 @@ describe('concise thread view', () => {
     expect(state.reasoningTrails).toBe(1)
     expect(state.screenshots).toBe(1)
     expect(state.texts.length).toBeGreaterThan(1)
+    await $('.tool-result-preview-image').waitForDisplayed()
+    // Cover the completed reply and screenshot footer before the separate top view.
+    await browser.execute(() => {
+      const list = document.querySelector('.messages-list')
+      list?.scrollTo({ top: list.scrollHeight, behavior: 'instant' })
+    })
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const list = document.querySelector('.messages-list')
+          return !!list && Math.abs(list.scrollHeight - list.clientHeight - list.scrollTop) < 2
+        }),
+      { timeout: 5000, timeoutMsg: 'full transcript must settle at its completed reply' },
+    )
     await saveAppScreenshot('concise-thread-full.png')
     // The steps the concise view hides sit above the fold; capture them too.
     await browser.execute(() => {
@@ -188,7 +202,7 @@ describe('concise thread view', () => {
     await saveAppScreenshot('concise-thread-full-top.png')
   })
 
-  it('keeps the full transcript for a capable model while the experiment is off', async () => {
+  it('keeps the full transcript for a capable model while Concise threads is off', async () => {
     await browser.url('/?scenario=concise-thread-disabled')
     await $('.msg-assistant .tool-card').waitForExist()
     await expect($('.msg-concise')).not.toBeExisting()

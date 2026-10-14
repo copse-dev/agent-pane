@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -23,7 +23,11 @@ describe('roadmap resolution check failure', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-review-fail-'))
+    workspaceRoot = join(
+      mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-review-fail-')),
+      'workspace',
+    )
+    mkdirSync(workspaceRoot, { recursive: true })
     knowledgeDir = seedRoadmapNotes('e2e-roadmap-review-fail', [
       {
         id: 'e2e-roadmap-review-fail',
@@ -41,7 +45,7 @@ describe('roadmap resolution check failure', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 
@@ -53,6 +57,7 @@ describe('roadmap resolution check failure', () => {
     await $('.roadmap-row').waitForDisplayed({ timeout: 20_000 })
     await $('.roadmap-row').click()
 
+    await $('.roadmap-details > summary').click()
     const errorBox = $('.roadmap-review-result.is-error')
     await errorBox.waitForDisplayed({ timeout: 30_000 })
     assert.equal(
