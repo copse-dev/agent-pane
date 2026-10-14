@@ -64,6 +64,10 @@
     "label": "Product announcements — fresh"
   },
   {
+    "id": "product-announcements-shipped",
+    "label": "Product announcements — shipped catalog"
+  },
+  {
     "id": "product-announcements-existing",
     "label": "Product announcements — existing"
   },
@@ -237,7 +241,7 @@
   },
   {
     "id": "concise-thread-disabled",
-    "label": "Full thread view for a capable model while the experiment is off"
+    "label": "Full thread view for a capable model while Concise threads is off"
   },
   {
     "id": "roadmap-chat-min-width",
@@ -270,6 +274,58 @@
   {
     "id": "site-mcp-permissions",
     "label": "Copse.dev tour: per-tool MCP permissions"
+  },
+  {
+    "id": "concise-state-stopped",
+    "label": "A turn the user stopped partway"
+  },
+  {
+    "id": "concise-state-interrupted-by-message",
+    "label": "A turn cut off by a new message, then answered"
+  },
+  {
+    "id": "concise-state-default-on",
+    "label": "A capable model’s turn on a profile with no stored setting"
+  },
+  {
+    "id": "concise-state-failed",
+    "label": "A turn that failed partway"
+  },
+  {
+    "id": "concise-state-approval",
+    "label": "A running turn waiting for permission"
+  },
+  {
+    "id": "concise-state-question",
+    "label": "A running turn waiting for an answer"
+  },
+  {
+    "id": "concise-state-subagent",
+    "label": "A finished turn that used subagents"
+  },
+  {
+    "id": "concise-state-subagent-running",
+    "label": "A running turn with a subagent at work"
+  },
+  {
+    "id": "concise-state-long-output",
+    "label": "A finished turn with long output, an edit and a patch"
+  },
+  {
+    "id": "concise-state-terminal",
+    "label": "A finished turn from an agent that ran a terminal"
+  },
+  {
+    "id": "concise-state-attachments",
+    "label": "A prompt with attachments, answered concisely"
+  },
+  {
+    "id": "concise-state-resumed",
+    "label": "An old thread resumed with a capable model"
+  },
+  {
+    "id": "concise-state-model-switch",
+    "label": "A thread that switches models between turns"
   },
   {
     "id": "approval-web-url",
