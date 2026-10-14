@@ -38,6 +38,23 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 
 ## Per-tool permission settings
 
+### Access to other conversations
+
+An agent's first read of another thread asks **Read your other threads?** Once approved,
+that thread can read every other conversation in the local chat store without another
+conversation-access prompt. Its own transcript remains readable. File read guards,
+the shell classifier and the sandbox read mount use the same thread-scoped permission;
+the chat store is never writable through these grants.
+
+`list_threads` searches conversation titles and summaries and returns paths for the existing
+read tools. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
+approval. Reading never grants sending. Both grants are persisted in main-owned settings,
+keyed by the requesting thread; they are not inherited by destination or forked threads.
+Either permission can be revoked through the thread menu → Conversation access.
+Destination prompts enter the normal queue with machine provenance, consume the existing
+continuation budget and respect held/paused queues. They do not interrupt active work or
+switch the visible thread. An unavailable or archived destination is rejected.
+
 Settings → Permissions lists registered Copse, custom, and connected MCP tools. Each tool can keep
 its inherited default or receive one explicit override:
 

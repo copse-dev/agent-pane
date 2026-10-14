@@ -98,4 +98,5 @@
 // v58 versions inline Mobile Companion settings endpoints.
 // v59 integrates explicit local terminal creation targets.
 // v60 adds living-plan reads and revision-checked changes.
-export const API_PROTOCOL_VERSION = 60 as const
+// v61 integrates cross-thread read and send permissions.
+export const API_PROTOCOL_VERSION = 61 as const

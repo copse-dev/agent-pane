@@ -1,5 +1,6 @@
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import { initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import {
@@ -628,6 +629,7 @@ app
     initApproval(win, ipcMain, alertUser)
     initAskUser(win, ipcMain, alertUser)
     initMobileChat(win, ipcMain)
+    initThreadPrompts(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
     // (the ACP re-authentication offer). The renderer owns the PTY's xterm tab,
     // so the request is forwarded rather than spawned here.

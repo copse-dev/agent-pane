@@ -41,7 +41,7 @@ export function isHeldMessage(item: QueuedUserMessage): boolean {
  * queued messages never do.
  */
 export function isMachineContinuation(item: QueuedUserMessage): boolean {
-  return item.origin?.kind === 'hook'
+  return item.origin !== undefined
 }
 
 /**
@@ -347,7 +347,7 @@ export function updateQueuedMessageModel(
 
 export function drainMessageQueue(store: AppStore, api: AgentRunApi, threadId: string): void {
   if (hasPendingDispatch(store, threadId)) return
-  const thread = store.getState().threads.find((t) => t.id === threadId)
+  const thread = getThreadById(store, threadId)
   if (!thread || thread.status !== 'idle' || thread.queuePaused) return
   const pending = thread.pendingMessages ?? []
   if (pending.length === 0) return
@@ -384,8 +384,7 @@ export function drainMessageQueue(store: AppStore, api: AgentRunApi, threadId: s
 
   const rest = pending.filter((item) => item !== next)
   const budgetHeld = new Set(heldByBudget)
-  const threads = store.getState().threads.map((t) => {
-    if (t.id !== threadId) return t
+  patchThreadAnywhere(store, threadId, (t) => {
     const { pendingMessages: _removed, ...restThread } = t
     const messages = movePendingUserMessagesToEnd(t.messages, pending)
     // Flip over-budget machine items to held so the pinned panel offers Release.
@@ -400,8 +399,6 @@ export function drainMessageQueue(store: AppStore, api: AgentRunApi, threadId: s
     // run payload's seed) reflect it (decision 5).
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base
   })
-  store.setState({ threads })
-
   // One visible note when the budget forced items to held (decision 5).
   if (heldByBudget.length > 0) addMessage(store, threadId, 'error', continuationBudgetHeldNote())
 

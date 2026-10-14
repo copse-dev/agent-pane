@@ -18,9 +18,19 @@
 import { configureShellScopeEnvironment } from '@copse/shell-guard/shell-scope.ts'
 import { agentScratchMatcher } from '../../project-sandbox/agent-scratch-roots.ts'
 import { copseWorkspaceDir } from '../storage/copse-paths.ts'
+import { getChatStoreRootSync } from '../workspace.ts'
 import { activeThreadReadRootPaths } from './thread-read-roots.ts'
+import { threadChatReadRoot } from './thread-access.ts'
 
 configureShellScopeEnvironment({
-  containedReadRoots: () => [copseWorkspaceDir(), ...activeThreadReadRootPaths()],
+  containedReadRoots: () => {
+    const roots = new Set(
+      [copseWorkspaceDir(), getChatStoreRootSync()].flatMap((root) => {
+        const permitted = root ? threadChatReadRoot(root) : null
+        return permitted ? [permitted] : []
+      }),
+    )
+    return [...roots, ...activeThreadReadRootPaths()]
+  },
   sanctionedScratchMatcher: agentScratchMatcher,
 })
