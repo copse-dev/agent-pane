@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -13,7 +13,8 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
 
   before(async () => {
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-file-search-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-file-search-')), 'workspace')
+    mkdirSync(workspaceRoot)
     mkdirSync(join(workspaceRoot, 'src'), { recursive: true })
     writeFileSync(join(workspaceRoot, 'README.md'), '# Fixture\n', 'utf8')
     writeFileSync(join(workspaceRoot, 'src', 'zebra-widget.ts'), 'export const zebra = 1\n', 'utf8')
@@ -25,7 +26,7 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('opens on Cmd/Ctrl+P, lists matches while typing, and opens the chosen file', async () => {

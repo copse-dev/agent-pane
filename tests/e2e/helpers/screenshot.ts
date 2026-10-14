@@ -150,7 +150,7 @@ export async function parkPointer(): Promise<void> {
 }
 
 /** Capture sizing must not become the layout used by subsequent interactions. */
-async function withCaptureFrame(capture: () => Promise<void>): Promise<void> {
+export async function withCaptureFrame(capture: () => Promise<void>): Promise<void> {
   const saved = await browser.execute(() => {
     const app = document.getElementById('app')
     if (!app) return []

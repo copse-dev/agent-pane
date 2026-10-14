@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -38,8 +38,9 @@ describe('settings plugins (about:addons)', function () {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    localPluginRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-selected-plugin-'))
-    mkdirSync(join(localPluginRoot, 'dist'))
+    localPluginRoot = join(tmpdir(), 'copse-e2e', 'selected-plugin')
+    rmSync(localPluginRoot, { recursive: true, force: true })
+    mkdirSync(join(localPluginRoot, 'dist'), { recursive: true })
     writeFileSync(join(localPluginRoot, 'dist', 'index.mjs'), 'export default {}\n')
     writeFileSync(
       join(localPluginRoot, 'copse-plugin.json'),

@@ -878,7 +878,7 @@ export function seedMemoryNotes(
   const memoryDir = join(knowledgeDir, 'memory')
   rmSync(knowledgeDir, { recursive: true, force: true })
   mkdirSync(memoryDir, { recursive: true })
-  const iso = new Date().toISOString()
+  const iso = '2026-10-01T12:00:00.000Z'
   for (const note of notes) {
     const contents = [
       '---',
@@ -3832,7 +3832,8 @@ const GIT_IMAGE_FIXTURES = join(process.cwd(), 'tests/e2e/fixtures')
  * image preview e2e. Returns the repo path for cleanup.
  */
 export function seedGitImageChangesFixture(): string {
-  const repoRoot = mkdtempSync(join(tmpdir(), 'copse-panel-git-img-'))
+  const repoRoot = join(mkdtempSync(join(tmpdir(), 'copse-panel-git-img-')), 'git-image-workspace')
+  mkdirSync(repoRoot)
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
 
   git('init', '-q')
@@ -6009,4 +6010,34 @@ export function seedAppleDevelopmentFixture(workspaceRoot: string): void {
     ],
   })
   seedE2eViewport({ width: 1280, height: 800 }, { theme: 'dark' })
+}
+
+/** A real visible transcript for tests that exercise intermediate markdown DOM. */
+export function seedStreamingMarkdownFixture(workspaceRoot: string): void {
+  seedEmptyProject(workspaceRoot, 'e2e-streaming-markdown', { subagentsEnabled: false })
+  const now = Date.now()
+  writeSeedConfig({
+    projects: [{ id: 'e2e-streaming-markdown', path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: 'e2e-streaming-markdown',
+    expandedProjectId: 'e2e-streaming-markdown',
+    activeThreadId: 'streaming-markdown-thread',
+    'threads:e2e-streaming-markdown': [
+      {
+        id: 'streaming-markdown-thread',
+        title: 'Streaming markdown',
+        status: 'idle',
+        messages: [
+          {
+            id: 'streaming-markdown-message',
+            role: 'assistant',
+            content: 'Intro paragraph.',
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
 }
