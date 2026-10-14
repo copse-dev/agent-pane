@@ -13,6 +13,7 @@ import { runAcpSessionPrompt, type AcpClientHandlers, type AcpTransport } from '
 import { ToolRegistry } from '../tool-registry.ts'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
+import { listAcpSessionProcesses } from './acp-process-registry.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
   clearUnrepairableOpenFileFault,
@@ -109,6 +110,26 @@ const CONFIG = { command: 'unused-in-tests', cwd: '/tmp/pool-test' }
 describe('acp-session-pool', () => {
   afterEach(async () => {
     await disposeAllAcpSessions()
+  })
+
+  it('registers the local agent process with its thread until disposal', async () => {
+    const factory = makeTransportFactory({ spawns: 0, promptSessions: [] })
+    await acquireAcpSession({
+      threadId: 'owned-thread',
+      projectId: 'owned-project',
+      config: CONFIG,
+      createTransport: async () => ({ ...(await factory()), processId: (): number => 12345 }),
+    })
+    assert.deepEqual(listAcpSessionProcesses(), [
+      {
+        pid: 12345,
+        label: 'unused-in-tests',
+        threadId: 'owned-thread',
+        projectId: 'owned-project',
+      },
+    ])
+    await disposeAcpSession('owned-thread')
+    assert.deepEqual(listAcpSessionProcesses(), [])
   })
 
   it('reuses one agent process and one session across turns', async () => {
@@ -290,7 +311,7 @@ describe('acp-session-pool', () => {
     await runAcpSessionPrompt(first.entry.open, 'one', undefined)
     first.entry.lastUsedAt = 0
 
-    const reaping = reapIdleAcpSessions(Date.now(), 1)
+    const reaping = reapIdleAcpSessions(Date.now() + 1_000, 1)
     await shutdownStarted
     const replacement = acquireAcpSession({
       threadId: 'reap-single-writer',
@@ -376,6 +397,116 @@ describe('acp-session-pool', () => {
     await runAcpSessionPrompt(resumed.entry.open, 'two', undefined)
     assert.equal(log.spawns, 2)
     assert.deepEqual(log.promptSessions, [originalSessionId, originalSessionId])
+  })
+
+  it('bounds the resumable warm cache oldest-first and resumes an evicted session', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const createTransport = makeResumableTransportFactory(log)
+    const now = Date.now()
+    const original = await acquireAcpSession({
+      threadId: 'warm-0',
+      config: CONFIG,
+      createTransport,
+    })
+    original.entry.open.handlers.current = sink([])
+    await runAcpSessionPrompt(original.entry.open, 'one', undefined)
+    for (let i = 1; i < 7; i++) {
+      const { entry } = await acquireAcpSession({
+        threadId: `warm-${String(i)}`,
+        config: CONFIG,
+        createTransport,
+      })
+      entry.lastUsedAt = now + i * 1_000
+    }
+    assert.deepEqual(
+      await reapIdleAcpSessions(now + 30_000),
+      [],
+      'preserve the startup grace period',
+    )
+    assert.deepEqual(await reapIdleAcpSessions(now + 90_000), ['warm-0', 'warm-1', 'warm-2'])
+    assert.equal(acpSessionPoolSize(), 4)
+    const resumed = await acquireAcpSession({ threadId: 'warm-0', config: CONFIG, createTransport })
+    assert.equal(resumed.fresh, false)
+    assert.equal(resumed.entry.open.session.sessionId, original.entry.open.session.sessionId)
+  })
+
+  it('does not evict non-resumable sessions early or count active turns against the warm cache', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const resumable = makeResumableTransportFactory(log)
+    const nonResumable = makeTransportFactory(log)
+    for (let i = 0; i < 6; i++) {
+      const { entry } = await acquireAcpSession({
+        threadId: `protected-${String(i)}`,
+        config: CONFIG,
+        createTransport: resumable,
+      })
+      if (i < 2) entry.open.turnStop = { resolve: (): void => {}, reject: (): void => {} }
+      await acquireAcpSession({
+        threadId: `legacy-${String(i)}`,
+        config: CONFIG,
+        createTransport: nonResumable,
+      })
+    }
+    assert.deepEqual(await reapIdleAcpSessions(Date.now() + 90_000), [])
+    assert.equal(acpSessionPoolSize(), 12)
+  })
+
+  it('protects background tools between turns and restarts the idle clock on their completion', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const { entry } = await acquireAcpSession({
+      threadId: 'background',
+      config: CONFIG,
+      createTransport: makeResumableTransportFactory(log),
+    })
+    entry.open.updates.enqueue({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'helper',
+      title: 'Background helper',
+      status: 'in_progress',
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const now = Date.now()
+    assert.deepEqual(await reapIdleAcpSessions(now + 20 * 60_000), [])
+    entry.open.updates.enqueue({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'helper',
+      status: 'completed',
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.deepEqual(await reapIdleAcpSessions(Date.now()), [])
+    assert.deepEqual(await reapIdleAcpSessions(Date.now() + 11 * 60_000), ['background'])
+  })
+
+  it('reaps a closed transport despite unfinished tool activity and resumes its session', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const createTransport = makeResumableTransportFactory(log)
+    const { entry } = await acquireAcpSession({
+      threadId: 'closed-background',
+      config: CONFIG,
+      createTransport,
+    })
+    entry.open.handlers.current = sink([])
+    await runAcpSessionPrompt(entry.open, 'one', undefined)
+    entry.open.updates.enqueue({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'unfinished',
+      title: 'Background tool',
+      status: 'in_progress',
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.deepEqual(await reapIdleAcpSessions(), [])
+    entry.open.connection.close()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(entry.open.isClosed(), true)
+    assert.deepEqual(await reapIdleAcpSessions(), ['closed-background'])
+    assert.equal(acpSessionPoolSize(), 0)
+    const resumed = await acquireAcpSession({
+      threadId: 'closed-background',
+      config: CONFIG,
+      createTransport,
+    })
+    assert.equal(resumed.fresh, false)
+    assert.equal(resumed.entry.open.session.sessionId, entry.open.session.sessionId)
   })
 
   it('resumes a dropped resumable session without replaying history', async () => {

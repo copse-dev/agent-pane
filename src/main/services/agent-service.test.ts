@@ -1280,3 +1280,81 @@ describe('standalone review admission', () => {
     assert.equal(agentService.listRunningThreadIds().includes(threadId), false)
   })
 })
+
+it('queued primary turns remain stoppable from mobile without launching a provider', async () => {
+  const { agentTurnScheduler, AGENT_TURN_QUEUE_NOTICE } = await import('./agent-turn-scheduler.ts')
+  let release = (): void => {}
+  const hold = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const blockers = Array.from({ length: 4 }, () =>
+    agentTurnScheduler.run(
+      new AbortController().signal,
+      () => {},
+      () => hold,
+    ),
+  )
+  const threadId = `queued-mobile-${randomUUID()}`
+  const chunks: StreamChunk[] = []
+  try {
+    const pending = agentService.runAgent(
+      threadId,
+      'Do the work',
+      [],
+      {
+        emit: (_id, chunk) => {
+          chunks.push(chunk)
+        },
+      },
+      new ToolRegistry(),
+    )
+    assert.ok(agentService.listRunningThreadIds().includes(threadId))
+    const runId = agentService.mobileRunId(threadId)
+    assert.ok(runId)
+    await assert.rejects(
+      agentService.runAgent(threadId, 'Duplicate', [], { emit: () => {} }, new ToolRegistry()),
+      /already|busy|progress/i,
+    )
+    assert.equal(agentService.mobileRunId(threadId), runId)
+    assert.equal(agentService.stopMobileRun(threadId, 'stale-id'), false)
+    assert.equal(agentService.stopMobileRun(threadId, runId), true)
+    const result = await pending
+    assert.deepEqual(chunks, [
+      { type: 'text', text: AGENT_TURN_QUEUE_NOTICE },
+      { type: 'done', stopReason: 'cancelled' },
+    ])
+    assert.deepEqual(result.messages, [{ role: 'user', content: 'Do the work' }])
+    assert.deepEqual(result.usage, { inputTokens: 0, outputTokens: 0 })
+    assert.ok(!agentService.listRunningThreadIds().includes(threadId))
+    assert.equal(agentService.mobileRunId(threadId), null)
+  } finally {
+    release()
+    await Promise.all(blockers)
+  }
+})
+
+it('Stop during admitted model preflight cannot be overwritten by a new controller', async () => {
+  const threadId = `preflight-stop-${randomUUID()}`
+  const chunks: StreamChunk[] = []
+  const pending = agentService.runAgent(
+    threadId,
+    'Do the work',
+    [],
+    {
+      emit: (_id, chunk) => {
+        chunks.push(chunk)
+      },
+    },
+    new ToolRegistry(),
+  )
+  const runId = agentService.mobileRunId(threadId)
+  assert.ok(runId)
+  // Admission resumes first; model resolution yields before any provider launch.
+  await Promise.resolve()
+  assert.equal(agentService.mobileRunId(threadId), runId)
+  assert.equal(agentService.stopMobileRun(threadId, runId), true)
+  const result = await pending
+  assert.deepEqual(chunks, [{ type: 'done', stopReason: 'cancelled' }])
+  assert.deepEqual(result.usage, { inputTokens: 0, outputTokens: 0 })
+  assert.equal(agentService.mobileRunId(threadId), null)
+})
