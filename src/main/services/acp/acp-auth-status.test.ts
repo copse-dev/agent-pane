@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import type { AcpAuthState } from '@shared/types/acp.ts'
 import { probeAcpAuth, type AcpAuthProbeDeps } from './acp-auth-status.ts'
 
 function deps(over: Partial<AcpAuthProbeDeps> = {}): AcpAuthProbeDeps {
@@ -8,6 +9,7 @@ function deps(over: Partial<AcpAuthProbeDeps> = {}): AcpAuthProbeDeps {
     home: '/home/u',
     fileExists: () => Promise.resolve(false),
     exec: () => Promise.reject(new Error('not run')),
+    agent: { command: 'codex-acp', args: [] },
     ...over,
   }
 }
@@ -57,6 +59,48 @@ describe('probeAcpAuth', () => {
     )
   })
 
+  it('asks the adapter-bundled Codex CLI when no standalone `codex` is installed', async () => {
+    const calls: string[] = []
+    const probe = (
+      adapterOut: string,
+      agent: AcpAuthProbeDeps['agent'] = { command: 'codex-acp', args: [] },
+    ): Promise<AcpAuthState> =>
+      probeAcpAuth(
+        'codex-acp',
+        deps({
+          agent,
+          exec: async (command, args) => {
+            calls.push([command, ...args].join(' '))
+            if (command === 'codex')
+              throw Object.assign(new Error('spawn codex'), { code: 'ENOENT' })
+            return adapterOut
+          },
+        }),
+      )
+    assert.equal(await probe('Logged in using ChatGPT'), 'signed-in')
+    assert.deepEqual(calls, ['codex login status', 'codex-acp cli login status'])
+    assert.equal(await probe('Not logged in'), 'signed-out')
+    assert.equal(await probe('Usage: codex-acp [options]'), 'unknown')
+    calls.length = 0
+    await probe('Logged in using ChatGPT', {
+      command: 'npx',
+      args: ['-y', '@agentclientprotocol/codex-acp'],
+    })
+    assert.equal(calls[1], 'npx -y @agentclientprotocol/codex-acp cli login status')
+  })
+
+  it('uses a standalone `codex` answer without spawning the adapter', async () => {
+    const calls: string[] = []
+    const d = deps({
+      exec: async (command) => {
+        calls.push(command)
+        return 'Not logged in'
+      },
+    })
+    assert.equal(await probeAcpAuth('codex-acp', d), 'signed-out')
+    assert.deepEqual(calls, ['codex'])
+  })
+
   it('parses `cursor-agent status`', async () => {
     const run = (stdout: string): AcpAuthProbeDeps => deps({ exec: () => Promise.resolve(stdout) })
     assert.equal(await probeAcpAuth('cursor', run('✓ Logged in as a@b.c')), 'signed-in')
@@ -76,9 +120,10 @@ describe('detectAcpAuthStatus environment boundary', () => {
     const previous = process.env['OPENAI_API_KEY']
     process.env['OPENAI_API_KEY'] = 'ambient-test-key'
     try {
-      const result = await detectAcpAuthStatus(['codex-acp'], (env) => {
+      const result = await detectAcpAuthStatus(['codex-acp'], (env, agent) => {
         assert.equal(env['OPENAI_API_KEY'], undefined)
-        return deps({ env })
+        assert.equal(agent.command, 'codex-acp', 'probes the catalog launch command')
+        return deps({ env, agent })
       })
       assert.deepEqual(result, [{ id: 'codex-acp', state: 'unknown' }])
     } finally {
