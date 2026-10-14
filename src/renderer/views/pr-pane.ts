@@ -324,7 +324,7 @@ export function mountPrPane(
   // titleAttempted so renderList cannot turn into a fetch loop.
   const titleInFlight = new Set<string>()
   const titleAttempted = new Set<string>()
-  let ciEls = new Map<string, HTMLElement>()
+  let ciEls = new Map<string, { icon: HTMLElement; label: HTMLElement }>()
   let ciGen = 0
   let refreshInFlight = false
   let disposed = false
@@ -342,8 +342,9 @@ export function mountPrPane(
     }, 0)
   }
 
-  const CI_LABEL: Record<GhPrChecksState | 'loading', string> = {
+  const CI_LABEL: Record<GhPrChecksState | 'loading' | 'unavailable', string> = {
     loading: 'Checking CI…',
+    unavailable: 'CI unavailable',
     pending: 'CI running',
     success: 'CI passing',
     failure: 'CI failing',
@@ -357,7 +358,7 @@ export function mountPrPane(
   function applyPrStatus(
     node: HTMLElement,
     pr: GhPrSummary,
-    checks: GhPrChecksState | 'loading',
+    checks: GhPrChecksState | 'loading' | 'unavailable',
   ): void {
     const lifecycle = cachedPrTitle(pr)?.state ?? (isPlaceholderPr(pr) ? 'UNKNOWN' : pr.state)
     const kind =
@@ -404,8 +405,13 @@ export function mountPrPane(
       .finally(() => {
         checksInFlight.delete(key)
         if (gen !== ciGen) return
-        const node = ciEls.get(key)
-        if (node) applyPrStatus(node, pr, checksCache.get(key) ?? 'no_checks')
+        const nodes = ciEls.get(key)
+        if (nodes) {
+          const state = checksCache.get(key) ?? 'no_checks'
+          applyPrStatus(nodes.icon, pr, state)
+          nodes.label.textContent = CI_LABEL[state]
+          nodes.label.dataset['state'] = state
+        }
       })
   }
 
@@ -478,8 +484,15 @@ export function mountPrPane(
       selectedPr.number === pr.number
     const ci = el('span', {})
     const state = knownChecks(pr)
-    applyPrStatus(ci, pr, state ?? 'loading')
-    ciEls.set(githubPrKey(pr), ci)
+    const displayedState =
+      state ?? (ghStatus && !ghStatus.authenticated ? 'unavailable' : 'loading')
+    applyPrStatus(ci, pr, displayedState)
+    const checksLabel = el(
+      'span',
+      { class: 'pr-list-checks-label', 'data-state': displayedState },
+      CI_LABEL[displayedState],
+    )
+    ciEls.set(githubPrKey(pr), { icon: ci, label: checksLabel })
     const agents = agentLinks.get(githubPrKey(pr)) ?? []
     const agentBadge =
       agents.length > 0
@@ -537,11 +550,7 @@ export function mountPrPane(
           : []),
         ...(agentBadge ? [agentBadge] : []),
         ci,
-        el(
-          'span',
-          { class: 'pr-list-checks-label', 'data-state': state ?? 'loading' },
-          CI_LABEL[state ?? 'loading'],
-        ),
+        checksLabel,
       ),
     )
     row.addEventListener('click', () => void selectPr(pr))

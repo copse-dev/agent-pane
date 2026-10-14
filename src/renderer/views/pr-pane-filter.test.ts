@@ -151,6 +151,28 @@ afterEach(() => {
 })
 
 describe('pr pane filter (issue #2482)', () => {
+  for (const installed of [true, false]) {
+    it(`does not claim to check CI when GitHub is ${installed ? 'signed out' : 'unavailable'}`, async () => {
+      let requests = 0
+      const { listRoot } = mount([], {
+        workspacePrs: [],
+        gh: {
+          status: async () => ({ installed, authenticated: false, username: null, message: null }),
+        },
+        prChecks: async () => {
+          requests++
+          return 'success'
+        },
+      })
+      await settle()
+      assert.equal(requests, 0)
+      assert.equal(listRoot.querySelector('.pr-list-checks-label')?.textContent, 'CI unavailable')
+      assert.match(
+        listRoot.querySelector('.pr-list-status')?.getAttribute('aria-label') ?? '',
+        /CI unavailable/,
+      )
+    })
+  }
   it('keeps relationship labels with repository and CI metadata in the current row layout', async () => {
     const { listRoot } = mount()
     await settle()
@@ -407,6 +429,11 @@ describe('pr pane filter (issue #2482)', () => {
     resolveChecks('failure')
     await settle()
     assert.ok(listRoot.querySelector('.pr-list-status.is-open.has-ci-failure'))
+    assert.equal(
+      listRoot.querySelector('.pr-list-status.is-open.has-ci-failure + .pr-list-checks-label')
+        ?.textContent,
+      'CI failing',
+    )
     listRoot.querySelector<HTMLButtonElement>('.pr-other-toggle')?.click()
     await settle()
     const merged = listRoot.querySelector('.pr-list-status.is-merged')
