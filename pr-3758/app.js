@@ -53043,7 +53043,7 @@ var init_paste_key_form = __esm({
       { prefix: "fw_", provider: "fireworks", certain: true },
       { prefix: "pplx-", provider: "perplexity", certain: true },
       { prefix: "cur_", provider: "cursor", certain: true },
-      // OpenAI-style keys, but DeepSeek and others also start `sk-`, so validation decides.
+      // OpenAI-style keys, but DeepSeek and others also start `sk-`, so the user chooses.
       { prefix: "sk-", provider: "openai", certain: false }
     ];
     MIN_KEY_LENGTH = 8;
@@ -53648,7 +53648,7 @@ function createAcpAgentsList(api2, opts = {}) {
       const { imported, skipped } = await api2.settings.importEnvKeys(
         fresh.map((key) => key.provider)
       );
-      scanStatus.textContent = imported.length === 0 ? "Nothing new to import." : `Added ${String(imported.length)} key${imported.length === 1 ? "" : "s"} found on this Mac. Remove any you don\u2019t want.`;
+      scanStatus.textContent = imported.length === 0 ? "Nothing new to import." : `Added ${String(imported.length)} key${imported.length === 1 ? "" : "s"} found on this machine. Remove any you don\u2019t want.`;
       if (skipped.length > 0)
         scanStatus.textContent += ` ${String(skipped.length)} keys could not be imported. Review secure storage settings.`;
       if (imported.length > 0) opts.onKeysImported?.();
