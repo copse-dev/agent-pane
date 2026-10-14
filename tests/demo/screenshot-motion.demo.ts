@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import { $, browser } from '@wdio/globals'
-import { saveElementScreenshot, withCaptureFrame } from '../e2e/helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, withCaptureFrame } from '../e2e/helpers/screenshot.ts'
 
 describe('reference screenshot motion', () => {
   it('pins a visible reasoning frame and resumes motion after success or failure', async () => {
@@ -31,7 +32,9 @@ describe('reference screenshot motion', () => {
     await browser.waitUntil(async () => (await motion()).state === 'running')
     await withCaptureFrame(async () => {
       assert.deepEqual(await motion(), { state: 'paused', time: 1250, opacity: '1' })
-      await saveElementScreenshot('#capture-motion-fixture', 'screenshot-motion-frame.png')
+      await $('#capture-motion-fixture').saveScreenshot(
+        join(E2E_SCREENSHOT_DIR, 'screenshot-motion-frame.png'),
+      )
       assert.deepEqual(await motion(), { state: 'paused', time: 1250, opacity: '1' })
     })
     assert.equal((await motion()).state, 'running')

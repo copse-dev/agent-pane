@@ -10,7 +10,6 @@ import {
   withCaptureFrame,
 } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
-import { withFrozenAnimations } from './helpers/frozen-animations.ts'
 
 const SKILL = 'settings-navigation-fixture'
 const INSTRUCTIONS = 'Prefer readable names and focused changes.'
@@ -108,19 +107,17 @@ describe('Settings section composition, validation and sticky actions', () => {
       // Chromium's native validation bubble is outside the DOM animation API.
       // Require consecutive identical frames so its fade-in cannot leak through
       // the screenshot's otherwise frozen renderer animations.
-      await withFrozenAnimations(async () => {
-        let previousFrame = ''
-        let stableFrames = 0
-        await browser.waitUntil(
-          async () => {
-            const frame = await browser.takeScreenshot()
-            stableFrames = frame === previousFrame ? stableFrames + 1 : 0
-            previousFrame = frame
-            return stableFrames >= 2
-          },
-          { timeout: 5_000, interval: 200, timeoutMsg: 'native validation bubble did not settle' },
-        )
-      })
+      let previousFrame = ''
+      let stableFrames = 0
+      await browser.waitUntil(
+        async () => {
+          const frame = await browser.takeScreenshot()
+          stableFrames = frame === previousFrame ? stableFrames + 1 : 0
+          previousFrame = frame
+          return stableFrames >= 2
+        },
+        { timeout: 5_000, interval: 200, timeoutMsg: 'native validation bubble did not settle' },
+      )
       await dialog.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'settings-composition-invalid-save.png'))
     })
     await dialog.$('[name="fontSize"]').setValue('16')
