@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+
+import { pinRoadmapDisplayTimestamp } from './helpers/roadmap-capture.ts'
 
 const PROMPT = 'Ship the roadmap reopen feature'
 
@@ -14,7 +16,8 @@ describe('roadmap start-thread tracking and reopen', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-reopen-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-reopen-')), 'workspace')
+    mkdirSync(workspaceRoot, { recursive: true })
     seedEmptyProject(workspaceRoot, 'e2e-roadmap-reopen', {
       roadmapPlansEnabled: true,
     })
@@ -23,7 +26,7 @@ describe('roadmap start-thread tracking and reopen', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('tracks the started thread on the item and reopens it later', async () => {
@@ -81,6 +84,13 @@ describe('roadmap start-thread tracking and reopen', () => {
       originPlacement.bottom <= originPlacement.composerTop,
       'the composer does not cover the roadmap link',
     )
+    pinRoadmapDisplayTimestamp('e2e-roadmap-reopen')
+    await $('.roadmap-refresh-btn').click()
+    await browser.waitUntil(
+      async () => (await $('.roadmap-form > .memories-meta').getText()).includes('2026-01-15'),
+      { timeout: 10_000, timeoutMsg: 'expected the pinned roadmap display date' },
+    )
+    await $('.roadmap-row').click()
     await browser.execute(() => {
       const viewer = document.querySelector<HTMLElement>('.memories-viewer-host')
       if (viewer) viewer.scrollTop = viewer.scrollHeight

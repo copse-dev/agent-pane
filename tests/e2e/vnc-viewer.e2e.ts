@@ -487,6 +487,9 @@ describe('VNC viewer', function () {
       })
     }
     await assertCheckboxBesideLabel('.vnc-remember-password')
+    await browser.execute(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    })
     await saveElementScreenshot('.vnc-auth-panel', 'vnc-viewer-remember-password-row.png')
     if (!secureCredentialStorage) {
       await browser.execute(() => {

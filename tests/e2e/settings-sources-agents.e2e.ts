@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
   assertBadgeRecipe,
@@ -28,7 +28,8 @@ describe('custom agent discovery surfaces', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
 
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-sources-agents-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-e2e-sources-agents-')), 'workspace')
+    mkdirSync(workspaceRoot)
     const agentsDir = join(workspaceRoot, '.cursor', 'agents')
     mkdirSync(agentsDir, { recursive: true })
     writeFileSync(
@@ -59,7 +60,7 @@ describe('custom agent discovery surfaces', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('shows a project agent in Settings and the slash-command picker', async () => {
