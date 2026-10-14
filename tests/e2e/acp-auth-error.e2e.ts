@@ -1,8 +1,29 @@
 import { $, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
 import { resetUserData, seedAcpAuthErrorFixture } from './helpers/seed-config.ts'
-import { saveElementScreenshot, savePreparedElementScreenshot } from './helpers/screenshot.ts'
+import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+
+async function saveAuthMessage(selector: string, filename: string): Promise<void> {
+  await prepareE2eScreenshot()
+  if (await $('#pane-projects').isDisplayed()) await $('[aria-label="Toggle sidebar"]').click()
+  await $(selector).scrollIntoView({ block: 'center' })
+  const bounds = await browser.execute((sel) => {
+    for (const block of document.querySelectorAll<HTMLElement>(`${sel} pre`)) block.scrollLeft = 0
+    const message = document.querySelector(sel)!.getBoundingClientRect()
+    const composer = document.querySelector('#input-bar')!.getBoundingClientRect()
+    const transcript = document.querySelector('.conversation-scroll')!.getBoundingClientRect()
+    return {
+      top: message.top,
+      bottom: message.bottom,
+      viewportTop: transcript.top,
+      composerTop: composer.top,
+    }
+  }, selector)
+  expect(bounds.top).toBeGreaterThanOrEqual(bounds.viewportTop)
+  expect(bounds.bottom).toBeLessThanOrEqual(bounds.composerTop)
+  await saveElementScreenshot(selector, filename, { frame: 'document' })
+}
 
 /**
  * Where each env-var hint rendered: inside the numbered sign-in steps (the
@@ -139,10 +160,7 @@ describe('ACP authentication error presentation', () => {
     expect(hints.inSteps).toEqual(['claude auth login'])
     expect(hints.inNote).toEqual(['ANTHROPIC_API_KEY'])
 
-    await savePreparedElementScreenshot(
-      '[data-message-id="msg-assistant-acp-auth"]',
-      'acp-auth-error.png',
-    )
+    await saveAuthMessage('[data-message-id="msg-assistant-acp-auth"]', 'acp-auth-error.png')
   })
 
   it("shows Cursor's rejected session as an expired sign-in with its own recovery path", async () => {
@@ -160,7 +178,7 @@ describe('ACP authentication error presentation', () => {
       expect.stringContaining('expired WorkosCursorSessionToken'),
     )
 
-    await savePreparedElementScreenshot(
+    await saveAuthMessage(
       '[data-message-id="msg-assistant-cursor-auth"]',
       'cursor-acp-auth-error.png',
     )
@@ -181,7 +199,8 @@ describe('ACP authentication error presentation', () => {
       expect.stringContaining('workspace routing discovery unauthorized (401)'),
     )
 
-    await savePreparedElementScreenshot(
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
+    await saveAuthMessage(
       '[data-message-id="msg-assistant-codex-auth"]',
       'codex-workspace-routing-auth-error.png',
     )

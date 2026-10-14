@@ -95,6 +95,9 @@ describe('chat-scoped approval', () => {
 
     // The sidebar is in frame; its auto-title lands asynchronously.
     await waitForActiveThreadTitle()
+    const terminalToggle = $('.titlebar-btn[aria-label="Open terminal"]')
+    await terminalToggle.execute((button) => button.focus())
+    await expect(terminalToggle).toBeFocused()
     await saveAppScreenshot('approval-chat-scoped.png')
     await dialog.$('.approval-reject').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
