@@ -101,8 +101,10 @@ describe('Settings section composition, validation and sticky actions', () => {
       assert.equal(invalid.overflow, true)
       assert.notEqual(invalid.message, '')
       // Chromium owns this popup outside the page DOM. Re-open after capture
-      // sizing, then let its native fade finish; DOM geometry cannot observe it.
-      await browser.pause(350)
+      // sizing, then wait for its longest transition (1166.67ms scale; opacity
+      // is 466.67ms and text is 700ms in Blink validation_bubble.css). The
+      // overlay has its own internal page, so app DOM geometry cannot observe it.
+      await browser.pause(1500)
       // Chromium's native validation bubble is outside the DOM animation API.
       // Require consecutive identical frames so its fade-in cannot leak through
       // the screenshot's otherwise frozen renderer animations.
