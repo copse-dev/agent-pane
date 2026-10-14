@@ -88,7 +88,7 @@ export function formatSandboxNetworkDenialAudit(denied: readonly DeniedDestinati
     '',
     'If no bridged tool covers the need — an agent signing itself in, say — add the ' +
       "domain to this agent's sandbox.allowedDomains override under Settings → General → " +
-      'Providers. That grants the agent process egress to it for the whole session.',
+      'Coding agents. That grants the agent process egress to it for the whole session.',
   )
 
   return lines.join('\n')

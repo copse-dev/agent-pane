@@ -207,7 +207,7 @@ describe('Screenshot click-to-expand', () => {
     await waitForImagesSettled('.messages-list', { minImages: 6 })
     await prepareE2eScreenshot()
     await browser.execute(() => {
-      const scroller = document.querySelector<HTMLElement>('.conversation-scroll')
+      const scroller = document.querySelector<HTMLElement>('.messages-list')
       if (!scroller) throw new Error('Conversation scroll host is missing')
       scroller.scrollTop = scroller.scrollHeight
     })
@@ -470,6 +470,14 @@ describe('Screenshot click-to-expand', () => {
     await newThreadBtn.waitForClickable({ timeout: 15_000 })
     await newThreadBtn.click()
     await $('.pane-chat.is-activity-home').waitForExist({ timeout: 10_000 })
+    // The home class precedes Activity's populated render. Pin the seeded
+    // recent thread so captures cannot alternate between the 720px idle
+    // composer and the 800px composer below Activity.
+    await $('#activity-home[data-idle="false"]').waitForDisplayed({ timeout: 10_000 })
+    await $(
+      '#activity-home .activity-row[data-thread-id="e2e-image-expand-thread"]',
+    ).waitForDisplayed({ timeout: 10_000 })
+    await expect($('.pane-chat')).not.toHaveElementClass('is-activity-idle')
     await $('.prompt-input').waitForExist({ timeout: 10_000 })
 
     await browser.execute((base64: string) => {

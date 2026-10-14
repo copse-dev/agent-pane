@@ -17,6 +17,13 @@
           1
         ]
       },
+      "acp:auth-status": {
+        "api": "acp.authStatus",
+        "args": [
+          1,
+          1
+        ]
+      },
       "acp:auto-setup": {
         "api": "acp.autoSetup",
         "args": [

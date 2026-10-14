@@ -74,6 +74,16 @@ describe('git commit approval', () => {
       { id: PROJECT_ID, path: root, name: 'Commit fixture', worktreeMode: 'never' },
     )
     await browser.refresh()
+    const seededSettings = await browser.execute(async () => ({
+      model: await window.api.settings.get('model'),
+      autoRunSandboxCommands: await window.api.settings.get('autoRunSandboxCommands'),
+      safetyClassifierEnabled: await window.api.settings.get('safetyClassifierEnabled'),
+    }))
+    assert.deepEqual(seededSettings, {
+      model: 'claude-sonnet-4-6',
+      autoRunSandboxCommands: false,
+      safetyClassifierEnabled: false,
+    })
     try {
       await $('.prompt-input').waitForExist({ timeout: 10_000 })
     } catch (error) {

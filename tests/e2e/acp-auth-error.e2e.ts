@@ -1,8 +1,29 @@
 import { $, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
 import { resetUserData, seedAcpAuthErrorFixture } from './helpers/seed-config.ts'
-import { saveElementScreenshot, savePreparedElementScreenshot } from './helpers/screenshot.ts'
+import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+
+async function saveAuthMessage(selector: string, filename: string): Promise<void> {
+  await prepareE2eScreenshot()
+  if (await $('#pane-projects').isDisplayed()) await $('[aria-label="Toggle sidebar"]').click()
+  await $(selector).scrollIntoView({ block: 'center' })
+  const bounds = await browser.execute((sel) => {
+    for (const block of document.querySelectorAll<HTMLElement>(`${sel} pre`)) block.scrollLeft = 0
+    const message = document.querySelector(sel)!.getBoundingClientRect()
+    const composer = document.querySelector('#input-bar')!.getBoundingClientRect()
+    const transcript = document.querySelector('.conversation-scroll')!.getBoundingClientRect()
+    return {
+      top: message.top,
+      bottom: message.bottom,
+      viewportTop: transcript.top,
+      composerTop: composer.top,
+    }
+  }, selector)
+  expect(bounds.top).toBeGreaterThanOrEqual(bounds.viewportTop)
+  expect(bounds.bottom).toBeLessThanOrEqual(bounds.composerTop)
+  await saveElementScreenshot(selector, filename, { frame: 'document' })
+}
 
 /**
  * Where each env-var hint rendered: inside the numbered sign-in steps (the
@@ -62,7 +83,8 @@ describe('ACP authentication error presentation', () => {
   it('shows the dedicated Claude sign-in command in setup without adapter jargon', async () => {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
-    await $('.provider-chip[data-provider="anthropic"]').click()
+    await $('[data-testid="acp-add-toggle"]').click()
+    await $('.acp-add-row[data-agent="claude-acp"]').$('button=Set up').click()
     // Provider discovery can find a host client outside PATH and offer its
     // adapter. Decline through the real UI before reviewing sign-in guidance.
     const approval = $('#approval-dialog')
@@ -85,10 +107,7 @@ describe('ACP authentication error presentation', () => {
     await expect(note).not.toHaveText(expect.stringContaining('claude-agent-acp'))
     await expect(signIn).not.toHaveText(expect.stringContaining('--sso'))
     await expect($('#approval-dialog')).not.toBeDisplayed()
-    await saveElementScreenshot(
-      '.provider-capability:has(.acp-known-agent-note)',
-      'claude-sign-in.png',
-    )
+    await saveElementScreenshot('.acp-add-menu .provider-form', 'claude-sign-in.png')
   })
 
   it('leads with recovery and keeps opaque ACP diagnostics subordinate', async () => {
@@ -141,10 +160,7 @@ describe('ACP authentication error presentation', () => {
     expect(hints.inSteps).toEqual(['claude auth login'])
     expect(hints.inNote).toEqual(['ANTHROPIC_API_KEY'])
 
-    await savePreparedElementScreenshot(
-      '[data-message-id="msg-assistant-acp-auth"]',
-      'acp-auth-error.png',
-    )
+    await saveAuthMessage('[data-message-id="msg-assistant-acp-auth"]', 'acp-auth-error.png')
   })
 
   it("shows Cursor's rejected session as an expired sign-in with its own recovery path", async () => {
@@ -162,7 +178,7 @@ describe('ACP authentication error presentation', () => {
       expect.stringContaining('expired WorkosCursorSessionToken'),
     )
 
-    await savePreparedElementScreenshot(
+    await saveAuthMessage(
       '[data-message-id="msg-assistant-cursor-auth"]',
       'cursor-acp-auth-error.png',
     )
@@ -183,7 +199,8 @@ describe('ACP authentication error presentation', () => {
       expect.stringContaining('workspace routing discovery unauthorized (401)'),
     )
 
-    await savePreparedElementScreenshot(
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
+    await saveAuthMessage(
       '[data-message-id="msg-assistant-codex-auth"]',
       'codex-workspace-routing-auth-error.png',
     )

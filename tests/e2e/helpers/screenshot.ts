@@ -4,6 +4,7 @@ import { PNG } from 'pngjs'
 import { browser } from '@wdio/globals'
 import { recentreClippedCapture, restoreScrollAfterCapture } from './capture-framing.ts'
 import { mockConversationLeaks } from './mock-content.ts'
+import { withFrozenAnimations } from './frozen-animations.ts'
 
 /** Fixed viewport for committed e2e reference screenshots (see tests/e2e/screenshots/). */
 export const E2E_VIEWPORT = { width: 1280, height: 800 } as const
@@ -161,7 +162,7 @@ export async function withCaptureFrame(capture: () => Promise<void>): Promise<vo
     ])
   })
   try {
-    await capture()
+    await withFrozenAnimations(capture)
   } finally {
     await browser.execute((styles) => {
       const app = document.getElementById('app')
@@ -197,10 +198,14 @@ export async function savePreparedAppScreenshot(filename: string): Promise<void>
 }
 
 /** Capture native webviews without ChromeDriver's element-capture rescaling. */
-export async function saveAppViewportScreenshot(filename: string): Promise<void> {
+export async function saveAppViewportScreenshot(
+  filename: string,
+  beforeCapture?: () => Promise<void>,
+): Promise<void> {
   await withCaptureFrame(async () => {
     await prepareE2eScreenshot()
     await waitForSettledLayout('#app')
+    await beforeCapture?.()
     const bounds = await browser.execute(() => {
       const rect = document.getElementById('app')?.getBoundingClientRect()
       if (!rect) throw new Error('App shell is missing')
