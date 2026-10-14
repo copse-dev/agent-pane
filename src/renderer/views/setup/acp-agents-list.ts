@@ -198,7 +198,7 @@ export function createAcpAgentsList(
       scanStatus.textContent =
         imported.length === 0
           ? 'Nothing new to import.'
-          : `Added ${String(imported.length)} key${imported.length === 1 ? '' : 's'} found on this Mac. Remove any you don’t want.`
+          : `Added ${String(imported.length)} key${imported.length === 1 ? '' : 's'} found on this machine. Remove any you don’t want.`
       if (skipped.length > 0)
         scanStatus.textContent += ` ${String(skipped.length)} keys could not be imported. Review secure storage settings.`
       if (imported.length > 0) opts.onKeysImported?.()

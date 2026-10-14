@@ -24,7 +24,7 @@ const KEY_PREFIXES: readonly { prefix: string; provider: string; certain: boolea
   { prefix: 'fw_', provider: 'fireworks', certain: true },
   { prefix: 'pplx-', provider: 'perplexity', certain: true },
   { prefix: 'cur_', provider: 'cursor', certain: true },
-  // OpenAI-style keys, but DeepSeek and others also start `sk-`, so validation decides.
+  // OpenAI-style keys, but DeepSeek and others also start `sk-`, so the user chooses.
   { prefix: 'sk-', provider: 'openai', certain: false },
 ]
 

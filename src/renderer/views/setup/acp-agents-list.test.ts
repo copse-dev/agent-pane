@@ -188,7 +188,7 @@ describe('Re-scan (agents and keys in one click)', () => {
     assert.deepEqual(spy.consent, [true])
     assert.equal(spy.imports, 1)
     assert.equal(spy.imported, 1)
-    assert.match(status(list.root), /Added 2 keys found on this Mac/)
+    assert.match(status(list.root), /Added 2 keys found on this machine/)
     list.root.remove()
   })
 
