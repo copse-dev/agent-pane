@@ -85,7 +85,7 @@ describe('Coding agents list in Settings', () => {
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
     await $('.settings-nav-btn[data-section="general"]').click()
 
-    const list = $('[data-testid="acp-agents-list"]')
+    const list = $('[data-testid="models-agents-list"]')
     await list.waitForExist({ timeout: 15_000 })
     const codex = list.$('.acp-row[data-agent="codex-acp"]')
     await codex.waitForExist({ timeout: 15_000 })
@@ -156,7 +156,7 @@ describe('Coding agents list in Settings', () => {
     })
     assert.deepEqual(collisions, [], 'row parts must not overlap or overflow')
 
-    await $('[data-testid="acp-add-toggle"]').click()
+    await $('[data-testid="connections-add-toggle"]').click()
     for (const id of ['claude-acp', 'gemini', 'cursor']) {
       await expect($(`.acp-add-row[data-agent="${id}"]`)).toBeDisplayed()
     }
@@ -167,7 +167,10 @@ describe('Coding agents list in Settings', () => {
         .map((svg) => svg.closest('.acp-add-row')?.getAttribute('data-agent') ?? '?'),
     )
     assert.deepEqual(unpainted, [], 'logos in the Add menu must render')
-    await $('[data-testid="acp-agents-fieldset"]').scrollIntoView({ block: 'center' })
-    await saveSettingsSection('[data-testid="acp-agents-fieldset"]', 'settings-acp-agents-list.png')
+    await $('[data-testid="models-agents-fieldset"]').scrollIntoView({ block: 'center' })
+    await saveSettingsSection(
+      '[data-testid="models-agents-fieldset"]',
+      'settings-acp-agents-list.png',
+    )
   })
 })
