@@ -53692,7 +53692,7 @@ function createAcpAgentsList(api2, opts = {}) {
       openId = open2 ? "" : model.id;
       menuOpen = false;
       render2();
-      if (openId && !autoSetupRun) {
+      if (openId && !autoSetupRun && KNOWN_ACP_AGENTS.some((agent2) => agent2.id === openId)) {
         autoSetupRun = true;
         void panel.refresh().then(() => refresh());
       }
