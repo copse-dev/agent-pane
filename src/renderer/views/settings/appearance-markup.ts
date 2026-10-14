@@ -50,6 +50,22 @@ export const appearanceMarkup = `
               </p>
             </fieldset>
 
+            <fieldset data-testid="settings-concise-threads">
+              <legend>Concise threads</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="conciseThreadsEnabled" aria-describedby="concise-threads-hint" />
+                Hide tool details and reasoning from highly capable models
+              </label>
+              <p class="field-hint" id="concise-threads-hint">
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
+                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning,
+                and the tool errors the model recovers from stay hidden, and every finished turn
+                has a Show steps button to open it in full; while a model works, you see what it
+                is doing now. Turn off to always show the full thread. Other models always show the
+                full thread.
+              </p>
+            </fieldset>
+
             <fieldset>
               <legend>Display</legend>
               <label>
@@ -174,6 +190,7 @@ export const appearanceMarkup = `
 export const appearanceFields: readonly SettingField[] = [
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
   { name: 'animateAgentAvatars', kind: 'checkbox', default: true, save: true },
+  { name: 'conciseThreadsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'alertOnInteraction', kind: 'checkbox', default: true, save: true },
   { name: 'alertOnThreadFinished', kind: 'checkbox', default: true, save: true },
   { name: 'alertSystemNotification', kind: 'checkbox', default: true, save: true },

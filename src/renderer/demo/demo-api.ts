@@ -962,6 +962,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           sizeBytes: archive.bytes?.byteLength ?? 0,
         }),
     },
+    plans: { get: () => resolved(null), revision: () => resolved(null), change: unsupported },
     threads: {
       storageSize: () => resolved({ bytes: 24_576, truncated: false }),
       archive: (_projectId, threadId) => {

@@ -12,7 +12,7 @@ const ASK_USER_CANCELLED = 'The run was stopped before the user answered.'
 export const askUserTool = defineTool({
   name: 'ask_user',
   description:
-    "Ask for missing information or a consequential scope decision that blocks progress, and BLOCK until the user answers. Resolve routine implementation choices from the request and available evidence. Do not use this to repeat an existing approval, duplicate a tool's approval prompt, or report a diagnosis that needs no user decision. Each question may include suggested `options`, but the user can always type their own answer. The tool result contains the user's answers.",
+    "Ask for missing information or a consequential scope decision that blocks progress, and BLOCK until the user answers. Resolve routine implementation choices from the request and available evidence. Do not use this to repeat an existing approval, duplicate a tool's approval prompt, or report a diagnosis that needs no user decision. Each question may include suggested `options`; when the evidence favors one, set `recommendedOption` to its exact text and explain why with `recommendationReason`. The user can always type their own answer. The tool result contains the user's answers.",
   parameters: askUserParamsSchema,
   async execute({ questions }, signal) {
     const { answers, cancelled } = await requestUserAnswers({ questions }, signal)

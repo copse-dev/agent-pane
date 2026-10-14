@@ -1002,21 +1002,18 @@
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
-  /* The docked card's real border would stack under the hairline ring. */
   border: none;
-  border-radius: var(--radius-lg);
-  box-shadow:
-    0 0 0 1px var(--border),
-    var(--shadow-lg);
+  border-radius: var(--composer-radius);
+  box-shadow: var(--composer-shadow);
   /* Centred on both axes, so a long draft is capped to the pane. */
   max-height: calc(100% - 2 * var(--spacing-xl));
 }
 .pane-chat.is-activity-idle .prompt-input {
   border-top: none;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-radius: var(--composer-radius) var(--composer-radius) 0 0;
 }
 .pane-chat.is-activity-idle .input-footer {
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border-radius: 0 0 var(--composer-radius) var(--composer-radius);
 }
 .pane-chat.is-activity-home .conversation {
   /* The empty thread has nothing to show; the Activity home (views/activity-home.ts)
@@ -2628,14 +2625,17 @@ summary.pr-check-group-heading::-webkit-details-marker {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  /* Transparent canvas artefacts expose this surface. The headless mirror
-     captures against the resolved value of the same token. The text colour is
-     read back and injected into such guests (browser-pane.ts), since host CSS
-     does not inherit into a webview. */
-  background: var(--bg-base);
+  /* Ordinary pages use the browser's light default canvas. A transparent page
+     must not put its default black text on Copse's dark app surface. */
+  background: var(--browser-page-background);
   color: var(--text-primary);
   -webkit-app-region: no-drag;
   position: relative;
+}
+.browser-webview-host.is-canvas {
+  /* Inline Canvas artefacts deliberately share the app surface; browser-pane
+     also supplies its foreground when their roots are transparent. */
+  background: var(--bg-base);
 }
 .browser-webview {
   flex: 1;

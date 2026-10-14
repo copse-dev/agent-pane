@@ -1,5 +1,5 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -7,9 +7,11 @@ import { readWorktreePreparationPlan } from '../../src/main/services/worktree-pr
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
-const root = mkdtempSync(join(tmpdir(), 'go-preparation-approval-'))
+const root = join(tmpdir(), 'copse-e2e', 'go-preparation-approval')
 describe('automatic Go preparation approval', () => {
   before(async () => {
+    rmSync(root, { recursive: true, force: true })
+    mkdirSync(root, { recursive: true })
     writeFileSync(join(root, 'go.mod'), 'module example.test/ordinary\n\ngo 1.24\n')
     writeFileSync(join(root, 'main.go'), 'package main\nfunc main() {}\n')
     resetUserData()

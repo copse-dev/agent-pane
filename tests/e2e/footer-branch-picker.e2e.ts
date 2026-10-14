@@ -252,6 +252,26 @@ describe('footer branch picker', () => {
             (await $('.input-footer').getAttribute('class'))?.includes('is-compact') ?? false,
           { timeout: 3000, timeoutMsg: 'narrow owning footer must enter compact mode' },
         )
+        const controls = await browser.execute(() =>
+          ['.model-picker-trigger', '.footer-checkout-btn', '.branch-picker-trigger'].map(
+            (selector) => {
+              const control = document.querySelector(selector)
+              if (!control) throw new Error(`Missing footer control: ${selector}`)
+              const rect = control.getBoundingClientRect()
+              return {
+                selector,
+                width: rect.width,
+                hit: control.contains(
+                  document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2),
+                ),
+              }
+            },
+          ),
+        )
+        for (const control of controls) {
+          expect(control.width).toBeGreaterThanOrEqual(24)
+          expect(control.hit).toBe(true)
+        }
         await trigger.click()
         await expect(menu).toBeDisplayed()
         await expect(menu.$('.branch-picker-default-badge')).toBeDisplayed()

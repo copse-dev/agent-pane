@@ -6,6 +6,9 @@ import {
 } from '@shared/appearance.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
+/** One-time marker: concise threads became default-on and a stored `false` was cleared. */
+export const CONCISE_THREADS_DEFAULT_MIGRATION_SETTING = 'conciseThreadsDefaultMigrated'
+
 export interface StartupSettings {
   model: unknown
   layout: unknown
@@ -55,6 +58,7 @@ export async function loadStartupSettings(
     uiTintStrength,
     developerMode,
     appearanceDefaultsMigrationVersion,
+    conciseThreadsDefaultMigrated,
   ] = await Promise.all([
     settings.get('model'),
     settings.get('layout'),
@@ -74,9 +78,10 @@ export async function loadStartupSettings(
     settings.get('uiTintStrength'),
     settings.get(DEVELOPER_MODE_SETTING),
     settings.get(APPEARANCE_DEFAULTS_MIGRATION_SETTING),
+    settings.get(CONCISE_THREADS_DEFAULT_MIGRATION_SETTING),
   ])
 
-  const loaded: StartupSettings = {
+  const unmigrated: StartupSettings = {
     model,
     layout,
     autoPortraitRightPanel,
@@ -94,6 +99,18 @@ export async function loadStartupSettings(
     uiTintColor,
     uiTintStrength,
     developerMode,
+  }
+
+  // Before the default flipped, the Settings dialog saved every field, so a
+  // stored `false` is as likely to be an untouched default as a choice. Clear it
+  // once; the marker keeps any later opt-out the user's own.
+  let loaded = unmigrated
+  if (conciseThreadsDefaultMigrated !== true) {
+    if (unmigrated.conciseThreadsEnabled === false) {
+      await settings.set('conciseThreadsEnabled', true)
+      loaded = { ...unmigrated, conciseThreadsEnabled: true }
+    }
+    await settings.set(CONCISE_THREADS_DEFAULT_MIGRATION_SETTING, true)
   }
 
   if (appearanceDefaultsMigrationVersion === APPEARANCE_DEFAULTS_MIGRATION_VERSION) {

@@ -1,10 +1,11 @@
 import { RequestError } from '@agentclientprotocol/sdk'
+import quote from 'shell-quote'
 import { acpReauthCommand, findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { isContextOverflowMessage } from '@shared/context-window-advice.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 import { IMAGE_INPUT_UNSUPPORTED_MESSAGE } from '@shared/image-input-support.ts'
-import { ThreadWorktreeDetachedError } from './worktree-manager.ts'
+import { ThreadWorktreeDetachedError, ThreadWorktreeOnBaseBranchError } from './worktree-manager.ts'
 import type { TurnErrorDetail } from '@shared/types/turn-outcome.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
 
@@ -398,6 +399,23 @@ function acpAgentReport(rpc: JsonRpcError | null): string | null {
   return dataDetail ? `${report}\nDetails: ${dataDetail}` : report
 }
 
+/** Keep literal checkout names and commands intact inside CommonMark code spans. */
+function markdownInlineCode(value: string): string {
+  const runs = value.match(/`+/g) ?? []
+  const length = runs.reduce((longest, run) => Math.max(longest, run.length + 1), 1)
+  const fence = '`'.repeat(length)
+  const content = runs.length > 0 || /^\s|\s$/.test(value) ? ` ${value} ` : value
+  return `${fence}${content}${fence}`
+}
+
+function checkoutRecoveryCommand(branch: string): string {
+  if (process.platform !== 'win32') return quote.quote(['git', 'checkout', branch])
+  // The Windows terminal defaults to cmd.exe, where POSIX backslashes are
+  // literal characters. Keep ordinary names unchanged and quote punctuation.
+  const argument = /^[a-zA-Z0-9_./-]+$/.test(branch) ? branch : `"${branch.replaceAll('"', '\\"')}"`
+  return `git checkout ${argument}`
+}
+
 /** Fence opaque agent diagnostics without trusting them to be Markdown. */
 function markdownCodeBlock(value: string): string {
   const backtickRuns = value.match(/`+/g) ?? []
@@ -517,6 +535,12 @@ export function classifyProviderAccessFailure(err: unknown): ProviderAccessFailu
 export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext): string {
   if (err instanceof ThreadWorktreeDetachedError) {
     return `This thread's checkout is detached from its branch. Your files are preserved. Once the agent has stopped, a recovery button appears next to the branch name below the composer (**Reattach**, **Continue rebase**, **Commit and continue**, or **Reset bisect**, depending on what Git left half-done). Use it to put the checkout back on \`${err.branch}\`, then retry. It is hidden while the agent or a background task is still running.`
+  }
+  if (err instanceof ThreadWorktreeOnBaseBranchError) {
+    const base = markdownInlineCode(err.baseBranch)
+    const checkout = markdownInlineCode(err.path)
+    const command = markdownInlineCode(checkoutRecoveryCommand(err.branch))
+    return `This thread's checkout is on its base branch ${base} instead of its own branch, so Copse will not run in it: edits would land directly on ${base}. Your files are preserved. In the checkout at ${checkout}, run ${command} to return to the thread branch (or \`git checkout -b <new-branch>\` to start a fresh one), then retry.`
   }
 
   const rpc = findJsonRpcError(err)

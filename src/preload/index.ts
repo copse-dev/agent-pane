@@ -413,7 +413,7 @@ const api: ApiClient = {
       handler: (req: {
         id: string
         threadId?: string
-        questions: { question: string; options?: string[] }[]
+        questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
       }) => void,
     ) => {
       const listener = (
@@ -421,7 +421,7 @@ const api: ApiClient = {
         req: {
           id: string
           threadId?: string
-          questions: { question: string; options?: string[] }[]
+          questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
         },
       ): void => {
         handler(req)
@@ -789,6 +789,17 @@ const api: ApiClient = {
       ipcRenderer.invoke('storage:retention', policy),
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
+  },
+  plans: {
+    get: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('plans:get', projectId, threadId),
+    revision: (projectId: string, threadId: string, planId: string, revision: number) =>
+      ipcRenderer.invoke('plans:revision', projectId, threadId, planId, revision),
+    change: (
+      projectId: string,
+      threadId: string,
+      change: import('@copse/thread-store/plan-schema.ts').PlanChange,
+    ) => ipcRenderer.invoke('plans:change', projectId, threadId, change),
   },
   threads: {
     storageSize: (projectId: string, threadId: string) =>

@@ -377,9 +377,18 @@ describe('cron automation trigger', function () {
       /^Latest · .+$/,
       'Latest · Jan 1, 2026, 12:00 AM',
     )
+    // This checkout was allocated by the real scheduler, so its branch embeds
+    // a fresh thread id. Assert the real branch before pinning only its label.
+    await expect($('.footer-branch-label')).toHaveText(/^copse\/thread-[a-f0-9]+$/)
+    const restoreActiveBranch = await pinTextForCapture(
+      '.footer-branch-label',
+      /^copse\/thread-[a-f0-9]+$/,
+      'copse/thread-000001',
+    )
     try {
       await saveAppScreenshot('automation-active.png')
     } finally {
+      await restoreActiveBranch()
       await restoreActiveRunTime()
     }
 
@@ -407,15 +416,25 @@ describe('cron automation trigger', function () {
       },
     )
     assert.deepEqual((await editorSurfacePaint([])).token, [0, 46, 43])
+    await expect(scheduleGroup.$('.automation-schedule-held')).toHaveText('1 held')
 
     const restoreFinalRunTime = await pinTextForCapture(
       '.automation-schedule-runs',
       /^Latest · .+$/,
       'Latest · Jan 1, 2026, 12:00 AM',
     )
+    // The completed turn names its branch after the CI review. Wait for that
+    // real rename before replacing the remaining generated id for capture.
+    await expect($('.footer-branch-label')).toHaveText(/^copse\/ci-review-[a-f0-9]+$/)
+    const restoreFinalBranch = await pinTextForCapture(
+      '.footer-branch-label',
+      /^copse\/ci-review-[a-f0-9]+$/,
+      'copse/ci-review-000001',
+    )
     try {
       await saveAppScreenshot('automation-trigger.png')
     } finally {
+      await restoreFinalBranch()
       await restoreFinalRunTime()
     }
   })

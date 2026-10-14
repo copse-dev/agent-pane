@@ -159,6 +159,26 @@ describe('browser panel display', () => {
     // Capture the full app: WebDriver's element crop can misalign a native guest surface.
     await saveAppScreenshot('browser-mode-local-page.png')
 
+    await navigateActiveBrowserTab(`${page.origin}/unstyled`)
+    await waitForWebviewTitle('Copse browser fixture')
+    const ordinarySurface = await browser.execute(async () => {
+      const host = document.querySelector('.browser-tab-panel.is-active .browser-webview-host')!
+      const webview = host.querySelector<WebviewTag>('webview')!
+      return {
+        canvas: host.classList.contains('is-canvas'),
+        background: getComputedStyle(host).backgroundColor,
+        guestText: await webview.executeJavaScript('getComputedStyle(document.body).color'),
+      }
+    })
+    expect(ordinarySurface).toEqual({
+      canvas: false,
+      background: 'rgb(255, 255, 255)',
+      guestText: 'rgb(0, 0, 0)',
+    })
+    // Capture the native guest at its actual window size; element screenshot
+    // reframing can leave the webview painted at its previous width.
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'browser-mode-unstyled-page.png'))
+
     const newTabBtn = await $('.browser-tabs-new-btn')
     await newTabBtn.click()
     await browser.waitUntil(async () => (await $$('.browser-tabs-tab')).length >= 2, {

@@ -1,5 +1,10 @@
 import { $, $$, browser, expect } from '@wdio/globals'
-import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import {
+  parkPointer,
+  prepareE2eScreenshot,
+  saveElementScreenshot,
+  waitForSettledLayout,
+} from '../e2e/helpers/screenshot.ts'
 
 /**
  * The unattended-container-run surface over the mocked backend: the footer
@@ -97,6 +102,8 @@ describe('unattended container run (browser-hosted)', () => {
     // Dismiss is the kit's close icon, not a literal "×" glyph.
     await expect(banner.$('.container-run-dismiss svg[data-icon="close"]')).toBeExisting()
     expect((await banner.$('.container-run-dismiss').getText()).trim()).toBe('')
+    await parkPointer()
+    await expect($('.context-wheel-popover')).not.toBeDisplayed()
     await saveElementScreenshot('#input-bar', 'container-run-banner-finished.png')
 
     await banner.$('.container-run-details').click()
@@ -172,10 +179,41 @@ describe('unattended container run (browser-hosted)', () => {
     expect(cardText).toContain('Reading the lint report')
     expect(cardText).toContain('git push publishes commits to a remote')
     await expect(card.$('.subagent-container-apply')).toBeDisplayed()
-    await saveElementScreenshot(
-      '.tool-card-subagent[data-tool-id^="container-run:"]',
-      'container-run-card.png',
-    )
+    // Keep the whole expanded record clear of the sticky prompt and composer.
+    // Cropping a tall card in the normal viewport also captures those overlays.
+    const windowSize = await browser.getWindowSize()
+    try {
+      await browser.setWindowSize(1280, 1300)
+      await prepareE2eScreenshot({ width: 1280, height: 1200 })
+      await parkPointer()
+      await browser.execute(() => {
+        const transcript = document.querySelector('.messages-list')
+        if (transcript) transcript.scrollTop = transcript.scrollHeight
+      })
+      await waitForSettledLayout('.tool-card-subagent[data-tool-id^="container-run:"]')
+      const visible = await browser.execute(() => {
+        const card = document.querySelector('.tool-card-subagent[data-tool-id^="container-run:"]')
+        if (!card) throw new Error('Missing container record')
+        const rect = card.getBoundingClientRect()
+        return {
+          inViewport: rect.top >= 0 && rect.bottom <= innerHeight,
+          unobscured: [rect.top + 16, rect.bottom - 16].every((y) =>
+            [rect.left + 16, (rect.left + rect.right) / 2, rect.right - 16].every((x) =>
+              card.contains(document.elementFromPoint(x, y)),
+            ),
+          ),
+        }
+      })
+      expect(visible).toEqual({ inViewport: true, unobscured: true })
+      await saveElementScreenshot(
+        '.tool-card-subagent[data-tool-id^="container-run:"]',
+        'container-run-card.png',
+        { frame: 'document' },
+      )
+    } finally {
+      await browser.setWindowSize(windowSize.width, windowSize.height)
+      await prepareE2eScreenshot()
+    }
     // The follow-up: the demo backend applies the three commits; the card says so.
     await card.$('.subagent-container-apply').click()
     await expect(card).toHaveAttribute('open')

@@ -207,6 +207,19 @@ describe('Process manager', function () {
         (await $('.chat-row.selected').getAttribute('data-thread-id')) !== originalThreadId,
       { timeout: 10_000 },
     )
+    // Persist a name through the real sidebar rename surface so background
+    // process groups do not expose a randomly generated draft thread ID.
+    await browser.execute(() => {
+      const title = document.querySelector('.chat-row.selected .chat-title')
+      if (!(title instanceof HTMLElement)) throw new Error('selected thread title missing')
+      title.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
+    })
+    const renameInput = $('.chat-title-rename')
+    await renameInput.waitForDisplayed({ timeout: 5_000 })
+    await renameInput.setValue('Process manager other thread')
+    await browser.keys('Enter')
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Process manager other thread')
+    await approveUnsandboxedTerminalIfPrompted()
     await $('.prompt-input').click()
     await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
     await dialog.waitForDisplayed({ timeout: 10_000 })

@@ -2,6 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { RequestError } from '@agentclientprotocol/sdk'
 import OpenAI from 'openai'
+import quote from 'shell-quote'
+import { JSDOM } from 'jsdom'
 import { renderMarkdownUnsafe } from '@copse/streaming-markdown'
 import {
   acpTurnInterruptionFor,
@@ -13,7 +15,7 @@ import {
   turnErrorDetail,
 } from './agent-errors.ts'
 import { AcpTurnFailure } from './acp/acp-agent-service.ts'
-import { ThreadWorktreeDetachedError } from './worktree-manager.ts'
+import { ThreadWorktreeDetachedError, ThreadWorktreeOnBaseBranchError } from './worktree-manager.ts'
 
 describe('classifyAgentError', () => {
   it('maps 401 to API key guidance', () => {
@@ -231,6 +233,86 @@ describe('classifyAgentError', () => {
       "This thread's checkout is detached from its branch. Your files are preserved. Once the agent has stopped, a recovery button appears next to the branch name below the composer (**Reattach**, **Continue rebase**, **Commit and continue**, or **Reset bisect**, depending on what Git left half-done). Use it to put the checkout back on `copse/thread-branch`, then retry. It is hidden while the agent or a background task is still running.",
     )
     assert.doesNotMatch(result, /^An error occurred:/)
+  })
+
+  it('turns a thread worktree sitting on its base branch into recovery guidance (#1882)', () => {
+    const result = classifyAgentError(
+      new ThreadWorktreeOnBaseBranchError({
+        baseBranch: 'main',
+        branch: 'copse/thread-branch',
+        path: '/worktrees/project-1/thread-1',
+      }),
+    )
+
+    assert.equal(
+      result,
+      "This thread's checkout is on its base branch `main` instead of its own branch, so Copse will not run in it: edits would land directly on `main`. Your files are preserved. In the checkout at `/worktrees/project-1/thread-1`, run `git checkout copse/thread-branch` to return to the thread branch (or `git checkout -b <new-branch>` to start a fresh one), then retry.",
+    )
+    assert.doesNotMatch(result, /^An error occurred:/)
+  })
+
+  it('keeps the rendered recovery command literal for Git branch punctuation', () => {
+    for (const branch of [
+      'copse/feature(with-parens)',
+      "copse/it's-fine",
+      'copse/$USER',
+      'copse/a;false',
+      'copse/`literal`',
+      'copse/``literal``',
+    ]) {
+      const result = classifyAgentError(
+        new ThreadWorktreeOnBaseBranchError({
+          baseBranch: 'main',
+          branch,
+          path: '/worktrees/project-1/thread-1',
+        }),
+      )
+      const dom = new JSDOM(renderMarkdownUnsafe(result))
+      try {
+        const command = Array.from(dom.window.document.querySelectorAll('code')).find((code) =>
+          code.textContent.startsWith('git checkout '),
+        )?.textContent
+        assert.ok(command, branch)
+        assert.deepEqual(quote.parse(command), ['git', 'checkout', branch], branch)
+      } finally {
+        dom.window.close()
+      }
+    }
+  })
+
+  it('keeps Windows recovery commands compatible with the default cmd terminal', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    assert.ok(descriptor)
+    for (const branch of [
+      'copse/thread',
+      'copse/feature(with-parens)',
+      'copse/$USER',
+      'copse/a;false',
+    ]) {
+      let result: string
+      try {
+        Object.defineProperty(process, 'platform', { value: 'win32' })
+        result = classifyAgentError(
+          new ThreadWorktreeOnBaseBranchError({ baseBranch: 'main', branch, path: 'C:/worktrees' }),
+        )
+      } finally {
+        Object.defineProperty(process, 'platform', descriptor)
+      }
+      const dom = new JSDOM(renderMarkdownUnsafe(result))
+      try {
+        const commands = Array.from(dom.window.document.querySelectorAll('code')).map(
+          (code) => code.textContent,
+        )
+        assert.ok(
+          commands.includes(
+            branch === 'copse/thread' ? `git checkout ${branch}` : `git checkout "${branch}"`,
+          ),
+          branch,
+        )
+      } finally {
+        dom.window.close()
+      }
+    }
   })
 
   it('falls back to error message', () => {

@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
   startScriptedModelServer,
@@ -46,7 +46,8 @@ describe('local provider default worktree isolation', () => {
 
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
-    projectRoot = mkdtempSync(join(tmpdir(), 'copse-local-model-worktree-'))
+    projectRoot = join(mkdtempSync(join(tmpdir(), 'copse-local-model-worktree-')), 'workspace')
+    mkdirSync(projectRoot)
     git(projectRoot, ['init', '-q', '--initial-branch=main'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
@@ -94,7 +95,7 @@ describe('local provider default worktree isolation', () => {
       }
     }
     if (model) await model.stop()
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (projectRoot) rmSync(dirname(projectRoot), { recursive: true, force: true })
   })
 
   it('routes a real local-provider tool write into a default isolated worktree', async function () {

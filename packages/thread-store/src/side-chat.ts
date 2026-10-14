@@ -1,4 +1,5 @@
 import type { Message, SideChatLink, Thread } from './thread-types.ts'
+import { Lexer } from 'marked'
 
 /**
  * Side chats (prototype #3538). A side chat is an ordinary thread (own id, own
@@ -27,9 +28,35 @@ export interface SideChatOptions {
   title?: string
 }
 
-function excerpt(message: Message): string {
-  const line = message.content.trim().split('\n', 1)[0] ?? ''
+interface ExcerptToken {
+  type: string
+  text?: string
+  tokens?: readonly ExcerptToken[]
+}
+
+function excerptTokenText(token: ExcerptToken): string {
+  if (token.type === 'html') return ''
+  if (token.tokens) return token.tokens.map(excerptTokenText).join('')
+  return token.text ?? ''
+}
+
+// Parse inline Markdown once: regex replacements also consume intraword
+// underscores and reinterpret literal formatting inside code spans.
+function stripInlineMarkdown(text: string): string {
+  const tokens: readonly ExcerptToken[] = Lexer.lexInline(text.replace(/^#{1,6}\s+/, ''), {
+    gfm: true,
+  })
+  return tokens.map(excerptTokenText).join('')
+}
+
+/** Plain-text excerpt of `text`'s first line, for a title or a read-only context line. */
+export function excerptText(text: string): string {
+  const line = stripInlineMarkdown(text.trim().split('\n', 1)[0] ?? '')
   return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1)}…`
+}
+
+function excerpt(message: Message): string {
+  return excerptText(message.content)
 }
 
 /**

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -21,7 +21,8 @@ const CHANGED_FILE = 'sample.ts'
 const CLEAN_FILE = 'clean.ts'
 
 function seedGitWorkspace(): string {
-  const repoRoot = mkdtempSync(join(tmpdir(), 'copse-file-viewer-changes-'))
+  const repoRoot = join(mkdtempSync(join(tmpdir(), 'copse-file-viewer-changes-')), 'workspace')
+  mkdirSync(repoRoot)
   const git = (...args: string[]): Buffer =>
     execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
 
@@ -98,7 +99,7 @@ describe('file viewer Changes view', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('offers browser opening from the file tree before opening a file', async () => {
