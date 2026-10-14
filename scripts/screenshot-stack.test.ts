@@ -9,6 +9,7 @@ import {
   memoizeScreenshotStackAncestry,
   parseScreenshotStack,
   reconcileScreenshotStack,
+  selectScreenshotStackPulls,
   STACK_COVERAGE,
   STACK_DECISION,
   verifyScreenshotStack,
@@ -517,8 +518,133 @@ const workflowSchema = z.object({
     }),
   ),
 })
+describe('incremental screenshot stack selection', () => {
+  it('bounds ordinary-PR reconciliation to two API reads in a 50-PR repository', async () => {
+    const f = fixture()
+    const open = Array.from({ length: 50 }, (_, index) => pull(index + 1, BASE, ''))
+    let reads = 0
+    f.github.rest.pulls.get = async ({ pull_number }): Promise<{ data: unknown }> => {
+      assert.equal(pull_number, 50, 'unrelated PRs must not be validated')
+      reads++
+      return { data: open[49] }
+    }
+    f.github.rest.repos.listCommitStatusesForRef = async (): Promise<{ data: unknown }> => {
+      reads++
+      return { data: [] }
+    }
+    for (const number of selectScreenshotStackPulls(open, 'pull_request_target', {
+      pull_request: open[49],
+    }))
+      await reconcileScreenshotStack(f.github, { ...input, number })
+    assert.equal(reads, 2, 'excludes the single paginated open-PR discovery request')
+    assert.equal(f.writes.length, 0)
+  })
+  const other = `<!-- copse-screenshot-stack: #3@${BASE} tip=#4 -->`
+  const open = [
+    pull(1, LOWER),
+    pull(2, TIP),
+    pull(3, BASE, other),
+    pull(4, BASE, other),
+    pull(5, BASE, ''),
+  ]
+  it('selects one ordinary PR without validating unrelated stacks', () => {
+    assert.deepEqual(
+      selectScreenshotStackPulls(open, 'pull_request_target', {
+        pull_request: pull(5, BASE, ''),
+      }),
+      [5],
+    )
+  })
+  it('selects the connected stack for a lower push or tip approval', () => {
+    for (const number of [1, 2])
+      assert.deepEqual(
+        selectScreenshotStackPulls(open, 'pull_request_target', {
+          pull_request: pull(number, TIP),
+        }),
+        [1, 2],
+      )
+    assert.deepEqual(
+      selectScreenshotStackPulls(open, 'workflow_run', {
+        workflow_run: { pull_requests: [{ number: 2 }] },
+      }),
+      [1, 2],
+    )
+  })
+  it('revokes removed declarations and follows the old membership', () => {
+    const removed = [pull(1, LOWER, ''), pull(2, TIP, ''), ...open.slice(2)]
+    assert.deepEqual(
+      selectScreenshotStackPulls(removed, 'pull_request_target', {
+        pull_request: pull(1, LOWER, ''),
+        changes: { body: { from: TEXT } },
+      }),
+      [1, 2],
+    )
+  })
+  it('follows old and new membership transitively', () => {
+    const moved = [pull(1, LOWER, other), ...open.slice(1)]
+    assert.deepEqual(
+      selectScreenshotStackPulls(moved, 'pull_request_target', {
+        pull_request: pull(1, LOWER, other),
+        changes: { body: { from: TEXT } },
+      }),
+      [1, 2, 3, 4],
+    )
+  })
+  it('invalidates dependents of a closed tip absent from the open list', () => {
+    assert.deepEqual(
+      selectScreenshotStackPulls(
+        open.filter((_, index) => index !== 1),
+        'pull_request_target',
+        {
+          pull_request: { number: 2, body: '' },
+        },
+      ),
+      [1],
+    )
+  })
+  it('includes malformed declarations for live error validation', () => {
+    const broken = [pull(1, LOWER, `<!-- copse-screenshot-stack: broken #2`), ...open.slice(1)]
+    assert.deepEqual(
+      selectScreenshotStackPulls(broken, 'workflow_run', {
+        workflow_run: { pull_requests: [{ number: 2 }] },
+      }),
+      [1, 2],
+    )
+  })
+  it('uses matching heads and falls back when workflow association is unavailable', () => {
+    assert.deepEqual(
+      selectScreenshotStackPulls(open, 'workflow_run', {
+        workflow_run: { head_sha: TIP, pull_requests: [] },
+      }),
+      [1, 2],
+    )
+    for (const payload of [{}, { workflow_run: { head_sha: 'unknown', pull_requests: [] } }]) {
+      assert.deepEqual(selectScreenshotStackPulls(open, 'workflow_run', payload), [1, 2, 3, 4, 5])
+    }
+  })
+  it('performs complete manual/scheduled repair and handles invalid event numbers', () => {
+    for (const event of ['schedule', 'workflow_dispatch', 'unknown', 'pull_request_target']) {
+      assert.deepEqual(selectScreenshotStackPulls(open, event, {}), [1, 2, 3, 4, 5])
+    }
+  })
+  it('selects the same dependency closure independently of list order', () => {
+    const payload = { pull_request: pull(1, LOWER, other), changes: { body: { from: TEXT } } }
+    assert.deepEqual(
+      selectScreenshotStackPulls([...open].reverse(), 'pull_request_target', payload).sort(),
+      [1, 2, 3, 4],
+    )
+  })
+})
 describe('stack workflow integration', () => {
-  it('reconciles removed declarations when their event is replaced by another pending run', () => {
+  it('retains distinct events and performs full repair sweeps for missed removals', () => {
+    const source = readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')
+    const routing = z
+      .object({
+        concurrency: z.object({ queue: z.literal('max'), 'cancel-in-progress': z.literal(false) }),
+        on: z.object({ schedule: z.array(z.object({ cron: z.string() })) }),
+      })
+      .parse(load(source))
+    assert.equal(routing.on.schedule.length, 1)
     const workflow = workflowSchema.parse(
       load(readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')),
     )
@@ -527,7 +653,7 @@ describe('stack workflow integration', () => {
     )?.with?.['script']
     assert.equal(typeof script, 'string')
     assert.ok(typeof script === 'string')
-    const start = script.indexOf('const selected =')
+    const start = script.indexOf('const eligible =')
     const end = script.indexOf('for (const pr of selected)', start)
     assert.ok(start >= 0 && end > start)
     const removed = pull(3, BASE, '')
@@ -541,7 +667,9 @@ describe('stack workflow integration', () => {
       open: [pull(1, LOWER), removed, foreign],
       owner: 'copse-dev',
       repo: 'agent-pane',
-      context: { payload: { pull_request: { number: 1 } } },
+      selectScreenshotStackPulls,
+      core: { info: (): void => {} },
+      context: { eventName: 'schedule', payload: {} },
     })
     assert.equal(JSON.stringify(selected), '[1,3]')
   })
