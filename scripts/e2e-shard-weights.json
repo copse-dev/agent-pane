@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14; agent-execution-mode measured from CI38619822117/job116050261558, 2026-10-14",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 14.9,
     "tests/e2e/acp-auth-error.e2e.ts": 20.2,
@@ -27,6 +27,7 @@
     "tests/e2e/advisor-pair-hint.e2e.ts": 18.8,
     "tests/e2e/agent-avatars.e2e.ts": 38.5,
     "tests/e2e/agent-coordination.e2e.ts": 11.8,
+    "tests/e2e/agent-execution-mode.e2e.ts": 8.5,
     "tests/e2e/agent-plugins-discovery.e2e.ts": 13.5,
     "tests/e2e/agent-tasks-terminal.e2e.ts": 21.2,
     "tests/e2e/appearance-settings.e2e.ts": 6.7,
