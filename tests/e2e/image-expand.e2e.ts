@@ -207,7 +207,7 @@ describe('Screenshot click-to-expand', () => {
     await waitForImagesSettled('.messages-list', { minImages: 6 })
     await prepareE2eScreenshot()
     await browser.execute(() => {
-      const scroller = document.querySelector<HTMLElement>('.conversation-scroll')
+      const scroller = document.querySelector<HTMLElement>('.messages-list')
       if (!scroller) throw new Error('Conversation scroll host is missing')
       scroller.scrollTop = scroller.scrollHeight
     })
