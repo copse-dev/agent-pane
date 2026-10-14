@@ -13,6 +13,7 @@ import type {
   GhPrChecksState,
   GhPrDetails,
   GhPrFileDiff,
+  GhRepoStacks,
   PrActionResult,
 } from '@shared/types/git.ts'
 
@@ -25,7 +26,12 @@ const status: GhCliStatus = {
   message: null,
 }
 
-function emptyBackend(calls: { status: number; details: number; approve: number }): GitHubBackend {
+function emptyBackend(calls: {
+  status: number
+  details: number
+  approve: number
+  stacks?: number
+}): GitHubBackend {
   const ok: PrActionResult = { ok: true, backend: 'api', message: 'ok' }
   return {
     kind: 'api',
@@ -54,6 +60,10 @@ function emptyBackend(calls: { status: number; details: number; approve: number 
     listWorkspaceOpenIssues: async () => ({ issues: [], hasMore: false }),
     getIssue: async (): Promise<GhIssueSummary | null> => null,
     searchWorkspaceIssues: async () => [],
+    listStacks: async (): Promise<GhRepoStacks> => {
+      calls.stacks = (calls.stacks ?? 0) + 1
+      return { status: 'enabled', stacks: [] }
+    },
     createPr: async () => ok,
     rerunFailedRuns: async () => ok,
     approvePr: async (): Promise<PrActionResult> => {
@@ -172,5 +182,18 @@ describe('cachingGitHubBackend', () => {
     await backend.getPrDetails(REF)
     assert.equal(calls.details, 2)
     assert.equal(calls.approve, 1)
+  })
+
+  it('caches stack lists per repository and drops them after a write', async () => {
+    const calls = { status: 0, details: 0, approve: 0, stacks: 0 }
+    const backend = cachingGitHubBackend(emptyBackend(calls))
+    await backend.listStacks('octo', 'demo')
+    await backend.listStacks('octo', 'demo')
+    assert.equal(calls.stacks, 1)
+    await backend.listStacks('octo', 'other')
+    assert.equal(calls.stacks, 2, 'each repository has its own slot')
+    await backend.approvePr(REF)
+    await backend.listStacks('octo', 'demo')
+    assert.equal(calls.stacks, 3, 'a PR write can change stack state')
   })
 })

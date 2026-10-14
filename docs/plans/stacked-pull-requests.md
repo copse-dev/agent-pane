@@ -1,7 +1,7 @@
 # Stacked pull requests
 
-Status: **Proposed**. Written 2026-10-11 against `main` at `685cb52`. Nothing here is
-implemented yet.
+Status: **Active**. Written 2026-10-11 against `main` at `685cb52`. PR 1 (reading stack
+membership in the backends) is implemented; nothing is visible in the panel yet.
 
 GitHub now treats a chain of dependent pull requests as a first-class **stack**. This plan
 adds stacks to the PR panel first, and to agent tools after that. It records the decisions
@@ -193,16 +193,33 @@ need a focused WebdriverIO spec with a screenshot, per `AGENTS.md`.
 - Record request and response shapes, the 404/403 behavior, and any differences from the
   docs above in this file.
 
-### PR 1 — Read stack membership
+### PR 1 — Read stack membership (implemented)
 
-- Add `stack: { number, size, position, baseRefName } | null` to `GhPrDetails`, and an
-  optional stack membership to `GhPrSummary`, with zod decoders for each source.
-- Add `listStacks(owner, repo)` to `GitHubBackend` (CLI: `gh api`; token: `rest()`; mock:
-  fixture state). Treat 404 as "stacks not enabled" and cache that per repository.
-- Read `stack` / `stackEntry` and the stack's entries in the details query.
-- Mock backend: a three-PR stack fixture plus a repository without stacks, behind the
-  existing `COPSE_PANEL_MOCK_GH` switches.
-- Tests: decoders, the 404 path, cache invalidation, and both backends' wiring. No UI change.
+- `GhPrStack`, `GhPrStackEntry` and `GhRepoStacks` in `src/shared/types/git.ts`, and an
+  optional `stack` on `GhPrDetails`.
+- `backend/github-stacks.ts` holds the zod decoders and the paging and 404 handling that
+  both real backends share. Unknown or merged PR states decode as closed, so nothing can
+  look mergeable by mistake.
+- `listStacks(owner, repo)` on `GitHubBackend`: `gh api` in the CLI backend (slimmed with
+  `--jq` to stay inside the stdout cap), `rest()` in the token backend, and fixture state in
+  the mock. A 404 returns `unavailable`; any other failure throws, so it never reads as "no
+  stacks". The read cache keeps each repository's list for 20 seconds and drops it after any
+  PR write.
+- `getPrDetails` in both real backends reads `GET /stacks?pull_request=N` alongside the
+  pull. It is best-effort: any failure leaves `stack` unset and the details still load.
+- **Changed from the original plan:** details use that REST call instead of adding
+  `stack` / `stackEntry` to the GraphQL details query. An unknown GraphQL field fails the
+  whole query, so on a host without stacks the details view would break; a REST 404 only
+  means "no stack".
+- **Deferred to PR 2:** stack membership on `GhPrSummary`. The list will join PRs to
+  `listStacks` instead.
+- The mock lists stack #12 (PRs 301–303) for `copse-dev/copse-panel` and reports every
+  other repository as unavailable. Those PRs are not in the list fixtures yet, so no existing
+  panel state or screenshot changes.
+- Tests: `github-stacks.test.ts` (decoders, paging, the page bound, 404 vs error, the `gh`
+  stderr 404 check), plus additions to the token backend, mock backend and read-cache
+  tests. The CLI backend's `gh api` call itself has no unit harness; its result handling is
+  the tested `stacksResponseFromGh`.
 
 ### PR 2 — Show stacks in the PR panel
 

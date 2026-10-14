@@ -200,7 +200,47 @@ export interface GhPrDetails extends GhPrSummary {
   reviewDecision?: string
   /** Bounded read of conversation comments, submitted reviews, and head checks. */
   activity?: GhPrActivity
+  /**
+   * The GitHub stack this PR belongs to. Absent when it is not stacked, when the
+   * repository has no stacks, or when the stack read failed — stack membership
+   * is best-effort and never fails the details load.
+   */
+  stack?: GhPrStack
 }
+
+/** One pull request in a GitHub stack. */
+export interface GhPrStackEntry {
+  number: number
+  /** 1-based, from the bottom (the PR that targets the stack's base). */
+  position: number
+  state: 'open' | 'closed'
+  draft: boolean
+  merged: boolean
+  headRefName: string
+}
+
+/**
+ * A GitHub stack: two or more PRs in one repository where each PR targets the
+ * head branch of the one below, and the bottom PR targets `baseRefName`.
+ * See docs/plans/stacked-pull-requests.md.
+ */
+export interface GhPrStack {
+  /** Repository-scoped stack number, as shown on GitHub. */
+  number: number
+  /** The branch the whole stack lands on, e.g. `main`. */
+  baseRefName: string
+  /** False once every PR in the stack is merged or closed. */
+  open: boolean
+  /** Bottom to top. */
+  entries: GhPrStackEntry[]
+}
+
+/**
+ * A repository's stacks. `unavailable` means the panel should behave as it does
+ * without stacks: GitHub answered 404 (stacks not enabled for the repository, or
+ * a host without them), or the backend has no way to ask (no `gh`).
+ */
+export type GhRepoStacks = { status: 'enabled'; stacks: GhPrStack[] } | { status: 'unavailable' }
 
 export interface GhPrComment {
   id: string

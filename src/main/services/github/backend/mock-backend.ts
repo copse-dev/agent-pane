@@ -4,13 +4,18 @@ import type {
   GhPrChecksState,
   GhPrDetails,
   GhPrFileDiff,
+  GhPrStack,
   GhPrSummary,
+  GhRepoStacks,
   PrActionResult,
   PrCreateResult,
 } from '@shared/types/git.ts'
 import type { GitHubBackend, PrCreateInput, PrRef } from './backend.ts'
+import { stackContaining } from './github-stacks.ts'
 import {
   MOCK_GH_PR_NUMBER,
+  MOCK_GH_PR_OWNER,
+  MOCK_GH_PR_REPO,
   MOCK_GH_WORKSPACE_PR_NUMBER,
   mockGetGhPrChecksState,
   mockGetGhPrDetails,
@@ -30,6 +35,50 @@ interface MockPrState {
   reviewDecision?: string
   isDraft: boolean
   failedRuns: number
+}
+
+/**
+ * A three-PR stack in the mock workspace repository. Its PRs are not in the
+ * list fixtures yet, so no existing PR-panel state changes; the panel work in
+ * docs/plans/stacked-pull-requests.md (PR 2) adds them. Every other repository
+ * answers as one without stacks enabled.
+ */
+const MOCK_STACKS: GhPrStack[] = [
+  {
+    number: 12,
+    baseRefName: 'main',
+    open: true,
+    entries: [
+      {
+        number: 301,
+        position: 1,
+        state: 'open',
+        draft: false,
+        merged: false,
+        headRefName: 'stacks/read-membership',
+      },
+      {
+        number: 302,
+        position: 2,
+        state: 'open',
+        draft: false,
+        merged: false,
+        headRefName: 'stacks/stack-map',
+      },
+      {
+        number: 303,
+        position: 3,
+        state: 'open',
+        draft: true,
+        merged: false,
+        headRefName: 'stacks/merge-stack',
+      },
+    ],
+  },
+]
+
+function isMockStacksRepo(owner: string, repo: string): boolean {
+  return owner === MOCK_GH_PR_OWNER && repo === MOCK_GH_PR_REPO
 }
 
 // Fixture issues for the roadmap "import from issues" flow.
@@ -115,8 +164,8 @@ function ensureState(ref: PrRef): MockPrState {
 }
 
 // Numbers for PRs opened during a mock run, starting far above every fixture
-// constant (42/17/88/99 today) so a created PR can never collide with one —
-// including fixtures added later, short of a four-digit fixture.
+// constant (42/17/88/99 and the 301–303 stack today) so a created PR can never
+// collide with one — including fixtures added later, short of a four-digit fixture.
 const MOCK_CREATED_PR_BASE = 1000
 let nextMockPr = MOCK_CREATED_PR_BASE
 
@@ -183,6 +232,11 @@ export const mockGitHubBackend: GitHubBackend = {
     )
   },
 
+  listStacks(owner: string, repo: string): Promise<GhRepoStacks> {
+    if (!isMockStacksRepo(owner, repo)) return Promise.resolve({ status: 'unavailable' })
+    return Promise.resolve({ status: 'enabled', stacks: structuredClone(MOCK_STACKS) })
+  },
+
   getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
     // A linked PR can be visible from chat while GitHub blocks its details
     // behind organization SAML authorization. Keep this response at the mock
@@ -203,6 +257,10 @@ export const mockGitHubBackend: GitHubBackend = {
       autoMergeEnabled: state.autoMergeEnabled,
     }
     if (state.reviewDecision) details.reviewDecision = state.reviewDecision
+    const stack = isMockStacksRepo(ref.owner, ref.repo)
+      ? stackContaining(MOCK_STACKS, ref.number)
+      : undefined
+    if (stack) details.stack = structuredClone(stack)
     return Promise.resolve(details)
   },
 
