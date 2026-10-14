@@ -70,6 +70,8 @@ describe('Cursor Cloud Agent settings list hint', () => {
 
     // The nested auth card's title sits inside the card, not on its top edge.
     await assertLegendInsideCard('Cursor authentication')
+    await hint.scrollIntoView({ block: 'center' })
+    await saveElementScreenshot('#settings-dialog', 'settings-cursor-agents-hint.png')
 
     // Cursor is not installed on this PATH, so it is offered under Add an agent
     // with a copyable install command.
@@ -79,7 +81,5 @@ describe('Cursor Cloud Agent settings list hint', () => {
     await assertKitButtonChrome('.acp-add-row[data-agent="cursor"] button', 'secondary')
     const approval = $('#approval-dialog')
     await expect(approval).not.toBeDisplayed()
-    await browser.pause(100)
-    await saveElementScreenshot('#settings-dialog', 'settings-cursor-agents-hint.png')
   })
 })

@@ -5,7 +5,11 @@ import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 describe('ACP permission-mode settings', () => {
@@ -124,7 +128,7 @@ describe('ACP permission-mode settings', () => {
     await expect(await modelPicker.$('.model-picker-option .model-picker-option-label')).toHaveText(
       'Fixture Opus',
     )
-    await saveElementScreenshot('.acp-agent-card', 'settings-acp-model-picker-search.png')
+    await saveAppScreenshot('settings-acp-model-picker-search.png')
     await browser.keys('Escape')
 
     const modeSelect = await card.$('.acp-permission-mode-field select')
