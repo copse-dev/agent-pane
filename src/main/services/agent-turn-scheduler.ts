@@ -14,8 +14,7 @@ export function parseMaxActiveTurns(value: string | undefined): number {
 
 interface Waiter {
   signal: AbortSignal
-  resolve: () => void
-  reject: (reason: unknown) => void
+  resolve: (admitted: boolean) => void
   abort: () => void
 }
 
@@ -39,7 +38,13 @@ export class AgentTurnScheduler {
   async run<T>(signal: AbortSignal, onQueued: () => void, run: () => Promise<T>): Promise<T> {
     signal.throwIfAborted()
     if (this.context.getStore()?.active) return run()
-    await this.acquire(signal, onQueued)
+    const admitted = await this.acquire(signal, onQueued)
+    if (!admitted) {
+      // Cancellation did not acquire a slot. Preserve the signal's exact reason,
+      // including primitive Send now reasons, without releasing another turn's slot.
+      signal.throwIfAborted()
+      throw new Error('Turn admission cancelled without an aborted signal')
+    }
     const lease = { active: true }
     try {
       signal.throwIfAborted()
@@ -51,21 +56,20 @@ export class AgentTurnScheduler {
     }
   }
 
-  private acquire(signal: AbortSignal, onQueued: () => void): Promise<void> {
+  private acquire(signal: AbortSignal, onQueued: () => void): Promise<boolean> {
     if (this.limit === 0 || this.active < this.limit) {
       this.active++
-      return Promise.resolve()
+      return Promise.resolve(true)
     }
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<boolean>((resolve, reject) => {
       const waiter: Waiter = {
         signal,
         resolve,
-        reject,
         abort: () => {
           const index = this.queue.indexOf(waiter)
           if (index !== -1) this.queue.splice(index, 1)
           signal.removeEventListener('abort', waiter.abort)
-          reject(signal.reason)
+          resolve(false)
         },
       }
       this.queue.push(waiter)
@@ -87,11 +91,11 @@ export class AgentTurnScheduler {
       if (!waiter) break
       waiter.signal.removeEventListener('abort', waiter.abort)
       if (waiter.signal.aborted) {
-        waiter.reject(waiter.signal.reason)
+        waiter.resolve(false)
         continue
       }
       this.active++
-      waiter.resolve()
+      waiter.resolve(true)
     }
   }
 }
