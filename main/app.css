@@ -2055,6 +2055,14 @@ copse-ui-field input[type=password],
   font-weight: 600;
   color: var(--text-secondary);
 }
+.git-changes-header-owner {
+  font-size: var(--font-size-2xs);
+  color: var(--text-tertiary, var(--text-secondary));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
 .git-changes-bulk-actions {
   display: flex;
   gap: var(--spacing-xs);
@@ -3557,15 +3565,39 @@ summary.pr-check-group-heading::-webkit-details-marker {
 }
 
 /* src/renderer/styles/global/thread-context.css */
-.context-viewer-host {
-  padding: var(--spacing-md);
+.is-context-panel .pane-files-body {
+  flex-direction: column;
+  background: var(--bg-elevated);
+}
+.is-context-panel .context-host {
+  flex: none;
+}
+.is-context-panel .context-viewer-host {
+  padding: 0;
   overflow-y: auto;
+  min-height: 0;
+  border-top: 0;
 }
 .thread-context {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--spacing-md);
+  gap: 0;
   align-content: start;
+}
+.thread-context-section {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.thread-context-thread-title {
+  padding: 16px 16px 4px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.thread-context-label {
+  margin: 8px 6px 4px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
 }
 .thread-context-section h5 {
   margin: 0 0 6px;
@@ -3592,7 +3624,7 @@ summary.pr-check-group-heading::-webkit-details-marker {
 }
 .thread-context-row-wrap {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 4px;
 }
 .thread-context-row-wrap > .thread-context-row {
@@ -3604,12 +3636,13 @@ summary.pr-check-group-heading::-webkit-details-marker {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 6px 8px;
+  padding: 4px 6px;
   color: var(--text-primary);
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: 0;
   font: inherit;
+  font-size: var(--font-size-sm);
   text-align: left;
 }
 button.thread-context-row {
@@ -3650,16 +3683,10 @@ button.thread-context-row:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding: 0 6px;
-  border-radius: var(--radius);
-  background: var(--bg-hover);
+  border-radius: 8px;
+  border: 1px solid var(--border);
   color: var(--text-muted);
   font-size: var(--font-size-2xs);
-}
-.thread-context-chip[data-status=running] {
-  color: var(--accent);
-}
-.thread-context-chip[data-status=error] {
-  color: var(--error);
 }
 .thread-context-empty {
   margin: 0;
@@ -3721,21 +3748,59 @@ button.thread-context-row:disabled {
   cursor: pointer;
   text-decoration: underline;
 }
-.thread-context-index-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-}
-.thread-context-count {
+.thread-context-meta {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-2xs);
+}
+.thread-context-status-dot {
+  width: 7px;
+  height: 7px;
+  margin: 0 6px;
+  border-radius: 50%;
+  background: var(--success);
+  flex: none;
+}
+.thread-context-row[data-status=running] .thread-context-status-dot {
+  background: var(--text-muted);
+}
+.thread-context-row[data-status=error] .thread-context-status-dot {
+  background: var(--error);
 }
 .thread-context-row .chat-unread-dot {
   position: static;
   flex: none;
   transform: none;
+}
+.thread-context-section h5 {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.thread-context-count {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: var(--font-size-2xs);
+}
+.thread-context-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.thread-context-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+html.is-popout .thread-context-close {
+  display: none;
 }
 
 /* src/renderer/styles/global/side-chat.css */
@@ -4067,6 +4132,37 @@ button.thread-context-row:disabled {
   gap: var(--spacing-sm);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
+}
+#titlebar .titlebar-panel-controls {
+  flex: 1 1 0;
+  justify-content: flex-end;
+  min-width: 0;
+}
+#titlebar .titlebar-drag {
+  flex: 0 0 var(--spacing-lg);
+}
+#titlebar .titlebar-panel-controls > [data-portrait-overflow] {
+  display: none;
+}
+#titlebar .titlebar-panel-controls > * {
+  flex-shrink: 0;
+}
+#titlebar .portrait-panel-overflow-menu {
+  top: calc(100% + 4px);
+  bottom: auto;
+}
+#titlebar .titlebar-left {
+  min-width: 0;
+  flex-shrink: 0;
+  max-width: 40%;
+}
+#titlebar .workspace-name,
+#titlebar .workspace-ssh-target,
+#titlebar .workspace-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .titlebar-btn-icon {
   flex-shrink: 0;
@@ -17446,6 +17542,40 @@ dialog.activity-panel-overlay {
 .vnc-setup-fields[hidden] {
   display: none;
 }
+.vnc-add-ssh-btn {
+  align-self: flex-start;
+}
+.vnc-ssh-host-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+.vnc-ssh-host-form[hidden] {
+  display: none;
+}
+.vnc-ssh-host-form .vnc-field-label input {
+  width: 100%;
+}
+.vnc-ssh-host-hint,
+.vnc-ssh-host-status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.vnc-ssh-host-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.vnc-ssh-host-actions > button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .vnc-devices-heading {
   display: flex;
   align-items: center;
@@ -17621,6 +17751,24 @@ dialog.activity-panel-overlay {
 .vnc-disconnect-btn {
   justify-content: center;
   width: 100%;
+}
+.vnc-capture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.vnc-capture-actions:has(> button:not([hidden])) > button {
+  flex: 1 1 8rem;
+  min-width: 0;
+  justify-content: center;
+  white-space: normal;
+}
+.vnc-capture-actions:not(:has(> button:not([hidden]))) {
+  display: none;
+}
+.vnc-annotate-btn[aria-pressed=true] {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .vnc-discovery-retry {
   align-self: flex-start;
@@ -17827,12 +17975,6 @@ dialog.activity-panel-overlay {
   color: var(--text-secondary);
   font-weight: 400;
 }
-.vnc-view-only-note {
-  margin: auto 0 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-base);
-}
 .vnc-viewer-host {
   position: relative;
   display: flex;
@@ -17852,6 +17994,7 @@ dialog.activity-panel-overlay {
   min-height: 0;
 }
 .vnc-screen {
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
@@ -18383,7 +18526,7 @@ dialog.activity-panel-overlay {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
-.roadmap-viewer {
+.roadmap-viewer:has(> .roadmap-form:not([hidden])) {
   padding: 0;
   overflow: hidden;
 }
