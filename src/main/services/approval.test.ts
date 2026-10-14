@@ -34,6 +34,7 @@ import {
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { storageSet } from './storage/storage.ts'
+import { drainWriteQueue } from './storage/write-queue.ts'
 
 const PROJECT = 'proj-approval'
 const THREAD = 't-approval'
@@ -76,6 +77,55 @@ describe('requestApproval pluggable transport', () => {
     assert.equal(events.at(-1)?.actor, 'system')
     assert.equal(events.at(-1)?.verdict, 'cancelled')
     assert.equal(events.at(-1)?.source, 'unavailable')
+  })
+
+  it('denies and dismisses a safety prompt at its deadline, ignoring a late approval', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    let promptSignal: AbortSignal | undefined
+    let answer: (response: ApprovalResponse) => void = () => {}
+    setApprovalHandler((_request, signal) => {
+      promptSignal = signal
+      return new Promise<ApprovalResponse>((resolve) => {
+        answer = resolve
+      })
+    })
+    const timed = { ...req, timeoutMs: 120_000 }
+    const first = requestUnderThread(timed)
+    const duplicate = requestUnderThread(timed)
+    t.mock.timers.tick(119_999)
+    assert.equal(promptSignal?.aborted, false)
+    runWithActiveRunIdentity(THREAD, () => {
+      t.mock.timers.tick(1)
+    })
+    const denial = { approved: false, remember: false, resolution: 'timeout' }
+    assert.deepEqual(await first, denial)
+    assert.deepEqual(await duplicate, denial)
+    assert.equal(promptSignal.aborted, true)
+    assert.equal(pendingApprovalCountForThread(THREAD), 0)
+    answer({ approved: true, remember: true })
+    await Promise.resolve()
+    t.mock.timers.reset()
+    await drainWriteQueue()
+    const events = await readDecisionLog(PROJECT)
+    assert.equal(events.at(-1)?.verdict, 'timeout')
+    assert.equal(events.at(-1)?.actor, 'system')
+  })
+
+  it('keeps ordinary prompts pending past the safety timeout', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    let signal: AbortSignal | undefined
+    setApprovalHandler((_request, nextSignal) => {
+      signal = nextSignal
+      return new Promise(() => {})
+    })
+    const controller = new AbortController()
+    const pending = requestUnderThread(req, controller.signal)
+    t.mock.timers.tick(240_000)
+    assert.equal(signal?.aborted, false)
+    assert.equal(pendingApprovalCountForThread(THREAD), 1)
+    controller.abort()
+    assert.equal((await pending).approved, false)
+    assert.equal(signal.aborted, true)
   })
 
   it('routes the request to the registered handler', async () => {
