@@ -41,7 +41,7 @@ describe('Settings section composition, validation and sticky actions', () => {
         ),
       ].map((legend) => legend.textContent.trim()),
     )
-    assert.deepEqual(groups, ['Detected settings', 'Providers', 'Models'])
+    assert.deepEqual(groups, ['Coding agents', 'API keys', 'Models'])
     assert.equal(
       await browser.execute(() =>
         [
