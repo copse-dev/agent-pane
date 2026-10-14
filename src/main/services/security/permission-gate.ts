@@ -532,16 +532,18 @@ export async function promptExpectedSandboxBlock(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
-  opts: { requireInteractiveApproval?: boolean } = {},
+  opts: { source?: 'agent' | 'prior-denial' } = {},
 ): Promise<boolean> {
-  const forceAsk =
-    opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
-  if (!forceAsk && autoApproveShell(command, 'external')) return true
+  // An explicit escape request must reach the user even when deterministic tiers
+  // would approve the command. The caller handles already-authorized run modes.
   const { approved } = await requestApproval(
     {
-      title: 'Run outside sandbox?',
+      title:
+        opts.source === 'prior-denial' ? 'Run outside sandbox?' : 'Agent requests sandbox escape',
       type: 'shell',
-      ...shellPromptToApprovalFields(formatExpectedSandboxBlockPromptParts(command, reasons)),
+      ...shellPromptToApprovalFields(
+        formatExpectedSandboxBlockPromptParts(command, reasons, opts.source),
+      ),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
       cause: 'shell-expected-sandbox-block',

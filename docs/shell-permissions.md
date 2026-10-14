@@ -351,6 +351,13 @@ Stop app targets only the app session launched by that workflow.
 
 ## Strict mode and expected blocks
 
+Direct project executables (including `./node_modules/.bin/tsc`) and local scripts run
+inside an active OS sandbox when auto-run is enabled. Opaque contents alone do not
+establish that the sandbox would block execution. Other network/outside-path signals
+and destructive-command checks still apply. Without containment or auto-run, approval
+is required. Guarded YOLO's bounded script-content harm scan remains a separate check;
+reading a script is not proof that it is safe or permission to escape containment.
+
 `safetyExternalDenyThreshold` defaults to `1` (off). At a lower threshold, a command is hard-denied
 only when both conditions hold:
 
@@ -367,7 +374,10 @@ to need network or outside-workspace access. This only advances the same unsandb
 - a sandbox-contained command ignores the hint and must earn escalation through a verified block;
 - declining the advanced prompt runs the command in the sandbox without prompting again on failure.
 
-Approval copy must describe this as an expectation, not a confirmed sandbox failure.
+The prompt is titled “Agent requests sandbox escape” and describes this as the agent's
+expectation, not a confirmed sandbox failure. A cached denial instead retains “Run outside
+sandbox?” and states that a previous denial was recorded, without attributing a new request
+to the agent. Approval authorizes one outside execution; rejection keeps the contained attempt.
 
 Some sandboxed failures come from a broker or helper that does not increment the OS sandbox's
 violation counter. After a non-zero attempt, `run_shell` may recognise the bounded denial signatures

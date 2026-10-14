@@ -550,7 +550,7 @@ export const runShellTool = defineTool({
             unattendedContainer,
           ) ||
           (await promptExpectedSandboxBlock(command, reasons, signal, {
-            requireInteractiveApproval: escalationSource === 'denial-cache',
+            source: cachedAdvice === null ? 'agent' : 'prior-denial',
           }))
         ) {
           outsideSandbox = true
