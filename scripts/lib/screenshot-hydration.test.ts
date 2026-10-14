@@ -60,6 +60,52 @@ function fixture(): {
 }
 
 describe('R2 baseline cutover', () => {
+  it('includes the HEAD comparison object when a selected working manifest has changed', async (context) => {
+    const { cwd, save } = fixture()
+    try {
+      save({ version: 1, screenshots: { 'a.png': entry(png) } })
+      const candidate = Buffer.concat([png, Buffer.from('candidate')])
+      writeFileSync(
+        join(cwd, SCREENSHOT_MANIFEST),
+        serializeScreenshotManifest({
+          version: 1,
+          screenshots: { 'a.png': entry(candidate) },
+        }),
+      )
+      writeFileSync(join(cwd, SCREENSHOT_DIRECTORY, 'a.png'), candidate)
+      context.mock.method(globalThis, 'fetch', async (url: URL) => {
+        assert.equal(url.href, `${SCREENSHOT_PUBLIC_URL}/${screenshotObjectKey(entry(png))}`)
+        return new Response(png)
+      })
+      await hydrateScreenshots({ cwd, names: ['a.png'], restore: false })
+      assert.deepEqual(screenshotAtRef(`${SCREENSHOT_DIRECTORY}/a.png`, 'HEAD', cwd), png)
+      assert.deepEqual(readFileSync(join(cwd, SCREENSHOT_DIRECTORY, 'a.png')), candidate)
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+  it('hydrates only requested names without fetching or restoring unrelated baselines', async (context) => {
+    const { cwd, save } = fixture()
+    try {
+      save({
+        version: 1,
+        screenshots: {
+          'selected.png': entry(png),
+          'unrelated.png': entry(Buffer.concat([png, Buffer.from('different')])),
+        },
+      })
+      const fetchMock = context.mock.method(globalThis, 'fetch', async (url: URL) => {
+        assert.equal(url.href, `${SCREENSHOT_PUBLIC_URL}/${screenshotObjectKey(entry(png))}`)
+        return new Response(png)
+      })
+      await hydrateScreenshots({ cwd, names: ['selected.png'] })
+      assert.equal(fetchMock.mock.callCount(), 1)
+      assert.deepEqual(readFileSync(join(cwd, SCREENSHOT_DIRECTORY, 'selected.png')), png)
+      assert.equal(existsSync(join(cwd, SCREENSHOT_DIRECTORY, 'unrelated.png')), false)
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
   it('hydrates an empty checkout without credentials, verifies cache hits, and deduplicates aliases', async (context) => {
     const { cwd, save } = fixture()
     try {
