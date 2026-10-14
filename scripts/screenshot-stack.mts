@@ -124,6 +124,80 @@ interface Input {
   number: number
 }
 
+/** Select work, never evidence: every selected PR still receives live validation. */
+export function selectScreenshotStackPulls(
+  open: unknown[],
+  eventName: string,
+  payload: unknown,
+): number[] {
+  const numberOf = (value: unknown): number | undefined =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined
+  const numbers = open.flatMap((pr) => {
+    const number = numberOf(field(pr, 'number'))
+    return number === undefined ? [] : [number]
+  })
+  const affected = new Set<number>()
+  // Over-select malformed declarations too: validation must revoke their old
+  // status. PR bodies are routing hints, not trusted stack declarations.
+  const references = (body: unknown): number[] => {
+    if (typeof body !== 'string' || !body.includes(PREFIX)) return []
+    return [...body.matchAll(/#([1-9][0-9]*)/g)].flatMap((match) => {
+      const number = numberOf(Number(match[1]))
+      return number === undefined ? [] : [number]
+    })
+  }
+  if (eventName === 'pull_request_target') {
+    const pr = field(payload, 'pull_request')
+    const number = numberOf(field(pr, 'number'))
+    if (number === undefined) return numbers
+    affected.add(number)
+    for (const member of references(field(pr, 'body'))) affected.add(member)
+    // An edit can remove the only edge connecting this PR to its former stack.
+    const oldBody = field(field(field(payload, 'changes'), 'body'), 'from')
+    for (const member of references(oldBody)) affected.add(member)
+  } else if (eventName === 'workflow_run') {
+    const run = field(payload, 'workflow_run')
+    const pulls = field(run, 'pull_requests')
+    if (Array.isArray(pulls)) {
+      for (const pr of pulls) {
+        const number = numberOf(field(pr, 'number'))
+        if (number !== undefined) affected.add(number)
+      }
+    }
+    const sha = field(run, 'head_sha')
+    if (typeof sha === 'string' && SHA.test(sha)) {
+      for (const pr of open) {
+        const number = numberOf(field(pr, 'number'))
+        if (number !== undefined && field(field(pr, 'head'), 'sha') === sha) affected.add(number)
+      }
+    }
+    // Default-branch publishers can have neither PR metadata nor a matching
+    // head. Keep the full sweep rather than guessing which approval changed.
+    if (affected.size === 0) return numbers
+  } else {
+    return numbers // Manual/scheduled repair and unknown event shapes.
+  }
+  // Follow both directions and transitively: membership edits can connect old
+  // and new stacks, including a closed triggering tip absent from `open`.
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const pr of open) {
+      const number = numberOf(field(pr, 'number'))
+      if (number === undefined) continue
+      const linked = references(field(pr, 'body'))
+      if (!affected.has(number) && !linked.some((member) => affected.has(member))) continue
+      for (const member of [number, ...linked]) {
+        if (!affected.has(member)) {
+          affected.add(member)
+          changed = true
+        }
+      }
+    }
+  }
+  return numbers.filter((number) => affected.has(number))
+}
+
 async function statuses(
   github: StackGitHub,
   input: Input,
