@@ -13,7 +13,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
-import { setComposerValue, submitPrompt } from './helpers/composer.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -425,7 +425,9 @@ describe('footer branch status for a detached thread worktree', function () {
     await saveElementScreenshot('.input-footer', 'footer-branch-missing-worktree.png')
 
     await setComposerValue('Keep this draft while restoring the checkout.')
-    await submitPrompt()
+    // This send must fail and retain the draft; submitComposer waits for a
+    // successful send to empty it.
+    await $('.submit-btn').click()
     await expect($('.composer-checkout-error')).toBeDisplayed()
 
     await button.click()
