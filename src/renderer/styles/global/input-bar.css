@@ -358,6 +358,7 @@
   border-radius: 999px;
   padding: 6px 16px;
 }
+
 .footer-queue {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
@@ -531,6 +532,29 @@
   background: transparent;
   border-top: 1px solid var(--border);
   border-radius: 0 0 var(--composer-radius) var(--composer-radius);
+}
+/* A narrow split must leave room to type rather than reserve almost the whole
+   editor for overlaid controls. Keep the action row below the draft. */
+@container chat-pane (max-width: 300px) {
+  .input-footer {
+    flex-wrap: wrap;
+  }
+  .prompt-input,
+  .prompt-input.with-stop {
+    padding: var(--spacing-md);
+    min-width: 0;
+  }
+  .attach-btn {
+    top: auto;
+    bottom: var(--spacing-md);
+  }
+  .submit-row {
+    position: static;
+    align-self: stretch;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    margin: 0 var(--spacing-md) var(--spacing-md) 40px;
+  }
 }
 /* Portrait / bottom-pinned chrome: dock one composer-width outline around the
    labeled panel toggles, directly on the single-pixel divider above the stacked
