@@ -8,7 +8,7 @@ import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/
 import { listenOnFixturePort } from './helpers/fixture-server.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveAppViewportScreenshot } from './helpers/screenshot.ts'
 import { assertBrowserAddressFieldRoomy } from './helpers/text-fit.ts'
 
 const PLUGIN_ID = 'personal.browser-fixture'
@@ -163,6 +163,6 @@ describe('selected plugin browser behavior', function () {
     )
     await waitForActiveThreadTitle()
     await assertBrowserAddressFieldRoomy()
-    await saveElementScreenshot('#app', 'selected-plugin-browser-tab.png')
+    await saveAppViewportScreenshot('selected-plugin-browser-tab.png')
   })
 })

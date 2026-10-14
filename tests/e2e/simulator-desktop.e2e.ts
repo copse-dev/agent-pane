@@ -87,6 +87,13 @@ describe('Simulator desktop preview', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const onboardingClose = $('#onboarding-close')
     if (await onboardingClose.isDisplayed()) await onboardingClose.click()
+    // This live-session fixture does not seed the usual announcement acknowledgements.
+    const announcement = $('#product-announcement-dialog')
+    if (await announcement.isExisting()) {
+      await announcement.waitForDisplayed({ timeout: 10_000 })
+      await announcement.$('button.ui-btn-primary').click()
+      await announcement.waitForExist({ reverse: true, timeout: 10_000 })
+    }
   })
 
   it('shows and controls a booted Simulator in the Desktop pane', async () => {
