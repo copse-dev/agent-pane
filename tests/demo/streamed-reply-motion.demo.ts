@@ -20,6 +20,7 @@ async function startRecordingFrames(): Promise<void> {
     const frames: StreamFrame[] = []
     const started = performance.now()
     let settledFrames = 0
+    let sawStreaming = false
     const recording = { frames, done: false }
     Reflect.set(window, '__copseStreamMotionCapture', recording)
     const tick = (): void => {
@@ -52,7 +53,9 @@ async function startRecordingFrames(): Promise<void> {
       }
       const last = frames[frames.length - 1]
       const running = document.querySelector('.submit-btn.with-stop') !== null
-      if (!running && last?.streaming === false) settledFrames++
+      sawStreaming ||= last?.streaming === true
+      if (sawStreaming && !running && last?.streaming === false) settledFrames++
+      else settledFrames = 0
       if (settledFrames > 20 || performance.now() - started > 25_000) recording.done = true
       else requestAnimationFrame(tick)
     }
@@ -93,6 +96,16 @@ describe('streamed reply motion in the real renderer', () => {
       composer.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await startRecordingFrames()
+    // A slow submit must not let the pre-existing settled reply end capture.
+    await browser.waitUntil(async () => (await recordedFrames()).length >= 30)
+    expect(
+      await browser.execute(() => {
+        const recording: unknown = Reflect.get(window, '__copseStreamMotionCapture')
+        return recording !== null && typeof recording === 'object'
+          ? Reflect.get(recording, 'done')
+          : true
+      }),
+    ).toBe(false)
     await $('.submit-btn').click()
 
     // The tool step and the first prose, then a capture mid-reply.
