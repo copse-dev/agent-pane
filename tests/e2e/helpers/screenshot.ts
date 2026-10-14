@@ -4,6 +4,7 @@ import { PNG } from 'pngjs'
 import { browser } from '@wdio/globals'
 import { recentreClippedCapture, restoreScrollAfterCapture } from './capture-framing.ts'
 import { mockConversationLeaks } from './mock-content.ts'
+import { withFrozenAnimations } from './frozen-animations.ts'
 
 /** Fixed viewport for committed e2e reference screenshots (see tests/e2e/screenshots/). */
 export const E2E_VIEWPORT = { width: 1280, height: 800 } as const
@@ -161,7 +162,7 @@ export async function withCaptureFrame(capture: () => Promise<void>): Promise<vo
     ])
   })
   try {
-    await capture()
+    await withFrozenAnimations(capture)
   } finally {
     await browser.execute((styles) => {
       const app = document.getElementById('app')
