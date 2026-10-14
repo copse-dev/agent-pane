@@ -43200,6 +43200,9 @@ function findAcpCatalogEntry(id) {
   const canonical2 = canonicalAcpAgentId(id);
   return KNOWN_ACP_AGENTS.find((agent2) => agent2.id === canonical2) ?? RETIRED_ACP_AGENTS.find((agent2) => agent2.id === canonical2);
 }
+function acpReauthCommand(known) {
+  return known?.reauth ?? known?.setup ?? null;
+}
 var LEGACY_ACP_AGENT_IDS, RETIRED_ACP_AGENTS, KNOWN_ACP_AGENTS;
 var init_acp_known_agents = __esm({
   "src/shared/acp-known-agents.ts"() {
@@ -52846,6 +52849,208 @@ var init_chatgpt_plan_section = __esm({
   }
 });
 
+// src/renderer/views/setup/paste-key-form.ts
+function detectProviderFromKey(key) {
+  const trimmed2 = key.trim();
+  if (trimmed2.length < MIN_KEY_LENGTH) return null;
+  const match = KEY_PREFIXES.find((entry) => trimmed2.startsWith(entry.prefix));
+  return match ? { provider: match.provider, certain: match.certain } : null;
+}
+function createPasteKeyForm(api2, opts) {
+  const input2 = el("input", {
+    type: "password",
+    autocomplete: "off",
+    spellcheck: "false",
+    placeholder: "Paste an API key",
+    "data-testid": "paste-key-input"
+  });
+  const save = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-primary provider-save",
+      "data-testid": "paste-key-save"
+    },
+    "Save key"
+  );
+  save.disabled = true;
+  const hint = el("span", { class: "field-hint", "data-testid": "paste-key-hint" });
+  const picker = el("select", { "data-testid": "paste-key-provider" });
+  const ask = el("div", { class: "provider-actions", "data-testid": "paste-key-ask" }, picker);
+  ask.hidden = true;
+  const otherHost = el("div", { class: "provider-add-host", "data-testid": "paste-key-other" });
+  otherHost.hidden = true;
+  const defaultHint = "Paste a key and Copse suggests its provider. Save checks the key with that provider, then stores it using your secure storage settings.";
+  let guess = null;
+  let chosen = "";
+  let generation = 0;
+  let saving = false;
+  function label(id) {
+    return opts.providers().find((choice) => choice.id === id)?.label ?? id;
+  }
+  function refreshChoices() {
+    clear(picker);
+    picker.append(el("option", { value: "" }, "Choose a provider\u2026"));
+    for (const choice of opts.providers()) {
+      picker.append(el("option", { value: choice.id }, choice.label));
+    }
+    picker.append(el("option", { value: OTHER }, "Other (OpenAI-compatible)\u2026"));
+    picker.value = chosen;
+  }
+  function setHint(text2, kind = "idle") {
+    if (kind === "idle") hint.textContent = text2;
+    else setInlineStatus(hint, kind, text2);
+    hint.className = kind === "error" ? "field-hint key-status err" : "field-hint";
+  }
+  function askWhich(message2) {
+    ask.hidden = false;
+    setHint(message2);
+  }
+  function onInput() {
+    const value = input2.value.trim();
+    save.disabled = value.length < MIN_KEY_LENGTH;
+    guess = detectProviderFromKey(value);
+    chosen = "";
+    picker.value = "";
+    otherHost.hidden = true;
+    clear(otherHost);
+    if (value.length < MIN_KEY_LENGTH) {
+      ask.hidden = true;
+      setHint(defaultHint);
+    } else if (guess && !guess.certain) {
+      askWhich(
+        "This prefix is shared by several providers. Choose its provider before checking the key."
+      );
+    } else if (guess) {
+      ask.hidden = true;
+      const name = label(guess.provider);
+      setHint(`Looks like ${/^[aeiou]/i.test(name) ? "an" : "a"} ${name} key.`);
+    } else {
+      askWhich("Copse doesn\u2019t recognise this key. Which provider is it for?");
+    }
+  }
+  input2.addEventListener("input", onInput);
+  picker.addEventListener("change", () => {
+    chosen = picker.value;
+    if (chosen === OTHER) {
+      clear(otherHost);
+      otherHost.append(opts.renderOther());
+      otherHost.hidden = false;
+    } else {
+      otherHost.hidden = true;
+    }
+  });
+  async function store2(provider, key, mine) {
+    let result = await api2.settings.setKey(provider, key);
+    if (!result.ok && result.reason === "plaintext-consent-required") {
+      const approved = await showConfirmDialog({
+        message: `No OS keyring is available to encrypt your ${label(provider)} key at rest. Install and unlock a system keyring to store it encrypted.`,
+        detail: "Store it unencrypted on this machine anyway?",
+        confirmLabel: "Store anyway"
+      });
+      if (mine !== generation) return false;
+      if (approved) result = await api2.settings.setKey(provider, key, { allowPlaintext: true });
+    }
+    if (result.ok) return true;
+    setHint(
+      result.reason === "plaintext-storage-disabled" ? `Not saved: ${PLAINTEXT_STORAGE_DISABLED_REASON}` : "Not saved: unencrypted storage declined",
+      "error"
+    );
+    return false;
+  }
+  save.addEventListener("click", () => {
+    void (async () => {
+      if (saving) return;
+      const mine = generation;
+      const key = input2.value.trim();
+      if (key.length < MIN_KEY_LENGTH) return;
+      const provider = chosen === OTHER ? "" : chosen || (guess?.certain ? guess.provider : "");
+      if (!provider) {
+        askWhich(
+          chosen === OTHER ? "Fill in the details below." : "Choose which provider this key is for."
+        );
+        return;
+      }
+      saving = true;
+      save.disabled = true;
+      input2.disabled = true;
+      picker.disabled = true;
+      try {
+        setHint(`Checking with ${label(provider)}\u2026`, "pending");
+        const checked = await api2.settings.validateKey(provider, key).catch(() => null);
+        if (mine !== generation) return;
+        if (!checked?.ok) {
+          save.disabled = false;
+          if (guess && !guess.certain && !chosen) {
+            askWhich(`${label(provider)} didn\u2019t accept this key. Which provider is it for?`);
+            return;
+          }
+          setHint(checked?.error ?? `${label(provider)} didn\u2019t accept this key.`, "error");
+          return;
+        }
+        if (!await store2(provider, key, mine)) {
+          save.disabled = false;
+          return;
+        }
+        if (mine !== generation) return;
+        input2.value = "";
+        guess = null;
+        chosen = "";
+        ask.hidden = true;
+        save.disabled = true;
+        setHint(`${label(provider)} key saved.`, "ok");
+        opts.onSaved();
+      } catch {
+        if (mine === generation) setHint("Could not save the key. Please try again.", "error");
+      } finally {
+        saving = false;
+        input2.disabled = false;
+        picker.disabled = false;
+        save.disabled = input2.value.trim().length < MIN_KEY_LENGTH;
+      }
+    })();
+  });
+  refreshChoices();
+  setHint(defaultHint);
+  const root = el(
+    "div",
+    { class: "paste-key-form", "data-testid": "paste-key-form" },
+    el("div", { class: "provider-actions" }, input2, save),
+    hint,
+    ask,
+    otherHost
+  );
+  function reset2() {
+    generation += 1;
+    input2.value = "";
+    onInput();
+  }
+  return { root, refreshChoices, reset: reset2 };
+}
+var KEY_PREFIXES, MIN_KEY_LENGTH, OTHER;
+var init_paste_key_form = __esm({
+  "src/renderer/views/setup/paste-key-form.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_confirm_dialog();
+    init_api_keys_section();
+    KEY_PREFIXES = [
+      { prefix: "sk-ant-", provider: "anthropic", certain: true },
+      { prefix: "sk-or-", provider: "openrouter", certain: true },
+      { prefix: "gsk_", provider: "groq", certain: true },
+      { prefix: "AIza", provider: "gemini", certain: true },
+      { prefix: "hf_", provider: "huggingface", certain: true },
+      { prefix: "fw_", provider: "fireworks", certain: true },
+      { prefix: "pplx-", provider: "perplexity", certain: true },
+      { prefix: "cur_", provider: "cursor", certain: true },
+      // OpenAI-style keys, but DeepSeek and others also start `sk-`, so the user chooses.
+      { prefix: "sk-", provider: "openai", certain: false }
+    ];
+    MIN_KEY_LENGTH = 8;
+    OTHER = "__other";
+  }
+});
+
 // src/renderer/views/setup/providers-section.ts
 function createProvidersPanel(api2, opts = {}) {
   const cloudAgents = opts.cloudAgents ?? [];
@@ -52874,6 +53079,16 @@ function createProvidersPanel(api2, opts = {}) {
     ...opts.nativeLocalProviders ? { nativeProviders: opts.nativeLocalProviders } : {}
   });
   const agentsPanel = createAcpAgentsSection(api2, { embedded: true, onChanged: rebuild });
+  const pasteKey = createPasteKeyForm(api2, {
+    providers: () => apiPanel.providerIds().map((id) => ({ id, label: apiPanel.labelFor(id) ?? id })),
+    onSaved: () => {
+      void refresh();
+    },
+    renderOther: () => {
+      apiPanel.select(ADD_KEY);
+      return apiPanel.root;
+    }
+  });
   const chipRow = el("div", { class: "provider-chips", role: "tablist" });
   const formHost = el("div", { class: "provider-form-host" });
   const cloudAgentOptions = opts.cloudAgentOptions;
@@ -52881,11 +53096,11 @@ function createProvidersPanel(api2, opts = {}) {
   const fieldset = el(
     "fieldset",
     {},
-    el("legend", {}, "Providers"),
+    el("legend", {}, "API keys"),
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Everything Copse can send a turn to. Pick a provider to set up its API key, its cloud agent, the copy of it installed on this machine, or a model server you run yourself. Whatever you set up here shows up in the model picker."
+      "Add a key and its models show up in the model picker. Pick a provider to add its key, set up its cloud agent, or connect a model server you run yourself."
     ),
     chipRow,
     formHost,
@@ -52902,6 +53117,7 @@ function createProvidersPanel(api2, opts = {}) {
   let pendingOpenAiTierChoice = "auto";
   let openAiTierDirty = false;
   const deviceAutoSetup = opts.deviceAutoSetup ?? true;
+  const deviceAgents = opts.deviceAgents ?? true;
   const offeredOpenAiTier = new Set(SERVICE_TIER_CHOICES.map((choice) => choice.value));
   function openAiTierChoiceForStored(value) {
     if (value === "") return "auto";
@@ -52990,7 +53206,7 @@ function createProvidersPanel(api2, opts = {}) {
     return {
       api: (vendor.api ?? []).filter((id) => apiPanel.labelFor(id) !== null),
       local: (vendor.local ?? []).filter((id) => localPanel.labelFor(id) !== null),
-      agents: (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null),
+      agents: deviceAgents ? (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null) : [],
       cloud: cloudAgentByVendor.get(vendor.id)
     };
   }
@@ -53012,7 +53228,7 @@ function createProvidersPanel(api2, opts = {}) {
       if (claimed.has(id)) continue;
       list.push({ id, label: apiPanel.labelFor(id) ?? id, api: [id] });
     }
-    for (const id of agentsPanel.agentIds()) {
+    for (const id of deviceAgents ? agentsPanel.agentIds() : []) {
       if (claimed.has(id)) continue;
       list.push({ id, label: agentsPanel.labelFor(id) ?? id, agents: [id] });
     }
@@ -53084,7 +53300,7 @@ function createProvidersPanel(api2, opts = {}) {
   }
   function addForm() {
     const picker = el("select", {});
-    for (const entry of ADD_KINDS) {
+    for (const entry of ADD_KINDS.filter((e3) => deviceAgents || e3.kind !== "agent")) {
       picker.append(el("option", { value: entry.kind }, entry.label));
     }
     picker.value = selectedAddKind;
@@ -53095,8 +53311,7 @@ function createProvidersPanel(api2, opts = {}) {
     });
     const host = el("div", { class: "provider-add-host" });
     if (selectedAddKind === "api") {
-      apiPanel.select(ADD_KEY);
-      host.append(apiPanel.root);
+      host.append(pasteKey.root);
     } else if (selectedAddKind === "local") {
       localPanel.select(ADD_KEY);
       host.append(localPanel.root);
@@ -53246,6 +53461,7 @@ function createProvidersPanel(api2, opts = {}) {
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
       selected = "";
     }
+    pasteKey.refreshChoices();
     rebuild();
   }
   async function saveKeys() {
@@ -53264,6 +53480,7 @@ function createProvidersPanel(api2, opts = {}) {
     saveKeys,
     reset: () => {
       refreshGeneration += 1;
+      pasteKey.reset();
       apiPanel.reset();
       localPanel.reset();
       openAiTierDirty = false;
@@ -53287,6 +53504,7 @@ var init_providers_section = __esm({
     init_service_tier();
     init_ui();
     init_chatgpt_plan_section();
+    init_paste_key_form();
     MERGED_VENDORS = [
       {
         id: "anthropic",
@@ -53307,169 +53525,398 @@ var init_providers_section = __esm({
   }
 });
 
-// src/renderer/views/setup/detected-item-row.ts
-function providerLabel(slug2) {
-  return PROVIDER_LABELS2[slug2] ?? slug2;
-}
-function createDetectedItemRow(opts) {
-  let checkbox = null;
-  if (opts.checkbox) {
-    checkbox = el("input", {
-      type: "checkbox",
-      class: "detected-item-check",
-      "aria-label": `Use ${opts.label}`
-    });
-    checkbox.checked = opts.checkbox.checked;
-    checkbox.disabled = opts.checkbox.disabled ?? false;
-  }
-  const root = el(
-    "div",
-    { class: "env-key-row detected-item-row" },
-    ...checkbox ? [checkbox] : [],
-    el("span", { class: "env-key-provider" }, opts.label),
-    el("span", { class: "env-key-source" }, opts.detail),
-    ...opts.masked ? [el("span", { class: "env-key-masked" }, opts.masked)] : [],
-    ...opts.status ? [el("span", { class: opts.status.ok ? "key-status ok" : "key-status" }, opts.status.text)] : []
-  );
-  root.dataset["kind"] = opts.kind;
-  root.dataset["id"] = opts.id;
-  return { root, checkbox };
-}
-var PROVIDER_LABELS2;
-var init_detected_item_row = __esm({
-  "src/renderer/views/setup/detected-item-row.ts"() {
-    init_helpers();
-    PROVIDER_LABELS2 = {
-      anthropic: "Anthropic",
-      openai: "OpenAI",
-      cursor: "Cursor",
-      openrouter: "OpenRouter",
-      mistral: "Mistral",
-      gemini: "Google Gemini",
-      deepseek: "DeepSeek",
-      huggingface: "Hugging Face",
-      lmstudio: "LM Studio"
+// src/renderer/views/setup/agent-logos.ts
+var AGENT_LOGO_SVG;
+var init_agent_logos = __esm({
+  "src/renderer/views/setup/agent-logos.ts"() {
+    AGENT_LOGO_SVG = {
+      claude: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#fff" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>',
+      codex: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#cdx)"></path><defs><linearGradient gradientUnits="userSpaceOnUse" id="cdx" x1="12" x2="12" y1="3" y2="21"><stop stop-color="#B1A7FF"></stop><stop offset=".5" stop-color="#7A9DFF"></stop><stop offset="1" stop-color="#3941FF"></stop></linearGradient></defs></svg>',
+      gemini: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="gg" x1="3" y1="21" x2="21" y2="3" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4285f4"/><stop offset=".55" stop-color="#9b72cb"/><stop offset="1" stop-color="#d96570"/></linearGradient></defs><path fill="url(#gg)" d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>',
+      cursor: '<svg width="22" height="22" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 466.73 533.32"> <path fill="#72716d" d="M233.37,266.66l231.16,133.46c-1.42,2.46-3.48,4.56-6.03,6.03l-216.06,124.74c-5.61,3.24-12.53,3.24-18.14,0L8.24,406.15c-2.55-1.47-4.61-3.57-6.03-6.03l231.16-133.46h0Z"/> <path fill="#55544f" d="M233.37,0v266.66L2.21,400.12c-1.42-2.46-2.21-5.3-2.21-8.24v-250.44c0-5.89,3.14-11.32,8.24-14.27L224.29,2.43c2.81-1.62,5.94-2.43,9.07-2.43h.01Z"/> <path fill="#43413c" d="M464.52,133.2c-1.42-2.46-3.48-4.56-6.03-6.03L242.43,2.43c-2.8-1.62-5.93-2.43-9.06-2.43v266.66l231.16,133.46c1.42-2.46,2.21-5.3,2.21-8.24v-250.44c0-2.95-.78-5.77-2.21-8.24h-.01Z"/> <path fill="#d6d5d2" d="M448.35,142.54c1.31,2.26,1.49,5.16,0,7.74l-209.83,363.42c-1.41,2.46-5.16,1.45-5.16-1.38v-239.48c0-1.91-.51-3.75-1.44-5.36l216.42-124.95h.01Z"/> <path fill="#fff" d="M448.35,142.54l-216.42,124.95c-.92-1.6-2.26-2.96-3.92-3.92L20.62,143.83c-2.46-1.41-1.45-5.16,1.38-5.16h419.65c2.98,0,5.4,1.61,6.7,3.87Z"/> </svg>'
     };
   }
 });
 
-// src/renderer/views/setup/env-key-detect-section.ts
-function createEnvKeyDetectSection(api2, opts = {}) {
-  const legend = opts.legend ?? "Detect existing API keys";
-  const scanBtn = el(
+// src/renderer/views/setup/acp-agents-list.ts
+function agentChip(auth) {
+  if (auth === "signed-in") return "ready";
+  if (auth === "signed-out") return "needs-sign-in";
+  return null;
+}
+function listedAgents(known, detected, configured, auth) {
+  const configuredIds = new Set(configured.map((a3) => a3.id));
+  const rows = [];
+  for (const k3 of known) {
+    if (!configuredIds.has(k3.id) && !detected.get(k3.id)?.installed) continue;
+    const chip2 = agentChip(auth.get(k3.id));
+    rows.push({
+      id: k3.id,
+      title: k3.title,
+      chip: chip2,
+      signInCommand: chip2 === "needs-sign-in" ? acpReauthCommand(k3) : null
+    });
+  }
+  const knownIds = new Set(known.map((k3) => k3.id));
+  for (const a3 of configured) {
+    if (knownIds.has(a3.id)) continue;
+    rows.push({ id: a3.id, title: a3.title, chip: null, signInCommand: null });
+  }
+  return rows;
+}
+function addableAgents(known, detected, configured) {
+  const configuredIds = new Set(configured.map((a3) => a3.id));
+  return known.filter((k3) => !configuredIds.has(k3.id) && !detected.get(k3.id)?.installed);
+}
+function logoTile(id, title) {
+  const key = LOGO_KEY[id];
+  const svg2 = key ? AGENT_LOGO_SVG[key] : void 0;
+  const tile = el("span", { class: "acp-logo", "aria-hidden": "true" });
+  if (key) tile.dataset["brand"] = key;
+  if (!svg2) {
+    tile.textContent = title.slice(0, 1).toUpperCase();
+    return tile;
+  }
+  const doc3 = new DOMParser().parseFromString(svg2, "image/svg+xml");
+  tile.append(document.importNode(doc3.documentElement, true));
+  return tile;
+}
+function createAcpAgentsList(api2, opts = {}) {
+  let configured = [];
+  let detected = /* @__PURE__ */ new Map();
+  let auth = /* @__PURE__ */ new Map();
+  let openId = "";
+  let menuOpen = false;
+  let setupId = "";
+  let loaded = false;
+  let activeSignal;
+  let generation = 0;
+  let autoSetupRun = false;
+  const panel = createAcpAgentsSection(api2, {
+    embedded: true,
+    onChanged: () => {
+      void api2.settings.get("registeredAcpAgents").then((value) => {
+        const previousIds = new Set(configured.map((agent2) => agent2.id));
+        configured = parseAcpAgentConfigs(value);
+        const added = configured.find((agent2) => !previousIds.has(agent2.id));
+        if (added && menuOpen) {
+          openId = added.id;
+          menuOpen = false;
+          setupId = "";
+        }
+        if (loaded && !activeSignal?.aborted) render2();
+      }).catch(() => {
+      });
+    }
+  });
+  const list = el("div", { class: "acp-list", "data-testid": "acp-agents-list" });
+  const addToggle = el(
     "button",
-    { type: "button", class: "ui-btn ui-btn-secondary" },
-    "Scan environment"
+    { type: "button", class: "ui-btn ui-btn-secondary", "data-testid": "acp-add-toggle" },
+    "+ Add an agent"
   );
-  const importBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "onboarding-primary",
-      hidden: true
-    },
-    "Import keys"
-  );
-  const status = el("span", { class: "key-status" });
-  const results = el("div", { class: "env-key-results" });
-  const actions = el("div", { class: "env-key-actions" }, scanBtn, importBtn, status);
-  const fieldset = el(
+  const menu = el("div", { class: "acp-add-menu", "data-testid": "acp-add-menu" });
+  addToggle.addEventListener("click", () => {
+    menuOpen = !menuOpen;
+    setupId = "";
+    if (menuOpen) openId = "";
+    render2();
+  });
+  const rescan = el("button", { type: "button", class: "acp-link" }, "Re-scan");
+  const scanStatus = el("span", {
+    class: "field-hint acp-scan-status",
+    "data-testid": "acp-scan-status"
+  });
+  rescan.addEventListener("click", () => void rescanAll());
+  async function rescanAll() {
+    rescan.disabled = true;
+    scanStatus.textContent = "Scanning\u2026";
+    try {
+      const pending = refresh(activeSignal);
+      const mine = generation;
+      await pending;
+      if (mine !== generation || activeSignal?.aborted || !loaded) return;
+      await api2.settings.set("envKeyAutoDetectEnabled", true);
+      if (mine !== generation || activeSignal?.aborted) return;
+      const found2 = await api2.settings.scanEnvKeys();
+      if (mine !== generation || activeSignal?.aborted) return;
+      const fresh = found2.filter((key) => !key.alreadyConfigured);
+      if (fresh.length === 0) {
+        scanStatus.textContent = "Up to date. Nothing new found.";
+        return;
+      }
+      const { imported, skipped } = await api2.settings.importEnvKeys(
+        fresh.map((key) => key.provider)
+      );
+      scanStatus.textContent = imported.length === 0 ? "Nothing new to import." : `Added ${String(imported.length)} key${imported.length === 1 ? "" : "s"} found on this machine. Remove any you don\u2019t want.`;
+      if (skipped.length > 0)
+        scanStatus.textContent += ` ${String(skipped.length)} keys could not be imported. Review secure storage settings.`;
+      if (imported.length > 0) opts.onKeysImported?.();
+    } catch (err2) {
+      scanStatus.textContent = ipcErrorMessage(err2, "Scan failed. Please try again.");
+    } finally {
+      rescan.disabled = false;
+    }
+  }
+  const root = el(
     "fieldset",
-    {},
-    el("legend", {}, legend),
+    { "data-testid": "acp-agents-fieldset" },
+    el("legend", {}, "Coding agents"),
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Scans your exported environment and shell start-up files (e.g. ",
-      el("code", {}, "~/.zshrc"),
-      ", ",
-      el("code", {}, "~/.bashrc"),
-      ") for keys like ",
-      el("code", {}, "ANTHROPIC_API_KEY"),
-      " or ",
-      el("code", {}, "OPENAI_API_KEY"),
-      ". Nothing is read until you click Scan, and existing keys are never overwritten."
+      "Agents on this machine show up here on their own. Re-scan also reads API keys from your environment and shell startup files and imports new keys. Existing keys are never overwritten."
     ),
-    actions,
-    results
+    el("div", { class: "acp-list-bar" }, scanStatus, rescan),
+    list,
+    el("div", { class: "acp-add" }, addToggle, menu)
   );
-  function setStatus(text2, kind = "") {
-    status.textContent = text2;
-    status.className = kind ? `key-status ${kind}` : "key-status";
+  function chipEl(chip2) {
+    if (!chip2) return [];
+    return [
+      el(
+        "span",
+        { class: `acp-row-chip ${chip2 === "ready" ? "ok" : "warn"}` },
+        chip2 === "ready" ? "Ready" : "Needs sign-in"
+      )
+    ];
   }
-  function reset2() {
-    importBtn.hidden = true;
-    clear(results);
-    setStatus("");
+  function row2(model) {
+    const open2 = openId === model.id;
+    const options = el(
+      "button",
+      { type: "button", class: "acp-link", "aria-expanded": String(open2) },
+      open2 ? "Hide options" : "Options"
+    );
+    options.addEventListener("click", () => {
+      openId = open2 ? "" : model.id;
+      menuOpen = false;
+      render2();
+      if (openId && !autoSetupRun && KNOWN_ACP_AGENTS.some((agent2) => agent2.id === openId)) {
+        autoSetupRun = true;
+        void panel.refresh().then(() => refresh());
+      }
+    });
+    const action = model.signInCommand ? copyButton("Copy sign-in command", model.signInCommand, "ui-btn ui-btn-primary") : options;
+    const head = el(
+      "div",
+      { class: "acp-row-head" },
+      logoTile(model.id, model.title),
+      el(
+        "div",
+        { class: "acp-row-text" },
+        el("div", { class: "acp-row-name" }, el("strong", {}, model.title), ...chipEl(model.chip)),
+        el("div", { class: "acp-row-desc" }, describe4(model))
+      ),
+      action
+    );
+    const r2 = el("div", { class: "acp-row", "data-agent": model.id }, head);
+    if (model.signInCommand) r2.append(el("div", { class: "acp-row-extra" }, options));
+    if (open2) {
+      panel.select(model.id);
+      r2.append(el("div", { class: "acp-row-options" }, panel.root));
+    }
+    return r2;
   }
-  function renderDetections(detected) {
-    clear(results);
-    const importable = detected.filter((d3) => !d3.alreadyConfigured);
-    if (detected.length === 0) {
-      setStatus("No provider keys found in your environment.", "");
-      importBtn.hidden = true;
-      return;
-    }
-    for (const d3 of detected) {
-      const row2 = createDetectedItemRow({
-        kind: "env-key",
-        id: d3.provider,
-        label: providerLabel(d3.provider),
-        detail: `${d3.envVar} \xB7 ${d3.source}`,
-        masked: d3.masked,
-        status: d3.alreadyConfigured ? { text: "already set" } : { text: "will import", ok: true }
-      });
-      results.append(row2.root);
-    }
-    importBtn.hidden = importable.length === 0;
-    importBtn.textContent = importable.length === 1 ? "Import 1 key" : `Import ${String(importable.length)} keys`;
-    setStatus(
-      importable.length > 0 ? `Found ${String(importable.length)} new key${importable.length === 1 ? "" : "s"}.` : "All detected keys are already configured."
+  function describe4(model) {
+    const known = KNOWN_ACP_AGENTS.find((k3) => k3.id === model.id);
+    const path = detected.get(model.id)?.path;
+    if (path) return path;
+    return known ? `${known.title} on this machine.` : "Custom agent.";
+  }
+  function copyButton(label, command2, cls) {
+    const b5 = el("button", { type: "button", class: cls, title: command2 }, label);
+    b5.addEventListener("click", () => {
+      void navigator.clipboard.writeText(command2);
+      b5.textContent = "Copied";
+      watchForChanges();
+    });
+    return b5;
+  }
+  function addRow2(known) {
+    const install = known.install;
+    const action = install ? copyButton("Copy install command", install, "ui-btn ui-btn-secondary") : el("span", { class: "acp-row-desc" }, "Not available");
+    const setup = el("button", { type: "button", class: "acp-link" }, "Set up");
+    setup.addEventListener("click", () => {
+      setupId = known.id;
+      render2();
+    });
+    return el(
+      "div",
+      { class: "acp-row acp-add-row", "data-agent": known.id },
+      el(
+        "div",
+        { class: "acp-row-head" },
+        logoTile(known.id, known.title),
+        el(
+          "div",
+          { class: "acp-row-text" },
+          el("div", { class: "acp-row-name" }, el("strong", {}, known.title)),
+          el(
+            "div",
+            { class: "acp-row-desc" },
+            "Run the install command in a terminal, then Re-scan."
+          )
+        ),
+        action,
+        setup
+      )
     );
   }
-  scanBtn.addEventListener("click", () => {
-    void (async () => {
-      scanBtn.disabled = true;
-      setStatus("Scanning\u2026");
-      try {
-        await api2.settings.set("envKeyAutoDetectEnabled", true);
-        renderDetections(await api2.settings.scanEnvKeys());
-      } catch (err2) {
-        setStatus(err2 instanceof Error ? err2.message : "Scan failed", "err");
-      } finally {
-        scanBtn.disabled = false;
-      }
-    })();
-  });
-  importBtn.addEventListener("click", () => {
-    void (async () => {
-      importBtn.disabled = true;
-      setStatus("Importing\u2026");
-      try {
-        const { imported } = await api2.settings.importEnvKeys();
-        setStatus(
-          imported.length === 0 ? "Nothing new to import." : `Imported ${String(imported.length)} key${imported.length === 1 ? "" : "s"}.`,
-          "ok"
-        );
-        renderDetections(await api2.settings.scanEnvKeys());
-        opts.onImported?.();
-      } catch (err2) {
-        setStatus(err2 instanceof Error ? err2.message : "Import failed", "err");
-      } finally {
-        importBtn.disabled = false;
-      }
-    })();
-  });
-  function refresh(signal) {
-    if (!signal?.aborted) reset2();
-    return Promise.resolve();
+  function render2() {
+    clear(list);
+    const rows = listedAgents(KNOWN_ACP_AGENTS, detected, configured, auth);
+    for (const model of rows) list.append(row2(model));
+    if (!rows.length) {
+      list.append(
+        el(
+          "div",
+          { class: "acp-empty" },
+          loaded ? "No agents on this machine yet. Add one below." : "Looking for agents\u2026"
+        )
+      );
+    }
+    clear(menu);
+    menu.hidden = !menuOpen;
+    addToggle.setAttribute("aria-expanded", String(menuOpen));
+    if (!menuOpen) return;
+    if (setupId) {
+      panel.select(setupId);
+      menu.append(panel.root);
+      return;
+    }
+    for (const known of addableAgents(KNOWN_ACP_AGENTS, detected, configured)) {
+      menu.append(addRow2(known));
+    }
+    const custom2 = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Set up");
+    custom2.addEventListener("click", () => {
+      setupId = "other";
+      render2();
+    });
+    menu.append(
+      el(
+        "div",
+        { class: "acp-row acp-add-row", "data-agent": "other" },
+        el(
+          "div",
+          { class: "acp-row-head" },
+          logoTile("other", "+"),
+          el(
+            "div",
+            { class: "acp-row-text" },
+            el("div", { class: "acp-row-name" }, el("strong", {}, "Something else")),
+            el("div", { class: "acp-row-desc" }, "Any agent program on this machine.")
+          ),
+          custom2
+        )
+      )
+    );
   }
-  return { root: fieldset, refresh };
+  async function scanDevice() {
+    try {
+      const found2 = await api2.acp.detectAgents();
+      detected = new Map(found2.map((d3) => [d3.id, d3]));
+    } catch {
+      detected = /* @__PURE__ */ new Map();
+    }
+    const ids = KNOWN_ACP_AGENTS.filter((k3) => detected.get(k3.id)?.installed).map((k3) => k3.id);
+    try {
+      const statuses2 = ids.length ? await api2.acp.authStatus(ids) : [];
+      auth = new Map(statuses2.map((s16) => [s16.id, s16.state]));
+    } catch {
+      auth = /* @__PURE__ */ new Map();
+    }
+  }
+  function signature() {
+    return JSON.stringify([
+      [...detected.values()].map((d3) => [d3.id, d3.installed]),
+      [...auth.entries()]
+    ]);
+  }
+  async function refresh(signal) {
+    activeSignal = signal;
+    const mine = ++generation;
+    if (signal?.aborted) return;
+    try {
+      configured = parseAcpAgentConfigs(await api2.settings.get("registeredAcpAgents"));
+    } catch {
+      configured = [];
+    }
+    await scanDevice();
+    if (signal?.aborted || mine !== generation) return;
+    loaded = true;
+    await panel.reload(signal);
+    if (!signal?.aborted && mine === generation) render2();
+  }
+  let quietScanRunning = false;
+  async function quietRescan() {
+    if (activeSignal?.aborted || !loaded || quietScanRunning) return;
+    quietScanRunning = true;
+    try {
+      const mine = generation;
+      const before = signature();
+      await scanDevice();
+      if (!activeSignal?.aborted && mine === generation && signature() !== before && !openId && !menuOpen)
+        render2();
+    } finally {
+      quietScanRunning = false;
+    }
+  }
+  let watchTimer;
+  function watchForChanges() {
+    if (watchTimer) clearInterval(watchTimer);
+    let ticks2 = 0;
+    watchTimer = setInterval(() => {
+      ticks2 += 1;
+      if (!root.isConnected || ticks2 > WATCH_MAX_TICKS) {
+        clearInterval(watchTimer);
+        watchTimer = void 0;
+        return;
+      }
+      void quietRescan();
+    }, WATCH_INTERVAL_MS);
+  }
+  const onFocus = () => {
+    if (!root.isConnected) {
+      window.removeEventListener("focus", onFocus);
+      return;
+    }
+    if (loaded) void quietRescan();
+  };
+  window.addEventListener("focus", onFocus);
+  function reset2() {
+    generation += 1;
+    loaded = false;
+    openId = "";
+    menuOpen = false;
+    setupId = "";
+    autoSetupRun = false;
+    if (watchTimer) clearInterval(watchTimer);
+    watchTimer = void 0;
+    panel.select("");
+    scanStatus.textContent = "";
+    render2();
+  }
+  return { root, refresh, reset: reset2 };
 }
-var init_env_key_detect_section = __esm({
-  "src/renderer/views/setup/env-key-detect-section.ts"() {
+var LOGO_KEY, WATCH_INTERVAL_MS, WATCH_MAX_TICKS;
+var init_acp_agents_list = __esm({
+  "src/renderer/views/setup/acp-agents-list.ts"() {
+    init_acp();
+    init_acp_known_agents();
     init_helpers();
-    init_detected_item_row();
+    init_acp_agents_section();
+    init_agent_logos();
+    init_ipc_error_message();
+    LOGO_KEY = {
+      "claude-acp": "claude",
+      "claude-code-acp": "claude",
+      "codex-acp": "codex",
+      gemini: "gemini",
+      cursor: "cursor"
+    };
+    WATCH_INTERVAL_MS = 3e3;
+    WATCH_MAX_TICKS = 40;
   }
 });
 
@@ -54005,14 +54452,13 @@ var init_gh_cli_section = __esm({
 // src/renderer/views/settings/providers-section.ts
 function createProvidersSection(overlay, api2) {
   let activeSignal;
-  const envKeyDetectSection = createEnvKeyDetectSection(api2, {
-    legend: "Detected settings",
-    onImported: () => {
+  const agentsList = createAcpAgentsList(api2, {
+    onKeysImported: () => {
       void cursorKeySection.refreshKeyStatus(activeSignal);
       void providersPanel.refresh(void 0, activeSignal);
     }
   });
-  qsRequired(overlay, "#settings-env-detect-host").append(envKeyDetectSection.root);
+  qsRequired(overlay, "#settings-agents-host").append(agentsList.root);
   const cursorKeySection = createApiKeysSection(api2, {
     legend: "Cursor authentication",
     providers: ["cursor"]
@@ -54044,6 +54490,7 @@ function createProvidersSection(overlay, api2) {
       }
     ],
     showOpenAiServiceTier: true,
+    deviceAgents: false,
     deferOrdinaryWrites: true,
     cloudAgents: [
       {
@@ -54071,7 +54518,7 @@ function createProvidersSection(overlay, api2) {
         ...[cursorKeySection, claudeAgentKeySection].map(
           (section2) => section2.refreshKeyStatus(signal)
         ),
-        envKeyDetectSection.refresh(signal),
+        agentsList.refresh(signal),
         providersPanel.refresh(snapshot, signal)
       ]);
     },
@@ -54104,6 +54551,7 @@ function createProvidersSection(overlay, api2) {
       dirty.clear();
       for (const section2 of keySections) section2.reset();
       providersPanel.reset();
+      agentsList.reset();
       for (const input2 of lmStudioSection.root.querySelectorAll(
         'input[type="password"]'
       ))
@@ -54117,7 +54565,7 @@ var init_providers_section2 = __esm({
     init_helpers();
     init_api_keys_section();
     init_providers_section();
-    init_env_key_detect_section();
+    init_acp_agents_list();
     init_lm_studio_section();
     init_gh_cli_section();
   }
@@ -74507,7 +74955,7 @@ var init_general_markup = __esm({
           <section class="settings-section active" data-section="general">
             <h3>General</h3>
             <p class="settings-section-desc">
-              What Copse detected on this machine, the providers it can send work to, and the
+              The coding agents on this machine, the API keys Copse can use, and the
               models it picks by default.
             </p>
 
@@ -74515,7 +74963,7 @@ var init_general_markup = __esm({
                  top-level panel MUST carry class="settings-mount" so its injected
                  fieldset gets the same inter-panel spacing as inline ones: see the
                  .settings-section > .settings-mount > fieldset rule in settings.css. -->
-            <div id="settings-env-detect-host" class="settings-mount"></div>
+            <div id="settings-agents-host" class="settings-mount"></div>
 
             <div id="settings-providers-host" class="settings-mount"></div>
 
@@ -74534,7 +74982,7 @@ var init_general_markup = __esm({
                   the model that gives the most for what it costs on your plan, and sends the turn
                   to that provider. You can pin a specific model here instead, or from the picker
                   beside the chat box. Picking a cloud agent sends each turn to that provider's
-                  machines rather than running it here; set one up under Providers.
+                  machines rather than running it here; set one up under API keys.
                 </span>
               </label>
               <label>
@@ -84539,6 +84987,7 @@ function createDemoApi(scenario2, options = {}) {
       browseRegistry: () => resolved2({ entries: [], fetchedAt: Date.now(), skipped: 0 }),
       detectAgents: emptyArray,
       probeAgent: unsupported,
+      authStatus: emptyArray,
       autoSetup: () => resolved2({
         installed: [],
         upgraded: [],
@@ -188226,6 +188675,52 @@ var init_vnc_pane = __esm({
     SSH_MACHINE_PREFIX = "ssh:";
     SIMULATOR_MACHINE_PREFIX = "simulator:";
     isVncCredentialType = (type) => type === "username" || type === "password" || type === "target";
+  }
+});
+
+// src/renderer/views/setup/detected-item-row.ts
+function providerLabel(slug2) {
+  return PROVIDER_LABELS2[slug2] ?? slug2;
+}
+function createDetectedItemRow(opts) {
+  let checkbox = null;
+  if (opts.checkbox) {
+    checkbox = el("input", {
+      type: "checkbox",
+      class: "detected-item-check",
+      "aria-label": `Use ${opts.label}`
+    });
+    checkbox.checked = opts.checkbox.checked;
+    checkbox.disabled = opts.checkbox.disabled ?? false;
+  }
+  const root = el(
+    "div",
+    { class: "env-key-row detected-item-row" },
+    ...checkbox ? [checkbox] : [],
+    el("span", { class: "env-key-provider" }, opts.label),
+    el("span", { class: "env-key-source" }, opts.detail),
+    ...opts.masked ? [el("span", { class: "env-key-masked" }, opts.masked)] : [],
+    ...opts.status ? [el("span", { class: opts.status.ok ? "key-status ok" : "key-status" }, opts.status.text)] : []
+  );
+  root.dataset["kind"] = opts.kind;
+  root.dataset["id"] = opts.id;
+  return { root, checkbox };
+}
+var PROVIDER_LABELS2;
+var init_detected_item_row = __esm({
+  "src/renderer/views/setup/detected-item-row.ts"() {
+    init_helpers();
+    PROVIDER_LABELS2 = {
+      anthropic: "Anthropic",
+      openai: "OpenAI",
+      cursor: "Cursor",
+      openrouter: "OpenRouter",
+      mistral: "Mistral",
+      gemini: "Google Gemini",
+      deepseek: "DeepSeek",
+      huggingface: "Hugging Face",
+      lmstudio: "LM Studio"
+    };
   }
 });
 
