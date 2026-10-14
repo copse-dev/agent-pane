@@ -5,7 +5,8 @@ import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
+import { saveSettingsSection } from './helpers/settings-scroll-capture.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 describe('Coding agents list in Settings', () => {
@@ -150,9 +151,6 @@ describe('Coding agents list in Settings', () => {
     )
     assert.deepEqual(unpainted, [], 'logos in the Add menu must render')
     await $('[data-testid="acp-agents-fieldset"]').scrollIntoView({ block: 'center' })
-    await saveElementScreenshot(
-      '[data-testid="acp-agents-fieldset"]',
-      'settings-acp-agents-list.png',
-    )
+    await saveSettingsSection('[data-testid="acp-agents-fieldset"]', 'settings-acp-agents-list.png')
   })
 })
