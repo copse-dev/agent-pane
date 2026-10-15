@@ -52,7 +52,7 @@ import { currentRunIsUnattendedContainer } from './unattended-run.ts'
 import { decideContainedShellEffect } from '@copse/shell-guard/container-effects.ts'
 import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
-import { requestApproval } from '../approval.ts'
+import { requestApproval, type ApprovalRequest } from '../approval.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
 import {
@@ -269,9 +269,22 @@ function autoApproveShell(
   return true
 }
 
+/** Observation only: no commands, credential values or grant contents are copied. */
+function shellApprovalAuditContext(): NonNullable<ApprovalRequest['shellContext']> {
+  const threadId = getActiveRunThread()
+  return {
+    sandboxAvailable: commandRunsSandboxed(getAgentExecutionRoot()),
+    autoRunEnabled: getSetting<boolean>('autoRunSandboxCommands', true),
+    workspaceTrusted: isWorkspaceTrusted(getWorkspaceRoot()),
+    guardedYolo: currentRunUsesGuardedYolo(threadId),
+    networkScopeActive: isSandboxNetworkScopeActive(),
+  }
+}
+
 async function requestEscalationApproval(
   title: string,
   parts: ShellPromptParts,
+  reasons: string[],
   cause: PromptCause,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
@@ -287,6 +300,8 @@ async function requestEscalationApproval(
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
       cause,
+      reasons,
+      shellContext: shellApprovalAuditContext(),
       allowRemember: trustable !== null,
       ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
       ...(leaseIdentity
@@ -431,6 +446,7 @@ async function promptShell(
     return requestEscalationApproval(
       'Run outside sandbox?',
       formatExternalSandboxPromptParts(command, reasons),
+      reasons,
       'shell-sandbox-escalation',
       signal,
       leaseIdentity,
@@ -449,6 +465,8 @@ async function promptShell(
       subject: SHELL_DECISION_SUBJECT,
       scope: sandboxed ? 'sandbox' : 'external',
       cause: containedCause,
+      reasons,
+      shellContext: shellApprovalAuditContext(),
       // A sandboxed approval includes a bounded replay lease by default. The
       // prompt names the 10-retry/15-minute bound; outside-sandbox grants remain
       // explicit because they weaken containment.
@@ -497,6 +515,9 @@ async function promptGuardedYoloHarm(
       type: 'shell',
       scope: sandboxed ? 'sandbox' : 'external',
       cause: 'shell-guarded-yolo-harm',
+      subject: SHELL_DECISION_SUBJECT,
+      reasons,
+      shellContext: shellApprovalAuditContext(),
       allowRemember: false,
     },
     signal,
@@ -534,6 +555,7 @@ export async function promptUnsandboxedShell(
   return requestEscalationApproval(
     'Run outside sandbox?',
     formatUnsandboxedPromptParts(command, reasons),
+    reasons,
     'shell-sandbox-retry',
     signal,
   )
@@ -563,6 +585,8 @@ export async function promptExpectedSandboxBlock(
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
       cause: 'shell-expected-sandbox-block',
+      reasons,
+      shellContext: shellApprovalAuditContext(),
     },
     signal,
   )
