@@ -20,9 +20,6 @@ export async function revokeThreadAccess(threadId: string, access: ThreadAccess)
   )
 }
 
-// Coalesce simultaneous reads without letting one thread reuse another's consent.
-const pending = new Map<string, Promise<boolean>>()
-
 export async function ensureThreadAccess(
   access: ThreadAccess,
   signal?: AbortSignal,
@@ -32,34 +29,28 @@ export async function ensureThreadAccess(
   if (hasThreadAccess(threadId, access)) return true
   const key = `${threadId}:${access}`
   const revision = revisions.get(key) ?? 0
-  const existing = pending.get(key)
-  if (existing) return (await existing) && !signal?.aborted
-  const request = (async (): Promise<boolean> => {
-    const { requestApproval } = await import('../approval.ts')
-    const { approved } = await requestApproval(
-      {
-        ...threadAccessApproval(access),
-        type: 'mcp',
-        cause: access === 'read' ? 'thread-read-access' : 'thread-send-access',
-        scope: `thread-${access}`,
-        subject: `thread-${access}-access`,
-      },
-      signal,
-    )
-    if (!approved || signal?.aborted || (revisions.get(key) ?? 0) !== revision) return false
-    await updateSetting<string[]>(keys[access], [], (grants) =>
-      signal?.aborted || (revisions.get(key) ?? 0) !== revision
-        ? grants
-        : [...new Set([...grants, threadId])],
-    )
-    return (revisions.get(key) ?? 0) === revision && hasThreadAccess(threadId, access)
-  })()
-  pending.set(key, request)
-  try {
-    return await request
-  } finally {
-    pending.delete(key)
-  }
+  // The approval service coalesces prompts while tracking each caller's signal.
+  // Sharing a Promise here would let one caller's cancellation deny its siblings.
+  const { requestApproval } = await import('../approval.ts')
+  const { approved } = await requestApproval(
+    {
+      ...threadAccessApproval(access),
+      type: 'mcp',
+      cause: access === 'read' ? 'thread-read-access' : 'thread-send-access',
+      scope: `thread-${access}`,
+      subject: `thread-${access}-access`,
+    },
+    signal,
+  )
+  if (!approved || signal?.aborted || (revisions.get(key) ?? 0) !== revision) return false
+  await updateSetting<string[]>(keys[access], [], (grants) =>
+    signal?.aborted || (revisions.get(key) ?? 0) !== revision
+      ? grants
+      : [...new Set([...grants, threadId])],
+  )
+  return (
+    !signal?.aborted && (revisions.get(key) ?? 0) === revision && hasThreadAccess(threadId, access)
+  )
 }
 
 export function threadChatReadRoot(chatRoot: string): string | null {

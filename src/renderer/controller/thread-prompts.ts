@@ -98,13 +98,21 @@ export async function acceptThreadPrompt(
     const queued = current.status === 'running' || current.queuePaused === true
     drainMessageQueue(store, api, threadId)
     const accepted = getThreadById(store, threadId)
-    if (accepted)
-      await api.threads.updateMeta(command.projectId, threadId, {
-        pendingMessages: accepted.pendingMessages ?? [],
-        continuationUsed: accepted.continuationUsed ?? 0,
-        ...(accepted.currentEpoch !== undefined ? { currentEpoch: accepted.currentEpoch } : {}),
-        updatedAt: accepted.updatedAt,
-      })
+    if (accepted) {
+      try {
+        await api.threads.updateMeta(command.projectId, threadId, {
+          pendingMessages: accepted.pendingMessages ?? [],
+          continuationUsed: accepted.continuationUsed ?? 0,
+          ...(accepted.currentEpoch !== undefined ? { currentEpoch: accepted.currentEpoch } : {}),
+          updatedAt: accepted.updatedAt,
+        })
+      } catch (error) {
+        // The prompt is already queued or running. Reporting rejection would
+        // invite a retry that submits it again; retain acceptance and diagnose
+        // the persistence failure separately.
+        console.error('[threads] could not persist accepted prompt metadata', error)
+      }
+    }
     return {
       ok: true,
       queued:

@@ -642,7 +642,9 @@ function requestApprovalUnpaused(
   // call passes through — shell escalation, MCP, origin — attributes to it.
   const toolCallId = req.toolCallId ?? getApprovalToolCallId()
 
-  const key = `${dedupePrefix}:${approvalDedupeKey(req)}`
+  // Equal questions from different chats authorize different callers. Keep
+  // independent waiters in one chat without sharing consent across chats.
+  const key = JSON.stringify([dedupePrefix, threadId, approvalDedupeKey(req)])
   // Only a thread-attributed request can be parked and replayed: the ledger is
   // keyed by thread, and a headless/untracked caller has no retry to serve.
   const ledgerKey = threadId === null ? null : abandonedVerdictKey(threadId, key)

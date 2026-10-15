@@ -43,6 +43,91 @@ describe('conversation access', () => {
     assert.deepEqual(requests, ['Read your other threads?', 'Send prompts to your other threads?'])
   })
 
+  for (const access of ['read', 'send'] as const) {
+    for (const cancelled of [0, 1] as const) {
+      it(`${access}: cancelling waiter ${String(cancelled)} preserves its live sibling`, async () => {
+        const shown = Promise.withResolvers<boolean>()
+        const answer = Promise.withResolvers<{ approved: boolean; remember: boolean }>()
+        const controllers = [new AbortController(), new AbortController()] as const
+        let prompts = 0
+        await runWithApprovalHandler(
+          () => {
+            prompts++
+            shown.resolve(true)
+            return answer.promise
+          },
+          () =>
+            runWithActiveRunIdentity('concurrent', async () => {
+              const first = ensureThreadAccess(access, controllers[0].signal)
+              await shown.promise
+              const second = ensureThreadAccess(access, controllers[1].signal)
+              // Let the approval service register the second independent waiter.
+              await new Promise<void>((resolve) => setImmediate(resolve))
+              controllers[cancelled].abort()
+              answer.resolve({ approved: true, remember: false })
+              assert.deepEqual(
+                await Promise.all([first, second]),
+                cancelled === 0 ? [false, true] : [true, false],
+              )
+              assert.equal(hasThreadAccess('concurrent', access), true)
+            }),
+        )
+        assert.equal(prompts, 1)
+      })
+    }
+
+    it(`${access}: cancelling every waiter never records a grant`, async () => {
+      const shown = Promise.withResolvers<boolean>()
+      const answer = Promise.withResolvers<{ approved: boolean; remember: boolean }>()
+      const controllers = [new AbortController(), new AbortController()] as const
+      await runWithApprovalHandler(
+        () => {
+          shown.resolve(true)
+          return answer.promise
+        },
+        () =>
+          runWithActiveRunIdentity('all-cancelled', async () => {
+            const first = ensureThreadAccess(access, controllers[0].signal)
+            await shown.promise
+            const second = ensureThreadAccess(access, controllers[1].signal)
+            await new Promise<void>((resolve) => setImmediate(resolve))
+            controllers.forEach((controller) => {
+              controller.abort()
+            })
+            answer.resolve({ approved: true, remember: false })
+            assert.deepEqual(await Promise.all([first, second]), [false, false])
+            assert.equal(hasThreadAccess('all-cancelled', access), false)
+          }),
+      )
+    })
+  }
+
+  it('simultaneous requests from different chats require separate answers', async () => {
+    const answers = [
+      Promise.withResolvers<{ approved: boolean; remember: boolean }>(),
+      Promise.withResolvers<{ approved: boolean; remember: boolean }>(),
+    ] as const
+    let prompts = 0
+    await runWithApprovalHandler(
+      () => {
+        const answer = answers[prompts++]
+        assert.ok(answer)
+        return answer.promise
+      },
+      async () => {
+        const first = runWithActiveRunIdentity('first-chat', () => ensureThreadAccess('read'))
+        const second = runWithActiveRunIdentity('second-chat', () => ensureThreadAccess('read'))
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        answers[0].resolve({ approved: true, remember: false })
+        answers[1].resolve({ approved: false, remember: false })
+        assert.deepEqual(await Promise.all([first, second]), [true, false])
+        assert.equal(hasThreadAccess('first-chat', 'read'), true)
+        assert.equal(hasThreadAccess('second-chat', 'read'), false)
+      },
+    )
+    assert.equal(prompts, 2)
+  })
+
   it('a denial or aborted request never records a grant', async () => {
     await runWithApprovalHandler(
       async () => ({ approved: false, remember: false }),

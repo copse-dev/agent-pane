@@ -160,3 +160,42 @@ test('a blank destination prepares its checkout before running', async () => {
   assert.deepEqual(runs, ['visible-project/destination'])
   assert.equal(getThreadById(store, 'destination')?.worktreeChoice, 'automatic')
 })
+
+for (const status of ['idle', 'running'] as const) {
+  test(`metadata failure preserves acceptance of a prompt to an ${status} destination`, async (t) => {
+    const { store, api, runs, command } = fixture(status)
+    const failure = new Error('disk unavailable')
+    const errors = t.mock.method(console, 'error', () => {})
+    api.threads.updateMeta = async (): Promise<void> => {
+      throw failure
+    }
+    assert.deepEqual(await acceptThreadPrompt(store, api, command), {
+      ok: true,
+      queued: status === 'running',
+    })
+    const destination = getThreadById(store, 'destination')
+    assert.ok(destination)
+    assert.equal(destination.messages.length, 1)
+    assert.equal(destination.pendingMessages?.length ?? 0, status === 'running' ? 1 : 0)
+    assert.deepEqual(runs, status === 'idle' ? ['visible-project/destination'] : [])
+    assert.equal(errors.mock.callCount(), 1)
+    const logged = errors.mock.calls[0]
+    assert.ok(logged)
+    assert.equal(logged.arguments[1], failure)
+  })
+}
+
+test('checkout persistence failures before acceptance still reject without adding a prompt', async () => {
+  const { store, api, runs, command } = fixture()
+  const { worktreeChoice: _choice, ...blank } = command.thread
+  store.setState({ threads: [blank] })
+  api.agent.prepareCheckout = async (): Promise<PreparedThreadCheckout> => {
+    throw new Error('checkout unavailable')
+  }
+  assert.deepEqual(await acceptThreadPrompt(store, api, command), {
+    ok: false,
+    error: 'checkout unavailable',
+  })
+  assert.equal(getThreadById(store, 'destination')?.messages.length, 0)
+  assert.deepEqual(runs, [])
+})
