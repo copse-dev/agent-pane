@@ -31,7 +31,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['context-wheel-classifier-configured.png', 'context-wheel-classifier-none.png'],
   },
   'tests/e2e/file-viewer-changes.e2e.ts': {
-    sourceSha256: '38fbf372fa8e0dd45aa6356244b330e27f29ffcf2d0f99d11d5d0de1ad3d687f',
+    sourceSha256: '0dfcfe4f4ac25cb6213c4b39afd0b3e173e06bb6d6911b3b4507235c9824a15f',
     filenames: ['file-viewer-copse-strong-dark.png', 'file-viewer-copse-strong-light.png'],
   },
   'tests/e2e/footer-branch-picker.e2e.ts': {
