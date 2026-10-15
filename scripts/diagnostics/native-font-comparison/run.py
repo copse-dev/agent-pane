@@ -18,9 +18,11 @@ OUT.mkdir(exist_ok=True)
 TMP = Path(os.environ['RUNNER_TEMP']) / 'native-font-comparison'
 TMP.mkdir(exist_ok=True)
 SOURCES = {
-    'plan-old': ('66335a44247b58e95fb16ce12fb2e0c1cbc7ebda', ['thread-plan']),
-    'native-old': ('b28b2e092280e508b1e647808e10b891dac675b7', ['sidebar-thread-changes', 'accent-color']),
-    'current': ('392d66574036fc6f17072c41958da1fe94e11e90', ['thread-plan', 'sidebar-thread-changes', 'accent-color']),
+    'pip-old': ('745e1029c066d9fbe7003aae0330489a787b473b', ['worktree-preparation-python']),
+    # Actual tracked PNG blobs at663 match ACP f8eb + roadmap e13f/f45e refs.
+    'modal-old': ('66335a44247b58e95fb16ce12fb2e0c1cbc7ebda', ['acp-network-scope-approval', 'roadmap-plan-editor']),
+    'portrait-old': ('6949dcf00b8145eb8c73480629349ec7f08b36b3', ['portrait-panel-controls']),
+    'current': ('609ff718c53c9dcc831780fc499ace89c5d56f98', ['worktree-preparation-python', 'acp-network-scope-approval', 'roadmap-plan-editor', 'portrait-panel-controls']),
 }
 PUBLIC = 'https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev/screenshots/sha256/'
 errors = []
@@ -65,15 +67,19 @@ def runtime_info(binary, cwd):
         'JSON.stringify({versions:process.versions,platform:process.platform,arch:process.arch})'], cwd, env))
 
 def image_record(path):
-    im = Image.open(path).convert('RGB')
+    original = Image.open(path)
+    im = original.convert('RGB')
     result = dict(sha256=sha(path), bytes=path.stat().st_size, dimensions=list(im.size))
+    result['png_mode'] = original.mode
+    result['alpha_extrema'] = list(original.convert('RGBA').getchannel('A').getextrema())
     result['samples'] = {f'{x},{y}': list(im.getpixel((x,y))) for x,y in
-                         [(0,15),(553,274),(553,275),(553,276),(554,274)]
+                         [(0,15),(0,14),(1,15),(553,274),(553,275),(553,276),(554,274)]
                          if x < im.width and y < im.height}
     # Crop hashes plus bright chromatic pixels distinguish glyph LCD fringes from flat gray AA.
     result['crops'] = {}
     for name, box in {'assistant-T': (530,240,1050,330),
-                      'plan-body': (30,400,1200,1080), 'rounded-corner': (1320,0,1520,40)}.items():
+                      'plan-body': (30,400,1200,1080), 'rounded-corner': (1320,0,1520,40),
+                      'dialog-upper-left': (0,0,24,24), 'dialog-content': (30,140,1090,500)}.items():
         x,y,r,b = box
         if r <= im.width and b <= im.height:
             crop = im.crop(box)
@@ -92,12 +98,28 @@ def compare(left, right, label):
     else:
         d = ImageChops.difference(a,b)
         info.update(changed_pixels=sum(p != (0,0,0) for p in d.getdata()), bbox=d.getbbox())
+        # Bounded exact RGB evidence stays readable even if artifact downloads fail.
+        points = []
+        if d.getbbox():
+            l,t,r,bottom = d.getbbox()
+            for y in range(t,bottom):
+                for x in range(l,r):
+                    if a.getpixel((x,y)) != b.getpixel((x,y)):
+                        points.append(dict(x=x,y=y,before=list(a.getpixel((x,y))),after=list(b.getpixel((x,y)))))
+                        if len(points) >= 32: break
+                if len(points) >= 32: break
+        info['first_32_changed_samples'] = points
+        info['max_channel_difference'] = max(max(p) for p in d.getdata())
+        aa = Image.open(left).convert('RGBA').getchannel('A')
+        ba = Image.open(right).convert('RGBA').getchannel('A')
+        info['alpha_changed_pixels'] = sum(v != 0 for v in ImageChops.difference(aa,ba).getdata())
         if a.height>1:
             info['after_shifted_up_one_pixel_equal'] = ImageChops.difference(
                 a.crop((0,0,a.width,a.height-1)), b.crop((0,1,b.width,b.height))).getbbox() is None
         info['crop_deltas'] = {}
         for name, box in {'assistant-T':(530,240,1050,330),'plan-body':(30,400,1200,1080),
-                          'rounded-corner':(1320,0,1520,40)}.items():
+                          'rounded-corner':(1320,0,1520,40),
+                          'dialog-upper-left':(0,0,24,24),'dialog-content':(30,140,1090,500)}.items():
             if box[2]<=a.width and box[3]<=a.height:
                 dc=ImageChops.difference(a.crop(box),b.crop(box))
                 info['crop_deltas'][name]=dict(changed_pixels=sum(p!=(0,0,0) for p in dc.getdata()),bbox=dc.getbbox())
@@ -179,7 +201,8 @@ for source,(revision,specs) in SOURCES.items():
 
 cases=[(source,'locked') for source in SOURCES if source in states]
 if 'current' in states:
-    for source in ['plan-old','native-old']:
+    for source in SOURCES:
+        if source == 'current': continue
         if source not in states: continue
         old=states[source]['runtime'];current=states['current']['runtime']
         # Supported runtime path override only when native Node ABI, OS, and arch match.
@@ -227,7 +250,8 @@ for source,mode in cases:
         if all(p.exists() for p in paths): compare(*paths,f'{source}-{mode}:{name}:repeat')
 
 # Cross-source controls and shared-runtime effects, all decoded on this runner.
-for old in ['plan-old','native-old']:
+for old in SOURCES:
+    if old == 'current': continue
     if old not in states: continue
     for name in states[old]['names']:
         current=OUT/'captures/current-locked-r1'/name
