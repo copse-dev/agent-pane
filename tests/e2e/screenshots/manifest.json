@@ -677,6 +677,10 @@
       "sha256": "af80a22c66b28f2a4234864aab7a0958c0571b70bc7007751e36c015b49b3dad",
       "bytes": 55617
     },
+    "bridged-thread-proposals.png": {
+      "sha256": "66a5a836ba21b7e7767e7b9acbaa615e08f61e0b1ed2e4f7f1548afa42fc2429",
+      "bytes": 96974
+    },
     "bridged-tools-concise.png": {
       "sha256": "bb8f204bdbdaff6bd01950bec93c1c098ab399090121eea113908776f3d5ad8c",
       "bytes": 79957
