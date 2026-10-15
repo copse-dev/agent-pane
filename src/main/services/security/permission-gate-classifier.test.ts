@@ -5,7 +5,7 @@ import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import { ensureToolPermitted } from './permission-gate.ts'
-import { copseToolPermissionId } from './tool-permissions.ts'
+import { copseToolPermissionId, resolveToolPermission } from './tool-permissions.ts'
 
 const ARGS = { classifier: 'kev', text: 'private text', type: 'boolean', question: 'Is it?' }
 
@@ -46,6 +46,51 @@ describe('ask_classifier permission', () => {
     assert.equal(prompts.length, 1)
     assert.match(prompts[0]?.body ?? '', /private text/)
     assert.match(prompts[0]?.subject ?? '', /ask_classifier/)
+    const prompt = prompts[0]
+    assert.ok(prompt)
+    assert.equal(prompt.allowRemember, true)
+    assert.equal(prompt.approveOnceLabel, 'Allow once')
+  })
+
+  it('remembers one grant for subsequent classifier questions', async () => {
+    await configure('typesafe')
+    setApprovalHandler(async (request) => {
+      prompts.push(request)
+      return { approved: true, remember: true }
+    })
+    const args = { ...ARGS, classifier: 'typesafe' }
+    assert.equal(await ensureToolPermitted({ toolName: 'ask_classifier', args }), true)
+    assert.equal(
+      await ensureToolPermitted({
+        toolName: 'ask_classifier',
+        args: { ...args, text: 'different private text', question: 'Another question?' },
+      }),
+      true,
+    )
+    assert.equal(prompts.length, 1)
+    assert.equal(resolveToolPermission('ask_classifier')?.policy, 'allow')
+  })
+
+  it('does not replace a block set while approval is pending', async () => {
+    await configure('typesafe')
+    let answer: ((value: { approved: boolean; remember: boolean }) => void) | undefined
+    setApprovalHandler(
+      async () =>
+        await new Promise((resolve) => {
+          answer = resolve
+        }),
+    )
+    const pending = ensureToolPermitted({
+      toolName: 'ask_classifier',
+      args: { ...ARGS, classifier: 'typesafe' },
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    await setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('ask_classifier')]: 'block',
+    })
+    answer?.({ approved: true, remember: true })
+    assert.equal(await pending, false)
+    assert.equal(resolveToolPermission('ask_classifier')?.policy, 'block')
   })
 
   it('does not run when the person declines the prompt', async () => {
@@ -73,6 +118,9 @@ describe('ask_classifier permission', () => {
     await setSetting('toolPermissionOverrides', { [id]: 'ask' })
     assert.equal(await ensureToolPermitted({ toolName: 'ask_classifier', args: ARGS }), true)
     assert.equal(prompts.length, 1)
+    const prompt = prompts[0]
+    assert.ok(prompt)
+    assert.equal(prompt.allowRemember, false)
 
     prompts = []
     await setSetting('toolPermissionOverrides', { [id]: 'allow' })

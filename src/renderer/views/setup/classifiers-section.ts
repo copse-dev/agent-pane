@@ -27,6 +27,7 @@ interface ClassifiersSectionApi {
   classifiers: ClassifierClient
   localClassifiers: LocalClassifierClient
   settings: Pick<ApiClient['settings'], 'setKey'>
+  toolPermissions: Pick<ApiClient['toolPermissions'], 'list' | 'set' | 'reset'>
 }
 
 export interface ClassifiersSection {
@@ -112,6 +113,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
   const status = el('p', { class: 'classifier-status', role: 'status', 'aria-live': 'polite' })
   const screening = el('select', { name: 'classifierScreening' })
   const background = el('select', { name: 'classifierBackground' })
+  const askBeforeHosted = el('input', { type: 'checkbox', name: 'classifierToolPrompt' })
   const localHost = el('div', {
     class: 'classifier-local',
     'aria-label': 'Local classifier servers',
@@ -147,6 +149,17 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted.",
       ),
     ),
+    el(
+      'label',
+      { class: 'checkbox-label classifier-tool-prompt' },
+      askBeforeHosted,
+      'Ask before agents use hosted classifiers',
+    ),
+    el(
+      'span',
+      { class: 'field-hint' },
+      'Turn this off to allow agent calls to any configured classifier without another prompt. A hosted classifier receives each question and its supplied content. Safety screening and background questions use their own settings above.',
+    ),
     localHost,
     chips,
     formHost,
@@ -156,10 +169,31 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
   let screeningId: string | null = null
   let backgroundId: string | null = null
   let selectedId: string | null = null
+  let classifierToolPermissionId: string | null = null
   const drafts = new Map<string, ClassifierProfile>()
   let captureDraft: (() => void) | undefined
   const pending = new Map<string, Map<string, string>>()
   let busy = false
+
+  askBeforeHosted.addEventListener('change', () => {
+    const id = classifierToolPermissionId
+    if (id === null) return
+    askBeforeHosted.disabled = true
+    const request = askBeforeHosted.checked
+      ? api.toolPermissions.reset({ toolIds: [id] })
+      : api.toolPermissions.set({ toolIds: [id], policy: 'allow' })
+    void request
+      .then((catalog) => {
+        const tool = catalog.groups.flatMap((group) => group.tools).find((item) => item.id === id)
+        askBeforeHosted.checked = tool?.policy !== 'allow'
+        askBeforeHosted.disabled = tool === undefined || tool.policy === 'block'
+      })
+      .catch((error: unknown) => {
+        askBeforeHosted.checked = !askBeforeHosted.checked
+        askBeforeHosted.disabled = false
+        setInlineStatus(status, 'error', classifierErrorMessage(error))
+      })
+  })
 
   function renderChips(): void {
     clear(chips)
@@ -929,9 +963,16 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         api.classifiers.list(),
         api.classifiers.screening(),
         api.classifiers.background(),
+        api.toolPermissions.list(),
       ])
       if (signal?.aborted || request !== refreshGeneration) return
       ;[profiles, screeningId, backgroundId] = loaded
+      const classifierTool = loaded[3].groups
+        .flatMap((group) => group.tools)
+        .find((tool) => tool.executionName === 'ask_classifier')
+      classifierToolPermissionId = classifierTool?.id ?? null
+      askBeforeHosted.checked = classifierTool?.policy !== 'allow'
+      askBeforeHosted.disabled = classifierTool === undefined || classifierTool.policy === 'block'
       selectedId ??= profiles[0]?.profile.id ?? null
       void refreshLocal(signal)
       if (

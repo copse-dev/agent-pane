@@ -137,7 +137,7 @@ import {
 } from '@copse/shell-guard/trusted-ssh-hosts.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
-import { resolveToolPermission } from './tool-permissions.ts'
+import { resolveToolPermission, setToolPermissionForExecution } from './tool-permissions.ts'
 import type { ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 import {
   replayLeaseCore,
@@ -882,8 +882,9 @@ async function checkWebSearchPermission(
  * Host approval is the classifier service's own gate, applied again at call
  * time (`assertApprovedProviderHost`), so a host the user never approved fails
  * there whatever this returns. This gate decides whether the call needs a
- * prompt: a connection that leaves the machine asks, a local server or SemIf
- * scorer does not, and an explicit "allow" or "ask" override wins either way.
+ * prompt: a connection that leaves the machine asks once for a tool-wide grant,
+ * a local server or SemIf scorer does not, and an explicit "allow" or "ask"
+ * override wins either way.
  */
 async function checkAskClassifierPermission(
   args: unknown,
@@ -892,8 +893,41 @@ async function checkAskClassifierPermission(
 ): Promise<boolean> {
   if (explicitPolicy === 'allow') return true
   const id = isRecord(args) && typeof args['classifier'] === 'string' ? args['classifier'] : ''
-  if (explicitPolicy === 'ask' || classifierSendsOffMachine(id)) {
-    return promptExplicitToolAsk('ask_classifier', args, signal)
+  const offMachine = classifierSendsOffMachine(id)
+  if (explicitPolicy === 'ask' || offMachine) {
+    const { approved, remember } = await requestApproval(
+      {
+        title: 'Allow agent classifier use?',
+        body: JSON.stringify(args, null, 2),
+        bodyAdvice: offMachine
+          ? 'A hosted classifier receives the question and content shown below.'
+          : 'This classifier runs on this machine.',
+        ...(explicitPolicy === 'ask'
+          ? {}
+          : {
+              bodyFooter:
+                'Allow classifiers grants future agent calls to any configured classifier.',
+            }),
+        type: 'mcp',
+        subject: 'ask_classifier',
+        cause: 'mcp-tool',
+        allowRemember: explicitPolicy !== 'ask',
+        rememberLabel: 'Allow agent classifier use without asking again',
+        approveLabel: explicitPolicy === 'ask' ? 'Allow once' : 'Allow classifiers',
+        ...(explicitPolicy === 'ask' ? {} : { approveOnceLabel: 'Allow once' }),
+        collapseDetails: true,
+      },
+      signal,
+    )
+    if (
+      approved &&
+      remember &&
+      explicitPolicy !== 'ask' &&
+      resolveToolPermission('ask_classifier') === null
+    ) {
+      await setToolPermissionForExecution('ask_classifier', 'allow')
+    }
+    return approved
   }
   return true
 }
