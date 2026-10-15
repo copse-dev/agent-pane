@@ -1,6 +1,7 @@
 import { describe, it, afterEach, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { runWithApprovalToolCallId } from './approval-tool-call-context.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -218,6 +219,71 @@ describe('requestApproval pluggable transport', () => {
     assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse'])
     assert.equal(event.scope, 'external-read')
     assert.equal(event.remembered, true)
+  })
+
+  it('persists bridged identity and captures context before the handler settles', async () => {
+    setApprovalHandler(async () => ({ approved: true, remember: false }))
+    const shellContext = {
+      sandboxAvailable: false,
+      autoRunEnabled: true,
+      workspaceTrusted: false,
+      readOutsideGrant: false,
+      guardedYolo: false,
+      networkScopeActive: false,
+    }
+    await runWithApprovalToolCallId('bridged-call', () =>
+      requestUnderThread({
+        ...req,
+        subject: 'shell command (arguments omitted)',
+        shellContext,
+      }),
+    )
+    const event = (await readDecisionLog(PROJECT)).at(-1)
+    assert.ok(event)
+    assert.equal(event.toolCallId, 'bridged-call')
+    const detail = readFileSync(
+      join(auditRoot, PROJECT, THREAD, 'blobs', `decision-${event.id}.detail.json`),
+      'utf8',
+    )
+    assert.ok(detail.includes(JSON.stringify(shellContext)))
+    assert.ok(!detail.includes(req.body))
+  })
+
+  it('records explicit identity on unavailable and cancelled approvals', async () => {
+    setApprovalHandler(null)
+    await runWithApprovalToolCallId('ambient', () =>
+      requestUnderThread({ ...req, toolCallId: 'explicit' }),
+    )
+    const controller = new AbortController()
+    setApprovalHandler(() => new Promise(() => {}))
+    const pending = runWithApprovalToolCallId('cancelled-call', () =>
+      requestUnderThread(req, controller.signal),
+    )
+    controller.abort()
+    await pending
+    const events = await readDecisionLog(PROJECT)
+    assert.equal(events.at(-2)?.toolCallId, 'explicit')
+    assert.equal(events.at(-2)?.source, 'unavailable')
+    assert.equal(events.at(-1)?.toolCallId, 'cancelled-call')
+    assert.equal(events.at(-1)?.source, 'aborted')
+  })
+
+  it('keeps every coalesced tool identity in one prompt audit record', async () => {
+    const gate = Promise.withResolvers<ApprovalResponse>()
+    setApprovalHandler(() => gate.promise)
+    const a = requestUnderThread({ ...req, toolCallId: 'first' })
+    const b = requestUnderThread({ ...req, toolCallId: 'second' })
+    gate.resolve({ approved: true, remember: false })
+    await Promise.all([a, b])
+    const events = await readDecisionLog(PROJECT)
+    assert.equal(events.length, 1)
+    const event = events[0]
+    assert.ok(event)
+    const detail = readFileSync(
+      join(auditRoot, PROJECT, THREAD, 'blobs', `decision-${event.id}.detail.json`),
+      'utf8',
+    )
+    assert.ok(detail.includes('"toolCallIds":["first","second"]'))
   })
 
   it('omits reasons from the log when the request carries none', async () => {
@@ -527,11 +593,12 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     await Promise.resolve()
     assert.equal(parkedApprovalCount(), 0)
 
-    const retry = await requestUnderThread(req)
+    const retry = await requestUnderThread({ ...req, toolCallId: 'replayed-call' })
     assert.equal(retry.approved, true)
     assert.equal(handlerCalls, 1, 'the retry must not open a second prompt')
 
     const events = await readDecisionLog(PROJECT)
+    assert.equal(events.at(-1)?.toolCallId, 'replayed-call')
     assert.deepEqual(
       events.slice(-2).map((event) => [event.verdict, event.source ?? 'user']),
       [
@@ -676,7 +743,7 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     release?.({ approved: true, remember: false, resolution: 'user' })
     await Promise.resolve()
     assert.equal(parkedApprovalCount(), 0)
-    const retry = await requestUnderThread(req)
+    const retry = await requestUnderThread({ ...req, toolCallId: 'replayed-call' })
     assert.equal(retry.approved, true)
     assert.equal(handlerCalls, 1, 'the retry reuses the answer without prompting again')
   })
