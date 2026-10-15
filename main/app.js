@@ -59653,7 +59653,7 @@ var init_tool_display = __esm({
       browser_snapshot: { running: "Taking page snapshot", done: "Took page snapshot" },
       browser_screenshot: { running: "Taking screenshot", done: "Took screenshot" },
       image_gen: { running: "Generating image", done: "Generated image" },
-      classify_text: { running: "Classifying text", done: "Classified text" },
+      ask_classifier: { running: "Asking classifier", done: "Asked classifier" },
       browser_click: { running: "Clicking element", done: "Clicked element" },
       browser_type: { running: "Typing text", done: "Typed text" },
       browser_tabs: { running: "Listing browser tabs", done: "Listed browser tabs" },
