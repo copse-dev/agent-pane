@@ -21,6 +21,14 @@ function removeSignals(): void {
   for (const path of [READY, RELEASE, DONE]) rmSync(path, { force: true })
 }
 
+// The composer's Changes follow-up bubble (and the "Send follow-up" placeholder
+// it switches on) appears after the git watcher's debounce, which can land
+// after the signal file the scenario waits for. Capture the settled composer.
+async function expectChangesBubble(additions: string): Promise<void> {
+  await $('.follow-up-bubble-changes').waitForDisplayed({ timeout: 15_000 })
+  await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText(additions)
+}
+
 async function submitPrompt(): Promise<void> {
   await $('.submit-btn').click()
   await browser.waitUntil(
@@ -119,6 +127,7 @@ describe('Send now preserves a running shell', function () {
       'the original process must complete, without a restart',
     )
     await scenario.assertComplete()
+    await expectChangesBubble('+2')
     await saveAppScreenshot('send-now-preserves-shell.png')
     removeSignals()
   })
@@ -179,6 +188,7 @@ describe('Send now preserves a running shell', function () {
       )
       assert.equal(readFileSync(marker, 'utf8'), 'must survive the safety timeout')
       await scenario.assertComplete()
+      await expectChangesBubble('+1')
       await saveAppScreenshot('rm-safety-timeout.png')
     } finally {
       rmSync(output, { recursive: true, force: true })
