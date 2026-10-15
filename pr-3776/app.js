@@ -51145,7 +51145,7 @@ function createAcpAgentsSection(api2, opts = {}) {
   const root = embedded ? el(
     "div",
     { class: "provider-panel-embedded" },
-    el("div", { class: "provider-actions" }, rescanBtn, scanStatus),
+    ...opts.hideRescanAction ? [] : [el("div", { class: "provider-actions" }, rescanBtn, scanStatus)],
     formHost
   ) : el(
     "fieldset",
@@ -53252,6 +53252,7 @@ function createModelsAgentsList(api2, opts = {}) {
   };
   const agentsPanel = createAcpAgentsSection(api2, {
     embedded: true,
+    hideRescanAction: true,
     onChanged: () => {
       void api2.settings.get("registeredAcpAgents").then((value) => {
         const previousIds = new Set(configured.map((agent2) => agent2.id));
