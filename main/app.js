@@ -80820,6 +80820,17 @@ var init_demo_concise_states = __esm({
           settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off", model: CAPABLE }
         }
       ),
+      scenario("recovery-layout", "Interrupted turn with a long fallback model name", [
+        user("recovery-earlier-user", "Check the settings form."),
+        assistant("recovery-earlier", "The form needs a layout fix.", [], {
+          model: "claude-haiku-4-5-20251001",
+          turnOutcome: outcome("completed", { model: "claude-haiku-4-5-20251001" })
+        }),
+        user("recovery-user", "Fix the settings form."),
+        assistant("recovery-failed", "I found the footer, then the provider stopped responding.", [], {
+          turnOutcome: outcome("failed", { error: { message: "Provider disconnected." } })
+        })
+      ]),
       scenario("failed", "A turn that failed partway", [
         user("failed-user", "Fix the settings form so Save stays aligned on narrow windows."),
         assistant(
