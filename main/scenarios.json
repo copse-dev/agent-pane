@@ -336,6 +336,14 @@
     "label": "A thread that switches models between turns"
   },
   {
+    "id": "approval-thread-read",
+    "label": "Read your other threads?"
+  },
+  {
+    "id": "approval-thread-send",
+    "label": "Send prompts to your other threads?"
+  },
+  {
     "id": "approval-web-url",
     "label": "Allow web origin?"
   },
