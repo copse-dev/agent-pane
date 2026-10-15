@@ -186,12 +186,12 @@
       "bytes": 253689
     },
     "acp-unfinished-turn-budget-denied.png": {
-      "sha256": "fb49a3ecce0ac47b5a6d21ff0bd479a1bc59a4f8b7abe655e1f77d2d892f85aa",
-      "bytes": 336305
+      "sha256": "02bc86069e8e858e6506fd9d846f3b06f4796940da62cb900336b2a9b19334e1",
+      "bytes": 344931
     },
     "acp-unfinished-turn-recovery.png": {
-      "sha256": "1307eacd894a2de31b15a8c6625537caeefb0799d576d49bacf9eff2f89c0deb",
-      "bytes": 330808
+      "sha256": "17f107c6792fa3d6d0d943839a677de27c5357bce6fac9dee1f431c29422ad3b",
+      "bytes": 340097
     },
     "acp-usage-update-context.png": {
       "sha256": "b1d9f6c34d4438cee43af7be98685e3a40d458d00e6d85bf444765e6a1929835",
@@ -2301,6 +2301,10 @@
       "sha256": "e85965d137504e57dd674401c1fabd03c8ebfd313fd9a2eae9f2054f00fc195f",
       "bytes": 18555
     },
+    "model-version-suppression-picker.png": {
+      "sha256": "cf209e9f079201f0d67a75f94251d93cbb77bf4bb936adc6027f98ecec27fac0",
+      "bytes": 28080
+    },
     "monaco-python-fstring-highlight.png": {
       "sha256": "1d12c01617c8e17a13853802da070e5c32925bba441fb4fd675720fa59a8f9fc",
       "bytes": 279554
@@ -2725,6 +2729,10 @@
       "sha256": "15ea101327b749cba54d8b8e844ceb7e59a7074454e9bab48c2fd7c4843c06e5",
       "bytes": 125543
     },
+    "pr-panel-viewing-collapsed-pr.png": {
+      "sha256": "228d258e726fd9160a765222094922d5ff20419471200341f52f2ef9baf5ed04",
+      "bytes": 107784
+    },
     "pr-producing-and-related-threads-expanded.png": {
       "sha256": "d23d31e21e2c2b29b740c6b12a4e1ca2f8e6377cf31b57aa7ecd3171f44f5a3a",
       "bytes": 43625
@@ -2874,8 +2882,8 @@
       "bytes": 115148
     },
     "provider-settings-invalidated-route.png": {
-      "sha256": "572ef2e2bb48c736d4e61500b09369cdb2f002f49b0315578b62933cb31fca16",
-      "bytes": 263418
+      "sha256": "205afa5171144e8f50e062831e2abe97f2a0bbebbf47fbb04cbb20b45ef64250",
+      "bytes": 280687
     },
     "provider-settings-proactive-warning.png": {
       "sha256": "1f564630660971ef12b483e52c2099786b71d52fcf2116135c1b8b4ee35c8062",
@@ -4864,6 +4872,14 @@
     "truncated-tool-call-inspector.png": {
       "sha256": "fac6886101f3dd84a97b7be7e20521a7129789676576e6b98cce634884735915",
       "bytes": 350716
+    },
+    "turn-recovery-layout-360.png": {
+      "sha256": "c91af60bf1594ac740237193c897a45eabbfb5fcac2cac0aca3e260b3190e7e4",
+      "bytes": 38682
+    },
+    "turn-recovery-layout-720.png": {
+      "sha256": "4fabc15286cbe57b133214dc8935d54d1375af44a4f5af22ca4bedf128f928d6",
+      "bytes": 35598
     },
     "two-step-stop-armed.png": {
       "sha256": "edf14932fe5403e9a6c6ff713ab9de2bff81d1063affe8c70e856ab56702589f",
