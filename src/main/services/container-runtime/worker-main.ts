@@ -30,7 +30,7 @@ import { buildHostInferenceProvider } from './guest-host-provider.ts'
 import { runHeadlessAgent } from '../headless-agent-host.ts'
 import { armUnattendedRun, disarmUnattendedRun } from '../security/unattended-run.ts'
 import { readPendingDeferrals } from '../security/deferred-approval-store.ts'
-import { readDecisionLog } from '../security/decision-log-store.ts'
+import { readDecisionLog, persistRecordedDecision } from '../security/decision-log-store.ts'
 import { disposeAllAcpSessions } from '../acp/acp-session-pool.ts'
 import { storageSet } from '../storage/storage.ts'
 import { guestAcpAgentConfig } from './guest-acp-agent.ts'
@@ -670,17 +670,20 @@ async function workerMain(profile: WorkerProfile): Promise<void> {
       },
       // The desktop's own resolution of the model, built here from its
       // description with the run's one key.
-      spec.hostInference && link
-        ? {
-            provider: buildHostInferenceProvider(link),
-            contextWindow: spec.contextWindow ?? DEFAULT_GUEST_CONTEXT_WINDOW,
-          }
-        : spec.provider !== null
+      {
+        recordDecision: persistRecordedDecision,
+        ...(spec.hostInference && link
           ? {
-              provider: buildGuestProvider(spec.provider, apiKey || null),
+              provider: buildHostInferenceProvider(link),
               contextWindow: spec.contextWindow ?? DEFAULT_GUEST_CONTEXT_WINDOW,
             }
-          : {},
+          : spec.provider !== null
+            ? {
+                provider: buildGuestProvider(spec.provider, apiKey || null),
+                contextWindow: spec.contextWindow ?? DEFAULT_GUEST_CONTEXT_WINDOW,
+              }
+            : {}),
+      },
     )
     messages = result.messages
     chunks = result.chunks

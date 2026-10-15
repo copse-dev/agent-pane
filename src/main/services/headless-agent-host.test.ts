@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -333,7 +333,18 @@ describe('runHeadlessAgent', () => {
             message.content.includes('Background task'),
         ),
       )
-      assert.equal(existsSync(join(ambientStore, projectId, threadId)), false)
+      assert.equal(
+        existsSync(join(ambientStore, projectId, threadId)),
+        false,
+        JSON.stringify(await readdir(ambientStore, { recursive: true })),
+      )
+      const approval = result.decisions.find((decision) => decision.line.verdict === 'approved')
+      assert.ok(approval)
+      assert.equal(approval.projectId, projectId)
+      assert.equal(approval.threadId, threadId)
+      assert.equal(approval.line.kind, 'shell')
+      assert.ok(approval.detailContents)
+      assert.match(approval.detailContents, /shellContext/)
     } finally {
       if (previousWorkspaceDir === undefined) delete process.env['COPSE_WORKSPACE_DIR']
       else process.env['COPSE_WORKSPACE_DIR'] = previousWorkspaceDir

@@ -52,7 +52,7 @@ import { currentRunIsUnattendedContainer } from './unattended-run.ts'
 import { decideContainedShellEffect } from '@copse/shell-guard/container-effects.ts'
 import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
-import { requestApproval } from '../approval.ts'
+import { requestApproval, type ApprovalRequest } from '../approval.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
 import {
@@ -269,9 +269,22 @@ function autoApproveShell(
   return true
 }
 
+/** Observation only: no commands, credential values or grant contents are copied. */
+function shellApprovalAuditContext(): NonNullable<ApprovalRequest['shellContext']> {
+  const threadId = getActiveRunThread()
+  return {
+    sandboxAvailable: commandRunsSandboxed(getAgentExecutionRoot()),
+    autoRunEnabled: getSetting<boolean>('autoRunSandboxCommands', true),
+    workspaceTrusted: isWorkspaceTrusted(getWorkspaceRoot()),
+    guardedYolo: currentRunUsesGuardedYolo(threadId),
+    networkScopeActive: isSandboxNetworkScopeActive(),
+  }
+}
+
 async function requestEscalationApproval(
   title: string,
   parts: ShellPromptParts,
+  reasons: string[],
   cause: PromptCause,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
@@ -287,6 +300,8 @@ async function requestEscalationApproval(
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
       cause,
+      reasons,
+      shellContext: shellApprovalAuditContext(),
       allowRemember: trustable !== null,
       ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
       ...(leaseIdentity
@@ -431,6 +446,7 @@ async function promptShell(
     return requestEscalationApproval(
       'Run outside sandbox?',
       formatExternalSandboxPromptParts(command, reasons),
+      reasons,
       'shell-sandbox-escalation',
       signal,
       leaseIdentity,
@@ -449,6 +465,8 @@ async function promptShell(
       subject: SHELL_DECISION_SUBJECT,
       scope: sandboxed ? 'sandbox' : 'external',
       cause: containedCause,
+      reasons,
+      shellContext: shellApprovalAuditContext(),
       // A sandboxed approval includes a bounded replay lease by default. The
       // prompt names the 10-retry/15-minute bound; outside-sandbox grants remain
       // explicit because they weaken containment.
@@ -497,6 +515,9 @@ async function promptGuardedYoloHarm(
       type: 'shell',
       scope: sandboxed ? 'sandbox' : 'external',
       cause: 'shell-guarded-yolo-harm',
+      subject: SHELL_DECISION_SUBJECT,
+      reasons,
+      shellContext: shellApprovalAuditContext(),
       allowRemember: false,
     },
     signal,
@@ -534,6 +555,7 @@ export async function promptUnsandboxedShell(
   return requestEscalationApproval(
     'Run outside sandbox?',
     formatUnsandboxedPromptParts(command, reasons),
+    reasons,
     'shell-sandbox-retry',
     signal,
   )
@@ -563,6 +585,8 @@ export async function promptExpectedSandboxBlock(
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
       cause: 'shell-expected-sandbox-block',
+      reasons,
+      shellContext: shellApprovalAuditContext(),
     },
     signal,
   )
@@ -854,14 +878,14 @@ async function checkWebSearchPermission(
 }
 
 /**
- * `classify_text` sends text the model chose to a saved classifier connection.
+ * `ask_classifier` sends model-supplied input to a saved classifier connection.
  * Host approval is the classifier service's own gate, applied again at call
  * time (`assertApprovedProviderHost`), so a host the user never approved fails
  * there whatever this returns. This gate decides whether the call needs a
  * prompt: a connection that leaves the machine asks, a local server or SemIf
  * scorer does not, and an explicit "allow" or "ask" override wins either way.
  */
-async function checkClassifyTextPermission(
+async function checkAskClassifierPermission(
   args: unknown,
   signal?: AbortSignal,
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
@@ -869,7 +893,7 @@ async function checkClassifyTextPermission(
   if (explicitPolicy === 'allow') return true
   const id = isRecord(args) && typeof args['classifier'] === 'string' ? args['classifier'] : ''
   if (explicitPolicy === 'ask' || classifierSendsOffMachine(id)) {
-    return promptExplicitToolAsk('classify_text', args, signal)
+    return promptExplicitToolAsk('ask_classifier', args, signal)
   }
   return true
 }
@@ -2128,8 +2152,8 @@ export async function ensureToolPermitted(
     permitted = await checkWebSearchPermission(signal, explicitPolicy)
   } else if (toolName === 'parallel_search') {
     permitted = await checkParallelSearchPermission(signal, explicitPolicy)
-  } else if (toolName === 'classify_text') {
-    permitted = await checkClassifyTextPermission(args, signal, explicitPolicy)
+  } else if (toolName === 'ask_classifier') {
+    permitted = await checkAskClassifierPermission(args, signal, explicitPolicy)
   } else if (toolName === 'image_gen') {
     // The configured OpenAI credential is the network authority, as it is for
     // ordinary model requests. Keep the tool in the explicit network branch so

@@ -460,7 +460,7 @@ function parentTools(
   // is gated the same way, on attached archives.
   tools = applyVideoToolAvailability(tools, threadVideos)
   tools = applyArchiveToolAvailability(tools, threadArchives)
-  // classify_text is offered once a classifier connection is saved.
+  // ask_classifier is offered once a classifier connection is saved.
   tools = withClassifierToolOffer(tools, configuredClassifierProfiles())
   return tools
 }

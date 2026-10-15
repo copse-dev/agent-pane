@@ -263,7 +263,7 @@ describe('fetchModelOptions visibility', () => {
           title: 'Claude Code',
           command: 'claude-agent-acp',
           enabled: true,
-          availableModels: [{ value: 'sonnet', label: 'Claude Sonnet 4.6' }],
+          availableModels: [{ value: 'sonnet', label: 'Claude Sonnet 5.5' }],
         },
       ],
       planUsage: {
@@ -287,7 +287,7 @@ describe('fetchModelOptions visibility', () => {
       options.find((option) => option.value === 'acp:claude-acp#sonnet')?.coverage,
       'plan',
     )
-    assert.equal(options.find((option) => option.value === 'claude-sonnet-4-6')?.coverage, 'paid')
+    assert.equal(options.find((option) => option.value === 'claude-sonnet-5-5')?.coverage, 'paid')
     assert.equal(
       options.find((option) => option.value === 'lmstudio:qwen-local')?.coverage,
       'local',
@@ -718,13 +718,13 @@ describe('fetchModelOptions visibility', () => {
     )
   })
 
-  it('lists Sonnet 5.5 before the retained Sonnet 5 and 4.6 cloud options', async () => {
+  it('offers the latest Sonnet version and suppresses older cloud options', async () => {
     const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
     const cloud = options.filter((o) => o.group === 'Cloud models')
     const values = cloud.map((o) => o.value)
     assert.ok(values.includes('claude-sonnet-5-5'))
-    assert.ok(values.indexOf('claude-sonnet-5-5') < values.indexOf('claude-sonnet-5'))
-    assert.ok(values.indexOf('claude-sonnet-5') < values.indexOf('claude-sonnet-4-6'))
+    assert.ok(!values.includes('claude-sonnet-5'))
+    assert.ok(!values.includes('claude-sonnet-4-6'))
     assert.match(
       cloud.find((o) => o.value === 'claude-sonnet-5-5')?.label ?? '',
       /^Claude Sonnet 5\.5\b/,
@@ -852,7 +852,42 @@ describe('fetchModelOptions visibility', () => {
       id,
       'fixture must have a display name distinct from its id',
     )
+    // Nothing newer is offered without a key, so the row is not superseded either.
     assert.equal(current.label, `${modelDisplayLabel(id)} (no key)`)
+    assert.notEqual(current.disabled, true)
+  })
+
+  it('keeps a superseded saved selection, disabled and naming its successor', async () => {
+    const options = await fetchModelOptions(
+      mockApi({ available: { anthropic: true } }),
+      'claude-sonnet-4-6',
+    )
+    const current = options.find((o) => o.value === 'claude-sonnet-4-6')
+    assert.ok(current)
+    assert.equal(current.disabled, true)
+    assert.equal(
+      current.label,
+      `Claude Sonnet 4.6: ${currentCloudIntellectHint('claude-sonnet-4-6')} (superseded by Claude Sonnet 5.5)`,
+    )
+    // The other superseded Sonnet is simply absent.
+    assert.equal(
+      options.some((o) => o.value === 'claude-sonnet-5'),
+      false,
+    )
+  })
+
+  it('hides an OpenAI release only when its own tier has a newer offered release', async () => {
+    const options = await fetchModelOptions(mockApi({ available: { openai: true } }), '')
+    const values = options.filter((o) => o.group === 'Cloud models').map((o) => o.value)
+    // GPT-5 → GPT-5.5 and GPT-5.6 Sol → GPT-6.1 Sol are same-tier successions.
+    assert.equal(values.includes('gpt-5'), false)
+    assert.equal(values.includes('gpt-5.6-sol'), false)
+    assert.ok(values.includes('gpt-5.5'))
+    assert.ok(values.includes('gpt-6.1-sol'))
+    // The small and mid tiers have no newer release of their own, and 4o has no
+    // numeric version, so a newer frontier model never hides them.
+    for (const kept of ['gpt-5-mini', 'gpt-5-nano', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-4o'])
+      assert.ok(values.includes(kept), `${kept} should stay offered`)
   })
 
   it('adds an intellect hint to a remote-agent model that resolves to a measurement', async () => {
@@ -990,15 +1025,11 @@ describe('fetchModelOptions visibility', () => {
       mockApi({ available: { anthropic: true, openai: true, 'openai:gpt-6-astra': true } }),
       '',
     )
-    // Opus 5 joins the frontier at the same $9/MTok as Opus 4.8 but higher
-    // intellect, so the frontier flag rides on 5 and 4.8 becomes dominated.
-    const opus5 = options.find((o) => o.value === 'claude-opus-5')
+    const opus5 = options.find((o) => o.value === 'claude-opus-5-5')
     assert.ok(opus5)
-    assert.equal(opus5.label, `Claude Opus 5: ${currentCloudIntellectHint('claude-opus-5')}`)
+    assert.equal(opus5.label, `Claude Opus 5.5: ${currentCloudIntellectHint('claude-opus-5-5')}`)
     const opus = options.find((o) => o.value === 'claude-opus-4-8')
-    assert.ok(opus)
-    assert.equal(opus.label, `Claude Opus 4.8: ${currentCloudIntellectHint('claude-opus-4-8')}`)
-    assert.doesNotMatch(opus.label, /frontier/)
+    assert.equal(opus, undefined)
     const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
     assert.ok(haiku)
     assert.equal(haiku.label, `Claude Haiku 4.5: ${currentCloudIntellectHint('claude-haiku-4-5')}`)
@@ -1018,10 +1049,12 @@ describe('fetchModelOptions visibility', () => {
       mockApi({ available: { openai: true, 'openai:gpt-6-astra': true } }),
       '',
     )
-    assert.equal(
-      available.some((option) => option.value === 'gpt-6-astra'),
-      true,
-    )
+    // GPT-6.1 Sol is newer but a different tier, so Astra is offered as itself.
+    const astra = available.find((option) => option.value === 'gpt-6-astra')
+    assert.ok(astra)
+    assert.notEqual(astra.disabled, true)
+    assert.doesNotMatch(astra.label, /superseded/)
+    assert.ok(available.some((option) => option.value === 'gpt-6.1-sol'))
   })
 
   it('keeps the current selection selectable even with no key', async () => {
