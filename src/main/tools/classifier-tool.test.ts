@@ -7,12 +7,14 @@ import type {
   ClassifierProfile,
   ClassifierQuestion,
   ClassifierResult,
+  ClassifierState,
 } from '@copse/llm/classifiers/types.ts'
 import type { LLMTool } from '@shared/types'
+import { ToolRegistry } from '../services/tool-registry.ts'
 import {
-  CLASSIFY_TEXT_MAX_CHARS,
-  CLASSIFY_TEXT_TOOL_NAME,
-  createClassifyTextTool,
+  ASK_CLASSIFIER_MAX_CHARS,
+  ASK_CLASSIFIER_TOOL_NAME,
+  createAskClassifierTool,
   withClassifierToolOffer,
 } from './classifier-tool.ts'
 
@@ -45,7 +47,7 @@ function result(overrides: Partial<ClassifierResult> = {}): ClassifierResult {
 
 interface Call {
   id: string
-  state: string
+  state: ClassifierState
   question: ClassifierQuestion
 }
 
@@ -53,7 +55,7 @@ function toolWith(
   answer: ClassifierResult | Error,
   profiles: ClassifierProfile[] = [preset('kev')],
 ): {
-  tool: ReturnType<typeof createClassifyTextTool>
+  tool: ReturnType<typeof createAskClassifierTool>
   calls: Call[]
   usage: Array<{ model: string; inputTokens: number; outputTokens: number; provider?: string }>
 } {
@@ -64,7 +66,7 @@ function toolWith(
     outputTokens: number
     provider?: string
   }> = []
-  const tool = createClassifyTextTool({
+  const tool = createAskClassifierTool({
     profiles: () => profiles,
     classify: async (id, state, question) => {
       calls.push({ id, state, question })
@@ -80,7 +82,7 @@ function toolWith(
 
 const signal = new AbortController().signal
 
-describe('classify_text', () => {
+describe('ask_classifier', () => {
   it('asks the chosen classifier a choice question and reads the verdict from the probabilities', async () => {
     const { tool, calls } = toolWith(result())
     const out = await tool.execute(
@@ -142,6 +144,111 @@ describe('classify_text', () => {
     assert.equal(parsed['type'], 'boolean')
     assert.equal(parsed['probabilityTrue'], 0.1235)
     assert.equal('choice' in parsed, false)
+  })
+
+  it('sends structured state and boolean criteria to the saved classifier', async () => {
+    const { tool, calls } = toolWith(
+      result({ answers: { answer: { type: 'boolean', probability: 0.8 } } }),
+    )
+    const state = { task: 'Review a small change', filesChanged: 2 }
+    const out = await tool.execute(
+      {
+        classifier: 'kev',
+        state,
+        type: 'boolean',
+        question: 'Does it need deep review?',
+        criteria: { true: 'Behavior changed', false: 'Mechanical edit' },
+      },
+      signal,
+    )
+    assert.deepEqual(calls[0]?.state, state)
+    assert.deepEqual(calls[0].question, {
+      type: 'boolean',
+      instructions: 'Does it need deep review?',
+      criteria: { true: 'Behavior changed', false: 'Mechanical edit' },
+    })
+    assert.equal(parse(out)['probabilityTrue'], 0.8)
+  })
+
+  it('returns an HTTP score with its ordered levels and probabilities', async () => {
+    const { tool, calls } = toolWith(
+      result({
+        answers: {
+          answer: {
+            type: 'score',
+            score: 1.75,
+            levels: ['Low', 'Medium', 'High'],
+            probabilities: { '0': 0.05, '1': 0.15, '2': 0.8 },
+          },
+        },
+      }),
+      [preset('typesafe')],
+    )
+    const out = await tool.execute(
+      {
+        classifier: 'typesafe',
+        state: ['An incident', { impact: 'high' }],
+        type: 'score',
+        question: 'Rate urgency',
+        levels: ['Low', 'Medium', 'High'],
+      },
+      signal,
+    )
+    assert.deepEqual(calls[0]?.question, {
+      type: 'score',
+      instructions: 'Rate urgency',
+      levels: ['Low', 'Medium', 'High'],
+    })
+    assert.deepEqual(parse(out), {
+      classifier: 'typesafe',
+      model: 'kev-4b-r1',
+      elapsedMs: 41,
+      type: 'score',
+      score: 1.75,
+      levels: ['Low', 'Medium', 'High'],
+      probabilities: { '0': 0.05, '1': 0.15, '2': 0.8 },
+    })
+  })
+
+  it('refuses ambiguous input, oversized state, and score on SemIf before inference', async () => {
+    const { tool, calls } = toolWith(result(), [preset('kev'), preset('semif')])
+    assert.match(
+      await tool.execute({ classifier: 'kev', type: 'boolean', question: 'q' }, signal),
+      /exactly one/,
+    )
+    assert.match(
+      await tool.execute(
+        { classifier: 'kev', text: 't', state: { extra: true }, type: 'boolean', question: 'q' },
+        signal,
+      ),
+      /exactly one/,
+    )
+    assert.match(
+      await tool.execute(
+        {
+          classifier: 'kev',
+          state: { text: 'x'.repeat(ASK_CLASSIFIER_MAX_CHARS + 1) },
+          type: 'boolean',
+          question: 'q',
+        },
+        signal,
+      ),
+      /State exceeds/,
+    )
+    assert.match(
+      await tool.execute(
+        {
+          classifier: 'semif',
+          text: 't',
+          type: 'score',
+          question: 'Rate',
+          levels: ['Low', 'High'],
+        },
+        signal,
+      ),
+      /does not support score/,
+    )
+    assert.deepEqual(calls, [])
   })
 
   it('returns only the fixed fields: no provider metadata, request id or raw body', async () => {
@@ -224,7 +331,8 @@ describe('classify_text', () => {
     const base = { classifier: 'kev', text: 't', type: 'boolean', question: 'q' }
     assert.equal(tool.parameters.safeParse(base).success, true)
     assert.equal(
-      tool.parameters.safeParse({ ...base, text: 'x'.repeat(CLASSIFY_TEXT_MAX_CHARS + 1) }).success,
+      tool.parameters.safeParse({ ...base, text: 'x'.repeat(ASK_CLASSIFIER_MAX_CHARS + 1) })
+        .success,
       false,
     )
     assert.equal(tool.parameters.safeParse({ ...base, text: '' }).success, false)
@@ -237,6 +345,25 @@ describe('classify_text', () => {
       false,
     )
     assert.equal(tool.parameters.safeParse({ ...base, type: 'score' }).success, false)
+    assert.equal(
+      tool.parameters.safeParse({
+        classifier: 'kev',
+        state: { task: 'Review this' },
+        type: 'score',
+        question: 'Rate urgency',
+        levels: ['Low', 'High'],
+      }).success,
+      true,
+    )
+    assert.equal(tool.parameters.safeParse({ ...base, state: { extra: true } }).success, false)
+    assert.equal(
+      tool.parameters.safeParse({
+        ...base,
+        text: undefined,
+        state: { text: 'x'.repeat(ASK_CLASSIFIER_MAX_CHARS + 1) },
+      }).success,
+      false,
+    )
   })
 
   it('lets a transport failure surface as the tool error without a result', async () => {
@@ -270,12 +397,43 @@ describe('classify_text', () => {
       /did not answer every option/,
     )
   })
+
+  it('fails closed when a score omits one requested level', async () => {
+    const { tool } = toolWith(
+      result({
+        answers: {
+          answer: {
+            type: 'score',
+            score: 0.5,
+            levels: ['Low', 'High'],
+            probabilities: { '0': 1 },
+          },
+        },
+      }),
+      [preset('typesafe')],
+    )
+    await assert.rejects(
+      Promise.resolve(
+        tool.execute(
+          {
+            classifier: 'typesafe',
+            text: 't',
+            type: 'score',
+            question: 'Rate',
+            levels: ['Low', 'High'],
+          },
+          signal,
+        ),
+      ),
+      /did not answer every level/,
+    )
+  })
 })
 
-describe('offering classify_text', () => {
+describe('offering ask_classifier', () => {
   const tools: LLMTool[] = [
     { name: 'read_file', description: 'Read.', parameters: {} },
-    { name: CLASSIFY_TEXT_TOOL_NAME, description: 'static', parameters: {} },
+    { name: ASK_CLASSIFIER_TOOL_NAME, description: 'static', parameters: {} },
   ]
 
   it('withholds the tool until a classifier is configured', () => {
@@ -287,9 +445,22 @@ describe('offering classify_text', () => {
 
   it('names the configured classifiers in the description once there is one', () => {
     const offered = withClassifierToolOffer(tools, [preset('kev'), preset('typesafe')])
-    const tool = offered.find((candidate) => candidate.name === CLASSIFY_TEXT_TOOL_NAME)
+    const tool = offered.find((candidate) => candidate.name === ASK_CLASSIFIER_TOOL_NAME)
     assert.match(tool?.description ?? '', /Configured classifiers: kev \(Kev \(local\)\), typesafe/)
     assert.equal(offered.find((candidate) => candidate.name === 'read_file')?.description, 'Read.')
+  })
+
+  it('converts the structured question schema for the ACP MCP bridge', () => {
+    const registry = new ToolRegistry()
+    registry.register(createAskClassifierTool())
+    const tool = registry
+      .toMcpTools()
+      .find((candidate) => candidate.name === ASK_CLASSIFIER_TOOL_NAME)
+    assert.ok(tool)
+    const schema = JSON.stringify(tool.inputSchema)
+    assert.match(schema, /state/)
+    assert.match(schema, /score/)
+    assert.doesNotMatch(schema, /"nullable"/)
   })
 })
 
