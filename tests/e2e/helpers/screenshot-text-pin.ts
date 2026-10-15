@@ -28,7 +28,8 @@ export function installCaptureTextPin(
       matched += 1
       const replaced = text.data.replace(re, replacement)
       if (replaced === text.data) continue
-      if (!pinned.has(text)) pinned.set(text, text.data)
+      // Remember the latest live value when the app updates an existing node.
+      pinned.set(text, text.data)
       text.data = replaced
     }
     return matched

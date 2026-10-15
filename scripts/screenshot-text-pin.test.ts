@@ -25,8 +25,13 @@ it('keeps independent capture pins alive across rerenders and restores only its 
     await tick()
     assert.equal(window.document.querySelector('#time')?.textContent, 'Latest · fixed')
     assert.equal(window.document.querySelector('#branch')?.textContent, 'thread-fixed')
+    const branchText = window.document.querySelector('#branch')?.firstChild
+    assert.ok(branchText)
+    branchText.textContent = 'thread-789'
+    await tick()
+    assert.equal(window.document.querySelector('#branch')?.textContent, 'thread-fixed')
     restore('branch')
-    assert.equal(window.document.querySelector('#branch')?.textContent, 'thread-456')
+    assert.equal(window.document.querySelector('#branch')?.textContent, 'thread-789')
     window.document.querySelector('#time')?.replaceChildren('Latest · newest')
     await tick()
     assert.equal(window.document.querySelector('#time')?.textContent, 'Latest · fixed')

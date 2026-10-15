@@ -212,9 +212,12 @@ export async function withCaptureFrame(capture: () => Promise<void>): Promise<vo
 export async function saveAppScreenshot(
   filename: string,
   size: { width: number; height: number } = E2E_VIEWPORT,
+  beforeCapture?: () => Promise<void>,
 ): Promise<void> {
   await withCaptureFrame(async () => {
     await prepareE2eScreenshot(size)
+    // Wait on the owning surface after resize, which can reveal scroll chrome.
+    await beforeCapture?.()
     await savePreparedAppScreenshot(filename)
   })
 }
@@ -443,7 +446,7 @@ export async function waitForSettledLayout(
 export async function saveElementScreenshot(
   selector: string,
   filename: string,
-  options: { frame?: 'app' | 'document' } = {},
+  options: { frame?: 'app' | 'document'; beforeCapture?: () => Promise<void> } = {},
 ): Promise<void> {
   await withCaptureFrame(async () => {
     // Scrolling web documents cannot reach subjects below an app-sized clip.
@@ -458,6 +461,7 @@ export async function saveElementScreenshot(
       // Let the scroll settle before capturing, as the prepare step does.
       await browser.pause(100)
     }
+    await options.beforeCapture?.()
     // Settle by selector, then re-resolve: a subject that re-rendered while the
     // page settled (a tool card whose transcript updated once more) is a fresh
     // node by now, and the handle taken above would be stale.
