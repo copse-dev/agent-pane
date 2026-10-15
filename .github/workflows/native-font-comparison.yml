@@ -1,0 +1,60 @@
+name: Temporary native font comparison
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/native-font-comparison.yml
+      - scripts/diagnostics/native-font-comparison/**
+permissions:
+  contents: read
+concurrency:
+  group: native-font-comparison-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    if: github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'diagnostic/native-font-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      COPSE_E2E_HEADLESS: '0'
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Standard package manager, fonts and native sandbox dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ripgrep fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji xvfb xauth bubblewrap socat python3-pil
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --unshare-all --dev-bind / / --die-with-parent true
+          command -v socat
+          {
+            echo GIT_CONFIG_COUNT=2
+            echo GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf
+            echo GIT_CONFIG_VALUE_0=ssh://git@github.com/
+            echo GIT_CONFIG_KEY_1=url.https://github.com/.insteadOf
+            echo GIT_CONFIG_VALUE_1=git@github.com:
+          } >> "$GITHUB_ENV"
+      - name: Compare actual historical and current native fixtures
+        run: python3 scripts/diagnostics/native-font-comparison/run.py
+      - name: Preserve raw images, environment and readable pixel evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-font-comparison-${{ github.run_id }}-${{ github.run_attempt }}
+          path: _native-font-evidence/
+          retention-days: 5
+          if-no-files-found: error
