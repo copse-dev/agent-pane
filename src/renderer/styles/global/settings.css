@@ -3426,12 +3426,12 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   background: #fff;
 }
 .acp-logo[data-brand='chatgpt'] {
-  background: #000;
+  background: var(--brand-chatgpt-background);
 }
 .acp-logo[data-brand='key'] {
-  background: #d9a441;
+  background: var(--credential-logo-background);
   border-color: transparent;
-  color: #2a1c00;
+  color: var(--credential-logo-foreground);
 }
 .acp-logo[data-brand='codex'] {
   border: 0;
