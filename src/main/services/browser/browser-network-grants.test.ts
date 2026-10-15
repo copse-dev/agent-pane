@@ -1,6 +1,10 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
-import { browserAllowedOrigins, grantBrowserOrigin } from './browser-network-grants.ts'
+import {
+  browserAllowedOrigins,
+  browserSessionOrigins,
+  grantBrowserOrigin,
+} from './browser-network-grants.ts'
 import {
   browserThreadScope,
   browserSessionPartition,
@@ -17,6 +21,8 @@ it('isolates temporary browser grants and profiles by project and task', async (
   grantBrowserOrigin(first, 'https://approved.example:443')
   assert.deepEqual(browserAllowedOrigins(first), ['https://approved.example:443'])
   assert.deepEqual(browserAllowedOrigins(second), [])
+  assert.deepEqual(browserSessionOrigins(first), ['https://approved.example:443'])
+  assert.deepEqual(browserSessionOrigins(second), [])
   assert.notEqual(
     browserSessionPartition(BROWSER_SESSION_PARTITION, first),
     browserSessionPartition(BROWSER_AGENT_SESSION_PARTITION, first),

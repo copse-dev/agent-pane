@@ -85,7 +85,16 @@ import {
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
-import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
+import {
+  exportDecisionLog,
+  readDecisionLog,
+  readThreadDecisionLog,
+} from '../services/security/decision-log-store.ts'
+import { listReadOutsideProjectGrants } from '../services/security/read-outside-grant.ts'
+import { browserSessionOrigins } from '../services/browser/browser-network-grants.ts'
+import { browserThreadScope } from '@shared/browser-session.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
@@ -1898,6 +1907,11 @@ export function registerAllHandlers(
     if (!resolved) return []
     return readDecisionLog(resolved)
   })
+  ipcMain.handle('decisions:list-thread', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return readThreadDecisionLog(pid, tid)
+  })
   ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
@@ -1936,6 +1950,23 @@ export function registerAllHandlers(
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     return getGuardedYoloState(id)
   })
+  ipcMain.handle(
+    'security:get-context-permissions',
+    (event, projectId: unknown, threadId: unknown, checkoutRoot: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, root] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(4096)]),
+        [projectId, threadId, checkoutRoot],
+      )
+      return {
+        outsideReadPaths: listReadOutsideProjectGrants(tid),
+        browserOrigins: browserSessionOrigins(browserThreadScope(pid, tid)),
+        portBindingAllowed:
+          getDefaultPluginRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION) &&
+          getSetting<string[]>('portBindingAllowedRoots', []).includes(root),
+      }
+    },
+  )
   ipcMain.handle('security:enable-guarded-yolo', async (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
