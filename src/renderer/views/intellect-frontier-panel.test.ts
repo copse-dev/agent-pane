@@ -401,6 +401,37 @@ describe('createIntellectFrontierPanel', () => {
       panel.root.querySelector('details.frontier-severely-dominated')?.textContent ?? '',
       /o1-pro/,
     )
+    assert.equal(
+      panel.root.querySelector('details.frontier-severely-dominated summary')?.textContent,
+      '1 model costs at least 4× more than an equally capable priced model',
+    )
+  })
+
+  it('counts several hidden paid routes in the plural', async () => {
+    const provider = {
+      ...testExtraProvider([
+        { id: 'o1-pro', inputPricePerMTok: 150, outputPricePerMTok: 600 },
+        { id: 'gpt-5', inputPricePerMTok: 150, outputPricePerMTok: 600 },
+        { id: 'gpt-6-sol', inputPricePerMTok: 3, outputPricePerMTok: 12 },
+      ]),
+      id: 'legacy',
+      prefix: 'legacy:',
+      local: true,
+      baseUrl: 'http://127.0.0.1:9/v1',
+    }
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      async () => [provider],
+      undefined,
+      undefined,
+      undefined,
+      async () => ['legacy:o1-pro', 'legacy:gpt-5', 'legacy:gpt-6-sol'],
+    )
+    await panel.refresh()
+    assert.equal(
+      panel.root.querySelector('details.frontier-severely-dominated summary')?.textContent,
+      '2 models cost at least 4× more than an equally capable priced model',
+    )
   })
 
   it('renders the main chart after refresh, plotting scored local models', async () => {
