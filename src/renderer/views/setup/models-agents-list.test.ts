@@ -440,6 +440,19 @@ describe('Models & agents list', () => {
     list.reset()
   })
 
+  it('does not nest a second Re-scan action inside an agent row’s Options', async () => {
+    state.agents = [{ id: 'mine', title: 'Mine', command: 'mine', enabled: true }]
+    const list = await mount()
+    const row = rowEl(list.root, 'agent:mine')
+    button(row, 'Options').click()
+    await tick()
+    const nested = [...row.querySelectorAll('button')].find(
+      (b) => b.textContent.trim() === 'Re-scan device',
+    )
+    assert.equal(nested, undefined, 'the row options must not duplicate the single Re-scan above')
+    list.reset()
+  })
+
   describe('Re-scan (agents, servers and keys in one click)', () => {
     function status(root: HTMLElement): string {
       return root.querySelector('[data-testid="connections-scan-status"]')?.textContent ?? ''

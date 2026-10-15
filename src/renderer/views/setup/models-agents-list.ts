@@ -152,6 +152,7 @@ export function createModelsAgentsList(
 
   const agentsPanel = createAcpAgentsSection(api, {
     embedded: true,
+    hideRescanAction: true,
     onChanged: () => {
       void api.settings
         .get('registeredAcpAgents')
