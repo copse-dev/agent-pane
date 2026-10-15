@@ -389,6 +389,14 @@
       "sha256": "0d14a5ba50fdbeaec5c3d5f34e2d321d0bb572d3985907a1d5676f5871b24f94",
       "bytes": 304698
     },
+    "agent-execution-mode-active.png": {
+      "sha256": "0839949aca2469eb211a14a79fff3503d1bda11256342b33e699dcfa9a94f17a",
+      "bytes": 251065
+    },
+    "agent-execution-mode-dialog.png": {
+      "sha256": "90b233e63d7673883704c431c94997efe5e967b5987652e0fd1189d9ed969914",
+      "bytes": 71576
+    },
     "agent-plugin-discovered-row.png": {
       "sha256": "c672c4478a3c882999bb7258340c92eae5fc070dae264673fdc608e921759d2e",
       "bytes": 34754
@@ -408,6 +416,10 @@
     "agent-tasks-terminal.png": {
       "sha256": "997dd0754c6ac23df51b048ae38b4d8a3765887e2531b7b82a191e063ac64293",
       "bytes": 259227
+    },
+    "agent-turn-queue.png": {
+      "sha256": "765bc47a7c755b2cde9216ac9d229fd42a1cc05afbf0edc15151d77e3aa162ee",
+      "bytes": 26428
     },
     "android-desktop-live.png": {
       "sha256": "9138af23bdf249c1ea22ab0da277b197005f8f5d557b782c456582cc62f7c779",
@@ -444,6 +456,10 @@
     "apple-development-enrollment-settings.png": {
       "sha256": "b9d85edae7f0cc39f961dae86e232708b1f3ad3aec908f20227825cc9355da82",
       "bytes": 279081
+    },
+    "apple-development-retired-checkout.png": {
+      "sha256": "1781502b9546b75b67ccbb8106b6157dd97fac5e8d3e2a2babd66ec6f9f2418e",
+      "bytes": 93309
     },
     "apple-development-test-profile.png": {
       "sha256": "905c6fad2598301b4c22606a69f324e9a21ad2cb58596185104026987ee5e561",
@@ -488,6 +504,14 @@
     "approval-reasons-list.png": {
       "sha256": "3415f0d81c3420b2d6fbf1b6959cac49e0c5330d48c8c06f135de32911602b38",
       "bytes": 63606
+    },
+    "approval-thread-read.png": {
+      "sha256": "9f5f9f25683fd5476f1a44312d04a2a68ab2c8b5a2874b44b63c63def17cca69",
+      "bytes": 15464
+    },
+    "approval-thread-send.png": {
+      "sha256": "771c6fe14e3977c58790147b40f2c1a849dec7927385b7155848c16c7e8f5177",
+      "bytes": 17289
     },
     "approval-thread-switch-bottom.png": {
       "sha256": "b94244603ad85685620716348685fe0772496b3a9923072c4c0cc501b2cabc91",
@@ -736,6 +760,10 @@
     "benchmark-trial.png": {
       "sha256": "af80a22c66b28f2a4234864aab7a0958c0571b70bc7007751e36c015b49b3dad",
       "bytes": 55617
+    },
+    "bridged-thread-proposals.png": {
+      "sha256": "66a5a836ba21b7e7767e7b9acbaa615e08f61e0b1ed2e4f7f1548afa42fc2429",
+      "bytes": 96974
     },
     "bridged-tools-concise.png": {
       "sha256": "bb8f204bdbdaff6bd01950bec93c1c098ab399090121eea113908776f3d5ad8c",
@@ -3097,6 +3125,10 @@
       "sha256": "6e98dff38768284c131a70093824b9145fe27fca47cb1bf6425d5a9fdf6bb64e",
       "bytes": 29677
     },
+    "rm-safety-timeout.png": {
+      "sha256": "4ff23de41bff869ec47e4ef50a3d0f5231bb368c9743fbfeebb5db740cc4fb46",
+      "bytes": 374257
+    },
     "roadmap-accordion-chevron-alignment.png": {
       "sha256": "79f716407b30e3d67ea58889ac72886f56dec2eb7b2bfa4636be24acd8c6389b",
       "bytes": 313964
@@ -3232,6 +3264,10 @@
     "roadmap-thread-reopened.png": {
       "sha256": "df9b7cdcaf4e69f09fb7dfee5dac609a1eb7de8838172df9b379cc149df5e97c",
       "bytes": 328841
+    },
+    "screenshot-motion-frame.png": {
+      "sha256": "57cf6a15625e12c6105aaa94f80f6e7b67003353e40b5753df921947f67f4608",
+      "bytes": 4566
     },
     "scroll-to-bottom-at-bottom.png": {
       "sha256": "69c7fb3f4fc36b3a6f4a53e1a091dbcd75b44ed421277035e5640de88ec101b1",
@@ -4496,6 +4532,10 @@
     "theme-boot-popout-light.png": {
       "sha256": "d225c2958b2dadd947a0f9b1aed5eaf2a7574d9f9d491cb0d0adc5f8e11ca1bc",
       "bytes": 102564
+    },
+    "thread-access-menu.png": {
+      "sha256": "1beaf634364c2cf7d87dcb69462d7e97db5bf721bd0b2cda61faaf236d26d538",
+      "bytes": 5409
     },
     "thread-actions-menu.png": {
       "sha256": "5cddfedf75361680b1810e603a184d6bd6a02af1ff562db5ad6c68cfbfa30c57",
