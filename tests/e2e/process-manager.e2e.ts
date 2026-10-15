@@ -219,6 +219,12 @@ describe('Process manager', function () {
     await renameInput.setValue('Process manager other thread')
     await browser.keys('Enter')
     await expect($('.chat-row.selected .chat-title')).toHaveText('Process manager other thread')
+    const otherThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    assert.ok(otherThreadId)
+    // Renaming alone does not protect an empty thread from pruning when Jump
+    // switches away. Keep a real draft so its live terminal retains its owner.
+    await $('.prompt-input').click()
+    await browser.keys('Keep this thread while inspecting its terminal.')
     await approveUnsandboxedTerminalIfPrompted()
     await $('.prompt-input').click()
     await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
@@ -228,11 +234,17 @@ describe('Process manager', function () {
     await $('.context-menu-item=Jump to thread').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', originalThreadId)
+    await expect($(`.chat-row[data-thread-id="${otherThreadId}"] .chat-title`)).toHaveText(
+      'Process manager other thread',
+    )
 
     await $('.prompt-input').click()
     await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
     await dialog.waitForDisplayed({ timeout: 10_000 })
     await dialog.$(ownedSelector).waitForDisplayed({ timeout: 10_000 })
+    await expect(
+      dialog.$(`[data-group-key="${otherThreadId}"] .process-manager-group-title`),
+    ).toHaveText('Process manager other thread')
     await dialog.$(ownedSelector).click({ button: 'right' })
     await expect($('.context-menu-item=Stop terminal')).toBeDisplayed()
     await maskProcessManagerLiveValues()
