@@ -128,7 +128,7 @@ describe('shell prompt audit evidence', () => {
         assert.equal(request.cause, cause)
         assert.deepEqual(request.reasons, reasons)
         assert.equal(typeof request.shellContext?.sandboxAvailable, 'boolean')
-        assert.equal(typeof request.shellContext?.readOutsideGrant, 'boolean')
+        assert.equal(typeof request.shellContext?.workspaceTrusted, 'boolean')
         return { approved: false, remember: false }
       })
       try {

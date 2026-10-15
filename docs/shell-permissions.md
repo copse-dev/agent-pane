@@ -93,8 +93,8 @@ abort outside the original async context does not lose its project/thread.
 
 Shell escalation, expected-block, retry, contained-command and harm prompts retain
 their structured reasons. Their detail blobs also capture request-time booleans:
-sandbox availability, the configured auto-run setting, workspace trust, standing
-outside-read grant, Guarded YOLO and active network scope. These are diagnostic
+sandbox availability, the configured auto-run setting, workspace trust,
+Guarded YOLO and active network scope. These are diagnostic
 facts, not a complete snapshot of all grants or an execution authorization.
 Coalesced prompts retain the opening request's context. Raw command text is still
 omitted: use the tool-call reference to find the existing tool arguments.

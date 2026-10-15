@@ -171,7 +171,6 @@ export interface ApprovalRequest {
     sandboxAvailable: boolean
     autoRunEnabled: boolean
     workspaceTrusted: boolean
-    readOutsideGrant: boolean
     guardedYolo: boolean
     networkScopeActive: boolean
   }

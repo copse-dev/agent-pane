@@ -277,7 +277,6 @@ describe('requestApproval pluggable transport', () => {
       sandboxAvailable: false,
       autoRunEnabled: true,
       workspaceTrusted: false,
-      readOutsideGrant: false,
       guardedYolo: false,
       networkScopeActive: false,
     }
