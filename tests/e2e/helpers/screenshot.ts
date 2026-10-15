@@ -1,10 +1,12 @@
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { PNG } from 'pngjs'
 import { browser } from '@wdio/globals'
 import { recentreClippedCapture, restoreScrollAfterCapture } from './capture-framing.ts'
 import { mockConversationLeaks } from './mock-content.ts'
 import { withFrozenAnimations } from './frozen-animations.ts'
+import { installCaptureTextPin, restoreCaptureTextPin } from './screenshot-text-pin.ts'
 
 /** Fixed viewport for committed e2e reference screenshots (see tests/e2e/screenshots/). */
 export const E2E_VIEWPORT = { width: 1280, height: 800 } as const
@@ -493,44 +495,10 @@ export async function pinTextForCapture(
   pattern: RegExp,
   replacement: string,
 ): Promise<() => Promise<void>> {
+  const id = randomUUID()
   const count = await browser.execute(
-    (sel: string, source: string, flags: string, next: string) => {
-      type Pin = { observer: MutationObserver; pinned: Map<Text, string> }
-      const win = window as unknown as { __copsePinnedText?: Pin }
-      const re = new RegExp(source, flags)
-      const pinned = new Map<Text, string>()
-      const apply = (): number => {
-        const host = document.querySelector(sel)
-        if (!host) return 0
-        let matched = 0
-        const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
-        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-          const text = node as Text
-          // `search` ignores lastIndex, so a /g pattern cannot skip a node.
-          if (text.data.search(re) === -1) continue
-          // A live value that already reads as the stand-in (a 40 ms dry-run
-          // pinned to "40 ms") is pinned all the same; counting only rewrites
-          // made such a run look like the value was missing.
-          matched += 1
-          const replaced = text.data.replace(re, next)
-          // Already pinned: leave it, or the observer would chase its own writes.
-          if (replaced === text.data) continue
-          if (!pinned.has(text)) pinned.set(text, text.data)
-          text.data = replaced
-        }
-        return matched
-      }
-      const first = apply()
-      const observer = new MutationObserver(() => {
-        observer.disconnect()
-        apply()
-        observer.observe(document.body, { subtree: true, childList: true, characterData: true })
-      })
-      observer.observe(document.body, { subtree: true, childList: true, characterData: true })
-      win.__copsePinnedText?.observer.disconnect()
-      win.__copsePinnedText = { observer, pinned }
-      return first
-    },
+    installCaptureTextPin,
+    id,
     selector,
     pattern.source,
     pattern.flags,
@@ -542,16 +510,7 @@ export async function pinTextForCapture(
     )
   }
   return async () => {
-    await browser.execute(() => {
-      type Pin = { observer: MutationObserver; pinned: Map<Text, string> }
-      const win = window as unknown as { __copsePinnedText?: Pin }
-      const pin = win.__copsePinnedText
-      if (!pin) return
-      pin.observer.disconnect()
-      // A node the page has since replaced already shows the live text.
-      for (const [node, text] of pin.pinned) if (node.isConnected) node.data = text
-      delete win.__copsePinnedText
-    })
+    await browser.execute(restoreCaptureTextPin, id)
   }
 }
 
