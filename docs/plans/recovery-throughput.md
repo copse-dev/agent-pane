@@ -86,13 +86,16 @@ remove cumulative validation. Protected squash landing also works, but requires
 preserved source provenance and deliberate retirement/reparenting of descendants.
 Choose the method from live repository rules, not a blanket ancestry preference.
 
-`main` uses GitHub's merge queue, and the recovery batches landed through it as
-squash merges. [Testing strategy](../testing-strategy.md#where-each-tier-runs-main-and-release)
-describes the queue, the [base-freshness plan](ci-base-freshness.md) relies on it
-for the base-advancement gate, and
-[`merge-queue-gates.yml`](../../.github/workflows/merge-queue-gates.yml) runs on
-`merge_group` events. Verify live rules and supported merge methods before
-designing automation. Never bypass required checks to emulate a queue.
+The recovery batches landed as protected squash merges. The live `Main protect`
+ruleset (24342803, checked 2026-10-15) allows squash merges and requires `CI Passed`,
+`Screenshot review` and `CLA`, but defines no merge queue; the Actions API reports
+no `merge_group` runs. [Testing strategy](../testing-strategy.md#where-each-tier-runs-main-and-release)
+describes a queue, the [base-freshness plan](ci-base-freshness.md) relies on it,
+and [`merge-queue-gates.yml`](../../.github/workflows/merge-queue-gates.yml) handles
+`merge_group` events, but those files do not establish live queue configuration.
+Reconcile the documentation and settings before relying on a queue. Verify live
+rules and supported merge methods before designing automation. Never bypass
+required checks to emulate a queue.
 
 ## Proposed next improvements, in priority order
 
