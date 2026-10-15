@@ -240,9 +240,10 @@ describe('settings model routing placement', function () {
     // LM Studio's server connection lives in Models & agents: listed once it
     // answers, and otherwise one choice under + Add → Model server.
     const list = $('[data-testid="models-agents-fieldset"]')
-    await list.$('[data-testid="connections-add-toggle"]').click()
-    await list.$('.acp-add-row[data-add="server"]').$('button=Connect').click()
-    await list.$('[data-testid="connections-server-choice"]').selectByAttribute('value', 'lmstudio')
+    const lmStudioRow = list.$('.acp-row[data-row="server:lmstudio"]')
+    await lmStudioRow.waitForDisplayed({ timeout: 30_000 })
+    await expect(lmStudioRow.$('.acp-row-chip')).toHaveText('Running')
+    await lmStudioRow.$('button=Options').click()
     await expect(settingsSection('general').$('legend=Server connection')).toBeDisplayed()
 
     await expect($('.key-status[data-key="lmstudio"]')).toHaveText('not set')

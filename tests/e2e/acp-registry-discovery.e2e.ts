@@ -116,7 +116,7 @@ describe('public agent registry discovery', function () {
     await $('.settings-nav-btn[data-section="general"]').click()
     assert.equal(existsSync(`${registryFile}.requests`), false)
     await $('[data-testid="connections-add-toggle"]').click()
-    await $('.acp-add-row[data-agent="other"]').$('button=Set up').click()
+    await $('.acp-add-row[data-add="agent"]').$('button=Set up').click()
     await $('.acp-registry-toggle').click()
     await $('.acp-registry-entry').waitForDisplayed()
     await expect($('.acp-registry-entry')).toHaveText(expect.stringContaining('Unverified'))

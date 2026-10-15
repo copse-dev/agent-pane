@@ -45,6 +45,8 @@ describe('ZDR provider presets', () => {
     // Pasting a key offers every built-in provider by name.
     await list.$('[data-testid="connections-add-toggle"]').click()
     await list.$('.acp-add-row[data-add="key"]').$('button=Add key').click()
+    await list.$('[data-testid="paste-key-input"]').setValue('Zq81mXk93LpTt20abCdEf')
+    await expect(list.$('[data-testid="paste-key-ask"]')).toBeDisplayed()
     const providerLabels = await list
       .$$('[data-testid="paste-key-provider"] option')
       .map((option) => option.getText())
