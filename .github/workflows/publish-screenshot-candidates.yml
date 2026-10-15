@@ -795,6 +795,17 @@ jobs:
             // ticks names, then the last box; screenshot-review-selection.yml
             // commits only those. The hidden marker pins the list to this head.
             const selectionLimit = 100;
+            // The candidate step lists at most 50 names (PR-touched first), so
+            // a larger change has unlisted candidates. Say so: the compare
+            // view, the labels and the cherry-pick still cover every candidate.
+            const candidateTotal = Math.max(
+              Number(process.env.CANDIDATE_COUNT) || 0,
+              candidateEntries.length,
+            );
+            const listed = [
+              ...candidateEntries.filter((entry) => entry.focus === true).sort(byName),
+              ...candidateEntries.filter((entry) => entry.focus !== true).sort(byName),
+            ].slice(0, selectionLimit);
             const selection =
               acceptable && candidateEntries.length > 0
                 ? [
@@ -802,11 +813,7 @@ jobs:
                     'Or commit only some: tick the screenshots to keep, then tick the last box. ' +
                       'The others are not committed.',
                     '',
-                    ...[
-                      ...candidateEntries.filter((entry) => entry.focus === true).sort(byName),
-                      ...candidateEntries.filter((entry) => entry.focus !== true).sort(byName),
-                    ]
-                      .slice(0, selectionLimit)
+                    ...listed
                       .flatMap((entry, index) => [
                         `- [ ] \`${entry.name}\`${entry.new ? ' *(new)*' : ''}`,
                         ...(index < previewLimit
@@ -817,8 +824,12 @@ jobs:
                             ]
                           : []),
                       ]),
-                    ...(candidateEntries.length > selectionLimit
-                      ? [`…and ${candidateEntries.length - selectionLimit} more, which only the labels can commit.`]
+                    ...(candidateTotal > listed.length
+                      ? [
+                          `…and ${candidateTotal - listed.length} more that this list cannot tick: ` +
+                            `see [the compare view](${compareUrl}); the labels, the cherry-pick and ` +
+                            '`pnpm screenshots:accept` cover every candidate.',
+                        ]
                       : []),
                     '- [ ] **Commit the ticked screenshots**',
                     '',

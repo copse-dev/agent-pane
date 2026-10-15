@@ -34,6 +34,8 @@ import { unwrapInlineCode } from './session-update-adapter.ts'
 
 import { BRIDGE_MCP_SERVER_NAME, matchesBridgedToolName } from './acp-bridge-name.ts'
 import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
+import { configuredClassifierProfiles } from '../classifiers/classifier-service.ts'
+import { ASK_CLASSIFIER_TOOL_NAME, describeClassifyTool } from '../../tools/classifier-tool.ts'
 
 export { BRIDGE_MCP_SERVER_NAME }
 
@@ -93,6 +95,8 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // prompts and, when approved, runs outside the ACP process's seatbelt.
   'run_shell',
   'run_background',
+  // Saved decision classifiers run through Copse's permission and provider gates.
+  'ask_classifier',
   // Host GUI launch via Launch Services. run_shell/open cannot reach the
   // window server from the seatbelt; this tool asks once, then launches
   // unsandboxed from the host process (gui-app-launch-tool.ts).
@@ -294,7 +298,14 @@ function bridgedTools(
   // toMcpTools, not toLLMTools: the agent forwards these schemas to the
   // Anthropic API, which validates them as JSON Schema draft 2020-12 and
   // 400s the whole request on the openapi-3.0 flavor.
-  return registry.toMcpTools().filter((tool) => offered.has(tool.name))
+  return registry
+    .toMcpTools()
+    .filter((tool) => offered.has(tool.name))
+    .map((tool) =>
+      tool.name === ASK_CLASSIFIER_TOOL_NAME
+        ? { ...tool, description: describeClassifyTool(configuredClassifierProfiles()) }
+        : tool,
+    )
 }
 
 interface BridgeExecuteContext {
