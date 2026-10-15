@@ -132,15 +132,6 @@ describe('settings → Customise / MCP / Storage', function () {
     await expect(storage.$('legend=Worktrees')).toBeDisplayed()
     const list = storage.$('#sources-worktrees-list')
     await list.waitForExist({ timeout: 15_000 })
-    await expect(list.$('.sources-empty')).toHaveText(expect.stringContaining('No worktrees'))
-    const emptyRowId = (await list.$('.sources-empty')).elementId
-    await $('#settings-dialog').$('button[data-section="mcp"]').click()
-    await $('#settings-dialog').$('button[data-section="storage"]').click()
-    assert.equal(
-      (await list.$('.sources-empty')).elementId,
-      emptyRowId,
-      'revisiting Storage keeps the unchanged inventory node',
-    )
 
     await saveElementScreenshot('#settings-dialog', 'settings-storage.png')
   })

@@ -7,7 +7,7 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 
 export function createStorageMaintenancePanel(api: ApiClient): {
   element: HTMLElement
-  refresh: (force?: boolean) => Promise<void>
+  refresh: () => Promise<void>
 } {
   const element = el('fieldset', { id: 'storage-maintenance' })
   element.innerHTML = `
@@ -27,9 +27,6 @@ export function createStorageMaintenancePanel(api: ApiClient): {
   let state: StorageMaintenanceState | null = null
   let working = false
   let generation = 0
-  let lastCheckedAt = 0
-  let pendingRefresh: Promise<void> | null = null
-  const FRESH_MS = 60_000
   function controls(): void {
     enabled.disabled = working || !state
     days.disabled = working || !state
@@ -39,25 +36,12 @@ export function createStorageMaintenancePanel(api: ApiClient): {
         working || !summary || summary.busy || summary.entries === 0
     }
   }
-  async function refresh(force = false): Promise<void> {
-    if (!force && pendingRefresh) return pendingRefresh
-    if (!force && state && Date.now() - lastCheckedAt < FRESH_MS) return
-    const request = inspect()
-    pendingRefresh = request
-    try {
-      await request
-    } finally {
-      if (pendingRefresh === request) pendingRefresh = null
-    }
-  }
-  async function inspect(): Promise<void> {
+  async function refresh(): Promise<void> {
     const token = ++generation
     controls()
     try {
       const next = await api.storage.maintenance()
       if (token !== generation) return
-      lastCheckedAt = Date.now()
-      if (state && JSON.stringify(next) === JSON.stringify(state)) return
       state = next
       enabled.checked = next.retention.enabled
       if (![...days.options].some((option) => Number(option.value) === next.retention.days)) {
@@ -69,10 +53,7 @@ export function createStorageMaintenancePanel(api: ApiClient): {
           ? 'In use'
           : `${formatByteSize(summary.bytes)} · ${String(summary.entries)} item${summary.entries === 1 ? '' : 's'}`
     } catch (error) {
-      if (token === generation) {
-        lastCheckedAt = 0
-        status.textContent = errorMessage(error)
-      }
+      if (token === generation) status.textContent = errorMessage(error)
     } finally {
       if (token === generation) controls()
     }
@@ -88,7 +69,7 @@ export function createStorageMaintenancePanel(api: ApiClient): {
       status.textContent = 'Automatic cleanup updated.'
     } catch (error) {
       status.textContent = errorMessage(error)
-      await refresh(true)
+      await refresh()
     } finally {
       working = false
       controls()
@@ -111,7 +92,7 @@ export function createStorageMaintenancePanel(api: ApiClient): {
     status.textContent = 'Cleaning up…'
     try {
       const result = await api.storage.cleanup(area)
-      await refresh(true)
+      await refresh()
       status.textContent = `Removed ${String(result.removed)} item${result.removed === 1 ? '' : 's'} (${formatByteSize(result.bytes)}).${result.skipped ? ` Kept ${String(result.skipped)} active, incomplete or protected items.` : ''}`
     } catch (error) {
       status.textContent = errorMessage(error)

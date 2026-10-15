@@ -224,51 +224,6 @@ describe('settings sources → worktrees list', () => {
     assert.equal(row.querySelector('.sources-row-hover-detail')?.textContent, entry().path)
   })
 
-  it('reuses recent storage results and preserves unchanged rows on later checks', async (t) => {
-    let now = Date.now()
-    t.mock.method(Date, 'now', () => now)
-    const projectCalls: string[] = []
-    const sizeCalls: string[] = []
-    const entries = [entry()]
-    const list = await openWorktrees(stubApi(entries, { projectCalls, sizeCalls }))
-    const row = list.firstElementChild
-    const button = document.querySelector<HTMLButtonElement>(
-      '.settings-nav-btn[data-section="storage"]',
-    )
-    const general = document.querySelector<HTMLButtonElement>(
-      '.settings-nav-btn[data-section="general"]',
-    )
-    assert.ok(button)
-    assert.ok(general)
-    const revisit = async (): Promise<void> => {
-      general.click()
-      await flush()
-      button.click()
-      await flush()
-    }
-    await revisit()
-    assert.deepEqual(projectCalls, ['project-1'])
-    assert.deepEqual(sizeCalls, [entry().path])
-    assert.equal(list.firstElementChild, row)
-
-    now += 61_000
-    await revisit()
-    assert.deepEqual(projectCalls, ['project-1', 'project-1'])
-    assert.deepEqual(sizeCalls, [entry().path])
-    assert.equal(list.firstElementChild, row)
-
-    now += 5 * 60_000
-    await revisit()
-    assert.equal(sizeCalls.length, 2, 'old size measurements are eventually refreshed')
-    assert.equal(list.firstElementChild, row)
-
-    entries[0] = entry({ changedCount: 1 })
-    now += 61_000
-    await revisit()
-    assert.notEqual(list.firstElementChild, row)
-    assert.match(list.textContent, /1 uncommitted/)
-  })
-
   it('opens the owning thread from its badge', async () => {
     const list = await openWorktrees(stubApi([entry()]))
     const threadButton = list.querySelector<HTMLButtonElement>('.sources-worktree-thread-btn')
