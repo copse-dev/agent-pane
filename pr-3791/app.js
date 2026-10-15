@@ -46504,6 +46504,57 @@ var init_model_maker_block = __esm({
   }
 });
 
+// packages/llm/src/model-version-suppression.ts
+function parseModelLineage(id) {
+  const claude = CLAUDE_ID.exec(id);
+  if (claude) {
+    const family = claude[1];
+    const version2 = claude[2];
+    if (family === void 0 || version2 === void 0) return null;
+    return { lineage: `claude-${family}`, version: version2.split("-").map(Number) };
+  }
+  const gpt = GPT_ID.exec(id);
+  if (gpt) {
+    const version2 = gpt[1];
+    if (version2 === void 0) return null;
+    const tier = gpt[2];
+    return {
+      lineage: tier === void 0 ? "gpt" : `gpt-${tier}`,
+      version: version2.split(".").map(Number)
+    };
+  }
+  return null;
+}
+function compareVersions(a3, b5) {
+  for (let i3 = 0; i3 < Math.max(a3.length, b5.length); i3++) {
+    const difference = (a3[i3] ?? 0) - (b5[i3] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+function supersedingModel(model, offered) {
+  const own2 = parseModelLineage(model);
+  if (own2 === null) return null;
+  let best = null;
+  for (const candidate of offered) {
+    if (candidate === model) continue;
+    const parsed2 = parseModelLineage(candidate);
+    if (parsed2 === null || parsed2.lineage !== own2.lineage) continue;
+    if (compareVersions(parsed2.version, own2.version) <= 0) continue;
+    if (best === null || compareVersions(parsed2.version, best.version) > 0) {
+      best = { id: candidate, version: parsed2.version };
+    }
+  }
+  return best?.id ?? null;
+}
+var CLAUDE_ID, GPT_ID;
+var init_model_version_suppression = __esm({
+  "packages/llm/src/model-version-suppression.ts"() {
+    CLAUDE_ID = /^claude-(opus|sonnet|haiku|fable)-(\d{1,2}(?:-\d{1,2})?)$/;
+    GPT_ID = /^gpt-(\d{1,2}(?:\.\d{1,2})?)(?:-([a-z][a-z0-9]*))?$/;
+  }
+});
+
 // src/renderer/views/model-coverage.ts
 function modelCoverage(value, context) {
   if (!value || value.startsWith("auto:")) return void 0;
@@ -46948,11 +46999,24 @@ async function fetchModelOptions(api2, current, opts = {}) {
     blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
   } catch {
   }
-  const visibleOptions = options.flatMap((option) => {
+  const unblockedOptions = options.flatMap((option) => {
     const maker = blockedModelMaker(option.value, blockedMakers);
     if (!maker) return [option];
     if (option.value !== current) return [];
     return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
+  });
+  const offered = unblockedOptions.map((option) => option.value);
+  const visibleOptions = unblockedOptions.flatMap((option) => {
+    const successor = supersedingModel(option.value, offered);
+    if (successor === null) return [option];
+    if (option.value !== current) return [];
+    return [
+      {
+        ...option,
+        label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
+        disabled: true
+      }
+    ];
   });
   const concreteCount = visibleOptions.filter(
     (o3) => !isBestValueChatModel(o3.value) && o3.value !== "" && !o3.value.startsWith(AUTO_MODEL_PREFIX)
@@ -47051,6 +47115,7 @@ var init_model_options = __esm({
     init_model_display();
     init_nullish2();
     init_model_maker_block();
+    init_model_version_suppression();
     init_model_coverage();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
