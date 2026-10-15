@@ -1,5 +1,6 @@
 import { $, $$, browser, expect } from '@wdio/globals'
 import assert from 'node:assert/strict'
+import { isDeepStrictEqual } from 'node:util'
 import { readFile, writeFile } from 'node:fs/promises'
 import { build } from 'esbuild'
 import { z } from 'zod'
@@ -191,45 +192,53 @@ describe('streamed reply motion in the real renderer', () => {
       // Compare rendered text by blocks: Markdown **, link URLs, list markers and
       // browser-dependent block whitespace must not be compared to raw source.
       // Trailing paragraphs allow the same assistant bubble to retain the intro.
-      await browser.waitUntil(
-        async () => {
-          const actual = await browser.execute(() => {
-            const live = [
-              ...document.querySelectorAll<HTMLElement>(
-                '.msg-assistant > .message-body > .message-text.is-streaming',
-              ),
-            ].at(-1)
-            if (!live) return null
-            const normalize = (value: string): string => value.replace(/\s+/g, ' ').trim()
-            return {
-              paragraphs: [...live.querySelectorAll('p')]
-                .filter((p) => !p.closest('li'))
-                .map((p) => normalize(p.textContent ?? ''))
-                .slice(-2),
-              headings: [...live.querySelectorAll('h2,h3')].map((h) =>
-                normalize(h.textContent ?? ''),
-              ),
-              items: [...live.querySelectorAll('li')].map((li) => {
-                const copy = li.cloneNode(true)
-                if (!(copy instanceof HTMLElement)) throw new Error('Expected list item element')
-                for (const nested of copy.querySelectorAll('ul,ol')) nested.remove()
-                return normalize(copy.textContent ?? '')
-              }),
-              codeBlocks: live.querySelectorAll('pre').length,
-            }
-          })
-          return (
-            JSON.stringify(actual) ===
-            JSON.stringify({
+      let lastObserved: unknown = null
+      await browser
+        .waitUntil(
+          async () => {
+            const actual = await browser.execute(() => {
+              const live = [
+                ...document.querySelectorAll<HTMLElement>(
+                  '.msg-assistant > .message-body > .message-text.is-streaming',
+                ),
+              ].at(-1)
+              if (!live) return null
+              const normalize = (value: string): string => value.replace(/\s+/g, ' ').trim()
+              return {
+                paragraphs: [...live.querySelectorAll('p')]
+                  .filter((p) => !p.closest('li'))
+                  .map((p) => normalize(p.textContent ?? ''))
+                  .slice(-2),
+                headings: [...live.querySelectorAll('h2,h3')].map((h) =>
+                  normalize(h.textContent ?? ''),
+                ),
+                items: [...live.querySelectorAll('li')].map((li) => {
+                  const copy = li.cloneNode(true)
+                  if (!(copy instanceof HTMLElement)) throw new Error('Expected list item element')
+                  for (const nested of copy.querySelectorAll('ul,ol')) nested.remove()
+                  return normalize(copy.textContent ?? '')
+                }),
+                codeBlocks: live.querySelectorAll('pre').length,
+              }
+            })
+            lastObserved = actual
+            return isDeepStrictEqual(actual, {
               paragraphs: expectedParagraphs,
               headings: ['What changed'],
               items: expectedItems,
               codeBlocks: 0,
             })
-          )
-        },
-        { timeout: 10_000, timeoutMsg: 'renderer did not reveal the exact held prose/list prefix' },
-      )
+          },
+          {
+            timeout: 10_000,
+            timeoutMsg: 'renderer did not reveal the exact held prose/list prefix',
+          },
+        )
+        .catch((cause: unknown) => {
+          throw new Error(`Renderer checkpoint mismatch: ${JSON.stringify(lastObserved)}`, {
+            cause,
+          })
+        })
       await expect($('.submit-btn.with-stop')).toBeDisplayed()
       await expect($('.msg-assistant .message-text.is-streaming')).toBeDisplayed()
       await expect($('.tool-card[data-status="done"]')).toBeDisplayed()
