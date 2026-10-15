@@ -59,8 +59,11 @@ async function frameCompletedMissingEntryTurn(): Promise<void> {
     ].find((node) => node.querySelector('.message-text')?.textContent?.trim() === text)
     const id = message?.dataset.messageId
     const host = id ? document.querySelector(`[data-hook-cards-for="${id}"]`) : null
-    if (!host) throw new Error('final hook group missing')
-    host.scrollIntoView({ block: 'end', inline: 'nearest', behavior: 'instant' })
+    const list = document.querySelector('.messages-list')
+    if (!host || !list) throw new Error('final hook group or transcript missing')
+    // Use the completed transcript's actual end. scrollIntoView's nearest
+    // ancestor crop depends on the previous scroll position and footer resize.
+    list.scrollTo({ top: list.scrollHeight, behavior: 'instant' })
   }, MISSING_ENTRY_REPLY)
   await waitForSettledLayout('.messages-list')
   const contained = await browser.execute((text) => {
@@ -73,6 +76,7 @@ async function frameCompletedMissingEntryTurn(): Promise<void> {
     if (!list || !message || !host) return false
     const box = list.getBoundingClientRect()
     return (
+      list.scrollHeight - list.clientHeight - list.scrollTop <= 1 &&
       message.getBoundingClientRect().top >= box.top &&
       host.getBoundingClientRect().bottom <= box.bottom + 1
     )
