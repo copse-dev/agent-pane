@@ -31,7 +31,7 @@ import {
 import { createRequire } from 'node:module'
 import { dirname, join, relative } from 'node:path'
 import { isRecord } from '../src/shared/unknown-value.mts'
-import { resolveElectronBrowserVersion } from '../tests/e2e/helpers/electron-browser-version.ts'
+import { resolveElectronBrowserVersion } from './lib/electron-browser-version.mts'
 import { isDirectExecution } from './lib/direct-execution.mts'
 import { safeJsonParse } from './lib/safe-json.mts'
 import { hydrateScreenshots } from './lib/screenshot-hydration.mts'
