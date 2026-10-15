@@ -71,7 +71,10 @@ revisiting this document, not silently diverging in an implementation PR.
    the complete turn uses blocking mode.
 4. **The pending-message queue is the only async output channel.** An async hook's
    results land as queued messages (consumed at idle drain, or immediately if the hook
-   sets send-now — byte-for-byte the user's send-now semantics). No mid-turn injection
+   sets send-now — byte-for-byte the user's send-now semantics). Send-now interrupts
+   the model turn but transfers an already-running native shell command to the owned
+   background-task supervisor, preserving its process, containment, logs and original
+   deadline. Explicit Stop still cancels foreground work. No mid-turn injection
    path exists for async hooks; late results are therefore safe by construction.
 5. **One auto-continuation budget.** A single counter per **turn tree** (everything
    descending from one human-originated submission). The ledger counts
@@ -79,7 +82,9 @@ revisiting this document, not silently diverging in an implementation PR.
    follow-ups, bounded background-task completion wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
    originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, post-turn remediation cycles,
-   pre-review todo attempts, and todo-closeout turns. **In-loop nudges do not count**
+   pre-review todo attempts, and todo-closeout turns. Agent-managed external-agent
+   turns leave unfinished-turn recovery to the agent, so they spend no recovery
+   continuation. **In-loop nudges do not count**
    (truncation-continue, finalize, loop, and
    reasoning-runaway nudges are mid-turn message pushes inside one `runAgentLoop`
    invocation, already bounded by `maxSteps` / `DEFAULT_MAX_LLM_CALLS` and the run
@@ -292,8 +297,10 @@ revisiting this document, not silently diverging in an implementation PR.
     decision 17: disabling removes contributions from new work while stored data and
     historical rendering remain available.
 20. **`turnStart` assembly is executor-neutral.** The canonical event fires once
-    for the built-in loop and once for an external ACP turn, before either executor
-    receives its prompt. ACP receives the merged trusted outcome in a separately
+    for the built-in loop and once for a Copse-managed external ACP turn, before
+    either executor receives its prompt. Agent-managed external-agent turns omit
+    Copse's prompt assembly so the agent receives its native prompting behavior.
+    Copse-managed ACP receives the merged trusted outcome in a separately
     delimited `Copse guidance` block; the raw user message stays byte-for-byte intact,
     and an explicitly invoked skill remains the last instruction block because it is
     a direct user action. `TurnStartPayload.executor` lets hooks abstain from
@@ -919,7 +926,8 @@ Collected from design review — each of these was _almost_ a bug in the plan it
 
 - **`drainMessageQueue` auto-submits plain queued messages at idle.** Any "queued for
   the human" semantics must use the held state; a plain enqueue is an auto-submit.
-- **`sendQueuedMessageNow` aborts the active local run.** Check epoch staleness _before_
+- **`sendQueuedMessageNow` interrupts the active model turn while preserving a running
+  native shell command as a background task.** Check epoch staleness _before_
   reaching that path, or a late hook kills an unrelated turn.
 - **`writeThread` regenerates `events.jsonl` from `thread.messages` alone.** Appending a
   spine line without full-save round-tripping means it vanishes on the next save.
@@ -1057,6 +1065,15 @@ fixed add/commit operation. The ordinary tool-gate hooks remain in the registry 
 Its separate signing capability never inherits a shell basename bypass: approvals
 bind to a project, system signer, public key and agent socket, and do not change the
 Git hook process's sandbox. See `docs/shell-permissions.md#native-commits-and-signing`.
+
+### Cross-thread prompts
+
+`send_thread_prompt` is a machine submission surface, authorized by a separate durable
+send grant on the source thread. It enters the destination's pending-message queue with
+`kind: 'machine'` provenance. These queued items consume the same continuation budget as
+hook-originated items (decision 5), never start a human turn tree, never interrupt an
+active run, and respect held/paused queues. The renderer remains the transcript writer.
+Sending does not transfer the source's read or send grants to the destination.
 
 ### Mobile human submissions (26 September 2026)
 

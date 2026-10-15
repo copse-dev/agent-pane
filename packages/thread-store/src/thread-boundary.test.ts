@@ -2,11 +2,22 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseThreadMetaValue } from './thread-boundary.ts'
 
-function meta(usage: unknown): unknown {
+function meta(usage: unknown): Record<string, unknown> {
   return { id: 't1', title: 'Thread', status: 'idle', usage, createdAt: 1, updatedAt: 2 }
 }
 
 describe('parseThreadMetaValue usage', () => {
+  it('round-trips the thread execution choice and defaults unknown values to Copse managed', () => {
+    const base = meta({ inputTokens: 0, outputTokens: 0 })
+    assert.deepEqual(
+      parseThreadMetaValue({ ...base, executionMode: 'agent' })?.executionMode,
+      'agent',
+    )
+    const unknown = parseThreadMetaValue({ ...base, executionMode: 'other' })
+    assert.ok(unknown)
+    assert.equal(Object.hasOwn(unknown, 'executionMode'), false)
+  })
+
   it('raises legacy fresh-only ACP byModel entries and the thread total to the cache floor, once', () => {
     const parsed = parseThreadMetaValue(
       meta({

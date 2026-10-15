@@ -177,6 +177,8 @@ export interface SettingsValues {
   trustedShellCommands: Array<string>
   mcpAutoAllowReadOnly: boolean
   toolPermissionOverrides: Record<string, 'allow' | 'ask' | 'block'>
+  threadReadAccess: string[]
+  threadSendAccess: string[]
   cursorHooksEnabled: boolean
   defaultReadonlyMode: boolean
   safeInstallEnabled: boolean
@@ -236,6 +238,8 @@ type DedicatedSettingKey =
   | 'trustedShellCommands'
   | 'mcpAutoAllowReadOnly'
   | 'toolPermissionOverrides'
+  | 'threadReadAccess'
+  | 'threadSendAccess'
   | 'cursorHooksEnabled'
   | 'defaultReadonlyMode'
   | 'safeInstallEnabled'

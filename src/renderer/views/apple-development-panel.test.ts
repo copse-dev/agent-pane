@@ -103,29 +103,31 @@ afterEach(() => {
 })
 
 describe('Apple Development target selection', () => {
-  it('hides passive availability errors for a checkout awaiting recovery', async () => {
-    const base = createFakeApi()
-    const api: ApiClient = {
-      ...base,
-      appleDevelopment: {
-        ...base.appleDevelopment,
-        state: async () => {
-          throw new Error(
-            "Error invoking remote method 'apple-development:state': ThreadWorktreeOnBaseBranchError: on main",
-          )
+  for (const errorName of ['ThreadWorktreeOnBaseBranchError', 'MissingThreadWorktreeError']) {
+    it(`hides passive ${errorName} while preserving explicit action errors`, async () => {
+      const base = createFakeApi()
+      const api: ApiClient = {
+        ...base,
+        appleDevelopment: {
+          ...base.appleDevelopment,
+          state: async () => {
+            throw new Error(
+              `Error invoking remote method 'apple-development:state': ${errorName}: checkout unavailable`,
+            )
+          },
         },
-      },
-    }
-    const store = createStore({ activeProjectId: 'project', activeThreadId: 'thread' })
-    const passive = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
-    const explicit = createAppleDevelopmentPanel(store, api, { allowEnrollment: true })
-    document.body.append(passive, explicit)
-    await tick()
-    assert.equal(passive.hidden, true)
-    assert.equal(passive.querySelector('.apple-development-error'), null)
-    assert.equal(explicit.hidden, false)
-    assert.match(explicit.textContent, /ThreadWorktreeOnBaseBranchError/)
-  })
+      }
+      const store = createStore({ activeProjectId: 'project', activeThreadId: 'thread' })
+      const passive = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
+      const explicit = createAppleDevelopmentPanel(store, api, { allowEnrollment: true })
+      document.body.append(passive, explicit)
+      await tick()
+      assert.equal(passive.hidden, true)
+      assert.equal(passive.querySelector('.apple-development-error'), null)
+      assert.equal(explicit.hidden, false)
+      assert.ok(explicit.textContent.includes(errorName))
+    })
+  }
 
   it('shows only scheme-compatible destinations and prefers a booted simulator', async () => {
     const base = createFakeApi()

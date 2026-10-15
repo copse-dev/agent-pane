@@ -183,13 +183,13 @@ describe('agent scratch directories', () => {
   })
 
   it('keeps the opaque-executable reason for the command that reported this', () => {
-    // The dialog carried two reasons; only the path half was wrong. Executing a
-    // workspace binary the agent could have authored must still prompt.
+    // Neither opacity nor an already-granted scratch path requires an escape.
+    // The binary starts contained and may ask if it needs host access.
     const r = analyzeShellCommand(
       'env -u ELECTRON_RUN_AS_NODE node_modules/electron/dist/Copse.app/Contents/MacOS/Electron /tmp/claude/probe.js',
       root,
     )
-    assert.equal(r.verdict, 'external')
+    assert.equal(r.verdict, 'ambiguous')
     assert.deepEqual(r.reasons, [
       'executes an in-workspace file directly (contents opaque to analysis)',
     ])

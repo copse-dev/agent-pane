@@ -6,9 +6,10 @@ import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
   saveElementScreenshot,
+  waitForSettledLayout,
+  withCaptureFrame,
 } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
-import { withFrozenAnimations } from './helpers/frozen-animations.ts'
 
 const SKILL = 'settings-navigation-fixture'
 const INSTRUCTIONS = 'Prefer readable names and focused changes.'
@@ -83,10 +84,29 @@ describe('Settings section composition, validation and sticky actions', () => {
       (await browser.execute(() => window.api.settings.getSnapshot())).customInstructions,
       previous.customInstructions,
     )
-    // Chromium's native validation bubble is outside the DOM animation API.
-    // Require consecutive identical frames so its fade-in cannot leak through
-    // the screenshot's otherwise frozen renderer animations.
-    await withFrozenAnimations(async () => {
+    await withCaptureFrame(async () => {
+      await prepareE2eScreenshot()
+      await waitForSettledLayout('#settings-dialog')
+      const invalid = await browser.execute(() => {
+        const field = document.querySelector<HTMLInputElement>('[name="fontSize"]')
+        if (!field) throw new Error('Missing font size field')
+        return {
+          accepted: field.reportValidity(),
+          overflow: field.validity.rangeOverflow,
+          message: field.validationMessage,
+        }
+      })
+      assert.equal(invalid.accepted, false)
+      assert.equal(invalid.overflow, true)
+      assert.notEqual(invalid.message, '')
+      // Chromium owns this popup outside the page DOM. Re-open after capture
+      // sizing, then wait for its longest transition (1166.67ms scale; opacity
+      // is 466.67ms and text is 700ms in Blink validation_bubble.css). The
+      // overlay has its own internal page, so app DOM geometry cannot observe it.
+      await browser.pause(1500)
+      // Chromium's native validation bubble is outside the DOM animation API.
+      // Require consecutive identical frames so its fade-in cannot leak through
+      // the screenshot's otherwise frozen renderer animations.
       let previousFrame = ''
       let stableFrames = 0
       await browser.waitUntil(
@@ -98,8 +118,8 @@ describe('Settings section composition, validation and sticky actions', () => {
         },
         { timeout: 5_000, interval: 200, timeoutMsg: 'native validation bubble did not settle' },
       )
+      await dialog.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'settings-composition-invalid-save.png'))
     })
-    await saveElementScreenshot('#settings-dialog', 'settings-composition-invalid-save.png')
     await dialog.$('[name="fontSize"]').setValue('16')
     await prepareE2eScreenshot()
     const footer = await browser.execute(() => {
