@@ -97,3 +97,30 @@ test('busy categories are disabled; retention persists independently of the sett
   await settle()
   assert.deepEqual(policies, [{ enabled: false, days: 30 }])
 })
+
+test('recent inspections are reused and unchanged results leave the displayed size alone', async (t) => {
+  let now = Date.now()
+  t.mock.method(Date, 'now', () => now)
+  const base = createFakeApi()
+  let calls = 0
+  const panel = createStorageMaintenancePanel({
+    ...base,
+    storage: {
+      ...base.storage,
+      maintenance: async () => {
+        calls++
+        return state()
+      },
+    },
+  })
+  document.body.append(panel.element)
+  await Promise.all([panel.refresh(), panel.refresh()])
+  const size = panel.element.querySelector('#storage-runs-size')
+  const text = size?.firstChild
+  await panel.refresh()
+  assert.equal(calls, 1)
+  now += 61_000
+  await panel.refresh()
+  assert.equal(calls, 2)
+  assert.equal(size?.firstChild, text)
+})

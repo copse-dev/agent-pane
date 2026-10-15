@@ -427,6 +427,7 @@ export function createStorageSection(
   const worktreeSizeRequests = new WeakMap<HTMLElement, number>()
   let worktreeSizeGeneration = 0
   let worktreeSizeFill: Promise<void> = Promise.resolve()
+  let lastSizeCheck = 0
 
   /** Fill in each row's on-disk size, one checkout at a time so the walks don't pile up. */
   async function fillWorktreeSizes(
@@ -441,7 +442,8 @@ export function createStorageSection(
       if (!target.size.isConnected) continue
       const request = (worktreeSizeRequests.get(target.size) ?? 0) + 1
       worktreeSizeRequests.set(target.size, request)
-      target.size.dataset['sizeState'] = 'measuring'
+      if (target.size.dataset['sizeState'] !== 'ready')
+        target.size.dataset['sizeState'] = 'measuring'
       try {
         const size = await api.worktrees.size(projectId, target.entry.path)
         if (
@@ -449,10 +451,11 @@ export function createStorageSection(
           worktreeSizeRequests.get(target.size) !== request
         )
           continue
-        target.size.textContent = size.truncated
+        const label = size.truncated
           ? `over ${formatByteSize(size.bytes)}`
           : formatByteSize(size.bytes)
-        target.size.dataset['sizeState'] = 'ready'
+        if (target.size.textContent !== label) target.size.textContent = label
+        if (target.size.dataset['sizeState'] !== 'ready') target.size.dataset['sizeState'] = 'ready'
       } catch {
         if (
           generation !== worktreeSizeGeneration ||
@@ -584,6 +587,7 @@ export function createStorageSection(
     try {
       await action()
     } finally {
+      lastWorktreeCheck = 0
       worktreeActionRunning = false
       syncWorktreeSelection()
       const projectId = storageProjectId
@@ -660,6 +664,11 @@ export function createStorageSection(
 
   let storageProjectId: string | null = null
   let worktreeRefreshGeneration = 0
+  let lastWorktreeCheck = 0
+  let checkedProjectId: string | null = null
+  let storageProjectsKey = ''
+  const INVENTORY_FRESH_MS = 60_000
+  const SIZE_FRESH_MS = 5 * 60_000
 
   function syncStorageProjectSelect(preferActiveProject = false): string | null {
     const select = qsRequired<HTMLSelectElement>(overlay, '#storage-project-select')
@@ -676,40 +685,67 @@ export function createStorageSection(
       projects[0]?.id ??
       null
 
-    select.replaceChildren()
-    for (const project of projects) {
-      const option = document.createElement('option')
-      option.value = project.id
-      option.textContent = `${project.name} — ${project.path}`
-      option.title = project.path
-      select.append(option)
+    const projectsKey = JSON.stringify(projects.map(({ id, name, path }) => [id, name, path]))
+    if (projectsKey !== storageProjectsKey) {
+      storageProjectsKey = projectsKey
+      select.replaceChildren()
+      for (const project of projects) {
+        const option = document.createElement('option')
+        option.value = project.id
+        option.textContent = `${project.name} — ${project.path}`
+        option.title = project.path
+        select.append(option)
+      }
     }
     select.disabled = projects.length === 0
-    select.value = storageProjectId ?? ''
+    if (select.value !== (storageProjectId ?? '')) select.value = storageProjectId ?? ''
     const selected = projects.find((project) => project.id === storageProjectId)
-    path.textContent = selected?.path ?? 'Open a local project to manage its storage.'
+    const pathLabel = selected?.path ?? 'Open a local project to manage its storage.'
+    if (path.textContent !== pathLabel) path.textContent = pathLabel
     return storageProjectId
   }
 
   /** Load inventory when opening Storage or choosing another project. */
   async function refreshWorktrees(status = '', preferActiveProject = false): Promise<void> {
     if (worktreeActionRunning) return
-    worktreeSizeGeneration += 1
     const statusEl = qsRequired(overlay, '#sources-worktrees-status')
     const projectId = syncStorageProjectSelect(preferActiveProject)
-    worktreeRows.clear()
-    selectedWorktrees.clear()
-    fillSourceList('#sources-worktrees-list', [], 'Loading…')
-    syncWorktreeSelection()
+    const sameProject = projectId === checkedProjectId
+    const now = Date.now()
+    if (sameProject && lastWorktreeCheck && now - lastWorktreeCheck < INVENTORY_FRESH_MS) return
     const generation = ++worktreeRefreshGeneration
     if (!projectId) {
+      worktreeSizeGeneration += 1
+      worktreeRows.clear()
+      selectedWorktrees.clear()
+      checkedProjectId = null
+      lastWorktreeCheck = 0
       fillSourceList('#sources-worktrees-list', [], 'Open a project to see its worktrees.')
+      syncWorktreeSelection()
       statusEl.textContent = ''
       return
     }
+    if (!sameProject) fillSourceList('#sources-worktrees-list', [], 'Loading…')
     try {
       const entries = await api.worktrees.list(projectId)
       if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return
+      checkedProjectId = projectId
+      lastWorktreeCheck = Date.now()
+      const previous = [...worktreeRows.values()].map(({ entry }) => entry)
+      if (sameProject && JSON.stringify(entries) === JSON.stringify(previous)) {
+        if (Date.now() - lastSizeCheck >= SIZE_FRESH_MS) {
+          await worktreeSizeFill
+          if (generation !== worktreeRefreshGeneration) return
+          const sizeFill = fillWorktreeSizes(projectId, [...worktreeRows.values()])
+          worktreeSizeFill = sizeFill
+          await sizeFill
+          lastSizeCheck = Date.now()
+        }
+        return
+      }
+      worktreeSizeGeneration += 1
+      worktreeRows.clear()
+      selectedWorktrees.clear()
       const rendered = entries.map((entry) => ({ entry, ...makeWorktreeRow(projectId, entry) }))
       fillSourceList(
         '#sources-worktrees-list',
@@ -722,6 +758,7 @@ export function createStorageSection(
       const sizeFill = fillWorktreeSizes(projectId, rendered)
       worktreeSizeFill = sizeFill
       await sizeFill
+      if (generation === worktreeRefreshGeneration) lastSizeCheck = Date.now()
     } catch (error) {
       if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return
       fillSourceList('#sources-worktrees-list', [], 'Could not list worktrees.')
@@ -745,6 +782,15 @@ export function createStorageSection(
     invalidate: (): void => {
       worktreeRefreshGeneration += 1
       worktreeSizeGeneration += 1
+      if (
+        [...worktreeRows.values()].some(
+          ({ size }) =>
+            size.dataset['sizeState'] === 'pending' || size.dataset['sizeState'] === 'measuring',
+        )
+      ) {
+        lastWorktreeCheck = 0
+        lastSizeCheck = 0
+      }
     },
   }
 }
