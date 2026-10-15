@@ -128,7 +128,8 @@
     "screenshots:download": "node scripts/screenshot-storage.mts download",
     "screenshots:hydrate": "node scripts/screenshot-storage.mts hydrate",
     "screenshots:changed": "node scripts/screenshot-storage.mts changed",
-    "screenshots:accept": "node scripts/screenshot-storage.mts accept"
+    "screenshots:accept": "node scripts/screenshot-storage.mts accept",
+    "screenshots:metrics-baseline": "node scripts/screenshot-metrics-baseline.mts"
   },
   "build": {
     "appId": "dev.copse.app",

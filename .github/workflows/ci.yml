@@ -1474,6 +1474,12 @@ jobs:
       # by default unless developers opt out with the same variable.
       COPSE_E2E_HEADLESS: '0'
     steps:
+      # Measurement only: the shard's job start, before checkout wipes the
+      # workspace (RUNNER_TEMP survives it). The collect step below folds it
+      # into the shard's provenance marker so `screenshot-artifacts` can report
+      # e2e wall minutes without an Actions API token.
+      - name: Record shard start
+        run: date -u +%FT%TZ > "$RUNNER_TEMP/shard-job-started"
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: ${{ github.event_name != 'merge_group' }}
@@ -1582,6 +1588,10 @@ jobs:
       # is tuned for); `skip` runs nothing. Every shard still reports a status, so
       # this composes with any required check without depending on an aggregate
       # gate first.
+      # Measurement only: when the suite itself starts, after setup and the
+      # dist download, so setup overhead and spec time are separable.
+      - name: Record suite start
+        run: date -u +%FT%TZ > "$RUNNER_TEMP/shard-suite-started"
       - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (oracle-gated, retry on flaky session startup)
         if: >-
           needs.precheck.outputs.mode == 'full' ||
@@ -1967,9 +1977,12 @@ jobs:
       # non-empty when a shard rendered no diffs.
       - name: Collect changed reference screenshots
         if: success() && github.event_name == 'pull_request'
+        env:
+          SHARD: ${{ matrix.shard }}
+          PLAN_MODE: ${{ needs.precheck.outputs.mode }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           mkdir -p changed/tests/e2e/screenshots
-          touch "changed/.shard-${{ matrix.shard }}"
           # Untracked PNGs are first-time reference shots from a new spec and
           # must be included alongside modifications.
           mapfile -t files < <(node scripts/screenshot-storage.mts changed)
@@ -1978,6 +1991,16 @@ jobs:
             cp "$f" "changed/tests/e2e/screenshots/"
           done
           echo "Collected ${#files[@]} changed screenshot(s) for shard ${{ matrix.shard }}"
+          # The per-shard provenance marker. Consumers (the trusted publisher's
+          # artifact validation) only test that it exists; its content is this
+          # shard's measurement record (timing, runner, oracle mode, changed
+          # count) for the screenshot metrics `screenshot-artifacts` reports.
+          # The record must never fail the shard: fall back to an empty marker.
+          CHANGED_COUNT="${#files[@]}" \
+          JOB_STARTED_FILE="$RUNNER_TEMP/shard-job-started" \
+          SUITE_STARTED_FILE="$RUNNER_TEMP/shard-suite-started" \
+            node scripts/screenshot-metrics.mts shard-record > "changed/.shard-${{ matrix.shard }}" \
+            || : > "changed/.shard-${{ matrix.shard }}"
       - uses: actions/upload-artifact@v7
         if: success() && github.event_name == 'pull_request'
         with:
@@ -2078,6 +2101,9 @@ jobs:
       # merges the shard slices, so the candidate artifact carries only real
       # changes and its compare view is worth reviewing.
       - name: Drop render noise from the candidate set
+        # `id` only so the metrics step below can read the filter's counts
+        # (`kept-count`, `ignored-count`, … are its GITHUB_OUTPUT lines).
+        id: filter
         env:
           # The filter's documented escape hatch: the label means "refresh
           # everything", including sub-threshold micro-diffs.
@@ -2088,8 +2114,14 @@ jobs:
           shots='candidates/tests/e2e/screenshots'
           if ! compgen -G "$shots/*.png" > /dev/null; then
             echo 'No candidate PNGs to filter.'
+            { echo "ran=false"; echo "rendered-changed=0"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Measurement: how many shots the shards rendered differently from
+          # the baseline before any filtering, and how long the filter took.
+          rendered="$(find "$shots" -maxdepth 1 -name '*.png' | wc -l | tr -d ' ')"
+          { echo "ran=true"; echo "rendered-changed=$rendered"; } >> "$GITHUB_OUTPUT"
+          filter_started="$(date +%s)"
 
           # Lay the re-renders over the checked-out baseline. A plain copy, not
           # `git checkout` — the latter writes the index too, and the filter
@@ -2099,6 +2131,7 @@ jobs:
 
           # Restores every sub-threshold shot to its committed bytes in place.
           node scripts/filter-screenshots.mts
+          echo "seconds=$(( $(date +%s) - filter_started ))" >> "$GITHUB_OUTPUT"
 
           # Whatever the filter restored no longer differs from the baseline, so
           # drop it from the artifact. Iterating the artifact (not the worktree)
@@ -2143,6 +2176,43 @@ jobs:
           # places the PNGs exactly where the reviewer expects.
           path: candidates/
           if-no-files-found: error
+          retention-days: 14
+      # Measurement only (docs/plans item: screenshot review amplification).
+      # Reads the shard markers, the filter's counts and the surviving
+      # candidates, and writes one JSON record plus a job-summary table. It
+      # runs PR code on the untrusted side, so the record is evidence for
+      # humans and scripts/screenshot-metrics-baseline.mts, never an input to
+      # the trusted publisher — which is why it is written OUTSIDE candidates/
+      # (the publisher rejects unexpected files in that artifact) and uploaded
+      # separately. `continue-on-error`: metrics must never block the gate.
+      - name: Record screenshot review metrics
+        continue-on-error: true
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
+          UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+          FILTER_RAN: ${{ steps.filter.outputs.ran }}
+          RENDERED_CHANGED: ${{ steps.filter.outputs.rendered-changed }}
+          FILTER_SECONDS: ${{ steps.filter.outputs.seconds }}
+          KEPT_COUNT: ${{ steps.filter.outputs.kept-count }}
+          IGNORED_COUNT: ${{ steps.filter.outputs.ignored-count }}
+          FLAPPING_COUNT: ${{ steps.filter.outputs.flapping-count }}
+          CONTESTED_COUNT: ${{ steps.filter.outputs.contested-count }}
+          OUT_OF_SCOPE_COUNT: ${{ steps.filter.outputs.out-of-scope-count }}
+          CANDIDATES_DIR: candidates
+          METRICS_OUT: ${{ runner.temp }}/screenshot-metrics/screenshot-metrics.json
+        run: node scripts/screenshot-metrics.mts run
+      - name: Upload screenshot review metrics
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshot-metrics-${{ github.run_id }}
+          path: ${{ runner.temp }}/screenshot-metrics/screenshot-metrics.json
+          if-no-files-found: ignore
           retention-days: 14
 
   # Required aggregate: cancellation must produce failure/cancelled, never
