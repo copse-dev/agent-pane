@@ -2,6 +2,11 @@ import { queueInlineCanvasReference, runWithInlineCanvas } from '../inline-canva
 import type { StreamChunk } from '@shared/types'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { readDecisionLog } from '../security/decision-log-store.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
 import { z } from 'zod'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -284,6 +289,76 @@ describe('startAcpNativeBridge', () => {
     method: 'tools/call',
     params: { name: 'run_shell', arguments: { command: 'git worktree list --porcelain' } },
   }
+
+  it('links identical bridge requests and their approvals by distinct execution IDs', async () => {
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const previousProjectId = storageGet('activeProjectId')
+    const auditRoot = mkdtempSync(join(tmpdir(), 'copse-bridge-attribution-'))
+    process.env['COPSE_WORKSPACE_DIR'] = auditRoot
+    storageSet('activeProjectId', 'another-selected-project')
+    try {
+      const executed: string[] = []
+      setPermissionGateForTests(
+        async (_check, signal) =>
+          (
+            await requestApproval(
+              { title: 'Run command?', body: 'git worktree list --porcelain', type: 'shell' },
+              signal,
+            )
+          ).approved,
+      )
+      setApprovalHandler(async () => ({ approved: true, remember: false }))
+      bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+        threadId: 'bridge-attribution',
+        projectId: 'project-1',
+      })
+      assert.ok(bridge)
+      bridge.setExecutionContext(worktreeContext('bridge-attribution', '/worktrees/attribution'))
+      await rpc(bridge, SHELL_CALL)
+      // A later session/turn can reuse both the transport ID and arguments.
+      bridge.setExecutionContext(null)
+      bridge.setExecutionContext(worktreeContext('bridge-attribution', '/worktrees/attribution'))
+      await rpc(bridge, SHELL_CALL)
+      const events = await readDecisionLog('project-1')
+      const requests = events.filter((event) => event.kind === 'bridge-request')
+      const approvals = events.filter((event) => event.verdict === 'approved')
+      assert.equal(requests.length, 2)
+      assert.equal(approvals.length, 2)
+      assert.equal(new Set(requests.map((event) => event.bridgeExecutionId)).size, 2)
+      for (const request of requests) {
+        assert.ok(request.bridgeExecutionId)
+        assert.equal(request.verdict, 'requested')
+        const approval = approvals.find(
+          (event) => event.bridgeExecutionId === request.bridgeExecutionId,
+        )
+        assert.ok(approval)
+        assert.equal(approval.toolCallId, undefined)
+        assert.equal(request.toolCallId, undefined)
+        const detail = readFileSync(
+          join(
+            auditRoot,
+            'project-1',
+            'bridge-attribution',
+            'blobs',
+            `decision-${request.id}.detail.json`,
+          ),
+          'utf8',
+        )
+        assert.equal(
+          detail,
+          JSON.stringify({
+            mcpRequestId: String(SHELL_CALL.id),
+            arguments: SHELL_CALL.params.arguments,
+          }),
+        )
+      }
+    } finally {
+      storageSet('activeProjectId', previousProjectId)
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      rmSync(auditRoot, { recursive: true, force: true })
+    }
+  })
 
   it('offers request_write_access only to a bridge started for a deferred thread', async () => {
     const executed: string[] = []
