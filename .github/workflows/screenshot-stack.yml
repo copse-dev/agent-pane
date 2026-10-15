@@ -45,7 +45,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const { reconcileScreenshotStack, parseScreenshotStack, memoizeScreenshotStackAncestry, selectScreenshotStackPulls } = await import(
+            const { reconcileScreenshotStack, parseScreenshotStack, memoizeScreenshotStackAncestry, selectScreenshotStackPulls, selectScreenshotStackCompletion } = await import(
               `${process.env.GITHUB_WORKSPACE}/scripts/screenshot-stack.mts`);
             const { owner, repo } = context.repo;
             // Comparisons name immutable SHAs. Live PRs, declarations and
@@ -56,7 +56,11 @@ jobs:
             });
             const eligible = open.filter((pr) =>
               pr.head.repo?.full_name === `${owner}/${repo}`);
-            const affected = new Set(selectScreenshotStackPulls(eligible, context.eventName, context.payload));
+            // Publisher completions carry no PR association: select the stacks
+            // whose evidence changed instead of sweeping every open PR.
+            const affected = new Set(context.eventName === 'workflow_run'
+              ? await selectScreenshotStackCompletion(policy, { owner, repo }, eligible, context.payload)
+              : selectScreenshotStackPulls(eligible, context.eventName, context.payload));
             const selected = eligible.filter((pr) => affected.has(pr.number));
             core.info(`Reconciling ${selected.length}/${eligible.length} open same-repository PRs`);
             for (const pr of selected) {
