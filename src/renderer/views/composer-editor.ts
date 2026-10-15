@@ -129,11 +129,18 @@ export function mountComposerEditor(): ComposerEditor {
   // auto-scroll (`isNearBottom` / `SCROLL_PIN_THRESHOLD_PX`).
   const SCROLL_PIN_THRESHOLD_PX = 4
   let pinnedToBottom = true
+  let observedWidth = root.clientWidth
+  let observedHeight = root.clientHeight
   root.addEventListener('scroll', () => {
+    // Chromium can report a resize-induced scroll before ResizeObserver runs.
+    // Its new bottom is farther away; that does not mean the reader scrolled up.
+    if (root.clientWidth !== observedWidth || root.clientHeight !== observedHeight) return
     pinnedToBottom =
       root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX
   })
   new ResizeObserver(() => {
+    observedWidth = root.clientWidth
+    observedHeight = root.clientHeight
     if (pinnedToBottom) root.scrollTop = root.scrollHeight
   }).observe(root)
 
@@ -359,6 +366,7 @@ export function mountComposerEditor(): ComposerEditor {
           if (chip) frag.append(chip)
         }
       })
+      pinnedToBottom = true
       root.replaceChildren(frag)
       pruneChips()
       if (editor.isFocused()) caretToEnd()
