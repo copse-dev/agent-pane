@@ -83,6 +83,9 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   font-display: swap;
 }
 :root {
+  --brand-chatgpt-background: #000;
+  --credential-logo-background: #d9a441;
+  --credential-logo-foreground: #2a1c00;
   --browser-page-background: #ffffff;
   --tint-hue: #244c25;
   --tint-amount: 4%;
@@ -11787,12 +11790,12 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   background: #fff;
 }
 .acp-logo[data-brand=chatgpt] {
-  background: #000;
+  background: var(--brand-chatgpt-background);
 }
 .acp-logo[data-brand=key] {
-  background: #d9a441;
+  background: var(--credential-logo-background);
   border-color: transparent;
-  color: #2a1c00;
+  color: var(--credential-logo-foreground);
 }
 .acp-logo[data-brand=codex] {
   border: 0;
