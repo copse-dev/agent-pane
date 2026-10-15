@@ -4,11 +4,81 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveThreePaneScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveThreePaneScreenshot,
+  waitForSettledLayout,
+} from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const PROJECT_ID = 'e2e-browser-preview-project'
 let projectRoot = ''
+const MISSING_ENTRY_REPLY = 'Finish the build before previewing its output.'
+const FINAL_BOUNDARY_HOOKS = [
+  'stuck-finalize-nudge',
+  'loop-nudge',
+  'truncation-continue',
+  'reasoning-runaway',
+  'malformed-tool-call',
+].sort()
+
+// Idle and tool completion do not establish the final transcript crop. Keep
+// the real completed native-hook group visible after three-pane sizing.
+async function frameCompletedMissingEntryTurn(): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (text, expected) => {
+          const message = [
+            ...document.querySelectorAll<HTMLElement>('.msg-assistant[data-message-id]'),
+          ].find((node) => node.querySelector('.message-text')?.textContent?.trim() === text)
+          const id = message?.dataset.messageId
+          const host = id
+            ? document.querySelector<HTMLElement>(`[data-hook-cards-for="${id}"]`)
+            : null
+          const cards = [...(host?.querySelectorAll<HTMLElement>('.hook-card') ?? [])]
+          return (
+            cards.length === expected.length &&
+            cards.every(
+              (card) => card.dataset.hookEvent === 'stepBoundary' && card.dataset.status === 'ok',
+            ) &&
+            cards
+              .map((card) => card.dataset.hookId)
+              .sort()
+              .join('|') === expected.join('|')
+          )
+        },
+        MISSING_ENTRY_REPLY,
+        FINAL_BOUNDARY_HOOKS,
+      ),
+    { timeout: 10_000, timeoutMsg: 'final native step-boundary hook group did not settle' },
+  )
+  await browser.execute((text) => {
+    const message = [
+      ...document.querySelectorAll<HTMLElement>('.msg-assistant[data-message-id]'),
+    ].find((node) => node.querySelector('.message-text')?.textContent?.trim() === text)
+    const id = message?.dataset.messageId
+    const host = id ? document.querySelector(`[data-hook-cards-for="${id}"]`) : null
+    if (!host) throw new Error('final hook group missing')
+    host.scrollIntoView({ block: 'end', inline: 'nearest', behavior: 'instant' })
+  }, MISSING_ENTRY_REPLY)
+  await waitForSettledLayout('.messages-list')
+  const contained = await browser.execute((text) => {
+    const list = document.querySelector('.messages-list')
+    const message = [
+      ...document.querySelectorAll<HTMLElement>('.msg-assistant[data-message-id]'),
+    ].find((node) => node.querySelector('.message-text')?.textContent?.trim() === text)
+    const id = message?.dataset.messageId
+    const host = id ? document.querySelector(`[data-hook-cards-for="${id}"]`) : null
+    if (!list || !message || !host) return false
+    const box = list.getBoundingClientRect()
+    return (
+      message.getBoundingClientRect().top >= box.top &&
+      host.getBoundingClientRect().bottom <= box.bottom + 1
+    )
+  }, MISSING_ENTRY_REPLY)
+  expect(contained).toBe(true)
+}
 
 interface PreviewWebview extends HTMLElement {
   executeJavaScript(code: string): Promise<unknown>
@@ -192,7 +262,10 @@ describe('browser preview tool', () => {
     })
     await saveThreePaneScreenshot('browser-preview-missing-entry.png', {
       filesPaneWidth: 480,
-      beforeCapture: waitForPreviewViewport,
+      beforeCapture: async () => {
+        await waitForPreviewViewport()
+        await frameCompletedMissingEntryTurn()
+      },
       captureFromViewport: true,
     })
   })
