@@ -191130,13 +191130,18 @@ async function acceptThreadPrompt(store2, api2, command2) {
     const queued = current.status === "running" || current.queuePaused === true;
     drainMessageQueue(store2, api2, threadId);
     const accepted = getThreadById(store2, threadId);
-    if (accepted)
-      await api2.threads.updateMeta(command2.projectId, threadId, {
-        pendingMessages: accepted.pendingMessages ?? [],
-        continuationUsed: accepted.continuationUsed ?? 0,
-        ...accepted.currentEpoch !== void 0 ? { currentEpoch: accepted.currentEpoch } : {},
-        updatedAt: accepted.updatedAt
-      });
+    if (accepted) {
+      try {
+        await api2.threads.updateMeta(command2.projectId, threadId, {
+          pendingMessages: accepted.pendingMessages ?? [],
+          continuationUsed: accepted.continuationUsed ?? 0,
+          ...accepted.currentEpoch !== void 0 ? { currentEpoch: accepted.currentEpoch } : {},
+          updatedAt: accepted.updatedAt
+        });
+      } catch (error62) {
+        console.error("[threads] could not persist accepted prompt metadata", error62);
+      }
+    }
     return {
       ok: true,
       queued: queued || (getThreadById(store2, threadId)?.pendingMessages?.some(
