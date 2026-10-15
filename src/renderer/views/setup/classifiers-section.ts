@@ -153,12 +153,12 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       'label',
       { class: 'checkbox-label classifier-tool-prompt' },
       askBeforeHosted,
-      'Ask before agents use hosted classifiers',
+      'Ask before agent classifier questions',
     ),
     el(
       'span',
       { class: 'field-hint' },
-      'Turn this off to allow agent calls to any configured classifier without another prompt. A hosted classifier receives each question and its supplied content. Safety screening and background questions use their own settings above.',
+      'Off by default. Turn on to review each agent question before it reaches a classifier. Hosted classifiers receive the question and supplied content. Safety screening and background questions use their own settings above.',
     ),
     localHost,
     chips,
@@ -180,12 +180,12 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     if (id === null) return
     askBeforeHosted.disabled = true
     const request = askBeforeHosted.checked
-      ? api.toolPermissions.reset({ toolIds: [id] })
-      : api.toolPermissions.set({ toolIds: [id], policy: 'allow' })
+      ? api.toolPermissions.set({ toolIds: [id], policy: 'ask' })
+      : api.toolPermissions.reset({ toolIds: [id] })
     void request
       .then((catalog) => {
         const tool = catalog.groups.flatMap((group) => group.tools).find((item) => item.id === id)
-        askBeforeHosted.checked = tool?.policy !== 'allow'
+        askBeforeHosted.checked = tool?.policy === 'ask'
         askBeforeHosted.disabled = tool === undefined || tool.policy === 'block'
       })
       .catch((error: unknown) => {
@@ -971,7 +971,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         .flatMap((group) => group.tools)
         .find((tool) => tool.executionName === 'ask_classifier')
       classifierToolPermissionId = classifierTool?.id ?? null
-      askBeforeHosted.checked = classifierTool?.policy !== 'allow'
+      askBeforeHosted.checked = classifierTool?.policy === 'ask'
       askBeforeHosted.disabled = classifierTool === undefined || classifierTool.policy === 'block'
       selectedId ??= profiles[0]?.profile.id ?? null
       void refreshLocal(signal)

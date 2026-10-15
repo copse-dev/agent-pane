@@ -26,6 +26,7 @@ describe('agent classifier approval', () => {
     writeSettings({
       ...readSeededSettings(),
       classifierProviders: { version: 1, profiles: [profile] },
+      toolPermissionOverrides: { 'copse:classify_text': 'ask' },
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -35,7 +36,7 @@ describe('agent classifier approval', () => {
     resetUserData()
   })
 
-  it('offers a single classifier grant with the exact input behind details', async () => {
+  it('shows the exact input only when the person expands the prompt', async () => {
     await prepareMockToolTurn(
       'Classify this TypeScript snippet.',
       {
@@ -53,10 +54,10 @@ describe('agent classifier approval', () => {
 
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
-    await expect(dialog.$('.approval-heading')).toHaveText('Allow agent classifier use?')
-    await expect(dialog.$('.approval-approve')).toHaveText('Allow classifiers')
-    await expect(dialog.$('.approval-footer')).toHaveText(
-      expect.stringContaining('future agent calls to any configured classifier'),
+    await expect(dialog.$('.approval-heading')).toHaveText('Allow this classifier question?')
+    await expect(dialog.$('.approval-approve')).toHaveText('Allow once')
+    await expect(dialog.$('.approval-advice')).toHaveText(
+      expect.stringContaining('sent to a hosted classifier'),
     )
     expect(await dialog.$('.approval-body').isDisplayed()).toBe(false)
     expect(await dialog.$('.approval-approve-once').isDisplayed()).toBe(false)
@@ -66,7 +67,6 @@ describe('agent classifier approval', () => {
     await expect(dialog.$('.approval-body')).toHaveText(
       expect.stringContaining('const value = JSON.parse(input) as UserSettings;'),
     )
-    await expect(dialog.$('.approval-approve-once')).toHaveText('Allow once')
     await saveAppScreenshot('classifier-tool-approval-expanded.png')
     await dialog.$('.approval-reject').click()
   })

@@ -21,7 +21,6 @@ const LEGACY_MCP_GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
 const EMPTY_OVERRIDES: Record<string, ToolPermissionPolicy> = {}
 
 const ALWAYS_ASK_TOOLS = new Set([
-  'ask_classifier',
   'browser_navigate',
   'fetch_url',
   'parallel_search',

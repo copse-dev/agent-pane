@@ -94,7 +94,7 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     removals: new Array<string>(),
     local: { servers: [], hosted: [] } as LocalClassifierOverview,
     localCalls: new Array<string>(),
-    toolPolicy: 'ask' as ToolPermissionPolicy,
+    toolPolicy: 'allow' as ToolPermissionPolicy,
   }
   const permissionCatalog = (): ToolPermissionCatalog => ({
     groups: [
@@ -109,8 +109,8 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
             name: 'Ask classifier',
             description: '',
             policy: state.toolPolicy,
-            defaultPolicy: 'ask',
-            overridden: state.toolPolicy !== 'ask',
+            defaultPolicy: 'allow',
+            overridden: state.toolPolicy !== 'allow',
           },
         ],
       },
@@ -204,7 +204,7 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
         return permissionCatalog()
       },
       reset: async () => {
-        state.toolPolicy = 'ask'
+        state.toolPolicy = 'allow'
         return permissionCatalog()
       },
     },
@@ -232,19 +232,19 @@ beforeEach(() => {
 })
 
 describe('classifier connections settings', () => {
-  it('lets the person turn the shared agent classifier prompt off and back on', async () => {
+  it('starts without prompts and lets the person opt in and back out', async () => {
     const { section, state } = setup()
     await section.refresh()
     const prompt = field(section.root, 'ToolPrompt')
-    assert.equal(prompt.checked, true)
-    prompt.click()
-    await setImmediate()
-    assert.equal(state.toolPolicy, 'allow')
     assert.equal(prompt.checked, false)
     prompt.click()
     await setImmediate()
     assert.equal(state.toolPolicy, 'ask')
     assert.equal(prompt.checked, true)
+    prompt.click()
+    await setImmediate()
+    assert.equal(state.toolPolicy, 'allow')
+    assert.equal(prompt.checked, false)
   })
 
   it('routes safety screening to a saved connection and back without an inference call', async () => {
