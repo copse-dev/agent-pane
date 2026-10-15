@@ -672,7 +672,8 @@ export function classify(
     record.screenshot.state === 'success' &&
     record.cla.state === 'success' &&
     record.pendingChecks === 0 &&
-    record.sameRepository
+    record.sameRepository &&
+    record.errors.length === 0
   ) {
     return {
       group: 'ready',
@@ -682,6 +683,7 @@ export function classify(
     }
   }
   const reasons: string[] = []
+  if (record.errors.length) reasons.push('incomplete observation; retry failed GitHub reads')
   if (record.draft) reasons.push('draft; mark ready for review when complete')
   if (record.mergeable === false) reasons.push(`resolve conflicts with ${record.baseRef}`)
   if (!record.ci) {

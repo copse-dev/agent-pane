@@ -74,7 +74,8 @@ The rendering ends with the same list, so a reader of the shared snapshot sees i
 - **Ready**: not a draft, GitHub reports it mergeable, `CI Passed`, `Screenshot review` and `CLA`
   are all successful on the head, nothing is pending, and no hold was detected.
 - **In progress or waiting**: everything else, with the reason (draft, conflicts, CI not run or
-  still running, no screenshot status, mergeability not yet computed).
+  still running, no screenshot status, mergeability not yet computed, or an incomplete observation
+  after a failed GitHub read). A row with observation errors is never ready.
 
 A PR appears in exactly one group, chosen in the order superseded, failing checks, acceptance hold,
 missing visual decision, ready, in progress. Its other signals stay visible in the Flags column.

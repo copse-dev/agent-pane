@@ -96,6 +96,27 @@ describe('backlog snapshot access', () => {
 })
 
 describe('backlog snapshot grouping from recorded responses', () => {
+  it('keeps otherwise green work pending when review retrieval fails', async () => {
+    const api = recordedApi(responses())
+    const reviewPath = `repos/${REPOSITORY}/pulls/3770/reviews?per_page=100`
+    const snapshot = await collectBacklogSnapshot(
+      {
+        get: async (path) => {
+          if (path === reviewPath) throw new Error('HTTP 500')
+          return api.get(path)
+        },
+      },
+      options(),
+    )
+    const record = pull(snapshot, 3770)
+    assert.equal(record.ci?.conclusion, 'success')
+    assert.equal(record.screenshot.state, 'success')
+    assert.equal(record.cla.state, 'success')
+    assert.deepEqual(record.errors, ['reviews: HTTP 500'])
+    assert.equal(record.group, 'in-progress')
+    assert.match(record.nextAction, /incomplete observation; retry failed GitHub reads/)
+  })
+
   it('separates ready, failing, visual, hold, superseded and in-progress work', async () => {
     const { snapshot } = await collect()
     assert.equal(snapshot.pulls.length, 8)
