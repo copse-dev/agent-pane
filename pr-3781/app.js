@@ -98975,10 +98975,15 @@ function mountComposerEditor() {
   root.setAttribute("aria-label", "Message");
   const SCROLL_PIN_THRESHOLD_PX2 = 4;
   let pinnedToBottom = true;
+  let observedWidth = root.clientWidth;
+  let observedHeight = root.clientHeight;
   root.addEventListener("scroll", () => {
+    if (root.clientWidth !== observedWidth || root.clientHeight !== observedHeight) return;
     pinnedToBottom = root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX2;
   });
   new ResizeObserver(() => {
+    observedWidth = root.clientWidth;
+    observedHeight = root.clientHeight;
     if (pinnedToBottom) root.scrollTop = root.scrollHeight;
   }).observe(root);
   const blocks = /* @__PURE__ */ new Map();
@@ -99167,6 +99172,7 @@ function mountComposerEditor() {
           if (chip2) frag.append(chip2);
         }
       });
+      pinnedToBottom = true;
       root.replaceChildren(frag);
       pruneChips();
       if (editor.isFocused()) caretToEnd2();
