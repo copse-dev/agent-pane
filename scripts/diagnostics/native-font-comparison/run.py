@@ -10,7 +10,6 @@ import signal
 import subprocess
 import sys
 import time
-import urllib.request
 from PIL import Image, ImageChops
 
 ROOT = Path.cwd()
@@ -117,8 +116,10 @@ def references(tree, source, specs):
             shutil.copy2(original,dest/name)
         elif name in manifest:
             expected=manifest[name]['sha256']
-            with urllib.request.urlopen(PUBLIC+expected+'.png',timeout=40) as response:
-                (dest/name).write_bytes(response.read())
+            data = subprocess.check_output(['node', '--input-type=module', '-e',
+                'const r=await fetch(process.argv[1],{signal:AbortSignal.timeout(40000)});if(!r.ok)throw Error(`HTTP ${r.status}`);process.stdout.write(Buffer.from(await r.arrayBuffer()))',
+                PUBLIC+expected+'.png'], cwd=tree, timeout=45)
+            (dest/name).write_bytes(data)
             if sha(dest/name)!=expected:
                 raise RuntimeError('Reference hash mismatch: '+name)
         else:
@@ -159,7 +160,9 @@ for source,(revision,specs) in SOURCES.items():
         env.pop('COPSE_E2E_CHROMEDRIVER_BINARY',None)
         command(['pnpm','install','--frozen-lockfile'],tree,env,seconds=540,name='install-'+source)
         command(['pnpm','run','build'],tree,env,seconds=420,name='build-'+source)
-        electron=Path(output(['node','-p',"require('electron')"],tree,env))
+        electron=Path(output(['node','-p',"require('electron')"],tree,env).splitlines()[-1])
+        if not electron.is_absolute() or not electron.is_file():
+            raise RuntimeError('Electron executable missing after normal installation: '+str(electron))
         driver=Path(output(['node','-p',"require('node:path').join(require('node:path').dirname(require.resolve('electron-chromedriver/package.json')),'bin','chromedriver')"],tree,env))
         runtime=runtime_info(electron,tree)
         state=dict(tree=tree,names=names,specs=specs,env=env,electron=electron,driver=driver,runtime=runtime)
