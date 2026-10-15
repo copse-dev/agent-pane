@@ -179,6 +179,16 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  threadPrompts: {
+    revokeAccess: (threadId: string, access: 'read' | 'send') => Promise<void>
+    onPrompt: (
+      handler: (command: import('@shared/thread-prompt.ts').ThreadPromptCommand) => void,
+    ) => () => void
+    reply: (
+      id: string,
+      result: import('@shared/thread-prompt.ts').ThreadPromptResult,
+    ) => Promise<void>
+  }
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
     getState: () => Promise<import('@shared/types/mobile-companion.ts').MobileCompanionState>
@@ -343,7 +353,7 @@ export interface ApiClient {
       threadId: string,
       payload: string,
     ) => Promise<ContextBreakdown>
-    abort: (threadId: string) => Promise<void>
+    abort: (threadId: string, reason?: 'send_now') => Promise<void>
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     clearHistory: (projectId: string, threadId: string) => Promise<void>

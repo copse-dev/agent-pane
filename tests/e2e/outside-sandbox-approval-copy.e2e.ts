@@ -44,7 +44,7 @@ describe('outside-sandbox approval copy', () => {
 
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
-    await expect(dialog.$('.approval-heading')).toHaveText('Run outside sandbox?')
+    await expect(dialog.$('.approval-heading')).toHaveText('Agent requests sandbox escape')
 
     const advice = dialog.$('.approval-advice')
     await expect(advice).toHaveText(expect.stringContaining('expects the project sandbox to block'))

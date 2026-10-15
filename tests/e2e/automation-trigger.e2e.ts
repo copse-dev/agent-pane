@@ -439,6 +439,7 @@ describe('cron automation trigger', function () {
       'copse/ci-review-000001',
     )
     try {
+      await expect($('.apple-development-error')).not.toExist()
       await saveAppScreenshot('automation-trigger.png')
     } finally {
       await restoreFinalBranch()
