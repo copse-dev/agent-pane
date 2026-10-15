@@ -1,13 +1,58 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
+import { PNG } from 'pngjs'
 import { E2E_SCREENSHOT_DIR } from '../e2e/helpers/screenshot.ts'
+import { withFrozenAnimations } from '../e2e/helpers/frozen-animations.ts'
 
 async function screenshot(name: string): Promise<void> {
   expect(
     await browser.execute(() => document.documentElement.scrollWidth > window.innerWidth),
   ).toBe(false)
-  await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, name))
+  await withFrozenAnimations(async () => {
+    // Mobile emulation paints a transient native scrollbar after taps and
+    // focus-driven scrolling. It is not a DOM animation. Wait for its real
+    // idle paint in the shell's empty right margin, rather than hiding it or
+    // accepting whichever fade opacity a worker happened to capture.
+    const viewport = await browser.execute(() => {
+      const context = new OffscreenCanvas(1, 1).getContext('2d')
+      if (!context) throw new Error('Missing canvas context for mobile background')
+      context.fillStyle = getComputedStyle(document.body).backgroundColor
+      context.fillRect(0, 0, 1, 1)
+      const background = Array.from(context.getImageData(0, 0, 1, 1).data)
+      if (background[3] !== 255) throw new Error('Expected an opaque mobile background')
+      return {
+        width: window.innerWidth,
+        top: Math.ceil(document.querySelector('.topbar')?.getBoundingClientRect().bottom ?? 0) + 1,
+        background,
+      }
+    })
+    const [red, green, blue] = viewport.background
+    await browser.waitUntil(
+      async () => {
+        const image = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+        const scale = image.width / viewport.width
+        for (let y = Math.ceil(viewport.top * scale); y < image.height; y++) {
+          for (let x = Math.floor((viewport.width - 4) * scale); x < image.width; x++) {
+            const offset = (y * image.width + x) * 4
+            if (
+              image.data[offset] !== red ||
+              image.data[offset + 1] !== green ||
+              image.data[offset + 2] !== blue
+            )
+              return false
+          }
+        }
+        return true
+      },
+      {
+        timeout: 6_000,
+        interval: 100,
+        timeoutMsg: 'Mobile overlay scrollbar did not reach idle paint',
+      },
+    )
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, name))
+  })
 }
 
 async function expectComposerVisible(id: 'message' | 'new-message'): Promise<void> {
