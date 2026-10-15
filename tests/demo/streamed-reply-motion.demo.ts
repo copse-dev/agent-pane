@@ -1,4 +1,7 @@
 import { $, $$, browser, expect } from '@wdio/globals'
+import assert from 'node:assert/strict'
+import { readFile, writeFile } from 'node:fs/promises'
+import { build } from 'esbuild'
 import { z } from 'zod'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 import { analyzeStreamMotion, type StreamFrame } from './helpers/stream-motion.ts'
@@ -82,6 +85,33 @@ async function recordedFrames(): Promise<StreamFrame[]> {
 }
 
 describe('streamed reply motion in the real renderer', () => {
+  before(async () => {
+    await build({
+      entryPoints: ['tests/demo/helpers/streamed-reply-checkpoint-fixture.ts'],
+      outfile: 'dist/demo/streamed-reply-checkpoint-fixture.js',
+      bundle: true,
+      platform: 'browser',
+      format: 'esm',
+      target: 'es2022',
+      tsconfig: 'tsconfig.web.json',
+      loader: { '.css': 'empty', '.ttf': 'dataurl' },
+      define: {
+        __COPSE_TEST_SCENARIOS__: 'true',
+        __COPSE_BUILD_COMMIT__: JSON.stringify('streamed-reply-checkpoint-fixture'),
+        __COPSE_BUILD_DIRTY__: 'false',
+      },
+    })
+    const html = await readFile('dist/demo/index.html', 'utf8')
+    const oldScript = '<script type="module" src="./app.js"></script>'
+    assert.equal(html.split(oldScript).length, 2, 'expected exactly one renderer entry')
+    await writeFile(
+      'dist/demo/streamed-reply-checkpoint-fixture.html',
+      html.replace(
+        oldScript,
+        '<script type="module" src="./streamed-reply-checkpoint-fixture.js"></script>',
+      ),
+    )
+  })
   it('reveals a paced reply smoothly and settles without a jump', async () => {
     await browser.url('/?scenario=chat-reading-layout&autoplay=0')
     await $('.prompt-input').waitForExist()
@@ -95,12 +125,6 @@ describe('streamed reply motion in the real renderer', () => {
     await startRecordingFrames()
     await $('.submit-btn').click()
 
-    // The tool step and the first prose, then a capture mid-reply.
-    await browser.waitUntil(
-      async () => (await recordedFrames()).some((frame) => frame.streaming && frame.length >= 700),
-      { timeout: 25_000 },
-    )
-    await saveAppScreenshot('streamed-reply-mid-stream.png')
     await browser.waitUntil(
       () =>
         browser.execute(() => {
@@ -129,5 +153,123 @@ describe('streamed reply motion in the real renderer', () => {
     // The final render lands on the streamed layout.
     expect(motion.finalSwapHeightDeltaPx).not.toBeNull()
     expect(Math.abs(motion.finalSwapHeightDeltaPx ?? Infinity)).toBeLessThanOrEqual(1)
+  })
+  it('captures a complete fixed prefix while the real reply remains streaming', async () => {
+    await browser.url('/streamed-reply-checkpoint-fixture.html')
+    await $('.prompt-input').waitForExist()
+    await browser.execute(async () => {
+      await document.fonts.ready
+      const composer = document.querySelector<HTMLElement>('.prompt-input')
+      if (!composer) throw new Error('Missing composer')
+      composer.textContent = 'Show the reading layout with a streamed response.'
+      composer.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await $('.submit-btn').click()
+    try {
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const state: unknown = Reflect.get(window, '__copseStreamCheckpoint')
+            return (
+              state !== null && typeof state === 'object' && Reflect.get(state, 'paused') === true
+            )
+          }),
+        { timeout: 25_000 },
+      )
+      const expectedParagraphs = [
+        'A response should be comfortable to read from the first streamed sentence through the final answer. The prose stays within a readable measure while the surrounding chat can still hold wider tool output.',
+        'This second paragraph checks the separation between ideas. Short answers should keep their natural height, and longer explanations should wrap without pushing the chat pane sideways.',
+      ]
+      const expectedItems = [
+        'A readable column: keeps long lines from crossing the entire window.',
+        'Paragraphs and sections have enough separation to scan.',
+        'Nested details retain their indentation.',
+        'A second nested item checks the list rhythm.',
+        'Pending markdown uses the same text size as the completed answer.',
+        'A bold link keeps the link colour.',
+      ]
+      // Compare rendered text by blocks: Markdown **, link URLs, list markers and
+      // browser-dependent block whitespace must not be compared to raw source.
+      // Trailing paragraphs allow the same assistant bubble to retain the intro.
+      await browser.waitUntil(
+        async () => {
+          const actual = await browser.execute(() => {
+            const live = [
+              ...document.querySelectorAll<HTMLElement>(
+                '.msg-assistant > .message-body > .message-text.is-streaming',
+              ),
+            ].at(-1)
+            if (!live) return null
+            const normalize = (value: string): string => value.replace(/\s+/g, ' ').trim()
+            return {
+              paragraphs: [...live.querySelectorAll('p')]
+                .filter((p) => !p.closest('li'))
+                .map((p) => normalize(p.textContent ?? ''))
+                .slice(-2),
+              headings: [...live.querySelectorAll('h2,h3')].map((h) =>
+                normalize(h.textContent ?? ''),
+              ),
+              items: [...live.querySelectorAll('li')].map((li) => {
+                const copy = li.cloneNode(true)
+                if (!(copy instanceof HTMLElement)) throw new Error('Expected list item element')
+                for (const nested of copy.querySelectorAll('ul,ol')) nested.remove()
+                return normalize(copy.textContent ?? '')
+              }),
+              codeBlocks: live.querySelectorAll('pre').length,
+            }
+          })
+          return (
+            JSON.stringify(actual) ===
+            JSON.stringify({
+              paragraphs: expectedParagraphs,
+              headings: ['What changed'],
+              items: expectedItems,
+              codeBlocks: 0,
+            })
+          )
+        },
+        { timeout: 10_000, timeoutMsg: 'renderer did not reveal the exact held prose/list prefix' },
+      )
+      await expect($('.submit-btn.with-stop')).toBeDisplayed()
+      await expect($('.msg-assistant .message-text.is-streaming')).toBeDisplayed()
+      await expect($('.tool-card[data-status="done"]')).toBeDisplayed()
+      await expect($('.messages-list')).toHaveText(
+        expect.stringContaining('I will inspect the sample before explaining it.'),
+      )
+      // The producer cannot advance during prepare/layout/screenshot awaits.
+      const heldCalls = await browser.execute(() => {
+        const state: unknown = Reflect.get(window, '__copseStreamCheckpoint')
+        if (state === null || typeof state !== 'object') throw new Error('Missing checkpoint')
+        const calls: unknown = Reflect.get(state, 'sleepCalls')
+        if (typeof calls !== 'number') throw new Error('Missing checkpoint sleep count')
+        return calls
+      })
+      await saveAppScreenshot('streamed-reply-mid-stream.png')
+      assert.deepEqual(
+        await browser.execute(() => {
+          const state: unknown = Reflect.get(window, '__copseStreamCheckpoint')
+          if (state === null || typeof state !== 'object') throw new Error('Missing checkpoint')
+          const calls: unknown = Reflect.get(state, 'sleepCalls')
+          if (typeof calls !== 'number') throw new Error('Missing checkpoint sleep count')
+          return { paused: Reflect.get(state, 'paused') === true, sleepCalls: calls }
+        }),
+        { paused: true, sleepCalls: heldCalls },
+      )
+    } finally {
+      await browser.execute(() => {
+        const state: unknown = Reflect.get(window, '__copseStreamCheckpoint')
+        if (state === null || typeof state !== 'object') return
+        const release: unknown = Reflect.get(state, 'release')
+        if (typeof release === 'function') release()
+      })
+    }
+    await browser.waitUntil(
+      async () => (await $$('.msg-assistant .message-text.is-streaming')).length === 0,
+      { timeout: 25_000 },
+    )
+    await expect($('.submit-btn.with-stop')).not.toExist()
+    await expect($('.messages-list')).toHaveText(
+      expect.stringContaining('This is a deterministic layout fixture.'),
+    )
   })
 })
