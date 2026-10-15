@@ -878,14 +878,14 @@ async function checkWebSearchPermission(
 }
 
 /**
- * `classify_text` sends text the model chose to a saved classifier connection.
+ * `ask_classifier` sends model-supplied input to a saved classifier connection.
  * Host approval is the classifier service's own gate, applied again at call
  * time (`assertApprovedProviderHost`), so a host the user never approved fails
  * there whatever this returns. This gate decides whether the call needs a
  * prompt: a connection that leaves the machine asks, a local server or SemIf
  * scorer does not, and an explicit "allow" or "ask" override wins either way.
  */
-async function checkClassifyTextPermission(
+async function checkAskClassifierPermission(
   args: unknown,
   signal?: AbortSignal,
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
@@ -893,7 +893,7 @@ async function checkClassifyTextPermission(
   if (explicitPolicy === 'allow') return true
   const id = isRecord(args) && typeof args['classifier'] === 'string' ? args['classifier'] : ''
   if (explicitPolicy === 'ask' || classifierSendsOffMachine(id)) {
-    return promptExplicitToolAsk('classify_text', args, signal)
+    return promptExplicitToolAsk('ask_classifier', args, signal)
   }
   return true
 }
@@ -2152,8 +2152,8 @@ export async function ensureToolPermitted(
     permitted = await checkWebSearchPermission(signal, explicitPolicy)
   } else if (toolName === 'parallel_search') {
     permitted = await checkParallelSearchPermission(signal, explicitPolicy)
-  } else if (toolName === 'classify_text') {
-    permitted = await checkClassifyTextPermission(args, signal, explicitPolicy)
+  } else if (toolName === 'ask_classifier') {
+    permitted = await checkAskClassifierPermission(args, signal, explicitPolicy)
   } else if (toolName === 'image_gen') {
     // The configured OpenAI credential is the network authority, as it is for
     // ordinary model requests. Keep the tool in the explicit network branch so

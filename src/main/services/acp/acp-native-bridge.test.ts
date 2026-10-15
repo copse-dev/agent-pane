@@ -1016,6 +1016,53 @@ describe('startAcpNativeBridge', () => {
     }
   })
 
+  it('offers ask_classifier to ACP and executes it through the registry gate', async () => {
+    const permissionChecks: string[] = []
+    setPermissionGateForTests((check) => {
+      permissionChecks.push(check.toolName)
+      return Promise.resolve(true)
+    })
+    const registry = testRegistry([])
+    registry.register({
+      name: 'ask_classifier',
+      description: 'Ask a saved classifier a typed question',
+      parameters: z.object({
+        classifier: z.string(),
+        text: z.string(),
+        type: z.literal('boolean'),
+        question: z.string(),
+      }),
+      execute: () => Promise.resolve('{"probabilityTrue":0.8}'),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-test', '/worktrees/bridge-test'))
+
+    for (const init of initialized()) await rpc(bridge, init)
+    const listed = await rpc(bridge, LIST_TOOLS)
+    const names = recordArrayOrEmpty(rpcResult(listed)['tools']).map((tool) => tool['name'])
+    assert.ok(names.includes('ask_classifier'))
+
+    const call = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: {
+        name: 'ask_classifier',
+        arguments: {
+          classifier: 'kev',
+          text: 'app crashes',
+          type: 'boolean',
+          question: 'Is this a bug report?',
+        },
+      },
+    })
+    assert.equal(contentText(call), '{"probabilityTrue":0.8}')
+    assert.deepEqual(permissionChecks, ['ask_classifier'])
+  })
+
   it('offers the advisor tool when registered, so an ACP executor can consult it', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))
     const registry = testRegistry([])
