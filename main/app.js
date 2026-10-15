@@ -32742,6 +32742,46 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-07-18"
         }
       ],
+      "claude-haiku-5-5": [
+        {
+          value: 43.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-high": [
+        {
+          value: 37.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-high', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-low": [
+        {
+          value: 29.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-low', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-medium": [
+        {
+          value: 34.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-medium', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-xhigh": [
+        {
+          value: 41.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-xhigh', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
       "claude-instant": [
         {
           value: 1.7,
@@ -36486,10 +36526,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 14.8,
+          value: 12.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "granite-4-2-3b": [
@@ -38848,8 +38888,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-06",
-          asOf: "2026-10-06"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -39040,6 +39080,22 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3-xhigh', fetched 2026-09-22",
           asOf: "2026-09-22"
+        }
+      ],
+      "muse-wonder": [
+        {
+          value: 52.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-wonder', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "muse-wonder-full": [
+        {
+          value: 55.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-wonder-full', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "nanbeige4-1-3b": [
