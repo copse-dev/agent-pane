@@ -3313,6 +3313,10 @@
       "sha256": "f3982eea3ea6d1eea343a1c4265220f46bc4dca88e51bc317a7e993398fa4ff4",
       "bytes": 145715
     },
+    "send-now-preserves-shell.png": {
+      "sha256": "7a5589788779a4515da6e10bd8d2c116735892a322eb39402eb786f753d772da",
+      "bytes": 288931
+    },
     "settings-about-update-channel.png": {
       "sha256": "1e0a62a89efe93d45568cf3edf2189b4c7c96a15c985c53a69e71971cde28bfd",
       "bytes": 38722
