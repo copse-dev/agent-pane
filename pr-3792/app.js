@@ -150281,6 +150281,8 @@ ${context}` : text2;
       name,
       bytes: bytes2.buffer.slice(bytes2.byteOffset, bytes2.byteOffset + bytes2.byteLength)
     });
+    const end = composer.value.length;
+    composer.setSelectionRange(end, end);
     composer.focus();
   }
   function debugTrace() {
