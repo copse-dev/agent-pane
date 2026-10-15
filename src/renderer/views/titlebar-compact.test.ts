@@ -28,6 +28,9 @@ describe('titlebar compact layout', () => {
     const titlebar = document.createElement('div')
     const left = document.createElement('div')
     const controls = document.createElement('div')
+    const overflowed = document.createElement('button')
+    overflowed.setAttribute('data-portrait-overflow', '')
+    controls.append(overflowed)
     titlebar.append(left, controls)
     document.body.append(titlebar)
 
@@ -36,7 +39,11 @@ describe('titlebar compact layout', () => {
       clientWidth: { configurable: true, get: () => availableWidth },
       scrollWidth: {
         configurable: true,
-        get: () => (titlebar.classList.contains(TITLEBAR_COMPACT_CLASS) ? 400 : 600),
+        get: () =>
+          titlebar.classList.contains(TITLEBAR_COMPACT_CLASS) ||
+          overflowed.hasAttribute('data-portrait-overflow')
+            ? 400
+            : 600,
       },
     })
 
@@ -44,6 +51,7 @@ describe('titlebar compact layout', () => {
     try {
       destroy = bindTitlebarCompactLayout(titlebar, [left, controls])
       assert.equal(titlebar.classList.contains(TITLEBAR_COMPACT_CLASS), true)
+      assert.equal(overflowed.hasAttribute('data-portrait-overflow'), true)
 
       availableWidth = 700
       window.dispatchEvent(new Event('resize'))

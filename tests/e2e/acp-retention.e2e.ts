@@ -82,8 +82,9 @@ describe('device-agent route retention qualification', function () {
     )
     await composer.$('.model-picker-trigger').click()
     await $('[aria-label="Settings"]').click()
-    await $('.provider-chip[data-provider="privacy-fixture"]').waitForExist({ timeout: 30_000 })
-    await $('.provider-chip[data-provider="privacy-fixture"]').click()
+    const options = $('.acp-row[data-agent="privacy-fixture"] button[aria-expanded]')
+    await options.waitForExist({ timeout: 30_000 })
+    await options.click()
     const notice = $('.acp-agent-card .acp-retention-notice')
     await notice.waitForDisplayed()
     await browser.waitUntil(

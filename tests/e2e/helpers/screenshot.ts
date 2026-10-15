@@ -4,6 +4,7 @@ import { PNG } from 'pngjs'
 import { browser } from '@wdio/globals'
 import { recentreClippedCapture, restoreScrollAfterCapture } from './capture-framing.ts'
 import { mockConversationLeaks } from './mock-content.ts'
+import { withFrozenAnimations } from './frozen-animations.ts'
 
 /** Fixed viewport for committed e2e reference screenshots (see tests/e2e/screenshots/). */
 export const E2E_VIEWPORT = { width: 1280, height: 800 } as const
@@ -151,6 +152,24 @@ export async function parkPointer(): Promise<void> {
 
 /** Capture sizing must not become the layout used by subsequent interactions. */
 export async function withCaptureFrame(capture: () => Promise<void>): Promise<void> {
+  await browser.execute(async () => {
+    await document.fonts.ready
+  })
+  // Motion is tested before/after capture. Reference images need the same
+  // visible frame regardless of worker scheduling, without hiding indicators.
+  const motion = await browser.execute(() =>
+    [...document.querySelectorAll('.reasoning-activity-path')].map((path) =>
+      path.getAnimations().map((animation) => {
+        const saved = {
+          time: typeof animation.currentTime === 'number' ? animation.currentTime : null,
+          running: animation.playState === 'running',
+        }
+        animation.pause()
+        animation.currentTime = 1250
+        return saved
+      }),
+    ),
+  )
   const saved = await browser.execute(() => {
     const app = document.getElementById('app')
     if (!app) return []
@@ -161,8 +180,18 @@ export async function withCaptureFrame(capture: () => Promise<void>): Promise<vo
     ])
   })
   try {
-    await capture()
+    await withFrozenAnimations(capture)
   } finally {
+    await browser.execute((savedMotion) => {
+      document.querySelectorAll('.reasoning-activity-path').forEach((path, pathIndex) => {
+        path.getAnimations().forEach((animation, animationIndex) => {
+          const saved = savedMotion[pathIndex]?.[animationIndex]
+          if (!saved) return
+          animation.currentTime = saved.time
+          if (saved.running) animation.play()
+        })
+      })
+    }, motion)
     await browser.execute((styles) => {
       const app = document.getElementById('app')
       if (!app) return
@@ -197,10 +226,14 @@ export async function savePreparedAppScreenshot(filename: string): Promise<void>
 }
 
 /** Capture native webviews without ChromeDriver's element-capture rescaling. */
-export async function saveAppViewportScreenshot(filename: string): Promise<void> {
+export async function saveAppViewportScreenshot(
+  filename: string,
+  beforeCapture?: () => Promise<void>,
+): Promise<void> {
   await withCaptureFrame(async () => {
     await prepareE2eScreenshot()
     await waitForSettledLayout('#app')
+    await beforeCapture?.()
     const bounds = await browser.execute(() => {
       const rect = document.getElementById('app')?.getBoundingClientRect()
       if (!rect) throw new Error('App shell is missing')

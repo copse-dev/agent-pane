@@ -153,11 +153,14 @@ describe('right panel toggle and shortcuts', () => {
     await closeRightPanelIfOpen()
     await panelToggle.click()
     await panel.waitForDisplayed({ timeout: 5_000 })
-    await $('.pane-maximize-btn').click()
-    await browser.waitUntil(
-      async () => (await $('.pane-maximize-btn').getAttribute('aria-pressed')) === 'true',
-      { timeout: 5_000, timeoutMsg: 'expected the right panel to maximize' },
-    )
+    await $('[aria-label="Open thread context"]').click()
+    const maximize = await $('#context-host .pane-maximize-btn')
+    await maximize.waitForDisplayed({ timeout: 5_000 })
+    await maximize.click()
+    await browser.waitUntil(async () => (await maximize.getAttribute('aria-pressed')) === 'true', {
+      timeout: 5_000,
+      timeoutMsg: 'expected the right panel to maximize',
+    })
 
     await sidebarToggle.click()
     await browser.waitUntil(async () => !(await $('#pane-projects').isDisplayed()), {
@@ -176,7 +179,7 @@ describe('right panel toggle and shortcuts', () => {
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'sidebar-hidden-panel-maximized.png'))
 
     await sidebarToggle.click()
-    await $('.pane-maximize-btn').click()
+    await maximize.click()
     await panelToggle.click()
   })
 

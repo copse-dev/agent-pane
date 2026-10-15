@@ -29,6 +29,7 @@ describe('Unicode chat fallback coverage', () => {
       content.replaceAll('\n\n', '\n'),
     )
 
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
     await saveAppScreenshot('unicode-chat-fallbacks.png')
   })
 })

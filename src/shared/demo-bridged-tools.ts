@@ -15,6 +15,77 @@ const PATCH = [
 // Authored ACP UI fixtures: wrapped identities and no meaningful ACP kind.
 export const BRIDGED_TOOL_SCENARIOS: readonly DemoScenario[] = [
   {
+    id: 'bridged-thread-proposals',
+    label: 'Two proposed follow-up threads',
+    project: { id: 'demo-proposals-project', name: 'Follow-up work', path: '/demo/proposals' },
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off', model: MODEL },
+    threads: [
+      {
+        id: 'demo-proposals-thread',
+        title: 'Settings follow-up',
+        status: 'idle',
+        model: MODEL,
+        messages: [
+          {
+            id: 'proposals-user',
+            role: 'user',
+            content: 'Propose separate threads for these two settings fixes.',
+            toolCalls: [],
+            createdAt: CREATED_AT,
+          },
+          {
+            id: 'proposals-assistant',
+            role: 'assistant',
+            content: 'Here are the two proposed threads.',
+            createdAt: CREATED_AT,
+            toolCalls: [
+              {
+                id: 'proposal-read-1',
+                name: 'read_file',
+                args: { path: 'settings.ts' },
+                status: 'done',
+                result: 'Read settings.',
+              },
+              {
+                id: 'proposal-read-2',
+                name: 'read_file',
+                args: { path: 'agents.ts' },
+                status: 'done',
+                result: 'Read agents.',
+              },
+              ...[
+                {
+                  title: 'Fix Codex readiness detection',
+                  summary: 'Show the correct sign-in status and verify refresh behavior.',
+                },
+                {
+                  title: 'Finish the combined Models & agents list',
+                  summary:
+                    'Bring coding agents, API keys and model servers into one settings list.',
+                },
+              ].map((proposal, index) => ({
+                id: `wrapped-proposal-${String(index)}`,
+                name: 'mcp.copse.propose_thread',
+                title: 'mcp.copse.propose_thread',
+                kind: 'execute',
+                args: {
+                  server: 'copse',
+                  tool: 'propose_thread',
+                  arguments: { ...proposal, prompt: `${proposal.title}. Add focused tests.` },
+                },
+                status: 'done' as const,
+                result: 'Offered to the user.',
+              })),
+            ],
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+      },
+    ],
+  },
+  {
     id: 'bridged-tools',
     label: 'Patch file links and command output',
     project: { id: 'demo-bridge-project', name: 'Bridge tools', path: '/demo/bridge' },

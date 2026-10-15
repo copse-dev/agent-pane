@@ -7,6 +7,7 @@ import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { SERVICE_TIER_CHOICES, isServiceTier } from '@copse/llm/service-tier.ts'
 import { uiField } from '../../ui/index.ts'
 import { createChatGptPlanSection } from './chatgpt-plan-section.ts'
+import { createPasteKeyForm } from './paste-key-form.ts'
 
 // The one "Providers" panel in Settings > General. A provider is a company, not
 // a wiring mechanism: picking Cursor shows everything Cursor can do here (its
@@ -95,6 +96,12 @@ export function createProvidersPanel(
      * cheap PATH scan, installs wait for first use.
      */
     deviceAutoSetup?: boolean
+    /**
+     * Whether agents installed on this machine appear under their providers.
+     * Defaults to true (onboarding). Settings turns it off because its own
+     * Coding agents list owns them.
+     */
+    deviceAgents?: boolean
   } = {},
 ): ProvidersPanel {
   const cloudAgents = opts.cloudAgents ?? []
@@ -127,6 +134,18 @@ export function createProvidersPanel(
   })
   const agentsPanel = createAcpAgentsSection(api, { embedded: true, onChanged: rebuild })
 
+  const pasteKey = createPasteKeyForm(api, {
+    providers: () =>
+      apiPanel.providerIds().map((id) => ({ id, label: apiPanel.labelFor(id) ?? id })),
+    onSaved: () => {
+      void refresh()
+    },
+    renderOther: () => {
+      apiPanel.select(ADD_KEY)
+      return apiPanel.root
+    },
+  })
+
   const chipRow = el('div', { class: 'provider-chips', role: 'tablist' })
   const formHost = el('div', { class: 'provider-form-host' })
   // The cloud-agent run options carry named form controls, so they stay parented
@@ -139,14 +158,13 @@ export function createProvidersPanel(
   const fieldset = el(
     'fieldset',
     {},
-    el('legend', {}, 'Providers'),
+    el('legend', {}, 'API keys'),
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Everything Copse can send a turn to. Pick a provider to set up its API ' +
-        'key, its cloud agent, the copy of it installed on this machine, or a ' +
-        'model server you run yourself. Whatever you set up here shows up in the ' +
-        'model picker.',
+      'Add a key and its models show up in the model picker. Pick a provider to ' +
+        'add its key, set up its cloud agent, or connect a model server you run ' +
+        'yourself.',
     ),
     chipRow,
     formHost,
@@ -178,6 +196,7 @@ export function createProvidersPanel(
   let openAiTierDirty = false
 
   const deviceAutoSetup = opts.deviceAutoSetup ?? true
+  const deviceAgents = opts.deviceAgents ?? true
 
   const offeredOpenAiTier = new Set<string>(SERVICE_TIER_CHOICES.map((choice) => choice.value))
 
@@ -284,7 +303,9 @@ export function createProvidersPanel(
     return {
       api: (vendor.api ?? []).filter((id) => apiPanel.labelFor(id) !== null),
       local: (vendor.local ?? []).filter((id) => localPanel.labelFor(id) !== null),
-      agents: (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null),
+      agents: deviceAgents
+        ? (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null)
+        : [],
       cloud: cloudAgentByVendor.get(vendor.id),
     }
   }
@@ -312,7 +333,7 @@ export function createProvidersPanel(
       if (claimed.has(id)) continue
       list.push({ id, label: apiPanel.labelFor(id) ?? id, api: [id] })
     }
-    for (const id of agentsPanel.agentIds()) {
+    for (const id of deviceAgents ? agentsPanel.agentIds() : []) {
       if (claimed.has(id)) continue
       list.push({ id, label: agentsPanel.labelFor(id) ?? id, agents: [id] })
     }
@@ -393,7 +414,7 @@ export function createProvidersPanel(
 
   function addForm(): HTMLElement {
     const picker = el('select', {})
-    for (const entry of ADD_KINDS) {
+    for (const entry of ADD_KINDS.filter((e) => deviceAgents || e.kind !== 'agent')) {
       picker.append(el('option', { value: entry.kind }, entry.label))
     }
     picker.value = selectedAddKind
@@ -404,8 +425,9 @@ export function createProvidersPanel(
     })
     const host = el('div', { class: 'provider-add-host' })
     if (selectedAddKind === 'api') {
-      apiPanel.select(ADD_KEY)
-      host.append(apiPanel.root)
+      // Paste a key and let Copse work out the provider; "Other" falls through to
+      // the full custom-endpoint form below.
+      host.append(pasteKey.root)
     } else if (selectedAddKind === 'local') {
       localPanel.select(ADD_KEY)
       host.append(localPanel.root)
@@ -570,6 +592,7 @@ export function createProvidersPanel(
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
       selected = ''
     }
+    pasteKey.refreshChoices()
     rebuild()
   }
 
@@ -590,6 +613,7 @@ export function createProvidersPanel(
     saveKeys,
     reset: (): void => {
       refreshGeneration += 1
+      pasteKey.reset()
       apiPanel.reset()
       localPanel.reset()
       openAiTierDirty = false
