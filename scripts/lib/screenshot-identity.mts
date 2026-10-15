@@ -19,7 +19,6 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import {
   BROAD_PATTERNS,
-  extractSpecScreenshots,
   extractSpecTokens,
   listSourceFiles,
   reachableFiles,
@@ -29,6 +28,7 @@ import {
 } from '../test-oracle.mts'
 import { decodeWithSchema, safeJsonParse } from './safe-json.mts'
 import { SCREENSHOT_NAME } from './screenshot-manifest.mts'
+import { nativeScreenshotOutputs } from './native-screenshot-outputs.mts'
 
 /** The read-only source view the oracle uses, plus a file/directory probe. */
 export type IdentityTree = OracleFiles & { isFile: (path: string) => boolean }
@@ -396,7 +396,7 @@ export function buildIdentityRecords(input: BuildIdentityInput): IdentityRecords
     const inputs = renderingInputs(spec, input.tree, cache)
     inputsBySpec.set(spec, inputs)
     for (const cls of INPUT_CLASSES) for (const path of inputs[cls]) digest(path)
-    for (const name of extractSpecScreenshots(input.tree.read(spec))) {
+    for (const name of nativeScreenshotOutputs(spec, input.tree.read(spec))) {
       const owner = owners.get(name)
       if (owner !== undefined && owner !== spec)
         throw new Error(`Screenshot ${name} is written by both ${owner} and ${spec}`)

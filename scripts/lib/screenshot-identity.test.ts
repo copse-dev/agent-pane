@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import {
   buildIdentityRecords,
@@ -351,6 +352,23 @@ describe('identity hash', () => {
 })
 
 describe('rendered marker', () => {
+  it('retains valid rendered flags for audited real settings continuation writes', () => {
+    const spec = 'tests/e2e/settings-provider-hosts.e2e.ts'
+    const files = { ...baseFiles(), [spec]: readFileSync(spec, 'utf8') }
+    const pngs = {
+      'settings-provider-hosts-page-2.png': { bytes: 'page-two', mtimeMs: MARKER_MS + 1 },
+    }
+    const records = build({ files, specs: [spec], pngs })
+    assert.equal(records.marker, 'valid')
+    assert.equal(record(records, 'settings-provider-hosts-page-2.png').result?.rendered, true)
+    const unknown = build({
+      files,
+      specs: [spec],
+      pngs: { ...pngs, 'unknown.png': { bytes: 'late', mtimeMs: MARKER_MS + 1 } },
+    })
+    assert.equal(unknown.marker, 'invalidated')
+    assert.equal(record(unknown, 'settings-provider-hosts-page-2.png').result?.rendered, null)
+  })
   it('marks PNGs written after the marker as rendered', () => {
     const records = build()
     assert.equal(records.marker, 'valid')

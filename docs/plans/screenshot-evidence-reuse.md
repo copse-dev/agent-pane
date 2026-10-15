@@ -57,8 +57,22 @@ artifact. `scripts/lib/screenshot-identity.test.ts` holds the contract tests.
 For each spec in the shard, the identity covers six **disjoint** classes. The
 mapping is the test oracle's own, exported rather than re-implemented
 (`reachableFiles`, `extractSpecTokens` + `tokenMatcher`, `BROAD_PATTERNS`,
-`listSourceFiles`, `extractSpecScreenshots`), so the identity and the CI
+`listSourceFiles`), so the identity and the CI
 selector cannot drift apart silently.
+
+Output ownership uses parsed capture calls and their filename argument positions,
+including constant filenames passed with additional arguments. It does not scan
+selector strings, callbacks, fixture PNGs or unused table properties for names.
+Direct native captures must target the named screenshot directory. Finite dynamic
+writers that cannot be inferred this way are declared in
+`scripts/lib/native-screenshot-outputs-audit.mts`: exact native spec, source digest
+and output filenames. These cover the settings continuation pages, table-driven
+captures, local wrappers and decoded guest/explainer PNG writes. There are no
+wildcards or browser-only grants. A changed producer revokes its declarations;
+re-audit its actual output paths before updating the digest or filenames. Tests
+check the declarations against the current source and retain duplicate-owner
+rejection. An unknown baseline PNG written after the marker still invalidates
+every rendered flag; these declarations do not weaken that control.
 
 | Class          | Contents                                                                                                                                                                                                                                                                                                    |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
