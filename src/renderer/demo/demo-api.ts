@@ -547,6 +547,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    threadPrompts: {
+      onPrompt: () => () => {},
+      reply: async () => {},
+      revokeAccess: async () => {},
+    },
     mobile: {
       getState: () =>
         resolved({
@@ -962,6 +967,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           sizeBytes: archive.bytes?.byteLength ?? 0,
         }),
     },
+    plans: { get: () => resolved(null), revision: () => resolved(null), change: unsupported },
     threads: {
       storageSize: () => resolved({ bytes: 24_576, truncated: false }),
       archive: (_projectId, threadId) => {
@@ -1137,8 +1143,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     acp: {
+      browseRegistry: () => resolved({ entries: [], fetchedAt: Date.now(), skipped: 0 }),
       detectAgents: emptyArray,
       probeAgent: unsupported,
+      authStatus: emptyArray,
       autoSetup: () =>
         resolved({
           installed: [],
@@ -1272,6 +1280,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           ledgerEventCount: 0,
         })
       },
+      getThreadClassifierUse: () => resolved({ calls: 0, rows: [] }),
       getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME }),
       getPlanWorthIt: () =>
         resolved({
@@ -1467,6 +1476,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      cleanupRuns: unsupported,
       listBranchCi: emptyArray,
       upsertBranchCi: unsupported,
       removeBranchCi: unsupported,

@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedStreamingMarkdownFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -10,7 +10,7 @@ describe('markdown streaming list pending', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-streaming-list-project', { subagentsEnabled: false })
+    seedStreamingMarkdownFixture(process.cwd())
     await browser.reloadSession()
   })
 
@@ -19,23 +19,21 @@ describe('markdown streaming list pending', () => {
   })
 
   it('renders lazy continuations inside the open list item without raw leading dashes', async () => {
-    await $('.messages-list').waitForExist({ timeout: 30_000 })
+    await $('[data-message-id="streaming-markdown-message"] .message-text').waitForDisplayed({
+      timeout: 30_000,
+    })
 
     const result = await browser.execute(() => {
-      const list = document.querySelector('.messages-list')
-      if (!list) return { error: 'no messages list' }
-
-      const msg = document.createElement('div')
-      msg.className = 'msg msg-assistant'
-      const text = document.createElement('div')
-      text.className = 'message-text streaming-markdown is-streaming'
+      const text = document.querySelector(
+        '[data-message-id="streaming-markdown-message"] .message-text',
+      )
+      if (!text) return { error: 'no visible assistant message' }
+      text.classList.add('streaming-markdown', 'is-streaming')
       text.innerHTML = [
         '<div class="stream-complete">',
         '<ul><li>Database migration ran flawlessly<span class="stream-pending stream-pending-list-continuation stream-pending-block">  - zero downtime during production rollout.</span></li></ul>',
         '</div>',
       ].join('')
-      msg.append(text)
-      list.append(msg)
 
       const li = text.querySelector('li')
       const continuation = text.querySelector('.stream-pending-list-continuation')
@@ -53,27 +51,41 @@ describe('markdown streaming list pending', () => {
     expect(result.liText).toContain('Database migration ran flawlessly')
     expect(result.liText).toContain('zero downtime')
 
+    await expect($('.stream-pending')).toBeDisplayed()
+    const visible = await browser.execute(() => {
+      const element = document.querySelector('.stream-pending')
+      if (!element) return false
+      const rect = element.getBoundingClientRect()
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.top >= 0 &&
+        rect.bottom <= innerHeight &&
+        element.contains(
+          document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2),
+        )
+      )
+    })
+    expect(visible).toBe(true)
     await saveAppScreenshot('markdown-streaming-list-continuation.png')
   })
 
   it('renders pending list items with native ul/li bullets matching committed items', async () => {
-    await $('.messages-list').waitForExist({ timeout: 30_000 })
+    await $('[data-message-id="streaming-markdown-message"] .message-text').waitForDisplayed({
+      timeout: 30_000,
+    })
 
     const result = await browser.execute(() => {
-      const list = document.querySelector('.messages-list')
-      if (!list) return { error: 'no messages list' }
-
-      const msg = document.createElement('div')
-      msg.className = 'msg msg-assistant'
-      const text = document.createElement('div')
-      text.className = 'message-text streaming-markdown is-streaming'
+      const text = document.querySelector(
+        '[data-message-id="streaming-markdown-message"] .message-text',
+      )
+      if (!text) return { error: 'no visible assistant message' }
+      text.classList.add('streaming-markdown', 'is-streaming')
       text.innerHTML = [
         '<div class="stream-complete">',
         '<ul><li>First item</li><li class="stream-pending stream-pending-list-item stream-pending-block">Second item</li></ul>',
         '</div>',
       ].join('')
-      msg.append(text)
-      list.append(msg)
 
       const items = [...text.querySelectorAll('li')]
       const pending = text.querySelector('li.stream-pending-list-item')
@@ -99,6 +111,22 @@ describe('markdown streaming list pending', () => {
     expect(result.hasCustomBulletBefore).toBe(false)
     expect(result.listStyleType).toBe('disc')
 
+    await expect($('.stream-pending')).toBeDisplayed()
+    const visible = await browser.execute(() => {
+      const element = document.querySelector('.stream-pending')
+      if (!element) return false
+      const rect = element.getBoundingClientRect()
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.top >= 0 &&
+        rect.bottom <= innerHeight &&
+        element.contains(
+          document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2),
+        )
+      )
+    })
+    expect(visible).toBe(true)
     await saveAppScreenshot('markdown-streaming-list-pending-bullet.png')
   })
 })

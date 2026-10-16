@@ -1,3 +1,7 @@
+import { mountPlanDocumentEditor } from './plan-document-editor.ts'
+import { mountRoadmapAttempts } from './roadmap-attempts.ts'
+import { roadmapPlanDraft } from './roadmap-plan.ts'
+import { awaitPendingThreadPersistence } from '../controller/persistence.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
@@ -47,7 +51,12 @@ import {
 } from '@shared/roadmap/review.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { knowledgeDate } from './knowledge-date.ts'
-import { createThread, getThreadById, switchThread } from '@shared/store/thread-helpers.ts'
+import {
+  createThread,
+  getThreadById,
+  markThreadHasSavedPlan,
+  switchThread,
+} from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
@@ -452,6 +461,58 @@ export function mountRoadmapPane(
     placeholder: 'Prompt or idea to run later…',
     'aria-label': 'Roadmap prompt',
   })
+  const documentEditor = mountPlanDocumentEditor(
+    () => {
+      promptInput.value = documentEditor.value
+    },
+    () => {},
+    { id: 'roadmap', label: 'Roadmap' },
+  )
+  const documentTitle = el('span', { class: 'roadmap-document-title' })
+  const documentModeBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-ghost ui-btn-compact' },
+    'Document',
+  )
+  const quickModeBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-ghost ui-btn-compact' },
+    'Quick edit',
+  )
+  const formatBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost ui-btn-compact roadmap-format-toggle',
+      'aria-expanded': 'false',
+    },
+    'Format',
+  )
+  formatBtn.addEventListener('click', () => {
+    const expanded = form.classList.toggle('is-formatting')
+    formatBtn.setAttribute('aria-expanded', String(expanded))
+  })
+  let documentMode = true
+  let editorItemKey: string | null = null
+  function setEditorMode(useDocument: boolean): void {
+    documentMode = useDocument
+    if (useDocument && documentEditor.value !== promptInput.value)
+      documentEditor.value = promptInput.value
+    documentEditor.element.hidden = !useDocument
+    promptInput.hidden = useDocument
+    documentModeBtn.setAttribute('aria-pressed', String(useDocument))
+    quickModeBtn.setAttribute('aria-pressed', String(!useDocument))
+    form.classList.toggle('is-document', useDocument)
+    formatBtn.hidden = !useDocument
+  }
+  documentModeBtn.addEventListener('click', () => {
+    setEditorMode(true)
+  })
+  quickModeBtn.addEventListener('click', () => {
+    setEditorMode(false)
+    promptInput.focus()
+  })
+  const attempts = mountRoadmapAttempts(api, store)
   const notesInput = el('input', {
     type: 'text',
     class: 'memories-field roadmap-notes-input',
@@ -526,6 +587,16 @@ export function mountRoadmapPane(
     { type: 'submit', class: 'ui-btn ui-btn-primary ui-btn-compact roadmap-save-btn' },
     'Save',
   )
+  const developBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-develop-btn',
+      title: 'Save this brief and open a draft plan for review',
+    },
+    'Develop plan',
+  )
+  let developing = false
   // Runs the jotted prompt: opens a fresh thread with the composer pre-filled
   // (not auto-sent — the user reviews, tweaks, and hits send). Hidden in
   // pop-out windows, where there is no chat pane to land in (popout.css).
@@ -591,37 +662,68 @@ export function mountRoadmapPane(
   )
   const actions = el(
     'div',
-    { class: 'memories-actions' },
+    { class: 'memories-actions roadmap-primary-actions' },
     saveBtn,
+    developBtn,
     startBtn,
     reopenBtn,
-    fitBtn,
-    resolutionBtn,
-    deleteBtn,
     reviewBackBtn,
     cancelBtn,
   )
-
-  form.append(
-    el('label', { class: 'memories-label' }, 'Prompt'),
-    promptInput,
-    el('label', { class: 'memories-label' }, 'Notes'),
-    notesInput,
-    el('label', { class: 'memories-label' }, 'Issue'),
-    issueInput,
-    attachmentsLabel,
-    attachmentList,
-    attachFileInput,
-    el('label', { class: 'memories-label' }, 'Category'),
-    categorySelect,
-    statusLabel,
-    statusSelect,
-    metaLine,
-    errorLine,
-    fitResult,
-    reviewResult,
-    actions,
+  const details = el(
+    'details',
+    { class: 'roadmap-details' },
+    el('summary', {}, 'Details'),
+    el(
+      'div',
+      { class: 'roadmap-detail-fields' },
+      el('label', { class: 'memories-label' }, 'Notes'),
+      notesInput,
+      el('label', { class: 'memories-label' }, 'Issue'),
+      issueInput,
+      el('label', { class: 'memories-label' }, 'Category'),
+      categorySelect,
+      metaLine,
+      el('div', { class: 'roadmap-secondary-actions' }, fitBtn, resolutionBtn, deleteBtn),
+      fitResult,
+      reviewResult,
+    ),
   )
+  const editorHeader = el(
+    'div',
+    { class: 'roadmap-document-header' },
+    documentTitle,
+    el('div', { class: 'roadmap-document-controls' }, statusLabel, statusSelect),
+  )
+  const modes = el(
+    'div',
+    { class: 'roadmap-editor-modes', 'aria-label': 'Roadmap editor view' },
+    documentModeBtn,
+    quickModeBtn,
+    formatBtn,
+  )
+  const documentScroll = el(
+    'div',
+    { class: 'roadmap-document-scroll' },
+    editorHeader,
+    modes,
+    promptInput,
+    documentEditor.element,
+    el(
+      'div',
+      { class: 'roadmap-document-attachments' },
+      attachmentsLabel,
+      attachmentList,
+      attachFileInput,
+    ),
+    attempts.element,
+    details,
+  )
+  form.append(
+    documentScroll,
+    el('footer', { class: 'roadmap-document-footer' }, errorLine, actions),
+  )
+  viewerRoot.classList.add('roadmap-viewer')
   // --- import-from-issues picker (shown in the viewer column while importing) --
   const importStatus = el('div', { class: 'memories-meta roadmap-import-status' })
   const importList = el('div', { class: 'roadmap-import-list' })
@@ -996,8 +1098,17 @@ export function mountRoadmapPane(
         resetAttachmentEdits()
       }
     }
+    const nextEditorKey = creating ? NEW_ITEM_DRAFT_KEY : selectedId
+    if (editorItemKey !== nextEditorKey) {
+      editorItemKey = nextEditorKey
+      documentMode = !creating
+      details.open = false
+    }
+    setEditorMode(documentMode)
+    documentTitle.textContent = nonEmptyStringOr(item?.title, 'New idea')
+    attempts.show(item?.fields ?? {})
     renderAttachments()
-    statusLabel.hidden = !item
+    statusLabel.hidden = true
     statusSelect.hidden = !item
     startBtn.hidden = !item
     // Reopen only while the tracked thread still exists — a deleted thread
@@ -1183,6 +1294,7 @@ export function mountRoadmapPane(
         const status = itemStatus(item)
         const row = el('button', {
           type: 'button',
+          'data-id': item.id,
           class: [
             'git-change-row',
             'memories-row',
@@ -1443,12 +1555,21 @@ export function mountRoadmapPane(
     promptInput.scrollIntoView({ block: 'nearest' })
   }
 
-  async function save(): Promise<void> {
+  async function save(): Promise<boolean> {
+    if (saveBtn.disabled) return false
+    const projectId = store.getState().activeProjectId
+    let targetId = selectedId
+    let wasCreating = creating
+    const stillHere = (): boolean =>
+      projectId === store.getState().activeProjectId &&
+      targetId === selectedId &&
+      wasCreating === creating
+    const category = isRoadmapCategory(categorySelect.value) ? categorySelect.value : ''
     const prompt = promptInput.value.trim()
     const notes = notesInput.value.trim()
     if (!prompt) {
       showError('Add a prompt before saving.')
-      return
+      return false
     }
     const issue = issueInput.value.trim()
     const addAttachments = pendingAttachments.map(({ name, mimeType, dataUrl }) => ({
@@ -1466,10 +1587,13 @@ export function mountRoadmapPane(
           firstNonEmptyString(issue),
           addAttachments.length > 0 ? addAttachments : undefined,
         )
+        if (!stillHere()) return false
         selectedId = created.id
-        const category = isRoadmapCategory(categorySelect.value) ? categorySelect.value : ''
+        targetId = created.id
         if (category) await api.roadmap.setCategory(created.id, category)
+        if (!stillHere()) return false
         creating = false
+        wasCreating = false
         editorDrafts.delete(NEW_ITEM_DRAFT_KEY)
       } else {
         const updated = await api.roadmap.update(
@@ -1481,6 +1605,7 @@ export function mountRoadmapPane(
           addAttachments.length > 0 ? addAttachments : undefined,
           removeIds.length > 0 ? removeIds : undefined,
         )
+        if (!stillHere()) return false
         if (!updated) {
           showError('This roadmap item no longer exists.')
           selectedId = null
@@ -1490,14 +1615,16 @@ export function mountRoadmapPane(
             updated.fields['categoryManual'] && isRoadmapCategory(updated.fields['category'])
               ? updated.fields['category']
               : ''
-          const category = isRoadmapCategory(categorySelect.value) ? categorySelect.value : ''
           if (category !== storedCategory) await api.roadmap.setCategory(updated.id, category)
         }
       }
+      if (!stillHere()) return false
       if (selectedId) editorDrafts.delete(selectedId)
       await refresh()
+      return stillHere() && selectedId !== null
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Could not save roadmap item.')
+      return false
     } finally {
       saveBtn.disabled = false
     }
@@ -1653,7 +1780,9 @@ export function mountRoadmapPane(
   // tweak goes to the thread the user is looking at, not a stale stored copy.
   // The item's attachments ride along into the composer: images as image
   // attachments, text files (.jsonl eval sets and the like) as file chips.
-  async function startThread(): Promise<void> {
+  async function startThread(planning = false): Promise<void> {
+    const projectId = store.getState().activeProjectId
+    const itemId = selectedId
     const prompt = promptInput.value.trim()
     if (!prompt) {
       showError('Add a prompt before starting a thread.')
@@ -1672,6 +1801,12 @@ export function mountRoadmapPane(
       }
     }
     payloads.push(...pendingAttachments)
+    if (projectId !== store.getState().activeProjectId || itemId !== selectedId) return
+    const planDraft = planning && item ? roadmapPlanDraft(item) : null
+    if (planDraft && planDraft.body.length > 100000) {
+      showError('This brief is too long for a plan. Shorten it or attach supporting material.')
+      return
+    }
     // Persist whatever is in the chat composer to its thread before switching.
     store.emit('composer_draft_flush')
     const threadId = createThread(store, draft)
@@ -1690,10 +1825,20 @@ export function mountRoadmapPane(
     // later. Best-effort: a failed stamp only costs the Reopen shortcut. Main
     // broadcasts roadmap:changed once the stamp lands, and the onChanged
     // subscription below refreshes the list — no second refresh here.
-    if (selectedId) {
-      void api.roadmap.setThread(selectedId, threadId).catch(() => {})
+    if (planDraft && projectId) {
+      await awaitPendingThreadPersistence()
+      if (projectId !== store.getState().activeProjectId) return
+      await api.plans.change(projectId, threadId, { action: 'create', ...planDraft })
+      markThreadHasSavedPlan(store, threadId)
+      store.emit('thread_plan_changed', threadId)
     }
-    handlers?.focusComposer?.()
+    if (projectId !== store.getState().activeProjectId) return
+    if (itemId) {
+      if (planning) await api.roadmap.setThread(itemId, threadId)
+      else void api.roadmap.setThread(itemId, threadId).catch(() => {})
+    }
+    if (planDraft && store.getState().activeThreadId === threadId) store.emit('thread_plan_open')
+    else handlers?.focusComposer?.()
   }
 
   // Switch back to the thread tracked on the selected item. The button only
@@ -2347,6 +2492,26 @@ export function mountRoadmapPane(
     }
   })
   startBtn.addEventListener('click', () => void startThread())
+  developBtn.addEventListener('click', () => {
+    if (developing) return
+    developing = true
+    form.inert = true
+    developBtn.textContent = 'Opening plan…'
+    const projectId = store.getState().activeProjectId
+    void (async (): Promise<void> => {
+      if (!(await save())) return
+      if (projectId !== store.getState().activeProjectId) return
+      await startThread(true)
+    })()
+      .catch((err: unknown) => {
+        showError(ipcErrorMessage(err, 'Could not open the plan.'))
+      })
+      .finally(() => {
+        developing = false
+        form.inert = false
+        developBtn.textContent = 'Develop plan'
+      })
+  })
 
   // Pasted files/images anywhere in the form become attachments. Stop
   // propagation for handled pastes: the chat input bar owns a document-level
@@ -2477,6 +2642,9 @@ export function mountRoadmapPane(
 
   return () => {
     document.removeEventListener('click', closeFilterOnOutsideClick)
+    documentEditor.destroy()
+    attempts.destroy()
+    viewerRoot.classList.remove('roadmap-viewer')
     unregisterPopoutSeed()
     unsubs.forEach((u) => {
       u()

@@ -246,10 +246,12 @@ describe('tool activity icon — nested rollup row', function () {
     // all — narrow it so the (already 96-char-capped, see SHELL_LABEL_MAX)
     // label needs real CSS ellipsis, the way it would in a normal window once
     // a command label runs long.
-    await browser.execute(() => {
-      document.documentElement.style.setProperty('--chat-content-max', '420px')
-    })
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    // Reach a narrow column through the real panel layout. Overriding the
+    // content-width token leaves the user-message minimum at its normal size
+    // and creates artificial transcript overflow in the capture.
+    await $('[aria-label="Toggle right panel"]').click()
+    await $('#pane-files').waitForDisplayed()
     await setComposerValue('Wait briefly for the preview server to finish starting.')
     await submitToolPrompt()
     const nestedCard = $('.tool-rollup-body .tool-card')

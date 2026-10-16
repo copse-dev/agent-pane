@@ -219,13 +219,18 @@ function serializedNavigation(api: ApiClient, navigation: MainWindowNavigation):
 const threadWriteKey = (projectId: string, threadId: string): string =>
   `thread:${projectId}:${threadId}`
 
-type ThreadMeta = Omit<Thread, 'messages' | 'messagesLoaded'>
+type ThreadMeta = Omit<Thread, 'messages' | 'messagesLoaded' | 'hasSavedPlan'>
 
 function metaOf(thread: Thread): ThreadMeta {
-  // Mirror the main-process `metaOf`: `messagesLoaded` is session-local load
-  // bookkeeping. Leaving it in would also make hydrating a thread look like a
-  // metadata change and fire a pointless `updateMeta` write per thread opened.
-  const { messages: _messages, messagesLoaded: _messagesLoaded, ...meta } = thread
+  // Mirror the main-process `metaOf`: load state and plan presence are derived
+  // for this session. Hydration and plan saves must not write these projections
+  // back as mutable metadata.
+  const {
+    messages: _messages,
+    messagesLoaded: _messagesLoaded,
+    hasSavedPlan: _hasSavedPlan,
+    ...meta
+  } = thread
   return meta
 }
 
@@ -408,7 +413,11 @@ export function saveProjectGroups(api: ApiClient, groups: ProjectGroup[]): Promi
 }
 
 export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
-  const threads = sortThreadsNewestFirst(await api.threads.loadProject(projectId))
+  const threads = sortThreadsNewestFirst(await api.threads.loadProject(projectId)).map((thread) =>
+    thread.status !== 'running' && thread.lastSettledAt === undefined
+      ? { ...thread, lastSettledAt: thread.updatedAt }
+      : thread,
+  )
   // Seed the persisted-metadata baseline so the autosave doesn't re-create these
   // (they're already on disk) but still detects later deletions and removed keys.
   const metas = new Map<string, ThreadMeta>()

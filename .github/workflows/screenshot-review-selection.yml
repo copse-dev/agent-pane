@@ -50,6 +50,22 @@ jobs:
       pull-requests: write
       statuses: write
     steps:
+      - name: Load trusted screenshot storage policy
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: .screenshot-policy
+          persist-credentials: false
+          sparse-checkout: |
+            .nvmrc
+            scripts/lib
+            scripts/screenshot-candidates.mts
+            scripts/screenshot-storage.mts
+            packages/std/package.json
+            packages/std/src/unknown-value.ts
+            packages/std/src/nullish.ts
+          sparse-checkout-cone-mode: false
+
       # Read-only: every write happens in the last step, so a refusal and a
       # decision take the same path.
       - name: Validate the selection against the live head
@@ -179,41 +195,14 @@ jobs:
               return;
             }
 
-            // Descend to tests/e2e/screenshots on both sides. Only the ticked
-            // blobs are copied, so nothing else in the compare commit matters.
+            const { validateManifestCompare, selectManifestEntries } = require(`${process.env.GITHUB_WORKSPACE}/.screenshot-policy/scripts/lib/screenshot-review-manifest.mts`);
             const { data: headCommit } = await github.rest.git.getCommit({ owner, repo, commit_sha: head });
-            const readTree = async (treeSha) => {
-              const { data } = await github.rest.git.getTree({ owner, repo, tree_sha: treeSha });
-              if (data.truncated) throw new Error(`Tree ${treeSha} is truncated.`);
-              return new Map(data.tree.map((entry) => [entry.path, entry]));
-            };
-            const descend = async (rootSha) => {
-              let sha = rootSha;
-              for (const name of ['tests', 'e2e', 'screenshots']) {
-                const entry = (await readTree(sha)).get(name);
-                if (entry?.type !== 'tree') return undefined;
-                sha = entry.sha;
-              }
-              return readTree(sha);
-            };
-            const [before, after] = await Promise.all([descend(headCommit.tree.sha), descend(commit.tree.sha)]);
-            if (!before || !after) {
-              refuse('the compare commit has no tests/e2e/screenshots/ tree to take screenshots from.');
-              return;
-            }
-
-            const selected = [];
-            for (const name of names) {
-              const entry = after.get(name);
-              if (entry?.type !== 'blob' || entry.mode !== '100644' || before.get(name)?.sha === entry.sha) {
-                refuse(`\`${name}\` is not a changed candidate in the compare commit.`);
-                return;
-              }
-              selected.push({ name, sha: entry.sha });
-            }
-            const candidates = [...after.entries()].filter(
-              ([name, entry]) => entry.type === 'blob' && before.get(name)?.sha !== entry.sha,
-            ).length;
+            let selected, candidates;
+            try {
+              const result = await validateManifestCompare(github, owner, repo, headCommit.tree.sha, commit.tree.sha);
+              selected = selectManifestEntries(result.before, result.after, names);
+              candidates = result.changed.length;
+            } catch (error) { refuse(error.message); return; }
             core.setOutput('outcome', 'accept');
             core.setOutput('compare-commit', compareCommit);
             core.setOutput('head-ref', pr.head.ref);
@@ -254,21 +243,20 @@ jobs:
             if (
               !Array.isArray(selected) ||
               selected.length === 0 ||
-              !selected.every((item) => namePattern.test(item.name) && /^[0-9a-f]{40}$/.test(item.sha))
+              !selected.every((item) => namePattern.test(item.name) && /^[0-9a-f]{64}$/.test(item.sha256) && Number.isSafeInteger(item.bytes) && item.bytes > 0)
             ) {
               core.setFailed('Refusing an unexpected selection.');
               return;
             }
+            const { readReviewManifest, selectedManifestContent, selectedReadmeContent } = require(`${process.env.GITHUB_WORKSPACE}/.screenshot-policy/scripts/lib/screenshot-review-manifest.mts`);
+            const before = await readReviewManifest(github, owner, repo, process.env.HEAD_TREE);
+            const content = selectedManifestContent(before, selected);
+            const after = JSON.parse(content);
+            const readme = await selectedReadmeContent(github, owner, repo, process.env.HEAD_TREE, before, after);
             const { data: tree } = await github.rest.git.createTree({
-              owner,
-              repo,
-              base_tree: process.env.HEAD_TREE,
-              tree: selected.map((item) => ({
-                path: `tests/e2e/screenshots/${item.name}`,
-                mode: '100644',
-                type: 'blob',
-                sha: item.sha,
-              })),
+              owner, repo, base_tree: process.env.HEAD_TREE,
+              tree: [{ path: 'tests/e2e/screenshots/manifest.json', mode: '100644', type: 'blob', content },
+                ...(readme === null ? [] : [{ path: 'README.md', mode: '100644', type: 'blob', content: readme }])],
             });
             const noun = selected.length === 1 ? 'screenshot' : 'screenshots';
             const { data: commit } = await github.rest.git.createCommit({
@@ -392,7 +380,7 @@ jobs:
                 process.env.TOKEN_MINTED === 'true'
                   ? 'the PR branch could not be advanced. It may have moved since the evidence was published.'
                   : 'the release App token is unavailable, and a push with the job token would start no CI. ' +
-                    'Use the `git checkout` command in the comment to take those files yourself.';
+                    'Use the `screenshots:accept` command in the comment to take those files yourself.';
             } else {
               refusal = process.env.REASON || 'the selection could not be evaluated.';
             }

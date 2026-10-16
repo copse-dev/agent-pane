@@ -94,5 +94,9 @@
 // v55 versions host-owned container authentication.
 // v56 versions threads:archive stopProcesses and blocked-running live-work reports.
 // v57 versions approval effect, boundary, and grant-scope details.
+// v58 versions automation-only icon endpoints as test-only.
 // v58 versions inline Mobile Companion settings endpoints.
-export const API_PROTOCOL_VERSION = 58 as const
+// v59 integrates explicit local terminal creation targets.
+// v60 adds living-plan reads and revision-checked changes.
+// v61 integrates Send now abort causes and cross-thread read/send permissions.
+export const API_PROTOCOL_VERSION = 61 as const

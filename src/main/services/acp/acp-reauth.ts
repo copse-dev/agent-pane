@@ -40,13 +40,10 @@ function offerQuestion(
       ? `${agentName}’s saved sign-in has expired, so this turn could not run.`
       : `${agentName} is not signed in, so this turn could not run.`
   const open = hostId
-    ? `The agent runs on the SSH host ${hostId} and its credentials live there, ` +
+    ? `${agentName} runs on the SSH host ${hostId}, ` +
       `so open a terminal connected to ${hostId} running \`${command}\` to sign in?`
     : `Open a terminal and run \`${command}\` to sign in again?`
-  return (
-    `${cause} ${open} ` +
-    `Copse can’t complete the sign-in for you — finish it in that terminal, then re-send your message.`
-  )
+  return `${cause} ${open} Finish signing in there, then re-send your message.`
 }
 
 /**

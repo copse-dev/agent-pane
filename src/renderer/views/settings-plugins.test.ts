@@ -13,7 +13,7 @@ import { createStore, type AppStore } from '@shared/store/store.ts'
 import type { PluginSummary, PluginsListResult } from '@shared/types/plugins.ts'
 import type { PluginInstallRecord } from '@shared/types/plugin-installs.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { mountSettingsDialog } from './settings-dialog.ts'
+import { mountSettingsDialog, openSettingsDialog, openModelSettings } from './settings-dialog.ts'
 import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
@@ -35,6 +35,7 @@ function stubApi(
   let current = initial
   let installs: PluginInstallRecord[] = []
   return createPendingApi({
+    'settings.getSnapshot': () => Promise.resolve({}),
     'instructions.list': () => Promise.resolve([]),
     'cursorRules.list': () => Promise.resolve([]),
     'skills.sources': () =>
@@ -267,6 +268,7 @@ async function openPlugins(
   document.body.innerHTML = ''
   mountConfirmDialog()
   mountSettingsDialog(store, stubApi(initial, spy))
+  openSettingsDialog('customise')
   const btn = document.querySelector<HTMLButtonElement>(
     `.settings-nav-btn[data-section="${section}"]`,
   )
@@ -290,6 +292,161 @@ function pluginsFieldset(): HTMLElement {
   return fieldset
 }
 
+it('reveals explainer settings after Manage finishes rebuilding the plugin row', async () => {
+  const spy: StubApiSpy = {
+    lastSetEnabled: null,
+    lastSetSetting: null,
+    addSourceCalls: 0,
+    lastPreparedCatalogId: null,
+    lastCommittedToken: null,
+  }
+  const initial: PluginsListResult = {
+    plugins: [{ ...demoPlugin, id: 'copse.mcp-ui-canvas', stability: 'experimental' }],
+  }
+  let release: ((result: PluginsListResult) => void) | undefined
+  let reads = 0
+  const api = stubApi(initial, spy, (current) => {
+    reads++
+    if (reads === 2)
+      return new Promise((resolve) => {
+        release = resolve
+      })
+    return Promise.resolve(current)
+  })
+  document.body.innerHTML = ''
+  mountSettingsDialog(createStore(), api)
+  openSettingsDialog('experimental')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const oldRow = document.querySelector('.plugin-row[data-plugin-id="copse.mcp-ui-canvas"]')
+  assert.ok(oldRow)
+  const manage = document.querySelector<HTMLButtonElement>('#animated-explainers-manage')
+  assert.ok(manage)
+  manage.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(release, 'Customise starts a fresh plugin registry read')
+  release(initial)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const row = document.querySelector('.plugin-row[data-plugin-id="copse.mcp-ui-canvas"]')
+  assert.ok(row)
+  assert.notEqual(row, oldRow, 'the refreshed registry replaces the prior row')
+  const fold = row.querySelector<HTMLDetailsElement>('.plugin-settings-fold')
+  assert.ok(fold)
+  assert.equal(fold.open, true, 'Manage reveals the refreshed row rather than the discarded row')
+})
+
+it('does not reveal a pending explainer target after Settings closes', async () => {
+  const spy: StubApiSpy = {
+    lastSetEnabled: null,
+    lastSetSetting: null,
+    addSourceCalls: 0,
+    lastPreparedCatalogId: null,
+    lastCommittedToken: null,
+  }
+  const initial: PluginsListResult = {
+    plugins: [{ ...demoPlugin, id: 'copse.mcp-ui-canvas', stability: 'experimental' }],
+  }
+  let release: ((result: PluginsListResult) => void) | undefined
+  let reads = 0
+  const api = stubApi(initial, spy, (current) => {
+    reads++
+    if (reads === 2)
+      return new Promise((resolve) => {
+        release = resolve
+      })
+    return Promise.resolve(current)
+  })
+  document.body.innerHTML = ''
+  mountSettingsDialog(createStore(), api)
+  openSettingsDialog('experimental')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const oldRow = document.querySelector('.plugin-row[data-plugin-id="copse.mcp-ui-canvas"]')
+  assert.ok(oldRow)
+  const manage = document.querySelector<HTMLButtonElement>('#animated-explainers-manage')
+  assert.ok(manage)
+  manage.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(release, 'Customise starts a fresh plugin registry read')
+  const close = document.querySelector<HTMLButtonElement>('#settings-close')
+  assert.ok(close)
+  close.click()
+  release(initial)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const row = document.querySelector('.plugin-row[data-plugin-id="copse.mcp-ui-canvas"]')
+  assert.ok(row)
+  assert.equal(row, oldRow, 'the canceled refresh must not replace the prior row')
+  const fold = row.querySelector<HTMLDetailsElement>('.plugin-settings-fold')
+  assert.ok(fold)
+  assert.equal(fold.open, false, 'closing Settings cancels the pending detail reveal')
+})
+
+it('reveals explainer settings when search already loaded Customise beside Experimental', async () => {
+  const spy: StubApiSpy = {
+    lastSetEnabled: null,
+    lastSetSetting: null,
+    addSourceCalls: 0,
+    lastPreparedCatalogId: null,
+    lastCommittedToken: null,
+  }
+  const initial: PluginsListResult = {
+    plugins: [
+      {
+        ...demoPlugin,
+        id: 'copse.mcp-ui-canvas',
+        stability: 'experimental',
+        settings: [
+          {
+            id: 'animatedExplainers',
+            kind: 'boolean',
+            title: 'Animated explainers',
+            value: false,
+            default: false,
+          },
+        ],
+      },
+    ],
+  }
+  document.body.innerHTML = ''
+  mountSettingsDialog(createStore(), stubApi(initial, spy))
+  openSettingsDialog('customise')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const browse = document.querySelector<HTMLButtonElement>('#plugins-browse-tab')
+  assert.ok(browse)
+  browse.click()
+  const installed = document.querySelector<HTMLElement>('#plugins-installed-panel')
+  assert.ok(installed)
+  assert.equal(installed.hidden, true)
+  const search = document.querySelector<HTMLInputElement>('#settings-search-input')
+  assert.ok(search)
+  search.value = 'Animated explainers'
+  search.dispatchEvent(new Event('input', { bubbles: true }))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const manage = document.querySelector<HTMLButtonElement>('#animated-explainers-manage')
+  assert.ok(manage)
+  manage.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const fold = document.querySelector<HTMLDetailsElement>(
+    '.plugin-row[data-plugin-id="copse.mcp-ui-canvas"] .plugin-settings-fold',
+  )
+  assert.ok(fold)
+  assert.equal(
+    fold.open,
+    true,
+    'the retained Customise owner must reveal despite aborted Experimental work',
+  )
+  assert.equal(installed.hidden, false, 'Manage must reveal the Installed tab after Browse')
+  assert.equal(search.value, '', 'Manage exits search so the revealed plugin row is visible')
+  const toggle = installed.querySelector<HTMLInputElement>('.plugin-toggle-input')
+  assert.ok(toggle)
+  toggle.checked = false
+  toggle.dispatchEvent(new Event('change', { bubbles: true }))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(
+    installed.querySelector('.plugin-row')?.getAttribute('data-enabled'),
+    'false',
+    'the revealed owner must refresh after a plugin mutation',
+  )
+})
+
 it('ignores a pre-toggle plugin refresh that completes after the updated list', async () => {
   const spy: StubApiSpy = {
     lastSetEnabled: null,
@@ -311,9 +468,9 @@ it('ignores a pre-toggle plugin refresh that completes after the updated list', 
   })
   document.body.innerHTML = ''
   mountSettingsDialog(createStore(), api)
-  document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="customise"]')?.click()
+  openSettingsDialog('customise')
   await new Promise((resolve) => setTimeout(resolve, 0))
-  document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="customise"]')?.click()
+  document.querySelector<HTMLButtonElement>('#plugins-reload-btn')?.click()
   await new Promise((resolve) => setTimeout(resolve, 0))
   const toggle = document.querySelector<HTMLInputElement>('#plugins-list .plugin-toggle-input')
   assert.ok(toggle)
@@ -620,12 +777,12 @@ describe('settings → plugins list', () => {
     // Capitalising every word turned `copse.pii-redaction` into "Pii redaction"
     // and `copse.ci-investigator` into "Ci investigator" — the id transformation
     // showing through as user-facing copy. Only the lead word is capitalised,
-    // known acronyms stay whole, prose compounds keep their hyphen, and a
+    // known acronyms stay whole, pack-name dashes become spaces, and a
     // Markdown instruction-file slug reads as the file it names.
     const cases: readonly (readonly [string, string])[] = [
       ['copse.todos', 'Todos'],
-      ['copse.long-horizon-tasks', 'Long-horizon tasks'],
-      ['copse.post-turn-review', 'Post-turn review'],
+      ['copse.long-horizon-tasks', 'Long horizon tasks'],
+      ['copse.post-turn-review', 'Post turn review'],
       ['copse.pii-redaction', 'PII redaction'],
       ['copse.ci-investigator', 'CI investigator'],
       ['copse.okf-memories', 'OKF memories'],
@@ -841,6 +998,22 @@ describe('settings → plugins list', () => {
     // It is not misrendered as the plain string/enum inputs.
     assert.equal(list.querySelector('.plugin-setting-string'), null)
     assert.equal(list.querySelector('.plugin-setting-enum'), null)
+  })
+
+  it('reveals a plugin model recovery target after Browse was selected', async () => {
+    await openPlugins({ plugins: [modelFieldPlugin] }, spy)
+    const browse = document.querySelector<HTMLButtonElement>('#plugins-browse-tab')
+    const installed = document.querySelector<HTMLElement>('#plugins-installed-panel')
+    assert.ok(browse && installed)
+    browse.click()
+    assert.equal(installed.hidden, true)
+    openModelSettings(`plugin:${modelFieldPlugin.id}:advisorModel`)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(installed.hidden, false)
+    assert.equal(
+      document.activeElement?.getAttribute('data-model-setting-target'),
+      `plugin:${modelFieldPlugin.id}:advisorModel`,
+    )
   })
 
   it('offers dynamic selections only, plus the pinned value already stored', async () => {

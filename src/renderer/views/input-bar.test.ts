@@ -72,7 +72,7 @@ function createApi(options: {
   branchStatusCurrentBranch?: string
   onBranchStatus?: () => void
   branches?: Awaited<ReturnType<ApiClient['git']['listBranches']>>
-  onAbort?: () => Promise<void>
+  onAbort?: ApiClient['agent']['abort']
   onRun?: ApiClient['agent']['run']
   onCheckoutBranch?: (branch: string) => Promise<void>
   onPrepareCheckout?: ApiClient['agent']['prepareCheckout']
@@ -95,6 +95,7 @@ function createApi(options: {
   onAttachArchive?: (projectId: string, threadId: string, name: string, bytes?: Uint8Array) => void
   onRecordModelSelection?: ApiClient['threads']['recordModelSelection']
   catalogThreads?: ThreadCatalogHit[]
+  getThreadClassifierUse?: ApiClient['usage']['getThreadClassifierUse']
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -124,6 +125,11 @@ function createApi(options: {
       fs: {
         ...base['fs'],
         onChanged: () => () => {},
+      },
+      usage: {
+        ...base['usage'],
+        getThreadClassifierUse:
+          options.getThreadClassifierUse ?? base['usage'].getThreadClassifierUse,
       },
       security: {
         ...base['security'],
@@ -1693,7 +1699,7 @@ describe('input bar model recents', () => {
     const newest: Thread = {
       ...thread(),
       id: 'thread-newest',
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5-5',
       updatedAt: 3,
     }
     const older: Thread = {
@@ -1705,7 +1711,7 @@ describe('input bar model recents', () => {
     const duplicate: Thread = {
       ...thread(),
       id: 'thread-duplicate',
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5-5',
       updatedAt: 0,
     }
     const store = createStore({
@@ -1725,9 +1731,9 @@ describe('input bar model recents', () => {
     trigger.click()
 
     const recentLabels = [...host.querySelectorAll<HTMLElement>('.model-picker-option')].map(
-      (option) => option.textContent.split(' — ')[0],
+      (option) => option.textContent.split(': ')[0],
     )
-    assert.deepEqual(recentLabels, ['GPT-5.6 Sol', 'Claude Opus 4.8', 'Claude Haiku 4.5'])
+    assert.deepEqual(recentLabels, ['GPT-5.6 Sol', 'Claude Opus 5.5', 'Claude Haiku 4.5'])
   })
 
   it('records a user-attributed event when the footer picker commits a model', async () => {
@@ -3106,6 +3112,9 @@ describe('input bar attachment previews', () => {
     const expanded = dialog.querySelector<HTMLImageElement>('.image-expand-image')
     assert.ok(expanded)
     assert.equal(expanded.src, PNG)
+    dialog.querySelector<HTMLButtonElement>('.image-expand-annotate')?.click()
+    assert.equal(dialog.querySelector('.annotation-send')?.textContent, 'Update')
+    assert.equal(host.querySelectorAll('.image-chip').length, 1)
     dialog.close()
   })
 
@@ -3247,6 +3256,77 @@ describe('input bar image compatibility', () => {
     assert.equal(composer.textContent, 'Describe this screenshot')
     assert.equal(host.querySelectorAll('.image-chip').length, 1)
     assert.equal(warning.hidden, true)
+  })
+
+  it('uses undecorated catalog names in image actions and attribution while preserving custom punctuation', async () => {
+    for (const model of [
+      { id: 'anthropic/claude-sonnet-4-6', name: 'Claude Sonnet 4.6', annotated: true },
+      { id: 'custom/vision', name: 'Research: model — draft', annotated: false },
+    ]) {
+      document.body.innerHTML = ''
+      const host = document.createElement('div')
+      document.body.append(host)
+      const api = imageModelApi()
+      api.openRouter.models = async (): ReturnType<ApiClient['openRouter']['models']> => [
+        {
+          id: 'deepseek/deepseek-v4-flash',
+          name: 'DeepSeek V4 Flash',
+          inputPricePerMTok: 0,
+          outputPricePerMTok: 0,
+          supportsImages: false,
+        },
+        {
+          id: model.id,
+          name: model.name,
+          inputPricePerMTok: 3,
+          outputPricePerMTok: 15,
+          supportsImages: true,
+        },
+      ]
+      api.lmStudio.modelInfo = async (): ReturnType<ApiClient['lmStudio']['modelInfo']> => []
+      let usedModel = ''
+      api.agent.describeImages = async (
+        _projectId,
+        _threadId,
+        value,
+      ): Promise<{ text: string }> => {
+        usedModel = value
+        return { text: 'A visible diagram.' }
+      }
+      mountInputBar(host, imageModelStore(), api)
+      await settle()
+      getPromptAttachmentHandlers()?.attachImage('data:image/png;base64,abc', 'image/png')
+      await flush()
+      assert.equal(
+        host.querySelector('.composer-image-model-btn')?.textContent,
+        `Use ${model.name}`,
+      )
+      assert.equal(
+        host.querySelector('.composer-image-describe-btn')?.textContent,
+        `Describe with ${model.name}`,
+      )
+      if (model.annotated) {
+        host
+          .querySelector<HTMLButtonElement>(
+            '.composer-image-description-picker .model-picker-trigger',
+          )
+          ?.click()
+        await flush()
+        assert.match(
+          host.querySelector('.composer-image-description-picker .model-picker-option')
+            ?.textContent ?? '',
+          /Claude Sonnet 4\.6: intellect .*\$/,
+          'the picker retains the annotated catalog label',
+        )
+      }
+      host.querySelector<HTMLButtonElement>('.composer-image-describe-btn')?.click()
+      await flush()
+      assert.equal(usedModel, `openrouter:${model.id}`)
+      assert.equal(
+        host.querySelector('.prompt-input')?.textContent,
+        `[Image description generated by ${model.name}]\nA visible diagram.\n[End image description]`,
+      )
+    }
   })
 
   it('chooses image fidelity per chip and sends it on that image only', async () => {
@@ -3954,6 +4034,267 @@ describe('input bar footer usage hover', () => {
   })
 })
 
+describe('input bar footer classifier use', () => {
+  const classifierUse = {
+    calls: 2,
+    rows: [
+      {
+        subject: 'shell-scope' as const,
+        engine: 'Kev 4B',
+        calls: 2,
+        verdicts: [{ label: 'sandbox', count: 2 }],
+        noVerdict: 0,
+        averageLatencyMs: 800,
+        inputTokens: 0,
+        outputTokens: 0,
+      },
+    ],
+  }
+
+  function mountWith(getThreadClassifierUse: ApiClient['usage']['getThreadClassifierUse']): {
+    host: HTMLElement
+    store: ReturnType<typeof createStore>
+  } {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [
+        {
+          ...thread(),
+          model: 'claude-sonnet-4-6',
+          usage: { inputTokens: 1200, outputTokens: 300 },
+        },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main', getThreadClassifierUse }))
+    return { host, store }
+  }
+
+  it('asks main for the active thread and shows the classifiers in the hover', async () => {
+    const asked: Array<[string, string]> = []
+    const { host } = mountWith(async (projectId, threadId) => {
+      asked.push([projectId, threadId])
+      return classifierUse
+    })
+    await settle()
+
+    assert.deepEqual(asked, [['project-1', 'thread-1']])
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    const popover = host.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.match(popover?.textContent ?? '', /Classifiers · 2 calls/)
+    assert.match(popover?.textContent ?? '', /Shell guard/)
+    assert.match(popover?.textContent ?? '', /2 sandbox/)
+  })
+
+  it('does not re-ask on an unrelated footer refresh', async () => {
+    let asks = 0
+    const { host } = mountWith(async () => {
+      asks += 1
+      return classifierUse
+    })
+    await settle()
+    const before = asks
+    // Typing refreshes the footer; nothing that can add a classifier call moved.
+    const input = host.querySelector<HTMLTextAreaElement>('.prompt-input')
+    assert.ok(input)
+    input.value = 'hello'
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    assert.equal(asks, before)
+  })
+
+  it('re-reads when the hover opens, so a call recorded after the last refresh shows', async () => {
+    // The shell-tier shadow check records after its answer arrives, with no
+    // message or status change to trigger a fetch.
+    let asks = 0
+    const { host } = mountWith(async () => {
+      asks += 1
+      return asks === 1 ? { calls: 0, rows: [] } : classifierUse
+    })
+    await settle()
+    assert.equal(asks, 1)
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    await settle()
+    assert.equal(asks, 2)
+    assert.match(
+      host.querySelector('.context-wheel-popover')?.textContent ?? '',
+      /Classifiers · 2 calls/,
+    )
+  })
+
+  it('does not stack fetches while one is still in flight', async () => {
+    let asks = 0
+    const release: Array<() => void> = []
+    const { host } = mountWith(
+      () =>
+        new Promise((resolve) => {
+          asks += 1
+          release.push(() => {
+            resolve(classifierUse)
+          })
+        }),
+    )
+    await settle()
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    wheel.dispatchEvent(new Event('focusin'))
+    assert.equal(asks, 1, 'the mount fetch is still pending, so hover does not add another')
+    for (const done of release) done()
+    await settle()
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.equal(asks, 2)
+  })
+
+  it('keeps guarding against stacked reads when a superseded fetch settles first', async () => {
+    const asked: string[] = []
+    const release = new Map<string, () => void>()
+    const { host, store } = mountWith(
+      (_projectId, threadId) =>
+        new Promise((resolve) => {
+          asked.push(threadId)
+          release.set(threadId, () => {
+            resolve(classifierUse)
+          })
+        }),
+    )
+    await settle()
+    assert.deepEqual(asked, ['thread-1'])
+
+    // Switch threads while the first read is still pending: a second read starts.
+    store.setState({
+      threads: [
+        {
+          ...thread(),
+          model: 'claude-sonnet-4-6',
+          usage: { inputTokens: 1200, outputTokens: 300 },
+        },
+        {
+          ...thread(),
+          id: 'thread-2',
+          model: 'claude-sonnet-4-6',
+          usage: { inputTokens: 1200, outputTokens: 300 },
+        },
+      ],
+      activeThreadId: 'thread-2',
+    })
+    store.emit('threads_changed')
+    await settle()
+    assert.deepEqual(asked, ['thread-1', 'thread-2'])
+
+    // The superseded read settles while the newer one is still pending. Hovering
+    // must not start a third read for the same thread.
+    release.get('thread-1')?.()
+    await settle()
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.deepEqual(asked, ['thread-1', 'thread-2'])
+
+    release.get('thread-2')?.()
+    await settle()
+    wheel.dispatchEvent(new Event('mouseleave'))
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.deepEqual(asked, ['thread-1', 'thread-2', 'thread-2'])
+  })
+
+  it('asks once more when the hover opens during a read it did not start', async () => {
+    const release: Array<(use: typeof classifierUse | { calls: number; rows: [] }) => void> = []
+    const { host } = mountWith(
+      () =>
+        new Promise((resolve) => {
+          release.push(resolve)
+        }),
+    )
+    await settle()
+    assert.equal(release.length, 1, 'the mount read is pending')
+
+    // The pending read began before whatever the shadow check records next, so
+    // a hover during it must not rely on that answer alone.
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    wheel.dispatchEvent(new Event('focusin'))
+    assert.equal(release.length, 1, 'no second read while the first is pending')
+
+    release[0]?.({ calls: 0, rows: [] })
+    await settle()
+    assert.equal(release.length, 2, 'one follow-up read after it settles')
+
+    // That follow-up was started by the hover, so another hover event adds nothing.
+    wheel.dispatchEvent(new Event('mouseenter'))
+    release[1]?.(classifierUse)
+    await settle()
+    assert.equal(release.length, 2)
+    assert.match(
+      host.querySelector('.context-wheel-popover')?.textContent ?? '',
+      /Classifiers · 2 calls/,
+    )
+  })
+
+  it('shows no classifier section when the thread asked none', async () => {
+    const { host } = mountWith(async () => ({ calls: 0, rows: [] }))
+    await settle()
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.doesNotMatch(
+      host.querySelector('.context-wheel-popover')?.textContent ?? '',
+      /Classifiers/,
+    )
+  })
+
+  it("drops one project's figures when another project reuses the thread id and its fetch fails", async () => {
+    const { host, store } = mountWith(async (projectId) => {
+      if (projectId === 'project-1') return classifierUse
+      throw new Error('boom')
+    })
+    await settle()
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.match(
+      host.querySelector('.context-wheel-popover')?.textContent ?? '',
+      /Classifiers · 2 calls/,
+    )
+
+    // Same thread id, different project: the first project's report must not linger.
+    store.setState({
+      projects: [
+        { id: 'project-1', name: 'Project', path: '/repo' },
+        { id: 'project-2', name: 'Other', path: '/other' },
+      ],
+      activeProjectId: 'project-2',
+    })
+    store.emit('threads_changed')
+    await settle()
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.doesNotMatch(
+      host.querySelector('.context-wheel-popover')?.textContent ?? '',
+      /Classifiers/,
+    )
+  })
+
+  it('survives a failed fetch without breaking the hover', async () => {
+    const { host } = mountWith(async () => {
+      throw new Error('boom')
+    })
+    await settle()
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.match(host.querySelector('.context-wheel-popover')?.textContent ?? '', /Usage ·/)
+  })
+})
+
 describe('input bar context fit warning', () => {
   function contextFitStore(model: string): ReturnType<typeof createStore> {
     return createStore({
@@ -4378,5 +4719,106 @@ describe('input bar container target', () => {
     )
     assert.ok(!labels.includes('Run unattended in a container…'), labels.join(', '))
     assert.equal(host.querySelector<HTMLSelectElement>('.composer-target')?.hidden, true)
+  })
+})
+
+describe('composer Send now shortcuts', () => {
+  for (const keys of [['Enter'], ['x', 's']]) {
+    it(`sends an existing queue using Ctrl+${keys.join(' Ctrl+')}`, async () => {
+      const running = thread()
+      running.status = 'running'
+      running.pendingMessages = [
+        { messageId: 'queued', payload: { content: 'follow up' }, createdAt: 1 },
+      ]
+      const aborts: Array<[string, string | undefined]> = []
+      const store = createStore({
+        workspaceRoot: '/repo',
+        projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+        activeProjectId: 'project-1',
+        activeThreadId: running.id,
+        threads: [running],
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      mountInputBar(
+        host,
+        store,
+        createApi({
+          currentBranch: 'main',
+          onAbort: async (id, reason) => {
+            aborts.push([id, reason])
+          },
+        }),
+      )
+      await settle()
+      const composer = host.querySelector<HTMLElement>('.prompt-input')
+      assert.ok(composer)
+      for (const key of keys)
+        composer.dispatchEvent(
+          new window.KeyboardEvent('keydown', {
+            key,
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        )
+      await flush()
+      assert.deepEqual(aborts, [[running.id, 'send_now']])
+      assert.equal(store.getState().threads[0]?.pendingMessages?.length, 1)
+    })
+  }
+
+  it('queues plain Enter without interrupting, and Ctrl+Enter sends a drafted follow-up', async () => {
+    const running = thread('main')
+    running.status = 'running'
+    running.worktreeChoice = 'shared'
+    running.messages = [{ id: 'old', role: 'user', content: 'start', createdAt: 1, toolCalls: [] }]
+    const aborts: Array<[string, string | undefined]> = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: running.id,
+      threads: [running],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onAbort: async (id, reason) => {
+          aborts.push([id, reason])
+        },
+      }),
+    )
+    await settle()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'queue this'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    composer.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    await flush()
+    assert.deepEqual(aborts, [])
+    assert.equal(store.getState().threads[0]?.pendingMessages?.length, 1)
+    composer.textContent = 'send this now'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    composer.dispatchEvent(
+      new window.KeyboardEvent('keydown', {
+        key: 'Enter',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+    await flush()
+    assert.deepEqual(aborts, [[running.id, 'send_now']])
+    assert.equal(
+      store.getState().threads[0]?.pendingMessages?.[0]?.payload.content,
+      'send this now',
+    )
   })
 })

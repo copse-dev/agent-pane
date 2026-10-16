@@ -10,7 +10,7 @@ import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
-  saveAppScreenshot,
+  saveAppViewportScreenshot,
   waitForSettledLayout,
 } from './helpers/screenshot.ts'
 
@@ -417,7 +417,7 @@ describe('canvas background parity', () => {
       { timeout: 15_000, timeoutMsg: 'expected the canvas guest to take the host text colour' },
     )
     expect(contrastRatio(text.guest ?? '', text.hostBg)).toBeGreaterThan(7)
-    await saveAppScreenshot('canvas-transparent-text-dark.png')
+    await saveAppViewportScreenshot('canvas-transparent-text-dark.png')
   })
 
   it('lets an artefact override the default canvas background', async function () {

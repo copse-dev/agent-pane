@@ -1,4 +1,5 @@
 import '../../../tests/setup-dom.ts'
+import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
@@ -503,6 +504,7 @@ describe('projects pane automation setup links', () => {
     const conversationRow = host.querySelector('.chat-row:not(.is-automation)')
     assert.ok(automationRow && conversationRow)
     assert.deepEqual(labelsFor(automationRow), [
+      'Conversation access…',
       'Rename',
       'Fork',
       'Archive',
@@ -510,7 +512,13 @@ describe('projects pane automation setup links', () => {
       'Automation setup…',
       'Delete',
     ])
-    assert.deepEqual(labelsFor(conversationRow), ['Rename', 'Fork', 'Archive', 'Delete'])
+    assert.deepEqual(labelsFor(conversationRow), [
+      'Conversation access…',
+      'Rename',
+      'Fork',
+      'Archive',
+      'Delete',
+    ])
   })
 })
 
@@ -632,7 +640,7 @@ describe('workspace-level automations section (#2511)', () => {
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
     assert.deepEqual(
       Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
-      ['Run now', 'Automation setup…'],
+      ['Conversation access…', 'Run now', 'Automation setup…'],
     )
     dismissContextMenu()
   })
@@ -1094,5 +1102,154 @@ describe('a schedule with no run yet', () => {
     toggle.click()
     assert.equal(host.querySelectorAll('.chat-row.is-automation').length, 1)
     assert.equal(host.querySelector('.chat-row.is-automation-unrun'), null)
+  })
+})
+
+describe('held automation worktrees in the sidebar', () => {
+  function held(id: string, triggeredAt: number, overrides: Partial<Thread> = {}): Thread {
+    return {
+      ...thread(id, 'Main check', 'schedule-main', triggeredAt),
+      worktree: {
+        path: `/worktrees/${id}`,
+        branch: `codex/${id}`,
+        baseBranch: 'main',
+        baseCommit: 'a'.repeat(40),
+        createdAt: triggeredAt,
+        seededFromDirtyProject: false,
+      },
+      ...overrides,
+    }
+  }
+
+  function mountHeld(
+    threads: Thread[],
+    cleanupRuns?: ReturnType<typeof createFakeApi>['automations']['cleanupRuns'],
+  ): { host: HTMLElement; store: ReturnType<typeof createStore> } {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads,
+      activeThreadId: 'chat',
+    })
+    const api = createFakeApi()
+    if (cleanupRuns) api.automations.cleanupRuns = cleanupRuns
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConfirmDialog()
+    mountProjectsPane(host, store, api)
+    host.querySelector<HTMLButtonElement>('.automation-threads-toggle')?.click()
+    return { host, store }
+  }
+
+  function openHeadingMenu(host: HTMLElement): string[] {
+    const heading = host.querySelector('.automation-schedule-toggle')
+    assert.ok(heading)
+    heading.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    return Array.from(document.querySelectorAll('.context-menu-item')).map(
+      (item) => item.textContent,
+    )
+  }
+
+  function clickMenuItem(label: string): void {
+    const item = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((candidate) => candidate.textContent === label)
+    assert.ok(item, `menu item ${label}`)
+    item.click()
+  }
+
+  it('badges a schedule by how many finished runs still hold a checkout', () => {
+    const retired = held('retired', 5)
+    assert.ok(retired.worktree)
+    const { host } = mountHeld([
+      thread('chat', 'Regular conversation'),
+      held('a', 30),
+      held('b', 20),
+      held('running', 25, { status: 'running' }),
+      { ...retired, worktree: { ...retired.worktree, retiredAt: 6 } },
+    ])
+
+    const badge = host.querySelector('.automation-schedule-held')
+    assert.equal(badge?.textContent, '2 held')
+    assert.match(badge.getAttribute('aria-label') ?? '', /^2 finished runs still hold a worktree/)
+  })
+
+  it('shows no badge and offers no cleanup when nothing is held', () => {
+    const { host } = mountHeld([
+      thread('chat', 'Regular conversation'),
+      thread('a', 'Main check', 'schedule-main', 20),
+      thread('b', 'Main check', 'schedule-main', 10),
+    ])
+
+    assert.equal(host.querySelector('.automation-schedule-held'), null)
+    assert.ok(!openHeadingMenu(host).includes('Clean up finished runs…'))
+  })
+
+  it('reports how many worktrees a cleanup freed', async () => {
+    const calls: Array<[string, string]> = []
+    const { host } = mountHeld(
+      [thread('chat', 'Regular conversation'), held('a', 30), held('b', 20)],
+      (projectId, scheduleId) => {
+        calls.push([projectId, scheduleId])
+        return Promise.resolve({ released: ['a', 'b'], retained: [] })
+      },
+    )
+
+    assert.ok(openHeadingMenu(host).includes('Clean up finished runs…'))
+    clickMenuItem('Clean up finished runs…')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.deepEqual(calls, [['a', 'schedule-main']])
+    assert.match(document.querySelector('.toast')?.textContent ?? '', /Freed 2 worktrees/)
+  })
+
+  it('names each run it had to leave, tells identical titles apart, and opens the first', async () => {
+    const { host, store } = mountHeld(
+      [thread('chat', 'Regular conversation'), held('a', 1_786_000_000_000), held('b', 20)],
+      () =>
+        Promise.resolve({
+          released: ['b'],
+          retained: [
+            {
+              threadId: 'a',
+              title: 'Main check',
+              reason: 'uncommitted-changes',
+              paths: ['notes.md', 'src/app.ts'],
+            },
+          ],
+        }),
+    )
+
+    openHeadingMenu(host)
+    clickMenuItem('Clean up finished runs…')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const dialog = document.querySelector('#confirm-dialog')
+    assert.match(
+      dialog?.querySelector('.confirm-dialog-message')?.textContent ?? '',
+      /1 run of “Main check” still holds a worktree/,
+    )
+    const detail = dialog?.querySelector('.confirm-dialog-detail')?.textContent ?? ''
+    assert.match(detail, /Freed 1 worktree\./)
+    assert.match(detail, /• “Main check · .+” has uncommitted changes \(notes\.md, src\/app\.ts\)/)
+    assert.equal(dialog?.querySelector('.confirm-dialog-confirm')?.textContent, 'Open run')
+
+    clickActiveConfirmDialogConfirm()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(store.getState().activeThreadId, 'a')
+  })
+
+  it('offers the same cleanup from a held run row', () => {
+    const { host } = mountHeld([thread('chat', 'Regular conversation'), held('only', 30)])
+
+    const row = host.querySelector('.chat-row.is-automation')
+    assert.ok(row)
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    const labels = Array.from(document.querySelectorAll('.context-menu-item')).map(
+      (item) => item.textContent,
+    )
+    assert.ok(labels.includes('Clean up finished runs…'))
   })
 })

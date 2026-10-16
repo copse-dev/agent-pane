@@ -5,6 +5,19 @@ import { parseKnowledgeAttachments } from '@shared/knowledge/attachments.ts'
 import { createRoadmapWriteHandlers } from './roadmap-write-handlers.ts'
 
 describe('roadmap write handlers without Electron', () => {
+  it('keeps multiline briefs intact while deriving titles from their opening line', () => {
+    const h = roadmapWriteHarness()
+    const brief = 'Recover expired sessions.\n\n## Expected experience\n\nPreserve the draft.'
+    const note = h.handlers.create(brief)
+    assert.equal(note.title, 'Recover expired sessions.')
+    assert.equal(note.body, brief)
+    const edited = 'Keep recovery in the form.\r\n\r\n## Constraints\r\nKeep sessions valid.'
+    const updated = h.handlers.update(note.id, edited, '', 'ready')
+    assert.ok(updated)
+    assert.equal(updated.title, 'Keep recovery in the form.')
+    assert.equal(updated.body, edited)
+  })
+
   it('validates and normalizes actual create arguments before persisting and stamping', () => {
     const h = roadmapWriteHarness()
     assert.throws(() => h.handlers.create(' '), /must not be empty/)
@@ -124,9 +137,9 @@ describe('roadmap write handlers without Electron', () => {
     assert.equal(h.handlers.findByThread('thread-2'), null)
     assert.equal(h.notes.get(second.id)?.fields['thread'], undefined)
 
-    // Restamping points the item at the newer thread; the older one stops resolving.
+    // Restamping updates the shortcut while keeping earlier attempts reachable.
     h.handlers.setThread(first.id, 'thread-2')
-    assert.equal(h.handlers.findByThread('thread-1'), null)
+    assert.deepEqual(h.handlers.findByThread('thread-1'), { id: first.id, title: first.title })
     assert.deepEqual(h.handlers.findByThread('thread-2'), { id: first.id, title: first.title })
 
     // An empty id clears the tracking.

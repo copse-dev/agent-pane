@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { $, $$, browser } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import {
   readSeededSettings,
   resetUserData,
@@ -27,17 +27,29 @@ import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveAppScreenshot } from './help
  * through an OpenAI-compatible fixture at the provider boundary.
  */
 describe('roadmap AI-generated short names', () => {
+  let workspaceParent: string
+  let workspaceRoot: string
+  let server: ConversationServer
+
+  before(async () => {
+    server = await startConversationServer({ title: 'Split Settings Into Panels' })
+    server.configureEnvironment()
+    // Both sessions represent the same project, including its on-disk path.
+    workspaceParent = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-short-name-'))
+    workspaceRoot = join(workspaceParent, 'roadmap-short-names')
+    mkdirSync(workspaceRoot)
+  })
+
+  after(async () => {
+    rmSync(workspaceParent, { recursive: true, force: true })
+    await server.close()
+  })
   describe('persisted rows', () => {
-    let workspaceRoot: string
-    let workspaceParent: string
     let knowledgeDir: string
 
     before(async () => {
       mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
       resetUserData()
-      workspaceParent = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-short-name-'))
-      workspaceRoot = join(workspaceParent, 'roadmap-short-names')
-      mkdirSync(workspaceRoot)
       knowledgeDir = seedRoadmapNotes('e2e-roadmap-short-names', [
         {
           // Stamp already landed: the note's title is the short AI-generated
@@ -62,15 +74,14 @@ describe('roadmap AI-generated short names', () => {
         },
       ])
       seedEmptyProject(workspaceRoot, 'e2e-roadmap-short-names', {
-        model: 'claude-sonnet-4-6',
         roadmapPlansEnabled: true,
       })
+      writeSettings({ ...readSeededSettings(), ...server.settings })
       await browser.reloadSession()
     })
 
     after(() => {
       resetUserData()
-      rmSync(workspaceParent, { recursive: true, force: true })
       rmSync(knowledgeDir, { recursive: true, force: true })
     })
 
@@ -102,29 +113,18 @@ describe('roadmap AI-generated short names', () => {
   })
 
   describe('generated on create', () => {
-    let workspaceRoot: string
-    let workspaceParent: string
-    let server: ConversationServer
-
     before(async () => {
       mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-      server = await startConversationServer({ title: 'Split Settings Into Panels' })
-      server.configureEnvironment()
       resetUserData()
-      workspaceParent = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-short-name-gen-'))
-      workspaceRoot = join(workspaceParent, 'roadmap-short-names')
-      mkdirSync(workspaceRoot)
-      seedEmptyProject(workspaceRoot, 'e2e-roadmap-short-name-gen', {
+      seedEmptyProject(workspaceRoot, 'e2e-roadmap-short-names', {
         roadmapPlansEnabled: true,
       })
       writeSettings({ ...readSeededSettings(), ...server.settings })
       await browser.reloadSession()
     })
 
-    after(async () => {
+    after(() => {
       resetUserData()
-      rmSync(workspaceParent, { recursive: true, force: true })
-      await server.close()
     })
 
     it('replaces the truncation title with the model-generated short name', async () => {
@@ -167,6 +167,7 @@ describe('roadmap AI-generated short names', () => {
         /^Updated .+$/,
         'Updated Jan 1, 2026 at 12:00 AM',
       )
+      await expect($('.orphans-heading')).not.toExist()
       await saveAppScreenshot('roadmap-short-name-generated.png')
       await restoreUpdatedAt()
     })

@@ -1,3 +1,4 @@
+import { mountThreadPlanControl } from './thread-plan-dialog.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
@@ -32,6 +33,7 @@ import {
 import {
   dispatchAgentRun,
   enqueueUserMessage,
+  sendQueuedMessageNow,
   startHumanTurnTree,
 } from '../controller/message-queue.ts'
 import { sendCodeBlockRunResult } from '../controller/code-block-runs.ts'
@@ -61,7 +63,8 @@ import { initSkillPicker } from './skill-picker.ts'
 import { mountFooterIndexStatus } from './footer-index-status.ts'
 import { mergeInvocables, resolveInvocation } from '@shared/invocation/parse-invocation.ts'
 import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
-import type { ContextBreakdown, TranscriptAttachment, UserContent } from '@shared/types'
+import type { ContextBreakdown, Thread, TranscriptAttachment, UserContent } from '@shared/types'
+import type { ThreadClassifierUse } from '@shared/usage/classifier-use.ts'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import type { AgentSummary } from '@shared/types/agents.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
@@ -105,6 +108,7 @@ import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
+import { mountAgentExecutionModeControl } from './agent-execution-mode-control.ts'
 import { mountContainerRunControl } from './container-run-control.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
@@ -400,8 +404,23 @@ export function mountInputBar(
   containerRunMounted = true
   updateTargetPicker()
   void refreshContainerRunsSetting()
+  const planControl = mountThreadPlanControl(api, store, async (threadId, text): Promise<void> => {
+    if (getActiveThreadId() !== threadId)
+      throw new Error('Select the plan’s task before continuing.')
+    const context = composer.expandedValue().trim()
+    composer.value = context ? `${text}\n\nAdditional context:\n${context}` : text
+    persistComposerDraft()
+    // Use the ordinary checkout, attachment, submission and draft-consumption path.
+    // If preflight needs attention, the complete prompt stays ready in the composer.
+    await submit()
+  })
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
+  const executionMode = mountAgentExecutionModeControl(
+    store,
+    () => isAcpModel(footerChatModel()),
+    () => footerOverflow?.update(),
+  )
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
   const checkoutBtn = el('button', {
     type: 'button',
@@ -429,8 +448,13 @@ export function mountInputBar(
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator)
-  footer.append(modelHost, checkoutHost, branchHost)
+  footer.append(modelHost, executionMode.element, checkoutHost, branchHost, planControl.button)
   footerOverflow = mountFooterOverflow(footer, [
+    {
+      label: executionMode.menuLabel,
+      hidden: (): boolean => !getActiveThreadId() || !isAcpModel(footerChatModel()),
+      onClick: executionMode.open,
+    },
     {
       label: guardedYolo.menuLabel,
       hidden: (): boolean => !getActiveThreadId(),
@@ -583,6 +607,7 @@ export function mountInputBar(
   const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
     formatCurrentLabel: footerModelDisplayLabel,
     getCurrentRoute: footerResolvedModel,
+    isAgentManaged: () => getActiveThread(store)?.executionMode === 'agent',
     isSshWorkspace: (): boolean => {
       const { activeProjectId, projects } = store.getState()
       if (!activeProjectId) return false
@@ -668,6 +693,11 @@ export function mountInputBar(
       name,
       bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     })
+    // Focusing an unfocused contenteditable with a newly replaced draft can
+    // create a selection at its start and scroll the symptom line out of view.
+    // Establish the intended insertion point before Chromium focuses it.
+    const end = composer.value.length
+    composer.setSelectionRange(end, end)
     composer.focus()
   }
 
@@ -778,13 +808,10 @@ export function mountInputBar(
   let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
   let automaticCheckoutPreviewSeq = 0
 
-  // The picker's label carries the route as well as the name (`Title — Model`
-  // for an agent, `… · local` for LM Studio). These sentences name the model
-  // only — and the ones that care about local already say so in words — so the
-  // route half is dropped rather than read out as "Describe locally with
-  // qwen/… · local".
+  // Action text and description attribution use the undecorated name supplied
+  // by the option owner. Parsing punctuation would truncate custom model names.
   function shortModelLabel(option: ModelOption): string {
-    const name = option.label.split(' — ')[0] ?? option.label
+    const name = option.shortLabel ?? option.label
     return name.endsWith(LOCAL_MODEL_SUFFIX) ? name.slice(0, -LOCAL_MODEL_SUFFIX.length) : name
   }
 
@@ -1534,6 +1561,87 @@ export function mountInputBar(
     contextFitWarning.hidden = false
   }
 
+  // What the classifiers did for the active thread. It lives in the thread's
+  // decision log in main, so it is fetched over IPC — only when something that
+  // can add a classifier call has moved (the thread, its status, a new message,
+  // or a new tool call on the last one), never per streamed chunk. Some calls
+  // land with no such event: the shell-tier shadow check is fire-and-forget and
+  // records after its answer arrives, so the hover also re-reads when it opens.
+  let classifierUse: ThreadClassifierUse | null = null
+  let classifierUseKey = ''
+  // Which project's thread the figures belong to; thread ids alone are not unique across projects.
+  let classifierUseOwner: string | null = null
+  let classifierUseSeq = 0
+  let classifierUseInFlight = false
+  // Whether the pending read was started by the hover itself. One that was not
+  // can have missed a call recorded since, so a hover during it asks again once
+  // it settles; one that was already covers what the hover wants.
+  let classifierUseInFlightForced = false
+  let classifierUseRereadQueued = false
+
+  function refreshClassifierUse(thread: Thread | undefined, force = false): void {
+    const projectId = store.getState().activeProjectId
+    if (!thread || projectId === null) {
+      classifierUse = null
+      classifierUseKey = ''
+      classifierUseOwner = null
+      classifierUseSeq++
+      // Whatever was pending is superseded and will not clear the flag itself.
+      classifierUseInFlight = false
+      classifierUseRereadQueued = false
+      return
+    }
+    const last = thread.messages.at(-1)
+    const key = `${projectId}:${thread.id}:${thread.status}:${String(thread.messages.length)}:${String(last?.toolCalls.length ?? 0)}`
+    if (force && classifierUseInFlight) {
+      if (!classifierUseInFlightForced) classifierUseRereadQueued = true
+      return
+    }
+    if (!force && key === classifierUseKey) return
+    // Another thread's figures must not show while this one's are in flight.
+    const owner = `${projectId}:${thread.id}`
+    if (owner !== classifierUseOwner) classifierUse = null
+    classifierUseOwner = owner
+    classifierUseKey = key
+    const seq = ++classifierUseSeq
+    classifierUseInFlight = true
+    classifierUseInFlightForced = force
+    classifierUseRereadQueued = false
+    // A hover that arrived during this read asks once more, after it has painted.
+    const settle = (): void => {
+      classifierUseInFlight = false
+      if (!classifierUseRereadQueued) return
+      classifierUseRereadQueued = false
+      refreshClassifierUse(getActiveThread(store), true)
+    }
+    api.usage.getThreadClassifierUse(projectId, thread.id).then(
+      (use) => {
+        // A newer fetch (or a thread switch) has superseded this answer, and the
+        // flag now belongs to that newer fetch.
+        if (seq !== classifierUseSeq) return
+        // A re-read that finds the same figures must not repaint: a repaint drops
+        // the wheel's tabindex, which blurs it and closes a keyboard-opened hover.
+        // A thread that asked no classifier shows nothing, the same as before the
+        // answer arrived, so that answer needs no repaint either.
+        const next = use.calls > 0 ? use : null
+        if (JSON.stringify(next) !== JSON.stringify(classifierUse)) {
+          classifierUse = next
+          updateFooter()
+        }
+        settle()
+      },
+      () => {
+        if (seq === classifierUseSeq) settle()
+      },
+    )
+  }
+
+  const rereadClassifierUse = (): void => {
+    refreshClassifierUse(getActiveThread(store), true)
+  }
+  contextWheel.root.addEventListener('mouseenter', rereadClassifierUse)
+  contextWheel.root.addEventListener('focusin', rereadClassifierUse)
+
   function updateFooter(): void {
     const thread = getActiveThread(store)
     const running = thread?.status === 'running'
@@ -1543,6 +1651,7 @@ export function mountInputBar(
     // dynamic-default resolver): refresh it, which for ACP drops it instead.
     if (lastBreakdown && !breakdown) scheduleContextEstimate(0)
     const usage = usageViews()
+    refreshClassifierUse(thread)
     const snapshot = thread?.contextSnapshot
     const snapshotUsable =
       !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01
@@ -1571,6 +1680,7 @@ export function mountInputBar(
     contextWheel.update(snapshot, running, {
       usageLine: usage?.detail ?? null,
       usage: usage?.tooltip ?? null,
+      classifierUse,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource:
@@ -1797,8 +1907,24 @@ export function mountInputBar(
     true,
   )
 
+  let sendNowChordAt = 0
   composer.el.addEventListener('keydown', (e) => {
     if (e.isComposing) return
+    const control = e.ctrlKey || e.metaKey
+    const chord =
+      control &&
+      !e.altKey &&
+      !e.shiftKey &&
+      e.key.toLowerCase() === 's' &&
+      sendNowChordAt > 0 &&
+      Date.now() - sendNowChordAt < 1_500
+    sendNowChordAt =
+      control && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'x' ? Date.now() : 0
+    if (chord || (control && e.key === 'Enter' && !e.altKey && !e.shiftKey)) {
+      e.preventDefault()
+      void submit(true)
+      return
+    }
     // Tab accepts the offered next step into an empty composer. Plain Tab only
     // — modified Tabs keep their meanings (Ctrl+Tab switches threads) — and a
     // visible mention/skill picker keeps its own Tab-to-accept.
@@ -1822,12 +1948,12 @@ export function mountInputBar(
     void submit()
   })
 
-  async function submit(): Promise<void> {
+  async function submit(sendNow = false): Promise<void> {
     const id = getActiveThreadId()
     if (!id || imageDescriptionInProgress || !beginThreadSubmission(store, id)) return
     updateState()
     try {
-      await performSubmit(id)
+      await performSubmit(id, sendNow)
     } catch (error) {
       console.error('Could not send prompt', { threadId: id, error })
       checkoutErrors.set(id, error instanceof Error ? error.message : 'Could not send message')
@@ -1838,7 +1964,7 @@ export function mountInputBar(
     }
   }
 
-  async function performSubmit(id: string): Promise<void> {
+  async function performSubmit(id: string, sendNow: boolean): Promise<void> {
     perfMark('ttft:composer-submit')
     followUps.clearSuggestions()
     nextStepHint.clear()
@@ -1880,8 +2006,15 @@ export function mountInputBar(
       attachedArchives.length === 0 &&
       attachedThreads.length === 0 &&
       attachedShells.length === 0
-    )
+    ) {
+      if (sendNow) {
+        const target = getThreadById(store, id)?.pendingMessages?.find(
+          (item) => item.autoDispatch !== false,
+        )
+        if (target) sendQueuedMessageNow(store, api, id, target.messageId)
+      }
       return
+    }
     const projectId = store.getState().activeProjectId
     const thread = getThreadById(store, id)
     if (!projectId || !thread) return
@@ -2217,6 +2350,7 @@ export function mountInputBar(
     }
     if (getThreadById(store, id)?.status === 'running') {
       enqueueUserMessage(store, id, queued)
+      if (sendNow) sendQueuedMessageNow(store, api, id, messageId)
     } else {
       // A typed prompt at idle starts a fresh turn tree (decision 16): late async
       // hooks from an earlier turn now carry a stale epoch and are held, not
@@ -2424,7 +2558,14 @@ export function mountInputBar(
     thumb.width = 40
     thumb.height = 40
     // Same shared lightbox as transcript/roadmap thumbs — openable before send.
-    attachImageExpand(thumb, 'Attached image')
+    attachImageExpand(thumb, 'Attached image', undefined, undefined, (png) => {
+      if (!attachedImages.includes(entry)) return false
+      entry.dataUrl = png
+      entry.mimeType = 'image/png'
+      thumb.src = png
+      scheduleContextEstimate()
+      return true
+    })
     const remove = document.createElement('button')
     remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
@@ -2711,6 +2852,8 @@ export function mountInputBar(
     }),
     store.on('threads_changed', () => {
       syncComposerThread()
+      executionMode.refresh()
+      footerOverflow.update()
       guardedYolo.refresh()
       containerRun.refresh()
       hideBranchMismatch()
@@ -2815,7 +2958,9 @@ export function mountInputBar(
       modelPicker.destroy()
       footerOverflow.destroy()
       guardedYolo.destroy()
+      executionMode.destroy()
       containerRun.destroy()
+      planControl.destroy()
       footerCompact.destroy()
       portraitPanelControls.destroy()
       branchControl.destroy()

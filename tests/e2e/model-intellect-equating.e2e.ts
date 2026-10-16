@@ -37,7 +37,7 @@ describe('new index model intelligence', () => {
     await filter.setValue('fable')
     const menu = $('.model-picker-menu')
     // Synced scores move; the tilde is the stable contract for an equated estimate.
-    await expect(menu).toHaveText('Claude Fable 5.1 — intellect ~', { containing: true })
+    await expect(menu).toHaveText('Claude Fable 5.1: intellect ~', { containing: true })
     await saveElementScreenshot('.model-picker-menu', 'model-intellect-equating.png')
   })
 })

@@ -7,9 +7,10 @@ import { AUTOMATIONS_PLUGIN_ID } from '../../packages/agent/src/plugins/automati
 import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
-  saveElementScreenshot,
   waitForSettledLayout,
+  saveElementScreenshot,
 } from './helpers/screenshot.ts'
+import { saveSettingsSection } from './helpers/settings-scroll-capture.ts'
 import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
@@ -118,7 +119,10 @@ describe('settings automations plugin', function () {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID, { model: 'claude-sonnet-4-6' })
+    seedEmptyProject(process.cwd(), PROJECT_ID, {
+      model: 'claude-sonnet-4-6',
+      windowBounds: { width: 1280, height: 1000 },
+    })
     // The automations plugin has no legacy opt-in, so production seeds it off
     // once. Mark that migration complete and seed the explicit enabled state +
     // plugin storage for this visual fixture.
@@ -320,7 +324,7 @@ describe('settings automations plugin', function () {
     )
     assert.ok(formActions.buttons[0]?.classes.includes('ui-btn-primary'), 'Save is the primary')
     assert.ok(formActions.buttons[1]?.classes.includes('ui-btn-secondary'), 'Cancel is secondary')
-    await saveElementScreenshot('.automation-form', 'settings-automation-form.png')
+    await saveSettingsSection('.automation-form', 'settings-automation-form.png')
     await detail.$('.automation-cancel-btn').click()
     await expect(dialog.$('.settings-buttons')).toBeDisplayed()
   })

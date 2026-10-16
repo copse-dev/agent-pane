@@ -60,6 +60,23 @@ describe('Perplexity provider', () => {
     assert.deepEqual(form.modelIds, [])
     assert.equal(form.fetchModelsLabel, 'Fetch models')
 
+    await $('.provider-form').scrollIntoView({ block: 'center' })
+    for (const selector of [
+      '.provider-form-title',
+      '.provider-form input[type="url"]',
+      '.provider-form input[type="password"]',
+    ]) {
+      assert.equal(
+        await $(selector).isDisplayed({ withinViewport: true }),
+        true,
+        `${selector} must be visible`,
+      )
+    }
+    assert.equal(
+      await $('.provider-form').$('button=Fetch models').isDisplayed({ withinViewport: true }),
+      true,
+      'Fetch models must be visible',
+    )
     await saveElementScreenshot('#settings-dialog', 'settings-perplexity-agent-provider.png')
   })
 })
