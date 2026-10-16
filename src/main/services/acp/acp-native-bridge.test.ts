@@ -38,6 +38,9 @@ import {
   type ThreadExecutionOwner,
 } from '../thread-execution-context.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
+import { suggestModelTool } from '../../tools/model-classifier-tool.ts'
+import { preflightWorktreeTool } from '../../tools/worktree-preparation-tool.ts'
+import { browserShowTool } from '../../tools/browser-tools.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import {
   clearMcpToolPermissionTargets,
@@ -1248,6 +1251,35 @@ describe('startAcpNativeBridge', () => {
     const listed = await rpc(bridge, LIST_TOOLS)
     const tools = recordArrayOrEmpty(rpcResult(listed)['tools'])
     assert.ok(tools.some((tool) => tool['name'] === 'propose_thread'))
+  })
+
+  it('offers compatible registered tools through the ACP bridge', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register(preflightWorktreeTool)
+    registry.register(suggestModelTool)
+    registry.register(browserShowTool)
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-test', '/worktrees/bridge-test'))
+
+    for (const init of initialized()) await rpc(bridge, init)
+    const listed = await rpc(bridge, LIST_TOOLS)
+    const names = recordArrayOrEmpty(rpcResult(listed)['tools']).map((tool) => tool['name'])
+    assert.ok(names.includes('preflight_worktree'))
+    assert.ok(names.includes('suggest_model'))
+    assert.ok(names.includes('browser_show'))
+
+    const advice = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: { name: 'suggest_model', arguments: { task: 'Summarize a short file' } },
+    })
+    assert.equal(rpcResult(advice)['isError'], undefined)
+    assert.match(contentText(advice) ?? '', /Recommended intellect band:/)
   })
 
   it('rejects requests without the per-turn bearer token', async () => {
