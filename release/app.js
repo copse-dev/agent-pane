@@ -32742,6 +32742,46 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-07-18"
         }
       ],
+      "claude-haiku-5-5": [
+        {
+          value: 43.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-high": [
+        {
+          value: 37.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-high', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-low": [
+        {
+          value: 29.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-low', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-medium": [
+        {
+          value: 34.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-medium', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-xhigh": [
+        {
+          value: 41.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-xhigh', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
       "claude-instant": [
         {
           value: 1.7,
@@ -36486,10 +36526,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 14.8,
+          value: 12.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "granite-4-2-3b": [
@@ -38848,8 +38888,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-06",
-          asOf: "2026-10-06"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -39040,6 +39080,22 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3-xhigh', fetched 2026-09-22",
           asOf: "2026-09-22"
+        }
+      ],
+      "muse-wonder": [
+        {
+          value: 52.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-wonder', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "muse-wonder-full": [
+        {
+          value: 55.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-wonder-full', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "nanbeige4-1-3b": [
@@ -46471,6 +46527,57 @@ var init_model_maker_block = __esm({
   }
 });
 
+// packages/llm/src/model-version-suppression.ts
+function parseModelLineage(id) {
+  const claude = CLAUDE_ID.exec(id);
+  if (claude) {
+    const family = claude[1];
+    const version2 = claude[2];
+    if (family === void 0 || version2 === void 0) return null;
+    return { lineage: `claude-${family}`, version: version2.split("-").map(Number) };
+  }
+  const gpt = GPT_ID.exec(id);
+  if (gpt) {
+    const version2 = gpt[1];
+    if (version2 === void 0) return null;
+    const tier = gpt[2];
+    return {
+      lineage: tier === void 0 ? "gpt" : `gpt-${tier}`,
+      version: version2.split(".").map(Number)
+    };
+  }
+  return null;
+}
+function compareVersions(a3, b5) {
+  for (let i3 = 0; i3 < Math.max(a3.length, b5.length); i3++) {
+    const difference = (a3[i3] ?? 0) - (b5[i3] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+function supersedingModel(model, offered) {
+  const own2 = parseModelLineage(model);
+  if (own2 === null) return null;
+  let best = null;
+  for (const candidate of offered) {
+    if (candidate === model) continue;
+    const parsed2 = parseModelLineage(candidate);
+    if (parsed2 === null || parsed2.lineage !== own2.lineage) continue;
+    if (compareVersions(parsed2.version, own2.version) <= 0) continue;
+    if (best === null || compareVersions(parsed2.version, best.version) > 0) {
+      best = { id: candidate, version: parsed2.version };
+    }
+  }
+  return best?.id ?? null;
+}
+var CLAUDE_ID, GPT_ID;
+var init_model_version_suppression = __esm({
+  "packages/llm/src/model-version-suppression.ts"() {
+    CLAUDE_ID = /^claude-(opus|sonnet|haiku|fable)-(\d{1,2}(?:-\d{1,2})?)$/;
+    GPT_ID = /^gpt-(\d{1,2}(?:\.\d{1,2})?)(?:-([a-z][a-z0-9]*))?$/;
+  }
+});
+
 // src/renderer/views/model-coverage.ts
 function modelCoverage(value, context) {
   if (!value || value.startsWith("auto:")) return void 0;
@@ -46915,11 +47022,24 @@ async function fetchModelOptions(api2, current, opts = {}) {
     blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
   } catch {
   }
-  const visibleOptions = options.flatMap((option) => {
+  const unblockedOptions = options.flatMap((option) => {
     const maker = blockedModelMaker(option.value, blockedMakers);
     if (!maker) return [option];
     if (option.value !== current) return [];
     return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
+  });
+  const offered = unblockedOptions.map((option) => option.value);
+  const visibleOptions = unblockedOptions.flatMap((option) => {
+    const successor = supersedingModel(option.value, offered);
+    if (successor === null) return [option];
+    if (option.value !== current) return [];
+    return [
+      {
+        ...option,
+        label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
+        disabled: true
+      }
+    ];
   });
   const concreteCount = visibleOptions.filter(
     (o3) => !isBestValueChatModel(o3.value) && o3.value !== "" && !o3.value.startsWith(AUTO_MODEL_PREFIX)
@@ -47018,6 +47138,7 @@ var init_model_options = __esm({
     init_model_display();
     init_nullish2();
     init_model_maker_block();
+    init_model_version_suppression();
     init_model_coverage();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
@@ -59653,7 +59774,7 @@ var init_tool_display = __esm({
       browser_snapshot: { running: "Taking page snapshot", done: "Took page snapshot" },
       browser_screenshot: { running: "Taking screenshot", done: "Took screenshot" },
       image_gen: { running: "Generating image", done: "Generated image" },
-      classify_text: { running: "Classifying text", done: "Classified text" },
+      ask_classifier: { running: "Asking classifier", done: "Asked classifier" },
       browser_click: { running: "Clicking element", done: "Clicked element" },
       browser_type: { running: "Typing text", done: "Typed text" },
       browser_tabs: { running: "Listing browser tabs", done: "Listed browser tabs" },
@@ -80755,6 +80876,17 @@ var init_demo_concise_states = __esm({
           settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off", model: CAPABLE }
         }
       ),
+      scenario("recovery-layout", "Interrupted turn with a long fallback model name", [
+        user("recovery-earlier-user", "Check the settings form."),
+        assistant("recovery-earlier", "The form needs a layout fix.", [], {
+          model: "claude-haiku-4-5-20251001",
+          turnOutcome: outcome("completed", { model: "claude-haiku-4-5-20251001" })
+        }),
+        user("recovery-user", "Fix the settings form."),
+        assistant("recovery-failed", "I found the footer, then the provider stopped responding.", [], {
+          turnOutcome: outcome("failed", { error: { message: "Provider disconnected." } })
+        })
+      ]),
       scenario("failed", "A turn that failed partway", [
         user("failed-user", "Fix the settings form so Save stays aligned on narrow windows."),
         assistant(
@@ -98975,10 +99107,15 @@ function mountComposerEditor() {
   root.setAttribute("aria-label", "Message");
   const SCROLL_PIN_THRESHOLD_PX2 = 4;
   let pinnedToBottom = true;
+  let observedWidth = root.clientWidth;
+  let observedHeight = root.clientHeight;
   root.addEventListener("scroll", () => {
+    if (root.clientWidth !== observedWidth || root.clientHeight !== observedHeight) return;
     pinnedToBottom = root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX2;
   });
   new ResizeObserver(() => {
+    observedWidth = root.clientWidth;
+    observedHeight = root.clientHeight;
     if (pinnedToBottom) root.scrollTop = root.scrollHeight;
   }).observe(root);
   const blocks = /* @__PURE__ */ new Map();
@@ -99167,6 +99304,7 @@ function mountComposerEditor() {
           if (chip2) frag.append(chip2);
         }
       });
+      pinnedToBottom = true;
       root.replaceChildren(frag);
       pruneChips();
       if (editor.isFocused()) caretToEnd2();
@@ -150281,6 +150419,8 @@ ${context}` : text2;
       name,
       bytes: bytes2.buffer.slice(bytes2.byteOffset, bytes2.byteOffset + bytes2.byteLength)
     });
+    const end = composer.value.length;
+    composer.setSelectionRange(end, end);
     composer.focus();
   }
   function debugTrace() {
