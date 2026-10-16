@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
+import { writeFile } from 'node:fs/promises'
 import { PNG } from 'pngjs'
 import { E2E_SCREENSHOT_DIR } from '../e2e/helpers/screenshot.ts'
 import { withFrozenAnimations } from '../e2e/helpers/frozen-animations.ts'
@@ -28,9 +29,11 @@ async function screenshot(name: string): Promise<void> {
       }
     })
     const [red, green, blue] = viewport.background
+    let idleCapture: Buffer | undefined
     await browser.waitUntil(
       async () => {
-        const image = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+        const capture = Buffer.from(await browser.takeScreenshot(), 'base64')
+        const image = PNG.sync.read(capture)
         const scale = image.width / viewport.width
         for (let y = Math.ceil(viewport.top * scale); y < image.height; y++) {
           for (let x = Math.floor((viewport.width - 4) * scale); x < image.width; x++) {
@@ -43,6 +46,7 @@ async function screenshot(name: string): Promise<void> {
               return false
           }
         }
+        idleCapture = capture
         return true
       },
       {
@@ -51,7 +55,10 @@ async function screenshot(name: string): Promise<void> {
         timeoutMsg: 'Mobile overlay scrollbar did not reach idle paint',
       },
     )
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, name))
+    // Save the frame whose native paint passed the check. A second capture can
+    // repaint the overlay between the readiness probe and the saved evidence.
+    assert.ok(idleCapture, 'Expected a verified idle mobile screenshot')
+    await writeFile(join(E2E_SCREENSHOT_DIR, name), idleCapture)
   })
 }
 
