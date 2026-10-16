@@ -4914,7 +4914,7 @@ label {
 .turn-recovery-card {
   --sev: var(--warning);
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: var(--spacing-sm);
   border: 0;
@@ -4952,23 +4952,23 @@ label {
   margin-top: var(--spacing-xs);
 }
 .turn-recovery-actions {
+  grid-column: 2;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: var(--spacing-sm);
 }
 .turn-recovery-button.ui-btn {
+  max-width: 100%;
+  min-width: 0;
   padding: var(--spacing-xs) var(--spacing-sm);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
-@media (max-width: 720px) {
-  .turn-recovery-card {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-  .turn-recovery-actions {
-    grid-column: 2;
-    justify-content: flex-start;
-  }
+.turn-recovery-model-note {
+  overflow-wrap: anywhere;
 }
 .conversation-scroll {
   position: relative;
