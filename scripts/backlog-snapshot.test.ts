@@ -74,6 +74,14 @@ async function collect(
 }
 
 describe('backlog snapshot access', () => {
+  it('reports truncation when the requested limit cuts a partial API page', async () => {
+    const { snapshot: limited } = await collect({}, { limit: 1 })
+    assert.equal(limited.pulls.length, 1)
+    assert.equal(limited.truncated, true)
+    const { snapshot: complete } = await collect()
+    assert.equal(complete.truncated, false)
+  })
+
   it('only ever issues REST GET requests', async () => {
     const { requested } = await collect()
     assert.ok(requested.length > 20)

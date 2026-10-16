@@ -1145,7 +1145,7 @@ export async function collectBacklogSnapshot(
     since: since ? since.toISOString() : null,
     apiCalls: api.calls?.() ?? 0,
     reused,
-    truncated,
+    truncated: truncated || open.length > options.limit,
     pulls: pulls.sort((a, b) => b.number - a.number),
     closedBatches: [...closedBatches.values()].sort((a, b) => b.number - a.number),
   }
