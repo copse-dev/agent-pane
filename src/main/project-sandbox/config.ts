@@ -20,6 +20,7 @@ import {
   type InternalWorkspaceRootRegistration,
 } from '../services/workspace.ts'
 import { activeThreadReadRoots } from '../services/security/thread-read-roots.ts'
+import { threadChatReadRoot } from '../services/security/thread-access.ts'
 import {
   WEB_ALLOWED_ORIGINS_SETTING,
   sandboxAllowedDomainsFromOrigins,
@@ -853,7 +854,12 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
   // such as Claude Code. Re-allow only the literal parent — never `home/**` —
   // whenever an agent declares home-scoped state. Without this, the narrower
   // `.claude` allowance is insufficient and `claude auth status` fails EPERM.
-  const homeReadPaths = configuredHomePaths.length > 0 ? [home, ...configuredHomePaths] : []
+  // On Linux a parent read bind shadows writable checkouts beneath home.
+  // Keep the metadata-only parent grant on platforms that support it.
+  const homeReadPaths =
+    configuredHomePaths.length > 0
+      ? [...(listingOnlyDirEntriesSupported() ? [home] : []), ...configuredHomePaths]
+      : []
   const scratchPaths = (sandbox.scratchPaths ?? [])
     .flatMap(expandScratchPath)
     .flatMap((abs) => [abs, `${abs}/**`])
@@ -1040,7 +1046,8 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // lives under $HOME, so `denyRead: [homedir()]` would block it without this
   // more-specific allow. NOT added to allowWrite — the sandbox denies chat-store
   // writes too, matching the workspace-only path guards.
-  const chatStore = getChatStoreRootSync()
+  const chatStoreRoot = getChatStoreRootSync()
+  const chatStore = chatStoreRoot ? threadChatReadRoot(chatStoreRoot) : null
   // Linux read binds shadow writable descendants. The store contains scratch
   // and may also contain the active checkout; those retain their own grants.
   const chatStoreRead = chatStore

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { $, $$, browser } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, parkPointer, prepareE2eScreenshot } from './helpers/screenshot.ts'
 import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
 import { tokenColour } from './helpers/theme.ts'
 
@@ -88,6 +88,11 @@ describe('ports section', function () {
     assert.equal(await $('.ports-row[data-port="5432"] .ports-row-owner').isExisting(), false)
 
     await prepareE2eScreenshot()
+    await parkPointer()
+    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => button.focus())
+    await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
+    await browser.keys('Escape')
+    await expect($('#app-tooltip')).not.toBeDisplayed()
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ports-section-list.png'))
     await assertNoErrorToasts('ports section list')
   })
@@ -118,6 +123,11 @@ describe('ports section', function () {
     assert.equal(openBorder, await tokenColour('--border', 'border-top-color'))
 
     await prepareE2eScreenshot()
+    await parkPointer()
+    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => button.focus())
+    await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
+    await browser.keys('Escape')
+    await expect($('#app-tooltip')).not.toBeDisplayed()
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ports-section-owned.png'))
     await assertNoErrorToasts('ports section owned row')
   })
@@ -132,6 +142,11 @@ describe('ports section', function () {
     assert.match(await $('.ports-detail-note').getText(), /only stops processes it started/)
 
     await prepareE2eScreenshot()
+    await parkPointer()
+    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => button.focus())
+    await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
+    await browser.keys('Escape')
+    await expect($('#app-tooltip')).not.toBeDisplayed()
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ports-section-foreign.png'))
     await assertNoErrorToasts('ports section foreign row')
   })

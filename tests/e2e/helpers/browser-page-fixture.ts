@@ -9,7 +9,7 @@ export async function startBrowserPageFixture(
   const server = createServer((request, response) => {
     const path = request.url ?? ''
     requests.push(path)
-    if (path !== '/page') {
+    if (path !== '/page' && path !== '/unstyled') {
       response.writeHead(404).end()
       return
     }
@@ -18,11 +18,15 @@ export async function startBrowserPageFixture(
       <html lang="en">
         <head>
           <title>Copse browser fixture</title>
-          <style>
+          ${
+            path === '/unstyled'
+              ? ''
+              : `<style>
             body { margin: 16px; font: 14px system-ui; color: #23332d; background: #f3f5ef; }
             main { max-width: 200px; padding: 12px; background: white; border: 1px solid #c7d0c8; }
             h1 { margin-top: 0; font-size: 20px; }
-          </style>
+          </style>`
+          }
         </head>
         <body><main>
           <h1>Local browser page</h1>

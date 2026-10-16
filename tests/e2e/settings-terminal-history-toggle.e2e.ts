@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
+import { saveSettingsSection } from './helpers/settings-scroll-capture.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const FIELDSET_SELECTOR = 'fieldset:has(input[name="shareTerminalHistoryEnabled"])'
@@ -50,7 +51,7 @@ describe('shared terminal history setting (#2433)', () => {
         ?.scrollIntoView({ block: 'center' })
     })
     await browser.pause(100)
-    await saveElementScreenshot(FIELDSET_SELECTOR, 'settings-terminal-history-toggle.png')
+    await saveSettingsSection(FIELDSET_SELECTOR, 'settings-terminal-history-toggle.png')
 
     await toggle.click()
     assert.equal(await toggle.isSelected(), false)
@@ -62,7 +63,7 @@ describe('shared terminal history setting (#2433)', () => {
         ?.scrollIntoView({ block: 'center' })
     })
     await browser.pause(100)
-    await saveElementScreenshot(FIELDSET_SELECTOR, 'settings-terminal-history-toggle-off.png')
+    await saveSettingsSection(FIELDSET_SELECTOR, 'settings-terminal-history-toggle-off.png')
 
     await $('#settings-dialog button[type="submit"]').click()
     // Dialog hides on a successful save.

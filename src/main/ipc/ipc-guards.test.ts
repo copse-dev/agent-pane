@@ -2,6 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   INDEX_QUERY_PATTERN,
+  IpcValidationError,
+  assertMainFrameSender,
   estimateContextPayloadSchema,
   followUpContextSchema,
   isIndexQueryPattern,
@@ -10,6 +12,7 @@ import {
   lmStudioTestSchema,
   machineAgentRunSchema,
   parsePortKillArgs,
+  parseAcpAuthStatusArgs,
   vncDiscoveryHostSchema,
   vncTargetSchema,
   zHttpUrl,
@@ -18,6 +21,26 @@ import {
   zProjectId,
   zThreadId,
 } from './ipc-guards.ts'
+
+describe('ipc-guards assertMainFrameSender', () => {
+  it('never reads webContents of a closed boot window', () => {
+    // Electron throws on `win.webContents` after destroy. With a second main
+    // window still open, every request it sends must reach the trusted-frame
+    // check rather than crash on the closed boot window the handlers captured.
+    const closedBootWindow = {
+      isDestroyed: (): boolean => true,
+      get webContents(): never {
+        throw new TypeError('Object has been destroyed')
+      },
+    }
+    assert.throws(
+      () => {
+        assertMainFrameSender({ senderFrame: null }, closedBootWindow)
+      },
+      (err: unknown) => err instanceof IpcValidationError,
+    )
+  })
+})
 
 describe('ipc-guards ports:kill arguments', () => {
   it('decodes one positional port instead of treating it as a one-item tuple', () => {
@@ -264,5 +287,26 @@ describe('ipc-guards gh:create-pr-for-thread request', () => {
       zPrComposerCreateRequest.safeParse({ title: 't', body: 'x'.repeat(20_001) }).success,
       false,
     )
+  })
+})
+
+describe('ACP auth-status IPC payload', () => {
+  it('accepts a single bounded array and rejects malformed or oversized input', () => {
+    assert.deepEqual(parseAcpAuthStatusArgs([['codex-acp', 'claude-acp']]), [
+      'codex-acp',
+      'claude-acp',
+    ])
+    assert.deepEqual(parseAcpAuthStatusArgs([[]]), [])
+    for (const args of [
+      ['codex-acp'],
+      [[['codex-acp']]],
+      [[null]],
+      [[42]],
+      [['']],
+      [['x'.repeat(129)]],
+      [Array(33).fill('codex-acp')],
+    ]) {
+      assert.throws(() => parseAcpAuthStatusArgs(args), IpcValidationError)
+    }
   })
 })

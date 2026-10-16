@@ -3,6 +3,7 @@ import type { RemoteAgentProvider } from '@shared/remote-agent.ts'
 import { getGithubRepoSlug } from '../github/git-service.ts'
 import { getActiveProjectId, getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
+import type { OpenAiHostTools } from './openai-host-tools.ts'
 
 /**
  * Options for a single remote-agent turn. Shared by every provider adapter
@@ -23,6 +24,7 @@ export interface RemoteAgentRunOptions {
   /** Prior local conversation, dumped into the first prompt on remote hand-off. */
   priorMessages?: LLMMessage[]
   fetchImpl?: typeof fetch
+  hostTools?: OpenAiHostTools
 }
 
 export interface RemoteAgentRunResult {

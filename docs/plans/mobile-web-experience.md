@@ -230,7 +230,10 @@ expensive is an axis this version simply does not have.
 11. **Control requires an explicit desktop grant after local-root installation.**
     Existing device records default to read-only. Pairing or Manage paired phones
     can grant control only after a desktop checkbox confirms that this phone has
-    installed and trusted the local root. The grant is persisted per device and
+    installed and trusted the local root. Control grants also require a main-process native
+    confirmation with its own unchecked trust checkbox; the renderer cannot supply that
+    acknowledgement. Pending pairings and device revocation are rechecked after the
+    native confirmation returns. The grant is persisted per device and
     checked on every POST, including again after asynchronous store reads. Browsers
     cannot attest their trust settings to this server: this is a human-confirmed
     setup prerequisite, not cryptographic proof of installation. Do not interpret
@@ -538,7 +541,7 @@ Non-negotiable controls, all fail-closed, on every request and every SSE connect
   `frame-ancestors` is ignored in meta CSP (and absent anyway):
   `Content-Security-Policy: … frame-ancestors 'none'`, `X-Frame-Options: DENY`,
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control:
-no-store`. Without these, an attacker page frames the decision screen and overlays a
+  no-store`. Without these, an attacker page frames the decision screen and overlays a
   transparent button on Approve — one tap approves a shell command.
 - **401 before reading any body** (the one thing the ACP bridge gets exactly right), a
   hard body-size cap, `server.maxConnections`, header and idle timeouts, and a temporary
@@ -732,3 +735,12 @@ by hand, on a device the app cannot reach.
   submission does not roll back a started checkout or a queued message.
 - Saved text still appears after desktop persistence. This slice does not claim
   token streaming, attachment composition, or model selection from the phone.
+- Settings > Experimental manages Mobile Companion inline — enabling, network choice,
+  pairing approval, and per-device access all live there, with no native-dialog
+  management surface. An OS-native confirmation still owns the local-root trust
+  acknowledgement before a phone receives control access. It also shows a QR encoding the running server's URL,
+  generated server-side (`qrcode`) from the same string already shown as text. This
+  is the convenience case the Alternatives section's governing theorem leaves open,
+  not the rejected one: it carries no claim the page or bundle is unmodified, so it
+  adds nothing for a reviewer to re-litigate under "what the user is told, and what
+  is actually true" above.

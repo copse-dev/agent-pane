@@ -17,6 +17,11 @@ import {
   type BranchCiSnapshot,
 } from './branch-ci-automation-service.ts'
 
+function ciBranch(definition: { trigger: { kind: string } }): string {
+  const trigger = definition.trigger
+  return 'branch' in trigger && typeof trigger.branch === 'string' ? trigger.branch : ''
+}
+
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.ci-definitions`
 const SHA_A = 'a'.repeat(40)
 const SHA_B = 'b'.repeat(40)
@@ -142,7 +147,7 @@ describe('branch CI automations', () => {
         readBranchCiSnapshot(
           root,
           definition.trigger.repository,
-          definition.trigger.branch,
+          ciBranch(definition),
           (args, options) => {
             assert.deepEqual(options, { cwd: root, timeout_ms: 15_000 })
             if (args[1] === 'repos/owner/repo/branches/main') {
@@ -198,6 +203,10 @@ describe('branch CI automations', () => {
       repository: 'github.com/owner/repo',
       branch: 'main',
       latestFailure: 'https://github.com/owner/repo/actions/runs/1',
+      recent: Array.from(
+        { length: 5 },
+        (_, index) => `CI · https://github.com/owner/repo/actions/runs/${String(index + 1)}`,
+      ),
     })
     const definition = await service.upsert('project-a', {
       name: 'Investigate CI',
@@ -294,7 +303,7 @@ describe('branch CI automations', () => {
     })
     assert.deepEqual(await service.canStart('project-a', created.id), {
       allowed: false,
-      reason: 'The CI automation was paused or changed before this task started.',
+      reason: 'The automation was paused or changed before this task started.',
     })
     assert.ok(reads >= 4)
   })

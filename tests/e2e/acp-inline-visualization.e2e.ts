@@ -6,7 +6,7 @@ import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
   prepareChatMessageScreenshot,
-  saveAppScreenshot,
+  saveAppViewportScreenshot,
   savePreparedElementScreenshot,
 } from './helpers/screenshot.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
@@ -328,7 +328,7 @@ describe('ACP inline visualization reference', () => {
         )) === 1,
       { timeout: 5_000, timeoutMsg: 'expected a Browser pane annotation mark' },
     )
-    await saveAppScreenshot('browser-canvas-annotation.png')
+    await saveAppViewportScreenshot('browser-canvas-annotation.png')
 
     await browser.execute(() => {
       document
@@ -356,7 +356,7 @@ describe('ACP inline visualization reference', () => {
       return { hidden: root?.hidden ?? false, marks: surface?.childElementCount ?? -1 }
     })
     expect(sentState).toEqual({ hidden: false, marks: 1 })
-    await saveAppScreenshot('browser-canvas-annotation-after-send.png')
+    await saveAppViewportScreenshot('browser-canvas-annotation-after-send.png')
     await expect($('.attachment-chips .image-chip img')).toHaveAttribute(
       'src',
       expect.stringContaining('data:image/png;base64,'),
@@ -400,7 +400,7 @@ describe('ACP inline visualization reference', () => {
     expect(afterParts.every(Number.isFinite)).toBe(true)
     expect(afterParts[1]).toBeGreaterThanOrEqual(240)
     expect(afterParts.slice(2)).toEqual(beforeParts.slice(2))
-    await saveAppScreenshot('browser-canvas-annotation-scrolled.png')
+    await saveAppViewportScreenshot('browser-canvas-annotation-scrolled.png')
     await assertNoErrorToasts('canvas annotation')
   })
 })

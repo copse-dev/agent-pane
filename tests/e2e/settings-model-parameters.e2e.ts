@@ -1,7 +1,8 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
+import { saveSettingsSection } from './helpers/settings-scroll-capture.ts'
 
 /**
  * The per-chat effort override that used to live here as a second `describe`
@@ -59,7 +60,7 @@ describe('per-model generation parameters', () => {
       '0.95',
     )
 
-    await saveElementScreenshot('[data-testid="model-parameters"]', 'settings-model-parameters.png')
+    await saveSettingsSection('[data-testid="model-parameters"]', 'settings-model-parameters.png')
   })
 
   it('applies the experimental GLM-5.3-Flash profile by default', async function () {
@@ -102,7 +103,7 @@ describe('per-model generation parameters', () => {
         ?.scrollIntoView({ block: 'start' })
     })
     await browser.pause(200)
-    await saveElementScreenshot(
+    await saveSettingsSection(
       '[data-testid="model-parameters"]',
       'settings-model-parameters-glm-5-3-flash.png',
     )
@@ -143,9 +144,9 @@ describe('per-model generation parameters', () => {
     const labels = await verbosity.$$('option').map((option) => option.getText())
     expect(labels).toEqual([
       "Model default (don't send)",
-      'Low — terse answers',
+      'Low, terse answers',
       'Medium',
-      'High — thorough answers',
+      'High, thorough answers',
     ])
     await expect(verbosity).toHaveValue('')
     await browser.execute(() => {
@@ -154,7 +155,7 @@ describe('per-model generation parameters', () => {
         ?.scrollIntoView({ block: 'start' })
     })
     await browser.pause(200)
-    await saveElementScreenshot(
+    await saveSettingsSection(
       '[data-testid="model-parameters"]',
       'settings-model-parameters-verbosity.png',
     )
@@ -215,7 +216,7 @@ describe('per-model generation parameters', () => {
         .querySelector<HTMLElement>('[data-testid="model-parameters"]')
         ?.scrollIntoView({ block: 'start' })
     })
-    await saveElementScreenshot(
+    await saveSettingsSection(
       '[data-testid="model-parameters"]',
       'settings-model-parameters-glm-4-7-flash.png',
     )
@@ -262,7 +263,7 @@ describe('per-model generation parameters', () => {
         ?.scrollIntoView({ block: 'start' })
     })
     await browser.pause(200)
-    await saveElementScreenshot(
+    await saveSettingsSection(
       '[data-testid="model-parameter-header"]',
       'settings-model-parameters-rule-chat-model.png',
     )

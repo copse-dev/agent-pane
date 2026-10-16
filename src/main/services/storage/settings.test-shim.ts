@@ -1,3 +1,4 @@
+import type { z } from 'zod'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { firstNonEmptyString, matchesFallbackType } from '@shared/unknown-value.ts'
 import { getSettingSchema } from './settings-schema.ts'
@@ -110,6 +111,19 @@ export function getRegisteredSetting(key: string): unknown {
   const raw = scoped ? scoped.values[key] : settings.get(key)
   const parsed = schema.safeParse(raw)
   return parsed.success ? parsed.data : undefined
+}
+
+/**
+ * Read a key with no registered schema (one of a dynamic family such as
+ * `mcpOAuth.<digest>`) through the caller's decoder. `getSetting` can only
+ * check such a value against its fallback's runtime type, and a `null` fallback
+ * matches nothing but `null`. Returns `null` when absent or invalid.
+ */
+export function getDecodedSetting<T>(key: string, schema: z.ZodType<T>): T | null {
+  const scoped = getExplicitSettingsProfile()
+  const raw = scoped ? scoped.values[key] : settings.get(key)
+  const parsed = schema.safeParse(raw)
+  return parsed.success ? parsed.data : null
 }
 
 export function getSetting<T>(key: string, fallback: T): T {

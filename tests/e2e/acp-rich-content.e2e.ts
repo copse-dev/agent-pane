@@ -18,6 +18,21 @@ describe('ACP rich content', () => {
     const image = readFileSync(
       join(process.cwd(), 'tests/e2e/fixtures/inline-rollup-prototype.png'),
     ).toString('base64')
+    // A valid one-second PCM clip gives native controls deterministic metadata.
+    const audio = Buffer.alloc(44 + 8000)
+    audio.write('RIFF', 0)
+    audio.writeUInt32LE(audio.length - 8, 4)
+    audio.write('WAVEfmt ', 8)
+    audio.writeUInt32LE(16, 16)
+    audio.writeUInt16LE(1, 20)
+    audio.writeUInt16LE(1, 22)
+    audio.writeUInt32LE(8000, 24)
+    audio.writeUInt32LE(8000, 28)
+    audio.writeUInt16LE(1, 32)
+    audio.writeUInt16LE(8, 34)
+    audio.write('data', 36)
+    audio.writeUInt32LE(8000, 40)
+    audio.fill(128, 44)
     process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     process.env['ANTHROPIC_API_KEY'] = ''
     process.env['OPENAI_API_KEY'] = ''
@@ -69,8 +84,8 @@ describe('ACP rich content', () => {
                       type: 'content',
                       content: {
                         type: 'audio',
-                        dataUrl: 'data:audio/ogg;base64,T2dnUw==',
-                        mimeType: 'audio/ogg',
+                        dataUrl: `data:audio/wav;base64,${audio.toString('base64')}`,
+                        mimeType: 'audio/wav',
                       },
                     },
                     {
@@ -153,6 +168,19 @@ describe('ACP rich content', () => {
     await rich.waitForDisplayed({ timeout: 15_000 })
     await expect(rich.$$('.tool-result-image')).toBeElementsArrayOfSize(1)
     await expect(rich.$$('audio')).toBeElementsArrayOfSize(1)
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const audio = document.querySelector('audio')
+          return (
+            audio instanceof HTMLAudioElement &&
+            audio.readyState >= 1 &&
+            audio.duration === 1 &&
+            audio.error === null
+          )
+        }),
+      { timeout: 15_000, timeoutMsg: 'Expected playable audio with one-second metadata' },
+    )
     await expect(rich.$('.acp-resource-title')).toHaveText('Generated report')
     const diff = rich.$('.acp-tool-diff')
     await expect(diff.$('.acp-tool-diff-label')).toHaveText('Diff')
@@ -193,5 +221,32 @@ describe('ACP rich content', () => {
     })
     await browser.pause(100)
     await saveAppScreenshot(DETAILS_SCREENSHOT)
+  })
+
+  it('keeps remote media blocked by the app content security policy', async () => {
+    const blocked = await browser.execute(
+      () =>
+        new Promise<boolean>((resolve) => {
+          const audio = document.createElement('audio')
+          const url = 'https://example.invalid/copse-audio-policy-probe.wav'
+          const finish = (result: boolean): void => {
+            clearTimeout(timeout)
+            document.removeEventListener('securitypolicyviolation', onViolation)
+            audio.removeAttribute('src')
+            audio.load()
+            resolve(result)
+          }
+          const onViolation = (event: SecurityPolicyViolationEvent): void => {
+            if (event.blockedURI === url && event.effectiveDirective === 'media-src') finish(true)
+          }
+          const timeout = setTimeout(() => {
+            finish(false)
+          }, 5000)
+          document.addEventListener('securitypolicyviolation', onViolation)
+          audio.src = url
+          audio.load()
+        }),
+    )
+    assert.equal(blocked, true, 'Remote audio must be rejected by media-src')
   })
 })

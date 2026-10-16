@@ -279,14 +279,21 @@ describe('cron automation trigger', function () {
       timeoutMsg: 'the Automations section never appeared after opening the schedule project',
     })
     assert.equal(await automationGroup.getAttribute('aria-expanded'), 'false')
-    assert.equal(await automationGroup.$('.automation-threads-count').getText(), '1')
+    assert.equal(await $('.automation-threads-toggle .automation-threads-count').getText(), '1')
     await automationGroup.click()
 
-    const scheduleGroup = $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`)
+    // Scheduler updates replace the sidebar subtree. Resolve descendants from
+    // their full selector each time instead of retaining a detached parent.
+    const scheduleGroupSelector = `.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`
+    const scheduleGroup = $(scheduleGroupSelector)
     await scheduleGroup.waitForExist({ timeout: 5_000 })
-    assert.equal(await scheduleGroup.$('.automation-schedule-title').getText(), 'CI review')
+    assert.equal(
+      await $(`${scheduleGroupSelector} .automation-schedule-title`).getText(),
+      'CI review',
+    )
     await browser.waitUntil(
-      async () => (await scheduleGroup.$('.automation-schedule-count').getText()) === '3 runs',
+      async () =>
+        (await $(`${scheduleGroupSelector} .automation-schedule-count`).getText()) === '3 runs',
       {
         timeout: SCHEDULER_TICK_TIMEOUT_MS,
         timeoutMsg:
@@ -298,14 +305,14 @@ describe('cron automation trigger', function () {
     // the scheduled run. Streaming store updates rebuild the entire sidebar
     // and can detach a row between WebDriver locating and clicking it.
     await scenario.waitForHold('review-ready')
-    assert.equal(await scheduleGroup.$('.automation-schedule-count').getText(), '3 runs')
+    assert.equal(await $(`${scheduleGroupSelector} .automation-schedule-count`).getText(), '3 runs')
     assert.equal(
-      await scheduleGroup.$('.automation-schedule-toggle').getAttribute('aria-expanded'),
+      await $(`${scheduleGroupSelector} .automation-schedule-toggle`).getAttribute('aria-expanded'),
       'false',
     )
-    await scheduleGroup.$('.automation-schedule-toggle').click()
+    await $(`${scheduleGroupSelector} .automation-schedule-toggle`).click()
 
-    const scheduledRow = scheduleGroup.$('.automation-schedule-runs .chat-row')
+    const scheduledRow = $(`${scheduleGroupSelector} .automation-schedule-runs .chat-row`)
     await scheduledRow.waitForExist({ timeout: 5_000 })
     assert.match(await scheduledRow.getText(), /^Latest · /)
     const scheduledThreadId = await scheduledRow.getAttribute('data-thread-id')
@@ -377,9 +384,18 @@ describe('cron automation trigger', function () {
       /^Latest · .+$/,
       'Latest · Jan 1, 2026, 12:00 AM',
     )
+    // This checkout was allocated by the real scheduler, so its branch embeds
+    // a fresh thread id. Assert the real branch before pinning only its label.
+    await expect($('.footer-branch-label')).toHaveText(/^copse\/thread-[a-f0-9]+$/)
+    const restoreActiveBranch = await pinTextForCapture(
+      '.footer-branch-label',
+      /^copse\/thread-[a-f0-9]+$/,
+      'copse/thread-000001',
+    )
     try {
       await saveAppScreenshot('automation-active.png')
     } finally {
+      await restoreActiveBranch()
       await restoreActiveRunTime()
     }
 
@@ -407,15 +423,26 @@ describe('cron automation trigger', function () {
       },
     )
     assert.deepEqual((await editorSurfacePaint([])).token, [0, 46, 43])
+    await expect($(`${scheduleGroupSelector} .automation-schedule-held`)).toHaveText('1 held')
 
     const restoreFinalRunTime = await pinTextForCapture(
       '.automation-schedule-runs',
       /^Latest · .+$/,
       'Latest · Jan 1, 2026, 12:00 AM',
     )
+    // The completed turn names its branch after the CI review. Wait for that
+    // real rename before replacing the remaining generated id for capture.
+    await expect($('.footer-branch-label')).toHaveText(/^copse\/ci-review-[a-f0-9]+$/)
+    const restoreFinalBranch = await pinTextForCapture(
+      '.footer-branch-label',
+      /^copse\/ci-review-[a-f0-9]+$/,
+      'copse/ci-review-000001',
+    )
     try {
+      await expect($('.apple-development-error')).not.toExist()
       await saveAppScreenshot('automation-trigger.png')
     } finally {
+      await restoreFinalBranch()
       await restoreFinalRunTime()
     }
   })

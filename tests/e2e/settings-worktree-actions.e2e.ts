@@ -177,7 +177,12 @@ describe('settings → Storage → worktree actions', function () {
     const pathCodes = await confirm.$$('.confirm-dialog-detail code').map((code) => code.getText())
     assert.equal(pathCodes.length, 1)
     assert.match(pathCodes[0] ?? '', /node_modules$/)
-    await saveAppScreenshot('settings-worktree-cleanup-confirm.png')
+    const restoreConfirmPath = await pinProfilePathForCapture('#settings-dialog')
+    try {
+      await saveAppScreenshot('settings-worktree-cleanup-confirm.png')
+    } finally {
+      await restoreConfirmPath()
+    }
     await confirm.$('.confirm-dialog-cancel').click()
 
     await thread.click()
@@ -256,7 +261,12 @@ describe('settings → Storage → worktree actions', function () {
       expect.stringContaining('stops after the current worktree finishes'),
     )
     await expect($('.sources-row[data-cleanup-state="cleaning"]')).toExist()
-    await saveAppScreenshot('settings-worktree-cleanup-pending.png')
+    const restorePendingPath = await pinProfilePathForCapture('#settings-dialog')
+    try {
+      await saveAppScreenshot('settings-worktree-cleanup-pending.png')
+    } finally {
+      await restorePendingPath()
+    }
     await confirm.$('.confirm-dialog-cancel').click()
     await expect(confirm).not.toBeDisplayed()
     await expect($('#sources-worktrees-status')).toHaveText(

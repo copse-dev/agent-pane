@@ -32,6 +32,7 @@ import {
 } from './exec/supervised-background-process.ts'
 import { getTaskSupervisor, type TaskSupervisor } from './supervisor/task-supervisor.ts'
 import { runWithThreadResourceStateLookup } from './thread-resource-fence.ts'
+import { runWithDecisionRecorder, type RecordedDecision } from './security/decision-log-store.ts'
 
 export interface HeadlessInteractionProfile {
   readonly approve?: ApprovalHandler
@@ -60,9 +61,11 @@ export interface HeadlessAgentProfile {
   /**
    * Tools the run must never offer, unregistered after bootstrap and before
    * the agent sees a list — whatever the bootstrap's own probes decided. The
-   * container worker names the GitHub and CI tools here (decision A10).
+   * benchmark profiles use this to exercise otherwise unavailable paths.
    */
   readonly excludeTools?: readonly string[]
+  /** Exact supported tool surface; omitted uses the ordinary registry, empty offers no tools. */
+  readonly includeTools?: readonly string[]
   /** Explicit trust posture used by MCP, hooks, shell routing, and permission policy. */
   readonly workspaceTrusted: boolean
   /** Host interaction channels; omitted channels resolve deterministically without ambient UI. */
@@ -73,6 +76,8 @@ export interface HeadlessAgentProfile {
     readonly maxLlmCalls?: number
     /** False for benchmark/eval profiles whose limits are part of the result contract. */
     readonly adaptiveExtensions?: boolean
+    /** Token cap for the recovery stream after a reasoning circle is cut; the product cap when omitted. */
+    readonly reasoningRecoveryMaxTokens?: number
   }
 }
 
@@ -98,12 +103,16 @@ export interface HeadlessAgentDependencies {
   readonly contextWindow?: number
   /** Supervisor seam for isolated hosts and tests; desktop/headless production uses the singleton. */
   readonly taskSupervisor?: TaskSupervisor
+  /** Explicit audit destination for hosts that own durable state, such as a container worker. */
+  readonly recordDecision?: (decision: RecordedDecision) => void
 }
 
 export interface HeadlessAgentResult {
   readonly threadId: string
   readonly chunks: readonly StreamChunk[]
   readonly messages: readonly LLMMessage[]
+  /** Control-plane decisions and details owned by this run, without desktop persistence. */
+  readonly decisions: readonly RecordedDecision[]
   readonly usage: { readonly inputTokens: number; readonly outputTokens: number }
   /** Effective product construction, exposed for profile-resolution/hash tests. */
   readonly toolNames: readonly string[]
@@ -154,6 +163,7 @@ export async function runHeadlessAgent(
   const workspaceRoot = await canonicalWorkspaceRoot(profile.workspaceRoot, localWorkspaceFs)
   const threadId = nonEmptyStringOr(run.threadId, `headless-${randomUUID()}`)
   const projectId = nonEmptyStringOr(run.projectId, `headless-project-${randomUUID()}`)
+  const decisions: RecordedDecision[] = []
   const enabledPluginIds = new Set(profile.enabledPluginIds)
   const pluginRegistry = createFirstPartyPluginRegistry()
 
@@ -181,7 +191,14 @@ export async function runHeadlessAgent(
         Promise.resolve(
           owner.projectId === projectId && owner.threadId === threadId ? { id: threadId } : null,
         ),
-      () => runWithBackgroundProcessSupervisor(supervisor, operation),
+      () =>
+        runWithDecisionRecorder(
+          (decision) => {
+            decisions.push(decision)
+            dependencies.recordDecision?.(decision)
+          },
+          () => runWithBackgroundProcessSupervisor(supervisor, operation),
+        ),
     )
 
   return runWithOwnerScopedBackgroundProcessSupervisor(
@@ -199,6 +216,12 @@ export async function runHeadlessAgent(
                       const registry = createRegistry()
                       registerSkillTools(registry)
                       if (profile.loadMcpServers) await loadMcpServers(registry)
+                      if (profile.includeTools !== undefined) {
+                        const allowed = new Set(profile.includeTools)
+                        for (const name of registry.names()) {
+                          if (!allowed.has(name)) registry.unregister(name)
+                        }
+                      }
                       for (const name of profile.excludeTools ?? []) {
                         if (registry.has(name)) registry.unregister(name)
                       }
@@ -230,6 +253,7 @@ export async function runHeadlessAgent(
                         let inputTokens = 0
                         let outputTokens = 0
                         const dispatcher = new AgentDispatcher(host, registry, {
+                          loadPlan: (): Promise<null> => Promise.resolve(null),
                           loadHistory: (): Promise<LLMMessage[]> => Promise.resolve(messages),
                           saveHistory: (_projectId, _threadId, nextMessages): Promise<void> => {
                             messages = nextMessages
@@ -287,6 +311,12 @@ export async function runHeadlessAgent(
                                   : {}),
                                 ...(profile.limits?.adaptiveExtensions !== undefined
                                   ? { adaptiveExtensions: profile.limits.adaptiveExtensions }
+                                  : {}),
+                                ...(profile.limits?.reasoningRecoveryMaxTokens !== undefined
+                                  ? {
+                                      reasoningRecoveryMaxTokens:
+                                        profile.limits.reasoningRecoveryMaxTokens,
+                                    }
                                   : {}),
                               },
                             )
@@ -363,6 +393,7 @@ export async function runHeadlessAgent(
                           threadId,
                           chunks,
                           messages,
+                          decisions,
                           usage: { inputTokens, outputTokens },
                           toolNames: registry.names(),
                           skillNames: listSkills().map((skill) => skill.name),

@@ -1,3 +1,4 @@
+import { deferred } from '../../../tests/deferred.ts'
 import '../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'node:test'
@@ -368,5 +369,29 @@ describe('tool permissions panel', () => {
       'false',
     )
     assert.equal(resetAll.hidden, true)
+  })
+})
+
+describe('tool permissions cancelled refreshes', () => {
+  it('loads a fresh visit while an aborted earlier list is still pending', async () => {
+    document.body.innerHTML = ''
+    const harness = apiHarness()
+    const first = deferred<ToolPermissionCatalog>()
+    let calls = 0
+    const panel = createToolPermissionsPanel({
+      ...harness.api,
+      list: async () => (++calls === 1 ? first.promise : catalog()),
+    })
+    document.body.append(panel.root)
+    const oldVisit = new AbortController()
+    const oldRefresh = panel.refresh(oldVisit.signal)
+    oldVisit.abort()
+    await panel.refresh(new AbortController().signal)
+    assert.equal(calls, 2)
+    assert.match(panel.root.textContent, /Read file/)
+    first.resolve({ groups: [] })
+    await oldRefresh
+    assert.match(panel.root.textContent, /Read file/)
+    assert.doesNotMatch(panel.root.textContent, /Loading/)
   })
 })

@@ -62,6 +62,8 @@ legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-inde
     meta.json                        # mutable thread metadata (everything except messages)
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
+    openai-agent-session.json        # private hosted session, pending input, terminal result + Git import checkpoint
+    blobs/openai-git/                # bounded source/return Git bundles and result manifest
     acp-session.json                 # private external ACP session binding (optional)
     history-edit-transaction.json    # pending edit rollback journal (temporary, private)
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)
@@ -511,16 +513,24 @@ and hook runs). Zod source of truth:
 [`plan-schema.ts`](../packages/thread-store/src/plan-schema.ts); published mirror:
 [`schemas/copse-plan.schema.json`](../schemas/copse-plan.schema.json).
 
+A committed plan makes its task nonempty for automatic blank-task cleanup, even
+with no messages or composer draft. Both full and metadata-only loads derive the
+session-only `hasSavedPlan` signal from committed plan events (not orphan files);
+successful renderer plan saves set it immediately. Neither metadata writer stores
+this signal. Ended plans retain it because their history is still saved content.
+Explicit task deletion continues to remove the task and its plans.
+
 ```jsonc
 {
   "v": 1,
   "type": "plan",
-  "action": "create" | "revise" | "comment" | "approve" | "abandon",
+  "action": "create" | "revise" | "comment" | "approve" | "abandon" | "report",
   "id": "<eventId>",
   "planId": "<planId>",
   "revision": 2, // when the action touches a revision
   "createdAt": 1712345678901,
-  "artifact": { "ref": "plans/<planId>/revision-2.md", "sha256": "…" }, // create/revise/approve
+  "artifact": { "ref": "plans/<planId>/revision-2.md", "sha256": "…" },
+  "state": { "ref": "plans/<planId>/states/<eventId>.json", "sha256": "…" },
   "commentId": "<commentId>", // comment
   "executionProfileId": "implementation", // approve
   "contentHash": "<hex sha256 of body>" // approve
@@ -536,6 +546,12 @@ and hook runs). Zod source of truth:
 - **Full-save refs.** `rebuildSpinePreservingNonMessageLines` keeps `plan` lines
   and exempts their `artifact.ref` paths from stale-file pruning (same as
   `hook_run` blobs).
+
+Plan writers commit hashed immutable state snapshots through these lines. Readers
+ignore uncommitted files and the mutable convenience projections; a corrupt committed
+snapshot blocks execution. The `report` action records criterion results against the
+exact approval identity. UI writes recheck idleness at the commit point. See the
+[living plan task brief](./plans/plan-mode-and-rewind.md#current-task-brief) for scope.
 
 ## Catalog
 
@@ -576,3 +592,15 @@ full-fidelity copy for debugging or moving a thread between machines.
 ```
 
 ```
+
+### OpenAI hosted Git transfer checkpoint
+
+`openai-agent-session.json` records the key hash (never the key), model, environment,
+pending submission, terminal result, usage reporting and local Git transfer state.
+Terminal artifacts are checkpointed before pending input is cleared. Retrying an
+import therefore downloads/adopts the recorded output without replaying inference.
+The transfer binds an absolute thread checkout to a snapshot tree and synthetic
+transport base; `refs/copse/openai/<id>` pins that base and
+`refs/copse/runs/openai-<id>` retains returned commits. Guest refs, ancestry and the
+current local tree are checked before adoption. Completed transfers are replaced
+by a fresh snapshot on the next task. These private sidecars are not chat messages.

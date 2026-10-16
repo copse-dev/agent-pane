@@ -152,6 +152,7 @@ describe('ACP tool diff', () => {
     expect((await diff.$('.acp-diff-add .acp-diff-sr').getSize()).width).toBeLessThanOrEqual(1)
 
     await diff.scrollIntoView()
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
     await saveAppScreenshot('acp-tool-diff.png')
   })
 })

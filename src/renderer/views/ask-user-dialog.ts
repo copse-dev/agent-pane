@@ -4,13 +4,16 @@ import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
+import { attentionThreadId } from '../controller/projects.ts'
+import { sideChatPromptOrigin } from '../controller/side-chat.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
+import type { AskUserQuestion } from '@copse/agent/ask-user-format.ts'
 
 interface AskUserRequest {
   id: string
   /** Thread this question belongs to; undefined = not tied to a run (show anywhere). */
   threadId: string | undefined
-  questions: { question: string; options?: string[] }[]
+  questions: AskUserQuestion[]
   /** Renderer clock when the question arrived — how long it has been waiting. */
   receivedAt: number
   /** Arrival order; the clock alone ties within a millisecond. */
@@ -25,6 +28,8 @@ export interface PendingQuestionSummary {
   questions: string[]
   /** The quick answers the agent offered for each question, in question order ([] for none). */
   options: readonly (readonly string[])[]
+  recommendedOptions?: readonly (string | undefined)[]
+  recommendationReasons?: readonly (string | undefined)[]
   receivedAt: number
 }
 
@@ -75,16 +80,20 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
   // answers map back to questions by index.
   let inputs: HTMLTextAreaElement[] = []
 
+  // A side chat is never the active thread: its questions surface over its parent.
   function isShowable(req: AskUserRequest): boolean {
-    return !req.threadId || req.threadId === store.getState().activeThreadId
+    return (
+      !req.threadId || attentionThreadId(store, req.threadId) === store.getState().activeThreadId
+    )
   }
 
   // Flag every queued question that belongs to a non-focused thread so the
   // sidebar can show an attention indicator on it.
   function syncAttention(): void {
     const activeThreadId = store.getState().activeThreadId
+    // A side chat's question flags its parent: the side chat has no sidebar row.
     const waiting = queue
-      .map((req) => req.threadId)
+      .map((req) => (req.threadId ? attentionThreadId(store, req.threadId) : undefined))
       .filter((id): id is string => !!id && id !== activeThreadId)
     setAttentionThreads(store, 'ask', waiting)
     // Every queue mutation ends here, so this is where other surfaces hear of it.
@@ -95,7 +104,19 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
     if (!active) return
     clear(form)
     inputs = []
-    form.append(el('h3', { class: 'ask-user-title' }, 'The agent has a question'))
+    const asker = sideChatPromptOrigin(store, [active.threadId])
+    form.append(
+      el(
+        'h3',
+        { class: 'ask-user-title' },
+        asker ? 'A side chat has a question' : 'The agent has a question',
+      ),
+    )
+    if (asker) {
+      form.append(el('p', { class: 'ask-user-origin' }, asker.label))
+      // Show the asking side chat beside its parent so the question has its context.
+      store.emit('side_chat_open_requested', asker.firstSideChatId)
+    }
 
     active.questions.forEach((q, i) => {
       const questionId = `ask-user-question-${String(i)}`
@@ -122,15 +143,23 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
         for (const option of q.options) {
           const button = el('button', { type: 'button', class: 'ask-user-option' })
           setInlineMarkdown(button, option)
+          const answer = button.textContent
+          if (option === q.recommendedOption) {
+            button.classList.add('ask-user-option-recommended')
+            button.append(el('span', { class: 'ask-user-recommended-label' }, 'Recommended'))
+          }
           button.addEventListener('click', () => {
             // Insert the rendered label, not its Markdown source, so selecting
             // a command does not put raw backticks back into the visible field.
-            input.value = button.textContent
+            input.value = answer
             input.focus()
           })
           optionRow.append(button)
         }
         field.append(optionRow)
+      }
+      if (q.recommendationReason) {
+        field.append(el('p', { class: 'ask-user-recommendation-reason' }, q.recommendationReason))
       }
       field.append(input)
       form.append(field)
@@ -357,6 +386,8 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
           threadId: req.threadId,
           questions: req.questions.map((q) => q.question),
           options: req.questions.map((q) => q.options ?? []),
+          recommendedOptions: req.questions.map((q) => q.recommendedOption),
+          recommendationReasons: req.questions.map((q) => q.recommendationReason),
           receivedAt: req.receivedAt,
         })),
     answer: answerFrom,

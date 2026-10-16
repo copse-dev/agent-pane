@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -13,7 +13,8 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
 
   before(async () => {
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-file-search-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-file-search-')), 'workspace')
+    mkdirSync(workspaceRoot)
     mkdirSync(join(workspaceRoot, 'src'), { recursive: true })
     writeFileSync(join(workspaceRoot, 'README.md'), '# Fixture\n', 'utf8')
     writeFileSync(join(workspaceRoot, 'src', 'zebra-widget.ts'), 'export const zebra = 1\n', 'utf8')
@@ -25,7 +26,7 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('opens on Cmd/Ctrl+P, lists matches while typing, and opens the chosen file', async () => {
@@ -57,6 +58,17 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
     const firstName = await $('.file-search-item .file-search-name').getElement()
     await expect(firstName).toHaveText(expect.stringContaining('zebra-widget.ts'))
 
+    // Keep the focused caret visible instead of capturing either blink phase.
+    // Electron's pinned Chromium supports a steady caret without blurring the
+    // search field or hiding its focus state.
+    const steadyCaret = await browser.execute(() => {
+      const field = document.querySelector<HTMLElement>('.file-search-input')
+      if (!field || !CSS.supports('caret-animation', 'manual')) return false
+      field.style.setProperty('caret-animation', 'manual')
+      return getComputedStyle(field).getPropertyValue('caret-animation') === 'manual'
+    })
+    expect(steadyCaret).toBe(true)
+    await expect(input).toBeFocused()
     await saveAppScreenshot('file-search-palette.png')
 
     // Choosing the match closes the palette, opens the explorer, and loads the

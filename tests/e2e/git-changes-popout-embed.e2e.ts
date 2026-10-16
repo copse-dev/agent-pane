@@ -132,7 +132,7 @@ describe('git changes embed alongside pop-out (#1753)', function () {
       timeoutMsg: 'expected a pop-out window',
     })
     const popoutHandle = (await browser.getWindowHandles()).find((h) => !before.includes(h))
-    if (!popoutHandle) throw new Error('Expected a new pop-out window handle')
+    if (!popoutHandle) throw new Error('Missing Changes pop-out handle')
 
     await browser.switchToWindow(popoutHandle)
     await browser.waitUntil(
@@ -148,6 +148,72 @@ describe('git changes embed alongside pop-out (#1753)', function () {
       timeoutMsg: `pop-out never showed diff decorations: ${await describeViewer()}`,
     })
     await waitForFixtureRows()
+    await expect($('.git-changes-header-owner')).toBeDisplayed()
+    const originalOwner = await $('.git-changes-header-owner').getText()
+    await browser.switchToWindow(mainHandle)
+    await browser.execute((nextTitle) => {
+      const title = document.querySelector('.chat-row.selected .chat-title')
+      if (!title) throw new Error('active thread title missing')
+      title.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
+      const input = document.querySelector<HTMLInputElement>('.chat-title-rename')
+      if (!input) throw new Error('rename input missing')
+      input.focus()
+      input.value = nextTitle
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      )
+    }, 'Review Changes owner')
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Review Changes owner')
+    await browser.waitUntil(async () =>
+      browser.execute(async () => {
+        const projectId = (await window.api.windowState.getNavigation()).activeProjectId
+        if (!projectId) return false
+        return (await window.api.threads.loadProject(projectId)).some(
+          (thread) => thread.title === 'Review Changes owner',
+        )
+      }),
+    )
+    await browser.switchToWindow(popoutHandle)
+    await browser.execute(() => window.dispatchEvent(new Event('focus')))
+    await expect($('.git-changes-header-owner')).toHaveText(
+      expect.stringContaining('Review Changes owner'),
+    )
+    await parkPointer()
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-popout-renamed-owner.png'))
+    // Restore the deterministic original title for the existing capture.
+    await browser.switchToWindow(mainHandle)
+    await browser.execute(
+      (nextTitle) => {
+        document
+          .querySelector('.chat-row.selected .chat-title')
+          ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
+        const input = document.querySelector<HTMLInputElement>('.chat-title-rename')
+        if (!input) throw new Error('rename input missing')
+        input.focus()
+        input.value = nextTitle
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+        )
+      },
+      originalOwner.split(' · ')[0] ?? originalOwner,
+    )
+    await browser.waitUntil(async () =>
+      browser.execute(
+        async (title) => {
+          const projectId = (await window.api.windowState.getNavigation()).activeProjectId
+          if (!projectId) return false
+          return (await window.api.threads.loadProject(projectId)).some(
+            (thread) => thread.title === title,
+          )
+        },
+        originalOwner.split(' · ')[0] ?? originalOwner,
+      ),
+    )
+    await browser.switchToWindow(popoutHandle)
+    await browser.execute(() => window.dispatchEvent(new Event('focus')))
+    await expect($('.git-changes-header-owner')).toHaveText(originalOwner)
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-popout-embed-popout.png'))
 
     // Back in the main window, the docked pane must still be coloured, and must

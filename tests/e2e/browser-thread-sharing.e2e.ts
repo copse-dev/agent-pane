@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
 import { mkdirSync } from 'node:fs'
+import type { WebviewTag } from 'electron'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { navigateActiveBrowserTab } from './helpers/browser-address.ts'
 import {
@@ -12,7 +13,7 @@ import {
 import { listenOnFixturePort } from './helpers/fixture-server.ts'
 import {
   E2E_SCREENSHOT_DIR,
-  saveAppScreenshot,
+  saveAppViewportScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
 
@@ -162,6 +163,30 @@ describe('browser context sharing with a thread', function () {
     assert.match((await image.getAttribute('src')) ?? '', /^data:image\/png;base64,/)
 
     await browser.pause(2_100)
-    await saveAppScreenshot('browser-thread-sharing-attachments.png')
+    await saveAppViewportScreenshot('browser-thread-sharing-attachments.png', async () => {
+      await browser.waitUntil(
+        () =>
+          browser.execute(async () => {
+            const guest = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
+            if (!guest) return false
+            const width: unknown = await guest.executeJavaScript('window.innerWidth')
+            return (
+              typeof width === 'number' &&
+              Math.abs(width - guest.getBoundingClientRect().width) <= 1
+            )
+          }),
+        { timeout: 10_000, timeoutMsg: 'guest must resize to the framed browser pane' },
+      )
+      const contentFits = await browser.execute(async () => {
+        const guest = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
+        if (!guest) return false
+        const fits: unknown = await guest.executeJavaScript(`
+          document.documentElement.scrollWidth <= window.innerWidth &&
+          document.querySelector('article').getBoundingClientRect().right <= window.innerWidth
+        `)
+        return fits === true
+      })
+      expect(contentFits).toBe(true)
+    })
   })
 })

@@ -75,6 +75,33 @@ function fakeSettings(agents: AcpAgentConfig[]): {
 }
 
 describe('acpOptionGroupsFor', () => {
+  it('omits mode selectors in Agent managed while retaining other agent options', () => {
+    const agent = {
+      ...AGENT,
+      availableConfigOptions: [
+        ...(AGENT.availableConfigOptions ?? []),
+        {
+          configId: 'mode',
+          name: 'Mode',
+          category: 'mode' as const,
+          currentValue: 'plan',
+          choices: [
+            { value: 'plan', label: 'Plan' },
+            { value: 'auto', label: 'Auto' },
+          ],
+        },
+      ],
+    }
+    assert.deepEqual(
+      acpOptionGroupsFor(agent, true).map((group) => group.id),
+      ['thinking'],
+    )
+    assert.deepEqual(
+      acpOptionGroupsFor(AGENT, true).map((group) => group.id),
+      ['thinking'],
+    )
+  })
+
   it('offers the agent’s non-model selectors, plus its session modes', () => {
     assert.deepEqual(
       acpOptionGroupsFor(AGENT).map((group) => [group.id, group.kind, group.label]),

@@ -1,5 +1,6 @@
 import { nonEmptyStringOr } from '@copse/std/unknown-value.ts'
 import { updateChromeOptions } from './tests/e2e/helpers/chrome-options.ts'
+import { hydrateScreenshots } from './scripts/lib/screenshot-hydration.mts'
 import { browser } from '@wdio/globals'
 import { resolveElectronExecutable } from './tests/e2e/helpers/electron-executable.ts'
 import { createRequire } from 'node:module'
@@ -59,7 +60,12 @@ let e2eUserDataDir: string | null = null
 let cleanupE2eUserDataDir: (() => void) | null = null
 
 export const config: WebdriverIO.Config = {
+  onPrepare: async () => {
+    await hydrateScreenshots()
+  },
   runner: 'local',
+  // Preserve v9's first-match `$` behavior for the existing fixture selectors.
+  strictSelectors: false,
   // Keep the runner + chromedriver logs instead of discarding them. When a spec
   // dies with "Unable to connect to http://localhost:PORT", that message is the
   // symptom; the driver's own log is the only place the cause is written down.
@@ -78,7 +84,7 @@ export const config: WebdriverIO.Config = {
   // scripts/run-e2e.mts owns headless Linux's Xvfb lifecycle so it can size the
   // framebuffer for the pinned 2x DPR. WDIO's built-in Xvfb uses 1280x1024,
   // which leaves only 640x512 logical pixels and changes the app's layout.
-  autoXvfb: false,
+  displayServerEnabled: false,
   capabilities: [
     {
       browserName: 'chrome',
@@ -224,6 +230,9 @@ export const config: WebdriverIO.Config = {
 
     const e2eEnv: Record<string, string> = {
       COPSE_E2E: '1',
+      COPSE_E2E_MOBILE_NETWORK: specs.some((spec) => spec.endsWith('settings-experimental.e2e.ts'))
+        ? '1'
+        : '0',
       COPSE_PANEL_MOCK_LLM: '1',
       COPSE_PANEL_MOCK_GH: '1',
       // Deterministic Claude/Codex plan bars in Settings → Usage (no real OAuth).

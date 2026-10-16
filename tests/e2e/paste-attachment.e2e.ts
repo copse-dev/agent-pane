@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
@@ -54,7 +54,8 @@ describe('Pasting text into the composer', () => {
 
   before(async function () {
     this.timeout(120_000)
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-paste-attachment-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-paste-attachment-')), 'workspace')
+    mkdirSync(workspaceRoot)
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
@@ -66,7 +67,7 @@ describe('Pasting text into the composer', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('keeps a short multi-line paste inline instead of folding it into a chip', async () => {
@@ -127,20 +128,32 @@ describe('Pasting text into the composer', () => {
     // chip (composer block -> Message.attachments -> conversation.ts), not an
     // emoji or the raw pasted text.
     await $('.submit-btn').click()
-    const sentChip = await $(
-      '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste',
-    ).getElement()
-    await sentChip.waitForExist({ timeout: 10_000 })
-    expect(await sentChip.$('svg[data-icon="paste"]').isExisting()).toBe(true)
-    expect(await sentChip.getText()).toContain('Editor feedback summary')
-    expect(
-      await chipCorner(
-        '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste',
-      ),
-    ).toBe('6px')
+    // The sent row keeps re-rendering while the reply streams in, so an element
+    // handle taken from it goes stale between finding the chip and reading it
+    // (a WebDriver "stale element reference" in CI). Read the chip in-page,
+    // the same way `layout` reads the composer above.
+    const SENT_CHIP =
+      '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste'
+    const sentChip = await browser.waitUntil(
+      () =>
+        browser.execute((target: string) => {
+          const chip = document.querySelector(target)
+          if (!(chip instanceof HTMLElement)) return null
+          const row = chip.closest('.msg-user')
+          return {
+            hasIcon: chip.querySelector('svg[data-icon="paste"]') !== null,
+            text: chip.textContent,
+            messageText: row?.querySelector('.message-text')?.textContent ?? '',
+          }
+        }, SENT_CHIP),
+      { timeout: 10_000, timeoutMsg: 'expected the sent paste chip in the transcript' },
+    )
+    expect(sentChip.hasIcon).toBe(true)
+    expect(sentChip.text).toContain('Editor feedback summary')
+    expect(await chipCorner(SENT_CHIP)).toBe('6px')
     // The object-replacement placeholder that marks the paste position never
     // shows as literal text.
-    expect(await $('.messages-list .msg-user .message-text').getText()).not.toContain('￼')
+    expect(sentChip.messageText).not.toContain('￼')
 
     await waitForAgentIdle()
     await expect($('.messages-list .msg-assistant .message-text')).toHaveText(

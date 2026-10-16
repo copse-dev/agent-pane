@@ -2,12 +2,15 @@ import '../../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
-import type { ProviderPlanResult } from '@copse/plan-usage'
+import { createFakeApi } from '../../fake-api.test-support.ts'
+import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
 import type { PlanWorthItPayload } from '@shared/usage/plan-worth-it.ts'
 import type { ModelUsageBreakdown } from '@shared/usage/aggregate-usage.ts'
 import {
   claudeReasonNeedsLogin,
+  createUsageSection,
   createPlanSignInHandler,
+  renderClassifierTable,
   renderModelTable,
   renderPlanProvider,
   renderPlanWorthItSection,
@@ -20,7 +23,11 @@ function claudeUnavailable(reason: string): ProviderPlanResult {
 describe('claudeReasonNeedsLogin', () => {
   it('matches sign-in / credential reasons a re-login would fix', () => {
     assert.equal(
-      claudeReasonNeedsLogin('Claude credentials were rejected. Re-run `claude /login`.'),
+      claudeReasonNeedsLogin('No Claude OAuth token (sign in with `claude auth login`)'),
+      true,
+    )
+    assert.equal(
+      claudeReasonNeedsLogin('Claude credentials were rejected. Re-run `claude auth login`.'),
       true,
     )
     assert.equal(
@@ -28,7 +35,7 @@ describe('claudeReasonNeedsLogin', () => {
       true,
     )
     assert.equal(
-      claudeReasonNeedsLogin('No Claude OAuth token (sign in with `claude /login`)'),
+      claudeReasonNeedsLogin('No Claude OAuth token (sign in with `claude auth login`)'),
       true,
     )
   })
@@ -60,7 +67,7 @@ describe('renderPlanProvider sign-in button', () => {
     let clicked = 0
     renderPlanProvider(
       host,
-      claudeUnavailable('Claude credentials were rejected. Re-run `claude /login`.'),
+      claudeUnavailable('Claude credentials were rejected. Re-run `claude auth login`.'),
       {
         claude: () => {
           clicked += 1
@@ -74,9 +81,10 @@ describe('renderPlanProvider sign-in button', () => {
     // in the hint and in the button's plain-text tooltip alike.
     const hint = host.querySelector('.usage-plan-status')
     assert.ok(hint)
-    assert.equal(hint.querySelector('code')?.textContent, 'claude /login')
+    assert.equal(hint.querySelector('code')?.textContent, 'claude auth login')
     assert.doesNotMatch(hint.textContent, /`/)
     assert.doesNotMatch(btn.title, /`/)
+    assert.equal(btn.title, 'Open a terminal and run claude auth login')
     btn.click()
     assert.equal(clicked, 1)
   })
@@ -99,7 +107,7 @@ describe('renderPlanProvider sign-in button', () => {
     const host = document.createElement('div')
     renderPlanProvider(
       host,
-      claudeUnavailable('Claude credentials were rejected. Re-run `claude /login`.'),
+      claudeUnavailable('Claude credentials were rejected. Re-run `claude auth login`.'),
       {},
     )
     assert.equal(host.querySelector('.usage-plan-signin-btn'), null)
@@ -243,11 +251,16 @@ describe('renderPlanProvider credit windows', () => {
 })
 
 describe('createPlanSignInHandler', () => {
-  it('closes settings and requests `claude /login` in a terminal', () => {
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
-    const commands: string[] = []
-    store.on('request_terminal_command', (cmd) => {
-      commands.push(cmd)
+  it('closes settings and requests `claude auth login` in a terminal', () => {
+    const store = createStore({
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+      activeProjectId: 'ssh-project',
+      workspaceRoot: '/remote/project',
+    })
+    const commands: { command: string; executionTarget?: 'local' }[] = []
+    store.on('request_terminal_command', (cmd, options) => {
+      commands.push({ command: cmd, ...options })
     })
     let closed = 0
     const handler = createPlanSignInHandler(store, 'claude', () => {
@@ -255,7 +268,7 @@ describe('createPlanSignInHandler', () => {
     })
     assert.ok(handler)
     handler()
-    assert.deepEqual(commands, ['claude /login'])
+    assert.deepEqual(commands, [{ command: 'claude auth login', executionTarget: 'local' }])
     assert.equal(closed, 1)
   })
 
@@ -277,6 +290,56 @@ describe('createPlanSignInHandler', () => {
 
   it('returns null without a store to route through', () => {
     assert.equal(createPlanSignInHandler(undefined, 'claude'), null)
+  })
+})
+
+describe('usage refresh after sign-in', () => {
+  it('forces a fresh plan read on return until Claude becomes available', async () => {
+    const base = createFakeApi()
+    const store = createStore()
+    const forced: boolean[] = []
+    let claude: ProviderPlanResult = claudeUnavailable('Claude’s access token has expired.')
+    const api = {
+      ...base,
+      usage: {
+        ...base.usage,
+        getPlanUsage: async (force?: boolean): Promise<PlanUsageSnapshot> => {
+          forced.push(force === true)
+          return { checkedAt: new Date().toISOString(), providers: [claude] }
+        },
+      },
+    }
+    const section = createUsageSection(api, store)
+    await section.refresh()
+    const signIn = section.root.querySelector<HTMLButtonElement>('.usage-plan-signin-btn')
+    assert.ok(signIn)
+    signIn.click()
+
+    forced.length = 0
+    await section.refresh()
+    assert.ok(forced.includes(true), 'returning after sign-in must bypass the plan cache')
+    assert.equal(
+      section.root.querySelector('.usage-plan-provider')?.getAttribute('data-status'),
+      'unavailable',
+    )
+
+    claude = {
+      status: 'ok',
+      provider: 'claude',
+      usage: { provider: 'claude', plan: 'Pro', windows: [], checkedAt: new Date().toISOString() },
+    }
+    forced.length = 0
+    await section.refresh()
+    assert.ok(forced.includes(true), 'keep checking until the login succeeds')
+    assert.equal(
+      section.root.querySelector('.usage-plan-provider')?.getAttribute('data-status'),
+      'ok',
+    )
+
+    forced.length = 0
+    await section.refresh()
+    assert.equal(forced.includes(true), false, 'ordinary reads remain cached after recovery')
+    section.detach()
   })
 })
 
@@ -462,7 +525,7 @@ describe('renderPlanWorthItSection', () => {
     renderPlanWorthItSection(
       host,
       payload('insufficient_history', {
-        reason: 'Need a couple of completed weekly windows',
+        reason: 'Need a couple of completed weekly windows — reopen Usage after resets.',
         monthlyFeeUsd: null,
         apiEquivalentBurnPerWeek: null,
         completedWeeklyCount: 0,
@@ -475,5 +538,51 @@ describe('renderPlanWorthItSection', () => {
       'insufficient_history',
     )
     assert.match(host.querySelector('.usage-worth-reason')?.textContent ?? '', /completed weekly/)
+    assert.match(host.querySelector('.usage-worth-reason')?.textContent ?? '', /· reopen Usage/)
+    assert.doesNotMatch(host.querySelector('.usage-worth-reason')?.textContent ?? '', /—/)
+  })
+})
+
+describe('renderClassifierTable', () => {
+  const rows = [
+    { provider: 'Kev (local)', model: 'kev-4b', inputTokens: 12_400, outputTokens: 310, calls: 42 },
+    {
+      provider: '<img src=x onerror=alert(1)>',
+      model: '<b>m</b>',
+      inputTokens: 5,
+      outputTokens: 1,
+      calls: 1,
+    },
+  ]
+
+  it('lists each connection and model with calls and tokens, and no cost column', () => {
+    const host = document.createElement('div')
+    renderClassifierTable(host, rows, false)
+    assert.equal(host.querySelector('h4')?.textContent, 'Classifiers')
+    const headers = [...host.querySelectorAll('th')].map((th) => th.textContent)
+    assert.deepEqual(headers, ['Classifier', 'Model', 'Calls', 'Input', 'Output'])
+    const first = [...(host.querySelector('tbody tr')?.querySelectorAll('td') ?? [])].map(
+      (td) => td.textContent,
+    )
+    assert.deepEqual(first, ['Kev (local)', 'kev-4b', '42', '12.4k', '310'])
+  })
+
+  it('shows a connection label as text, never as markup', () => {
+    const host = document.createElement('div')
+    renderClassifierTable(host, rows, false)
+    assert.equal(host.querySelector('img'), null)
+    assert.equal(host.querySelector('b'), null)
+    assert.match(host.textContent, /<img src=x onerror=alert\(1\)>/)
+  })
+
+  it('says so when a window has no classifier calls, and explains All time', () => {
+    const empty = document.createElement('div')
+    renderClassifierTable(empty, [], false)
+    assert.equal(empty.querySelector('table'), null)
+    assert.match(empty.textContent, /No classifier usage in this period/)
+    const allTime = document.createElement('div')
+    renderClassifierTable(allTime, rows, true)
+    assert.equal(allTime.querySelector('table'), null)
+    assert.match(allTime.textContent, /day, month and 90-day windows only/)
   })
 })

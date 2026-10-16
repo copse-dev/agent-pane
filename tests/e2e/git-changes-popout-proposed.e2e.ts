@@ -1,9 +1,10 @@
 import { at } from '@copse/std/array-utils.ts'
-import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { waitForAgentIdle } from './helpers.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import {
   assertPopoutModesAllShown,
@@ -22,23 +23,18 @@ const WORKSPACE = join(tmpdir(), 'copse-e2e-popout-proposed-workspace')
 // while the pop-out is open, approvals made in either window, and a proposal
 // arriving while the main window's panel is closed.
 
-async function waitForAgentIdle(timeoutMs = 60_000): Promise<void> {
-  await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
-    timeout: timeoutMs,
-    interval: 500,
-    timeoutMsg: 'Agent did not return to idle',
-  })
-}
-
 async function proposeFileChange(path: string, content: string): Promise<void> {
   const args = { path, content }
-  await prepareMockToolTurn(
+  const scenario = await prepareMockToolTurn(
     `Propose an update to ${path}.`,
     { name: 'write_file', args },
     'The proposed file change is ready for review.',
   )
   await $('.submit-btn').click()
+  await scenario.waitForComplete()
+  await expectAssistantReply('The proposed file change is ready for review.')
   await waitForAgentIdle()
+  await scenario.assertComplete()
 }
 
 async function hasDecorations(): Promise<boolean> {

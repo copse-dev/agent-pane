@@ -56,6 +56,8 @@ describe('tokenPrinterReason', () => {
     for (const command of [
       'gh auth status --show-token',
       'gh auth status -t',
+      'gh auth status --show-token=true',
+      'gh auth status -at',
       'security dump-keychain -d login.keychain',
       'gcloud auth print-access-token',
       'gcloud auth application-default print-access-token',

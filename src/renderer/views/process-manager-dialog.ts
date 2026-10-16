@@ -1,3 +1,4 @@
+import { createNetworkActivityView } from './network-activity-view.ts'
 import type { ProcessManagerSnapshot, ProcessManagerRow } from '@shared/types/process-manager.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -125,6 +126,40 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
   const status = el('p', { class: 'process-manager-status', role: 'status' }, 'Loading processes…')
   const summary = el('p', { class: 'process-manager-summary', role: 'status' })
   const updated = el('span', { class: 'process-manager-updated', 'aria-hidden': 'true' })
+  const processScroll = el('div', { class: 'process-manager-scroll' }, table)
+  const network = createNetworkActivityView(threadLabel)
+  network.element.hidden = true
+  const processesButton = el(
+    'button',
+    { type: 'button', class: 'process-manager-tab', 'aria-pressed': 'true' },
+    'Processes',
+  )
+  const networkButton = el(
+    'button',
+    { type: 'button', class: 'process-manager-tab', 'aria-pressed': 'false' },
+    'Network',
+  )
+  const footerHint = el('span', {}, 'CPU is approximate; memory is physical RAM in MiB.')
+  let showingNetwork = false
+  function showNetwork(value: boolean): void {
+    showingNetwork = value
+    dialog.dataset['view'] = value ? 'network' : 'processes'
+    processScroll.hidden = value
+    summary.hidden = value
+    network.element.hidden = !value
+    processesButton.setAttribute('aria-pressed', String(!value))
+    networkButton.setAttribute('aria-pressed', String(value))
+    footerHint.textContent = value
+      ? 'Updates every second · Metadata only'
+      : 'CPU is approximate; memory is physical RAM in MiB.'
+    if (current) render(current)
+  }
+  processesButton.addEventListener('click', () => {
+    showNetwork(false)
+  })
+  networkButton.addEventListener('click', () => {
+    showNetwork(true)
+  })
   dialog.append(
     el(
       'div',
@@ -136,18 +171,20 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
           'div',
           {},
           el('h2', { id: 'process-manager-title' }, 'Process Manager'),
-          el('p', { class: 'process-manager-subtitle' }, 'Live Copse and managed task processes'),
+          el('p', { class: 'process-manager-subtitle' }, 'Live processes and network activity'),
         ),
         closeButton,
       ),
-      el('div', { class: 'process-manager-scroll' }, table),
-      summary,
       el(
-        'footer',
-        { class: 'process-manager-footer' },
-        el('span', {}, 'CPU is approximate; memory is physical RAM in MiB.'),
-        updated,
+        'div',
+        { class: 'process-manager-tabs', role: 'group', 'aria-label': 'Process manager view' },
+        processesButton,
+        networkButton,
       ),
+      processScroll,
+      network.element,
+      summary,
+      el('footer', { class: 'process-manager-footer' }, footerHint, updated),
       status,
     ),
   )
@@ -291,6 +328,7 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
   }
 
   function render(snapshot: ProcessManagerSnapshot): void {
+    if (showingNetwork) network.render(snapshot.network, snapshot.sampledAt)
     const focusedGroup =
       document.activeElement instanceof HTMLElement &&
       body.contains(document.activeElement) &&
@@ -392,7 +430,8 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
     }
     updated.textContent = `Updated ${new Date(snapshot.sampledAt).toLocaleTimeString()}`
     dialog.dataset['sampledAt'] = String(snapshot.sampledAt)
-    status.textContent = snapshot.processes.length === 0 ? 'No processes found.' : ''
+    status.textContent =
+      !showingNetwork && snapshot.processes.length === 0 ? 'No processes found.' : ''
   }
 
   function isRequestCurrent(requestGeneration: number): boolean {
@@ -444,7 +483,8 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
     if (dialog.open) return
     current = null
     clear(body)
-    status.textContent = 'Loading processes…'
+    network.render(undefined, Date.now())
+    status.textContent = 'Loading activity…'
     updated.textContent = ''
     open()
     closeButton.focus({ preventScroll: true })

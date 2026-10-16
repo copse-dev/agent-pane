@@ -5,6 +5,8 @@
 @import './global/ui.css';
 @import './global/layout.css';
 @import './global/pr-thread-relationships.css';
+@import './global/thread-context.css';
+@import './global/side-chat.css';
 @import './global/titlebar.css';
 @import './global/forms.css';
 @import './global/model-picker.css';
@@ -19,6 +21,7 @@
 @import './global/onboarding.css';
 @import './global/approval.css';
 @import './global/ask-user.css';
+@import './global/thread-plan.css';
 @import './global/ssh-prompt.css';
 @import './global/update-prompt.css';
 @import './global/product-announcement.css';
@@ -48,6 +51,7 @@
 @import './global/tooltip.css';
 @import './global/pr-link-preview.css';
 @import './global/ssh-workspace.css';
+@import './global/mobile-companion.css';
 @import './global/memories.css';
 @import './global/ports.css';
 @import './global/vnc.css';

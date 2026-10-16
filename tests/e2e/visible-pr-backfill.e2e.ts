@@ -78,6 +78,22 @@ describe('visible legacy thread PR backfill', () => {
     await laterChip.waitForExist({ timeout: 15_000 })
     await expect(laterChip).toHaveAttribute('aria-label', expect.stringMatching(/merged/i))
     await browser.waitUntil(() => metaHasPrRefs('thread-11'), { timeout: 15_000 })
-    await saveElementScreenshot('#pane-projects', 'visible-pr-backfill.png')
+    await saveElementScreenshot('#pane-projects', 'visible-pr-backfill.png', {
+      beforeCapture: async () => {
+        // The Settings footer overflows its hidden pane by half a CSS pixel.
+        // scrollIntoView can pan that pane while revealing the last thread;
+        // the inner list owns scrolling, so return the outer frame to origin.
+        await browser.execute(() => {
+          const pane = document.getElementById('pane-projects')
+          if (!pane) throw new Error('Projects pane is missing')
+          pane.scrollTop = 0
+        })
+        expect(await $('#pane-projects').getProperty('scrollTop')).toBe(0)
+        await expect($('.chat-row[data-thread-id="thread-11"] .chat-pr-status')).toHaveAttribute(
+          'aria-label',
+          expect.stringMatching(/merged/i),
+        )
+      },
+    })
   })
 })

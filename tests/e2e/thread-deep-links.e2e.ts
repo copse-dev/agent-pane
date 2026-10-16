@@ -80,6 +80,7 @@ describe('native thread deep links', () => {
     await expect($('.messages-list .msg-user')).toHaveText(
       expect.stringContaining('Cold launch destination'),
     )
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
     await saveAppScreenshot('thread-deep-link-cold-launch.png')
 
     // The OS protocol handler launches another process; the real single-instance

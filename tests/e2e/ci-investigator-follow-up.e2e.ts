@@ -1,7 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import {
   completeMockTurn,
@@ -19,7 +19,8 @@ describe('CI investigator follow-up', () => {
   before(async function () {
     this.timeout(120_000)
     resetUserData()
-    workspace = mkdtempSync(join(tmpdir(), 'copse-follow-up-investigate-ci-'))
+    workspace = join(mkdtempSync(join(tmpdir(), 'copse-follow-up-investigate-ci-')), 'workspace')
+    mkdirSync(workspace)
     fixtureBin = mkdtempSync(join(tmpdir(), 'copse-follow-up-gh-'))
     seedCleanFeatureBranch(workspace)
     writeFailingPrGhFixture(fixtureBin)
@@ -42,7 +43,7 @@ describe('CI investigator follow-up', () => {
       PATH: originalPath,
     })
     resetUserData()
-    if (workspace) rmSync(workspace, { recursive: true, force: true })
+    if (workspace) rmSync(dirname(workspace), { recursive: true, force: true })
     if (fixtureBin) rmSync(fixtureBin, { recursive: true, force: true })
   })
 
@@ -52,6 +53,7 @@ describe('CI investigator follow-up', () => {
     await ciBubble.waitForDisplayed({ timeout: 30_000 })
     await expect(ciBubble).toHaveText('Investigate CI failure')
 
+    await $('.footer-indexing').waitForDisplayed({ timeout: 30_000, reverse: true })
     await saveAppScreenshot('follow-up-suggestions-investigate-ci.png')
     await scenario.assertComplete()
   })

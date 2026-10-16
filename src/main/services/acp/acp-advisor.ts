@@ -105,7 +105,7 @@ export async function runAcpAdvisorPrompt(options: {
   const agent = getAcpAgent(options.agentId)
   if (!agent) {
     throw new Error(
-      `The advisor agent "${options.agentId}" is not configured or is disabled. Add it in Settings → General → Providers.`,
+      `The advisor agent "${options.agentId}" is not configured or is disabled. Add it in Settings → General → Coding agents.`,
     )
   }
   const cwd = getAgentExecutionRoot()

@@ -3,7 +3,8 @@
 Copse stores classifier connections separately from chat providers. Open **Settings → Classifiers**
 to add a Liquid/d1, TypeSafe/Jev, Kev, SemIf, Featherless/Simple Jev, or compatible custom connection. Saving a
 profile or its key makes no inference request. **Test** submits a small sample and displays the
-answer and duration. These profiles are available for safety screening, background questions and
+answer and duration. These profiles are available for safety screening, background questions, the
+`ask_classifier` tool and
 evals; they never appear as chat models. With **Match task**, the background
 classifier assesses the first ask’s reasoning demand before Copse picks the primary model.
 This assessment has a five-second budget and respects cancellation. An unavailable or
@@ -116,8 +117,9 @@ The roadmap labels share one question definition (`BackgroundChoiceQuestion` in
    spend the chat model on every save.
 
 Only an answer from a classifier carries probabilities, so a caller can apply a threshold only
-to that. When nothing answers, the item is left without a badge, as before. For every background
-question, classifier and model tokens are both recorded as `small-tasks` usage.
+to that. When nothing answers, the item is left without a badge, as before. Tokens a classifier
+reports are recorded as `classifier` usage, attributed to the connection and model that answered (see
+[Usage](#usage)); tokens the small-tasks or chat model spend stay `small-tasks` usage.
 
 Safety screening does not use this path: it has its own time budget, and a failed screening
 classifier asks the user rather than falling back to a model.
@@ -126,6 +128,46 @@ To compare a classifier connection with a small-tasks model on these questions, 
 `pnpm run eval:background-questions`. It asks both of them labelled cases through the product's own
 requests, prompts and parsers; see
 [`benchmarks/background-questions/README.md`](../benchmarks/background-questions/README.md).
+
+## The `ask_classifier` tool
+
+Copse's native model and ACP agents can ask a saved classifier a typed question about text or structured JSON state. ACP exposes the same `ask_classifier` tool through Copse's native-tool bridge, so calls use the same permission and classifier-service gates. The tool takes a classifier id, exactly one of `text` or `state`, a `type` of `choice` (2–16 distinct `options`), `boolean` (optional `criteria`), or `score` (2–10 ordered `levels`), and the `question`. Score requires an HTTP connection; SemIf supports choice and boolean. It returns one small JSON object with the classifier id, returned model, elapsed milliseconds, and the typed answer with probabilities. Choice is read from the probabilities, never the provider's `choice`; a tie goes to the option listed first. Score includes the numeric value, levels, and their probabilities. Nothing else the provider returned (metadata, request id, raw body) is passed on. Input over 20,000 characters is refused rather than cut, since a verdict on a prefix misleads.
+
+- **Native model offers only when a classifier is saved.** The tool is registered but withheld
+  from native model turns until a connection exists, as `video_frames` waits for a video, so its
+  schema costs no context before then. The ACP bridge advertises it at session setup and describes
+  the currently configured ids; a call without a saved connection returns a clear error. Saving a
+  connection from Settings or the one-click installer needs no restart.
+- **Egress follows the connection.** A connection that leaves the machine (any non-loopback HTTP
+  endpoint) asks before every call, showing the arguments that will be sent; a loopback server or a SemIf
+  scorer runs without a prompt. **Settings → Permissions → Tools** can set `ask_classifier` to
+  _Always allow_, _Ask_ or _Block_, and an explicit choice wins either way. Whatever the prompt
+  says, the call still goes through the classifier service, which re-checks host approval
+  (`assertApprovedProviderHost`) and redacts known saved keys from remote text, exactly as for
+  screening and background questions. A host that is not approved fails before anything is sent. The
+  tool is not available in read-only agent mode.
+- **Not a chat model.** Nothing here adds a classifier to a model picker or role-model list.
+- **Usage and context.** Each call is recorded as `classifier` usage in the thread's project. Its
+  schema counts under _Tools_ in the context wheel while offered, and its result counts under
+  _Conversation_ like any other tool result.
+
+## Usage
+
+Classifier calls have their own usage source, `classifier`, written by the `ask_classifier` tool,
+background questions, safety screening through a classifier, and the **Test** button. An event
+records the model the provider returned, the connection's label as `provider`, and the tokens the
+provider reported; a call that reports none records nothing, so a missing figure never reads as
+zero. **Settings → Usage** lists them in a _Classifiers_ table for the day, month and 90-day windows:
+one row per connection and model with calls, input and output tokens. They are not chat-model
+usage: they appear in neither the cloud nor the local table, add nothing to the cost headline, and
+never raise the "unpriced cloud usage" warning. All time is built from saved threads, which carry no
+classifier usage, so it shows an explanation instead. Classifier tokens are not part of the context
+wheel's thread usage either, since they are not that conversation's model tokens; they are in the
+ledger, attributed to the thread, and in Settings → Usage.
+
+Before this change, background and safety-screening classifier tokens were recorded as `small-tasks`
+and `safety-classifier` usage under the classifier's model name, which appeared as an unpriced cloud
+model; existing ledger entries keep their old source for the 90 days they are retained.
 
 ## Liquid decision API
 
@@ -171,7 +213,7 @@ COPSE_CLASSIFIER_CACHE=/Volumes/Big/copse-classifier-cache pnpm run classifier:s
 COPSE_CLASSIFIER_CACHE=/Volumes/Big/copse-classifier-cache pnpm run classifier:serve -- winnow
 ```
 
-**Settings → Classifiers** does the same from the app. Opening it probes the loopback ports of the
+**Settings → Classifiers** does the same from the app (see below for what it checks and how it fails). Opening it probes the loopback ports of the
 servers below (a TCP connect, no request) and lists each as not installed, installed, or already
 running; a running one gets **Add connection**, which saves the preset profile. **Download and run**
 asks first, naming the size, source repository and required tools, then sets the server up in the
@@ -182,6 +224,33 @@ leaves ones started elsewhere alone; **Cancel** stops an install or load in prog
 downloaded or started until you confirm, and the connection is not chosen for safety screening
 or background questions automatically. A hosted preset whose provider key (`TYPESAFE_API_KEY`, `FEATHERLESS_API_KEY`) is
 already in the environment is offered as **Set up**; the key's value is never shown or copied.
+
+**Download and run** in detail:
+
+- **Detection** only probes the loopback port (a TCP connect, no request) and reads a marker file;
+  each server reads _Not installed_, _Installed_, _Running_ or _Detected running_ (someone else's).
+  The button is disabled and names `git`, `uv` or `python3` when it is missing.
+- **Before anything downloads:** the dialog names size, source and tools; declining runs nothing.
+  Confirming first checks the port is free and the cache's volume has about 1.25× the download
+  free, and stops with a message naming `COPSE_CLASSIFIER_CACHE` otherwise. A server already set up
+  skips the disk check.
+- **Failures** show on the row, with the failing command's last output line, and leave it ready to
+  retry with nothing half-saved: _offline_ ("Could not reach the network…"), _out of disk space_
+  (also mid-setup), a _pinned commit that cannot be fetched_ (setup code never runs at an unverified
+  revision), a _port already in use_, and a missing tool. `GIT_TERMINAL_PROMPT=0` stops a clone
+  waiting on credentials nobody can see. **Cancel** ends an install without an error.
+- **Stop** stops a server Copse started. **Uninstall** (offered only for a stopped, installed
+  server, after a confirmation) deletes that server's checkout, environment and model files from the
+  cache, plus Kev's Hugging Face weights; the shared uv package cache and the saved connection
+  stay, and it refuses while the server runs or the port is in use.
+
+Validation: `local-classifier-install.test.ts` runs the real manager and cache preparation with fake
+`git` and `python3` executables on `PATH` (`tests/helpers/fake-classifier-tools.ts`) and a real HTTP
+"server"; `settings-classifiers-install.e2e.ts` drives the same flow through the Electron app.
+Neither downloads anything. No real Kev or Winnow download has been run from an agent session: the
+sandbox could not reach the Kev repository or Hugging Face (2026-10-07), so real-weights behaviour
+(model load time, `--run` argument handling, memory) is verified only by the earlier manual runs
+above.
 
 The first run clones the server, installs it and downloads its weights (Kev about 8 GB, Winnow
 about 12.5 GB text-only). Every later run reuses the cache and downloads nothing. The checkout,

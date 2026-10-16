@@ -1,6 +1,6 @@
 # Main-process synchronous read audit
 
-Copse's Electron main process currently contains **39** `readFileSync` call sites in **23**
+Copse's Electron main process currently contains **39** `readFileSync` call sites in **24**
 production files. This register makes that debt explicit and shrink-only: the unit invariant in
 [`scripts/main-sync-read-invariants.test.ts`](../scripts/main-sync-read-invariants.test.ts) rejects a
 new call, a new file, an aliased import that could evade counting, or a stale baseline after a call is

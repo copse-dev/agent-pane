@@ -1,3 +1,4 @@
+import { deferred } from '../../../../tests/deferred.ts'
 import '../../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'node:test'
@@ -8,6 +9,7 @@ import type {
   ClassifierResult,
 } from '@copse/llm/classifiers/types.ts'
 import type { LocalClassifierOverview, LocalClassifierStatus } from '@shared/local-classifiers.ts'
+import { createFakeApi } from '../../fake-api.test-support.ts'
 import { createClassifiersSection } from './classifiers-section.ts'
 import { qsRequired } from '../../dom/helpers.ts'
 import {
@@ -146,6 +148,10 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
       },
       stop: async (id) => {
         state.localCalls.push(`stop:${id}`)
+        return structuredClone(state.local)
+      },
+      uninstall: async (id) => {
+        state.localCalls.push(`uninstall:${id}`)
         return structuredClone(state.local)
       },
       connect: async (id) => {
@@ -674,6 +680,91 @@ describe('classifier connections settings', () => {
     assert.deepEqual(state.localCalls, ['start:winnow', 'stop:winnow'])
   })
 
+  it('uninstalls a stopped server only after confirming what will be deleted', async () => {
+    const { section, state } = setup([])
+    state.local = { servers: [{ ...WINNOW_SERVER, phase: 'installed', saved: true }], hosted: [] }
+    await section.refresh()
+    const row = qsRequired(section.root, '[data-local-id="winnow"]')
+    qsRequired<HTMLButtonElement>(row, '.classifier-local-uninstall').click()
+    await setImmediate()
+    const dialog = document.querySelector('#confirm-dialog')
+    assert.match(dialog?.textContent ?? '', /Uninstall Winnow-12B\?/)
+    assert.match(dialog?.textContent ?? '', /12\.5 GB/)
+    assert.match(dialog?.textContent ?? '', /saved connection stays/)
+    clickActiveConfirmDialogCancel()
+    await setImmediate()
+    assert.deepEqual(state.localCalls, [])
+    qsRequired<HTMLButtonElement>(row, '.classifier-local-uninstall').click()
+    await setImmediate()
+    clickActiveConfirmDialogConfirm()
+    await setImmediate()
+    assert.deepEqual(state.localCalls, ['uninstall:winnow'])
+  })
+
+  it('offers no uninstall while a server runs, installs, or is someone else’s', async () => {
+    for (const phase of [
+      'running',
+      'installing',
+      'starting',
+      'external',
+      'not-installed',
+    ] as const) {
+      const { section, state } = setup([])
+      state.local = { servers: [{ ...WINNOW_SERVER, phase }], hosted: [] }
+      await section.refresh()
+      assert.equal(
+        section.root.querySelector('.classifier-local-uninstall'),
+        null,
+        `no uninstall while ${phase}`,
+      )
+      // An installing or starting server is polled; settle it so the timer ends.
+      state.local = { servers: [], hosted: [] }
+      await section.refresh()
+      document.body.replaceChildren()
+      mountConfirmDialog()
+    }
+  })
+
+  it('shows why a download failed on the row, beside a button that retries it', async () => {
+    const { section, state } = setup([])
+    state.local = {
+      servers: [
+        {
+          ...WINNOW_SERVER,
+          error:
+            'Not enough free disk space for Winnow-12B: about 15.6 GB is needed and 3.0 GB is free.',
+        },
+      ],
+      hosted: [],
+    }
+    await section.refresh()
+    const row = qsRequired(section.root, '[data-local-id="winnow"]')
+    assert.equal(row.getAttribute('data-phase'), 'not-installed')
+    assert.match(
+      qsRequired(row, '.classifier-local-error').textContent,
+      /Not enough free disk space for Winnow-12B/,
+    )
+    assert.equal(qsRequired<HTMLButtonElement>(row, '.classifier-local-install').disabled, false)
+  })
+
+  it('shows setup progress with a Cancel button instead of the download button', async () => {
+    const { section, state } = setup([])
+    state.local = {
+      servers: [{ ...WINNOW_SERVER, phase: 'installing', progress: '$ git clone --quiet …' }],
+      hosted: [],
+    }
+    await section.refresh()
+    const row = qsRequired(section.root, '[data-local-id="winnow"]')
+    assert.match(row.textContent, /git clone/)
+    assert.equal(row.querySelector('.classifier-local-install'), null)
+    qsRequired<HTMLButtonElement>(row, '.classifier-local-stop').click()
+    await setImmediate()
+    assert.deepEqual(state.localCalls, ['stop:winnow'])
+    // Cancelling settles the row, which ends the progress polling.
+    state.local = { servers: [WINNOW_SERVER], hosted: [] }
+    await section.refresh()
+  })
+
   it('opens a draft for a hosted classifier whose key is already in the environment', async () => {
     const { section, state } = setup([])
     state.local = {
@@ -687,5 +778,54 @@ describe('classifier connections settings', () => {
     assert.equal(field(section.root, 'Model').value, 'jev-latest')
     assert.equal(state.keys.length, 0)
     assert.equal(state.saves.length, 0)
+  })
+})
+
+describe('Classifier refresh visit isolation', () => {
+  it('ignores a nested profile reload from a closed visit', async () => {
+    document.body.innerHTML = ''
+    const base = createFakeApi()
+    const stale = deferred<ClassifierProfileStatus[]>()
+    let calls = 0
+    const oldProfile: ClassifierProfileStatus = {
+      profile: HTTP_PROFILE,
+      hasKey: false,
+      encrypted: null,
+    }
+    const freshProfile: ClassifierProfileStatus = {
+      ...oldProfile,
+      profile: { ...HTTP_PROFILE, id: 'fresh', label: 'Fresh classifier' },
+    }
+    const section = createClassifiersSection({
+      ...base,
+      classifiers: {
+        ...base.classifiers,
+        list: async () => {
+          calls += 1
+          if (calls === 2) return stale.promise
+          return calls === 1 ? [oldProfile] : [freshProfile]
+        },
+      },
+      localClassifiers: {
+        ...base.localClassifiers,
+        status: async () => ({
+          servers: [{ ...WINNOW_SERVER, saved: true, phase: 'running' }],
+          hosted: [],
+        }),
+      },
+    })
+    document.body.append(section.root)
+    const oldVisit = new AbortController()
+    await section.refresh(oldVisit.signal)
+    await setImmediate()
+    assert.equal(calls, 2)
+    oldVisit.abort()
+    await section.refresh(new AbortController().signal)
+    const chips = qsRequired(section.root, '[aria-label="Classifier profiles"]')
+    assert.match(chips.textContent, /Fresh classifier/)
+    stale.resolve([oldProfile])
+    await setImmediate()
+    assert.match(chips.textContent, /Fresh classifier/)
+    assert.doesNotMatch(chips.textContent, /Fixture classifier/)
   })
 })

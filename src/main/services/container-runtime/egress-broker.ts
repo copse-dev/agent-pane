@@ -23,11 +23,14 @@
  * Refusals are logged, because they can happen: a target the guest asked for
  * and did not get is exactly what a reviewer wants to see.
  */
+import { networkActivity } from '../diagnostics/network-activity.ts'
+import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns'
 import { connect, isIP, type Socket, type TcpSocketConnectOpts } from 'node:net'
 import type { Readable } from 'node:stream'
 import type { EgressLogEntry } from '@shared/types/container-run.ts'
 import { EgressLink, type EgressLinkOutput, type MuxStream } from './egress-link.ts'
+import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
 import {
   egressRuleAllows,
   findEgressRule,
@@ -59,6 +62,8 @@ export interface EgressBrokerOptions {
    * container's configuration.
    */
   runKey?: string
+  /** A run-scoped model stream, never a generic HTTP or credential endpoint. */
+  inference?: (stream: MuxStream) => Promise<void>
 }
 
 type LookupFunction = NonNullable<TcpSocketConnectOpts['lookup']>
@@ -170,12 +175,12 @@ async function dialOrigin(
 }
 
 /** Where to dial for a guest-named target, after any `resolve` remap. */
-function dialAddress(
+export function dialAddress(
   resolve: Readonly<Record<string, string>>,
   host: string,
   port: number,
 ): { host: string; port: number } {
-  const mapped = resolve[host]
+  const mapped = Object.hasOwn(resolve, host) ? resolve[host] : undefined
   if (mapped === undefined) return { host, port }
   const bracketedIpv6 = /^\[([^\]]+)\]:(\d{1,5})$/.exec(mapped.trim())
   const bracketedPort = Number(bracketedIpv6?.[2])
@@ -213,6 +218,8 @@ export function hostLocalAliasRefusal(
 }
 
 export class EgressBroker {
+  private readonly closeActivities = new Set<() => void>()
+  private readonly owner = currentThreadExecutionContext()
   private link: EgressLink | null = null
   private readonly entries: EgressLogEntry[] = []
   private readonly live = new Set<Socket | MuxStream>()
@@ -220,8 +227,10 @@ export class EgressBroker {
   private readonly resolve: Readonly<Record<string, string>>
   private readonly lookup = cachedLookup()
   private runKey: string | null
+  private readonly inference: EgressBrokerOptions['inference']
 
   constructor(options: EgressBrokerOptions) {
+    this.inference = options.inference
     this.rules = options.rules
     this.resolve = options.resolve ?? {}
     const refusal = hostLocalAliasRefusal(this.rules, this.resolve)
@@ -254,6 +263,37 @@ export class EgressBroker {
   private open(id: number, target: string): void {
     const link = this.link
     if (!link) return
+    if (target === HOST_INFERENCE_TARGET) {
+      if (!this.inference || findEgressRule(this.rules, 'inference.copse.internal', 443) === null) {
+        this.refuse(link, id, target, 'no host inference for this run')
+        return
+      }
+      const stream = link.accept(id)
+      stream.on('error', () => {
+        this.entries.push({
+          at: Date.now(),
+          origin: target,
+          event: 'error',
+          detail: 'host inference channel closed',
+        })
+      })
+      this.live.add(stream)
+      this.entries.push({
+        at: Date.now(),
+        origin: target,
+        event: 'connect',
+        detail: 'host-authenticated model inference',
+      })
+      void this.inference(stream)
+        .finally(() => {
+          this.live.delete(stream)
+          this.entries.push({ at: Date.now(), origin: target, event: 'close' })
+        })
+        .catch(() => {
+          stream.destroy()
+        })
+      return
+    }
     const parsed = parseEgressTarget(target)
     if (parsed === null) {
       this.refuse(link, id, target.slice(0, 80), 'malformed request')
@@ -268,7 +308,28 @@ export class EgressBroker {
     this.bridge(link, id, label, rule, parsed.host, parsed.port)
   }
 
+  private activity(target: string): ReturnType<typeof networkActivity.start> {
+    const activity = networkActivity.start({
+      source: 'container',
+      label: 'Container connection',
+      target,
+      ...(this.owner ? { threadId: this.owner.threadId, projectId: this.owner.projectId } : {}),
+    })
+    const close = (): void => {
+      activity.finish('closed')
+    }
+    this.closeActivities.add(close)
+    return {
+      ...activity,
+      finish: (...args: Parameters<typeof activity.finish>): void => {
+        this.closeActivities.delete(close)
+        activity.finish(...args)
+      },
+    }
+  }
+
   private refuse(link: EgressLink, id: number, label: string, reason: string): void {
+    this.activity(parseEgressTarget(label) ? label : 'Invalid destination').finish('blocked')
     this.entries.push({ at: Date.now(), origin: label, event: 'refused', detail: reason })
     link.refuse(id, `DENY ${reason}`)
   }
@@ -281,6 +342,7 @@ export class EgressBroker {
     host: string,
     port: number,
   ): void {
+    const activity = this.activity(label)
     let bytesToOrigin = 0
     let bytesFromOrigin = 0
     this.entries.push({
@@ -296,6 +358,7 @@ export class EgressBroker {
     const finish = (event: 'close' | 'error', detail?: string): void => {
       if (closed) return
       closed = true
+      activity.finish(event === 'error' ? 'failed' : 'closed')
       this.entries.push({
         at: Date.now(),
         origin: label,
@@ -320,6 +383,7 @@ export class EgressBroker {
           finish('close')
           return
         }
+        activity.active()
         upstream = socket
         this.live.add(socket)
         // Accepted only now: the guest's stream exists once the origin
@@ -330,9 +394,11 @@ export class EgressBroker {
         this.live.add(stream)
         stream.on('data', (chunk: Buffer) => {
           bytesToOrigin += chunk.length
+          activity.transfer(bytesToOrigin, bytesFromOrigin)
         })
         socket.on('data', (chunk: Buffer) => {
           bytesFromOrigin += chunk.length
+          activity.transfer(bytesToOrigin, bytesFromOrigin)
         })
         stream.pipe(socket)
         socket.pipe(stream)
@@ -367,6 +433,8 @@ export class EgressBroker {
 
   /** Sever every stream and the link; the byte streams themselves are the caller's. */
   stop(): void {
+    for (const close of this.closeActivities) close()
+    this.closeActivities.clear()
     this.runKey = null
     for (const stream of this.live) stream.destroy()
     this.live.clear()

@@ -567,6 +567,20 @@ describe('OpenRouter model picker', () => {
     assert.equal(fields.freeModeChecked, false)
     assert.equal(fields.customModelValue, 'anthropic/claude-3.5-sonnet')
 
+    // The agent list above this form can move the fields below the fold.
+    // Capture the provider controls this test actually exercises.
+    await $('.provider-form').scrollIntoView({ block: 'center' })
+    for (const selector of [
+      '.provider-form input[type="password"]',
+      '.provider-form input[name="openRouterModel"]',
+      '.provider-form input[name="openRouterFreeMode"]',
+    ]) {
+      assert.equal(
+        await $(selector).isDisplayed({ withinViewport: true }),
+        true,
+        `${selector} must be visible`,
+      )
+    }
     await saveElementScreenshot('#settings-dialog', 'openrouter-settings-fields.png')
   })
 })

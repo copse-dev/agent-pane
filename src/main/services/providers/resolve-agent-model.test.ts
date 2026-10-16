@@ -8,11 +8,26 @@ import { FALLBACK_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 describe('resolveAgentChatModel', () => {
   beforeEach(async () => {
     clearProviderKeyStatusCache()
+    deleteApiKey('openai')
     deleteApiKey('cursor')
     deleteApiKey('anthropic')
     await setSetting('registeredAcpAgents', [])
     await setSetting('preferAcpOverCloudAgent', true)
     await setSetting('blockedModelMakers', [])
+  })
+
+  it('uses OpenAI credentials for cloud sessions and never falls back when they fail', async () => {
+    setApiKey('openai', 'sk-test-openai')
+    recordProviderKeyValidation('openai', 'sk-test-openai', true)
+    assert.equal(
+      (await resolveAgentChatModel('remote-agent:openai#gpt-6.1-sol')).model,
+      'remote-agent:openai#gpt-6.1-sol',
+    )
+    recordProviderKeyValidation('openai', 'sk-test-openai', false)
+    await assert.rejects(
+      resolveAgentChatModel('remote-agent:openai#gpt-6.1-sol'),
+      /has not been rerouted/,
+    )
   })
 
   it('passes through a runnable non-remote model unchanged', async () => {

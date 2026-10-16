@@ -1,8 +1,9 @@
 import { at } from '@copse/std/array-utils.ts'
 import assert from 'node:assert/strict'
+import { isRecord } from '@copse/std/unknown-value.ts'
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server, type Socket } from 'node:net'
-import { $, browser } from '@wdio/globals'
+import { $, $$, browser } from '@wdio/globals'
 import { seedStableWorkspace } from './helpers/seed-config.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { assertCheckboxBesideLabel } from './helpers/checkbox-row.ts'
@@ -333,6 +334,14 @@ describe('VNC viewer', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const onboardingClose = $('#onboarding-close')
     if (await onboardingClose.isDisplayed()) await onboardingClose.click()
+    // This fixture configures a live session instead of using writeSettings,
+    // so acknowledge any startup announcement through its normal UI.
+    const announcement = $('#product-announcement-dialog')
+    if (await announcement.isExisting()) {
+      await announcement.waitForDisplayed({ timeout: 10_000 })
+      await announcement.$('button.ui-btn-primary').click()
+      await announcement.waitForExist({ reverse: true, timeout: 10_000 })
+    }
     // The titlebar mounted before the live fixture enabled this experimental
     // setting. Mirror its normal settings_changed reconciliation without a
     // second Electron session, which is unreliable on local macOS WebDriver.
@@ -493,6 +502,9 @@ describe('VNC viewer', function () {
       })
     }
     await assertCheckboxBesideLabel('.vnc-remember-password')
+    await browser.execute(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    })
     await saveElementScreenshot('.vnc-auth-panel', 'vnc-viewer-remember-password-row.png')
     if (!secureCredentialStorage) {
       await browser.execute(() => {
@@ -562,6 +574,25 @@ describe('VNC viewer', function () {
     assert.equal(authenticationUsername, 'remembered-user')
     assert.match(await $('.vnc-status-detail').getText(), /check the Screen Sharing password/i)
     assert.match(await $('.vnc-status-detail').getText(), /password was rejected/i)
+    // The SSH setup entry can push the status below the scrollable device
+    // list. Capture the rejected login's explanation, not just the form.
+    await $('.vnc-controls-panel:not([hidden]) .vnc-status').scrollIntoView({ block: 'end' })
+    const failedStatusFits = await browser.execute(() => {
+      const statusNode = document.querySelector('.vnc-controls-panel:not([hidden]) .vnc-status')
+      const paneNode = document.querySelector('#pane-files')
+      if (!statusNode || !paneNode) throw new Error('Missing VNC status or Files pane')
+      const status = statusNode.getBoundingClientRect()
+      const pane = paneNode.getBoundingClientRect()
+      return {
+        fits: status.top >= pane.top - 1 && status.bottom <= pane.bottom + 1,
+        status: { top: status.top, bottom: status.bottom },
+        pane: { top: pane.top, bottom: pane.bottom },
+      }
+    })
+    assert.ok(
+      failedStatusFits.fits,
+      `the rejected login status must fit in the capture: ${JSON.stringify(failedStatusFits)}`,
+    )
     await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-failed.png')
     const failedMarker = await readVncSeverity(
       '.vnc-controls-panel:not([hidden]) .vnc-status',
@@ -645,12 +676,24 @@ describe('VNC viewer', function () {
     )
     assert.equal(await $('.vnc-setup-fields').isDisplayed(), false)
     assert.equal(await $('.vnc-connect-btn').isDisplayed(), false)
-    assert.equal(await $('.vnc-view-only-note').isDisplayed(), false)
+    assert.equal(await $('.vnc-view-only-note').isExisting(), false)
     assert.equal(await $('.vnc-disconnect-btn').getText(), 'Disconnect')
     const controlButton = $('.vnc-control-btn')
     assert.equal(await controlButton.isDisplayed(), true)
     assert.equal(await controlButton.getText(), 'Control desktop')
     assert.equal(await controlButton.getAttribute('aria-pressed'), 'false')
+    const shareButton = $('.vnc-share-btn')
+    const annotateButton = $('.vnc-annotate-btn')
+    assert.equal(await shareButton.isDisplayed(), true)
+    assert.equal(await shareButton.getText(), 'Share screenshot')
+    assert.equal(await annotateButton.isDisplayed(), true)
+    assert.equal(await annotateButton.getAttribute('aria-pressed'), 'false')
+    const captureOverflow = await browser.execute(() =>
+      [...document.querySelectorAll('.vnc-capture-actions > button:not([hidden])')]
+        .filter((button) => button.scrollWidth > button.clientWidth + 1)
+        .map((button) => button.textContent),
+    )
+    assert.deepEqual(captureOverflow, [], 'Desktop capture action labels must remain readable')
     assert.equal(await $('.vnc-controls-host .pane-header-title').isDisplayed(), true)
     assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'localhost')
 
@@ -687,6 +730,56 @@ describe('VNC viewer', function () {
       window.scrollTo(0, 0)
     })
     await saveElementScreenshot('#pane-files', 'vnc-viewer-read-only.png')
+
+    await shareButton.click()
+    const sharedScreen = $('.attachment-chips .image-chip img')
+    await sharedScreen.waitForDisplayed({ timeout: 5_000 })
+    await browser.execute(async () => {
+      const image = document.querySelector<HTMLImageElement>('.attachment-chips .image-chip img')
+      if (!image) throw new Error('Missing shared desktop image')
+      await image.decode()
+    })
+    assert.match((await sharedScreen.getAttribute('src')) ?? '', /^data:image\/png;base64,/)
+    assert.deepEqual(
+      await browser.execute(() => {
+        const image = document.querySelector<HTMLImageElement>('.attachment-chips .image-chip img')
+        return image ? { width: image.naturalWidth, height: image.naturalHeight } : null
+      }),
+      { width: WIDTH, height: HEIGHT },
+    )
+    await $('.toast').waitForExist({ reverse: true, timeout: 5_000 })
+    await saveAppScreenshot('vnc-viewer-shared-screen.png')
+
+    await annotateButton.click()
+    assert.equal(await annotateButton.getAttribute('aria-pressed'), 'true')
+    await $('.vnc-screen [data-tool="rect"]').click()
+    await browser.execute(() => {
+      const surface = document.querySelector('.vnc-screen .annotation-layer-svg')
+      if (!surface) throw new Error('Missing desktop annotation surface')
+      const frame = document.querySelector('.vnc-screen canvas')?.getBoundingClientRect()
+      if (!frame) throw new Error('Missing desktop frame')
+      const pointer = (type: string, x: number, y: number): PointerEvent =>
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+          pointerId: 1,
+          pointerType: 'mouse',
+          pressure: 0.5,
+        })
+      surface.dispatchEvent(pointer('pointerdown', frame.left + 40, frame.top + 40))
+      window.dispatchEvent(pointer('pointermove', frame.left + 150, frame.top + 120))
+      window.dispatchEvent(pointer('pointerup', frame.left + 150, frame.top + 120))
+    })
+    await $('.vnc-screen .annotation-layer-svg > *').waitForExist()
+    await saveAppScreenshot('vnc-viewer-annotate.png')
+    await $('.vnc-screen .annotation-send').click()
+    await browser.waitUntil(
+      async () => (await $$('.attachment-chips .image-chip img').length) === 2,
+    )
+    assert.equal(await annotateButton.getAttribute('aria-pressed'), 'false')
+    await $('.toast').waitForExist({ reverse: true, timeout: 5_000 })
 
     await controlButton.click()
     assert.equal(await controlButton.getText(), 'Stop controlling')
@@ -754,17 +847,6 @@ describe('VNC viewer', function () {
     await saveElementScreenshot('.context-menu', 'vnc-viewer-share-screen-menu.png')
     await $('.context-menu-item').click()
     await expect(shareMenu).not.toBeExisting()
-    const sharedScreen = $('.attachment-chips .image-chip img')
-    await sharedScreen.waitForDisplayed({ timeout: 5_000 })
-    assert.match((await sharedScreen.getAttribute('src')) ?? '', /^data:image\/png;base64,/)
-    assert.deepEqual(
-      await browser.execute(() => {
-        const image = document.querySelector<HTMLImageElement>('.attachment-chips .image-chip img')
-        return image ? { width: image.naturalWidth, height: image.naturalHeight } : null
-      }),
-      { width: WIDTH, height: HEIGHT },
-    )
-    await saveAppScreenshot('vnc-viewer-shared-screen.png')
     await $('.toast').waitForExist({ reverse: true, timeout: 5_000 })
 
     await controlButton.click()
@@ -871,6 +953,45 @@ describe('VNC viewer', function () {
         timeout: 20_000,
         timeoutMsg: 'expected the nearby discovery retry to finish with an empty result',
       },
+    )
+
+    await $(`${retryControls} .vnc-add-ssh-btn`).click()
+    const sshForm = $(`${retryControls} .vnc-ssh-host-form`)
+    await sshForm.waitForDisplayed()
+    assert.equal(await $(`${retryControls} .vnc-device-list`).isDisplayed(), false)
+    await browser.execute(() => {
+      const body = document.querySelector<HTMLElement>(
+        '.vnc-controls-panel:not([hidden]) .vnc-controls-body',
+      )
+      if (body) body.scrollTop = 0
+    })
+    await saveElementScreenshot('#pane-files', 'vnc-viewer-add-ssh-machine.png')
+    await $(`${retryControls} [aria-label="SSH host label"]`).setValue('Build Mac')
+    assert.equal(await $(`${retryControls} [aria-label="SSH host id"]`).getValue(), 'build-mac')
+    await $(`${retryControls} [aria-label="SSH hostname"]`).setValue('localhost')
+    await $(`${retryControls} [aria-label="SSH user"]`).setValue('builder')
+    await $(`${retryControls} [aria-label="SSH identity file"]`).setValue('~/.ssh/id_ed25519')
+    await $(`${retryControls} .vnc-ssh-host-form button[type="submit"]`).click()
+    await browser.waitUntil(async () =>
+      (await $(`${retryControls} .vnc-ssh-host-status`).getText()).includes(
+        'Enable SSH workspaces in Settings',
+      ),
+    )
+    assert.equal(await sshForm.isDisplayed(), true)
+    await browser.execute(async () => window.api.settings.set('sshWorkspaceEnabled', true))
+    await $(`${retryControls} .vnc-ssh-host-form button[type="submit"]`).click()
+    await $(
+      `${retryControls} .vnc-device-header[data-machine="ssh:build-mac"][aria-expanded="true"]`,
+    ).waitForDisplayed({ timeout: 20_000 })
+    const savedSshHosts = await browser.execute(async () =>
+      window.api.settings.get('sshWorkspaceHosts'),
+    )
+    assert.ok(Array.isArray(savedSshHosts))
+    assert.ok(savedSshHosts.some((item: unknown) => isRecord(item) && item['id'] === 'build-mac'))
+    assert.equal(await $(`${retryControls} .vnc-network-warning`).isDisplayed(), false)
+    assert.match(
+      await $(`${retryControls} .vnc-credential-hint`).getText(),
+      /SSH secures the connection/,
     )
 
     await assertNoErrorToasts('VNC viewer')

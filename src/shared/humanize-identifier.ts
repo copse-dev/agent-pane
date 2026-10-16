@@ -84,6 +84,10 @@ function casedWord(word: string, leading: boolean): string {
 export function humanizeIdentifier(identifier: string): string {
   const words = identifier
     .replace(/([a-z0-9])([A-Z])/gu, '$1 $2')
+    // An acronym run ends before its last capital when a lower-case word follows
+    // (`HTTPResponse` → `HTTP Response`); two lower-case letters keep a plural
+    // acronym (`IDs`, `URLs`) whole.
+    .replace(/([A-Z])(?=[A-Z][a-z]{2})/gu, '$1 ')
     .split(/[\s._-]+/u)
     .filter(Boolean)
     .map((word) => word.toLowerCase())

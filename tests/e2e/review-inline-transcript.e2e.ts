@@ -81,8 +81,9 @@ describe('post-turn review follow-up note (#2506)', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const projectId = 'e2e-review-followup-note-project'
-    const threadId = 'e2e-review-followup-note-thread'
+    // Reuse the fixture identity so previous cases cannot become orphan stores.
+    const projectId = 'e2e-review-inline-project'
+    const threadId = 'e2e-review-inline-thread'
     const now = Date.now()
     writeSeedConfig({
       projects: [{ id: projectId, path: process.cwd(), name: 'workspace' }],
@@ -148,6 +149,7 @@ describe('post-turn review follow-up note (#2506)', () => {
     expect(state.issuesFound).toBe('true')
     expect(state.noteText).toBe('Follow-up turn not started: the run was cancelled.')
 
+    await expect($('.orphans-heading')).not.toExist()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'review-followup-note.png'))
   })
 })
@@ -159,8 +161,9 @@ describe('post-turn review follow-up note (#2506)', () => {
 describe('skipped post-turn review explanation', () => {
   before(async () => {
     resetUserData()
-    const projectId = 'e2e-review-skipped-project'
-    const threadId = 'e2e-review-skipped-thread'
+    // Reuse the fixture identity so previous cases cannot become orphan stores.
+    const projectId = 'e2e-review-inline-project'
+    const threadId = 'e2e-review-inline-thread'
     const now = Date.now()
     writeSeedConfig({
       projects: [{ id: projectId, path: process.cwd(), name: 'workspace' }],

@@ -56,6 +56,8 @@ export interface LocalClassifierClient {
   start(id: string): Promise<LocalClassifierOverview>
   /** Stop a server Copse started, or cancel its install. */
   stop(id: string): Promise<LocalClassifierOverview>
+  /** Delete what Copse installed for a stopped server. Its saved connection stays. */
+  uninstall(id: string): Promise<LocalClassifierOverview>
   /** Save a connection for a catalog server that is already running. Returns the saved profiles' ids. */
   connect(id: string): Promise<LocalClassifierOverview>
 }

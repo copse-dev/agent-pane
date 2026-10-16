@@ -88,7 +88,7 @@ renderer-side subpaths pulls in **zero** SDK modules.
   `ModelComparison`, `TodoItem`. The package owns the narrow `ProviderStreamChunk`
   (the six variants providers actually emit — text/reasoning/tool_call/tool_result/
   usage/done); the app's `StreamChunk` is `ProviderStreamChunk | <orchestration
-events>`. Because a provider stream is a subset, it stays assignable to every
+  events>`. Because a provider stream is a subset, it stays assignable to every
   `StreamChunk` sink. Narrowing the `LLMProvider` contract surfaced two app-side
   test mocks that leaned on the fat type — corrected to the real contract.
 - **`LLMProvider` was duplicated** verbatim in `@shared/types/provider.ts` and the

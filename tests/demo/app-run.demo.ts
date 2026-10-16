@@ -103,6 +103,7 @@ describe('shared Apple and Android Run app picker', () => {
     await $('.app-run-logs summary').click()
     await expect($('.app-run-log')).toHaveText(expect.stringContaining('compileDebugKotlin'))
     await expect($('.app-run-run')).toBeDisabled()
+    await expect($('.app-run-elapsed')).toHaveText('0s')
     await saveElementScreenshot('#app-run-dialog', 'app-run-progress.png')
     await $('.app-run-cancel').click()
     await expect($('.app-run-stage')).toHaveText('Cancelled')

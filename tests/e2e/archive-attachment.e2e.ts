@@ -61,11 +61,15 @@ async function dropArchiveOnComposer(name: string, bytes: number[]): Promise<voi
 }
 
 describe('Attaching an archive to the chat', () => {
+  let temporaryRoot = ''
   let workspaceRoot = ''
 
   before(async function () {
     this.timeout(120_000)
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-archive-attachment-'))
+    temporaryRoot = mkdtempSync(join(tmpdir(), 'copse-archive-attachment-'))
+    // Preserve isolation while keeping the titlebar's directory name stable.
+    workspaceRoot = join(temporaryRoot, 'archive-attachment')
+    mkdirSync(workspaceRoot)
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
@@ -80,7 +84,7 @@ describe('Attaching an archive to the chat', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (temporaryRoot) rmSync(temporaryRoot, { recursive: true, force: true })
   })
 
   it('shows a dropped zip as an archive chip with its size, never as inlined text', async () => {

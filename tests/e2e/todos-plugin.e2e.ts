@@ -57,6 +57,7 @@ describe('copse.todos plan panel (P4)', function () {
     // runs captured the composer before it.
     await expect($('.follow-up-bubble*=Continue:')).toBeDisplayed({ wait: 15_000 })
 
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
     await saveAppScreenshot('todos-plugin-plan-panel.png')
   })
 })

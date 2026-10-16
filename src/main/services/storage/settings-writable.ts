@@ -213,6 +213,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // default tuple. It must be registered because settings:get uses a null
   // fallback and otherwise can never read back the value written here.
   appearanceDefaultsMigrationVersion: z.literal(1),
+  // One-time renderer startup marker for turning concise threads on by default:
+  // a stored `conciseThreadsEnabled: false` predates the default (the Settings
+  // dialog once saved every field), so it is cleared once. Registered for the
+  // same reason as the Appearance marker above.
+  conciseThreadsDefaultMigrated: z.literal(true),
   appIconVariant: z.enum(APP_ICON_VARIANTS),
   layout: z.object({
     projectsPaneWidth: z.number().int().min(180).max(400),
@@ -376,9 +381,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // offer one obvious next step as composer placeholder text the user accepts
   // with Tab. See next-step-service.ts.
   nextStepSuggestionEnabled: z.boolean(),
-  // Experimental concise threads: turns from a model scoring above 50 on the
-  // canonical intellect index show only their output (screenshots, summary).
-  // Off by default. See src/renderer/views/concise-thread.ts.
+  // Concise threads: turns from a model scoring above 50 on the canonical
+  // intellect index show only their output (screenshots, summary). On by
+  // default; Settings > Appearance turns it off.
+  // See src/renderer/views/concise-thread.ts.
   conciseThreadsEnabled: z.boolean(),
   // Experimental unattended container runs: a thread's turn in a hardened
   // Docker container, started from the composer. Off by default; needs Docker.

@@ -93,7 +93,7 @@ export function getOrchestrationRunner(): OrchestrationRunner | null {
   return async ({ step, context, expectedOutcome, signal }) => {
     // Expand a dynamic selection per delegation, not per session: a step handed
     // off an hour into a task should use whatever is cheapest/reachable now.
-    const workerModel = await resolveDynamicModelId(ctx.workerModel)
+    const workerModel = await resolveDynamicModelId(ctx.workerModel, { callableOnly: true })
     const provider = await buildProvider(workerModel)
     const contextWindow = await resolveContextWindow(workerModel)
     const toolSchemaReserve = workerToolSchemaReserve(workerModel)

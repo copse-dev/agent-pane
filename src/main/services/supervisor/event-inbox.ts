@@ -20,6 +20,11 @@ export interface EventInboxAdapter {
   sourceId: string
   connectionId: string
   eventType: string
+  /**
+   * Further (source, event type) pairs this adapter also authenticates. The primary
+   * pair above is always accepted; a host serving several event kinds lists the rest.
+   */
+  additionalRoutes?: readonly { sourceId: string; eventType: string }[]
   evaluate(binding: EventAutomationBinding, delivery: AutomationDelivery): Promise<MatchResult>
 }
 
@@ -272,10 +277,15 @@ export class AutomationEventInbox {
     binding: EventAutomationBinding,
     delivery: AutomationDelivery,
   ): string | null {
+    const routed =
+      (binding.sourceId === this.adapter.sourceId &&
+        binding.eventType === this.adapter.eventType) ||
+      (this.adapter.additionalRoutes ?? []).some(
+        (route) => route.sourceId === binding.sourceId && route.eventType === binding.eventType,
+      )
     if (
-      binding.sourceId !== this.adapter.sourceId ||
+      !routed ||
       binding.connectionId !== this.adapter.connectionId ||
-      binding.eventType !== this.adapter.eventType ||
       delivery.sourceId !== binding.sourceId ||
       delivery.connectionId !== binding.connectionId ||
       delivery.eventType !== binding.eventType

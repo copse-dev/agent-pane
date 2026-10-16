@@ -106,6 +106,21 @@ describe('landing cupcake walkthrough', () => {
     await expect($('.signup button[type="submit"]')).toHaveText(
       expect.stringContaining('YOU’RE IN!'),
     )
+    // The real signup click leaves the pointer over its button. Move it away
+    // before freezing guest motion, so capture cannot pin a hover transition.
+    await $('h1').moveTo()
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const button = document.querySelector('.signup button')
+          return (
+            button !== null &&
+            !button.matches(':hover') &&
+            button.getAnimations().every((animation) => animation.playState !== 'running')
+          )
+        }),
+      { timeout: 2_000, timeoutMsg: 'Signup button hover transition did not settle' },
+    )
     const previewLayout = await browser.execute(() => ({
       viewportWidth: window.innerWidth,
       columns: getComputedStyle(document.querySelector('.hero') ?? document.body)
@@ -113,6 +128,24 @@ describe('landing cupcake walkthrough', () => {
     }))
     expect(previewLayout.viewportWidth).toBeGreaterThan(780)
     expect(previewLayout.columns.split(' ')).toHaveLength(2)
+    // The preview has its own document: root capture preparation cannot settle
+    // its floating cupcake, pulsing dot or ticker. Pin those animations only
+    // after exercising the live signup, so capture timing cannot change pixels.
+    const animationState = await browser.execute(() => {
+      const animations = document.getAnimations()
+      for (const animation of animations) {
+        animation.pause()
+        animation.currentTime = 0
+      }
+      return {
+        count: animations.length,
+        settled: animations.every(
+          (animation) => animation.playState === 'paused' && animation.currentTime === 0,
+        ),
+      }
+    })
+    expect(animationState.count).toBeGreaterThan(0)
+    expect(animationState.settled).toBe(true)
     await browser.switchFrame(null)
 
     const expand = $('.browser-toolbar .pane-popout-btn')

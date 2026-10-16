@@ -81,6 +81,19 @@ describe('ZDR provider presets', () => {
     assertBadgeRecipe(policyBadge)
     assertNeutralBadge(tag, await signalColours())
 
+    await form.scrollIntoView({ block: 'center' })
+    for (const selector of [
+      '.provider-form-title',
+      '.provider-privacy-badge',
+      '.provider-privacy-hint',
+      'input[type="url"]',
+    ]) {
+      assert.equal(
+        await form.$(selector).isDisplayed({ withinViewport: true }),
+        true,
+        `${selector} must be visible`,
+      )
+    }
     await saveElementScreenshot('#settings-dialog', 'settings-zdr-provider-presets.png')
   })
 })

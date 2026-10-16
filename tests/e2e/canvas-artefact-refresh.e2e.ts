@@ -278,14 +278,15 @@ describe('canvas artefact refresh', () => {
   })
 
   it('shows a preview thumbnail of the render in the transcript', async () => {
+    await expectAssistantReply('The background dashboard is ready.')
+    await waitForAgentIdle(25_000)
     // End-to-end proof that the artefact reached the headless agent session: the
     // thumbnail is a capturePage() of the agent's own tab, so a card with image
     // data means the mirror loaded the document the canvas is showing. It is
     // also the card that offers to promote a background re-render.
     await browser.execute(() => {
       for (const card of document.querySelectorAll<HTMLDetailsElement>('details.tool-card')) {
-        card.open = true
-        card.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        if (!card.open) card.querySelector('summary')?.click()
       }
     })
     await $('.canvas-preview-card').waitForExist({ timeout: 20_000 })
@@ -293,13 +294,22 @@ describe('canvas artefact refresh', () => {
       () =>
         browser.execute(
           () =>
-            (document.querySelector<HTMLImageElement>('.canvas-preview-image')?.naturalWidth ?? 0) >
-            0,
+            ([...document.querySelectorAll('.canvas-preview-card')]
+              .find(
+                (card) =>
+                  card.querySelector('.canvas-preview-title')?.textContent ===
+                  'Background Dashboard',
+              )
+              ?.querySelector<HTMLImageElement>('.canvas-preview-image')?.naturalWidth ?? 0) > 0,
         ),
       { timeout: 20_000, timeoutMsg: 'expected the canvas preview image to load' },
     )
     const preview = await browser.execute(() => {
-      const image = document.querySelector<HTMLImageElement>('.canvas-preview-image')
+      const card = [...document.querySelectorAll('.canvas-preview-card')].find(
+        (element) =>
+          element.querySelector('.canvas-preview-title')?.textContent === 'Background Dashboard',
+      )
+      const image = card?.querySelector<HTMLImageElement>('.canvas-preview-image')
       if (!image) return null
       return {
         src: image.getAttribute('src') ?? '',
@@ -313,7 +323,10 @@ describe('canvas artefact refresh', () => {
     // text visibly blurry when the old 480px capture filled the transcript.
     expect(preview.naturalWidth).toBeGreaterThanOrEqual(Math.ceil(preview.renderedWidth))
     expect(preview.renderedWidth).toBeLessThanOrEqual(1280)
-    await saveAppScreenshot('canvas-artefact-preview.png')
+    const currentPreview = $('.canvas-preview-card*=Background Dashboard')
+    await currentPreview.waitForDisplayed({ timeout: 20_000 })
+    await currentPreview.scrollIntoView()
+    await saveStableCanvasScreenshot('canvas-artefact-preview.png')
   })
 
   it('does not show one thread’s thumbnail on a same-title card in another thread', async () => {

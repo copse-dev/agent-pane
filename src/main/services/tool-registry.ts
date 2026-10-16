@@ -1,3 +1,4 @@
+import { planToolBlockReason } from './thread-plan-context.ts'
 import { z } from 'zod'
 import type {
   ToolDefinition,
@@ -20,6 +21,7 @@ import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 import { describeToolArgError } from './tool-arg-error.ts'
+import { coerceStringlyTypedToolArgs } from '@copse/agent/parse-text-tool-calls.ts'
 import { clampNumericRangeArgs, describeClampRepair } from './tool-arg-repair.ts'
 import { getThreadExecutionContext, isThreadCheckoutDeferred } from './thread-execution-context.ts'
 import { isActiveSshWorkspace } from './ssh-workspace/execution-target.ts'
@@ -185,19 +187,39 @@ export class ToolRegistry {
     return tools
   }
 
+  /** Validate a queued call with the same schema used for execution. */
+  validateArgs(name: string, args: unknown): void {
+    const tool = this.tools.get(name)
+    if (!tool) throw new Error(`Unknown tool: ${name}`)
+    tool.parse(args)
+  }
+
   /** Coerce recovered text-tool-call args, leaving invalid known calls for execute to explain. */
   tryCoerceArgs(name: string, rawArgs: unknown): Record<string, unknown> | null {
     const tool = this.tools.get(name)
     if (!tool) return null
-    const parsed = tool.parameters.safeParse(rawArgs)
+    if (!isRecord(rawArgs)) return null
+    const asWritten = tool.parameters.safeParse(rawArgs)
+    if (asWritten.success) return expectRecord(asWritten.data)
+    // Text-recovered values are all strings. Type ("3000" → 3000, "true" →
+    // true) only the keys whose string the schema rejected, so a string field
+    // such as `old_string` keeps "3000" instead of failing as a number.
+    const rejected = new Set(asWritten.error.issues.map((issue) => issue.path[0]))
+    const typed = coerceStringlyTypedToolArgs(rawArgs)
+    const args = Object.fromEntries(
+      Object.entries(rawArgs).map(([key, value]) => [key, rejected.has(key) ? typed[key] : value]),
+    )
+    const parsed = tool.parameters.safeParse(args)
     if (parsed.success) return expectRecord(parsed.data)
     // Keep invalid known calls in the tool channel. execute either clamps a
     // numeric range miss and reports the adjustment, or returns its readable
     // schema error to the model. Returning null here silently drops the call.
-    return isRecord(rawArgs) ? rawArgs : null
+    return args
   }
 
   async execute(name: string, rawArgs: unknown, signal: AbortSignal): Promise<ToolExecuteResult> {
+    const blocked = planToolBlockReason(name)
+    if (blocked) return blocked
     const tool = this.tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
     // A ZodError carries the issues array as its `message`, and the agent loop

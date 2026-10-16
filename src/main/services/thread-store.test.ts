@@ -1,15 +1,27 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  symlinkSync,
+} from 'node:fs'
 // The same `promises` binding the thread store imports, so the spies below
 // patch the exact object it calls.
-import { promises as fsPromises } from 'node:fs'
+import fs, { promises as fsPromises } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LLMMessage, Message, Thread } from '@shared/types'
 import { toResponsesInput } from '@copse/llm/responses-provider.ts'
 import {
+  measureThreadStorage,
   loadProjectThreads,
+  loadProjectThreadMetas,
+  loadThreadMessages,
   loadAllProjectThreads,
   saveProjectThread,
   saveProjectThreads,
@@ -23,6 +35,7 @@ import {
   appendMessage,
   appendImportedRemoteAgentRunResult,
   updateMeta,
+  updateMetaOrThrow,
   getThreadMeta,
   recordThreadAgentLink,
   attachThreadPrUrl,
@@ -42,6 +55,17 @@ import {
   clearAcpSessionBinding,
   type AcpSessionBinding,
   findThreadOwners,
+  threadArchivesDir,
+  threadMediaDir,
+  createThreadPlan,
+  reviseThreadPlan,
+  commentOnThreadPlan,
+  approveThreadPlan,
+  getThreadPlan,
+  getThreadPlanRevision,
+  getLatestThreadPlan,
+  abandonThreadPlan,
+  reportThreadPlanCompletion,
 } from './thread-store.ts'
 import { storageSet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
@@ -56,6 +80,7 @@ import {
 import { isNonNull } from '@shared/nullish.ts'
 import { TOOL_RESULT_UNAVAILABLE } from '@shared/threads/fold.ts'
 import { createHash } from 'node:crypto'
+import { isBlankThread } from '@shared/store/thread-helpers.ts'
 
 /** Build PR refs from URL strings, matching what the link store feeds attach. */
 function prRefs(...urls: string[]): GithubPrRef[] {
@@ -111,6 +136,85 @@ describe('thread-store', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
+  it('measures retained thread files without following symlinks or counting other threads', async () => {
+    const dir = join(root, 'p', 't')
+    mkdirSync(join(dir, 'attachments'), { recursive: true })
+    writeFileSync(join(dir, 'meta.json'), '1234')
+    writeFileSync(join(dir, 'attachments', 'image.png'), '123456')
+    writeFileSync(join(root, 'outside'), 'not part of this thread')
+    symlinkSync(join(root, 'outside'), join(dir, 'linked'))
+    assert.deepEqual(await measureThreadStorage('p', 't'), { bytes: 10, truncated: false })
+    assert.deepEqual(await measureThreadStorage('p', 'missing'), { bytes: 0, truncated: false })
+    await assert.rejects(measureThreadStorage('p', '../outside'))
+  })
+
+  it('recovers plan retention from committed events after stale saves and message-only hydration', async () => {
+    const original = thread('plan-only')
+    await createThread('project', original)
+    // Prime the lazy-load cache before the plan exists.
+    assert.equal((await loadProjectThreadMetas('project'))[0]?.hasSavedPlan, undefined)
+    const plan = await createThreadPlan('project', original.id, {
+      title: 'Saved without messages',
+      body: '# Goal\nFix login\n# Constraints\nNone\n# Scope\nLogin\n# Definition of done\n- Login works',
+    })
+    for (const ended of [false, true]) {
+      if (ended) await abandonThreadPlan('project', original.id, plan.meta.planId, 1)
+      // A stale renderer snapshot must not erase the disk-derived retention.
+      await saveProjectThread('project', original)
+      await updateMeta('project', original.id, { title: 'Retained plan' })
+      const [full] = await loadProjectThreads('project')
+      assert.ok(full)
+      assert.equal(full.hasSavedPlan, true)
+      assert.equal(isBlankThread(full), false)
+      const [lazy] = await loadProjectThreadMetas('project')
+      assert.ok(lazy)
+      const hydrated = {
+        ...lazy,
+        messages: await loadThreadMessages('project', original.id),
+        messagesLoaded: true,
+      }
+      assert.equal(hydrated.messages.length, 0)
+      assert.equal(isBlankThread(hydrated), false)
+      await saveProjectThread('project', hydrated)
+      assert.doesNotMatch(
+        readFileSync(join(root, 'project', original.id, 'meta.json'), 'utf8'),
+        /hasSavedPlan/,
+      )
+      assert.equal(
+        (await getLatestThreadPlan('project', original.id))?.meta.planId,
+        plan.meta.planId,
+      )
+    }
+    await deleteProjectThread('project', original.id)
+    assert.equal(existsSync(join(root, 'project', original.id)), false)
+  })
+
+  it('does not retain an unused task solely because a failed save left orphan plan files', async () => {
+    await createThread('project', thread('empty'))
+    let checks = 0
+    await assert.rejects(
+      createThreadPlan(
+        'project',
+        'empty',
+        {
+          title: 'Interrupted draft',
+          body: '# Goal\nFix\n# Constraints\nNone\n# Scope\nLogin\n# Definition of done\n- Login works',
+        },
+        {
+          assertIdle: () => {
+            if (++checks === 2) throw new Error('Interrupted before commit')
+          },
+        },
+      ),
+      /Interrupted before commit/,
+    )
+    assert.equal(existsSync(join(root, 'project', 'empty', 'plans')), true)
+    const [loaded] = await loadProjectThreadMetas('project')
+    assert.ok(loaded)
+    assert.equal(loaded.hasSavedPlan, undefined)
+    assert.equal(isBlankThread(loaded), true)
+  })
+
   it('lists orphaned thread stores, excluding known project ids (#997)', async () => {
     await saveProjectThread('known', thread('t1'))
     await saveProjectThread('orphan', thread('t2', { title: 'lost' }))
@@ -142,6 +246,192 @@ describe('thread-store', () => {
     const loaded = await loadProjectThreads('proj-1')
     assert.equal(loaded.length, 1)
     assert.deepEqual(loaded[0], t)
+  })
+
+  it('saves formatted sections verbatim and reports complete multiline criteria', async () => {
+    await saveProjectThread('proj-plan', thread('t1'))
+    const body =
+      '# **Goal**\nFix login.\n\n# _Constraints_\nKeep sessions.\n\n# Scope\nAuth UI.\n\n# **Definition of done**\n- Sessions recover\n  without deleting current sessions.'
+    const saved = await createThreadPlan('proj-plan', 't1', { title: 'Fix login', body })
+    const approved = await approveThreadPlan(
+      'proj-plan',
+      't1',
+      saved.meta.planId,
+      1,
+      saved.contentHash,
+      'implementation',
+    )
+    assert.equal(approved.body, body)
+    assert.equal(approved.contentHash, createHash('sha256').update(body).digest('hex'))
+    const reported = await reportThreadPlanCompletion('proj-plan', 't1', {
+      planId: saved.meta.planId,
+      revision: 1,
+      contentHash: saved.contentHash,
+      results: [
+        {
+          criterionId: 'criterion-1',
+          status: 'unverified',
+          evidence: 'Recovery and session preservation still need testing.',
+        },
+      ],
+    })
+    assert.deepEqual(await getLatestThreadPlan('proj-plan', 't1'), reported)
+    assert.equal(await getThreadPlanRevision('proj-plan', 't1', saved.meta.planId, 1), body)
+  })
+
+  it('ignores uncommitted revisions and approval snapshots after an interrupted write', async () => {
+    await saveProjectThread('proj-plan', thread('t1'))
+    const input = {
+      title: 'Fix',
+      body: '# Goal\nFix\n# Constraints\nNone\n# Scope\nLogin\n# Definition of done\n- Login passes',
+    }
+    const first = await createThreadPlan('proj-plan', 't1', input)
+    const interrupted = (): { assertIdle: () => void } => {
+      let checks = 0
+      return {
+        assertIdle: (): void => {
+          if (++checks === 2) throw new Error('Turn started before commit')
+        },
+      }
+    }
+    await assert.rejects(
+      reviseThreadPlan(
+        'proj-plan',
+        't1',
+        first.meta.planId,
+        1,
+        { ...input, body: `${input.body} reliably` },
+        interrupted(),
+      ),
+      /before commit/,
+    )
+    assert.equal((await getLatestThreadPlan('proj-plan', 't1'))?.body, first.body)
+    assert.equal(await getThreadPlanRevision('proj-plan', 't1', first.meta.planId, 2), null)
+    await assert.rejects(
+      approveThreadPlan(
+        'proj-plan',
+        't1',
+        first.meta.planId,
+        1,
+        first.contentHash,
+        'implementation',
+        interrupted(),
+      ),
+      /before commit/,
+    )
+    assert.equal((await getLatestThreadPlan('proj-plan', 't1'))?.meta.status, 'draft')
+    const approved = await approveThreadPlan(
+      'proj-plan',
+      't1',
+      first.meta.planId,
+      1,
+      first.contentHash,
+      'implementation',
+    )
+    // Mutable projections are never authority, including after an interrupted repair.
+    writeFileSync(join(root, 'proj-plan', 't1', 'plans', first.meta.planId, 'meta.json'), 'broken')
+    assert.deepEqual(await getLatestThreadPlan('proj-plan', 't1'), approved)
+    await assert.rejects(
+      reviseThreadPlan('proj-plan', 't1', first.meta.planId, 1, input),
+      /editable draft/,
+    )
+    const identity = { planId: first.meta.planId, revision: 1, contentHash: first.contentHash }
+    await assert.rejects(
+      reportThreadPlanCompletion('proj-plan', 't1', { ...identity, results: [] }),
+      /every criterion/,
+    )
+    await assert.rejects(
+      reportThreadPlanCompletion('proj-plan', 't1', {
+        ...identity,
+        contentHash: 'wrong',
+        results: [],
+      }),
+      /exact approved/,
+    )
+    const reported = await reportThreadPlanCompletion('proj-plan', 't1', {
+      ...identity,
+      results: [
+        {
+          criterionId: 'criterion-1',
+          status: 'partial',
+          evidence: 'Login works; expiry still needs validation.',
+        },
+      ],
+    })
+    await saveProjectThread('proj-plan', thread('t1'))
+    assert.deepEqual(
+      (await getLatestThreadPlan('proj-plan', 't1'))?.completion,
+      reported.completion,
+    )
+    await abandonThreadPlan('proj-plan', 't1', first.meta.planId, 1)
+    assert.notEqual(
+      (await createThreadPlan('proj-plan', 't1', input)).meta.planId,
+      first.meta.planId,
+    )
+  })
+
+  it('persists revision-specific feedback and approval in the thread store', async () => {
+    await saveProjectThread('proj-plan', thread('t1'))
+    await assert.rejects(
+      createThreadPlan('proj-plan', 't1', { title: 'Incomplete', body: '# Goal\nFix login.' }),
+      /Constraints section/,
+    )
+    const first = await createThreadPlan('proj-plan', 't1', {
+      title: 'Ship the fix',
+      body: '# Goal\nFix login.\n\n# Constraints\nKeep sessions.\n\n# Scope\nAuth UI.\n\n# Definition of done\n- Login passes.',
+    })
+    const planId = first.meta.planId
+    const second = await reviseThreadPlan('proj-plan', 't1', planId, 1, {
+      title: 'Ship the login fix',
+      body: `${first.body}\nAdd a regression check.`,
+    })
+    await assert.rejects(
+      reviseThreadPlan('proj-plan', 't1', planId, 1, { title: 'Stale', body: 'Stale' }),
+      /revision changed/,
+    )
+    const passage = 'Login passes.'
+    const start = second.body.indexOf(passage)
+    const comment = await commentOnThreadPlan(
+      'proj-plan',
+      't1',
+      planId,
+      2,
+      'Include the expired-session case.',
+      { start, end: start + passage.length },
+    )
+    assert.equal(comment.revision, 2)
+    await assert.rejects(
+      approveThreadPlan('proj-plan', 't1', planId, 2, 'wrong hash', 'implementation'),
+      /revision changed/,
+    )
+    const approved = await approveThreadPlan(
+      'proj-plan',
+      't1',
+      planId,
+      2,
+      createHash('sha256').update(second.body).digest('hex'),
+      'implementation',
+    )
+    assert.equal(approved.meta.approvedRevision, 2)
+    assert.equal(approved.comments[0]?.anchor?.start, start)
+    assert.equal((await getThreadPlan('proj-plan', 't1', planId))?.approval?.approvedRevision, 2)
+    assert.equal(await getThreadPlanRevision('proj-plan', 't1', planId, 1), first.body)
+    assert.equal(await getThreadPlanRevision('proj-plan', 't1', planId, 3), null)
+    assert.equal(
+      readFileSync(join(root, 'proj-plan', 't1', 'plans', planId, 'revision-1.md'), 'utf8'),
+      first.body,
+    )
+    await saveProjectThread('proj-plan', thread('t1'))
+    assert.equal((await getThreadPlan('proj-plan', 't1', planId))?.body, second.body)
+    const entries = parseSpineEntries(
+      readFileSync(join(root, 'proj-plan', 't1', 'events.jsonl'), 'utf8'),
+    )
+    assert.deepEqual(
+      entries
+        .filter((entry) => entry.line?.type === 'plan')
+        .map((entry) => (entry.line?.type === 'plan' ? entry.line.action : null)),
+      ['create', 'revise', 'comment', 'approve'],
+    )
   })
 
   it('round-trips tier buckets in per-model usage metadata', async () => {
@@ -240,6 +530,72 @@ describe('thread-store', () => {
     await saveProjectThread('proj-1', thread('t1', { messages: [assistantMsg('a1', 'x', 'R')] }))
     assert.ok(!existsSync(join(dir, 'messages', 'u2.md')))
     assert.ok(existsSync(join(dir, 'messages', 'a1.md')))
+  })
+
+  it('keeps attached media in blobs/media when a whole-thread save prunes stale blobs', async () => {
+    await saveProjectThread('proj-1', thread('t1', { messages: [assistantMsg('a1', 'x', 'R')] }))
+    // Dropped videos and archives are stored here by their attachment stores and
+    // are never spine refs; a re-save (history edit, undo, recovery) must keep them.
+    const media = threadMediaDir('proj-1', 't1')
+    mkdirSync(join(media, 'archive-1'), { recursive: true })
+    writeFileSync(join(media, 'clip.mov'), 'video bytes')
+    writeFileSync(join(media, 'archive-1', 'notes.txt'), 'extracted')
+    await saveProjectThread('proj-1', thread('t1', { messages: [userMsg('u2', 'y')] }))
+    assert.ok(existsSync(join(media, 'clip.mov')))
+    assert.ok(existsSync(join(media, 'archive-1', 'notes.txt')))
+    assert.ok(!existsSync(join(root, 'proj-1', 't1', 'messages', 'a1.md')))
+  })
+
+  it('keeps extracted archives in blobs/archives when a whole-thread save prunes stale blobs', async () => {
+    await saveProjectThread('proj-1', thread('t1', { messages: [assistantMsg('a1', 'x', 'R')] }))
+    // read_archive unpacks here once and reuses the directory; pruning the files
+    // would leave an empty extraction that is "reused" with nothing in it.
+    const extracted = join(threadArchivesDir('proj-1', 't1'), 'bundle-abc123')
+    mkdirSync(join(extracted, 'src'), { recursive: true })
+    writeFileSync(join(extracted, 'src', 'a.txt'), 'extracted')
+    await saveProjectThread('proj-1', thread('t1', { messages: [userMsg('u2', 'y')] }))
+    assert.ok(existsSync(join(extracted, 'src', 'a.txt')))
+  })
+
+  it('keeps the previous meta.json and spine when a rewrite fails mid-write', async () => {
+    await saveProjectThread('proj-1', thread('t1', { messages: [userMsg('u1', 'hi')] }))
+    const dir = join(root, 'proj-1', 't1')
+    const metaBefore = readFileSync(join(dir, 'meta.json'), 'utf8')
+    const eventsBefore = readFileSync(join(dir, 'events.jsonl'), 'utf8')
+    const proseBefore = readFileSync(join(dir, 'messages', 'u1.md'), 'utf8')
+    // A full disk (or a crash) between opening and writing a file: an in-place
+    // O_TRUNC rewrite would leave meta.json empty and the thread unloadable.
+    const realWriteFileSync = fs.writeFileSync
+    const failingWrite = mock.method(
+      fs,
+      'writeFileSync',
+      (...args: Parameters<typeof fs.writeFileSync>) => {
+        if (typeof args[0] === 'number')
+          throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' })
+        realWriteFileSync(...args)
+      },
+    )
+    syncBuiltinESMExports()
+    try {
+      await assert.rejects(updateMetaOrThrow('proj-1', 't1', { title: 'Renamed' }))
+      await assert.rejects(
+        saveProjectThread(
+          'proj-1',
+          thread('t1', { messages: [userMsg('u1', 'hi'), userMsg('u2', 'later')] }),
+        ),
+      )
+    } finally {
+      failingWrite.mock.restore()
+      syncBuiltinESMExports()
+    }
+    assert.equal(readFileSync(join(dir, 'meta.json'), 'utf8'), metaBefore)
+    assert.equal(readFileSync(join(dir, 'events.jsonl'), 'utf8'), eventsBefore)
+    assert.equal(readFileSync(join(dir, 'messages', 'u1.md'), 'utf8'), proseBefore)
+    const loaded = await loadProjectThreads('proj-1')
+    assert.deepEqual(
+      loaded.map((t) => [t.title, t.messages.map((m) => m.id)]),
+      [['t1', ['u1']]],
+    )
   })
 
   it('skips a thread whose spine references a missing file rather than dropping the project', async () => {
@@ -753,6 +1109,7 @@ describe('thread-store', () => {
       assert.equal(loaded.length, 1)
       assert.deepEqual(loaded[0], {
         ...thread('t1', { title: 'Renamed', updatedAt: 42, draftPrompt: 'wip' }),
+        lastSettledAt: 1,
         messages: [userMsg('u1', 'hello'), assistantMsg('a1', 'on it', 'file contents')],
       })
     })
@@ -1105,6 +1462,17 @@ describe('thread-store', () => {
         loaded?.messages.map((message) => message.id),
         ['u1'],
       )
+    })
+
+    it('preserves completion time across metadata edits and records the next settled run', async () => {
+      await createThread('proj-1', thread('t1', { status: 'idle', updatedAt: 10 }))
+      await updateMeta('proj-1', 't1', { gitBranch: 'feature', updatedAt: 500 })
+      assert.equal((await getThreadMeta('proj-1', 't1'))?.lastSettledAt, 10)
+      await updateMeta('proj-1', 't1', { status: 'running', updatedAt: 600 })
+      await updateMetaOrThrow('proj-1', 't1', { status: 'idle', updatedAt: 700 })
+      assert.equal((await getThreadMeta('proj-1', 't1'))?.lastSettledAt, 700)
+      await updateMetaOrThrow('proj-1', 't1', { model: 'mock:test', updatedAt: 900 })
+      assert.equal((await getThreadMeta('proj-1', 't1'))?.lastSettledAt, 700)
     })
 
     it('updateMeta persists the resolved model as a distinct field next to the selector', async () => {

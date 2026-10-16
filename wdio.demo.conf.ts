@@ -1,3 +1,4 @@
+import { hydrateScreenshots } from './scripts/lib/screenshot-hydration.mts'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from './packages/std/src/safe-json.ts'
 import type { Server } from 'node:http'
@@ -40,6 +41,7 @@ const contentTypes: Readonly<Record<string, string>> = {
 }
 
 async function startDemoServer(): Promise<void> {
+  await hydrateScreenshots()
   let mobileStep = 0
   let mobileText = ''
   const mobileSession = '11111111-1111-4111-8111-111111111111'
@@ -103,9 +105,19 @@ async function startDemoServer(): Promise<void> {
                   projectName: 'Copse',
                   threadId: 'thread-1',
                   title: 'Review the release',
-                  group: 'needs-you',
-                  state: 'needs-approval',
-                  detail: '1 approval waiting',
+                  group: mobileStep < 2 ? 'needs-you' : 'working',
+                  state:
+                    mobileStep === 0
+                      ? 'needs-approval'
+                      : mobileStep === 1
+                        ? 'needs-answer'
+                        : 'working',
+                  detail:
+                    mobileStep === 0
+                      ? '1 approval waiting'
+                      : mobileStep === 1
+                        ? '1 answer waiting'
+                        : 'Agent running',
                   lastSavedAt: Date.now() - 120_000,
                 },
                 {
@@ -250,6 +262,8 @@ function stopDemoServer(): Promise<void> {
 }
 
 export const config: WebdriverIO.Config = {
+  // Preserve v9's first-match `$` behavior for the existing fixture selectors.
+  strictSelectors: false,
   runner: 'local',
   // The check fleet runs several PR build jobs concurrently. WebdriverIO's
   // default shared /tmp cache lets one interrupted download leave another job

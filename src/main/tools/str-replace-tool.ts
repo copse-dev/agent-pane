@@ -6,16 +6,37 @@ import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { getPendingAfterContent, applyOrStageDiff } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
+import { applyLfViewEdits, toLfView } from '@shared/line-endings.ts'
+import { isAgentRunExploreMode } from '../services/agent-run-explore-mode.ts'
 
-function countOccurrences(haystack: string, needle: string): number {
-  if (needle === '') return 0
-  let count = 0
-  let idx = 0
-  while ((idx = haystack.indexOf(needle, idx)) !== -1) {
-    count++
-    idx += needle.length
+/** Non-overlapping match offsets, left to right. */
+function matchOffsets(haystack: string, needle: string): number[] {
+  if (needle === '') return []
+  const offsets: number[] = []
+  for (
+    let at = haystack.indexOf(needle);
+    at !== -1;
+    at = haystack.indexOf(needle, at + needle.length)
+  ) {
+    offsets.push(at)
   }
-  return count
+  return offsets
+}
+
+/**
+ * explore returns a prose summary with approximate line numbers, not verbatim
+ * bytes, so telling the model to "re-read" is ambiguous — it was satisfied by
+ * calling explore again (#1433). Name the remedy the run actually has: outside
+ * explore mode only read_file returns the exact text str_replace needs to
+ * match; in explore mode read_file is delegated away from the parent (see
+ * `PARENT_DELEGATED_TOOLS`), so naming it sends the model after a tool it
+ * cannot call — ask explore for a verbatim quote instead.
+ */
+export function oldStringNotFoundMessage(path: string, exploreMode: boolean): string {
+  if (exploreMode) {
+    return `old_string was not found in the file. explore returns a summary, not verbatim bytes: call explore again on ${path} asking it to quote the exact lines you want to replace verbatim in a fenced code block, then copy old_string from that quote.`
+  }
+  return `old_string was not found in the file. Call read_file on ${path} and copy the exact text from its output — explore returns a summary, not verbatim bytes.`
 }
 
 export const strReplaceTool = defineTool({
@@ -45,31 +66,34 @@ export const strReplaceTool = defineTool({
       }
     }
 
-    const occurrences = countOccurrences(before, old_string)
-    if (occurrences === 0) {
-      // explore returns a prose summary with approximate line numbers, not
-      // verbatim bytes, so telling the model to "re-read" is ambiguous — it
-      // was satisfied by calling explore again (#1433). Name the remedy: only
-      // read_file returns the exact text str_replace needs to match.
-      return `old_string was not found in the file. Call read_file on ${path} and copy the exact text from its output — explore returns a summary, not verbatim bytes.`
-    }
+    // Match against the same LF view read_file shows (a CRLF file's lines are
+    // shown with `\n`), then write back with the file's own line breaks.
+    const view = toLfView(before)
+    const oldString = toLfView(old_string).text
+    const newString = toLfView(new_string).text
+    const matches = matchOffsets(view.text, oldString)
+    const occurrences = matches.length
+    if (occurrences === 0) return oldStringNotFoundMessage(path, isAgentRunExploreMode())
     if (!replace_all && occurrences > 1) {
       return `old_string appears ${String(occurrences)} times; include more surrounding context so it is unique, or set replace_all to true.`
     }
 
-    // `String#replace` expands `$$`, `$&`, `` $` `` and `$'` inside a replacement
-    // *string* even when the pattern is a plain string, so the file got something
-    // other than `new_string`: `` `Total: $${price}` `` landed as
-    // `` `Total: ${price}` ``, and `$'` swallowed the rest of the file. A function
-    // replacement is taken literally, and matches what the `replace_all` branch
-    // has always done — `Array#join` never expanded anything.
-    const after = replace_all
-      ? before.split(old_string).join(new_string)
-      : before.replace(old_string, () => new_string)
-
-    if (after === before) {
+    // The replacement is spliced in by offset, never through `String#replace`,
+    // which expands `$$`, `$&`, `` $` `` and `$'` inside a replacement string:
+    // `` `Total: $${price}` `` used to land as `` `Total: ${price}` ``.
+    // Compared in the LF view: rewriting identical text would otherwise still
+    // normalise the line breaks inside the match.
+    if (newString === oldString) {
       return 'No change: new_string is identical to old_string.'
     }
+    const after = applyLfViewEdits(
+      view,
+      (replace_all ? matches : matches.slice(0, 1)).map((start) => ({
+        start,
+        end: start + oldString.length,
+        replacement: newString,
+      })),
+    )
 
     const language = detectLanguage(path)
     const editStats = computeLineDiffStats(before, after)

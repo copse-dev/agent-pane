@@ -237,6 +237,7 @@ describe('native PR and commit provenance', function () {
       related.map((row) => row.pr.number).sort((a, b) => a - b),
       [55, 1001],
     )
+    await $('.pr-thread-toggle').click()
     await $('.pr-thread-link[data-thread-id="related"]').click()
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', 'related')
     await expect($('.git-changes-section-title*=Related PRs')).toHaveText(
@@ -244,6 +245,11 @@ describe('native PR and commit provenance', function () {
     )
     await expect($('.pr-list-row[data-pr-section="linked"]*=#55')).toExist()
     await expect($('.pr-list-row[data-pr-section="linked"]*=#1001')).toExist()
+    for (const number of [55, 1001]) {
+      await expect(
+        $(`.pr-list-row[data-pr-section="linked"]*=#${String(number)}`).$('.pr-list-checks-label'),
+      ).toHaveText('CI unavailable')
+    }
     await saveElementScreenshot('#pane-files', 'thread-native-multiple-prs-offline.png')
   })
 })

@@ -174,7 +174,9 @@ jobs:
             for (const [namespace, method] of [
               ['pulls', 'get'],
               ['repos', 'getCommit'],
+              ['repos', 'compareCommitsWithBasehead'],
               ['repos', 'listCommitStatusesForRef'],
+              ['repos', 'getCombinedStatusForRef'],
               ['repos', 'createCommitStatus'],
             ]) {
               if (typeof github.rest[namespace]?.[method] !== 'function') {
@@ -189,9 +191,10 @@ jobs:
       # Full history of the commit under test, for the oracle's base diff and the
       # gitleaks history scan. Not `fetch-depth: 0`: that also fetched every
       # other branch (~575, mostly screenshot-compare/*) and every tag, 2.3 GB
-      # against ~1 GB for this history alone. Nothing here reads another branch:
-      # a pull_request merge commit has the PR base as a parent, and every step
-      # that needs `BASE_SHA` still fetches it explicitly. A push's `before` is
+      # against ~1 GB for this history alone. Only the API protocol step reads
+      # other refs (release, promote/main and the v* tags), and it fetches just
+      # those: a pull_request merge commit has the PR base as a parent, and every
+      # step that needs `BASE_SHA` still fetches it explicitly. A push's `before` is
       # usually an ancestor, but a force-push may have replaced it; the plan
       # step fetches it unshallowed for that, and the oracle fails closed (full
       # plan) whenever it still finds no merge-base.
@@ -292,13 +295,16 @@ jobs:
       # Enforce the API protocol's compatibility rule (docs/api-protocol.md).
       # The unit test only pins that the committed manifest matches the sources,
       # which a breaking change satisfies by regenerating; this is the step that
-      # reads the change against the base and fails a breaking one that did not
-      # bump API_PROTOCOL_VERSION. Only meaningful with a base to compare to,
-      # so it is skipped on schedule / branch-create runs.
+      # reads the change against the base and fails a breaking one whose
+      # API_PROTOCOL_VERSION is not above the latest release. Only meaningful
+      # with a base to compare to, so it is skipped on schedule / branch-create runs.
       - name: API protocol compatibility
+        shell: bash
         env:
           # PR/queue base; previous tip on push. Empty for schedule.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          # The branch the change lands on (`main` or `release`).
+          TARGET_REF: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref_name }}
         run: |
           set -euo pipefail
           # No usable base (schedule, first push, branch create) -> nothing to
@@ -313,7 +319,49 @@ jobs:
           # worse than no gate. The script distinguishes that from a base that
           # genuinely predates the protocol, which it allows.
           git fetch --no-tags --quiet origin "$BASE_SHA" 2>/dev/null || true
-          node scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA"
+          # A version names a released surface (docs/api-protocol.md), so a
+          # breaking change needs a version above the newest surface that ships
+          # without it, and changes between two releases share one bump. That
+          # surface is the latest release tag, or, for a change landing on main
+          # while a promotion carrying a not-yet-tagged version is pending, that
+          # promotion. Without it the script falls back to requiring a bump over
+          # the base, so failing to read it can only make the gate stricter.
+          released_ref=''
+          if git fetch --no-tags --quiet origin \
+               '+refs/heads/release:refs/remotes/origin/release' '+refs/tags/v*:refs/tags/v*'; then
+            # A tag on the commit under test is this push being released (Cut
+            # release tag runs alongside), not the release before it.
+            exclude_head=()
+            while IFS= read -r tag; do
+              exclude_head+=(--exclude "$tag")
+            done < <(git tag --points-at HEAD --list 'v[0-9]*')
+            released_ref=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${exclude_head[@]}" \
+              refs/remotes/origin/release) || released_ref=''
+          fi
+          # Skip the promotion when it already contains the commit under test
+          # (a push to main that was pinned before its own CI read it).
+          if [ -n "$released_ref" ] && [ "${TARGET_REF#refs/heads/}" != release ] &&
+             git fetch --no-tags --quiet origin \
+               '+refs/heads/promote/main:refs/remotes/origin/promote/main' 2>/dev/null &&
+             ! git merge-base --is-ancestor HEAD refs/remotes/origin/promote/main; then
+            pending=$(git show refs/remotes/origin/promote/main:package.json |
+              node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version') || pending=''
+            if [ -n "$pending" ] && ! git rev-parse --quiet --verify "refs/tags/v${pending}" >/dev/null; then
+              released_ref=refs/remotes/origin/promote/main
+            fi
+          fi
+          released_args=()
+          if [ -n "$released_ref" ]; then
+            released_args=(--released-ref "$released_ref")
+          else
+            echo "::warning::Could not read the latest release, so this run requires a bump over the base. If main already carries an unreleased bump, re-run before bumping."
+          fi
+          if ! node scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA" "${released_args[@]}"; then
+            if [ "${TARGET_REF#refs/heads/}" = release ]; then
+              echo "::error::A promotion only carries main's commits: land the version bump on main, then promote again."
+            fi
+            exit 1
+          fi
       # Fail closed on high/critical dependency advisories. This runs after the
       # lockfile-exact setup, so it audits precisely the tree CI will execute.
       # The registry's audit endpoint intermittently times out from hosted
@@ -358,8 +406,47 @@ jobs:
       # — see that job for why. Every early-exit branch here predates the oracle's
       # analysis of the diff, so each one emits `unit_mode=full`: only the oracle
       # path has looked at what actually changed, so only it may thin.
+      # Capture the source event before testing: later body edits must not
+      # attach a stack declaration to evidence produced for a different stack.
+      - name: Capture screenshot stack coverage request
+        id: screenshot-stack
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, writeFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          import { parseScreenshotStack } from './scripts/screenshot-stack.mts';
+          const declaration = parseScreenshotStack(process.env.PR_BODY);
+          const tip = declaration?.tip === Number(process.env.PR_NUMBER) && process.env.PR_DRAFT === 'false';
+          appendFileSync(process.env.GITHUB_OUTPUT, `tip=${tip}\n`);
+          if (tip) {
+            execFileSync('git', ['fetch', '--no-tags', '--quiet', 'origin',
+              '+refs/heads/main:refs/remotes/origin/main']);
+            const base = execFileSync('git', ['merge-base', 'HEAD', 'origin/main'],
+              { encoding: 'utf8' }).trim();
+            writeFileSync('screenshot-stack-coverage.json', JSON.stringify({
+              declaration: declaration.text, number: declaration.tip,
+              head: process.env.HEAD_SHA, base,
+            }));
+          }
+          NODE
+
+      - name: Preserve screenshot stack coverage request
+        if: steps.screenshot-stack.outputs.tip == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshot-stack-coverage-${{ github.run_id }}
+          path: screenshot-stack-coverage.json
+          if-no-files-found: error
+          retention-days: 14
+
       - id: plan
         env:
+          STACK_TIP: ${{ steps.screenshot-stack.outputs.tip }}
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           # PR/queue base on pull_request; previous-tip on push. Empty for schedule.
@@ -383,6 +470,14 @@ jobs:
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # A stack tip covers all lower layers, not only its immediate PR
+          # diff. Run the complete suite even for a PNG-only acceptance commit;
+          # the coverage attestation must belong to this exact combined head.
+          if [ "${STACK_TIP:-false}" = "true" ]; then
+            echo "Declared screenshot stack tip -> full combined e2e suite"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # Screenshot-only head commit -> skip e2e. A human accepting a candidate
           # artifact already reviewed the parent run's output, and the commit adds
           # only reference PNGs, so re-running the suite would render the same shots
@@ -390,7 +485,7 @@ jobs:
           # does not turn the reviewed follow-up into another expensive full run.
           if [ -n "$HEAD_SHA" ]; then
             changed="$(git diff --name-only "${HEAD_SHA}^" "${HEAD_SHA}" 2>/dev/null || true)"
-            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^tests/e2e/screenshots/'; then
+            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qEv '^(tests/e2e/screenshots/manifest\.json|README\.md)$'; then
               echo "HEAD commit only refreshes reference screenshots -> skip e2e"
               { echo "mode=skip"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
               exit 0
@@ -539,6 +634,32 @@ jobs:
   # (promote-develop.yml), must hold only commits already on `main`, and a
   # format commit pushed there would reach `release` without ever landing on
   # trunk. Those commits were formatted on their own PRs.
+  # Prove that the committed hashes can restore a clean checkout without keys.
+  # This gate also warms the immutable object cache used by visual test workers.
+  screenshot-baselines:
+    needs: precheck
+    if: ${{ !cancelled() && needs.precheck.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
+      - name: Restore and verify R2 baselines
+        run: |
+          node scripts/screenshot-storage.mts hydrate
+          node scripts/screenshot-storage.mts check
+
   autoformat:
     if: >-
       github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release' && !(github.event_name == 'pull_request' &&
@@ -1174,6 +1295,12 @@ jobs:
         with:
           persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
+      - name: Cache verified R2 baseline objects
+        uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
       - run: npm run build
       # Plain-Chrome geometry coverage replaces Electron specs that do not need
       # main/preload IPC. Skip screenshot-only heads: their parent already ran
@@ -1194,12 +1321,7 @@ jobs:
         run: |
           mkdir -p changed/tests/e2e/screenshots
           touch changed/.demo
-          mapfile -t files < <(
-            {
-              git diff --name-only -- tests/e2e/screenshots/
-              git ls-files --others --exclude-standard -- tests/e2e/screenshots/
-            } | sort -u
-          )
+          mapfile -t files < <(node scripts/screenshot-storage.mts changed)
           for f in "${files[@]}"; do
             [ -n "$f" ] || continue
             cp "$f" "changed/tests/e2e/screenshots/"
@@ -1356,6 +1478,12 @@ jobs:
         with:
           persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
+      - name: Cache verified R2 baseline objects
+        uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
       # No disk-cleanup step. One used to delete ~30 GB of preloaded toolchains
       # and prune Docker images because shards hit "No space left on device" on
       # the private-repo hosted runner (14 GB SSD). The public-repo runner's root
@@ -1844,12 +1972,7 @@ jobs:
           touch "changed/.shard-${{ matrix.shard }}"
           # Untracked PNGs are first-time reference shots from a new spec and
           # must be included alongside modifications.
-          mapfile -t files < <(
-            {
-              git diff --name-only -- tests/e2e/screenshots/
-              git ls-files --others --exclude-standard -- tests/e2e/screenshots/
-            } | sort -u
-          )
+          mapfile -t files < <(node scripts/screenshot-storage.mts changed)
           for f in "${files[@]}"; do
             [ -n "$f" ] || continue
             cp "$f" "changed/tests/e2e/screenshots/"
@@ -1930,6 +2053,12 @@ jobs:
           git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)" \
             '+refs/heads/main:refs/remotes/origin/main'
       - uses: ./.github/actions/setup
+      - name: Cache verified R2 baseline objects
+        uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
       - name: Download rendered screenshot candidates
         uses: actions/download-artifact@v8
         with:
@@ -1974,11 +2103,10 @@ jobs:
           # Whatever the filter restored no longer differs from the baseline, so
           # drop it from the artifact. Iterating the artifact (not the worktree)
           # keeps the per-shard `.shard-N` provenance markers untouched.
+          node scripts/screenshot-storage.mts changed > "$RUNNER_TEMP/changed-screenshots"
           for png in "$shots"/*.png; do
             rel="tests/e2e/screenshots/$(basename "$png")"
-            if git diff --quiet -- "$rel" 2>/dev/null &&
-              ! git ls-files --others --exclude-standard --error-unmatch "$rel" > /dev/null 2>&1
-            then
+            if ! grep -qxF -- "$rel" "$RUNNER_TEMP/changed-screenshots"; then
               rm -f "$png"
             fi
           done
@@ -2068,7 +2196,8 @@ jobs:
     # Metadata runs earn this result through the same candidate jobs as source
     # runs; there is no success path that bypasses dependency validation.
     if: ${{ always() }}
-    needs: [precheck, check, review-cell, bench, build, e2e, screenshot-artifacts]
+    needs:
+      [precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -2087,6 +2216,7 @@ jobs:
           ANY_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
           PRECHECK_RESULT: ${{ needs.precheck.result }}
           CHECK_RESULT: ${{ needs.check.result }}
+          BASELINES_RESULT: ${{ needs.screenshot-baselines.result }}
           MERGE_GROUP: ${{ github.event_name == 'merge_group' }}
           QUEUE_BASE_REF: ${{ github.event.merge_group.base_ref }}
           BENCH_RESULT: ${{ needs.bench.result }}
@@ -2110,6 +2240,10 @@ jobs:
           if [ "$ANY_FAILURE" = "true" ] || [ "$PRECHECK_RESULT" != "success" ]; then
             echo "CI has failed jobs or no successful precheck."
             printf '%s\n' "$NEEDS_JSON"
+            exit 1
+          fi
+          if [ "$BASELINES_RESULT" != "success" ]; then
+            echo "Required R2 baseline hydration did not complete successfully."
             exit 1
           fi
           if [ "$FORK_PR" = "true" ]; then

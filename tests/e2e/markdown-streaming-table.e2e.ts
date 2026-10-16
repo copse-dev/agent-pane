@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedStreamingMarkdownFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -10,7 +10,7 @@ describe('markdown streaming table pending rows', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-streaming-table-project', { subagentsEnabled: false })
+    seedStreamingMarkdownFixture(process.cwd())
     await browser.reloadSession()
   })
 
@@ -19,16 +19,16 @@ describe('markdown streaming table pending rows', () => {
   })
 
   it('renders a streaming table body row as tr.stream-pending-row, not raw pipe text', async () => {
-    await $('.messages-list').waitForExist({ timeout: 30_000 })
+    await $('[data-message-id="streaming-markdown-message"] .message-text').waitForDisplayed({
+      timeout: 30_000,
+    })
 
     const result = await browser.execute(() => {
-      const list = document.querySelector('.messages-list')
-      if (!list) throw new Error('no messages list')
-
-      const msg = document.createElement('div')
-      msg.className = 'msg msg-assistant'
-      const text = document.createElement('div')
-      text.className = 'message-text streaming-markdown is-streaming'
+      const text = document.querySelector(
+        '[data-message-id="streaming-markdown-message"] .message-text',
+      )
+      if (!text) throw new Error('no visible assistant message')
+      text.classList.add('streaming-markdown', 'is-streaming')
       text.innerHTML = [
         '<div class="stream-complete">',
         '<table>',
@@ -40,8 +40,6 @@ describe('markdown streaming table pending rows', () => {
         '</table>',
         '</div>',
       ].join('')
-      msg.append(text)
-      list.append(msg)
 
       const pendingRow = text.querySelector('tr.stream-pending-row')
       const rawPending = text.querySelector('span.stream-pending')
@@ -60,6 +58,22 @@ describe('markdown streaming table pending rows', () => {
     expect(result.pendingRowText).toContain('tests/e2e/')
     expect(result.pendingRowText).toContain('WebdriverIO specs')
 
+    await expect($('.stream-pending-row')).toBeDisplayed()
+    const visible = await browser.execute(() => {
+      const element = document.querySelector('.stream-pending-row')
+      if (!element) return false
+      const rect = element.getBoundingClientRect()
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.top >= 0 &&
+        rect.bottom <= innerHeight &&
+        element.contains(
+          document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2),
+        )
+      )
+    })
+    expect(visible).toBe(true)
     await saveAppScreenshot('markdown-streaming-table-pending-row.png')
   })
 })

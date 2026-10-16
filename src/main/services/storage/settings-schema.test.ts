@@ -49,6 +49,13 @@ describe('settings-schema', () => {
     assert.equal(schema.safeParse(2).success, false)
   })
 
+  it('registers the one-time concise threads default marker', () => {
+    const schema = getSettingSchema('conciseThreadsDefaultMigrated')
+    assert.ok(schema)
+    assert.equal(schema.safeParse(true).success, true)
+    assert.equal(schema.safeParse(false).success, false)
+  })
+
   it('validates the right panel position setting', () => {
     const rightPanelPosition = getSettingSchema('rightPanelPosition')
     assert.ok(rightPanelPosition)

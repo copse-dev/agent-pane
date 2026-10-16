@@ -32,9 +32,18 @@ describe('app frame after resizing', () => {
       const editorLabel = titlebar.querySelector<HTMLElement>('.open-in-editor-label')
       if (!editorLabel) throw new Error('Missing editor label')
       editorLabel.textContent = 'Open in Terminal'
-      // A resize can make the full titlebar overflow before its next-frame
-      // compact measurement runs. Focus/scroll requests must not pan the app.
+      // Recreate the transient measurement frame: all panel actions are revealed
+      // and left-aligned before compact/overflow planning runs. Merely removing
+      // the compact class leaves the previous overflow plan hiding its buttons.
+      // Focus/scroll requests during this frame must not pan the app.
       titlebar.classList.remove('is-titlebar-compact')
+      const panelControls = titlebar.querySelector<HTMLElement>('.titlebar-panel-controls')
+      if (!panelControls) throw new Error('Missing titlebar panel controls')
+      const alignment = panelControls.style.justifyContent
+      panelControls.style.justifyContent = 'flex-start'
+      for (const button of panelControls.querySelectorAll('[data-portrait-overflow]')) {
+        button.removeAttribute('data-portrait-overflow')
+      }
       const controls = [
         ...titlebar.querySelectorAll<HTMLElement>('.titlebar-panel-controls button'),
       ]
@@ -42,13 +51,16 @@ describe('app frame after resizing', () => {
       if (!control) throw new Error('Missing control capture subject')
       control.focus()
       control.scrollIntoView({ block: 'nearest', inline: 'end' })
-      return [document.documentElement, document.body, app, body].map((node) => ({
+      const offsets = [document.documentElement, document.body, app, body].map((node) => ({
         id: node.id || node.tagName,
         left: node.getBoundingClientRect().left,
         scrollLeft: node.scrollLeft,
         width: node.clientWidth,
         scrollWidth: node.scrollWidth,
       }))
+      panelControls.style.justifyContent = alignment
+      window.dispatchEvent(new Event('resize'))
+      return offsets
     })
     const page = offsets.find((node) => node.id === 'app')
     if (!page) throw new Error('Missing page capture subject')
@@ -56,6 +68,28 @@ describe('app frame after resizing', () => {
     expect(offsets.map((node) => node.scrollLeft)).toEqual([0, 0, 0, 0])
     expect(offsets.map((node) => node.left)).toEqual([0, 0, 0, 0])
     await expect($('#titlebar')).toHaveElementClass('is-titlebar-compact')
+    const composer = await browser.execute(() => {
+      const editor = document.querySelector<HTMLElement>('.prompt-input')
+      const send = document.querySelector<HTMLElement>('.submit-row')
+      if (!editor || !send) throw new Error('Missing composer layout')
+      const bounds = editor.getBoundingClientRect()
+      const style = getComputedStyle(editor)
+      return {
+        textWidth: bounds.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        editorBottom: bounds.bottom,
+        actionsTop: send.getBoundingClientRect().top,
+        footerFits: [...document.querySelectorAll<HTMLElement>('.input-footer button')]
+          .filter((button) => button.checkVisibility())
+          .every((button) => {
+            const rect = button.getBoundingClientRect()
+            const footer = button.closest('.input-footer')?.getBoundingClientRect()
+            return !!footer && rect.left >= footer.left && rect.right <= footer.right
+          }),
+      }
+    })
+    expect(composer.textWidth).toBeGreaterThan(90)
+    expect(composer.actionsTop).toBeGreaterThanOrEqual(composer.editorBottom)
+    expect(composer.footerFits).toBe(true)
     await saveAppScreenshot('resize-clipping-narrow.png', { width: 760, height: 800 })
 
     await browser.execute(() => {

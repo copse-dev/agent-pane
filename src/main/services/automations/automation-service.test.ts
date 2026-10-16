@@ -12,6 +12,7 @@ import type {
   EnqueueSupervisedTaskInput,
   SupervisedTaskHandler,
 } from '../supervisor/task-supervisor.ts'
+import type { AutomationWorktreeRelease } from '../worktree-parking.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { createAutomationService, type AutomationTaskSupervisor } from './automation-service.ts'
 
@@ -562,6 +563,139 @@ describe('AutomationService', () => {
     assert.equal(threads.get(next.threadId)?.messages.length, 0)
   })
 
+  describe('handing a retained checkout to the next run', () => {
+    async function setup(options: {
+      canReuse: (threadId: string) => Promise<boolean>
+      release?: () => Promise<AutomationWorktreeRelease>
+    }): Promise<{
+      service: ReturnType<typeof createAutomationService>
+      schedule: { id: string }
+      first: AutomationTriggerEvent
+      threads: Map<string, Thread>
+      triggerNext: () => Promise<AutomationTriggerEvent>
+      advance: () => void
+    }> {
+      let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+      const threads = new Map<string, Thread>()
+      const events: AutomationTriggerEvent[] = []
+      const service = createAutomationService({
+        now: () => now,
+        isPluginEnabled: () => true,
+        createProjectThread: (_projectId, thread) => {
+          threads.set(thread.id, thread)
+          return Promise.resolve()
+        },
+        loadProjectThreads: () => Promise.resolve([...threads.values()]),
+        releasePreviousRun:
+          options.release ??
+          ((): Promise<AutomationWorktreeRelease> =>
+            Promise.resolve({ released: false, reason: 'unmerged-commits' })),
+        canReusePreviousRun: (_projectId, threadId): Promise<boolean> => options.canReuse(threadId),
+        supervisor: () => new FakeTaskSupervisor(),
+      })
+      service.start((event) => {
+        events.push(event)
+      })
+      const schedule = await service.upsert('project-a', {
+        name: 'Project health',
+        cron: '* * * * *',
+        prompt: 'Check project health.',
+        model: 'gpt-5.4',
+        enabled: true,
+      })
+      const first = await service.runNow('project-a', schedule.id)
+      const pending = threads.get(first.threadId)
+      assert.ok(pending)
+      threads.set(first.threadId, {
+        ...pending,
+        status: 'idle',
+        draftPrompt: '',
+        worktree: {
+          path: '/worktrees/first',
+          branch: 'codex/first',
+          baseBranch: 'main',
+          baseCommit: 'a'.repeat(40),
+          createdAt: now,
+          seededFromDirtyProject: false,
+        },
+      })
+      now += 60_000
+      return {
+        service,
+        schedule,
+        first,
+        threads,
+        triggerNext: async (): Promise<AutomationTriggerEvent> => {
+          await service.tick()
+          const event = events.at(-1)
+          assert.ok(event)
+          assert.equal(event.triggeredAt, now)
+          return event
+        },
+        advance: (): void => {
+          now += 60_000
+        },
+      }
+    }
+
+    it('does not count the checkout the next run will take over against the cap', async () => {
+      const { service, first, threads, triggerNext } = await setup({
+        canReuse: () => Promise.resolve(true),
+      })
+      const next = await triggerNext()
+      assert.equal(next.disposition, 'started')
+      assert.notEqual(next.threadId, first.threadId)
+      assert.equal(threads.size, 2)
+      assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, undefined)
+    })
+
+    it('still enforces the cap when the checkout cannot be handed on', async () => {
+      const { threads, triggerNext } = await setup({ canReuse: () => Promise.resolve(false) })
+      const next = await triggerNext()
+      assert.equal(next.disposition, 'coalesced')
+      assert.equal(next.coalescedReason, 'worktree-limit')
+      assert.equal(threads.size, 1)
+    })
+
+    it('treats a failing hand-over check, or release, as a retained checkout', async () => {
+      const failingCheck = await setup({ canReuse: () => Promise.reject(new Error('git failed')) })
+      assert.equal((await failingCheck.triggerNext()).coalescedReason, 'worktree-limit')
+      const failingRelease = await setup({
+        canReuse: () => Promise.resolve(false),
+        release: () => Promise.reject(new Error('worktree is missing')),
+      })
+      const outcome = await failingRelease.triggerNext()
+      assert.equal(outcome.coalescedReason, 'worktree-limit')
+    })
+
+    it('allows only one hand-over per run, so a higher cap still bounds the total', async () => {
+      const { threads, first, advance, triggerNext } = await setup({
+        canReuse: (threadId) => Promise.resolve(threadId === first.threadId),
+      })
+      // A second retained checkout (cap 1) is not covered by the single hand-over.
+      const second = await triggerNext()
+      assert.equal(second.disposition, 'started')
+      const pending = threads.get(second.threadId)
+      assert.ok(pending)
+      threads.set(second.threadId, {
+        ...pending,
+        status: 'idle',
+        draftPrompt: '',
+        worktree: {
+          path: '/worktrees/second',
+          branch: 'codex/second',
+          baseBranch: 'main',
+          baseCommit: 'a'.repeat(40),
+          createdAt: 1,
+          seededFromDirtyProject: false,
+        },
+      })
+      advance()
+      const third = await triggerNext()
+      assert.equal(third.coalescedReason, 'worktree-limit')
+    })
+  })
+
   it('does not allocate another worktree while the previous run retains changes', async () => {
     let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
     const threads = new Map<string, Thread>()
@@ -703,7 +837,9 @@ describe('AutomationService', () => {
     let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
     const threads = new Map<string, Thread>()
     const events: AutomationTriggerEvent[] = []
+    const supervisor = new FakeTaskSupervisor()
     const service = createAutomationService({
+      supervisor: () => supervisor,
       now: () => now,
       isPluginEnabled: () => true,
       createProjectThread: (_projectId, thread) => {
@@ -753,6 +889,134 @@ describe('AutomationService', () => {
     assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, undefined)
     service.stop()
   })
+  it('cleans up finished runs through the scheduler release path and reports what must stay', async () => {
+    const now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+    const threads = new Map<string, Thread>()
+    const released: string[] = []
+    const service = createAutomationService({
+      now: () => now,
+      isPluginEnabled: () => true,
+      createProjectThread: (_projectId, thread) => {
+        threads.set(thread.id, thread)
+        return Promise.resolve()
+      },
+      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      releasePreviousRun: (_projectId, threadId) => {
+        if (threadId === 'dirty') {
+          return Promise.resolve({
+            released: false,
+            reason: 'uncommitted-changes',
+            paths: ['notes.md'],
+          })
+        }
+        released.push(threadId)
+        return Promise.resolve({ released: true })
+      },
+    })
+    const schedule = await service.upsert('project-a', {
+      name: 'Project health',
+      cron: '* * * * *',
+      prompt: 'Check project health.',
+      model: 'gpt-5.4',
+      enabled: true,
+    })
+    const worktreeFor = (id: string, retiredAt?: number): NonNullable<Thread['worktree']> => ({
+      path: `/worktrees/${id}`,
+      branch: `codex/${id}`,
+      baseBranch: 'main',
+      baseCommit: 'a'.repeat(40),
+      createdAt: now,
+      seededFromDirtyProject: false,
+      ...(retiredAt !== undefined ? { retiredAt } : {}),
+    })
+    const held = (id: string, status: Thread['status'], retiredAt?: number): Thread => ({
+      id,
+      title: 'Project health',
+      status,
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      automation: { scheduleId: schedule.id, scheduleName: schedule.name, triggeredAt: now },
+      worktree: worktreeFor(id, retiredAt),
+      createdAt: now,
+      updatedAt: now,
+    })
+    threads.set('clean', held('clean', 'idle'))
+    threads.set('dirty', held('dirty', 'idle'))
+    threads.set('running', held('running', 'running'))
+    threads.set('retired', held('retired', 'idle', now))
+
+    const result = await service.cleanupRuns('project-a', schedule.id)
+
+    assert.deepEqual(released, ['clean'])
+    assert.deepEqual(result.released, ['clean'])
+    assert.deepEqual(result.retained, [
+      {
+        threadId: 'dirty',
+        title: 'Project health',
+        reason: 'uncommitted-changes',
+        paths: ['notes.md'],
+      },
+    ])
+  })
+
+  it('clears a recorded worktree-limit skip once cleanup leaves room, and keeps it otherwise', async () => {
+    let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+    const threads = new Map<string, Thread>()
+    let cleanReleased = false
+    const service = createAutomationService({
+      now: () => now,
+      isPluginEnabled: () => true,
+      createProjectThread: (_projectId, thread) => {
+        threads.set(thread.id, thread)
+        return Promise.resolve()
+      },
+      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      releasePreviousRun: () =>
+        Promise.resolve(
+          cleanReleased
+            ? { released: true }
+            : { released: false, reason: 'unmerged-commits' as const },
+        ),
+    })
+    const schedule = await service.upsert('project-a', {
+      name: 'Project health',
+      cron: '* * * * *',
+      prompt: 'Check project health.',
+      model: 'gpt-5.4',
+      enabled: true,
+    })
+    const first = await service.runNow('project-a', schedule.id)
+    const pending = threads.get(first.threadId)
+    assert.ok(pending)
+    threads.set(first.threadId, {
+      ...pending,
+      status: 'idle',
+      draftPrompt: '',
+      worktree: {
+        path: '/worktrees/first',
+        branch: 'codex/first',
+        baseBranch: 'main',
+        baseCommit: 'a'.repeat(40),
+        createdAt: now,
+        seededFromDirtyProject: false,
+      },
+    })
+    now += 60_000
+    await service.tick()
+    assert.ok(service.list('project-a')[0]?.lastWorktreeLimitAt)
+
+    const stillHeld = await service.cleanupRuns('project-a', schedule.id)
+    assert.equal(stillHeld.retained.length, 1)
+    assert.ok(service.list('project-a')[0]?.lastWorktreeLimitAt)
+    assert.equal(service.list('project-a')[0]?.lastWorktreeLimitBlockedBy?.length, 1)
+
+    cleanReleased = true
+    const freed = await service.cleanupRuns('project-a', schedule.id)
+    assert.deepEqual(freed.released, [first.threadId])
+    assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, undefined)
+    assert.equal(service.list('project-a')[0]?.lastWorktreeLimitBlockedBy, undefined)
+  })
+
   it('adopts the durable scheduler task instead of enqueuing one per launch', async () => {
     const scheduleId = 'schedule-1'
     storageSet(STORAGE_KEY, [
@@ -908,6 +1172,61 @@ describe('AutomationService', () => {
     assert.deepEqual(supervisor.cancelled, [])
   })
 
+  it('records a start failure only for the latest run, with a code, and clears it on the next run', async () => {
+    storageSet(STORAGE_KEY, [
+      {
+        id: 'schedule-1',
+        projectId: 'project-a',
+        name: 'Nightly',
+        cron: '* * * * *',
+        prompt: 'Go.',
+        model: 'gpt-5.4',
+        enabled: true,
+        createdAt: 0,
+        updatedAt: 0,
+        lastRunAt: 5,
+        lastCreatedThreadId: 'thread-latest',
+      },
+    ])
+    const service = createAutomationService({
+      now: () => 100,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+    })
+    assert.equal(
+      await service.reportStartFailure('project-a', 'thread-old', {
+        code: 'worktree-failed',
+        message: 'x',
+      }),
+      false,
+    )
+    assert.equal(
+      await service.reportStartFailure('project-b', 'thread-latest', {
+        code: 'worktree-failed',
+        message: 'x',
+      }),
+      false,
+    )
+    assert.equal(
+      await service.reportStartFailure('project-a', 'thread-latest', {
+        code: 'worktree-failed',
+        message: 'Isolated worktree is unavailable',
+      }),
+      true,
+    )
+    assert.deepEqual(service.list('project-a')[0]?.lastProblem, {
+      at: 100,
+      kind: 'failed',
+      message: 'Isolated worktree is unavailable',
+      code: 'worktree-failed',
+      threadId: 'thread-latest',
+    })
+    await service.runNow('project-a', 'schedule-1')
+    assert.equal(service.list('project-a')[0]?.lastProblem, undefined)
+  })
+
   describe('scheduler task recovery', () => {
     const SCHEDULE_ID = 'schedule-1'
     function seedSchedule(): void {
@@ -990,6 +1309,51 @@ describe('AutomationService', () => {
       service.stop()
 
       assert.equal(supervisor.enqueued.length, 1)
+    })
+
+    it('reports the scheduler as recovering, then healthy once a replacement is running', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor([
+        schedulerTask({ taskId: 'live', projectId: 'project-a', threadId: SCHEDULE_ID }),
+      ])
+      const service = serviceFor(supervisor)
+      const seen: string[] = []
+      service.onHealthChange((health) => seen.push(`${health.state}:${health.message ?? ''}`))
+      service.start(() => {})
+      await service.sync()
+      assert.equal(service.health().state, 'ok')
+
+      supervisor.setState('live', 'failed')
+      assert.equal(service.health().state, 'recovering')
+      assert.ok(service.health().since !== null)
+      await settle()
+      service.stop()
+
+      assert.deepEqual(
+        seen.map((entry) => entry.split(':')[0]),
+        ['recovering', 'ok'],
+      )
+      assert.equal(service.health().state, 'ok')
+      assert.equal(service.health().since, null)
+    })
+
+    it('reports the scheduler as stopped when its replacement cannot be created', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor([
+        schedulerTask({ taskId: 'live', projectId: 'project-a', threadId: SCHEDULE_ID }),
+      ])
+      supervisor.enqueue = (): Promise<SupervisedTaskMeta> =>
+        Promise.reject(new Error('disk is full'))
+      const service = serviceFor(supervisor)
+      service.start(() => {})
+      await service.sync()
+
+      supervisor.setState('live', 'failed')
+      await settle()
+      service.stop()
+
+      assert.equal(service.health().state, 'stopped')
+      assert.match(service.health().message ?? '', /disk is full/)
     })
 
     it('stops reacting to the supervisor once stopped', async () => {

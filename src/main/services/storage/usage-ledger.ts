@@ -50,6 +50,7 @@ function toUsageEvent(input: UsageRecordInput): UsageEvent {
     responseServiceTier,
     serviceTierUsage,
     hostingProvider,
+    provider,
     ...usage
   } = input
   if (!usage.inputTokens && !usage.outputTokens) {
@@ -72,6 +73,7 @@ function toUsageEvent(input: UsageRecordInput): UsageEvent {
     ...(responseServiceTier !== undefined ? { responseServiceTier } : {}),
     ...(serviceTierUsage !== undefined ? { serviceTierUsage } : {}),
     ...(hostingProvider !== undefined ? { hostingProvider } : {}),
+    ...(provider !== undefined ? { provider } : {}),
   }
 }
 

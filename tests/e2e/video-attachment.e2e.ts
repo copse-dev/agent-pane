@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -58,7 +58,8 @@ describe('Attaching a video to the chat', () => {
 
   before(async function () {
     this.timeout(120_000)
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-video-attachment-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-video-attachment-')), 'video-workspace')
+    mkdirSync(workspaceRoot)
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
@@ -73,7 +74,7 @@ describe('Attaching a video to the chat', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('shows a dropped video as a film chip with its size, not an image thumbnail', async () => {

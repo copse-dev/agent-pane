@@ -101,11 +101,16 @@ src/renderer/views/projects-pane.ts
 <parameter=end_line>20</parameter>
 </function>
 </tool_call>`
+    const received: Record<string, unknown>[] = []
     const { toolCalls } = recoverTextToolCalls(text, (name, args) => {
+      received.push(args)
       if (name !== 'read_file') return null
-      const parsed = readFileSchema.safeParse(args)
+      const parsed = readFileSchema.safeParse(coerceStringlyTypedToolArgs(args))
       return parsed.success ? parsed.data : null
     })
+    // The callback sees the values as written, so it can keep a string field's
+    // "10" a string; typing is the schema's call.
+    assert.deepEqual(received, [{ path: 'foo.ts', start_line: '10', end_line: '20' }])
     assert.equal(toolCalls.length, 1)
     assert.equal(toolArg(toolCalls, 0, 'start_line'), 10)
     assert.equal(toolArg(toolCalls, 0, 'end_line'), 20)

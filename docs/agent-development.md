@@ -130,7 +130,9 @@ refused if Apple container did not apply every hardening flag it was asked for. 
 engine enforces, and how, is in
 [`thread-in-container.md`](plans/thread-in-container.md#apple-container-as-the-host-engine).
 The opt-in end-to-end test runs on Apple container with
-`COPSE_THREAD_CONTAINER_E2E=apple` (and on Docker with `=1`).
+`COPSE_THREAD_CONTAINER_E2E=apple` (and on Docker with `=1`). The Docker path runs in CI from the
+advisory `thread-container.yml` workflow (PRs touching the runtime, nightly, manual dispatch); it
+is not part of the required `CI Passed` gate yet.
 
 The shared CI runner image can also run on Apple container without Compose. See
 [`ci-runners/README.md`](../ci-runners/README.md#apple-container--apple-silicon-macs)
@@ -156,6 +158,40 @@ Known environment behavior:
   ```bash
   while true; do DISPLAY=:1 xdotool key F15; sleep 0.5; done
   ```
+
+## Launching Copse from a Copse agent session
+
+Do not run `make run`, `pnpm start`, `pnpm run dev`, or `open` from an agent shell to see a branch
+build. Each fails in a different way:
+
+- An ACP agent's own shell is nested inside its session sandbox, and Copse's `run_shell` auto-runs
+  `make run` inside the project sandbox. Neither can reach the macOS window server, and no sandbox
+  denial signature offers the outside retry for it.
+- `make run` blocks for the app's lifetime, and a silent `run_shell` is killed after five minutes.
+- Without a separate profile, the new instance shares `~/.copse` with the Copse you are talking to,
+  loses Electron's single-instance lock, focuses the live window, and quits.
+
+Build in the shell, then launch through the `launch_gui_app` tool, which asks for approval each time
+and opens the app through Launch Services from the host process:
+
+1. In an agent-prepared worktree, run `make build` through `run_shell`.
+2. Resolve the bundle: `realpath node_modules/electron/dist/Copse.app` (a path under
+   `~/.copse/cache/electron-dist/<version>/`).
+3. Call `launch_gui_app` with:
+   - `target`: that absolute `Copse.app` path;
+   - `args`: the **absolute** path to this worktree's `dist/main/index.js` — Launch Services starts
+     the app in `/`, so a relative path does not resolve;
+   - `env`: `{ "COPSE_DIR": "<worktree>/.tmp/launch-profile" }`, plus `COPSE_PANEL_MOCK_LLM=1` when a
+     model is not needed. `COPSE_DIR` moves every store, not only `user-data/`, so the branch build
+     cannot touch the live app's threads, worktrees, or hooks. Reusing a profile directory focuses
+     the instance already using it.
+4. Confirm it started: `user-data/SingletonLock` exists under that profile, and
+   `user-data/config.json` records a `mainWindowState` window. A successful tool result only means
+   `/usr/bin/open` accepted the request.
+
+The instance stays open after the turn ends; quit it from the Dock or menu when finished. This path is
+macOS-only and unavailable in SSH workspaces. It is a manual look, not visual evidence: user-visible
+changes still need a focused WebdriverIO spec (see [Visual validation](#visual-validation)).
 
 ## Per-model behaviour
 
@@ -365,3 +401,21 @@ spec that is not deterministic, and re-baselining fixes neither.
 4. **Fix the cause in the spec or product, then re-baseline once.** Never raise
    `SCREENSHOT_IGNORE_RATIO` to hide a recurring shot: it also hides real 1-2px regressions.
 5. Say in the PR which shots were drift, what caused each, and what was fixed.
+
+### Limiting simultaneous primary agent turns
+
+Copse admits up to **four primary agent turns** at once per app process. Additional
+turns wait in first-in, first-out order and show a waiting notice in the transcript.
+Stop (including mobile Stop) cancels a queued turn without starting its provider.
+Permission waits keep their slot; finishing, cancelling, or failing a turn releases it.
+Queue waiting does not consume the agent's execution timeout.
+
+Set `COPSE_MAX_ACTIVE_TURNS` before launching Copse to change the limit. For example,
+`COPSE_MAX_ACTIVE_TURNS=2 make run` admits two turns. `0` disables admission limiting;
+invalid values use the default of four. Restart the app after changing this variable.
+
+The limit covers primary `runAgent` calls from the desktop, headless host, and ACP
+server, including machine continuations. A nested call shares its parent's admission
+to avoid deadlocking a parent that awaits its child. Internal subagents, standalone
+reviews, shells, builds, tests, and retained idle ACP sessions are separate workloads.
+This bounds simultaneous primary turns, not total processes or a hard RAM ceiling.

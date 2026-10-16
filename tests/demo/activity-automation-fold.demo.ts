@@ -1,5 +1,6 @@
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import { pinDemoClock } from './helpers/fixed-clock.ts'
 
 // A schedule's settled runs fold into one row per outcome in Recently finished, so a
 // schedule that runs every hour cannot fill the Activity list. The fold opens out
@@ -12,6 +13,7 @@ async function folds(): Promise<string[]> {
 
 describe('Activity home automation fold', () => {
   before(async () => {
+    await pinDemoClock()
     await browser.url('about:blank')
     await browser.url('/?scenario=activity-home-automation-fold')
     await $('#activity-home .activity-fold').waitForExist({ timeout: 30_000 })

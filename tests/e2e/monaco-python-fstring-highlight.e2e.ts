@@ -1,10 +1,10 @@
 import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-monaco-fstring-project'
 const SAMPLE_FILE = 'fstring-sample.py'
@@ -46,7 +46,8 @@ describe('Monaco python multi-line f-string highlighting', () => {
 
   before(async function () {
     this.timeout(120_000)
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-monaco-fstring-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-monaco-fstring-')), 'workspace')
+    mkdirSync(workspaceRoot)
     writeFileSync(join(workspaceRoot, SAMPLE_FILE), SAMPLE_LINES.join('\n'), 'utf8')
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
@@ -59,7 +60,7 @@ describe('Monaco python multi-line f-string highlighting', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('keeps code after the f-string tokenized as code, not string', async () => {
@@ -120,6 +121,20 @@ describe('Monaco python multi-line f-string highlighting', () => {
       },
     )
 
-    await saveAppScreenshot(SCREENSHOT)
+    await saveAppScreenshot(SCREENSHOT, undefined, async () => {
+      await parkPointer()
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const bars = [
+              ...document.querySelectorAll(
+                '#file-viewer .monaco-scrollable-element > .scrollbar.horizontal',
+              ),
+            ]
+            return bars.length > 0 && bars.every((bar) => getComputedStyle(bar).opacity === '0')
+          }),
+        { timeout: 5_000, timeoutMsg: 'Python editor scrollbars did not finish fading' },
+      )
+    })
   })
 })

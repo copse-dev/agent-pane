@@ -15,13 +15,16 @@ async function openRightPanelWith(position: 'bottom' | 'side'): Promise<void> {
   // The fixed fixture project, not the repo checkout: the Explorer in the
   // screenshot lists the workspace root, so the checkout's own files made the
   // reference change with every commit.
-  seedEmptyProject(seedStableWorkspace(), `e2e-panel-position-${position}`, {
+  seedEmptyProject(seedStableWorkspace(), 'e2e-panel-position', {
     rightPanelPosition: position,
   })
+  // Both cases exercise the same project. Changing its ID leaves the first
+  // case's native thread store orphaned when the replacement app discovers it.
   await browser.reloadSession()
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
   await $('[aria-label="Toggle right panel"]').click()
   await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
+  await expect($('.orphans-heading')).not.toExist()
 }
 
 describe('right panel position setting', () => {

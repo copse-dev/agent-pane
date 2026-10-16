@@ -198,7 +198,9 @@ export function applyRemoteAgentHandoffContext(
   const preamble = buildRemoteAgentContextPreamble(input)
   const currentImages = prompt.images ?? []
   const priorBudget = Math.max(0, MAX_REMOTE_PROMPT_IMAGES - currentImages.length)
-  const selectedPrior = collectPriorPromptImages(input.priorMessages).slice(-priorBudget)
+  // `slice(-0)` is the whole array, so an exhausted budget must select nothing.
+  const selectedPrior =
+    priorBudget === 0 ? [] : collectPriorPromptImages(input.priorMessages).slice(-priorBudget)
   const images = [...selectedPrior, ...currentImages]
   const text = preamble ? `${preamble}\n\n--- New message ---\n${prompt.text}` : prompt.text
   if (!preamble && images.length === currentImages.length) return prompt
@@ -296,19 +298,25 @@ export async function* parseSseStream(body: ReadableStream<Uint8Array>): AsyncGe
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  // A CR that ends one read may be the first half of a CRLF split across reads.
+  // Normalizing it alone would turn that CRLF into two line ends, a spurious
+  // event boundary, so it waits for the next read.
+  let heldCr = false
 
   for (;;) {
     const { done, value } = await reader.read()
-    if (value) {
-      buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-      let boundary = buffer.indexOf('\n\n')
-      while (boundary >= 0) {
-        const block = buffer.slice(0, boundary)
-        buffer = buffer.slice(boundary + 2)
-        const event = parseSseBlock(block)
-        if (event) yield event
-        boundary = buffer.indexOf('\n\n')
-      }
+    let text: string = (heldCr ? '\r' : '') + (value ? decoder.decode(value, { stream: true }) : '')
+    if (done) text += decoder.decode()
+    heldCr = !done && text.endsWith('\r')
+    if (heldCr) text = text.slice(0, -1)
+    buffer += text.replace(/\r\n?/g, '\n')
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary >= 0) {
+      const block = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+      const event = parseSseBlock(block)
+      if (event) yield event
+      boundary = buffer.indexOf('\n\n')
     }
     if (done) break
   }

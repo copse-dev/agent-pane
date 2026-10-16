@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
@@ -115,7 +115,8 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
     this.timeout(120_000)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-light-contrast-controls-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-light-contrast-controls-')), 'workspace')
+    mkdirSync(workspaceRoot)
     seedEmptyProject(workspaceRoot, PROJECT_ID, {
       model: 'claude-sonnet-4-6',
       roadmapPlansEnabled: true,
@@ -128,7 +129,7 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('clears AA on the real Changes badge and roadmap Save button in light and dark', async () => {

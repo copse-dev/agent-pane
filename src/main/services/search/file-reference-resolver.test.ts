@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { resolveFileReferences } from './file-reference-resolver.ts'
@@ -96,6 +96,64 @@ describe('file-reference-resolver', () => {
         projectRelativePath: join('packages', 'app'),
       }),
       [{ candidate: staleAbsolutePath, path: 'thread-only.md', kind: 'file' }],
+    )
+  })
+
+  it('resolves saved hosted links in the owning checkout before its index catches up', async () => {
+    const checkout = join(tempRoot, 'thread-checkout')
+    await mkdir(join(checkout, 'docs', 'plans'), { recursive: true })
+    await writeFile(join(checkout, 'docs', 'plans', 'mcp-apps-support.md'), '# Plan')
+    const candidate = '/workspace/repo/docs/plans/mcp-apps-support.md'
+    const context = {
+      projectRoot: tempRoot,
+      managedProjectRoot: join(tempRoot, 'worktrees'),
+      projectRelativePath: '',
+    }
+    assert.deepEqual(await resolveFileReferences([candidate], checkout, context), [
+      { candidate, path: 'docs/plans/mcp-apps-support.md', kind: 'file' },
+    ])
+    assert.deepEqual(await resolveFileReferences([candidate], tempRoot, context), [])
+    assert.deepEqual(await resolveFileReferences([candidate], checkout), [])
+  })
+
+  it('does not guess a different basename or map neighboring sandbox directories', async () => {
+    const context = {
+      projectRoot: tempRoot,
+      managedProjectRoot: join(tempRoot, 'worktrees'),
+      projectRelativePath: '',
+    }
+    assert.deepEqual(
+      await resolveFileReferences(
+        [
+          '/workspace/repo/renderer.ts',
+          '/workspace/repository/README.md',
+          '/workspace/outputs/README.md',
+          '/workspace/repo/../README.md',
+          '/workspace/repo//README.md',
+        ],
+        tempRoot,
+        context,
+      ),
+      [],
+    )
+    assert.deepEqual(
+      await resolveFileReferences(['/workspace/repo/README.md'], tempRoot, context),
+      [{ candidate: '/workspace/repo/README.md', path: 'README.md', kind: 'file' }],
+    )
+  })
+
+  it('rejects hosted links through symlinks outside the owning checkout', async () => {
+    const checkout = join(tempRoot, 'thread-checkout')
+    await mkdir(checkout)
+    await writeFile(join(tempRoot, 'private.txt'), 'outside checkout')
+    await symlink(join(tempRoot, 'private.txt'), join(checkout, 'escape.txt'))
+    assert.deepEqual(
+      await resolveFileReferences(['/workspace/repo/escape.txt'], checkout, {
+        projectRoot: tempRoot,
+        managedProjectRoot: join(tempRoot, 'worktrees'),
+        projectRelativePath: '',
+      }),
+      [],
     )
   })
 

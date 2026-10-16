@@ -1,13 +1,10 @@
+import { saveSettingsSection } from './helpers/settings-scroll-capture.ts'
 import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
-import {
-  E2E_SCREENSHOT_DIR,
-  pinTextForCapture,
-  saveElementScreenshot,
-} from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, pinTextForCapture } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 
 // G2 (docs/plans/hooks-and-feature-packs.md): the dry-run hook tester. Each
@@ -131,10 +128,7 @@ describe('settings sources hooks (dry-run tester)', () => {
       /^\d+ ms$/,
       '40 ms',
     )
-    await saveElementScreenshot(
-      'fieldset:has(#sources-hooks-list)',
-      'settings-sources-hook-test.png',
-    )
+    await saveSettingsSection('fieldset:has(#sources-hooks-list)', 'settings-sources-hook-test.png')
     await restoreDuration()
   })
 })

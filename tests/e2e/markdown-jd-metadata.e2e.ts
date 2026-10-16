@@ -52,6 +52,7 @@ describe('markdown job description metadata', () => {
     expect(result.hasBenefitsTable).toBe(true)
     expect(result.hasMetadataTable).toBe(false)
 
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
     await saveAppScreenshot('markdown-jd-metadata.png')
   })
 })

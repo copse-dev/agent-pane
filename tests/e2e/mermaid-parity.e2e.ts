@@ -143,14 +143,14 @@ describe('Mermaid same-environment rendering parity', () => {
     await browser.reloadSession()
     const loaded = await browser.execute(
       () =>
-        new Promise<boolean>((done) => {
+        new Promise<boolean>((resolve) => {
           const script = document.createElement('script')
           script.src = new URL('./mermaid-parity.js', location.href).href
           script.onload = (): void => {
-            done(true)
+            resolve(true)
           }
           script.onerror = (): void => {
-            done(false)
+            resolve(false)
           }
           document.head.append(script)
         }),
@@ -168,7 +168,10 @@ describe('Mermaid same-environment rendering parity', () => {
         async (source, name) => {
           const parity = window.mermaidParity
           if (!parity) throw new Error('Mermaid parity fixture is not loaded')
-          await parity.pair(source, name)
+          return await parity.pair(source, name).then(
+            () => true,
+            (e: unknown) => String(e),
+          )
         },
         source,
         name,

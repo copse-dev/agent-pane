@@ -96,6 +96,18 @@ describe('transcript selection reply', () => {
     assert.equal(popup.hidden, true)
   })
 
+  it('starts at one line and grows with the reply text', () => {
+    const { transcript, popup, input } = fixture()
+    select(transcript, 0, 13)
+    assert.equal(input.getAttribute('rows'), '1')
+    assert.equal(input.style.height, '')
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, value: 78 })
+    input.value = 'First line\\nSecond line\\nThird line'
+    input.dispatchEvent(new Event('input'))
+    assert.equal(input.style.height, '78px')
+    assert.equal(popup.hidden, false)
+  })
+
   it('keeps a draft and its original passage through outside clicks, selection changes and blur', () => {
     const { transcript, popup, input, quotes } = fixture()
     select(transcript, 0, 13)

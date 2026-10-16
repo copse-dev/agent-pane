@@ -496,9 +496,9 @@ export function mountContainerRunControl(
 
     const egressHint = el('p', { class: 'field-hint container-run-model-hint' })
     function renderEgressHint(): void {
-      egressHint.textContent =
-        `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; ` +
-        'the key is scoped to the run and blanked once the guest holds it.'
+      egressHint.textContent = chosenModel.startsWith('acp:')
+        ? `The agent runs in the container and receives its selected credential; network access is limited to its provider.`
+        : `The desktop calls ${modelDisplayLabel(chosenModel)} for this run; provider keys and sign-in tokens stay on the desktop.`
     }
     renderEgressHint()
 
@@ -710,7 +710,9 @@ export function mountContainerRunControl(
             ? 'one API key, scoped to the run'
             : held === 'login'
               ? 'your desktop sign-in, copied in for the run'
-              : 'none',
+              : held === 'host'
+                ? 'Provider authentication held on the desktop; no keys or tokens in the container'
+                : 'none',
       ),
     )
     const elapsedRow = row('Elapsed', elapsedLabel(run))

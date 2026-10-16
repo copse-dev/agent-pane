@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -17,7 +17,8 @@ describe('roadmap category accordion (alignment + scroll)', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-accordion-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-accordion-')), 'workspace')
+    mkdirSync(workspaceRoot, { recursive: true })
     const bugItems = Array.from({ length: 60 }, (_, i) => ({
       id: `e2e-accordion-bug-${String(i)}`,
       title: `Bug item ${String(i)}`,
@@ -40,7 +41,7 @@ describe('roadmap category accordion (alignment + scroll)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 

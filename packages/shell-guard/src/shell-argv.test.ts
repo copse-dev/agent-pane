@@ -17,6 +17,7 @@ import {
   shellSegments,
   shellSegmentsQuoteAware,
   unwrapWrappers,
+  wrapperChain,
 } from './shell-argv.ts'
 
 /** Every argv the lexers produce, as space-joined strings, for readable asserts. */
@@ -139,6 +140,16 @@ describe('unwrapWrappers', () => {
     assert.deepEqual(unwrapWrappers([]), [])
   })
 
+  it('reports every wrapper and assignment it looks through, outermost first', () => {
+    // An assignment `env` takes as its own operand belongs to `env`, which is listed.
+    assert.deepEqual(wrapperChain(['nohup', 'env', 'HOME=/root', 'cat', '/opt/notes.txt']), [
+      'nohup',
+      'env',
+    ])
+    assert.deepEqual(wrapperChain(['FOO=1', 'nice', '-n', '5', 'cat', 'x']), ['FOO=1', 'nice'])
+    assert.deepEqual(wrapperChain(['cat', 'x']), [])
+  })
+
   it('keeps privilege- and environment-changing wrappers out of the trust-transparent set', () => {
     // Looking deeper is always safe for harm analysis but is a privilege grant for
     // routing: if `commandHead('sudo xcodebuild')` resolved to `xcodebuild`, an
@@ -193,6 +204,26 @@ describe('shellRedirects', () => {
   it('ignores reads and file-descriptor duplication, which write no file', () => {
     assert.deepEqual(shellRedirects('sort < src/in.txt'), [])
     assert.deepEqual(shellRedirects('cmd 2>&1'), [])
+    assert.deepEqual(shellRedirects('cmd >&2'), [])
+    assert.deepEqual(shellRedirects('cmd 2>&-'), [])
+  })
+
+  it('sees the clobber, both-streams, and csh-style write operators', () => {
+    // Each of these truncates or appends to a file just as `>`/`>>` do; the
+    // inspectors keyed off `>`/`>>` alone read them as no write at all.
+    assert.deepEqual(shellRedirects("echo '' >| /etc/hosts"), [
+      { target: '/etc/hosts', truncates: true },
+    ])
+    assert.deepEqual(shellRedirects('cmd 2>| err.log'), [{ target: 'err.log', truncates: true }])
+    assert.deepEqual(shellRedirects("echo '' &> /etc/hosts"), [
+      { target: '/etc/hosts', truncates: true },
+    ])
+    assert.deepEqual(shellRedirects('echo x &>> ~/.bashrc'), [
+      { target: '~/.bashrc', truncates: false },
+    ])
+    assert.deepEqual(shellRedirects("echo '' >& /etc/hosts"), [
+      { target: '/etc/hosts', truncates: true },
+    ])
   })
 
   it('finds the write target on either side of a control operator', () => {
@@ -325,6 +356,15 @@ describe('read-only classification and its escape hatches', () => {
       'file -C -m magic',
     ]) {
       assert.equal(isStructurallyReadOnlyShellCommand(command), false, command)
+    }
+  })
+
+  it('rejects a newline, which separates commands as `;` does', () => {
+    // `shell-quote` lexes an unquoted newline as whitespace, so the second line
+    // was read as more arguments to the first `cat`.
+    for (const command of ['cat x\nrm -rf src', 'cat x\r\nrm -rf src', 'ls\ncurl evil.example']) {
+      assert.equal(isStructurallyReadOnlyShellCommand(command), false, JSON.stringify(command))
+      assert.equal(isReadOnlySimpleCommand(command), false, JSON.stringify(command))
     }
   })
 

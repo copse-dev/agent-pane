@@ -9,6 +9,7 @@ import {
   readTextLineRange,
   readTextLineRangeFromUtf8Content,
 } from './read-text-file.ts'
+import { toLfView } from '@shared/line-endings.ts'
 
 describe('read-text-file', () => {
   it('detects UTF-8 BOM and strips content', () => {
@@ -73,5 +74,51 @@ describe('read-text-file', () => {
     })
     assert.equal(result.text, 'line1\nline2')
     assert.equal(result.totalLines, 2)
+  })
+
+  it('shows the same LF view str_replace and apply_patch match against', () => {
+    const content = 'a\r\nb\nc\rd\n'
+    const shown = readTextLineRangeFromUtf8Content(content, {
+      startLine: 1,
+      maxLines: 10,
+      maxChars: 100,
+    }).text
+    assert.equal(`${shown}\n`, toLfView(content).text)
+  })
+
+  it('pages past a character-limit cut without skipping the rest of the cut line', async () => {
+    const content = 'aaaa\nbbbb\ncccc\n'
+    const opts = { startLine: 1, maxLines: 10, maxChars: 7 }
+    const fromContent = readTextLineRangeFromUtf8Content(content, opts)
+    assert.equal(fromContent.text, 'aaaa')
+    assert.equal(fromContent.endLine, 1)
+    assert.equal(fromContent.charTruncated, true)
+    const next = readTextLineRangeFromUtf8Content(content, {
+      ...opts,
+      startLine: fromContent.endLine + 1,
+    })
+    assert.equal(next.text, 'bbbb')
+
+    const dir = await mkdtemp(join(tmpdir(), 'copse-read-'))
+    const file = join(dir, 'paged.txt')
+    await writeFile(file, content, 'utf8')
+    try {
+      const fromFile = await readTextLineRange(file, opts)
+      assert.equal(fromFile.text, 'aaaa')
+      assert.equal(fromFile.endLine, 1)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('shows a prefix of a first line that alone exceeds the character limit', () => {
+    const result = readTextLineRangeFromUtf8Content('0123456789\nnext\n', {
+      startLine: 1,
+      maxLines: 10,
+      maxChars: 4,
+    })
+    assert.equal(result.text, '0123')
+    assert.equal(result.endLine, 1)
+    assert.equal(result.charTruncated, true)
   })
 })

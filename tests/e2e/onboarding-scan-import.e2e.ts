@@ -11,7 +11,7 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 // The happy path with real detections, made deterministic by injecting them:
 // two provider keys through the electron-shell env file (bootstrap.cjs applies
 // it before main runs), a fixture "Jan" server on its preset port 1337, and a
-// fixture LM Studio server whose ephemeral port is seeded as localServerUrl.
+// fixture LM Studio server whose stable port is seeded as localServerUrl.
 // The spec then proves the checklist honours unticking and that finish
 // persists imports + relative-selector defaults to settings.json on disk.
 
@@ -59,10 +59,10 @@ describe('onboarding: scan finds keys and local servers', () => {
   before(async function () {
     this.timeout(120_000)
     // Jan's preset probe URL is fixed (http://127.0.0.1:1337/v1), so the fixture
-    // must own the real port; LM Studio's probe honours localServerUrl, so its
-    // fixture takes any free port.
+    // must own the real port. Keep LM Studio's displayed URL stable too;
+    // fail clearly if a real server already owns its standard port.
     await listen(janServer, 1337, 'Jan (or something else on its port)')
-    const lmPort = await listen(lmServer, 0, 'unused')
+    const lmPort = await listen(lmServer, 1234, 'LM Studio (or something else on its port)')
     // Exercise normal PATH-based ACP discovery against a controlled fixture so
     // the checklist and its screenshot don't depend on the runner's installs.
     agentBinDir = mkdtempSync(join(tmpdir(), 'copse-onboarding-agent-'))

@@ -140,6 +140,9 @@ describe('integrated terminal', () => {
       },
     )
 
+    // Leave the canvas cursor unfocused at its steady outline for capture.
+    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => button.focus())
+    await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
     await saveAppScreenshot('terminal-shell-prompt.png')
 
     // xterm's hidden textarea receives keyboard input after its visible screen is focused.
@@ -158,6 +161,9 @@ describe('integrated terminal', () => {
       timeoutMsg: 'expected echo hello output in xterm buffer',
     })
 
+    // Leave the canvas cursor unfocused at its steady outline for capture.
+    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => button.focus())
+    await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
     await saveAppScreenshot('terminal-echo-hello.png')
   })
 

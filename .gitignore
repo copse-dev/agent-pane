@@ -85,3 +85,7 @@ docs/acp-behavior-matrix.json
 docs/plans/perf-data*/runs/**/process.log
 # Warmup runs are discarded by the harness; keeping them would commit noise.
 docs/plans/perf-data*/runs/*warmup*/
+
+# R2-backed screenshot references and local immutable object cache.
+/tests/e2e/screenshots/*.png
+/.screenshot-policy/

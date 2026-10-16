@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
   startScriptedModelServer,
@@ -46,7 +46,8 @@ describe('local provider default worktree isolation', () => {
 
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
-    projectRoot = mkdtempSync(join(tmpdir(), 'copse-local-model-worktree-'))
+    projectRoot = join(mkdtempSync(join(tmpdir(), 'copse-local-model-worktree-')), 'workspace')
+    mkdirSync(projectRoot)
     git(projectRoot, ['init', '-q', '--initial-branch=main'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
@@ -94,7 +95,7 @@ describe('local provider default worktree isolation', () => {
       }
     }
     if (model) await model.stop()
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (projectRoot) rmSync(dirname(projectRoot), { recursive: true, force: true })
   })
 
   it('routes a real local-provider tool write into a default isolated worktree', async function () {
@@ -198,6 +199,9 @@ describe('local provider default worktree isolation', () => {
     // settles; without this wait some runs capture the composer before it.
     await $('.follow-up-bubble-changes').waitForDisplayed({ timeout: 15_000 })
     await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+1')
+    // The sidebar summary has its own status refresh, independent of the
+    // composer's round trip. Capture only once both report this unlanded write.
+    await $('.chat-row.selected .chat-changes-status').waitForDisplayed({ timeout: 40_000 })
     await saveAppScreenshot('local-model-worktree-isolation.png')
   })
 })

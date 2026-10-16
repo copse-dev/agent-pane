@@ -25,6 +25,7 @@ import {
   getProjectRoot,
   getWorkspaceRoot,
   isResolvedPathInsideWorkspace,
+  listLocalProjectRoots,
   registerAllowedWorkspaceRoot,
   registerInternalWorkspaceRoot,
   resolveLocalChatStorePath,
@@ -563,6 +564,21 @@ describe('allowed workspace roots', () => {
 
     assert.equal(getProjectRoot('p2'), '/projects/two')
     assert.equal(getProjectRoot('missing'), null)
+  })
+
+  it('listLocalProjectRoots returns only projects without an sshHost', () => {
+    storageSet('projects', [
+      { id: 'p1', path: '/projects/one', name: 'one' },
+      { id: 'p2', path: '/srv/app', name: 'app', sshHost: 'remote-dev-testing-016' },
+      { id: 'p3', path: '/projects/three', name: 'three' },
+    ])
+
+    assert.deepEqual(listLocalProjectRoots(), ['/projects/one', '/projects/three'])
+  })
+
+  it('listLocalProjectRoots returns an empty list when no projects are persisted', () => {
+    storageSet('projects', [])
+    assert.deepEqual(listLocalProjectRoots(), [])
   })
 })
 

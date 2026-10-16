@@ -2,7 +2,7 @@ import { describe, it, afterEach, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 import {
   createTerminalSession,
@@ -19,9 +19,12 @@ import {
   writeTerminalSession,
   type TerminalOwner,
 } from './terminal-service.ts'
+import { hasLiveWorktreeWriter } from '../worktree-writers.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { projectStoreDir } from '../storage/copse-paths.ts'
-import { setSetting } from '../storage/settings.ts'
+import { setSetting, getSetting } from '../storage/settings.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
+import { getActiveExecutionTarget } from '../ssh-workspace/execution-target.ts'
 import {
   SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
   SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
@@ -146,6 +149,54 @@ describe('terminal-service', () => {
     } finally {
       if (sessionId) destroyTerminalSession(sessionId, OWNER)
       restore()
+    }
+  })
+
+  it('opens an explicit local console at home while the active project routes over SSH', async (t) => {
+    if (process.platform === 'win32' || !(await ptySpawnAvailable())) {
+      t.skip('POSIX PTY assertion unavailable')
+      return
+    }
+    const previousProjects = storageGet('projects')
+    const previousProject = storageGet('activeProjectId')
+    const previousEnabled = getSetting<boolean>('sshWorkspaceEnabled', false)
+    const previousHosts = getSetting('sshWorkspaceHosts', [])
+    const restore = setWorkspaceRootForTest('/remote/project')
+    const win = mockWindow()
+    let sessionId = ''
+    try {
+      await setSetting('sshWorkspaceEnabled', true)
+      await setSetting('sshWorkspaceHosts', [
+        {
+          id: 'dev-local-test',
+          label: 'Fixture',
+          host: 'no-network.example.invalid',
+          user: 'test',
+        },
+      ])
+      storageSet('activeProjectId', 'remote-local-test')
+      storageSet('projects', [
+        { id: 'remote-local-test', path: '/remote/project', sshHost: 'dev-local-test' },
+      ])
+      assert.equal(getActiveExecutionTarget().kind, 'ssh')
+      sessionId = await createTerminalSession(
+        win,
+        80,
+        24,
+        { executionTarget: 'local' },
+        '/remote/project',
+      )
+      writeTerminalSession(sessionId, OWNER, `printf '__COPSE_LOCAL_CWD__:%s\\n' "$PWD"\n`)
+      const output = await waitForTerminalOutput(win, /__COPSE_LOCAL_CWD__:\//)
+      assert.ok(output.includes(`__COPSE_LOCAL_CWD__:${homedir()}`))
+      assert.ok(!output.includes('__COPSE_LOCAL_CWD__:/remote/project'))
+    } finally {
+      if (sessionId) destroyTerminalSession(sessionId, OWNER)
+      restore()
+      storageSet('projects', previousProjects)
+      storageSet('activeProjectId', previousProject)
+      await setSetting('sshWorkspaceEnabled', previousEnabled)
+      await setSetting('sshWorkspaceHosts', previousHosts)
     }
   })
 
@@ -309,6 +360,35 @@ describe('terminal-service', () => {
     } finally {
       if (sessionId) destroyTerminalSession(sessionId, OWNER)
       restore()
+    }
+  })
+
+  it('holds a worktree writer lease while a shell is open on the tree (#1700)', async (t) => {
+    if (!(await ptySpawnAvailable())) {
+      t.skip('PTY spawn unavailable in this environment')
+      return
+    }
+    const threadRoot = await mkdtemp(join(tmpdir(), 'copse-terminal-writer-'))
+    const restore = setWorkspaceRootForTest(threadRoot)
+    const win = mockWindow()
+    try {
+      // Copse cannot see what the user types, so an open shell counts as a writer.
+      const destroyed = await createTerminalSession(win, 80, 24, { threadId: 'w' }, threadRoot)
+      assert.equal(hasLiveWorktreeWriter(threadRoot), true)
+      destroyTerminalSession(destroyed, OWNER)
+      assert.equal(hasLiveWorktreeWriter(threadRoot), false, 'closing the tab ends the lease')
+
+      const exited = await createTerminalSession(win, 80, 24, { threadId: 'w' }, threadRoot)
+      assert.equal(hasLiveWorktreeWriter(threadRoot), true)
+      writeTerminalSession(exited, OWNER, 'exit\n')
+      const deadline = Date.now() + 5000
+      while (hasLiveWorktreeWriter(threadRoot) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      assert.equal(hasLiveWorktreeWriter(threadRoot), false, 'a shell that exits ends the lease')
+    } finally {
+      restore()
+      await rm(threadRoot, { recursive: true, force: true })
     }
   })
 

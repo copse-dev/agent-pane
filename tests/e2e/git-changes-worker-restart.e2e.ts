@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
+import { parkPointer, waitForSettledLayout } from './helpers/screenshot.ts'
 import {
   cleanupGitChangesFixture,
   resetUserData,
@@ -95,6 +96,8 @@ describe('git changes diff colouring after a worker restart', function () {
       timeout: 15_000,
       timeoutMsg: 'expected diff colouring after the editor worker restart (#1753)',
     })
+    await parkPointer()
+    await waitForSettledLayout('#git-diff-viewer-host')
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-worker-restart.png'))
   })
 })

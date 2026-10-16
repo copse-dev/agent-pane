@@ -119,11 +119,12 @@ function runProbeWorker(
     let stderr = ''
     let settled = false
     const cancelEscalation = { current: null as (() => void) | null }
+    // Settling and stopping the escalation are separate: a timed-out worker is
+    // reported at once, but its SIGKILL fallback must stay armed until it exits.
     const finish = (fn: () => void): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      cancelEscalation.current?.()
       fn()
     }
     const timer = setTimeout(() => {
@@ -147,6 +148,7 @@ function runProbeWorker(
       })
     })
     child.once('close', (code) => {
+      cancelEscalation.current?.()
       finish(() => {
         try {
           const probe = parseProbeWorkerOutput(stdout)

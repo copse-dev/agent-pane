@@ -275,6 +275,31 @@ describe('switching between isolated running threads', () => {
     await expect($('.messages-list')).toHaveText(
       expect.stringContaining('The checkout files are listed above.'),
     )
-    await saveElementScreenshot('.messages-list', 'thread-switch-isolated-worktrees.png')
+    // Restoring a thread also refreshes its deterministic Changes suggestion.
+    // Wait for that row and its measured composer reservation before cropping
+    // the transcript, so the asynchronous row cannot paint over its lower edge.
+    await expect($('.follow-up-bubble-changes')).toBeDisplayed()
+    await expect($('.follow-up-stat-add')).toHaveText('+1')
+    await expect($('.follow-up-stat-del')).toHaveText('-0')
+    await saveElementScreenshot('.messages-list', 'thread-switch-isolated-worktrees.png', {
+      beforeCapture: async () => {
+        await browser.waitUntil(
+          () =>
+            browser.execute(() => {
+              const pane = document.getElementById('pane-chat')
+              const composer = document.getElementById('input-bar')
+              if (!pane || !composer) return false
+              const reserved = Number.parseFloat(
+                getComputedStyle(pane).getPropertyValue('--chat-composer-height'),
+              )
+              return reserved === Math.max(72, Math.ceil(composer.getBoundingClientRect().height))
+            }),
+          {
+            timeout: 5_000,
+            timeoutMsg: 'restored thread composer reservation did not match its visible rows',
+          },
+        )
+      },
+    })
   })
 })

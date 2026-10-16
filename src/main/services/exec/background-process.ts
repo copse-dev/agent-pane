@@ -19,6 +19,7 @@ import { currentRunUsesGuardedYolo } from '../security/guarded-yolo.ts'
 import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 import { worktreePreparationShellEnvironment } from '../worktree-preparation.ts'
+import { beginWorktreeWriter } from '../worktree-writers.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
 // plugin (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
@@ -198,6 +199,71 @@ export interface BackgroundProcessCompletion {
   logs: string
 }
 
+export interface AdoptBackgroundProcessOptions {
+  command: string
+  cwd: string
+  proc: ChildProcess
+  owner: ThreadExecutionOwner
+  unsandboxed: boolean
+  startedAt: number
+  output: string
+  timeoutMs: number
+  onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
+}
+
+/** Transfer an already authorized child without respawning it or widening its sandbox. */
+export function adoptBackgroundProcess(opts: AdoptBackgroundProcessOptions): BackgroundProcessInfo {
+  const entry: BackgroundProcess = {
+    id: nextBackgroundOperationId(),
+    command: opts.command,
+    cwd: opts.cwd,
+    proc: opts.proc,
+    owner: opts.owner,
+    startedAt: opts.startedAt,
+    output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES, { evidence: true }),
+    portBinding: false,
+    unsandboxed: opts.unsandboxed,
+    url: null,
+    urlRemote: false,
+    exited: false,
+    exitCode: null,
+    timedOut: false,
+    cancelled: false,
+    completionNotified: false,
+    completionTimer: null,
+    ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
+  }
+  entry.output.append(opts.output)
+  processes.set(entry.id, entry)
+  entry.completionTimer = setTimeout(
+    () => {
+      if (entry.exited || entry.cancelled) return
+      entry.timedOut = true
+      terminateProcessTree(entry.proc)
+    },
+    Math.max(1, opts.timeoutMs),
+  )
+  opts.proc.stdout?.on('data', (chunk: Buffer) => {
+    onOutput(entry, chunk)
+  })
+  opts.proc.stderr?.on('data', (chunk: Buffer) => {
+    onOutput(entry, chunk)
+  })
+  const finish = (code: number | null): void => {
+    if (entry.exited) return
+    entry.exited = true
+    entry.exitCode = code
+    notifyCompletion(entry)
+    notifyThreadResourceFinished(entry.owner.threadId)
+  }
+  opts.proc.once('close', finish)
+  opts.proc.once('error', () => {
+    finish(null)
+  })
+  if (opts.proc.exitCode !== null || opts.proc.signalCode !== null) finish(opts.proc.exitCode)
+  return toInfo(entry)
+}
+
 function notifyCompletion(entry: BackgroundProcess): void {
   if (entry.completionNotified || entry.cancelled || !entry.exited) return
   entry.completionNotified = true
@@ -242,6 +308,13 @@ export async function startBackgroundProcess(
       allowPortBinding: portBinding,
       unsandboxed,
     })
+    // A task writes on its own schedule, across turns, so the diff queue must
+    // not trust a remembered clean sweep while it runs (#1700). Released on the
+    // child's own exit, however it was stopped.
+    const releaseWriter = beginWorktreeWriter(cwd)
+    proc.once('exit', releaseWriter)
+    proc.once('error', releaseWriter)
+    if (proc.exitCode !== null || proc.signalCode !== null) releaseWriter()
 
     const entry: BackgroundProcess = {
       id: nextBackgroundOperationId(),

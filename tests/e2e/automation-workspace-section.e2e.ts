@@ -299,7 +299,7 @@ describe('workspace-level automations section', function () {
     const opsRow = (await rows.getElements())[1]
     assert.ok(opsRow)
 
-    // The row belongs to the background project, so its menu carries only the
+    // The background project's row exposes conversation access alongside its
     // schedule actions. Capture the transient surface itself: a screenshot of
     // the closed sidebar would not prove that Run now is actually exposed.
     await opsRow.click({ button: 'right' })
@@ -308,7 +308,7 @@ describe('workspace-level automations section', function () {
     const contextMenuLabels = await browser.execute(() =>
       Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
     )
-    assert.deepEqual(contextMenuLabels, ['Run now', 'Automation setup…'])
+    assert.deepEqual(contextMenuLabels, ['Conversation access…', 'Run now', 'Automation setup…'])
     await saveAppScreenshot('automation-sidebar-run-now-context-menu.png')
     await browser.keys('Escape')
     await expect(contextMenu).not.toBeExisting()

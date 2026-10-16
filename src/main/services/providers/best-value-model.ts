@@ -15,6 +15,7 @@ import {
   openRouterFrontierCandidates,
 } from '@copse/llm/frontier-candidates.ts'
 import { CLOUD_MODELS } from '@copse/llm/model-catalog.ts'
+import { hostRoutedNamespace } from '@copse/llm/model-selection.ts'
 import { isNoTrainingModelPath, isZeroRetentionModelPath } from '@copse/llm/data-policies.ts'
 import { LMSTUDIO_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
 import { applyPlanCoverage } from '@shared/plan-inclusion.ts'
@@ -108,7 +109,9 @@ export function toRoutableModelId(candidate: FrontierCandidate): string {
  * configured route) are excluded by `isRoutableCandidate` — a selector must
  * always name something that can run.
  */
-export async function routableFrontierPoints(): Promise<FrontierPoint[]> {
+export async function routableFrontierPoints(
+  opts: { callableOnly?: boolean } = {},
+): Promise<FrontierPoint[]> {
   const [localIds, openRouterModels, planUsage] = await Promise.all([
     loadedLocalModelIds(),
     openRouterPricedModels(),
@@ -138,6 +141,9 @@ export async function routableFrontierPoints(): Promise<FrontierPoint[]> {
 
   const keepRoute = (candidate: FrontierCandidate): boolean => {
     if (!isRoutableCandidate(candidate, availableCloud)) return false
+    // Filter before identity grouping so a free ACP route cannot hide the
+    // callable API route for the same model in an in-process worker's pool.
+    if (opts.callableOnly && hostRoutedNamespace(candidate.id) !== null) return false
     if (!isModelMakerAllowed(candidate.id)) return false
     // OpenRouter serves some routes async-only via `/v1/batches`. A `:batch`
     // suffix marks one of those, which the sync streaming transport cannot

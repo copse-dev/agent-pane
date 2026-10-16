@@ -40,6 +40,7 @@ describe('MCP tool labels', () => {
     await expect(failed.$('.tool-name')).toHaveText('Ran command')
     await expect(run).not.toHaveAttribute('open')
     await expect(run.$('[data-tool-id="tc-copse-error"]')).not.toExist()
+    await $('.context-wheel.has-breakdown').waitForExist({ timeout: 15_000 })
     await saveAppScreenshot('mcp-tool-labels-collapsed.png')
 
     // Each step is headed by its message's own label: a lone MCP tool keeps its

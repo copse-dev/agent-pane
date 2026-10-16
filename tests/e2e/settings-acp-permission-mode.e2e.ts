@@ -5,7 +5,11 @@ import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 describe('ACP permission-mode settings', () => {
@@ -92,18 +96,17 @@ describe('ACP permission-mode settings', () => {
     await dialog.waitForDisplayed({ timeout: 10_000 })
     await $('.settings-nav-btn[data-section="general"]').click()
 
-    // Device agents live under the one Providers panel now: an agent with no
-    // other capability gets a chip of its own.
-    const chip = await $('.provider-chip[data-provider="fixture-agent"]').getElement()
-    await chip.waitForExist({ timeout: 15_000 })
-    await chip.click()
+    // Device agents live in the Coding agents list: open the row's Options.
+    const options = await $('.acp-row[data-agent="fixture-agent"] button[aria-expanded]')
+    await options.waitForExist({ timeout: 15_000 })
+    await options.click()
 
     const card = await $('.acp-agent-card').getElement()
     await card.waitForExist({ timeout: 15_000 })
     await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
       const fieldset = [...document.querySelectorAll<HTMLFieldSetElement>('fieldset')].find(
-        (candidate) => candidate.querySelector('legend')?.textContent.trim() === 'Providers',
+        (candidate) => candidate.querySelector('legend')?.textContent.trim() === 'Coding agents',
       )
       if (content && fieldset) content.scrollTop = Math.max(0, fieldset.offsetTop - 24)
     })
@@ -125,13 +128,11 @@ describe('ACP permission-mode settings', () => {
     await modelPicker.$('.model-picker-trigger').click()
     const modelFilter = await modelPicker.$('.model-picker-filter').getElement()
     await modelFilter.setValue('opus')
-    await expect(
-      await modelPicker.$$('.model-picker-option').getElements(),
-    ).toBeElementsArrayOfSize(1)
-    await expect(
-      await modelPicker.$('.model-picker-option .model-picker-option-label').getElement(),
-    ).toHaveText('Fixture Opus')
-    await saveElementScreenshot('.acp-agent-card', 'settings-acp-model-picker-search.png')
+    await expect(await modelPicker.$$('.model-picker-option')).toBeElementsArrayOfSize(1)
+    await expect(await modelPicker.$('.model-picker-option .model-picker-option-label')).toHaveText(
+      'Fixture Opus',
+    )
+    await saveAppScreenshot('settings-acp-model-picker-search.png')
     await browser.keys('Escape')
 
     const modeSelect = await card.$('.acp-permission-mode-field select').getElement()

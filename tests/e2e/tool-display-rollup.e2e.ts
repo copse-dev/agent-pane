@@ -122,6 +122,7 @@ describe('tool call turn rollup', () => {
       const list = document.querySelector('.messages-list')
       if (list) list.scrollTop = 0
     })
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
     await saveAppScreenshot('tool-display-rollup-collapsed.png')
   })
 

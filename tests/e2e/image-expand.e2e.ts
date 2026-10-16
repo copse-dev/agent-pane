@@ -9,6 +9,8 @@ import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
   saveElementScreenshot,
+  prepareE2eScreenshot,
+  waitForImagesSettled,
 } from './helpers/screenshot.ts'
 
 const PROJECT_WORKSPACE_PREFIX = 'copse-image-expand-'
@@ -19,6 +21,8 @@ const THREAD_DISMISSED_SHOT = 'image-expand-thread-dismissed.png'
 const TEXT_SHOT = 'attachment-preview-text.png'
 const ROADMAP_SHOT = 'image-expand-roadmap.png'
 const COMPOSER_SHOT = 'image-expand-composer-new-thread.png'
+const COMPOSER_ANNOTATION_SHOT = 'image-expand-composer-annotation-update.png'
+const COMPOSER_UPDATED_SHOT = 'image-expand-composer-updated-chip.png'
 const IMAGE_COPY_MENU_SHOT = 'image-expand-copy-menu.png'
 const THREAD_COPY_MENU_SHOT = 'image-expand-thread-copy-menu.png'
 const TEXT_COPY_MENU_SHOT = 'attachment-preview-text-copy-menu.png'
@@ -187,21 +191,32 @@ async function waitForCopiedToastToClear(): Promise<void> {
 }
 
 describe('Screenshot click-to-expand', () => {
+  let temporaryRoot = ''
   let workspaceRoot = ''
 
   before(async function () {
     this.timeout(120_000)
-    workspaceRoot = mkdtempSync(join(tmpdir(), PROJECT_WORKSPACE_PREFIX))
+    temporaryRoot = mkdtempSync(join(tmpdir(), PROJECT_WORKSPACE_PREFIX))
+    workspaceRoot = join(temporaryRoot, 'image-expand')
+    mkdirSync(workspaceRoot)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedGalleryThread(workspaceRoot)
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await waitForImagesSettled('.messages-list', { minImages: 6 })
+    await prepareE2eScreenshot()
+    await browser.execute(() => {
+      const scroller = document.querySelector<HTMLElement>('.messages-list')
+      if (!scroller) throw new Error('Conversation scroll host is missing')
+      scroller.scrollTop = scroller.scrollHeight
+    })
+    await $('.msg-user.is-preview-compact').waitForDisplayed({ timeout: 5_000 })
   })
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (temporaryRoot) rmSync(temporaryRoot, { recursive: true, force: true })
   })
 
   it('expands a thread-panel attachment in a modal', async () => {
@@ -210,6 +225,54 @@ describe('Screenshot click-to-expand', () => {
     assert.equal(await thumb.getAttribute('role'), 'button')
     assert.equal(await thumb.getAttribute('aria-label'), 'Expand Attached image')
 
+    // Exercise the real sticky-preview transition. A native right-click can
+    // calculate its centre while the thumbnail is tall, then press after it
+    // shrinks, hitting message text and opening Copy message instead.
+    await browser.execute(() => {
+      const list = document.querySelector('.messages-list')
+      if (!list) throw new Error('Conversation scroll host is missing')
+      list.scrollTop = 0
+    })
+    await $('.msg-user.is-preview-compact').waitForExist({ reverse: true })
+    await browser.execute(async () => {
+      const prompt = document.querySelector('.msg-user')
+      const list = document.querySelector('.messages-list')
+      if (!prompt || !list) throw new Error('Conversation preview is missing')
+      await Promise.all(
+        prompt
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+          .map((animation) => animation.finished.catch(() => {})),
+      )
+      list.scrollTop = list.scrollHeight
+    })
+    await $('.msg-user.is-preview-compact').waitForDisplayed()
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const image = document.querySelector('.msg-user.is-preview-compact .message-image')
+          const prompt = image?.closest('.msg-user')
+          if (!image || !prompt) return false
+          if (
+            prompt
+              .getAnimations({ subtree: true })
+              .some(
+                (animation) =>
+                  animation.effect?.getTiming().iterations !== Infinity &&
+                  (animation.playState === 'running' || animation.pending),
+              )
+          )
+            return false
+          const rect = image.getBoundingClientRect()
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) ===
+              image
+          )
+        }),
+      { timeout: 5_000, timeoutMsg: 'Sticky thumbnail must settle over its native click target' },
+    )
     await thumb.click({ button: 'right' })
     const threadCopyMenu = $('.context-menu')
     await threadCopyMenu.waitForDisplayed({ timeout: 5_000 })
@@ -455,6 +518,14 @@ describe('Screenshot click-to-expand', () => {
     await newThreadBtn.waitForClickable({ timeout: 15_000 })
     await newThreadBtn.click()
     await $('.pane-chat.is-activity-home').waitForExist({ timeout: 10_000 })
+    // The home class precedes Activity's populated render. Pin the seeded
+    // recent thread so captures cannot alternate between the 720px idle
+    // composer and the 800px composer below Activity.
+    await $('#activity-home[data-idle="false"]').waitForDisplayed({ timeout: 10_000 })
+    await $(
+      '#activity-home .activity-row[data-thread-id="e2e-image-expand-thread"]',
+    ).waitForDisplayed({ timeout: 10_000 })
+    await expect($('.pane-chat')).not.toHaveElementClass('is-activity-idle')
     await $('.prompt-input').waitForExist({ timeout: 10_000 })
 
     await browser.execute((base64: string) => {
@@ -486,7 +557,12 @@ describe('Screenshot click-to-expand', () => {
     )
     await assertDialogChrome()
     await saveAppScreenshot(COMPOSER_SHOT)
-    await $('.attachment-preview-close').click()
+    await $('.image-expand-annotate').click()
+    await expect($('.annotation-send')).toHaveText('Update')
+    await drawGalleryAnnotation()
+    await expect($('.annotation-send')).toBeEnabled()
+    await saveAppScreenshot(COMPOSER_ANNOTATION_SHOT)
+    await $('.annotation-send').click()
     await browser.waitUntil(
       async () => {
         const closed = $('dialog.attachment-preview-dialog')
@@ -495,6 +571,9 @@ describe('Screenshot click-to-expand', () => {
       },
       { timeout: 5_000, timeoutMsg: 'expected composer image preview to close' },
     )
+    await expect($$('.attachment-chips .image-chip')).toBeElementsArrayOfSize(1)
+    await expect(thumb).not.toHaveAttribute('src', expandedSrc)
+    await saveElementScreenshot('.attachment-chips', COMPOSER_UPDATED_SHOT)
   })
 
   it('expands a roadmap plan attachment thumb in the same modal', async () => {

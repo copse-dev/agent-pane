@@ -104,13 +104,23 @@ export function getActiveThread(store: AppStore): Thread | undefined {
   return getThreadById(store, store.getState().activeThreadId)
 }
 
-/** Empty idle thread with no messages yet (unused "New Thread"). */
+/** Empty idle thread with no messages or saved plans (unused "New Thread"). */
 export function isBlankThread(thread: Thread): boolean {
   // A thread whose transcript has not been loaded yet is not blank — it is
   // unknown. Getting this wrong is destructive: `pruneBlankThreads` drops blanks
   // from the store and the autosave reconciler then deletes them from disk.
-  if (thread.messagesLoaded === false) return false
+  if (thread.messagesLoaded === false || thread.hasSavedPlan) return false
+  // A side chat starts empty on purpose: it is anchored work, not an unused
+  // "New Thread", and pruning it would delete it from disk.
+  if (thread.sideChat !== undefined) return false
   return thread.messages.length === 0 && thread.status === 'idle'
+}
+
+/** Protect a successfully saved plan from automatic empty-task cleanup. */
+export function markThreadHasSavedPlan(store: AppStore, threadId: string): void {
+  if (getThreadById(store, threadId)?.hasSavedPlan) return
+  if (!patchThreadAnywhere(store, threadId, (thread) => ({ ...thread, hasSavedPlan: true }))) return
+  store.emit('threads_changed')
 }
 
 export function hasUnsubmittedPrompt(thread: Thread): boolean {
@@ -309,44 +319,50 @@ export function markThreadUnread(store: AppStore, threadId: string, at = Date.no
 
 /** Clear a thread's unread completion marker when it is selected. */
 export function markThreadRead(store: AppStore, threadId: string): void {
-  const { threads } = store.getState()
-  if (!threads.some((thread) => thread.id === threadId && thread.unreadAt !== undefined)) return
-  store.setState({
-    threads: threads.map((thread) => {
-      if (thread.id !== threadId || thread.unreadAt === undefined) return thread
-      const { unreadAt: _read, ...readThread } = thread
-      return readThread
-    }),
+  if (getThreadById(store, threadId)?.unreadAt === undefined) return
+  patchThreadAnywhere(store, threadId, (thread) => {
+    const { unreadAt: _read, ...readThread } = thread
+    return readThread
   })
   store.emit('threads_changed')
 }
 
 export function deleteThread(store: AppStore, id: string): void {
   const { threads, activeThreadId } = store.getState()
-  const remaining = threads.filter((t) => t.id !== id)
+  // A side chat only makes sense beside its parent, and is hidden from thread
+  // browsers: deleting the parent must not leave it behind, unreachable.
+  const doomed = new Set([id])
+  for (const t of threads) if (t.sideChat?.parentThreadId === id) doomed.add(t.id)
+  const remaining = threads.filter((t) => !doomed.has(t.id))
   if (remaining.length === 0) {
     // Deleting the only thread: create a fresh replacement (which also becomes
     // active), then drop the deleted one. createThread prepends the new thread
-    // and sets it active, so we filter out `id`, not the new thread.
+    // and sets it active, so we filter out `doomed`, not the new thread.
     createThread(store)
     store.setState({
-      threads: store.getState().threads.filter((t) => t.id !== id),
+      threads: store.getState().threads.filter((t) => !doomed.has(t.id)),
     })
     store.emit('threads_changed')
     return
   }
+  const activeDoomed = activeThreadId !== null && doomed.has(activeThreadId)
   const index = threads.findIndex((t) => t.id === id)
-  const newActive =
-    activeThreadId === id
-      ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? null)
-      : activeThreadId
+  const parentId = threads.find((t) => t.id === id)?.sideChat?.parentThreadId
+  // Land on a thread the sidebar shows; a deleted side chat hands focus to its parent.
+  const listed = remaining.filter((t) => t.sideChat === undefined)
+  const pool = listed.length > 0 ? listed : remaining
+  const newActive = !activeDoomed
+    ? activeThreadId
+    : parentId !== undefined && remaining.some((t) => t.id === parentId)
+      ? parentId
+      : (pool[Math.min(index, pool.length - 1)]?.id ?? null)
   store.setState({
     threads: remaining,
     activeThreadId: newActive,
-    ...(activeThreadId === id ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}),
+    ...(activeDoomed ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}),
   })
   store.emit('threads_changed')
-  if (activeThreadId === id) store.emit('panel_changed')
+  if (activeDoomed) store.emit('panel_changed')
 }
 
 /**
@@ -366,8 +382,17 @@ export function archiveThread(
   if (!target || isThreadArchived(target)) return
 
   const now = persisted?.archivedAt ?? Date.now()
+  // Archiving a thread takes its side chats with it: they only make sense beside
+  // their parent. Archiving a side chat alone leaves the parent untouched. A side
+  // chat still running is left out, since archiving would hide its run without
+  // stopping it. A side chat never owns a checkout, so only the archived thread
+  // itself carries the persisted worktree retirement.
   const updated = threads.map((t) => {
-    if (t.id !== id) return t
+    if (t.id !== id) {
+      return t.sideChat?.parentThreadId === id && !isThreadArchived(t) && t.status !== 'running'
+        ? { ...t, archivedAt: now, updatedAt: now }
+        : t
+    }
     const archived = { ...t, archivedAt: now, updatedAt: now }
     if (persisted) {
       if (persisted.worktree) {
@@ -377,7 +402,9 @@ export function archiveThread(
     }
     return archived
   })
-  const visible = updated.filter((t) => !isThreadArchived(t))
+  // Side chats are hidden from thread browsers, so they never count as a
+  // visible thread the composer could land on.
+  const visible = updated.filter((t) => !isThreadArchived(t) && t.sideChat === undefined)
 
   if (visible.length === 0) {
     store.setState({ threads: updated, activeThreadId: null })
@@ -385,18 +412,42 @@ export function archiveThread(
     return
   }
 
+  const activeArchived =
+    activeThreadId !== null && updated.some((t) => t.id === activeThreadId && isThreadArchived(t))
   const index = threads.findIndex((t) => t.id === id)
-  const newActive =
-    activeThreadId === id
-      ? (visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id)
-      : activeThreadId
+  const parentId = target.sideChat?.parentThreadId
+  // An archived side chat hands focus back to the thread it branched from.
+  const newActive = !activeArchived
+    ? activeThreadId
+    : parentId !== undefined && visible.some((t) => t.id === parentId)
+      ? parentId
+      : (visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id)
   store.setState({
     threads: updated,
     activeThreadId: newActive,
-    ...(activeThreadId === id ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}),
+    ...(activeArchived ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}),
   })
   store.emit('threads_changed')
-  if (activeThreadId === id) store.emit('panel_changed')
+  if (activeArchived) store.emit('panel_changed')
+}
+
+/**
+ * Undo {@link archiveThread} for one thread: clear `archivedAt` so it is listed
+ * (or, for a side chat, shown under its parent) again. Persistence carries the
+ * removal as an explicit `undefined` in the metadata patch.
+ */
+export function restoreThread(store: AppStore, id: string): void {
+  const { threads } = store.getState()
+  const target = threads.find((t) => t.id === id)
+  if (!target || !isThreadArchived(target)) return
+  store.setState({
+    threads: threads.map((t) => {
+      if (t.id !== id) return t
+      const { archivedAt: _archivedAt, ...restored } = t
+      return { ...restored, updatedAt: Date.now() }
+    }),
+  })
+  store.emit('threads_changed')
 }
 
 export function recordContextTrim(
@@ -502,12 +553,37 @@ export function setThreadDraftPrompt(store: AppStore, threadId: string, draftPro
  * Record that an automation run could not be started, so its unsent draft stops
  * blocking the schedule's next trigger and is no longer auto-started.
  */
-export function markAutomationStartFailed(store: AppStore, threadId: string): void {
+export function markAutomationStartFailed(
+  store: AppStore,
+  threadId: string,
+  failure?: { code: string; message: string },
+): void {
   patchThreadAnywhere(store, threadId, (t) =>
     t.automation
       ? {
           ...t,
-          automation: { ...t.automation, startFailedAt: Date.now() },
+          automation: {
+            ...t.automation,
+            startFailedAt: Date.now(),
+            ...(failure ? { failure: { ...failure, at: Date.now() } } : {}),
+          },
+          updatedAt: Date.now(),
+        }
+      : t,
+  )
+}
+
+/** Record why an automation run that did start ended in error, for Activity and the manager. */
+export function markAutomationRunFailed(
+  store: AppStore,
+  threadId: string,
+  failure: { code: string; message: string },
+): void {
+  patchThreadAnywhere(store, threadId, (t) =>
+    t.automation
+      ? {
+          ...t,
+          automation: { ...t.automation, failure: { ...failure, at: Date.now() } },
           updatedAt: Date.now(),
         }
       : t,
@@ -863,12 +939,10 @@ export function updateContextSnapshot(
 }
 
 export function clearContextSnapshot(store: AppStore, threadId: string): void {
-  const threads = store.getState().threads.map((t) => {
-    if (t.id !== threadId) return t
+  patchThreadAnywhere(store, threadId, (t) => {
     const { contextSnapshot: _removed, ...rest } = t
     return rest
   })
-  store.setState({ threads })
   store.emit('context_updated', threadId)
 }
 
@@ -908,17 +982,14 @@ export function setMessageTurnOutcome(
   messageId: string,
   turnOutcome: TurnOutcome,
 ): void {
-  const threads = store.getState().threads.map((thread) => {
-    if (thread.id !== threadId) return thread
-    return {
-      ...thread,
-      messages: thread.messages.map((message) =>
-        message.id === messageId ? { ...message, turnOutcome } : message,
-      ),
-      updatedAt: Date.now(),
-    }
-  })
-  store.setState({ threads })
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    messages: thread.messages.map((message) =>
+      message.id === messageId ? { ...message, turnOutcome } : message,
+    ),
+    lastSettledAt: turnOutcome.endedAt,
+    updatedAt: Date.now(),
+  }))
   store.emit('threads_changed')
 }
 
@@ -1025,16 +1096,13 @@ export function setReviewFindingDismissed(
 
 /** Suspend/resume FIFO draining of a thread's queued messages (e.g. while editing). */
 export function setQueuePaused(store: AppStore, threadId: string, paused: boolean): void {
-  const { threads } = store.getState()
-  const thread = threads.find((t) => t.id === threadId)
+  const thread = getThreadById(store, threadId)
   if (!thread || Boolean(thread.queuePaused) === paused) return
-  const updated = threads.map((t) => {
-    if (t.id !== threadId) return t
+  patchThreadAnywhere(store, threadId, (t) => {
     if (paused) return { ...t, queuePaused: true, updatedAt: Date.now() }
     const { queuePaused: _removed, ...rest } = t
     return { ...rest, updatedAt: Date.now() }
   })
-  store.setState({ threads: updated })
   store.emit('threads_changed')
 }
 
@@ -1043,7 +1111,11 @@ export function setThreadStatus(
   threadId: string,
   status: 'idle' | 'running' | 'error',
 ): void {
-  patchThreadAnywhere(store, threadId, (t) => ({ ...t, status }))
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    status,
+    ...(t.status === 'running' && status !== 'running' ? { lastSettledAt: Date.now() } : {}),
+  }))
   store.emit('thread_status_changed', threadId, status)
 }
 
@@ -1076,7 +1148,12 @@ export function setThreadWorkingBrief(
 }
 
 export function setThreadGitBranch(store: AppStore, threadId: string, branch: string): void {
-  patchThreadAnywhere(store, threadId, (t) => ({ ...t, gitBranch: branch, updatedAt: Date.now() }))
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    gitBranch: branch,
+    ...(t.status !== 'running' ? { lastSettledAt: t.lastSettledAt ?? t.updatedAt } : {}),
+    updatedAt: Date.now(),
+  }))
   store.emit('threads_changed')
 }
 
