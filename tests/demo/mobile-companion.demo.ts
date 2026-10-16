@@ -284,9 +284,11 @@ describe('Mobile Companion at phone width', () => {
       })
       await expect($('#groups')).toHaveText(expect.stringContaining('NEEDS YOU'))
       await expect($('#groups')).toHaveText(expect.stringContaining('WORKING'))
+      await expect($('#groups')).toHaveText(expect.stringContaining('HAS CHANGES'))
       await expect($('#groups')).toHaveText(expect.stringContaining('RECENT'))
       await expect($('.state.needs-approval')).toHaveText('needs approval')
       await expect($('.state.finished')).toHaveText('finished')
+      await expect($('#groups')).toHaveText(expect.stringContaining('Polish the onboarding copy'))
       await screenshot(`mobile-companion-activity-${theme}.png`)
 
       // A needs-you row answers in place: tapping it selects the row and
