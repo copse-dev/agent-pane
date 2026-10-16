@@ -2,6 +2,7 @@ import { browser } from '@wdio/globals'
 
 declare global {
   interface Window {
+    e2eCaptureAnimationObserver?: MutationObserver
     e2eCaptureAnimations?: {
       animation: Animation
       time: Animation['currentTime']
@@ -22,10 +23,15 @@ export async function withFrozenAnimations(capture: () => Promise<void>): Promis
     // Keep the focused caret visible, rather than hiding a real editing affordance.
     caretStyle.textContent = '* { caret-animation: manual !important; }'
     document.head.append(caretStyle)
-    window.e2eCaptureAnimations = document
-      .getAnimations()
-      .filter((animation) => animation.effect?.getTiming().iterations === Infinity)
-      .map((animation) => {
+    const savedAnimations: NonNullable<Window['e2eCaptureAnimations']> = []
+    window.e2eCaptureAnimations = savedAnimations
+    const freezeNewAnimations = (): void => {
+      for (const animation of document.getAnimations()) {
+        if (
+          animation.effect?.getTiming().iterations !== Infinity ||
+          savedAnimations.some((saved) => saved.animation === animation)
+        )
+          continue
         const saved = {
           animation,
           time: animation.currentTime,
@@ -36,13 +42,25 @@ export async function withFrozenAnimations(capture: () => Promise<void>): Promis
         // The reasoning spiral is invisible at 0%; its middle frame is fully drawn.
         animation.currentTime =
           (timing?.delay ?? 0) + (typeof timing?.duration === 'number' ? timing.duration / 2 : 0)
-        return saved
-      })
+        savedAnimations.push(saved)
+      }
+    }
+    // Framing and live store updates can replace indicator nodes after capture
+    // starts. Enrol their loops too, preserving every original state to restore.
+    window.e2eCaptureAnimationObserver = new MutationObserver(freezeNewAnimations)
+    window.e2eCaptureAnimationObserver.observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+    })
+    freezeNewAnimations()
   })
   try {
     await capture()
   } finally {
     await browser.execute(() => {
+      window.e2eCaptureAnimationObserver?.disconnect()
+      delete window.e2eCaptureAnimationObserver
       for (const { animation, time, playing } of window.e2eCaptureAnimations ?? []) {
         animation.currentTime = time
         if (playing) animation.play()
