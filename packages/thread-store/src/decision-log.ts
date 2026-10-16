@@ -53,6 +53,7 @@ export type DecisionActor = (typeof DECISION_ACTORS)[number]
  * eventual answer.
  */
 const DECISION_VERDICTS = [
+  'requested',
   'approved',
   'denied',
   'allowed',
@@ -97,6 +98,8 @@ export interface DecisionEvent {
   threadId?: string
   /** Tool call this decision authorized, when known. */
   toolCallId?: string
+  /** Host-owned bridge execution ID; independent of ACP transcript IDs. */
+  bridgeExecutionId?: string
   /** Redacted extra context: hook config path, classifier model id, etc. */
   source?: string
   /**
@@ -202,6 +205,7 @@ export function makeDecisionEvent(input: DecisionInput, id: string, at: number):
   }
   if (input.threadId !== undefined) event.threadId = input.threadId
   if (input.toolCallId !== undefined) event.toolCallId = input.toolCallId
+  if (input.bridgeExecutionId !== undefined) event.bridgeExecutionId = input.bridgeExecutionId
   if (input.source !== undefined) event.source = clampField(redactSecrets(input.source))
   // Not redacted or clamped: a cause is one of a fixed set of slugs, never free text.
   if (input.cause !== undefined) event.cause = input.cause
@@ -245,6 +249,7 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
   const { v, type, id, at, kind, actor, verdict, subject } = event
   const { scope, remembered, confidence, reasons, threadId, toolCallId, source, cause } = event
   const { latencyMs, inputTokens, outputTokens } = event
+  const { bridgeExecutionId } = event
   if (
     v !== DECISION_LOG_SCHEMA_VERSION ||
     type !== 'decision' ||
@@ -268,6 +273,7 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
     (reasons !== undefined && !isStringArray(reasons)) ||
     !isOptionalString(threadId) ||
     !isOptionalString(toolCallId) ||
+    !isOptionalString(bridgeExecutionId) ||
     !isOptionalString(source) ||
     !isOptionalCount(latencyMs) ||
     !isOptionalCount(inputTokens) ||
@@ -290,6 +296,7 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
     ...(reasons !== undefined ? { reasons } : {}),
     ...(typeof threadId === 'string' ? { threadId } : {}),
     ...(typeof toolCallId === 'string' ? { toolCallId } : {}),
+    ...(typeof bridgeExecutionId === 'string' ? { bridgeExecutionId } : {}),
     ...(typeof source === 'string' ? { source } : {}),
     // Unknown slugs drop rather than reject the line: a log written by a newer
     // build must stay readable, just without that dimension.

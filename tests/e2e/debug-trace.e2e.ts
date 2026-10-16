@@ -1,6 +1,6 @@
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, writeSeedConfig } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_VIEWPORT, saveAppScreenshot } from './helpers/screenshot.ts'
 import { composerText } from './helpers/composer.ts'
 
 /**
@@ -115,6 +115,63 @@ describe('Debug trace', function () {
     )
 
     await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
-    await saveAppScreenshot('debug-trace-composer.png')
+    await saveAppScreenshot('debug-trace-composer.png', E2E_VIEWPORT, async () => {
+      let lastObserved: unknown = null
+      await browser
+        .waitUntil(
+          async () => {
+            const state = await browser.execute(() => {
+              const input = document.querySelector<HTMLElement>('.prompt-input')
+              if (!input) return null
+              const selection = document.getSelection()
+              const anchor = selection?.anchorNode
+              let caretAtEnd = false
+              if (selection?.isCollapsed && anchor && input.contains(anchor)) {
+                const rest = document.createRange()
+                rest.selectNodeContents(input)
+                rest.setStart(anchor, selection.anchorOffset)
+                caretAtEnd = rest.toString().trim() === ''
+              }
+              const box = input.getBoundingClientRect()
+              let tailVisible = false
+              const walker = document.createTreeWalker(input, NodeFilter.SHOW_TEXT)
+              for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                if (!(node instanceof Text)) continue
+                const start = node.data.lastIndexOf('What I saw:')
+                if (start < 0) continue
+                const tail = document.createRange()
+                tail.setStart(node, start)
+                tail.setEnd(node, start + 'What I saw:'.length)
+                const bounds = tail.getBoundingClientRect()
+                tailVisible =
+                  bounds.height > 0 && bounds.top >= box.top && bounds.bottom <= box.bottom
+              }
+              return {
+                focused: document.activeElement === input,
+                caretAtEnd,
+                tailVisible,
+                gap: input.scrollHeight - input.scrollTop - input.clientHeight,
+              }
+            })
+            lastObserved = state
+            return (
+              state !== null &&
+              state.focused &&
+              state.caretAtEnd &&
+              state.tailVisible &&
+              state.gap <= 4
+            )
+          },
+          {
+            timeout: 10_000,
+            timeoutMsg: 'sized Debug trace composer did not reveal its unsent symptom prompt',
+          },
+        )
+        .catch((cause: unknown) => {
+          throw new Error(`Debug trace composer capture state: ${JSON.stringify(lastObserved)}`, {
+            cause,
+          })
+        })
+    })
   })
 })
