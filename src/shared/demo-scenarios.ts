@@ -17,6 +17,7 @@ import {
   browserApprovalDetails,
   providerApprovalDetails,
   webApprovalDetails,
+  threadAccessApproval,
 } from './approval-copy.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
@@ -3397,6 +3398,13 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   ...SITE_TOUR_SCENARIOS,
   // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
   ...CONCISE_STATE_SCENARIOS,
+  ...(['read', 'send'] as const).map((access) =>
+    approvalRiskScenario(`approval-thread-${access}`, {
+      id: `thread-${access}`,
+      type: 'mcp',
+      ...threadAccessApproval(access),
+    }),
+  ),
   approvalRiskScenario('approval-web-url', {
     id: 'web-url',
     title: 'Allow web origin?',

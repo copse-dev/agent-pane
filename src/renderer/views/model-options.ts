@@ -81,6 +81,7 @@ import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { blockedModelMaker, parseBlockedModelMakers } from '@copse/llm/model-maker-block.ts'
+import { supersedingModel } from '@copse/llm/model-version-suppression.ts'
 import { modelCoverage, type ModelCoverage } from './model-coverage.ts'
 
 const ACP_GROUP = 'Agents on this device'
@@ -742,11 +743,30 @@ export async function fetchModelOptions(
   } catch {
     /* the main-process guard still rejects blocked routes */
   }
-  const visibleOptions = options.flatMap((option) => {
+  const unblockedOptions = options.flatMap((option) => {
     const maker = blockedModelMaker(option.value, blockedMakers)
     if (!maker) return [option]
     if (option.value !== current) return []
     return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }]
+  })
+
+  // An older cloud release is hidden only while this same list offers its direct
+  // successor (same family and tier, newer version — see
+  // `model-version-suppression.ts`), so a gated or keyless successor never hides
+  // a model the user can run. A superseded model that is still the saved
+  // selection stays, disabled and naming its successor, like a maker block.
+  const offered = unblockedOptions.map((option) => option.value)
+  const visibleOptions = unblockedOptions.flatMap((option) => {
+    const successor = supersedingModel(option.value, offered)
+    if (successor === null) return [option]
+    if (option.value !== current) return []
+    return [
+      {
+        ...option,
+        label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
+        disabled: true,
+      },
+    ]
   })
 
   // Only when nothing at all is configured (no cloud key, no provider, no local

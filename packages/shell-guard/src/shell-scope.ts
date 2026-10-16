@@ -89,8 +89,8 @@ const CMD_POS = String.raw`(?:^|[\n|;&(])\s*`
 
 // Direct execution of a workspace-relative file (`./build`, `../tool`, `bin/x`).
 // The agent can author and `chmod +x` such a file, so its contents are opaque to
-// this classifier (and to the file-blind safety classifier) — a hard escape even
-// under the sandbox, exactly like `node ./x.js`. Shared verbatim between the regex
+// this classifier. Opaque code starts inside an active OS sandbox; uncertainty
+// does not establish a need to escape it. Shared verbatim between the regex
 // entry and the token layer so the two dedupe against each other. (#581)
 const REASON_LOCAL_EXECUTABLE: ScopeReason =
   'executes an in-workspace file directly (contents opaque to analysis)'
@@ -229,6 +229,7 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
     // token layer, which keys off argv[0]. (#581)
     re: new RegExp(`${CMD_POS}\\.\\.?/\\S+`),
     reason: REASON_LOCAL_EXECUTABLE,
+    ambiguous: true,
   },
   {
     re: new RegExp(`${CMD_POS}nc\\b|\\bnetcat\\b|\\btelnet\\b`, 'i'),
@@ -243,8 +244,8 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
   },
   {
     // An interpreter executing a local script file (`node ./x.js`, `bash deploy.sh`).
-    // The agent can write the script first, so its contents are invisible here — and
-    // to the file-blind safety classifier — which is exactly why it must not auto-run.
+    // The agent can write the script first, so its contents are invisible here.
+    // Try it contained; only explicit approval can authorize an outside attempt.
     // The suffix list comes from shell-argv so this and the token pass below cannot
     // drift apart (they were previously two hand-maintained copies).
     re: new RegExp(
@@ -252,6 +253,7 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
       'i',
     ),
     reason: 'runs a local script via an interpreter (contents opaque to analysis)',
+    ambiguous: true,
   },
   {
     // Heredoc fed to a real interpreter (`python3 <<EOF … EOF`) — inline code with
@@ -502,7 +504,6 @@ function tokenBasedExternalReasons(command: string): {
     // can't. (#581)
     if (!exe0.startsWith('/') && exe0.includes('/')) {
       addReason(REASON_LOCAL_EXECUTABLE)
-      hasHard = true
     }
     const exe = commandName(exe0)
     const args = argv.slice(1)
@@ -521,7 +522,6 @@ function tokenBasedExternalReasons(command: string): {
       }
       if (args.some((a) => SCRIPT_EXTENSIONS.test(a))) {
         addReason(REASON_INTERPRETER_FILE)
-        hasHard = true
       }
     }
   }
@@ -1057,13 +1057,13 @@ const REPLAYABLE_OPAQUE_LOCAL_REASONS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * True only when a command prompts because it executes opaque local code—not
+ * True only when a command executes opaque local code—not
  * because it requests network or outside-workspace access. Callers may offer an
  * explicit bounded replay grant for this shape.
  */
 export function isReplayableOpaqueLocalExecution(analysis: ShellScopeAnalysis): boolean {
   return (
-    analysis.verdict === 'external' &&
+    analysis.verdict === 'ambiguous' &&
     analysis.reasons.length > 0 &&
     analysis.reasons.every((reason) => REPLAYABLE_OPAQUE_LOCAL_REASONS.has(reason))
   )

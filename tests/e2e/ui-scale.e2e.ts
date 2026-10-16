@@ -3,7 +3,6 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedConversationVisualHierarchyFixture } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
-  saveAppScreenshot,
   saveAppViewportScreenshot,
   saveElementScreenshot,
   waitForSettledLayout,
@@ -161,7 +160,7 @@ describe('interface scale (--ui-scale)', () => {
     expect(visualViewport?.offsetLeft).toBe(0)
     expect(visualViewport?.offsetTop).toBe(0)
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ui-scale-native-window-default.png'))
-    await saveAppScreenshot('ui-scale-default.png')
+    await saveScaleComparisonScreenshot('ui-scale-default.png')
 
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="appearance"]').click()

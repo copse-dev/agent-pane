@@ -301,7 +301,41 @@ describe('riso avatars in agent chat', () => {
           .some((animation) => animation.playState === 'running'),
       ),
     ).toBe(true)
-    await saveAppScreenshot('agent-avatars-active.png')
+    // The checks above prove movement. Pin the embedded SVG's ink animation
+    // for the reference image; document.getAnimations cannot reach an img's
+    // separate SVG document. Restore the original source before testing motion
+    // and visibility again below.
+    const activeSelector = `[data-message-id="${activeId}"] .agent-avatar`
+    const animatedSource = await browser.execute(async (selector) => {
+      const img = document.querySelector<HTMLImageElement>(selector)
+      const prefix = 'data:image/svg+xml,'
+      if (!img?.src.startsWith(prefix)) throw new Error('Expected a generated SVG avatar')
+      const source = img.src
+      const svg = decodeURIComponent(source.slice(prefix.length))
+      img.src =
+        prefix +
+        encodeURIComponent(
+          svg.replace(
+            '</svg>',
+            '<style>path { animation-play-state: paused !important; animation-delay: -8s !important; }</style></svg>',
+          ),
+        )
+      await img.decode()
+      return source
+    }, activeSelector)
+    try {
+      await saveAppScreenshot('agent-avatars-active.png')
+    } finally {
+      await browser.execute(
+        async ({ selector, source }) => {
+          const img = document.querySelector<HTMLImageElement>(selector)
+          if (!img) throw new Error('Active avatar disappeared during capture')
+          img.src = source
+          await img.decode()
+        },
+        { selector: activeSelector, source: animatedSource },
+      )
+    }
 
     await browser.execute(() => {
       const img = document.querySelector<HTMLElement>('[data-avatar-active]')

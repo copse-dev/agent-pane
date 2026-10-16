@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Copse · Agent controls</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --base: #1e211f;
+        --pane: #252926;
+        --raised: #2d322e;
+        --hover: #353a36;
+        --selected: #493841;
+        --text: #e3e6e2;
+        --secondary: #adb5ac;
+        --muted: #808a81;
+        --border: #3e4640;
+        --accent: #ff93d0;
+        --accentSoft: #44343d;
+        --shadow: 0 12px 35px #0008;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --base: #fffdf7;
+          --pane: #f5f5ef;
+          --raised: #fffefa;
+          --hover: #e9ebe5;
+          --selected: #f8e7f0;
+          --text: #263027;
+          --secondary: #59655c;
+          --muted: #768279;
+          --border: #d5ddd4;
+          --accent: #a33370;
+          --accentSoft: #f8e5ef;
+          --shadow: 0 12px 35px #1b2c241c;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--base);
+        color: var(--text);
+        font:
+          13px/1.45 'Pliant',
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+      .app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 250px minmax(0, 1fr);
+      }
+      .side {
+        background: var(--pane);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      .sideTop {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 51px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .mark {
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        background: #002e2b;
+        color: #20fd85;
+        border-radius: 5px;
+        font-size: 17px;
+        font-weight: 800;
+      }
+      .word {
+        font-weight: 750;
+        font-size: 17px;
+        letter-spacing: -0.05em;
+      }
+      .sideTop .dots {
+        margin-left: auto;
+      }
+      .iconbtn {
+        border: 0;
+        background: transparent;
+        color: var(--secondary);
+        width: 26px;
+        height: 26px;
+        border-radius: 5px;
+      }
+      .iconbtn:hover,
+      .iconbtn.active {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .project {
+        padding: 19px 13px 8px;
+        color: var(--secondary);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .thread {
+        height: 34px;
+        margin: 1px 7px;
+        padding: 0 6px 0 11px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        position: relative;
+      }
+      .thread.selected {
+        background: var(--selected);
+        color: var(--text);
+      }
+      .thread:not(.selected) {
+        color: var(--secondary);
+      }
+      .threadName {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1;
+      }
+      .thread .dots {
+        font-size: 20px;
+        line-height: 1;
+        opacity: 0.7;
+      }
+      .thread:hover .dots,
+      .thread.selected .dots {
+        opacity: 1;
+      }
+      .threadSub {
+        padding-left: 23px;
+        color: var(--muted);
+        font-size: 11px;
+        margin-top: 1px;
+      }
+      .spacer {
+        flex: 1;
+      }
+      .sideFoot {
+        border-top: 1px solid var(--border);
+        padding: 11px 14px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .main {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .topbar {
+        height: 51px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        padding: 0 22px;
+        gap: 10px;
+      }
+      .topTitle {
+        font-weight: 650;
+      }
+      .topbar .right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .mini {
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        padding: 3px 7px;
+        color: var(--secondary);
+      }
+      .conversation {
+        width: min(760px, 100%);
+        margin: auto;
+        padding: 39px 30px;
+        flex: 1;
+      }
+      .userMsg {
+        margin-left: auto;
+        max-width: 460px;
+        background: var(--raised);
+        border: 1px solid var(--border);
+        border-radius: 14px 14px 4px 14px;
+        padding: 13px 16px;
+      }
+      .assistantMsg {
+        margin-top: 30px;
+        max-width: 640px;
+      }
+      .speaker {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--secondary);
+        margin-bottom: 9px;
+      }
+      .assistantMsg p {
+        margin: 0 0 12px;
+        line-height: 1.6;
+      }
+      .tool {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        margin: 20px 0;
+        overflow: hidden;
+      }
+      .toolHead {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        background: var(--pane);
+        padding: 9px 12px;
+        font-size: 12px;
+      }
+      .toolHead .chev {
+        color: var(--muted);
+      }
+      .toolBody {
+        padding: 12px;
+        color: var(--secondary);
+        font-size: 12px;
+      }
+      .composer {
+        width: min(760px, calc(100% - 42px));
+        margin: 0 auto 25px;
+        border: 1px solid var(--border);
+        background: var(--raised);
+        border-radius: 14px;
+        padding: 13px;
+        box-shadow: var(--shadow);
+      }
+      .composerText {
+        color: var(--muted);
+        min-height: 43px;
+      }
+      .composerFoot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--secondary);
+        font-size: 11px;
+      }
+      .chip {
+        padding: 3px 7px;
+        border-radius: 5px;
+        border: 1px solid var(--border);
+      }
+      .agentSelect {
+        background: var(--raised);
+        color: var(--text);
+        max-width: 105px;
+        cursor: pointer;
+        font: inherit;
+      }
+      .send {
+        margin-left: 0;
+        background: var(--accent);
+        color: #332730;
+        border: 0;
+        border-radius: 7px;
+        padding: 5px 9px;
+        font-weight: 700;
+      }
+      .footerMore {
+        position: relative;
+        margin-left: auto;
+      }
+      .footerMore .iconbtn {
+        font-size: 19px;
+        line-height: 1;
+      }
+      .menu {
+        position: absolute;
+        bottom: 34px;
+        right: 0;
+        width: 225px;
+        padding: 5px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--raised);
+        box-shadow: var(--shadow);
+        z-index: 4;
+      }
+      .menu button {
+        display: block;
+        width: 100%;
+        border: 0;
+        background: transparent;
+        text-align: left;
+        padding: 8px 10px;
+        border-radius: 5px;
+        font-size: 12px;
+      }
+      .menu button:hover,
+      .menu button:focus-visible {
+        background: var(--hover);
+        outline: none;
+      }
+      .menu .separator {
+        height: 1px;
+        background: var(--border);
+        margin: 4px 5px;
+      }
+      .menu .danger {
+        color: #ed938b;
+      }
+      .menu .modeEntry {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-weight: 650;
+      }
+      .menu .modeEntry span {
+        color: var(--muted);
+        font-weight: 400;
+        font-size: 10px;
+      }
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: #0008;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        z-index: 10;
+      }
+      .dialog {
+        width: min(475px, 100%);
+        background: var(--raised);
+        border: 1px solid var(--border);
+        border-radius: 13px;
+        box-shadow: 0 25px 80px #0009;
+        overflow: hidden;
+      }
+      .dialogHeader {
+        display: flex;
+        align-items: start;
+        padding: 20px 22px 14px;
+        gap: 10px;
+      }
+      .dialogHeader h2 {
+        font-size: 18px;
+        letter-spacing: -0.025em;
+        margin: 0 0 4px;
+        font-weight: 650;
+      }
+      .dialogHeader p {
+        margin: 0;
+        color: var(--secondary);
+        font-size: 12px;
+      }
+      .close {
+        margin-left: auto;
+        border: 0;
+        background: transparent;
+        color: var(--secondary);
+        font-size: 20px;
+        width: 25px;
+        height: 25px;
+        line-height: 1;
+      }
+      .options {
+        padding: 4px 16px 12px;
+      }
+      .option {
+        display: flex;
+        gap: 11px;
+        width: 100%;
+        padding: 13px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--pane);
+        text-align: left;
+        margin-bottom: 9px;
+      }
+      .option.selected {
+        border-color: var(--accent);
+        background: var(--accentSoft);
+      }
+      .radio {
+        width: 16px;
+        height: 16px;
+        border: 1.5px solid var(--muted);
+        border-radius: 50%;
+        flex: none;
+        margin-top: 2px;
+        display: grid;
+        place-items: center;
+      }
+      .option.selected .radio {
+        border-color: var(--accent);
+      }
+      .option.selected .radio:after {
+        content: '';
+        width: 8px;
+        height: 8px;
+        background: var(--accent);
+        border-radius: 50%;
+      }
+      .option strong {
+        display: block;
+        margin-bottom: 3px;
+        font-size: 12px;
+      }
+      .option small {
+        display: block;
+        color: var(--secondary);
+        font-size: 11px;
+        line-height: 1.45;
+      }
+      .note {
+        font-size: 11px;
+        color: var(--secondary);
+        padding: 0 22px 16px;
+        line-height: 1.5;
+      }
+      .dialogFoot {
+        border-top: 1px solid var(--border);
+        padding: 12px 16px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .secondaryBtn,
+      .primaryBtn {
+        padding: 7px 12px;
+        border-radius: 7px;
+        font-size: 12px;
+      }
+      .secondaryBtn {
+        background: transparent;
+        border: 1px solid var(--border);
+      }
+      .primaryBtn {
+        background: var(--accent);
+        color: #332730;
+        border: 1px solid var(--accent);
+        font-weight: 700;
+      }
+      .primaryBtn:disabled {
+        opacity: 0.5;
+      }
+      .toast {
+        position: fixed;
+        right: 22px;
+        bottom: 20px;
+        background: var(--raised);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 14px;
+        box-shadow: var(--shadow);
+        font-size: 12px;
+        z-index: 11;
+      }
+      .hidden {
+        display: none !important;
+      }
+      @media (max-width: 700px) {
+        .app {
+          grid-template-columns: 180px minmax(0, 1fr);
+        }
+        .conversation {
+          padding: 24px 18px;
+        }
+        .topbar {
+          padding: 0 12px;
+        }
+        .topbar .right .mini {
+          display: none;
+        }
+        .menu {
+          right: 0;
+        }
+        .threadSub {
+          display: none;
+        }
+      }
+      @media (max-width: 520px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .side {
+          min-height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+        }
+        .sideTop {
+          height: 40px;
+        }
+        .project {
+          display: none;
+        }
+        .thread:not(.selected),
+        .sideFoot,
+        .spacer {
+          display: none;
+        }
+        .thread {
+          margin: 3px 7px;
+        }
+        .menu {
+          bottom: 34px;
+          right: 0;
+        }
+        .conversation {
+          padding: 22px 15px;
+        }
+        .composer {
+          margin-bottom: 12px;
+        }
+        .dialogHeader {
+          padding: 17px;
+        }
+        .options {
+          padding: 3px 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="side">
+        <div class="sideTop">
+          <span class="mark">♣</span><span class="word">Copse</span
+          ><button class="iconbtn dots" title="New thread">＋</button>
+        </div>
+        <div class="project">editor-research</div>
+        <div class="thread selected">
+          <span class="threadName">Agent action controls</span
+          ><button class="iconbtn dots" aria-label="Thread menu">⋮</button>
+        </div>
+        <div class="thread">
+          <span class="threadName">Monaco resize issue</span><button class="iconbtn dots">⋯</button>
+        </div>
+        <div class="thread">
+          <span class="threadName">Release checklist</span><button class="iconbtn dots">⋯</button>
+        </div>
+        <div class="spacer"></div>
+        <div class="sideFoot">editor-research · local workspace</div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <span class="topTitle">Agent action controls</span>
+          <div class="right">
+            <span id="topMode">Copse managed</span><span class="mini" id="topAgent">Codex</span>
+          </div>
+        </header>
+        <div class="conversation">
+          <div class="userMsg">
+            Can we let this agent use its own safety checks and full capabilities for this thread?
+          </div>
+          <div class="assistantMsg">
+            <div class="speaker" id="speaker">Codex</div>
+            <p>
+              Yes. You can choose who manages actions for this thread from the ⋯ menu in the chat
+              input. The choice applies to the next turn; Copse will continue to show the activity
+              the agent reports.
+            </p>
+            <div class="tool">
+              <div class="toolHead">
+                <span class="chev">▾</span><strong id="toolTitle">Copse tool activity</strong>
+              </div>
+              <div class="toolBody" id="toolBody">
+                Read 3 files · proposed 1 edit · Copse reviewed the edit
+              </div>
+            </div>
+            <p id="summary">This thread is currently using Copse’s action approvals.</p>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="composerText" id="placeholder">Ask Codex a follow-up…</div>
+          <div class="composerFoot">
+            <select class="chip agentSelect" id="agentSelect" aria-label="Agent">
+              <option>Codex</option>
+              <option>Claude</option>
+              <option>Cursor</option>
+              <option>Gemini CLI</option></select
+            ><span class="chip">Agent</span><span id="composerMode" hidden>Copse managed</span>
+            <div class="footerMore">
+              <button
+                class="iconbtn"
+                id="menuButton"
+                aria-label="More footer actions"
+                aria-expanded="true"
+                aria-haspopup="menu"
+              >
+                ⋯
+              </button>
+              <div class="menu" id="menu" role="menu">
+                <button class="modeEntry" id="modeMenu" role="menuitem">
+                  Execution mode… <span id="menuMode">Copse managed</span></button
+                ><button role="menuitem">Enable Guarded YOLO</button
+                ><button role="menuitem">Debug trace</button
+                ><button role="menuitem">Share trace</button>
+              </div>
+            </div>
+            <button class="send" aria-label="Send">↑</button>
+          </div>
+        </div>
+      </main>
+    </div>
+    <div class="overlay hidden" id="overlay">
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+        <div class="dialogHeader">
+          <div>
+            <h2 id="dialogTitle">Execution mode</h2>
+            <p>Choose how this agent acts in this thread.</p>
+          </div>
+          <button class="close" id="close" aria-label="Close">×</button>
+        </div>
+        <div class="options" role="radiogroup" aria-label="Execution mode">
+          <button class="option selected" data-mode="copse" role="radio" aria-checked="true">
+            <span class="radio"></span
+            ><span
+              ><strong>Copse managed</strong
+              ><small
+                >Use Copse tools, sandboxing, and review for actions that need approval.</small
+              ></span
+            ></button
+          ><button class="option" data-mode="agent" role="radio" aria-checked="false">
+            <span class="radio"></span
+            ><span
+              ><strong>Agent managed</strong
+              ><small
+                >Let the selected agent use its own tools, safety checks, and approval decisions.
+                Copse shows the activity it reports.</small
+              ></span
+            >
+          </button>
+        </div>
+        <p class="note">
+          This changes the current thread from the next turn. The agent may report less detail for
+          actions performed with its own tools. This choice follows the thread if you switch agents.
+          The agent’s own permission settings still apply.
+        </p>
+        <div class="dialogFoot">
+          <button class="secondaryBtn" id="cancel">Cancel</button
+          ><button class="primaryBtn" id="apply" disabled>Apply to thread</button>
+        </div>
+      </div>
+    </div>
+    <div class="toast hidden" id="toast"></div>
+    <script>
+      const agentSelect = document.getElementById('agentSelect'),
+        menu = document.getElementById('menu'),
+        menuButton = document.getElementById('menuButton'),
+        overlay = document.getElementById('overlay'),
+        options = [...document.querySelectorAll('.option')],
+        apply = document.getElementById('apply'),
+        toast = document.getElementById('toast')
+      let current = 'copse',
+        selected = 'copse'
+      const label = { copse: 'Copse managed', agent: 'Agent managed' }
+      function menuOpen(on) {
+        menu.classList.toggle('hidden', !on)
+        menuButton.setAttribute('aria-expanded', String(on))
+      }
+      function dialogOpen(on) {
+        overlay.classList.toggle('hidden', !on)
+        if (on) {
+          selected = current
+          renderOptions()
+        } else menuButton.focus()
+      }
+      function renderOptions() {
+        options.forEach((o) => {
+          const on = o.dataset.mode === selected
+          o.classList.toggle('selected', on)
+          o.setAttribute('aria-checked', String(on))
+        })
+        apply.disabled = selected === current
+      }
+      menuButton.addEventListener('click', (e) => {
+        e.stopPropagation()
+        menuOpen(menu.classList.contains('hidden'))
+      })
+      agentSelect.addEventListener('change', () => {
+        const agent = agentSelect.value
+        document.getElementById('topAgent').textContent = agent
+        document.getElementById('speaker').textContent = agent
+        document.getElementById('placeholder').textContent = 'Ask ' + agent + ' a follow-up…'
+        document.getElementById('toolTitle').textContent =
+          current === 'agent' ? agent + ' reported activity' : 'Copse tool activity'
+        document.getElementById('toolBody').textContent =
+          current === 'agent'
+            ? 'Read 3 files · edited 1 file · ' + agent + ' handled its own approval decision'
+            : 'Read 3 files · proposed 1 edit · Copse reviewed the edit'
+      })
+      document.getElementById('modeMenu').addEventListener('click', () => {
+        menuOpen(false)
+        dialogOpen(true)
+      })
+      options.forEach((o) =>
+        o.addEventListener('click', () => {
+          selected = o.dataset.mode
+          renderOptions()
+        }),
+      )
+      document.getElementById('close').addEventListener('click', () => dialogOpen(false))
+      document.getElementById('cancel').addEventListener('click', () => dialogOpen(false))
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) dialogOpen(false)
+      })
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          dialogOpen(false)
+          menuOpen(false)
+        }
+      })
+      document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && e.target !== menuButton) menuOpen(false)
+      })
+      apply.addEventListener('click', () => {
+        current = selected
+        dialogOpen(false)
+        document.getElementById('topMode').textContent = label[current]
+        document.getElementById('composerMode').textContent = label[current]
+        document.getElementById('composerMode').hidden = current === 'copse'
+        document.getElementById('menuMode').textContent = label[current]
+        document.getElementById('toolTitle').textContent =
+          current === 'agent' ? agentSelect.value + ' reported activity' : 'Copse tool activity'
+        document.getElementById('toolBody').textContent =
+          current === 'agent'
+            ? 'Read 3 files · edited 1 file · ' +
+              agentSelect.value +
+              ' handled its own approval decision'
+            : 'Read 3 files · proposed 1 edit · Copse reviewed the edit'
+        document.getElementById('summary').textContent =
+          current === 'agent'
+            ? 'Agent managed is set for the next turn in this thread.'
+            : 'This thread is currently using Copse’s action approvals.'
+        toast.textContent = label[current] + ' set for this thread · applies next turn'
+        toast.classList.remove('hidden')
+        setTimeout(() => toast.classList.add('hidden'), 3300)
+      })
+      renderOptions()
+    </script>
+  </body>
+</html>
