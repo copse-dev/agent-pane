@@ -16,7 +16,7 @@ import {
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
-import { getApprovalToolCallId } from './approval-tool-call-context.ts'
+import { getApprovalToolCallId, getBridgeExecutionId } from './approval-tool-call-context.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
@@ -180,6 +180,8 @@ export interface ApprovalRequest {
    * while a prompt that outlived the turn is still answerable. Never rendered.
    */
   toolCallId?: string
+  /** Exact host bridge request identity; audit-only, never an ACP card ID. */
+  bridgeExecutionId?: string
 }
 
 export interface ApprovalResponse {
@@ -266,6 +268,7 @@ interface InflightApproval {
 }
 
 interface InflightWaiter {
+  bridgeExecutionId?: string
   resolve: (response: ApprovalResponse) => void
   signal: AbortSignal | undefined
   onAbort: () => void
@@ -366,6 +369,7 @@ function recordReplayedDecision(req: ApprovalRequest, response: ApprovalResponse
     ...(req.cause ? { cause: req.cause } : {}),
     ...(req.reasons?.length ? { reasons: req.reasons } : {}),
     ...(req.toolCallId ? { toolCallId: req.toolCallId } : {}),
+    ...(req.bridgeExecutionId ? { bridgeExecutionId: req.bridgeExecutionId } : {}),
     ...(req.shellContext ? { detail: { shellContext: req.shellContext } } : {}),
     remembered: response.remember,
     source: response.device
@@ -380,8 +384,17 @@ function recordApprovalDecision(
   response: ApprovalResponse,
   resolutionOverride?: string,
   toolCallIds: string[] = [],
+  bridgeExecutionIds?: string[],
 ): void {
   const resolution = resolutionOverride ?? response.resolution ?? 'user'
+  // A shared prompt can outlive its original caller. Attribute its answer to
+  // the remaining waiters, not the caller whose request supplied the UI copy.
+  const bridgeExecutionId =
+    bridgeExecutionIds === undefined
+      ? req.bridgeExecutionId
+      : bridgeExecutionIds.length === 1
+        ? bridgeExecutionIds[0]
+        : undefined
   // Phone decisions belong to the run even when another project is selected.
   // Preserve other hosts' existing audit routing, including headless isolation.
   const projectId = response.device ? getThreadExecutionContext()?.projectId : undefined
@@ -405,8 +418,15 @@ function recordApprovalDecision(
     ...(req.cause ? { cause: req.cause } : {}),
     ...(req.reasons?.length ? { reasons: req.reasons } : {}),
     ...(req.toolCallId ? { toolCallId: req.toolCallId } : {}),
-    ...(req.shellContext || toolCallIds.length > 0
-      ? { detail: { ...(req.shellContext ? { shellContext: req.shellContext } : {}), toolCallIds } }
+    ...(bridgeExecutionId ? { bridgeExecutionId } : {}),
+    ...(req.shellContext || toolCallIds.length > 0 || (bridgeExecutionIds?.length ?? 0) > 0
+      ? {
+          detail: {
+            ...(req.shellContext ? { shellContext: req.shellContext } : {}),
+            toolCallIds,
+            bridgeExecutionIds,
+          },
+        }
       : {}),
     remembered: response.remember,
     ...(resolution === 'user'
@@ -454,7 +474,14 @@ function settleInflight(
       [...entry.waiters].flatMap((waiter) => (waiter.toolCallId ? [waiter.toolCallId] : [])),
     ),
   ]
-  recordApprovalDecision(req, response, undefined, toolCallIds)
+  const bridgeExecutionIds = [
+    ...new Set(
+      [...entry.waiters].flatMap((waiter) =>
+        waiter.bridgeExecutionId ? [waiter.bridgeExecutionId] : [],
+      ),
+    ),
+  ]
+  recordApprovalDecision(req, response, undefined, toolCallIds, bridgeExecutionIds)
   for (const waiter of entry.waiters) {
     waiter.signal?.removeEventListener('abort', waiter.onAbort)
     waiter.resolve(response)
@@ -619,7 +646,12 @@ export function requestApproval(
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
   const toolCallId = req.toolCallId ?? getApprovalToolCallId()
-  req = { ...req, ...(toolCallId !== undefined ? { toolCallId } : {}) }
+  const bridgeExecutionId = req.bridgeExecutionId ?? getBridgeExecutionId()
+  req = {
+    ...req,
+    ...(toolCallId !== undefined ? { toolCallId } : {}),
+    ...(bridgeExecutionId !== undefined ? { bridgeExecutionId } : {}),
+  }
   const context = getThreadExecutionContext()
   const projectId = context?.projectId ?? getActiveProjectId()
   const threadId = getActiveRunThread()
@@ -739,6 +771,7 @@ function requestApprovalUnpaused(
       resolve,
       signal,
       threadId,
+      ...(req.bridgeExecutionId ? { bridgeExecutionId: req.bridgeExecutionId } : {}),
       ...(toolCallId !== undefined ? { toolCallId } : {}),
       onAbort: () => {
         if (!active.waiters.has(waiter)) return
@@ -750,7 +783,14 @@ function requestApprovalUnpaused(
           // retry, and tell the caller so — this is not a denial.
           if (![...active.waiters].some((other) => other.ledgerKey === ledgerKey)) {
             active.waiters.add(
-              parkedWaiter(ledgerKey, threadId, active, teardownIfIdle, toolCallId),
+              parkedWaiter(
+                ledgerKey,
+                threadId,
+                active,
+                teardownIfIdle,
+                toolCallId,
+                req.bridgeExecutionId,
+              ),
             )
           }
           reject(new ApprovalPendingError(req.title))
@@ -810,11 +850,13 @@ function parkedWaiter(
   entry: InflightApproval,
   teardownIfIdle: () => void,
   toolCallId?: string,
+  bridgeExecutionId?: string,
 ): InflightWaiter {
   const waiter: InflightWaiter = {
     threadId,
     signal: undefined,
     ledgerKey,
+    ...(bridgeExecutionId ? { bridgeExecutionId } : {}),
     ...(toolCallId !== undefined ? { toolCallId } : {}),
     resolve: (response) => {
       storeAbandonedVerdict(ledgerKey, response)
