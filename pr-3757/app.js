@@ -32860,6 +32860,46 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-07-18"
         }
       ],
+      "claude-haiku-5-5": [
+        {
+          value: 43.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-high": [
+        {
+          value: 37.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-high', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-low": [
+        {
+          value: 29.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-low', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-medium": [
+        {
+          value: 34.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-medium', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-xhigh": [
+        {
+          value: 41.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-xhigh', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
       "claude-instant": [
         {
           value: 1.7,
@@ -36604,10 +36644,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 14.8,
+          value: 12.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "granite-4-2-3b": [
@@ -38966,8 +39006,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-06",
-          asOf: "2026-10-06"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -39158,6 +39198,22 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3-xhigh', fetched 2026-09-22",
           asOf: "2026-09-22"
+        }
+      ],
+      "muse-wonder": [
+        {
+          value: 52.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-wonder', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "muse-wonder-full": [
+        {
+          value: 55.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-wonder-full', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "nanbeige4-1-3b": [
@@ -46589,6 +46645,57 @@ var init_model_maker_block = __esm({
   }
 });
 
+// packages/llm/src/model-version-suppression.ts
+function parseModelLineage(id) {
+  const claude = CLAUDE_ID.exec(id);
+  if (claude) {
+    const family = claude[1];
+    const version2 = claude[2];
+    if (family === void 0 || version2 === void 0) return null;
+    return { lineage: `claude-${family}`, version: version2.split("-").map(Number) };
+  }
+  const gpt = GPT_ID.exec(id);
+  if (gpt) {
+    const version2 = gpt[1];
+    if (version2 === void 0) return null;
+    const tier = gpt[2];
+    return {
+      lineage: tier === void 0 ? "gpt" : `gpt-${tier}`,
+      version: version2.split(".").map(Number)
+    };
+  }
+  return null;
+}
+function compareVersions(a3, b5) {
+  for (let i3 = 0; i3 < Math.max(a3.length, b5.length); i3++) {
+    const difference = (a3[i3] ?? 0) - (b5[i3] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+function supersedingModel(model, offered) {
+  const own2 = parseModelLineage(model);
+  if (own2 === null) return null;
+  let best = null;
+  for (const candidate of offered) {
+    if (candidate === model) continue;
+    const parsed2 = parseModelLineage(candidate);
+    if (parsed2 === null || parsed2.lineage !== own2.lineage) continue;
+    if (compareVersions(parsed2.version, own2.version) <= 0) continue;
+    if (best === null || compareVersions(parsed2.version, best.version) > 0) {
+      best = { id: candidate, version: parsed2.version };
+    }
+  }
+  return best?.id ?? null;
+}
+var CLAUDE_ID, GPT_ID;
+var init_model_version_suppression = __esm({
+  "packages/llm/src/model-version-suppression.ts"() {
+    CLAUDE_ID = /^claude-(opus|sonnet|haiku|fable)-(\d{1,2}(?:-\d{1,2})?)$/;
+    GPT_ID = /^gpt-(\d{1,2}(?:\.\d{1,2})?)(?:-([a-z][a-z0-9]*))?$/;
+  }
+});
+
 // src/renderer/views/model-coverage.ts
 function modelCoverage(value, context) {
   if (!value || value.startsWith("auto:")) return void 0;
@@ -47033,11 +47140,24 @@ async function fetchModelOptions(api2, current, opts = {}) {
     blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
   } catch {
   }
-  const visibleOptions = options.flatMap((option) => {
+  const unblockedOptions = options.flatMap((option) => {
     const maker = blockedModelMaker(option.value, blockedMakers);
     if (!maker) return [option];
     if (option.value !== current) return [];
     return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
+  });
+  const offered = unblockedOptions.map((option) => option.value);
+  const visibleOptions = unblockedOptions.flatMap((option) => {
+    const successor = supersedingModel(option.value, offered);
+    if (successor === null) return [option];
+    if (option.value !== current) return [];
+    return [
+      {
+        ...option,
+        label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
+        disabled: true
+      }
+    ];
   });
   const concreteCount = visibleOptions.filter(
     (o3) => !isBestValueChatModel(o3.value) && o3.value !== "" && !o3.value.startsWith(AUTO_MODEL_PREFIX)
@@ -47136,6 +47256,7 @@ var init_model_options = __esm({
     init_model_display();
     init_nullish2();
     init_model_maker_block();
+    init_model_version_suppression();
     init_model_coverage();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
@@ -59771,7 +59892,7 @@ var init_tool_display = __esm({
       browser_snapshot: { running: "Taking page snapshot", done: "Took page snapshot" },
       browser_screenshot: { running: "Taking screenshot", done: "Took screenshot" },
       image_gen: { running: "Generating image", done: "Generated image" },
-      classify_text: { running: "Classifying text", done: "Classified text" },
+      ask_classifier: { running: "Asking classifier", done: "Asked classifier" },
       browser_click: { running: "Clicking element", done: "Clicked element" },
       browser_type: { running: "Typing text", done: "Typed text" },
       browser_tabs: { running: "Listing browser tabs", done: "Listed browser tabs" },
@@ -60319,7 +60440,7 @@ function isHeldMessage(item) {
   return item.autoDispatch === false;
 }
 function isMachineContinuation(item) {
-  return item.origin?.kind === "hook";
+  return item.origin !== void 0;
 }
 function continuationBudgetHeldNote() {
   return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next hook follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
@@ -60361,12 +60482,13 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }, queuedModel) {
+function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, executionMode: _previousMode, ...payload }, queuedModel) {
   const thread = getThreadById(store2, threadId);
   const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
   const selectedModel = queuedModel ?? thread?.model;
   return {
     ...payload,
+    ...thread?.executionMode === "agent" ? { executionMode: "agent" } : {},
     ...reviewContext !== void 0 ? { reviewContext } : {},
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
@@ -60470,7 +60592,7 @@ function updateQueuedMessageModel(store2, threadId, messageId, model) {
 }
 function drainMessageQueue(store2, api2, threadId) {
   if (hasPendingDispatch(store2, threadId)) return;
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  const thread = getThreadById(store2, threadId);
   if (!thread || thread.status !== "idle" || thread.queuePaused) return;
   const pending = thread.pendingMessages ?? [];
   if (pending.length === 0) return;
@@ -60494,8 +60616,7 @@ function drainMessageQueue(store2, api2, threadId) {
   if (!next && heldByBudget.length === 0) return;
   const rest = pending.filter((item) => item !== next);
   const budgetHeld = new Set(heldByBudget);
-  const threads = store2.getState().threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
     const nextPending = rest.map(
@@ -60504,7 +60625,6 @@ function drainMessageQueue(store2, api2, threadId) {
     const base2 = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
     return next && isMachineContinuation(next) ? { ...base2, continuationUsed: used } : base2;
   });
-  store2.setState({ threads });
   if (heldByBudget.length > 0) addMessage(store2, threadId, "error", continuationBudgetHeldNote());
   store2.emit("threads_changed");
   if (next) dispatchAgentRun(store2, api2, threadId, next.payload, next);
@@ -60642,7 +60762,7 @@ function sendQueuedMessageNow(store2, api2, threadId, messageId) {
   store2.emit("threads_changed");
   if (thread.status === "running") {
     markSendNowAbort(threadId);
-    void api2.agent.abort(threadId);
+    void api2.agent.abort(threadId, "send_now");
   } else {
     drainMessageQueue(store2, api2, threadId);
   }
@@ -73794,7 +73914,7 @@ function createAppleDevelopmentPanel(store2, api2, options) {
       if (current === generation) render2(owner, state);
     } catch (error62) {
       if (current !== generation) return;
-      if (!options.allowEnrollment && isUnavailableThreadCheckoutError(error62)) {
+      if (!options.allowEnrollment && (isUnavailableThreadCheckoutError(error62) || ipcErrorMessage(error62, "").startsWith("MissingThreadWorktreeError:"))) {
         stopPolling();
         host.replaceChildren();
         host.hidden = true;
@@ -77410,6 +77530,7 @@ function parseAgentRunPayload(rawPrompt) {
       })) : [];
       return {
         userContent: content2.data,
+        ...parsed2["executionMode"] === "agent" ? { executionMode: "agent" } : {},
         invokedSkills: invokedSkills.success ? invokedSkills.data : [],
         priorTodos: normalizedTodos,
         ...typeof parsed2["invokedAgent"] === "string" && parsed2["invokedAgent"] ? { invokedAgent: parsed2["invokedAgent"] } : {},
@@ -80877,6 +80998,17 @@ var init_demo_concise_states = __esm({
           settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off", model: CAPABLE }
         }
       ),
+      scenario("recovery-layout", "Interrupted turn with a long fallback model name", [
+        user("recovery-earlier-user", "Check the settings form."),
+        assistant("recovery-earlier", "The form needs a layout fix.", [], {
+          model: "claude-haiku-4-5-20251001",
+          turnOutcome: outcome("completed", { model: "claude-haiku-4-5-20251001" })
+        }),
+        user("recovery-user", "Fix the settings form."),
+        assistant("recovery-failed", "I found the footer, then the provider stopped responding.", [], {
+          turnOutcome: outcome("failed", { error: { message: "Provider disconnected." } })
+        })
+      ]),
       scenario("failed", "A turn that failed partway", [
         user("failed-user", "Fix the settings form so Save stays aligned on narrow windows."),
         assistant(
@@ -81124,6 +81256,76 @@ var init_demo_bridged_tools = __esm({
     ].join("\n");
     BRIDGED_TOOL_SCENARIOS = [
       {
+        id: "bridged-thread-proposals",
+        label: "Two proposed follow-up threads",
+        project: { id: "demo-proposals-project", name: "Follow-up work", path: "/demo/proposals" },
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off", model: MODEL },
+        threads: [
+          {
+            id: "demo-proposals-thread",
+            title: "Settings follow-up",
+            status: "idle",
+            model: MODEL,
+            messages: [
+              {
+                id: "proposals-user",
+                role: "user",
+                content: "Propose separate threads for these two settings fixes.",
+                toolCalls: [],
+                createdAt: CREATED_AT
+              },
+              {
+                id: "proposals-assistant",
+                role: "assistant",
+                content: "Here are the two proposed threads.",
+                createdAt: CREATED_AT,
+                toolCalls: [
+                  {
+                    id: "proposal-read-1",
+                    name: "read_file",
+                    args: { path: "settings.ts" },
+                    status: "done",
+                    result: "Read settings."
+                  },
+                  {
+                    id: "proposal-read-2",
+                    name: "read_file",
+                    args: { path: "agents.ts" },
+                    status: "done",
+                    result: "Read agents."
+                  },
+                  ...[
+                    {
+                      title: "Fix Codex readiness detection",
+                      summary: "Show the correct sign-in status and verify refresh behavior."
+                    },
+                    {
+                      title: "Finish the combined Models & agents list",
+                      summary: "Bring coding agents, API keys and model servers into one settings list."
+                    }
+                  ].map((proposal, index) => ({
+                    id: `wrapped-proposal-${String(index)}`,
+                    name: "mcp.copse.propose_thread",
+                    title: "mcp.copse.propose_thread",
+                    kind: "execute",
+                    args: {
+                      server: "copse",
+                      tool: "propose_thread",
+                      arguments: { ...proposal, prompt: `${proposal.title}. Add focused tests.` }
+                    },
+                    status: "done",
+                    result: "Offered to the user."
+                  }))
+                ]
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: CREATED_AT,
+            updatedAt: CREATED_AT
+          }
+        ]
+      },
+      {
         id: "bridged-tools",
         label: "Patch file links and command output",
         project: { id: "demo-bridge-project", name: "Bridge tools", path: "/demo/bridge" },
@@ -81245,6 +81447,16 @@ var init_demo_bridged_tools = __esm({
 });
 
 // src/shared/approval-copy.ts
+function threadAccessApproval(access) {
+  return {
+    title: access === "read" ? "Read your other threads?" : "Send prompts to your other threads?",
+    body: "",
+    bodyAdvice: access === "read" ? "Allow this thread to read all your other conversations." : "Allow this thread to send prompts that run in your other conversations.",
+    bodyFooter: "Applies only to this thread. Revoke it in the thread menu \u2192 Conversation access.",
+    approveLabel: access === "read" ? "Allow reading" : "Allow sending",
+    allowRemember: false
+  };
+}
 function webApprovalDetails(origin, url2, allowRemember, context) {
   return {
     body: url2,
@@ -84416,6 +84628,13 @@ var init_demo_scenarios = __esm({
       ...SITE_TOUR_SCENARIOS,
       // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
       ...CONCISE_STATE_SCENARIOS,
+      ...["read", "send"].map(
+        (access) => approvalRiskScenario(`approval-thread-${access}`, {
+          id: `thread-${access}`,
+          type: "mcp",
+          ...threadAccessApproval(access)
+        })
+      ),
       approvalRiskScenario("approval-web-url", {
         id: "web-url",
         title: "Allow web origin?",
@@ -84602,6 +84821,14 @@ function createDemoApi(scenario2, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api2 = {
+    threadPrompts: {
+      onPrompt: () => () => {
+      },
+      reply: async () => {
+      },
+      revokeAccess: async () => {
+      }
+    },
     mobile: {
       getState: () => resolved2({
         enabled: scenario2.mobileCompanion !== void 0,
@@ -89393,13 +89620,14 @@ function approvalCopyElement(className, text2) {
 function approvalRequestDetails(req) {
   const parts = [];
   if (req.bodyAdvice) parts.push(approvalCopyElement("approval-advice", req.bodyAdvice));
-  parts.push(
-    el(
-      "div",
-      { class: req.type === "shell" ? "approval-body approval-body-code" : "approval-body" },
-      req.body
-    )
-  );
+  if (req.body.trim())
+    parts.push(
+      el(
+        "div",
+        { class: req.type === "shell" ? "approval-body approval-body-code" : "approval-body" },
+        req.body
+      )
+    );
   if (req.bodyFooter) parts.push(approvalCopyElement("approval-footer", req.bodyFooter));
   return parts;
 }
@@ -89598,7 +89826,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
       const body = el("div", { class: bodyClass }, req.body);
-      if (collapseDetails && !detailsExpanded) body.hidden = true;
+      if (!req.body.trim() || collapseDetails && !detailsExpanded) body.hidden = true;
       return body;
     };
     items.replaceChildren(
@@ -93030,6 +93258,25 @@ function mountProjectsPane(root, store2, api2) {
       });
       const openThreadMenu = (x3, y3) => {
         showContextMenu(x3, y3, [
+          {
+            label: "Conversation access\u2026",
+            onSelect: () => {
+              showContextMenu(x3, y3, [
+                {
+                  label: "Revoke reading other threads",
+                  onSelect: () => {
+                    void api2.threadPrompts.revokeAccess(thread.id, "read");
+                  }
+                },
+                {
+                  label: "Revoke sending to other threads",
+                  onSelect: () => {
+                    void api2.threadPrompts.revokeAccess(thread.id, "send");
+                  }
+                }
+              ]);
+            }
+          },
           ...canMutate ? [
             ...allowRename ? [
               {
@@ -99035,10 +99282,15 @@ function mountComposerEditor() {
   root.setAttribute("aria-label", "Message");
   const SCROLL_PIN_THRESHOLD_PX2 = 4;
   let pinnedToBottom = true;
+  let observedWidth = root.clientWidth;
+  let observedHeight = root.clientHeight;
   root.addEventListener("scroll", () => {
+    if (root.clientWidth !== observedWidth || root.clientHeight !== observedHeight) return;
     pinnedToBottom = root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX2;
   });
   new ResizeObserver(() => {
+    observedWidth = root.clientWidth;
+    observedHeight = root.clientHeight;
     if (pinnedToBottom) root.scrollTop = root.scrollHeight;
   }).observe(root);
   const blocks = /* @__PURE__ */ new Map();
@@ -99227,6 +99479,7 @@ function mountComposerEditor() {
           if (chip2) frag.append(chip2);
         }
       });
+      pinnedToBottom = true;
       root.replaceChildren(frag);
       pruneChips();
       if (editor.isFocused()) caretToEnd2();
@@ -101546,7 +101799,9 @@ function threadProposalCardSignature(tc2, store2, sourceThreadId) {
   return `${state.status}:${state.threadId ?? ""}:${state.checkoutMode ?? ""}`;
 }
 function createThreadProposalToolCard(tc2, store2, api2, sourceThreadId) {
-  const proposal = parseThreadProposal(tc2.id, tc2.args);
+  const args = tc2.args;
+  const proposalArgs = isRecord(args) && args["server"] === "copse" && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
+  const proposal = parseThreadProposal(tc2.id, proposalArgs);
   if (!proposal) return null;
   return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc2.id), {
     onStart: async (accepted) => {
@@ -101580,6 +101835,7 @@ function createThreadProposalToolCard(tc2, store2, api2, sourceThreadId) {
 }
 var init_thread_proposal_tool_card = __esm({
   "src/renderer/views/thread-proposal-tool-card.ts"() {
+    init_unknown_value3();
     init_thread_proposal2();
     init_thread_helpers();
     init_thread_proposals();
@@ -103998,7 +104254,7 @@ function createHookCard(card, load) {
 }
 function buildMessageOriginMarker(origin, editedByUser) {
   const fromHook = origin.kind === "hook";
-  const label = fromHook ? `Hook \xB7 ${origin.hookId} (${hookEventLabel(origin.event)})` : "Machine \xB7 automatic continuation";
+  const label = fromHook ? `Hook \xB7 ${origin.hookId} (${hookEventLabel(origin.event)})` : origin.operationId.startsWith("thread:") ? "Thread \xB7 prompt from another conversation" : "Machine \xB7 automatic continuation";
   const marker = el(
     "div",
     {
@@ -104738,10 +104994,11 @@ function mountConversation(root, store2, api2) {
     if (editing) classes.push("msg-editing");
     if (held) classes.push("msg-held");
     if (fromHook) classes.push("msg-hook-origin");
+    if (queued.origin?.kind === "machine") classes.push("msg-machine-origin");
     const item = el("div", {
       class: classes.join(" "),
       "data-message-id": msg.id,
-      ...fromHook ? { "data-hook-id": queued.origin?.hookId ?? "" } : {}
+      ...queued.origin?.kind === "hook" ? { "data-hook-id": queued.origin.hookId } : {}
     });
     const body = el("div", { class: "message-body" });
     const badgeText = editing ? "Editing" : held ? "Held" : "Queued";
@@ -146256,10 +146513,11 @@ var init_build_skill_user_content = __esm({
 });
 
 // src/renderer/views/acp-config-options.ts
-function acpOptionGroupsFor(agent2) {
+function acpOptionGroupsFor(agent2, agentManaged = false) {
   const groups = [];
   for (const option of agent2.availableConfigOptions ?? []) {
-    if (option.category === "model" || option.choices.length < 2) continue;
+    if (option.category === "model" || agentManaged && option.category === "mode" || option.choices.length < 2)
+      continue;
     groups.push({
       id: option.configId,
       kind: "config",
@@ -146272,7 +146530,7 @@ function acpOptionGroupsFor(agent2) {
     (option) => option.category === "mode"
   );
   const modes = agent2.availablePermissionModes ?? [];
-  if (!hasConfigMode && modes.length > 1) {
+  if (!agentManaged && !hasConfigMode && modes.length > 1) {
     groups.push({
       id: ACP_MODE_GROUP_ID,
       kind: "mode",
@@ -146290,13 +146548,13 @@ function acpOptionGroupsFor(agent2) {
 async function readAgents(api2) {
   return parseAcpAgentConfigs(await api2.settings.get("registeredAcpAgents"));
 }
-async function loadAcpOptionGroups(api2, model) {
+async function loadAcpOptionGroups(api2, model, agentManaged = false) {
   const selection2 = parseAcpModelSelection(model);
   if (!selection2) return null;
   const selectedId = canonicalAcpAgentId(selection2.id);
   const agent2 = (await readAgents(api2)).find((candidate) => candidate.id === selectedId);
   if (!agent2?.enabled) return null;
-  const groups = acpOptionGroupsFor(agent2);
+  const groups = acpOptionGroupsFor(agent2, agentManaged);
   return groups.length > 0 ? { agentId: agent2.id, groups } : null;
 }
 async function saveAcpOptionSelection(api2, agentId, group, value) {
@@ -146406,7 +146664,11 @@ function mountFooterModelPicker(root, api2, getCurrent, onSelect, pickerOpts = {
       // effort). Both hang off whichever value is selected, so they reload with
       // the model list.
       loadValueGroups: async (current) => {
-        const loaded = await loadAcpOptionGroups(api2, current);
+        const loaded = await loadAcpOptionGroups(
+          api2,
+          current,
+          pickerOpts.isAgentManaged?.() === true
+        );
         optionAgentId = loaded?.agentId ?? null;
         optionGroups = loaded?.groups ?? [];
         const reasoning = pickerOpts.getReasoning ? reasoningValueGroup(current, pickerOpts.getReasoning()) : null;
@@ -148831,6 +149093,109 @@ var init_guarded_yolo_control = __esm({
   }
 });
 
+// src/renderer/views/agent-execution-mode-control.ts
+function mountAgentExecutionModeControl(store2, isAgentSelected, onChange) {
+  const badge = el(
+    "span",
+    { class: "agent-execution-mode-badge", role: "status", hidden: "" },
+    "Agent managed"
+  );
+  const shell4 = createOverlayDialog({
+    id: "agent-execution-mode-dialog",
+    className: "agent-execution-mode-dialog"
+  });
+  const title = el("h2", { id: "agent-execution-mode-title" }, "Execution mode");
+  const description = el("p", {}, "Choose how the selected agent acts in this thread.");
+  const copse = el(
+    "button",
+    { type: "button", class: "agent-execution-mode-option", "data-mode": "copse" },
+    el("strong", {}, "Copse managed"),
+    el("span", {}, "Use Copse action approvals and its sandbox where available.")
+  );
+  const agent2 = el(
+    "button",
+    { type: "button", class: "agent-execution-mode-option", "data-mode": "agent" },
+    el("strong", {}, "Agent managed"),
+    el("span", {}, "Use the agent\u2019s own tools, safety checks, and approval decisions.")
+  );
+  const note = el(
+    "p",
+    { class: "agent-execution-mode-note" },
+    "Agent managed runs the selected agent without Copse\u2019s process sandbox. Copse shows the activity the agent reports. Copse tools still use their own permissions. The change applies to the next turn."
+  );
+  const cancel = el("button", { type: "button" }, "Cancel");
+  const apply4 = el(
+    "button",
+    { type: "button", class: "agent-execution-mode-apply" },
+    "Apply to thread"
+  );
+  shell4.dialog.setAttribute("aria-labelledby", title.id);
+  shell4.dialog.append(
+    title,
+    description,
+    el("div", { class: "agent-execution-mode-options" }, copse, agent2),
+    note,
+    el("div", { class: "agent-execution-mode-actions" }, cancel, apply4)
+  );
+  let selected = "copse";
+  function activeThread() {
+    return getActiveThread(store2);
+  }
+  function refresh() {
+    const thread = activeThread();
+    badge.hidden = !thread || thread.executionMode !== "agent" || !isAgentSelected();
+  }
+  function renderSelection() {
+    copse.setAttribute("aria-pressed", String(selected === "copse"));
+    agent2.setAttribute("aria-pressed", String(selected === "agent"));
+    apply4.disabled = selected === (activeThread()?.executionMode === "agent" ? "agent" : "copse");
+  }
+  function open2() {
+    if (!activeThread() || !isAgentSelected()) return;
+    selected = activeThread()?.executionMode === "agent" ? "agent" : "copse";
+    renderSelection();
+    shell4.open();
+  }
+  copse.addEventListener("click", () => {
+    selected = "copse";
+    renderSelection();
+  });
+  agent2.addEventListener("click", () => {
+    selected = "agent";
+    renderSelection();
+  });
+  cancel.addEventListener("click", shell4.close);
+  apply4.addEventListener("click", () => {
+    const thread = activeThread();
+    if (!thread) return;
+    patchThreadAnywhere(store2, thread.id, (current) => {
+      const { executionMode: _previous, ...rest } = current;
+      return selected === "agent" ? { ...rest, executionMode: "agent", updatedAt: Date.now() } : { ...rest, updatedAt: Date.now() };
+    });
+    store2.emit("threads_changed");
+    shell4.close();
+    refresh();
+    onChange();
+  });
+  refresh();
+  return {
+    element: badge,
+    menuLabel: () => "Execution mode\u2026",
+    open: open2,
+    refresh,
+    destroy: () => {
+      shell4.dialog.remove();
+    }
+  };
+}
+var init_agent_execution_mode_control = __esm({
+  "src/renderer/views/agent-execution-mode-control.ts"() {
+    init_thread_helpers();
+    init_helpers();
+    init_dialog_shell();
+  }
+});
+
 // src/shared/container-acp-agents.ts
 function containerAcpAgentTitles() {
   return CONTAINER_ACP_AGENTS.map((agent2) => findAcpCatalogEntry(agent2.id)?.title ?? agent2.id);
@@ -150022,6 +150387,11 @@ ${context}` : text2;
   });
   const footer = el("div", { class: "input-footer" });
   const modelHost = el("div", { class: "footer-model-host" });
+  const executionMode = mountAgentExecutionModeControl(
+    store2,
+    () => isAcpModel(footerChatModel()),
+    () => footerOverflow?.update()
+  );
   const checkoutHost = el("div", { class: "footer-checkout-host" });
   const checkoutBtn = el("button", {
     type: "button",
@@ -150048,8 +150418,13 @@ ${context}` : text2;
   const contextWheel = createContextWheel();
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api2);
   usageGroup.append(contextWheel.root, queueIndicator);
-  footer.append(modelHost, checkoutHost, branchHost, planControl.button);
+  footer.append(modelHost, executionMode.element, checkoutHost, branchHost, planControl.button);
   footerOverflow = mountFooterOverflow(footer, [
+    {
+      label: executionMode.menuLabel,
+      hidden: () => !getActiveThreadId() || !isAcpModel(footerChatModel()),
+      onClick: executionMode.open
+    },
     {
       label: guardedYolo.menuLabel,
       hidden: () => !getActiveThreadId(),
@@ -150161,6 +150536,7 @@ ${context}` : text2;
   const modelPicker = mountFooterModelPicker(modelHost, api2, footerChatModel, selectChatModel, {
     formatCurrentLabel: footerModelDisplayLabel,
     getCurrentRoute: footerResolvedModel,
+    isAgentManaged: () => getActiveThread(store2)?.executionMode === "agent",
     isSshWorkspace: () => {
       const { activeProjectId, projects } = store2.getState();
       if (!activeProjectId) return false;
@@ -150218,6 +150594,8 @@ ${context}` : text2;
       name,
       bytes: bytes2.buffer.slice(bytes2.byteOffset, bytes2.byteOffset + bytes2.byteLength)
     });
+    const end = composer.value.length;
+    composer.setSelectionRange(end, end);
     composer.focus();
   }
   function debugTrace() {
@@ -151120,8 +151498,17 @@ ${description}
     },
     true
   );
+  let sendNowChordAt = 0;
   composer.el.addEventListener("keydown", (e3) => {
     if (e3.isComposing) return;
+    const control = e3.ctrlKey || e3.metaKey;
+    const chord = control && !e3.altKey && !e3.shiftKey && e3.key.toLowerCase() === "s" && sendNowChordAt > 0 && Date.now() - sendNowChordAt < 1500;
+    sendNowChordAt = control && !e3.altKey && !e3.shiftKey && e3.key.toLowerCase() === "x" ? Date.now() : 0;
+    if (chord || control && e3.key === "Enter" && !e3.altKey && !e3.shiftKey) {
+      e3.preventDefault();
+      void submit(true);
+      return;
+    }
     if (e3.key === "Tab" && !e3.shiftKey && !e3.ctrlKey && !e3.metaKey && !e3.altKey) {
       const hint = nextStepHint.current();
       if (hint !== null && !composer.value.trim() && !isAutocompletePickerOpen()) {
@@ -151139,12 +151526,12 @@ ${description}
     e3.preventDefault();
     void submit();
   });
-  async function submit() {
+  async function submit(sendNow = false) {
     const id = getActiveThreadId();
     if (!id || imageDescriptionInProgress || !beginThreadSubmission(store2, id)) return;
     updateState();
     try {
-      await performSubmit(id);
+      await performSubmit(id, sendNow);
     } catch (error62) {
       console.error("Could not send prompt", { threadId: id, error: error62 });
       checkoutErrors.set(id, error62 instanceof Error ? error62.message : "Could not send message");
@@ -151154,7 +151541,7 @@ ${description}
       updateCheckoutControl();
     }
   }
-  async function performSubmit(id) {
+  async function performSubmit(id, sendNow) {
     mark("ttft:composer-submit");
     followUps.clearSuggestions();
     nextStepHint.clear();
@@ -151181,8 +151568,15 @@ ${description}
       videoRefs: currentVideoRefs(),
       archiveRefs: currentArchiveRefs()
     };
-    if (!rawText && attachedFiles2.length === 0 && attachedImages2.length === 0 && attachedVideos2.length === 0 && attachedArchives2.length === 0 && attachedThreads2.length === 0 && attachedShells2.length === 0)
+    if (!rawText && attachedFiles2.length === 0 && attachedImages2.length === 0 && attachedVideos2.length === 0 && attachedArchives2.length === 0 && attachedThreads2.length === 0 && attachedShells2.length === 0) {
+      if (sendNow) {
+        const target = getThreadById(store2, id)?.pendingMessages?.find(
+          (item) => item.autoDispatch !== false
+        );
+        if (target) sendQueuedMessageNow(store2, api2, id, target.messageId);
+      }
       return;
+    }
     const projectId = store2.getState().activeProjectId;
     const thread = getThreadById(store2, id);
     if (!projectId || !thread) return;
@@ -151405,6 +151799,7 @@ ${description}
     };
     if (getThreadById(store2, id)?.status === "running") {
       enqueueUserMessage(store2, id, queued);
+      if (sendNow) sendQueuedMessageNow(store2, api2, id, messageId);
     } else {
       startHumanTurnTree(store2, id);
       dispatchAgentRun(store2, api2, id, payload, queued);
@@ -151840,6 +152235,8 @@ ${reply}`);
     }),
     store2.on("threads_changed", () => {
       syncComposerThread();
+      executionMode.refresh();
+      footerOverflow.update();
       guardedYolo.refresh();
       containerRun.refresh();
       hideBranchMismatch();
@@ -151927,6 +152324,7 @@ ${reply}`);
       modelPicker.destroy();
       footerOverflow.destroy();
       guardedYolo.destroy();
+      executionMode.destroy();
       containerRun.destroy();
       planControl.destroy();
       footerCompact.destroy();
@@ -151988,6 +152386,7 @@ var init_input_bar = __esm({
     init_composer_draft_autosave();
     init_panel_mode_controls();
     init_guarded_yolo_control();
+    init_agent_execution_mode_control();
     init_container_run_control();
     init_active_thread_owner();
     init_unknown_value3();
@@ -191047,6 +191446,114 @@ var init_activity_home = __esm({
   }
 });
 
+// src/renderer/controller/thread-prompts.ts
+async function acceptThreadPrompt(store2, api2, command2) {
+  const threadId = command2.thread.id;
+  if (Date.now() >= command2.expiresAt || command2.sourceThreadId === threadId)
+    return { ok: false, error: "This prompt expired or targets its own thread." };
+  if (!beginThreadSubmission(store2, threadId))
+    return {
+      ok: false,
+      error: "Another prompt is being submitted to this thread. Try again shortly."
+    };
+  try {
+    const state = store2.getState();
+    const resident = getThreadById(store2, threadId);
+    if (resident && (backgroundProjectOf(store2, threadId) ?? state.activeProjectId) !== command2.projectId)
+      return { ok: false, error: "The destination project changed." };
+    if (!resident) {
+      if (state.activeProjectId === command2.projectId)
+        store2.setState({ threads: [...state.threads, command2.thread] });
+      else
+        store2.setState({
+          backgroundThreads: [
+            ...state.backgroundThreads,
+            { projectId: command2.projectId, thread: command2.thread }
+          ]
+        });
+    } else if (resident.messagesLoaded === false) {
+      const diskIds = new Set(command2.thread.messages.map((message2) => message2.id));
+      patchThreadAnywhere(store2, threadId, (thread) => ({
+        ...thread,
+        messages: [
+          ...command2.thread.messages,
+          ...thread.messages.filter((message2) => !diskIds.has(message2.id))
+        ],
+        messagesLoaded: command2.thread.messagesLoaded !== false
+      }));
+    }
+    let current = getThreadById(store2, threadId);
+    if (!current || current.archivedAt !== void 0 || current.messagesLoaded === false || Date.now() >= command2.expiresAt)
+      return { ok: false, error: "The destination conversation is unavailable." };
+    if (!current.worktreeChoice && current.messages.length === 0) {
+      const prepared = await api2.agent.prepareCheckout(
+        command2.projectId,
+        threadId,
+        command2.text,
+        "automatic",
+        current.model
+      );
+      if (Date.now() >= command2.expiresAt)
+        return { ok: false, error: "This prompt expired while preparing the checkout." };
+      applyPreparedThreadCheckout(store2, threadId, prepared);
+      current = getThreadById(store2, threadId);
+      if (!current || current.archivedAt !== void 0)
+        return { ok: false, error: "The destination conversation is unavailable." };
+    }
+    const origin = {
+      kind: "machine",
+      operationId: `thread:${command2.sourceThreadId}`
+    };
+    if (current.status === "error")
+      patchThreadAnywhere(store2, threadId, (thread) => ({ ...thread, status: "idle" }));
+    const messageId = addMessage(store2, threadId, "user", command2.text, void 0, void 0, {
+      origin
+    });
+    enqueueUserMessage(store2, threadId, {
+      messageId,
+      payload: { content: command2.text },
+      createdAt: Date.now(),
+      origin
+    });
+    const queued = current.status === "running" || current.queuePaused === true;
+    drainMessageQueue(store2, api2, threadId);
+    const accepted = getThreadById(store2, threadId);
+    if (accepted) {
+      try {
+        await api2.threads.updateMeta(command2.projectId, threadId, {
+          pendingMessages: accepted.pendingMessages ?? [],
+          continuationUsed: accepted.continuationUsed ?? 0,
+          ...accepted.currentEpoch !== void 0 ? { currentEpoch: accepted.currentEpoch } : {},
+          updatedAt: accepted.updatedAt
+        });
+      } catch (error62) {
+        console.error("[threads] could not persist accepted prompt metadata", error62);
+      }
+    }
+    return {
+      ok: true,
+      queued: queued || (getThreadById(store2, threadId)?.pendingMessages?.some(
+        (item) => item.messageId === messageId
+      ) ?? false)
+    };
+  } catch (error62) {
+    return {
+      ok: false,
+      error: error62 instanceof Error ? error62.message : "Could not submit the prompt."
+    };
+  } finally {
+    endThreadSubmission(store2, threadId);
+  }
+}
+var init_thread_prompts = __esm({
+  "src/renderer/controller/thread-prompts.ts"() {
+    init_thread_helpers();
+    init_pending_submissions();
+    init_message_queue();
+    init_background_threads();
+  }
+});
+
 // src/renderer/controller/sync-thread-branch-after-shell.ts
 async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
   const projectId = store2.getState().activeProjectId;
@@ -191909,14 +192416,16 @@ function startAgentController(store2, api2) {
               usage: finished.usage,
               updatedAt: finished.updatedAt,
               title: finished.title,
+              pendingMessages: finished.pendingMessages ?? [],
+              continuationUsed: finished.continuationUsed ?? 0,
+              ...finished.currentEpoch !== void 0 ? { currentEpoch: finished.currentEpoch } : {},
               ...finished.todos !== void 0 ? { todos: finished.todos } : {}
             }).catch((err2) => {
               console.error("[threads] could not persist a background run finish", err2);
             });
           }
-        } else {
-          drainMessageQueue(store2, api2, threadId);
         }
+        if (!backgroundProjectWasRemoved) drainMessageQueue(store2, api2, threadId);
         const finishedThread = getThreadById(store2, threadId);
         const quiet = takeQuietRun(threadId);
         if (finishedThread?.status === "idle") {
@@ -191940,9 +192449,15 @@ function startAgentController(store2, api2) {
       sendNow: payload.sendNow
     });
   });
+  const unsubThreadPrompts = api2.threadPrompts.onPrompt((command2) => {
+    void acceptThreadPrompt(store2, api2, command2).then((result) => api2.threadPrompts.reply(command2.id, result)).catch((error62) => {
+      console.error("[threads] failed to acknowledge prompt:", error62);
+    });
+  });
   return () => {
     unsub();
     unsubHookQueue();
+    unsubThreadPrompts();
     detachDiffState();
   };
 }
@@ -192016,6 +192531,7 @@ var pendingTurn;
 var init_agent = __esm({
   "src/renderer/controller/agent.ts"() {
     init_automation_failure();
+    init_thread_prompts();
     init_dynamic_model();
     init_thread_helpers();
     init_sync_thread_branch_after_shell();

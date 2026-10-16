@@ -244,6 +244,10 @@
     "label": "OpenAI confirmed cancellation with interrupted recovery"
   },
   {
+    "id": "bridged-thread-proposals",
+    "label": "Two proposed follow-up threads"
+  },
+  {
     "id": "bridged-tools",
     "label": "Patch file links and command output"
   },
@@ -304,6 +308,10 @@
     "label": "A capable model’s turn on a profile with no stored setting"
   },
   {
+    "id": "concise-state-recovery-layout",
+    "label": "Interrupted turn with a long fallback model name"
+  },
+  {
     "id": "concise-state-failed",
     "label": "A turn that failed partway"
   },
@@ -342,6 +350,14 @@
   {
     "id": "concise-state-model-switch",
     "label": "A thread that switches models between turns"
+  },
+  {
+    "id": "approval-thread-read",
+    "label": "Read your other threads?"
+  },
+  {
+    "id": "approval-thread-send",
+    "label": "Send prompts to your other threads?"
   },
   {
     "id": "approval-web-url",
