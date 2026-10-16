@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -10,6 +10,7 @@ import {
 } from './helpers/follow-up-suggestions.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('CI investigator follow-up', () => {
   const originalPath = process.env['PATH']
@@ -43,8 +44,8 @@ describe('CI investigator follow-up', () => {
       PATH: originalPath,
     })
     resetUserData()
-    if (workspace) rmSync(dirname(workspace), { recursive: true, force: true })
-    if (fixtureBin) rmSync(fixtureBin, { recursive: true, force: true })
+    if (workspace) removeE2eTree(dirname(workspace))
+    if (fixtureBin) removeE2eTree(fixtureBin)
   })
 
   it('names the available investigate_ci tool in the failing-CI bubble', async () => {

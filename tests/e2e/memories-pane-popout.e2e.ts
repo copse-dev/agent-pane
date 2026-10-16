@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedMemoryNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // The Memories pane is gated on the `copse.okf-memories` first-party plugin, so
 // unlike the other right-panel panes it needs the plugin seeded on and a couple of
@@ -48,7 +49,7 @@ describe('Memories pane pop-out', () => {
       // session already gone — nothing to do
     }
     resetUserData()
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(knowledgeDir)
   })
 
   it('detaches the memories pane into its own window', async function () {

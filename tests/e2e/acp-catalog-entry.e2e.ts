@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildSync } from 'esbuild'
@@ -14,6 +14,7 @@ const ACP_FIXTURE = `
 import assert from 'node:assert/strict'
 import { Readable, Writable } from 'node:stream'
 import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 assert.deepEqual(process.argv.slice(2), ['--acp', '--stdio'])
 agent({ name: 'catalog-entry-fixture' })
@@ -80,7 +81,7 @@ describe('manual ACP catalog entry', function () {
 
   after(() => {
     resetUserData()
-    if (scratch) rmSync(scratch, { recursive: true, force: true })
+    if (scratch) removeE2eTree(scratch)
   })
 
   it('adds from Settings, selects in the picker and completes a fixture turn', async function () {

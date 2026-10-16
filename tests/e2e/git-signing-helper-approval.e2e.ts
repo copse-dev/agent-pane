@@ -14,6 +14,7 @@ import {
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // A public identity for the socket approval; the private-key case generates a disposable key.
 const PUBLIC_KEY =
@@ -94,7 +95,7 @@ describe('scoped Git signing approval', function () {
       })
     writeE2eEnv({ SSH_AUTH_SOCK: previousSocket })
     resetUserData()
-    if (directory) rmSync(directory, { recursive: true, force: true })
+    if (directory) removeE2eTree(directory)
   })
 
   it('offers private-key consent with default settings and signs only after explicit approval', async () => {

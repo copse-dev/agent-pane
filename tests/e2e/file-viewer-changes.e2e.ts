@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -16,6 +16,7 @@ import {
   channelDistance,
   editorSurfacePaint,
 } from './helpers/appearance.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // The file viewer's "Changes" view (#file-viewer): opening a file with
 // uncommitted changes surfaces a Changes toggle in the viewer toolbar that
@@ -122,7 +123,7 @@ describe('file viewer Changes view', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(dirname(workspaceRoot))
   })
 
   it('offers browser opening from the file tree before opening a file', async () => {

@@ -261,6 +261,12 @@ Use `writeSeedConfig` in `tests/e2e/helpers/seed-config.ts` to seed e2e state. I
 `config.json` no longer works. The thread store is mounted read-only into agent read tools for past
 thread references. See [`thread-store-format.md`](thread-store-format.md).
 
+Spec hooks run while the app is still alive, so remove profile, thread-store, checkout and fixture
+trees with `removeE2eTree` (`tests/e2e/helpers/remove-tree.ts`), not a bare recursive `rmSync`: it
+retries the `ENOTEMPTY` a concurrent write causes. It only absorbs a write already in flight. Never
+point a fixture checkout at the thread-store root itself, and let a running turn finish (or reload
+the session) before deleting a project the app is still writing.
+
 ## Focused validation
 
 The post-edit hook runs `scripts/hook-file-check.mts` through the Copse, Cursor, and Claude hook

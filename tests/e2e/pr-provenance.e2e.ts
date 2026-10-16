@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -16,6 +16,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { submitComposer } from './helpers/composer.ts'
 import { agentIsIdle, waitForAgentIdle } from './helpers.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT = 'e2e-native-pr-provenance'
 const PR = {
@@ -79,7 +80,7 @@ describe('native PR and commit provenance', function () {
   after(() => {
     writeE2eEnv({ COPSE_AGENT_EVAL: undefined, COPSE_PRESERVE_PATH: undefined, PATH: originalPath })
     resetUserData()
-    if (root) rmSync(root, { recursive: true, force: true })
+    if (root) removeE2eTree(root)
   })
 
   async function runTool(

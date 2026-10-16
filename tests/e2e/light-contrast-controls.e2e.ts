@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser } from '@wdio/globals'
@@ -10,6 +10,7 @@ import {
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Real-app visual + numeric evidence for issue #2488: the roadmap Save button
 // and the titlebar Changes-count badge painting `--text-on-accent` (a dark
@@ -129,7 +130,7 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(dirname(workspaceRoot))
   })
 
   it('clears AA on the real Changes badge and roadmap Save button in light and dark', async () => {

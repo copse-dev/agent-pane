@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -7,6 +7,7 @@ import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-usage-local-sign-in'
 
@@ -42,7 +43,7 @@ describe('usage sign-in local terminal routing', () => {
     writeE2eEnv({ PATH: originalPath, COPSE_PLAN_USAGE_MOCK: '1' })
     resetUserData()
     await browser.reloadSession()
-    if (bin) rmSync(bin, { recursive: true, force: true })
+    if (bin) removeE2eTree(bin)
   })
 
   it('runs the usage action locally even when main resolves the active project to SSH', async () => {

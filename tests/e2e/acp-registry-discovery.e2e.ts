@@ -19,6 +19,7 @@ const AGENT = `
 import { writeFileSync } from 'node:fs'
 import { Readable, Writable } from 'node:stream'
 import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 writeFileSync(new URL('./launched', import.meta.url), 'yes')
 agent({ name: 'registry-entry-fixture' })
   .onRequest('initialize', () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} }))
@@ -106,7 +107,7 @@ describe('public agent registry discovery', function () {
   after(() => {
     writeE2eEnv({ COPSE_E2E_ACP_REGISTRY_FIXTURE: undefined })
     resetUserData()
-    if (ownsScratch) rmSync(scratch, { recursive: true, force: true })
+    if (ownsScratch) removeE2eTree(scratch)
   })
 
   it('discovers without executing, reviews a disabled draft, then explicitly enables and runs it', async () => {
