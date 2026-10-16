@@ -2333,6 +2333,10 @@
       "sha256": "664f789098d0413bb4c02667b5a7a3e6407ba29818174aae255d2d4bd84519bc",
       "bytes": 21983
     },
+    "model-version-suppression-picker.png": {
+      "sha256": "cf209e9f079201f0d67a75f94251d93cbb77bf4bb936adc6027f98ecec27fac0",
+      "bytes": 28080
+    },
     "monaco-python-fstring-highlight.png": {
       "sha256": "5241403cd49f6985255d21c746561628d86635d30c19f467840eecb1caf00cf1",
       "bytes": 279276
@@ -4912,6 +4916,14 @@
     "truncated-tool-call-inspector.png": {
       "sha256": "727eada6ec33ffdee7aa776933b287866adef053a2bc357e9ab7f8cc4c36e719",
       "bytes": 358500
+    },
+    "turn-recovery-layout-360.png": {
+      "sha256": "c91af60bf1594ac740237193c897a45eabbfb5fcac2cac0aca3e260b3190e7e4",
+      "bytes": 38682
+    },
+    "turn-recovery-layout-720.png": {
+      "sha256": "4fabc15286cbe57b133214dc8935d54d1375af44a4f5af22ca4bedf128f928d6",
+      "bytes": 35598
     },
     "two-step-stop-armed.png": {
       "sha256": "80b54216a86a7c3ce3f6327b58a2e7af6f0022883feee949b58b493b79392baf",
