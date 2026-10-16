@@ -51,6 +51,7 @@ export interface ContextSideOf {
 
 export interface ThreadContextModel {
   threadId: string
+  title?: string
   sideOf?: ContextSideOf
   repos: ContextRepo[]
   links: ContextLink[]
@@ -98,7 +99,7 @@ export function deriveThreadContext(input: ThreadContextInput): ThreadContextMod
     const branch = thread.worktree?.branch ?? thread.gitBranch
     repos.push({
       name: project.name,
-      path: project.path,
+      path: thread.worktree?.path ?? project.path,
       ...(branch !== undefined ? { branch } : {}),
       checkout,
     })
@@ -174,6 +175,7 @@ export function deriveThreadContext(input: ThreadContextInput): ThreadContextMod
 
   return {
     threadId: thread.id,
+    title: thread.title,
     ...(sideOf ? { sideOf } : {}),
     repos,
     links,

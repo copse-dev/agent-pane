@@ -339,17 +339,17 @@ describe('analyzeShellCommand', () => {
     assert.equal(analyzeShellCommand(`perl -e 'print 1'`, root).verdict, 'external')
   })
 
-  it('flags an interpreter running a local script file', () => {
+  it('tries an interpreter running a local script file inside the sandbox', () => {
     for (const cmd of ['node ./evil.js', 'bash deploy.sh', 'python script.py', 'ruby task.rb']) {
-      assert.equal(analyzeShellCommand(cmd, root).verdict, 'external', `expected external: ${cmd}`)
+      assert.equal(analyzeShellCommand(cmd, root).verdict, 'ambiguous', cmd)
     }
   })
 
-  it('routes the direct local Electron e2e runner through host approval', () => {
+  it('lets the local Electron e2e runner request host access if needed', () => {
     const command = 'node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/example.e2e.ts'
     const result = analyzeShellCommand(command, root)
 
-    assert.equal(result.verdict, 'external')
+    assert.equal(result.verdict, 'ambiguous')
     assert.ok(
       result.reasons.includes(
         'runs a local script via an interpreter (contents opaque to analysis)',
@@ -381,7 +381,11 @@ describe('analyzeShellCommand', () => {
       'cat /etc/passwd',
       'printf "%s" "line one\nline two"; node ./build.js',
     ]) {
-      assert.equal(analyzeShellCommand(`${heredoc}\n${command}`, root).verdict, 'external', command)
+      assert.equal(
+        analyzeShellCommand(`${heredoc}\n${command}`, root).verdict,
+        command.includes('./build.js') ? 'ambiguous' : 'external',
+        command,
+      )
     }
   })
 
@@ -598,22 +602,21 @@ PY`,
     assert.ok(!r.reasons.some((x) => /\(open\)/.test(x)))
   })
 
-  it('flags direct execution of an in-workspace file (./x, ../x, bin/tool)', () => {
-    // The agent can write and `chmod +x` these; their contents are opaque here, so
-    // they must not auto-run — hard-external, like `node ./x.js`.
-    for (const cmd of [
-      './deploy',
-      '../tool run',
-      'bin/gen-thing',
-      'MODE=release ./deploy',
-      'cat x | ./x',
-    ]) {
+  it('tries direct local executables contained while preserving outside-path signals', () => {
+    for (const cmd of ['./deploy', 'bin/gen-thing', 'MODE=release ./deploy', 'cat x | ./x']) {
       const r = analyzeShellCommand(cmd, root)
-      assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
+      assert.equal(r.verdict, 'ambiguous', cmd)
       assert.ok(
         r.reasons.some((x) => /executes an in-workspace file directly/.test(x)),
         `missing local-executable reason: ${cmd}`,
       )
+    }
+    for (const cmd of [
+      '../tool run',
+      './deploy && curl https://example.com',
+      './deploy /etc/passwd',
+    ]) {
+      assert.equal(analyzeShellCommand(cmd, root).verdict, 'external', cmd)
     }
   })
 
@@ -680,13 +683,13 @@ PY`,
     // `(?:-\S+\s+)*` skip so the trailing `build.js` was never reached — the token
     // layer keys off argv[0]=node instead and still sees the .js operand.
     const nodeCase = analyzeShellCommand('node -r ./preload build.js', root)
-    assert.equal(nodeCase.verdict, 'external')
+    assert.equal(nodeCase.verdict, 'ambiguous')
     assert.ok(nodeCase.reasons.some((x) => /runs a local script via an interpreter/.test(x)))
 
     // A subcommand between the interpreter and the file (`deno run server.ts`) also
     // slipped past the regex; tokenization scans the whole argv.
     const denoCase = analyzeShellCommand('deno run server.ts', root)
-    assert.equal(denoCase.verdict, 'external')
+    assert.equal(denoCase.verdict, 'ambiguous')
     assert.ok(denoCase.reasons.some((x) => /runs a local script via an interpreter/.test(x)))
   })
 
@@ -712,7 +715,7 @@ PY`,
       ['curl https://example.com', 'external'],
       ['npm install lodash', 'external'],
       ['git push origin main', 'external'],
-      ['node ./evil.js', 'external'],
+      ['node ./evil.js', 'ambiguous'],
       ['python3 -c "import os"', 'external'],
     ]
     for (const [cmd, verdict] of expectations) {
@@ -1015,8 +1018,8 @@ describe('analyzeShellCommand — system executable heads and quoted separators'
   })
 
   it('still sees a command after a real separator following a quoted one', () => {
-    assert.equal(verdict("sed -i '' 's/a;b/c/' f.html; ./run.sh"), 'external')
-    assert.equal(verdict("echo 'a;b' && bin/tool"), 'external')
+    assert.equal(verdict("sed -i '' 's/a;b/c/' f.html; ./run.sh"), 'ambiguous')
+    assert.equal(verdict("echo 'a;b' && bin/tool"), 'ambiguous')
     assert.equal(verdict('echo "$(echo \'x\'; ./evil)"'), 'external')
   })
 })

@@ -37,6 +37,7 @@ Object.assign(globalThis, {
   // DOMRect backs getBoundingClientRect stubs without `as DOMRect` casts.
   DOMRect: win.DOMRect,
   Element: win.Element,
+  DOMParser: win.DOMParser,
   // HTMLElement is what renderer DOM helpers / tip layers return. Expose it so
   // `instanceof HTMLElement` works under happy-dom the same way Element does —
   // without this, tests that need `.style` / `.hidden` either throw at runtime

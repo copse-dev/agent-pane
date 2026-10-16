@@ -85,6 +85,17 @@ describe('outside-sandbox approval copy', () => {
     assert.match(bodyFooter ?? '', /not a confirmed sandbox block/)
   })
 
+  it('distinguishes a recorded prior denial from a new agent request', () => {
+    const parts = formatExpectedSandboxBlockPromptParts(
+      'gh pr list',
+      ['cached denial'],
+      'prior-denial',
+    )
+    assert.match(parts.bodyAdvice ?? '', /previous sandbox denial was recorded/)
+    assert.doesNotMatch(parts.bodyAdvice ?? '', /agent expects|It is asking/)
+    assert.match(parts.bodyFooter ?? '', /has not been tried in the sandbox again/)
+  })
+
   it('puts cached denial advice in its own block, not a reason bullet with the live command', () => {
     const prior =
       'gh could not read its own config at ~/.config/gh (operation not permitted) — this needs ' +

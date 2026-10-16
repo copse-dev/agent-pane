@@ -4,7 +4,7 @@ Copse stores classifier connections separately from chat providers. Open **Setti
 to add a Liquid/d1, TypeSafe/Jev, Kev, SemIf, Featherless/Simple Jev, or compatible custom connection. Saving a
 profile or its key makes no inference request. **Test** submits a small sample and displays the
 answer and duration. These profiles are available for safety screening, background questions, the
-`classify_text` tool and
+`ask_classifier` tool and
 evals; they never appear as chat models. With **Match task**, the background
 classifier assesses the first ask’s reasoning demand before Copse picks the primary model.
 This assessment has a five-second budget and respects cancellation. An unavailable or
@@ -129,25 +129,18 @@ To compare a classifier connection with a small-tasks model on these questions, 
 requests, prompts and parsers; see
 [`benchmarks/background-questions/README.md`](../benchmarks/background-questions/README.md).
 
-## The `classify_text` tool
+## The `ask_classifier` tool
 
-The model can ask a saved classifier a typed question about some text. The tool takes a classifier
-id, the `text`, a `type` of `choice` (2–16 distinct `options`) or `boolean`, and the `question`. It
-returns one small JSON object: the classifier id, the returned model, elapsed milliseconds, and for
-`choice` the likeliest option with every option's probability, or for `boolean` the probability of
-`true`. The verdict is read from the probabilities, never from the provider's `choice`; a tie goes
-to the option listed first. Nothing else the provider returned (metadata, request id, raw body) is
-passed on. `text` over 20,000 characters is refused rather than cut, since a verdict on a prefix
-misleads. Score questions are not offered: SemIf cannot answer them.
+Copse's native model and ACP agents can ask a saved classifier a typed question about text or structured JSON state. ACP exposes the same `ask_classifier` tool through Copse's native-tool bridge, so calls use the same permission and classifier-service gates. The tool takes a classifier id, exactly one of `text` or `state`, a `type` of `choice` (2–16 distinct `options`), `boolean` (optional `criteria`), or `score` (2–10 ordered `levels`), and the `question`. Score requires an HTTP connection; SemIf supports choice and boolean. It returns one small JSON object with the classifier id, returned model, elapsed milliseconds, and the typed answer with probabilities. Choice is read from the probabilities, never the provider's `choice`; a tie goes to the option listed first. Score includes the numeric value, levels, and their probabilities. Nothing else the provider returned (metadata, request id, raw body) is passed on. Input over 20,000 characters is refused rather than cut, since a verdict on a prefix misleads.
 
-- **Offered only when a classifier is saved.** The tool is always registered but withheld per turn
-  until a connection exists, as `video_frames` waits for a video, so a model is never shown a tool
-  that can only fail and the schema costs no context before then. Once offered, its description
-  names the configured ids. Saving a connection from Settings or the one-click installer needs no
-  restart.
+- **Native model offers only when a classifier is saved.** The tool is registered but withheld
+  from native model turns until a connection exists, as `video_frames` waits for a video, so its
+  schema costs no context before then. The ACP bridge advertises it at session setup and describes
+  the currently configured ids; a call without a saved connection returns a clear error. Saving a
+  connection from Settings or the one-click installer needs no restart.
 - **Egress follows the connection.** A connection that leaves the machine (any non-loopback HTTP
-  endpoint) asks before every call, showing the text that will be sent; a loopback server or a SemIf
-  scorer runs without a prompt. **Settings → Permissions → Tools** can set `classify_text` to
+  endpoint) asks before every call, showing the arguments that will be sent; a loopback server or a SemIf
+  scorer runs without a prompt. **Settings → Permissions → Tools** can set `ask_classifier` to
   _Always allow_, _Ask_ or _Block_, and an explicit choice wins either way. Whatever the prompt
   says, the call still goes through the classifier service, which re-checks host approval
   (`assertApprovedProviderHost`) and redacts known saved keys from remote text, exactly as for
@@ -160,7 +153,7 @@ misleads. Score questions are not offered: SemIf cannot answer them.
 
 ## Usage
 
-Classifier calls have their own usage source, `classifier`, written by the `classify_text` tool,
+Classifier calls have their own usage source, `classifier`, written by the `ask_classifier` tool,
 background questions, safety screening through a classifier, and the **Test** button. An event
 records the model the provider returned, the connection's label as `provider`, and the tokens the
 provider reported; a call that reports none records nothing, so a missing figure never reads as

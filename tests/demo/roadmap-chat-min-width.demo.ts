@@ -47,4 +47,24 @@ describe('browser-hosted roadmap side panel chat width', () => {
 
     await saveAppScreenshot('roadmap-chat-min-width.png')
   })
+
+  it('keeps the import view inset from the viewer edges', async () => {
+    await $('.roadmap-import-btn').click()
+    await $('.roadmap-import').waitForDisplayed()
+    const bounds = await browser.execute(() => {
+      const viewer = document.querySelector('.roadmap-viewer')
+      const content = document.querySelector('.roadmap-import')
+      if (!viewer || !content) throw new Error('expected the roadmap import view')
+      const outer = viewer.getBoundingClientRect()
+      const inner = content.getBoundingClientRect()
+      return {
+        left: inner.left - outer.left,
+        right: outer.right - inner.right,
+        top: inner.top - outer.top,
+        bottom: outer.bottom - inner.bottom,
+      }
+    })
+    for (const edge of Object.values(bounds)) assert.ok(edge >= 11, 'preserve the 12px inset')
+    await saveAppScreenshot('roadmap-import-viewer-inset.png')
+  })
 })

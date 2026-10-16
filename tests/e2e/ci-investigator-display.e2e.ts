@@ -23,6 +23,7 @@ describe('CI investigator subagent display', () => {
     await expect(card).not.toHaveAttribute('open')
     await expect(card.$('summary.tool-card-header .tool-name')).toHaveText('Investigated CI')
 
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
     await saveAppScreenshot('ci-investigator-display-collapsed.png')
 
     await card.$('summary.tool-card-header').click()

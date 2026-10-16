@@ -140,7 +140,7 @@ description: Bundled skill for tests
     assert.equal(skillsTokens(breakdown), 0)
   })
 
-  it('counts classify_text only once a classifier is configured, and counts its results as conversation', async () => {
+  it('counts ask_classifier only once a classifier is configured, and counts its results as conversation', async () => {
     const registry = createRegistry()
     const input = { draftText: '', invokedSkills: [], imageCount: 0, priorMessages: [] }
     await setSetting('classifierProviders', { version: 1, profiles: [] })
@@ -169,7 +169,7 @@ description: Bundled skill for tests
       priorMessages: [
         {
           role: 'assistant',
-          content: [{ id: 't1', name: 'classify_text', args: { classifier: 'kev' } }],
+          content: [{ id: 't1', name: 'ask_classifier', args: { classifier: 'kev' } }],
         },
         { role: 'tool', toolResults: [{ toolCallId: 't1', result }] },
       ],

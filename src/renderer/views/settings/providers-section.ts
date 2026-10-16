@@ -3,7 +3,7 @@ import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract
 import { qsRequired } from '../../dom/helpers.ts'
 import { createApiKeysSection } from '../setup/api-keys-section.ts'
 import { createProvidersPanel } from '../setup/providers-section.ts'
-import { createEnvKeyDetectSection } from '../setup/env-key-detect-section.ts'
+import { createAcpAgentsList } from '../setup/acp-agents-list.ts'
 import { createLmStudioSection } from '../setup/lm-studio-section.ts'
 import { createGhCliSection } from '../setup/gh-cli-section.ts'
 export interface ProvidersSection {
@@ -19,14 +19,13 @@ export interface ProvidersSection {
 }
 export function createProvidersSection(overlay: HTMLElement, api: ApiClient): ProvidersSection {
   let activeSignal: AbortSignal | undefined
-  const envKeyDetectSection = createEnvKeyDetectSection(api, {
-    legend: 'Detected settings',
-    onImported: () => {
+  const agentsList = createAcpAgentsList(api, {
+    onKeysImported: () => {
       void cursorKeySection.refreshKeyStatus(activeSignal)
       void providersPanel.refresh(undefined, activeSignal)
     },
   })
-  qsRequired(overlay, '#settings-env-detect-host').append(envKeyDetectSection.root)
+  qsRequired(overlay, '#settings-agents-host').append(agentsList.root)
 
   const cursorKeySection = createApiKeysSection(api, {
     legend: 'Cursor authentication',
@@ -73,6 +72,7 @@ export function createProvidersSection(overlay: HTMLElement, api: ApiClient): Pr
       },
     ],
     showOpenAiServiceTier: true,
+    deviceAgents: false,
     deferOrdinaryWrites: true,
     cloudAgents: [
       {
@@ -102,7 +102,7 @@ export function createProvidersSection(overlay: HTMLElement, api: ApiClient): Pr
         ...[cursorKeySection, claudeAgentKeySection].map((section) =>
           section.refreshKeyStatus(signal),
         ),
-        envKeyDetectSection.refresh(signal),
+        agentsList.refresh(signal),
         providersPanel.refresh(snapshot, signal),
       ])
     },
@@ -138,6 +138,7 @@ export function createProvidersSection(overlay: HTMLElement, api: ApiClient): Pr
       dirty.clear()
       for (const section of keySections) section.reset()
       providersPanel.reset()
+      agentsList.reset()
       for (const input of lmStudioSection.root.querySelectorAll<HTMLInputElement>(
         'input[type="password"]',
       ))

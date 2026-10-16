@@ -9,7 +9,7 @@ import type {
 import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
 import { refreshIcon } from '../dom/icons.ts'
-import { isUnavailableThreadCheckoutError } from '../ipc-error-message.ts'
+import { ipcErrorMessage, isUnavailableThreadCheckoutError } from '../ipc-error-message.ts'
 
 interface ApplePanelOptions {
   allowEnrollment: boolean
@@ -561,7 +561,13 @@ export function createAppleDevelopmentPanel(
       if (current === generation) render(owner, state)
     } catch (error) {
       if (current !== generation) return
-      if (!options.allowEnrollment && isUnavailableThreadCheckoutError(error)) {
+      // A completed automation can retire its checkout while this passive
+      // panel refreshes. Keep execution errors visible on explicit actions.
+      if (
+        !options.allowEnrollment &&
+        (isUnavailableThreadCheckoutError(error) ||
+          ipcErrorMessage(error, '').startsWith('MissingThreadWorktreeError:'))
+      ) {
         stopPolling()
         host.replaceChildren()
         host.hidden = true

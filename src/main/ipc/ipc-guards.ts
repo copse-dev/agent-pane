@@ -40,6 +40,11 @@ export function parseIpcArgs<T extends z.ZodType>(schema: T, args: unknown[]): z
   return parsed.data
 }
 
+/** One bounded array payload, not a tuple around that payload. */
+export function parseAcpAuthStatusArgs(args: unknown[]): string[] {
+  return parseIpcArgs(z.array(z.string().min(1).max(128)).max(32), args)
+}
+
 const zPortNumber = z.number().int().min(1).max(65535)
 
 export const vncTargetSchema: z.ZodType<VncTarget> = z.discriminatedUnion('kind', [
