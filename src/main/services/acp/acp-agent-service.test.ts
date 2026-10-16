@@ -459,7 +459,7 @@ describe('buildAcpPrompt', () => {
       wake_on_completion: true,
       timeout_ms: 1_800_000,
     })
-    assert.match(prompt, /independently of the ACP session/)
+    assert.match(prompt, /independently of the coding-agent session/)
     assert.match(prompt, /retain the task id and end the turn/)
     assert.match(prompt, /logs and exit status before reporting validation as complete/)
     assert.match(prompt, /run_background does not accept expects_sandbox_block/)
