@@ -186,12 +186,12 @@
       "bytes": 261244
     },
     "acp-unfinished-turn-budget-denied.png": {
-      "sha256": "f5f1306ec7e2f423ac853a3f924965102d61f498937cd318360ce88e8736f034",
-      "bytes": 336106
+      "sha256": "02bc86069e8e858e6506fd9d846f3b06f4796940da62cb900336b2a9b19334e1",
+      "bytes": 344931
     },
     "acp-unfinished-turn-recovery.png": {
-      "sha256": "61dc61df1a960c409ab690270a7f9226674e5d627d8dabdbcb935683b996e0e4",
-      "bytes": 330623
+      "sha256": "17f107c6792fa3d6d0d943839a677de27c5357bce6fac9dee1f431c29422ad3b",
+      "bytes": 340097
     },
     "acp-usage-update-context.png": {
       "sha256": "b1d9f6c34d4438cee43af7be98685e3a40d458d00e6d85bf444765e6a1929835",
@@ -1605,6 +1605,10 @@
       "sha256": "d80b6c574fc7fe54fea0ef787aa8210ca1505f20b0ad60b2ff8ff52985a9b7cf",
       "bytes": 20440
     },
+    "footer-branch-missing-worktree.png": {
+      "sha256": "c14ca0f58cf2dd1e8813e265b1109b28efde711944a80ae48d05a0e9938d2327",
+      "bytes": 19171
+    },
     "footer-branch-picker-compact-220.png": {
       "sha256": "ae9f9dd5bdd91d974862cef73fd551a3697fc21d13ea7c40cfffc5b453374f1c",
       "bytes": 183347
@@ -1648,6 +1652,14 @@
     "footer-branch-recovery-continued.png": {
       "sha256": "41cceea4c342a49d4f6b11ee0c1e4dae79291221f0ed6452585cff5bfe9e19f3",
       "bytes": 244017
+    },
+    "footer-branch-restored-composer.png": {
+      "sha256": "5124ebc891a2b4da816a5420bd4bfe287546a6743cbe6194a349ba8940d2fbb6",
+      "bytes": 385212
+    },
+    "footer-branch-restored-worktree.png": {
+      "sha256": "b71e6b26f6b86483675872b1b9424b4a8204d0675f3a89f25343209ab1e8e08e",
+      "bytes": 14786
     },
     "footer-branch-uncommitted-pick.png": {
       "sha256": "90ee901da4870098dba128536f2f2fb351c6868a916e53ab6f2cd6ee5108b5e1",
@@ -2333,6 +2345,10 @@
       "sha256": "664f789098d0413bb4c02667b5a7a3e6407ba29818174aae255d2d4bd84519bc",
       "bytes": 21983
     },
+    "model-version-suppression-picker.png": {
+      "sha256": "cf209e9f079201f0d67a75f94251d93cbb77bf4bb936adc6027f98ecec27fac0",
+      "bytes": 28080
+    },
     "monaco-python-fstring-highlight.png": {
       "sha256": "5241403cd49f6985255d21c746561628d86635d30c19f467840eecb1caf00cf1",
       "bytes": 279276
@@ -2906,8 +2922,8 @@
       "bytes": 115148
     },
     "provider-settings-invalidated-route.png": {
-      "sha256": "6b0319ec021808e0cce108000c5035bdeb63367ef6c915011b9a1bcf97ee6e5b",
-      "bytes": 270497
+      "sha256": "205afa5171144e8f50e062831e2abe97f2a0bbebbf47fbb04cbb20b45ef64250",
+      "bytes": 280687
     },
     "provider-settings-proactive-warning.png": {
       "sha256": "74cf3bec5025a04f271f9e259fa21874aa487208b0b4658de022c749d54fa749",
@@ -2918,8 +2934,8 @@
       "bytes": 249886
     },
     "provider-turn-recovery.png": {
-      "sha256": "2c767c18679f2f7653eb1872802a7ea97c72a795335f3bd4d957bd0378f41717",
-      "bytes": 277752
+      "sha256": "01578119819292f0ff56f59c4815d9f70cba6e1f4aecc4c44b358a7e73cbc537",
+      "bytes": 286631
     },
     "queued-actions-row-hover-dark.png": {
       "sha256": "d2f4ae738e150ea724421a8f5c602e0311cc3b365a86bf6b2903c9ecbf511380",
@@ -3038,8 +3054,8 @@
       "bytes": 11602
     },
     "reopen-turn-recovery.png": {
-      "sha256": "c14c2b2438bf54b682037151a57de2b3d5172f01e4d985d9279858af1e94bfc6",
-      "bytes": 127194
+      "sha256": "8cc3e13f877a151798926422d8e930a996193a7330d6e3f71e8299901c7540df",
+      "bytes": 169079
     },
     "resize-clipping-narrow.png": {
       "sha256": "39f41124d9ff4f7cf0ca8b2634bd373e80901df841b8e2cda4f928cb705d9abc",
@@ -4912,6 +4928,14 @@
     "truncated-tool-call-inspector.png": {
       "sha256": "727eada6ec33ffdee7aa776933b287866adef053a2bc357e9ab7f8cc4c36e719",
       "bytes": 358500
+    },
+    "turn-recovery-layout-360.png": {
+      "sha256": "c91af60bf1594ac740237193c897a45eabbfb5fcac2cac0aca3e260b3190e7e4",
+      "bytes": 38682
+    },
+    "turn-recovery-layout-720.png": {
+      "sha256": "4fabc15286cbe57b133214dc8935d54d1375af44a4f5af22ca4bedf128f928d6",
+      "bytes": 35598
     },
     "two-step-stop-armed.png": {
       "sha256": "80b54216a86a7c3ce3f6327b58a2e7af6f0022883feee949b58b493b79392baf",
