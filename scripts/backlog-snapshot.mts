@@ -887,8 +887,10 @@ function commentSignals(comments: readonly Comment[]): Map<number, CommentEviden
   const byIssue = new Map<number, CommentEvidence[]>()
   for (const comment of comments) {
     const number = issueNumber(comment)
-    const body = comment.body ?? ''
-    if (number === null || !body) continue
+    // Quoted lines restate someone else's words; a reply that quotes a hold or
+    // a supersession note is not itself one.
+    const body = stripBotSummary(comment.body)
+    if (number === null || !body.trim()) continue
     const author = comment.user?.login ?? 'unknown'
     const bot = comment.user?.type === 'Bot' || author.endsWith('[bot]')
     const signals: CommentEvidence[] = []

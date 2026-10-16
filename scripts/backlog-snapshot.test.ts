@@ -239,6 +239,28 @@ describe('backlog snapshot grouping from recorded responses', () => {
     assert.equal(record.commentEvidence[0]?.kind, 'supersession')
   })
 
+  it('ignores holds and supersession notes that a human comment only quotes', async () => {
+    const { snapshot } = await collect({
+      [COMMENTS_PATH]: [
+        {
+          id: 2,
+          body: '> HOLD: native acceptance remains.\n> Superseded by merged recovery #3758.\n\nThat was last week; both are resolved now.',
+          html_url: 'https://github.com/copse-dev/agent-pane/pull/3728#issuecomment-2',
+          issue_url: 'https://api.github.com/repos/copse-dev/agent-pane/issues/3728',
+          created_at: '2026-10-14T13:00:00Z',
+          user: { login: 'maintainer', type: 'User' },
+        },
+      ],
+    })
+    const record = pull(snapshot, 3728)
+    assert.deepEqual(record.commentEvidence, [])
+    assert.deepEqual(record.supersededBy, [])
+    assert.deepEqual(
+      record.holds.map((hold) => hold.kind),
+      ['label'],
+    )
+  })
+
   it('reads screenshot stack membership and tip', async () => {
     const { snapshot } = await collect()
     const member = pull(snapshot, 2658)
