@@ -21,6 +21,7 @@ import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import type { AgentInitiatedTurnClaim } from './acp/agent-initiated-turn.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
+import type { TurnTranscript } from './turn-transcript-writer.ts'
 import { contextLossNotice, contextWasLost } from './context-loss-notice.ts'
 import { recoverAgentHistory } from './history-recovery.ts'
 import {
@@ -59,6 +60,11 @@ export interface AgentDispatchPayload {
   continuationBudgetUsed?: number
   /** Summary of reviews the user ran since the model's last reply (#2519). */
   reviewContext?: string
+}
+
+/** Opens the main-owned transcript of one dispatched turn. */
+export interface TurnTranscriptSink {
+  begin(projectId: string, threadId: string): TurnTranscript
 }
 
 export interface AgentDispatchRequest {
@@ -224,14 +230,22 @@ export class AgentDispatcher {
   private readonly registry: ToolRegistry
   private readonly dependencies: AgentDispatcherDependencies
 
+  /**
+   * Where each dispatched turn's chunks are reduced and persisted before they
+   * reach the window. Absent, the window keeps writing the transcript itself.
+   */
+  private readonly transcripts: TurnTranscriptSink | undefined
+
   constructor(
     host: AgentHost<StreamChunk>,
     registry: ToolRegistry,
     dependencies: AgentDispatcherDependencies = defaultDependencies,
+    transcripts?: TurnTranscriptSink,
   ) {
     this.host = host
     this.registry = registry
     this.dependencies = dependencies
+    this.transcripts = transcripts
   }
 
   async dispatch(request: AgentDispatchRequest): Promise<void> {
@@ -576,6 +590,13 @@ export class AgentDispatcher {
       throw new AgentTurnBusyError(request.threadId)
     }
 
+    // This turn's own chunks go through its transcript, which main writes; any
+    // other thread's pass straight to the window as before.
+    const transcript = this.transcripts?.begin(request.projectId, request.threadId)
+    const deliver = (threadId: string, chunk: StreamChunk): void => {
+      if (transcript && threadId === request.threadId) transcript.emit(chunk)
+      else this.host.emit(threadId, chunk)
+    }
     let terminalOutcome: Extract<StreamChunk, { type: 'turn_outcome' }> | undefined
     let terminalDone: Extract<StreamChunk, { type: 'done' }> | undefined
     const terminalDeferringHost: AgentHost<StreamChunk> = {
@@ -588,7 +609,7 @@ export class AgentDispatcher {
           terminalDone ??= chunk
           return
         }
-        this.host.emit(threadId, chunk)
+        deliver(threadId, chunk)
       },
     }
     const running = run(terminalDeferringHost)
@@ -605,9 +626,10 @@ export class AgentDispatcher {
       // final commit failed; a retry must start from the still-authoritative
       // persisted history instead.
       if (committed && terminalDone !== undefined) {
-        if (terminalOutcome !== undefined) this.host.emit(request.threadId, terminalOutcome)
-        this.host.emit(request.threadId, terminalDone)
+        if (terminalOutcome !== undefined) deliver(request.threadId, terminalOutcome)
+        deliver(request.threadId, terminalDone)
       }
+      transcript?.end()
     }
   }
 

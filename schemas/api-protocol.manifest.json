@@ -59,6 +59,13 @@
           2
         ]
       },
+      "agent:attach-transcripts": {
+        "api": "agent.attachTranscripts",
+        "args": [
+          2,
+          2
+        ]
+      },
       "agent:clear-history": {
         "api": "agent.clearHistory",
         "args": [
@@ -106,6 +113,13 @@
         "args": [
           3,
           3
+        ]
+      },
+      "agent:replay-pending-decisions": {
+        "api": "agent.replayPendingDecisions",
+        "args": [
+          0,
+          0
         ]
       },
       "agent:reset-default-branch-cache": {
@@ -2222,6 +2236,13 @@
           2
         ]
       },
+      "threads:annotate-message": {
+        "api": "threads.annotateMessage",
+        "args": [
+          4,
+          4
+        ]
+      },
       "threads:append-message": {
         "api": "threads.appendMessage",
         "args": [
@@ -2664,7 +2685,7 @@
         "api": "agent.onChunk",
         "args": [
           2,
-          2
+          3
         ]
       },
       "agent:hook-queue-message": {
@@ -2693,6 +2714,13 @@
         "args": [
           6,
           6
+        ]
+      },
+      "agent:transcript-snapshot": {
+        "api": "agent.onTranscriptSnapshot",
+        "args": [
+          1,
+          1
         ]
       },
       "alerts:open-thread": {

@@ -156,6 +156,19 @@ describe('ask_user dialog (component)', () => {
     // modal methods are shimmed per-mount via mount()
   })
 
+  it('keeps one decision when attachment replays a visible question', () => {
+    const { api, harness } = stubApi()
+    const requests = mountAskUserDialog(api, createStore())
+    shimModal(dialog())
+    const request = { id: 'replayed', questions: [{ question: 'Which colour?' }] }
+    harness.emit(request)
+    harness.emit(request)
+    assert.equal(requests.pending().length, 1)
+    submitForm()
+    assert.equal(harness.responses.length, 1)
+    assert.equal(requests.pending().length, 0)
+  })
+
   it('queues Claude reauthentication until Settings and its cleanup confirmation both close', async () => {
     const { api, harness } = stubApi()
     const requests = mountAskUserDialog(api, createStore())

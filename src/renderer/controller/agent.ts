@@ -1,52 +1,23 @@
-import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
 import { acceptThreadPrompt } from './thread-prompts.ts'
 import type { AppStore } from '@shared/store/store.ts'
-import { MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
-  addMessage,
-  appendToken,
-  appendReasoning,
-  appendAcpContentBlock,
-  addMessageCanvasArtefact,
-  addMessageVisualEvidence,
-  addToolCall,
-  updateToolCall,
   findToolCall,
-  findToolCallOwner,
-  setMessageContent,
   setMessageCommandSummary,
   setMessageToolSummary,
   setMessageRunSummary,
-  setThreadStatus,
-  markAutomationRunFailed,
-  addUsageDelta,
-  recordContextTrim,
-  updateContextSnapshot,
-  setThreadTodos,
-  setMessageReview,
-  setMessageTurnOutcome,
-  setThreadReviewReport,
-  setMessageReviewReport,
-  addHookCard,
   getThreadById,
   markThreadUnread,
-  applyPreparedThreadCheckout,
   patchThreadAnywhere,
+  getThreadProjectId,
 } from '@shared/store/thread-helpers.ts'
+import { transcriptMeta } from '@shared/store/transcript-state.ts'
+import { acceptRuntimeThreadMeta } from './persistence.ts'
+import { createTranscriptReducer } from '@shared/store/transcript-reducer.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
 import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
 import { getToolCallLabel, shellCommandsFromToolCalls } from '@shared/tools/tool-display.ts'
 import { toolRunForMessage } from '@shared/tools/tool-runs.ts'
-import {
-  initSubagent,
-  appendSubagentReasoning,
-  appendSubagentText,
-  addSubagentToolCall,
-  updateSubagentToolCall,
-  finishSubagent,
-} from '@shared/store/subagent-helpers.ts'
-import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY, promptProgressLabel } from '../agent-activity.ts'
 import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
 import { attachDiffState } from './diff-state.ts'
@@ -59,59 +30,14 @@ import {
 } from './review-report-target.ts'
 import { takeSendNowAbort } from './send-now-aborts.ts'
 import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
-import type { TurnOutcome, UsageDelta } from '@shared/types'
-import type { ModelParameters } from '@copse/llm/model-parameters.ts'
-import { userContentToText } from '@shared/remote-agent-stream.ts'
+import { applyRuntimeOwnedChunk, isRuntimeOwnedMessage } from './runtime-transcript.ts'
+import type { TranscriptAnnotation } from '@shared/types'
 import { mark as perfMark } from '../perf.ts'
 
-/**
- * Resolved generation parameters, resolved model, and requested model for the
- * turn currently streaming, keyed by thread. Main reports them once before the
- * first token, which is before the assistant bubble exists — so they are held
- * here and stamped onto the bubble the moment it is created. Cleared when
- * consumed so a later turn on an untuned model cannot inherit them.
- */
-interface PendingTurn {
-  parameters: ModelParameters
-  /** The concrete route the turn actually ran on (after `auto:…` resolution). */
-  model?: string
-  /** The user's picker/requested selection (possibly a dynamic selector). */
-  requestedModel?: string
-}
-const pendingTurn = new Map<string, PendingTurn>()
-
-/**
- * Stamp a new primary-chat assistant bubble. The resolved model (the concrete
- * route actually run) becomes the message `model`; the picker/requested
- * selection — which may be a dynamic selector like `auto:…` — is recorded
- * separately as `requestedModel`.
- */
-function addAssistantMessage(store: AppStore, threadId: string): string {
-  const held = pendingTurn.get(threadId)
-  const requested =
-    held?.requestedModel ??
-    getThreadById(store, threadId)?.model ??
-    store.getState().settings?.model
-  return addMessage(store, threadId, 'assistant', '', undefined, undefined, {
-    ...(requested !== undefined ? { requestedModel: requested } : {}),
-    ...(held?.model !== undefined ? { model: held.model } : {}),
-    ...(held?.parameters !== undefined ? { parameters: held.parameters } : {}),
-  })
-}
-
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
-  // Per-thread streaming state: the message currently accumulating text, and
-  // whether a tool call has arrived since the last text chunk. When text
-  // resumes after tool calls, we finalize the current message and start a new
-  // one so the final answer renders BELOW the tool cards rather than above them.
-  type ThreadStreamState = {
-    msgId: string | null
-    toolSinceText: boolean
-    // Accumulated visible text of the current assistant message, threaded into
-    // planAgentTextChunk so a tool call that interrupts mid-sentence keeps the
-    // resumed text in the same bubble.
-    currentText: string
-    writing: boolean
+  // Window-only per-thread state. The transcript's own streaming state lives in
+  // the shared reducer, which main runs too.
+  type ThreadUiState = {
     // Which message we've already requested a command summary for, and at what
     // shell-command count, so we re-summarize only when more commands arrive.
     summaryMsgId: string | null
@@ -129,18 +55,12 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     // stale behind an intervening label and suppress the emit that restores it.
     lastActivityLabel: string | null
     firstActivityTraced: boolean
-    acpMessageId: string | null
-    acpThoughtMessageId: string | null
   }
-  const state = new Map<string, ThreadStreamState>()
-  const get = (tid: string): ThreadStreamState => {
-    let st = state.get(tid)
+  const ui = new Map<string, ThreadUiState>()
+  const get = (tid: string): ThreadUiState => {
+    let st = ui.get(tid)
     if (!st) {
       st = {
-        msgId: null,
-        toolSinceText: false,
-        currentText: '',
-        writing: false,
         summaryMsgId: null,
         summaryCount: 0,
         toolSummaryMsgId: null,
@@ -149,10 +69,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         runSummaryCount: 0,
         lastActivityLabel: null,
         firstActivityTraced: false,
-        acpMessageId: null,
-        acpThoughtMessageId: null,
       }
-      state.set(tid, st)
+      ui.set(tid, st)
     }
     return st
   }
@@ -160,16 +78,201 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     get(tid).lastActivityLabel = label
     store.emit('agent_activity', tid, label)
   }
-  const activity = (tid: string): void => {
-    const st = get(tid)
-    st.lastActivityLabel = syncAgentActivity(store, tid, st.writing)
+
+  // Ids main minted for the messages the chunk being applied creates, consumed
+  // in creation order. Empty for an unstamped chunk, which mints its own.
+  let stampedIds: string[] = []
+
+  const reducer = createTranscriptReducer(store, {
+    createMessageId: () => stampedIds.shift(),
+    userAbort: (threadId) => (takeSendNowAbort(threadId) ? 'send_now' : 'stop'),
+    reviewReportTarget: (threadId) => getReviewReportTarget(store, threadId),
+    reviewReportSettled: (threadId) => {
+      clearReviewReportTarget(store, threadId)
+    },
+    turnStarted: (threadId) => {
+      get(threadId).firstActivityTraced = false
+    },
+    activity: (threadId, writing) => {
+      get(threadId).lastActivityLabel = syncAgentActivity(store, threadId, writing)
+    },
+    activityLabel: (threadId, phase) => {
+      emitActivity(
+        threadId,
+        phase === 'context_trimmed' ? CONTEXT_TRIM_ACTIVITY : 'Reviewing changes…',
+      )
+    },
+    promptProgress: (threadId, fraction) => {
+      // Progress callbacks can arrive far more often than the label's whole
+      // percent changes; skip the emit when rounding collapses them, so the
+      // aria-live region is not re-announced with an unchanged string.
+      const label = promptProgressLabel(fraction)
+      if (label !== get(threadId).lastActivityLabel) emitActivity(threadId, label)
+    },
+    visibleOutput: (threadId) => {
+      maybeNameThread(store, api, threadId)
+    },
+    toolResult: (threadId, ownerId, chunk) => {
+      if (chunk.toolCallId && !chunk.isError) {
+        const toolCall = findToolCall(store, ownerId, chunk.toolCallId)
+        // Only the foreground thread may rebind: branch status is global to
+        // the working tree, so a background thread reading HEAD would chase a
+        // branch the active thread checked out.
+        if (
+          toolCall?.name === 'run_shell' &&
+          threadId === store.getState().activeThreadId &&
+          shellCommandMayChangeBranch(toolCall.args)
+        ) {
+          void syncThreadGitBranchAfterShell(store, api, threadId)
+        }
+      }
+      // Tools are now executing — the model is idle. Kick off small-model
+      // rollups (shell batch + whole-turn polish) so labels are ready by the
+      // time the tools finish — never blocks delivery.
+      const msgId = reducer.streamingMessageId(threadId)
+      const st = get(threadId)
+      maybeSummarizeCommands(store, api, threadId, msgId, st)
+      maybeSummarizeToolTurn(store, api, threadId, msgId, st)
+      maybeSummarizeToolRun(store, api, threadId, msgId, st)
+    },
+    continuationBudget: (threadId, turnTreeId, used) => {
+      foldBackContinuationUsed(store, threadId, turnTreeId, used)
+    },
+    beforeIdle: (threadId) => {
+      ui.delete(threadId)
+      // A standalone review that ends without its final report — main could
+      // not resolve the thread's checkout, say, and streamed only an error
+      // text before `done` — must not leave its card spinning.
+      const reviewTarget = getReviewReportTarget(store, threadId)
+      if (reviewTarget !== undefined) {
+        failRunningReviewReport(
+          store,
+          threadId,
+          reviewTarget,
+          'The review ended before it produced a report.',
+        )
+        clearReviewReportTarget(store, threadId)
+      }
+      // A send-now that raced a run already finishing leaves an unused mark.
+      takeSendNowAbort(threadId)
+    },
+    turnDone: (threadId) => {
+      finishTurn(threadId)
+    },
+  })
+
+  const finishTurn = (threadId: string): void => {
+    maybeRenameThreadBranch(store, api, threadId)
+    // Not emitActivity: the window state entry is gone, and recording the label
+    // on a fresh one would leak an entry per finished turn. The next turn
+    // starts from a null key anyway.
+    store.emit('agent_activity', threadId, null)
+    // The turn may have ended on a different branch than it started.
+    // External ACP agents run their own tools, so the mid-turn `run_shell`
+    // sync above never sees their checkouts; one HEAD read per turn keeps
+    // the foreground thread's bound branch tracking reality.
+    if (threadId === store.getState().activeThreadId) {
+      void syncThreadGitBranchAfterShell(store, api, threadId)
+    }
+    const backgroundProjectId = backgroundProjectOf(store, threadId)
+    const backgroundProjectWasRemoved =
+      backgroundProjectId !== undefined &&
+      !store.getState().projects.some((project) => project.id === backgroundProjectId)
+    if (backgroundProjectId) {
+      // Autosave's reconcile only covers the active project, so a carried
+      // run's final metadata (idle status, usage, todos) would otherwise
+      // stay `running` on disk until the project is revisited — or forever,
+      // if the app quits first (#1841). Write it directly. The queue is
+      // persisted before the owner-aware queue dispatches its next prompt.
+      const finished = getThreadById(store, threadId)
+      if (finished) {
+        void api.threads
+          .updateMeta(backgroundProjectId, threadId, {
+            status: finished.status,
+            usage: finished.usage,
+            updatedAt: finished.updatedAt,
+            title: finished.title,
+            pendingMessages: finished.pendingMessages ?? [],
+            continuationUsed: finished.continuationUsed ?? 0,
+            ...(finished.currentEpoch !== undefined ? { currentEpoch: finished.currentEpoch } : {}),
+            ...(finished.todos !== undefined ? { todos: finished.todos } : {}),
+          })
+          .catch((err: unknown) => {
+            console.error('[threads] could not persist a background run finish', err)
+          })
+      }
+    }
+    if (!backgroundProjectWasRemoved) drainMessageQueue(store, api, threadId)
+    // A queued user or machine continuation immediately flips the thread
+    // back to running. Only alert when the queue drain leaves it genuinely
+    // finished, rather than chiming between consecutive turns — and never
+    // for a run the user launched from the foreground and is watching.
+    const finishedThread = getThreadById(store, threadId)
+    const quiet = takeQuietRun(threadId)
+    if (finishedThread?.status === 'idle') {
+      markThreadUnread(store, threadId)
+      if (!quiet) {
+        void api.alerts.threadFinished(threadId, finishedThread.title).catch((error: unknown) => {
+          console.error('[alerts] failed to signal thread completion:', error)
+        })
+      }
+    }
+    // Removing an inactive project from the sidebar must not detach its
+    // live run. `removeProject` keeps the carried entry until this final
+    // message/meta handling is complete, after which nothing else needs
+    // the in-memory copy.
+    if (backgroundProjectWasRemoved) dropBackgroundThread(store, threadId)
   }
 
   // Diff IPC → store. Shared with pop-out windows, which run this wiring alone
   // because they deliberately do not start the rest of the agent controller.
   const detachDiffState = attachDiffState(store, api, { revealOnShowDiff: true })
 
-  const unsub = api.agent.onChunk((threadId, chunk) => {
+  const attached = new Set<string>()
+  const unsubSnapshot = api.agent.onTranscriptSnapshot(({ projectId, thread, checkpoint }) => {
+    if (getThreadProjectId(store, thread.id) !== projectId) return
+    applyRuntimeOwnedChunk(
+      thread.messages.map((message) => message.id),
+      () => {
+        patchThreadAnywhere(store, thread.id, (current) => {
+          const known = new Set(thread.messages.map((message) => message.id))
+          return {
+            ...current,
+            ...transcriptMeta(thread),
+            messages: [
+              ...thread.messages,
+              ...current.messages.filter((message) => !known.has(message.id)),
+            ],
+          }
+        })
+        reducer.restore(thread.id, checkpoint)
+        attached.add(thread.id)
+        const current = getThreadById(store, thread.id)
+        if (current) acceptRuntimeThreadMeta(projectId, current)
+        store.emit('threads_changed')
+        syncAgentActivity(store, thread.id, checkpoint.stream?.writing ?? false)
+      },
+    )
+  })
+  const attach = (): void => {
+    const { activeProjectId, threads } = store.getState()
+    if (!activeProjectId) return
+    void api.agent
+      .attachTranscripts(
+        activeProjectId,
+        threads.map((thread) => thread.id),
+      )
+      .catch((error: unknown) => {
+        console.error('[threads] could not attach transcripts:', error)
+      })
+  }
+  const unsubWorkspace = store.on('workspace_changed', attach)
+  attach()
+
+  const unsub = api.agent.onChunk((threadId, chunk, stamp) => {
+    // A new turn sends its snapshot before its first chunk. A reloaded window
+    // ignores missed-prefix chunks until attachment restores that checkpoint.
+    if (stamp && !attached.has(threadId)) return
     const st = get(threadId)
     const firstVisibleActivity =
       chunk.type === 'tool_call' ||
@@ -180,597 +283,22 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       st.firstActivityTraced = true
       perfMark('ttft:renderer-first-activity', { kind: chunk.type })
     }
-    switch (chunk.type) {
-      case 'machine_turn_start': {
-        st.firstActivityTraced = false
-        setThreadStatus(store, threadId, 'running')
-        addMessage(
-          store,
-          threadId,
-          'user',
-          userContentToText(chunk.content),
-          undefined,
-          chunk.attachments,
-          {
-            origin: chunk.origin,
-            ...(chunk.startingCommit !== undefined ? { startingCommit: chunk.startingCommit } : {}),
-            ...(chunk.dirty !== undefined ? { dirty: chunk.dirty } : {}),
-          },
-        )
-        break
-      }
-      case 'text': {
-        const { plan, state: nextState } = planAgentTextChunk(
-          { msgId: st.msgId, toolSinceText: st.toolSinceText, currentText: st.currentText },
-          chunk.text,
-        )
-        if (plan.action === 'ignore') break
-
-        if (plan.startNewMessage) {
-          if (plan.finalizeMsgId) store.emit('message_done', plan.finalizeMsgId)
-          st.msgId = addAssistantMessage(store, threadId)
-        }
-        st.toolSinceText = nextState.toolSinceText
-        st.currentText = nextState.currentText ?? ''
-        if (st.msgId === null) throw new Error('assistant message id missing for text chunk')
-        appendToken(store, st.msgId, plan.text)
-
-        if (plan.text.trim()) {
-          st.writing = true
-          activity(threadId)
-          // First visible assistant output — start naming without waiting for `done`.
-          maybeNameThread(store, api, threadId)
-        }
-        break
-      }
-      case 'reasoning': {
-        // Reasoning precedes this step's answer. If the previous step ended with
-        // tool calls, start a fresh assistant message (and clear toolSinceText)
-        // so the reasoning groups with the answer below the tool cards — and the
-        // subsequent text chunk lands in the same bubble rather than a new one.
-        if (!st.msgId || st.toolSinceText) {
-          if (st.toolSinceText && st.msgId) store.emit('message_done', st.msgId)
-          st.msgId = addAssistantMessage(store, threadId)
-          st.toolSinceText = false
-          st.currentText = ''
-        }
-        appendReasoning(store, st.msgId, chunk.text)
-        st.writing = false
-        activity(threadId)
-        break
-      }
-      case 'acp_content': {
-        const previousId = chunk.channel === 'message' ? st.acpMessageId : st.acpThoughtMessageId
-        const boundaryChanged =
-          chunk.messageId !== undefined && previousId !== null && chunk.messageId !== previousId
-        if (boundaryChanged && st.msgId) {
-          store.emit('message_done', st.msgId)
-          st.msgId = null
-          st.toolSinceText = false
-          st.currentText = ''
-        }
-        if (chunk.messageId !== undefined) {
-          if (chunk.channel === 'message') st.acpMessageId = chunk.messageId
-          else st.acpThoughtMessageId = chunk.messageId
-        }
-
-        if (chunk.content.type === 'text') {
-          if (chunk.channel === 'thought') {
-            if (!st.msgId || st.toolSinceText) {
-              if (st.toolSinceText && st.msgId) store.emit('message_done', st.msgId)
-              st.msgId = addAssistantMessage(store, threadId)
-              st.toolSinceText = false
-              st.currentText = ''
-            }
-            appendReasoning(store, st.msgId, chunk.content.text)
-            st.writing = false
-          } else {
-            const { plan, state: nextState } = planAgentTextChunk(
-              { msgId: st.msgId, toolSinceText: st.toolSinceText, currentText: st.currentText },
-              chunk.content.text,
-            )
-            if (plan.action === 'ignore') break
-            if (plan.startNewMessage) {
-              if (plan.finalizeMsgId) store.emit('message_done', plan.finalizeMsgId)
-              st.msgId = addAssistantMessage(store, threadId)
-            }
-            st.toolSinceText = nextState.toolSinceText
-            st.currentText = nextState.currentText ?? ''
-            if (st.msgId === null) throw new Error('assistant message id missing for agent text')
-            appendToken(store, st.msgId, plan.text)
-            st.writing = plan.text.trim().length > 0
-            if (st.writing) maybeNameThread(store, api, threadId)
-          }
-        } else {
-          if (!st.msgId || st.toolSinceText) {
-            if (st.toolSinceText && st.msgId) store.emit('message_done', st.msgId)
-            st.msgId = addAssistantMessage(store, threadId)
-            st.toolSinceText = false
-            st.currentText = ''
-          }
-          appendAcpContentBlock(store, st.msgId, chunk.channel, chunk.content)
-          st.writing = false
-          maybeNameThread(store, api, threadId)
-        }
-        activity(threadId)
-        break
-      }
-      case 'text_replace': {
-        st.msgId ??= addAssistantMessage(store, threadId)
-        setMessageContent(store, st.msgId, chunk.text)
-        st.currentText = chunk.text
-        break
-      }
-      case 'canvas_artefact': {
-        // A reference can be the entire post-tool answer. Give it a fresh
-        // assistant bubble just as reasoning or visible text would receive.
-        if (!st.msgId || st.toolSinceText) {
-          if (st.toolSinceText && st.msgId) store.emit('message_done', st.msgId)
-          st.msgId = addAssistantMessage(store, threadId)
-          st.toolSinceText = false
-          st.currentText = ''
-        }
-        addMessageCanvasArtefact(store, st.msgId, chunk.artefact)
-        break
-      }
-      case 'tool_call': {
-        // A pooled ACP session can replay a `tool_call` for an id this thread
-        // already has — a straggler from a turn that has ended. Opening a second
-        // card for it would put the previous turn's work under the new turn's
-        // bubble, below the user's follow-up (#2332).
-        if (findToolCallOwner(store, threadId, chunk.toolCall.id)) break
-        st.msgId ??= addAssistantMessage(store, threadId)
-        addToolCall(store, st.msgId, {
-          id: chunk.toolCall.id,
-          name: chunk.toolCall.name,
-          ...(chunk.toolCall.title !== undefined ? { title: chunk.toolCall.title } : {}),
-          ...(chunk.toolCall.programmaticName !== undefined
-            ? { programmaticName: chunk.toolCall.programmaticName }
-            : {}),
-          args: chunk.toolCall.args,
-          status: 'running',
-          result: null,
-          ...(chunk.toolCall.kind !== undefined ? { kind: chunk.toolCall.kind } : {}),
-        })
-        st.toolSinceText = true
-        st.writing = false
-        activity(threadId)
-        // First tool call counts as the agent responding — name in parallel.
-        maybeNameThread(store, api, threadId)
-        break
-      }
-      case 'tool_call_update': {
-        // Route by which message actually holds the call, not by whichever
-        // message happens to be streaming: a straggler from a finished turn
-        // otherwise patches — or silently misses — the wrong bubble (#2332).
-        const ownerId = findToolCallOwner(store, threadId, chunk.toolCallId)
-        if (ownerId) {
-          updateToolCall(store, ownerId, chunk.toolCallId, {
-            ...(chunk.name !== undefined ? { name: chunk.name } : {}),
-            ...(chunk.title !== undefined ? { title: chunk.title } : {}),
-            ...(chunk.programmaticName !== undefined
-              ? { programmaticName: chunk.programmaticName }
-              : {}),
-            ...(chunk.args !== undefined ? { args: chunk.args } : {}),
-            ...(chunk.kind !== undefined ? { kind: chunk.kind } : {}),
-            ...(chunk.status !== undefined ? { status: chunk.status } : {}),
-            ...(chunk.result !== undefined ? { result: chunk.result } : {}),
-            ...(chunk.resultFormat !== undefined ? { resultFormat: chunk.resultFormat } : {}),
-            ...(chunk.images !== undefined ? { images: chunk.images } : {}),
-            ...(chunk.content !== undefined ? { content: chunk.content } : {}),
-            ...(chunk.locations !== undefined ? { locations: chunk.locations } : {}),
-          })
-        }
-        st.writing = false
-        activity(threadId)
-        break
-      }
-      case 'visual_evidence': {
-        // Evidence is durable assistant-owned output: never guess its owner.
-        // The loop emits this only after the publishing tool_call, so a missing
-        // call means the event is stale or malformed and must not migrate onto
-        // whichever message happens to be live.
-        const ownerId = findToolCallOwner(store, threadId, chunk.toolCallId)
-        if (ownerId) {
-          addMessageVisualEvidence(store, ownerId, chunk.toolCallId, chunk.evidence)
-        }
-        break
-      }
-      case 'tool_result': {
-        // Same ownership rule as `tool_call_update`: the result belongs to the
-        // message that holds the call, which is not always the one streaming.
-        const ownerId = findToolCallOwner(store, threadId, chunk.toolCallId) ?? st.msgId
-        if (ownerId) {
-          updateToolCall(store, ownerId, chunk.toolCallId, {
-            status: chunk.isError ? 'error' : 'done',
-            result: chunk.result,
-            ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
-            ...(chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}),
-            ...(chunk.appendedReminderLengths
-              ? { appendedReminderLengths: chunk.appendedReminderLengths }
-              : {}),
-            ...(chunk.images ? { images: chunk.images } : {}),
-          })
-          if (chunk.toolCallId && !chunk.isError) {
-            const toolCall = findToolCall(store, ownerId, chunk.toolCallId)
-            // Only the foreground thread may rebind: branch status is global to
-            // the working tree, so a background thread reading HEAD would chase a
-            // branch the active thread checked out.
-            if (
-              toolCall?.name === 'run_shell' &&
-              threadId === store.getState().activeThreadId &&
-              shellCommandMayChangeBranch(toolCall.args)
-            ) {
-              void syncThreadGitBranchAfterShell(store, api, threadId)
-            }
-            tryOpenFileFromResult(store, chunk.result)
-          }
-          // Tools are now executing — the model is idle. Kick off small-model
-          // rollups (shell batch + whole-turn polish) so labels are ready by the
-          // time the tools finish — never blocks delivery.
-          maybeSummarizeCommands(store, api, threadId, st)
-          maybeSummarizeToolTurn(store, api, threadId, st)
-          maybeSummarizeToolRun(store, api, threadId, st)
-        }
-        st.writing = false
-        activity(threadId)
-        break
-      }
-      case 'context_trimmed': {
-        recordContextTrim(store, threadId, {
-          contextWindow: chunk.contextWindow,
-          historyBudget: chunk.historyBudget,
-          estimatedTokens: chunk.estimatedTokens,
-        })
-        updateContextSnapshot(store, threadId, {
-          contextWindow: chunk.contextWindow,
-          conversationBudget: chunk.historyBudget,
-          conversationTokens: chunk.estimatedTokens,
-          fillRatio: chunk.estimatedTokens / chunk.historyBudget,
-        })
-        emitActivity(threadId, CONTEXT_TRIM_ACTIVITY)
-        break
-      }
-      case 'turn_parameters': {
-        // Held rather than applied: the bubble this belongs to is created by the
-        // first text/tool chunk, which has not arrived yet.
-        pendingTurn.set(threadId, {
-          parameters: chunk.parameters,
-          model: chunk.model,
-          ...(chunk.requestedModel !== undefined ? { requestedModel: chunk.requestedModel } : {}),
-        })
-        // Publish the route before the first bubble exists. Footer chrome reads
-        // thread state, and a previous turn's persisted resolution may be stale.
-        if (
-          patchThreadAnywhere(store, threadId, (thread) => ({
-            ...thread,
-            resolvedModel: chunk.model,
-            ...(chunk.requestedModel === MATCH_PROMPT_MODEL_SELECTOR &&
-            (thread.model === undefined || thread.model === MATCH_PROMPT_MODEL_SELECTOR)
-              ? { model: chunk.model }
-              : {}),
-          }))
-        ) {
-          store.emit('thread_model_resolved', threadId)
-        }
-        break
-      }
-      case 'usage': {
-        const delta: UsageDelta = {
-          model: chunk.model,
-          inputTokens: chunk.inputTokens,
-          outputTokens: chunk.outputTokens,
-          ...(chunk.subagentUsage ? { subagentUsage: true } : {}),
-          ...(chunk.cacheReadTokens !== undefined
-            ? { cacheReadTokens: chunk.cacheReadTokens }
-            : {}),
-          ...(chunk.cacheCreationTokens !== undefined
-            ? { cacheCreationTokens: chunk.cacheCreationTokens }
-            : {}),
-          ...(chunk.requestedServiceTier !== undefined
-            ? { requestedServiceTier: chunk.requestedServiceTier }
-            : {}),
-          ...(chunk.responseServiceTier !== undefined
-            ? { responseServiceTier: chunk.responseServiceTier }
-            : {}),
-          ...(chunk.serviceTierUsage !== undefined
-            ? { serviceTierUsage: chunk.serviceTierUsage }
-            : {}),
-        }
-        addUsageDelta(store, threadId, delta)
-        break
-      }
-      case 'prompt_progress': {
-        // Progress callbacks can arrive far more often than the label's whole
-        // percent changes; skip the emit when rounding collapses them, so the
-        // aria-live region is not re-announced with an unchanged string.
-        const label = promptProgressLabel(chunk.fraction)
-        if (label !== st.lastActivityLabel) emitActivity(threadId, label)
-        break
-      }
-      case 'context_pressure': {
-        updateContextSnapshot(store, threadId, {
-          contextWindow: chunk.contextWindow,
-          conversationBudget: chunk.conversationBudget,
-          conversationTokens: chunk.conversationTokens,
-          fillRatio: chunk.fillRatio,
-          ...(chunk.source !== undefined ? { source: chunk.source } : {}),
-          ...(chunk.cost !== undefined ? { cost: chunk.cost } : {}),
-        })
-        break
-      }
-      case 'subagent_start': {
-        st.msgId ??= addAssistantMessage(store, threadId)
-        initSubagent(store, st.msgId, chunk.parentToolCallId, chunk.session)
-        st.writing = false
-        activity(threadId)
-        break
-      }
-      case 'subagent_reasoning': {
-        if (st.msgId) {
-          appendSubagentReasoning(
-            store,
-            st.msgId,
-            chunk.parentToolCallId,
-            chunk.messageId,
-            chunk.text,
-          )
-        }
-        break
-      }
-      case 'subagent_text': {
-        if (st.msgId) {
-          appendSubagentText(store, st.msgId, chunk.parentToolCallId, chunk.messageId, chunk.text)
-        }
-        break
-      }
-      case 'subagent_tool_call': {
-        if (st.msgId) {
-          addSubagentToolCall(store, st.msgId, chunk.parentToolCallId, chunk.messageId, {
-            id: chunk.toolCall.id,
-            name: chunk.toolCall.name,
-            args: chunk.toolCall.args,
-            status: 'running',
-            result: null,
-          })
-        }
-        activity(threadId)
-        break
-      }
-      case 'subagent_tool_result': {
-        if (st.msgId) {
-          updateSubagentToolCall(store, st.msgId, chunk.parentToolCallId, chunk.toolCallId, {
-            status: chunk.isError ? 'error' : 'done',
-            result: chunk.result,
-            ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
-            ...(chunk.appendedReminderLengths
-              ? { appendedReminderLengths: chunk.appendedReminderLengths }
-              : {}),
-            ...(chunk.images ? { images: chunk.images } : {}),
-          })
-        }
-        activity(threadId)
-        break
-      }
-      case 'subagent_done': {
-        if (st.msgId) {
-          finishSubagent(
-            store,
-            st.msgId,
-            chunk.parentToolCallId,
-            chunk.summary,
-            'done',
-            chunk.usage,
-          )
-        }
-        activity(threadId)
-        break
-      }
-      case 'subagent_error': {
-        if (st.msgId) {
-          finishSubagent(store, st.msgId, chunk.parentToolCallId, chunk.error, 'error')
-        }
-        activity(threadId)
-        break
-      }
-      case 'todo_update': {
-        setThreadTodos(store, threadId, chunk.todos)
-        activity(threadId)
-        break
-      }
-      case 'thread_checkout': {
-        applyPreparedThreadCheckout(store, threadId, chunk.prepared)
-        break
-      }
-      case 'panel_update': {
-        // P4: the todos plugin emits `panel_update` alongside `todo_update` (the
-        // ACP bridge maps it for external clients). The renderer already drives
-        // the plan panel from `thread.todos` via the `todo_update` above, so the
-        // chunk is redundant here — ignore it explicitly rather than through a
-        // fall-through so the exhaustiveness check stays meaningful.
-        break
-      }
-      case 'provider_state':
-      case 'context_compacted': {
-        // Provider bookkeeping. The opaque item never reaches the renderer (the
-        // loop keeps it in provider history), and the boundary is recorded in the
-        // thread spine by main; nothing to show or store here.
-        break
-      }
-      case 'todo_worker_start':
-      case 'todo_worker_done': {
-        activity(threadId)
-        break
-      }
-      case 'post_turn_review': {
-        // Anchor the review to the turn's final assistant message so it renders
-        // inline right after that turn. `st.msgId` is the current turn's message
-        // and is still live here (the deferred `done` clears turn state later);
-        // fall back to the thread's last message for a tool-only turn.
-        const anchorId = st.msgId ?? getThreadById(store, threadId)?.messages.at(-1)?.id ?? null
-        if (anchorId) {
-          setMessageReview(store, threadId, anchorId, {
-            status: chunk.status,
-            summary: chunk.summary,
-            ...(chunk.issuesFound !== undefined ? { issuesFound: chunk.issuesFound } : {}),
-            ...(chunk.followUpNote !== undefined ? { followUpNote: chunk.followUpNote } : {}),
-          })
-        }
-        if (chunk.status === 'running') emitActivity(threadId, 'Reviewing changes…')
-        break
-      }
-      case 'review_report': {
+    if (!stamp) {
+      reducer.apply(threadId, chunk)
+      return
+    }
+    stampedIds = [...stamp.messageIds]
+    const previous = getThreadById(store, threadId)
+    const beforeMeta = previous ? structuredClone(transcriptMeta(previous)) : undefined
+    try {
+      applyRuntimeOwnedChunk(stamp.messageIds, () => {
+        reducer.apply(threadId, chunk)
         const thread = getThreadById(store, threadId)
-        const requestedAnchor = getReviewReportTarget(store, threadId)
-        const anchorId =
-          requestedAnchor !== undefined
-            ? requestedAnchor
-            : (st.msgId ??
-              [...(thread?.messages ?? [])]
-                .reverse()
-                .find((message) => message.role === 'assistant')?.id ??
-              null)
-        if (anchorId === null) setThreadReviewReport(store, threadId, chunk.report)
-        else setMessageReviewReport(store, threadId, anchorId, chunk.report)
-        if (requestedAnchor !== undefined && chunk.report.status !== 'running') {
-          clearReviewReportTarget(store, threadId)
-        }
-        if (chunk.report.status === 'running') {
-          emitActivity(threadId, 'Reviewing changes…')
-        }
-        break
-      }
-      case 'hook_run': {
-        // Anchor the hook card to the turn's live message so the hook-card
-        // family renders inline (decision 10). Prefer the current assistant
-        // message; fall back to the thread's last message (a hook can fire
-        // before the first assistant token, e.g. `beforeSubmitPrompt`). If the
-        // thread has no message yet, the card will fold from the spine on reload.
-        const anchorId = st.msgId ?? getThreadById(store, threadId)?.messages.at(-1)?.id ?? null
-        if (anchorId) addHookCard(store, anchorId, chunk.card)
-        activity(threadId)
-        break
-      }
-      case 'continuation_budget': {
-        // C3 run→drain fold-back (decision 5 / E3): record the machine turns this
-        // run spent in-process so the next queue drain respects the shared cap.
-        // Arrives just before `done`, which triggers the drain.
-        foldBackContinuationUsed(store, threadId, chunk.turnTreeId, chunk.used)
-        break
-      }
-      case 'turn_outcome': {
-        // Terminal diagnostics belong to the assistant bubble that concluded
-        // the turn. A provider can fail before its first token, so create an
-        // otherwise-empty bubble rather than dropping the only durable record.
-        st.msgId ??= addAssistantMessage(store, threadId)
-        // Main cannot tell a Stop from a send-now; the renderer that issued
-        // the abort can, and the transcript labels the interruption from it.
-        const userCancelled =
-          chunk.outcome.status === 'cancelled' && chunk.outcome.source === 'user'
-        const outcome: TurnOutcome = userCancelled
-          ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? 'send_now' : 'stop' }
-          : chunk.outcome
-        setMessageTurnOutcome(store, threadId, st.msgId, outcome)
-        if (outcome.status === 'failed' && outcome.error) {
-          // A no-op for ordinary threads; for an automation run it is what Activity and
-          // the manager read to say why an unattended run died.
-          const detail = outcome.error
-          markAutomationRunFailed(store, threadId, {
-            code: classifyAutomationFailureMessage(
-              `${detail.message} ${detail.code === undefined ? '' : String(detail.code)}`,
-            ),
-            message: detail.message.slice(0, 500),
-          })
-        }
-        break
-      }
-      case 'done': {
-        if (st.msgId) store.emit('message_done', st.msgId)
-        state.delete(threadId)
-        // The turn is over; the next one resolves its own parameters (or none).
-        pendingTurn.delete(threadId)
-        // A standalone review that ends without its final report — main could
-        // not resolve the thread's checkout, say, and streamed only an error
-        // text before `done` — must not leave its card spinning.
-        const reviewTarget = getReviewReportTarget(store, threadId)
-        if (reviewTarget !== undefined) {
-          failRunningReviewReport(
-            store,
-            threadId,
-            reviewTarget,
-            'The review ended before it produced a report.',
-          )
-          clearReviewReportTarget(store, threadId)
-        }
-        // A send-now that raced a run already finishing leaves an unused mark.
-        takeSendNowAbort(threadId)
-        setThreadStatus(store, threadId, 'idle')
-        maybeRenameThreadBranch(store, api, threadId)
-        // Not emitActivity: the state entry is gone, and recording the label on
-        // a fresh one would leak an entry per finished turn. The next turn
-        // starts from a null key anyway.
-        store.emit('agent_activity', threadId, null)
-        // The turn may have ended on a different branch than it started.
-        // External ACP agents run their own tools, so the mid-turn `run_shell`
-        // sync above never sees their checkouts; one HEAD read per turn keeps
-        // the foreground thread's bound branch tracking reality.
-        if (threadId === store.getState().activeThreadId) {
-          void syncThreadGitBranchAfterShell(store, api, threadId)
-        }
-        const backgroundProjectId = backgroundProjectOf(store, threadId)
-        const backgroundProjectWasRemoved =
-          backgroundProjectId !== undefined &&
-          !store.getState().projects.some((project) => project.id === backgroundProjectId)
-        if (backgroundProjectId) {
-          // Autosave's reconcile only covers the active project, so a carried
-          // run's final metadata (idle status, usage, todos) would otherwise
-          // stay `running` on disk until the project is revisited — or forever,
-          // if the app quits first (#1841). Write it directly. The queue is
-          // persisted before the owner-aware queue dispatches its next prompt.
-          const finished = getThreadById(store, threadId)
-          if (finished) {
-            void api.threads
-              .updateMeta(backgroundProjectId, threadId, {
-                status: finished.status,
-                usage: finished.usage,
-                updatedAt: finished.updatedAt,
-                title: finished.title,
-                pendingMessages: finished.pendingMessages ?? [],
-                continuationUsed: finished.continuationUsed ?? 0,
-                ...(finished.currentEpoch !== undefined
-                  ? { currentEpoch: finished.currentEpoch }
-                  : {}),
-                ...(finished.todos !== undefined ? { todos: finished.todos } : {}),
-              })
-              .catch((err: unknown) => {
-                console.error('[threads] could not persist a background run finish', err)
-              })
-          }
-        }
-        if (!backgroundProjectWasRemoved) drainMessageQueue(store, api, threadId)
-        // A queued user or machine continuation immediately flips the thread
-        // back to running. Only alert when the queue drain leaves it genuinely
-        // finished, rather than chiming between consecutive turns — and never
-        // for a run the user launched from the foreground and is watching.
-        const finishedThread = getThreadById(store, threadId)
-        const quiet = takeQuietRun(threadId)
-        if (finishedThread?.status === 'idle') {
-          markThreadUnread(store, threadId)
-          if (!quiet) {
-            void api.alerts
-              .threadFinished(threadId, finishedThread.title)
-              .catch((error: unknown) => {
-                console.error('[alerts] failed to signal thread completion:', error)
-              })
-          }
-        }
-        // Removing an inactive project from the sidebar must not detach its
-        // live run. `removeProject` keeps the carried entry until this final
-        // message/meta handling is complete, after which nothing else needs
-        // the in-memory copy.
-        if (backgroundProjectWasRemoved) dropBackgroundThread(store, threadId)
-        break
-      }
+        const projectId = getThreadProjectId(store, threadId)
+        if (thread && projectId) acceptRuntimeThreadMeta(projectId, thread, beforeMeta)
+      })
+    } finally {
+      stampedIds = []
     }
   })
 
@@ -798,19 +326,52 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   return () => {
     unsub()
     unsubHookQueue()
+    unsubSnapshot()
+    unsubWorkspace()
     unsubThreadPrompts()
     detachDiffState()
   }
 }
 
-type AgentState = {
-  msgId: string | null
+type SummaryGuards = {
   summaryMsgId: string | null
   summaryCount: number
   toolSummaryMsgId: string | null
   toolSummaryCount: number
   runSummaryAnchorId: string | null
   runSummaryCount: number
+}
+
+/**
+ * Show a small-model label at once, and make it durable. A message main owns is
+ * main's to write, so the label goes to main to merge into its copy; writing the
+ * window's copy instead could land over a newer one main wrote meanwhile.
+ * Anything else is persisted by the autosave from the same store event.
+ */
+function applySummary(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  messageId: string,
+  annotation: TranscriptAnnotation,
+): void {
+  if (annotation.commandSummary !== undefined) {
+    setMessageCommandSummary(store, messageId, annotation.commandSummary)
+  }
+  if (annotation.toolSummary !== undefined) {
+    setMessageToolSummary(store, messageId, annotation.toolSummary)
+  }
+  if (annotation.runSummary !== undefined) {
+    setMessageRunSummary(store, messageId, annotation.runSummary)
+  }
+  if (!isRuntimeOwnedMessage(messageId)) return
+  const projectId = backgroundProjectOf(store, threadId) ?? store.getState().activeProjectId
+  if (!projectId) return
+  void api.threads
+    .annotateMessage(projectId, threadId, messageId, annotation)
+    .catch((err: unknown) => {
+      console.error('[threads] could not save a summary label', err)
+    })
 }
 
 // Generate (or regenerate) a rolled-up label for the current message's batch of
@@ -822,9 +383,9 @@ function maybeSummarizeCommands(
   store: AppStore,
   api: ApiClient,
   threadId: string,
-  st: AgentState,
+  msgId: string | null,
+  st: SummaryGuards,
 ): void {
-  const msgId = st.msgId
   if (!msgId) return
   const msg = getThreadById(store, threadId)?.messages.find((m) => m.id === msgId)
   if (!msg) return
@@ -842,7 +403,9 @@ function maybeSummarizeCommands(
     } catch {
       summary = null
     }
-    if (summary?.trim()) setMessageCommandSummary(store, msgId, summary.trim())
+    if (summary?.trim()) {
+      applySummary(store, api, threadId, msgId, { commandSummary: summary.trim() })
+    }
   })()
 }
 
@@ -853,9 +416,9 @@ function maybeSummarizeToolTurn(
   store: AppStore,
   api: ApiClient,
   threadId: string,
-  st: AgentState,
+  msgId: string | null,
+  st: SummaryGuards,
 ): void {
-  const msgId = st.msgId
   if (!msgId) return
   const msg = getThreadById(store, threadId)?.messages.find((m) => m.id === msgId)
   if (!msg) return
@@ -874,7 +437,9 @@ function maybeSummarizeToolTurn(
     } catch {
       summary = null
     }
-    if (summary?.trim()) setMessageToolSummary(store, msgId, summary.trim())
+    if (summary?.trim()) {
+      applySummary(store, api, threadId, msgId, { toolSummary: summary.trim() })
+    }
   })()
 }
 
@@ -888,9 +453,9 @@ function maybeSummarizeToolRun(
   store: AppStore,
   api: ApiClient,
   threadId: string,
-  st: AgentState,
+  msgId: string | null,
+  st: SummaryGuards,
 ): void {
-  const msgId = st.msgId
   if (!msgId) return
   const thread = getThreadById(store, threadId)
   if (!thread) return
@@ -914,12 +479,8 @@ function maybeSummarizeToolRun(
     // reply covers more of the run than ours — drop ours rather than let a
     // slower earlier request overwrite a newer summary.
     if (st.runSummaryAnchorId === run.anchorId && st.runSummaryCount !== requestCount) return
-    if (summary?.trim()) setMessageRunSummary(store, run.anchorId, summary.trim())
+    if (summary?.trim()) {
+      applySummary(store, api, threadId, run.anchorId, { runSummary: summary.trim() })
+    }
   })()
-}
-
-function tryOpenFileFromResult(_store: AppStore, _result: string): void {
-  // If tool result is file content (read_file), open it in the panel
-  // Convention: read_file returns the content directly; we use the store's pending openFile
-  // The main process sends agent:show-diff for write_file — handled separately
 }
