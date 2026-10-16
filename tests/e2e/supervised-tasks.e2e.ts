@@ -148,7 +148,9 @@ describe('supervised task list', function () {
     assert.ok(resized.ports >= resized.portsMin - 1)
 
     const terminalToggle = $('.titlebar-btn[aria-label="Open terminal"]')
-    await terminalToggle.execute((button) => button.focus())
+    await terminalToggle.execute((button) => {
+      button.focus()
+    })
     await expect(terminalToggle).toBeFocused()
     await saveAppScreenshot('supervised-tasks-waiting.png')
 

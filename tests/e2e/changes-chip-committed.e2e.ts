@@ -122,7 +122,7 @@ describe('Changes chip includes committed branch work', () => {
                   list?.querySelector('.git-change-row-committed .git-change-path')?.textContent ===
                     'example.txt' &&
                   !list.querySelector('.pane-loading') &&
-                  !(list.textContent ?? '').includes('Checking committed changes')
+                  !list.textContent.includes('Checking committed changes')
                 )
               })
               if (!settled) {
@@ -170,9 +170,15 @@ describe('Changes chip includes committed branch work', () => {
             host.dataset['captureChanged'] = 'true'
           })
           observer.observe(host, { childList: true, subtree: true, characterData: true })
-          document.addEventListener('e2e-changes-capture-finished', () => observer.disconnect(), {
-            once: true,
-          })
+          document.addEventListener(
+            'e2e-changes-capture-finished',
+            () => {
+              observer.disconnect()
+            },
+            {
+              once: true,
+            },
+          )
         })
       })
       stableCapture = await browser.execute(() => {

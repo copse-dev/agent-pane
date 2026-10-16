@@ -10,9 +10,13 @@ async function saveAuthMessage(selector: string, filename: string): Promise<void
   await $(selector).scrollIntoView({ block: 'center' })
   const bounds = await browser.execute((sel) => {
     for (const block of document.querySelectorAll<HTMLElement>(`${sel} pre`)) block.scrollLeft = 0
-    const message = document.querySelector(sel)!.getBoundingClientRect()
-    const composer = document.querySelector('#input-bar')!.getBoundingClientRect()
-    const transcript = document.querySelector('.conversation-scroll')!.getBoundingClientRect()
+    const messageNode = document.querySelector(sel)
+    const composerNode = document.querySelector('#input-bar')
+    const transcriptNode = document.querySelector('.conversation-scroll')
+    if (!messageNode || !composerNode || !transcriptNode) throw new Error('Missing capture layout')
+    const message = messageNode.getBoundingClientRect()
+    const composer = composerNode.getBoundingClientRect()
+    const transcript = transcriptNode.getBoundingClientRect()
     return {
       top: message.top,
       bottom: message.bottom,

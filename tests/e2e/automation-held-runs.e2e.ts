@@ -131,9 +131,7 @@ describe('held automation worktrees in the sidebar', function () {
     const contextMenu = $('.context-menu')
     await contextMenu.waitForDisplayed({ timeout: 5_000 })
     const labels = await browser.execute(() =>
-      Array.from(document.querySelectorAll('.context-menu-item')).map(
-        (item) => item.textContent ?? '',
-      ),
+      Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
     )
     assert.deepEqual(labels, ['Run now', 'Clean up finished runs…', 'Automation setup…'])
     await saveAppScreenshot('automation-held-runs-menu.png')

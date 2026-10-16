@@ -153,7 +153,7 @@ describe('thread + terminal rename / archive', () => {
     expect(
       await browser.execute(() =>
         Array.from(document.querySelectorAll('.context-menu-item')).map((item) => ({
-          label: item.textContent ?? '',
+          label: item.textContent,
           disabled: item instanceof HTMLButtonElement && item.disabled,
         })),
       ),

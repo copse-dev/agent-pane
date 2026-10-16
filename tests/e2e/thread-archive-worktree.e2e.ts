@@ -227,8 +227,8 @@ describe('archive chat and remove its worktree', function () {
       (projectId: string, threadId: string) => {
         void window.api.terminal
           .create(80, 24, { projectId, threadId, label: 'Dev server' })
-          .then((id: string) => {
-            document.body.dataset['e2eBusyTerminal'] = id
+          .then(({ sessionId }) => {
+            document.body.dataset['e2eBusyTerminal'] = sessionId
           })
       },
       PROJECT_ID,

@@ -28,7 +28,7 @@ describe('Activity home recent history', () => {
     await saveAppScreenshot('activity-read-history.png')
   })
   for (const width of [800, 1600]) {
-    it(`keeps recent history visible at ${width}px`, async () => {
+    it(`keeps recent history visible at ${String(width)}px`, async () => {
       await browser.setWindowSize(width, 900)
       const rows = await $$('#activity-home .activity-row')
       expect(rows).toHaveLength(4)
@@ -41,7 +41,7 @@ describe('Activity home recent history', () => {
       expect(geometry?.left).toBeGreaterThanOrEqual(0)
       expect(geometry?.right).toBeGreaterThanOrEqual(0)
       // Preserve the width under test instead of the helper's default 1280px cap.
-      await saveAppScreenshot(`activity-read-history-${width}.png`, { width, height: 900 })
+      await saveAppScreenshot(`activity-read-history-${String(width)}.png`, { width, height: 900 })
     })
   }
 })

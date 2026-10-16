@@ -31,8 +31,8 @@ async function frameCompletedMissingEntryTurn(): Promise<void> {
         (text, expected) => {
           const message = [
             ...document.querySelectorAll<HTMLElement>('.msg-assistant[data-message-id]'),
-          ].find((node) => node.querySelector('.message-text')?.textContent?.trim() === text)
-          const id = message?.dataset.messageId
+          ].find((node) => node.querySelector('.message-text')?.textContent.trim() === text)
+          const id = message?.dataset['messageId']
           const host = id
             ? document.querySelector<HTMLElement>(`[data-hook-cards-for="${id}"]`)
             : null
@@ -40,10 +40,11 @@ async function frameCompletedMissingEntryTurn(): Promise<void> {
           return (
             cards.length === expected.length &&
             cards.every(
-              (card) => card.dataset.hookEvent === 'stepBoundary' && card.dataset.status === 'ok',
+              (card) =>
+                card.dataset['hookEvent'] === 'stepBoundary' && card.dataset['status'] === 'ok',
             ) &&
             cards
-              .map((card) => card.dataset.hookId)
+              .map((card) => card.dataset['hookId'])
               .sort()
               .join('|') === expected.join('|')
           )
@@ -56,8 +57,8 @@ async function frameCompletedMissingEntryTurn(): Promise<void> {
   await browser.execute((text) => {
     const message = [
       ...document.querySelectorAll<HTMLElement>('.msg-assistant[data-message-id]'),
-    ].find((node) => node.querySelector('.message-text')?.textContent?.trim() === text)
-    const id = message?.dataset.messageId
+    ].find((node) => node.querySelector('.message-text')?.textContent.trim() === text)
+    const id = message?.dataset['messageId']
     const host = id ? document.querySelector(`[data-hook-cards-for="${id}"]`) : null
     const list = document.querySelector('.messages-list')
     if (!host || !list) throw new Error('final hook group or transcript missing')
@@ -70,8 +71,8 @@ async function frameCompletedMissingEntryTurn(): Promise<void> {
     const list = document.querySelector('.messages-list')
     const message = [
       ...document.querySelectorAll<HTMLElement>('.msg-assistant[data-message-id]'),
-    ].find((node) => node.querySelector('.message-text')?.textContent?.trim() === text)
-    const id = message?.dataset.messageId
+    ].find((node) => node.querySelector('.message-text')?.textContent.trim() === text)
+    const id = message?.dataset['messageId']
     const host = id ? document.querySelector(`[data-hook-cards-for="${id}"]`) : null
     if (!list || !message || !host) return false
     const box = list.getBoundingClientRect()

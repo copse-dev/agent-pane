@@ -226,7 +226,7 @@ describe('starting a proposed thread in an isolated checkout', () => {
     // persistent app shell, not a WebDriver reference to that replaceable node.
     const summary = await browser.execute(async () => {
       const row = [...document.querySelectorAll('.chat-row')].find((row) =>
-        row.textContent?.includes('Retire the legacy settings parser'),
+        row.textContent.includes('Retire the legacy settings parser'),
       )
       const threadId = row?.getAttribute('data-thread-id')
       if (!threadId) throw new Error('Missing proposed thread')

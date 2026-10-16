@@ -7,7 +7,8 @@
     "tests/e2e/helpers/*.d.ts",
     "src/preload/api.d.ts",
     "src/shared/build-constants.d.ts",
-    "src/renderer/types/**/*.d.ts"
+    "src/renderer/types/**/*.d.ts",
+    "src/renderer/css.d.ts"
   ],
   "exclude": []
 }

@@ -177,7 +177,9 @@ describe('shared terminal command history across threads (#2433)', function () {
     })
 
     // Leave the canvas cursor unfocused at its steady outline for capture.
-    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => button.focus())
+    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => {
+      button.focus()
+    })
     await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
     await saveAppScreenshot('terminal-shared-history-recalled.png')
   })

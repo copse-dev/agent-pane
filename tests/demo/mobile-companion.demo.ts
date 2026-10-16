@@ -1,3 +1,4 @@
+import { isRecord } from '@copse/std/unknown-value.ts'
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
@@ -108,7 +109,7 @@ describe('Mobile Companion at phone width', () => {
     // Model that API response at the browser boundary, using the real app bundle.
     await browser.execute(() => {
       const originalFetch = window.fetch.bind(window)
-      window.fetch = async (...args) => {
+      window.fetch = async (...args): Promise<Response> => {
         const response = await originalFetch(...args)
         if (args[0] !== '/api/thread/proj-1/thread-1') return response
         const data: unknown = await response.json()
@@ -155,12 +156,14 @@ describe('Mobile Companion at phone width', () => {
     })
     // Freeze recurring timers at the browser boundary: settlement must update
     // Activity through its own refresh, rather than the periodic poll.
-    const { identifier } = await browser.sendCommandAndGetResult(
+    const added: unknown = await browser.sendCommandAndGetResult(
       'Page.addScriptToEvaluateOnNewDocument',
       {
         source: 'window.setInterval = () => 0',
       },
     )
+    const identifier = isRecord(added) ? added['identifier'] : undefined
+    if (typeof identifier !== 'string') throw new Error('CDP did not return a script identifier')
     try {
       await browser.setWindowSize(390, 844)
       await browser.sendCommand('Emulation.setDeviceMetricsOverride', {

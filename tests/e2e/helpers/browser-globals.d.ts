@@ -6,9 +6,9 @@ declare global {
     /** The actual lazy Monaco bundle export, shared with monaco-global.ts. */
     __copseMonaco?: typeof monaco
     __copseE2e?: ScenarioBridge
-    __copsePinnedText?: { observer: MutationObserver; pinned: Map<Text, string> }
     __closeConfirmAnswers?: boolean[]
     __pageJumps?: number[]
+    __multiWindowIpc?: { changes: string[]; statusPushes: number }
     __toolDisclosureTrace?: { transitions: string[] }
   }
 }

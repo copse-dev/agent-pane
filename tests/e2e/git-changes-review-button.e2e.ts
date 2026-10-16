@@ -74,7 +74,7 @@ describe('Changes view "Review" gesture', function () {
         browser.execute(() => {
           const host = document.getElementById('git-changes-host')
           return (
-            Boolean(host && !host.textContent?.includes('Checking committed changes')) &&
+            Boolean(host && !host.textContent.includes('Checking committed changes')) &&
             [...document.querySelectorAll('#git-diff-viewer-host .scrollbar.horizontal')].every(
               (element) => getComputedStyle(element).opacity === '0',
             )

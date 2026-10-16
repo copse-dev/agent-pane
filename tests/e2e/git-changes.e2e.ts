@@ -405,7 +405,7 @@ describe('git changes viewer', function () {
           () =>
             !document
               .getElementById('git-changes-host')
-              ?.textContent?.includes('Checking committed changes'),
+              ?.textContent.includes('Checking committed changes'),
         ),
       {
         timeout: 30_000,

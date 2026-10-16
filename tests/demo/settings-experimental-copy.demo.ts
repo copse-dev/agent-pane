@@ -1,3 +1,4 @@
+import type { MobileCompanionState } from '@shared/types/mobile-companion.ts'
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
@@ -149,7 +150,7 @@ describe('browser-hosted Experimental settings copy', () => {
     await $('.prompt-input').waitForExist()
     await browser.execute(() => {
       const getState = window.api.mobile.getState
-      window.api.mobile.getState = async () => ({
+      window.api.mobile.getState = async (): Promise<MobileCompanionState> => ({
         ...(await getState()),
         pairing: { label: 'My phone', code: '123456' },
       })

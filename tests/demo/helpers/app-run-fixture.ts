@@ -4,7 +4,7 @@ import { createFakeApi } from '../../../src/renderer/fake-api.test-support.ts'
 import type { AppRunOperation, AppRunPlatform } from '@shared/types/app-run.ts'
 
 // Keep this static fixture's elapsed label fixed while real timers drive polling/cancel.
-Date.now = () => Date.UTC(2026, 0, 1)
+Date.now = (): number => Date.UTC(2026, 0, 1)
 
 const mode = new URLSearchParams(location.search).get('mode') ?? 'android'
 const platform: AppRunPlatform = mode === 'apple' ? 'apple' : 'android'

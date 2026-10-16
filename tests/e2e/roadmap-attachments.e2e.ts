@@ -114,7 +114,7 @@ describe('Roadmap item attachments', () => {
           () =>
             document
               .querySelector('.roadmap-form .memories-meta')
-              ?.textContent?.includes('2026-01-15') ?? false,
+              ?.textContent.includes('2026-01-15') ?? false,
         ),
       { timeout: 10_000, timeoutMsg: 'expected the pinned roadmap display date' },
     )

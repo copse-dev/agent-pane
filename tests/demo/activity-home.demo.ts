@@ -513,7 +513,7 @@ describe('browser-hosted Activity home with many projects', () => {
   it('lists every project by attention and scrolls the selected card into view', async () => {
     const names = await browser.execute(() =>
       [...document.querySelectorAll('#activity-home .activity-strip-name')].map(
-        (node) => node.textContent ?? '',
+        (node) => node.textContent,
       ),
     )
     // All projects, the one that needs you, then the rest by name.

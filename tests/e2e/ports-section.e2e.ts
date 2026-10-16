@@ -89,7 +89,9 @@ describe('ports section', function () {
 
     await prepareE2eScreenshot()
     await parkPointer()
-    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => button.focus())
+    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => {
+      button.focus()
+    })
     await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
     await browser.keys('Escape')
     await expect($('#app-tooltip')).not.toBeDisplayed()
@@ -124,7 +126,9 @@ describe('ports section', function () {
 
     await prepareE2eScreenshot()
     await parkPointer()
-    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => button.focus())
+    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => {
+      button.focus()
+    })
     await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
     await browser.keys('Escape')
     await expect($('#app-tooltip')).not.toBeDisplayed()
@@ -143,7 +147,9 @@ describe('ports section', function () {
 
     await prepareE2eScreenshot()
     await parkPointer()
-    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => button.focus())
+    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => {
+      button.focus()
+    })
     await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
     await browser.keys('Escape')
     await expect($('#app-tooltip')).not.toBeDisplayed()

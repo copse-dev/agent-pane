@@ -99,7 +99,8 @@ export type ActionBarClickSession = {
       origCommand: (options?: ClickOptions) => unknown,
       options?: ClickOptions,
     ) => Promise<unknown>,
-    attachToElement?: true,
+    // WDIO v10 takes an options object here and throws on the v9 boolean form.
+    options?: { attachToElement: true },
   ) => void
 }
 
@@ -186,6 +187,6 @@ export function installSettingsActionBarClickSafety(session: ActionBarClickSessi
         return await origClick.apply(this, args)
       }
     },
-    true,
+    { attachToElement: true },
   )
 }

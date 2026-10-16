@@ -71,7 +71,7 @@ describe('browser-hosted Apple Development target picker', () => {
     await panel.waitForDisplayed()
     // Reproduce the IPC boundary after automation cleanup retires a checkout.
     await browser.execute(() => {
-      window.api.appleDevelopment.state = async () => {
+      window.api.appleDevelopment.state = async (): Promise<never> => {
         throw new Error(
           "Error invoking remote method 'apple-development:state': MissingThreadWorktreeError: Thread worktree is missing",
         )

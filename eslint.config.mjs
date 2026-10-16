@@ -394,6 +394,8 @@ export default ts.config(
         Buffer: 'readonly',
         setTimeout: 'readonly',
         setInterval: 'readonly',
+        URL: 'readonly',
+        Response: 'readonly',
       },
     },
     rules: {
