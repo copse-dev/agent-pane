@@ -131,6 +131,7 @@
     "screenshots:hydrate": "node scripts/screenshot-storage.mts hydrate",
     "screenshots:changed": "node scripts/screenshot-storage.mts changed",
     "screenshots:accept": "node scripts/screenshot-storage.mts accept",
+    "screenshots:metrics-baseline": "node scripts/screenshot-metrics-baseline.mts",
     "screenshots:identity": "node scripts/screenshot-identity.mts"
   },
   "build": {
