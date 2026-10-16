@@ -1072,7 +1072,9 @@ Git hook process's sandbox. See `docs/shell-permissions.md#native-commits-and-si
 send grant on the source thread. It enters the destination's pending-message queue with
 `kind: 'machine'` provenance. These queued items consume the same continuation budget as
 hook-originated items (decision 5), never start a human turn tree, never interrupt an
-active run, and respect held/paused queues. The renderer remains the transcript writer.
+active run, and respect held/paused queues. The renderer remains the queue writer; the
+turn a drained item starts is written by main like any dispatched turn (`client-server-split.md`
+step 1a).
 Sending does not transfer the source's read or send grants to the destination.
 
 ### Mobile human submissions (26 September 2026)

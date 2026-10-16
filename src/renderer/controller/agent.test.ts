@@ -6,7 +6,16 @@ import { startAgentController } from './agent.ts'
 import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, setMessageReviewReport } from '@shared/store/thread-helpers.ts'
-import type { Message, Thread, StreamChunk, ThreadReviewReport } from '@shared/types'
+import type {
+  Message,
+  Thread,
+  StreamChunk,
+  ThreadReviewReport,
+  TranscriptStamp,
+  TranscriptSnapshot,
+} from '@shared/types'
+import { isRuntimeOwnedMessage } from './runtime-transcript.ts'
+import { createTranscriptReducer } from '@shared/store/transcript-reducer.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { markQuietRun } from './quiet-runs.ts'
 import { getReviewReportTarget, setReviewReportTarget } from './review-report-target.ts'
@@ -48,7 +57,8 @@ function setup(
   options?: { currentBranch?: string | null },
 ): {
   store: AppStore
-  send: (chunk: StreamChunk, threadId?: string) => void
+  snapshot: (snapshot: TranscriptSnapshot) => void
+  send: (chunk: StreamChunk, threadId?: string, stamp?: TranscriptStamp) => void
   unsub: () => void
   titleCalls: string[]
   messageDone: string[]
@@ -70,7 +80,10 @@ function setup(
   ) => void
 } {
   const store = createStore({ activeProjectId: 'project-1', threads: initial, activeThreadId })
-  let chunkHandler: ((threadId: string, chunk: StreamChunk) => void) | null = null
+  let snapshotHandler: ((snapshot: TranscriptSnapshot) => void) | undefined
+  let chunkHandler:
+    | ((threadId: string, chunk: StreamChunk, stamp?: TranscriptStamp) => void)
+    | null = null
   let showDiffHandler:
     | ((
         projectId: string,
@@ -97,8 +110,12 @@ function setup(
       ...base,
       agent: {
         ...base['agent'],
+        onTranscriptSnapshot: (handler) => {
+          snapshotHandler = handler
+          return () => {}
+        },
         run: async (): Promise<void> => {},
-        onChunk: (h: (threadId: string, chunk: StreamChunk) => void) => {
+        onChunk: (h: (threadId: string, chunk: StreamChunk, stamp?: TranscriptStamp) => void) => {
           chunkHandler = h
           return (): void => {}
         },
@@ -195,9 +212,9 @@ function setup(
   })()
 
   const unsub = startAgentController(store, api)
-  const send = (chunk: StreamChunk, threadId = 't1'): void => {
+  const send = (chunk: StreamChunk, threadId = 't1', stamp?: TranscriptStamp): void => {
     if (!chunkHandler) throw new Error('startAgentController did not register a chunk handler')
-    chunkHandler(threadId, chunk)
+    chunkHandler(threadId, chunk, stamp)
   }
   const messages = (id = 't1'): Message[] => requireThread(store, id).messages
   const showDiff = (...args: Parameters<NonNullable<typeof showDiffHandler>>): void => {
@@ -210,6 +227,10 @@ function setup(
   }
   return {
     store,
+    snapshot: (snapshot): void => {
+      assert.ok(snapshotHandler)
+      snapshotHandler(snapshot)
+    },
     send,
     unsub,
     titleCalls,
@@ -1204,4 +1225,50 @@ test('a user-cancelled turn records whether a send-now or a Stop aborted it', ()
   assert.deepEqual(at(messages(), 2).turnOutcome, timedOut)
   // `done` drops a mark that no cancellation consumed.
   assert.equal(takeSendNowAbort('t1'), false)
+})
+
+test('a fresh controller ignores missed-prefix chunks until a runtime checkpoint arrives', () => {
+  const runtime = createStore({ threads: [thread('t1')] })
+  const reducer = createTranscriptReducer(runtime, { createMessageId: () => 'runtime-answer' })
+  reducer.apply('t1', { type: 'text', text: 'The complete prefix ' })
+  const { send, messages, snapshot } = setup()
+  send({ type: 'text', text: 'missed while loading' }, 't1', { messageIds: [] })
+  assert.equal(messages().length, 0)
+  snapshot({
+    projectId: 'project-1',
+    thread: structuredClone(requireThread(runtime, 't1')),
+    checkpoint: reducer.checkpoint('t1'),
+  })
+  send({ type: 'text', text: 'and the suffix.' }, 't1', { messageIds: [] })
+  send({ type: 'done' }, 't1', { messageIds: [] })
+  assert.deepEqual(
+    messages().map((message) => [message.id, message.content]),
+    [['runtime-answer', 'The complete prefix and the suffix.']],
+  )
+})
+
+test('a stamped chunk draws with the message ids main wrote', () => {
+  const { send, messages, snapshot } = setup()
+  snapshot({
+    projectId: 'project-1',
+    thread: thread('t1'),
+    checkpoint: { stream: null, pendingTurn: null },
+  })
+
+  send({ type: 'text', text: 'Checking' }, 't1', { messageIds: ['main-a1'] })
+  send({ type: 'tool_call', toolCall: { id: 'tc1', name: 'read_file', args: {} } }, 't1', {
+    messageIds: [],
+  })
+  send({ type: 'tool_result', toolCallId: 'tc1', result: 'ok', isError: false }, 't1', {
+    messageIds: [],
+  })
+  send({ type: 'text', text: 'Done.' }, 't1', { messageIds: ['main-a2'] })
+  send({ type: 'done' }, 't1', { messageIds: [] })
+
+  assert.deepEqual(
+    messages().map((message) => message.id),
+    ['main-a1', 'main-a2'],
+  )
+  assert.equal(isRuntimeOwnedMessage('main-a1'), true)
+  assert.equal(isRuntimeOwnedMessage('main-a2'), true)
 })

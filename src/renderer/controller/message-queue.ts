@@ -23,6 +23,7 @@ import { ensureThreadMessages } from './thread-hydration.ts'
 import { mark as perfMark } from '../perf.ts'
 import { isAgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import { markSendNowAbort } from './send-now-aborts.ts'
+import { afterThreadWrites } from './persistence.ts'
 
 /**
  * A **held** queued message (decisions 5 & 16): `autoDispatch: false` means the
@@ -250,10 +251,9 @@ export function dispatchAgentRun(
   syncAgentActivity(store, threadId, false)
   perfMark('ttft:renderer-dispatch')
   if (queued) beginPendingDispatch(store, threadId)
-  const run = api.agent.run(
-    projectId,
-    threadId,
-    JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model)),
+  const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model))
+  const run = afterThreadWrites(projectId, threadId, () =>
+    api.agent.run(projectId, threadId, runPayload),
   )
   if (!queued) {
     void run

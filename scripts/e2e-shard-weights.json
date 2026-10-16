@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14; agent-execution-mode measured from CI38619822117/job116050261558, 2026-10-14",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14; agent-execution-mode measured from CI38619822117/job116050261558, 2026-10-14; detached-turn-transcript is macOS-only and skips on the Linux CI shards, recorded at 1s, 2026-10-16",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 14.9,
     "tests/e2e/acp-auth-error.e2e.ts": 20.2,
@@ -89,6 +89,7 @@
     "tests/e2e/debug-trace.e2e.ts": 7.7,
     "tests/e2e/decision-spine-archive.e2e.ts": 6.5,
     "tests/e2e/deepseek-dsml-recovery.e2e.ts": 7.2,
+    "tests/e2e/detached-turn-transcript.e2e.ts": 1,
     "tests/e2e/developer-mode.e2e.ts": 13.1,
     "tests/e2e/dialog-shortcuts.e2e.ts": 7.1,
     "tests/e2e/double-submit.e2e.ts": 9,
