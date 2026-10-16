@@ -1,8 +1,9 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedThemeBootFixture } from './helpers/seed-config.ts'
+import { resetUserData, seedStableWorkspace, seedThemeBootFixture } from './helpers/seed-config.ts'
 import { waitForImagesSettled } from './helpers/screenshot.ts'
+import { withFrozenAnimations } from './helpers/frozen-animations.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -11,7 +12,8 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 describe('theme boot before first paint (#41)', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
-    seedThemeBootFixture(process.cwd(), 'light')
+    // A theme eval must not inherit the checkout's live Git status or files.
+    seedThemeBootFixture(seedStableWorkspace(), 'light')
     await browser.reloadSession()
   })
 
@@ -30,7 +32,9 @@ describe('theme boot before first paint (#41)', () => {
     expect(themeState.queryTheme).toBe('light')
     expect(themeState.htmlTheme).toBe('light')
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'theme-boot-light.png'))
+    await withFrozenAnimations(async () => {
+      await browser.saveScreenshot(join(SCREENSHOT_DIR, 'theme-boot-light.png'))
+    })
   })
 
   it('preserves the boot theme query when opening a popout', async () => {
@@ -64,6 +68,11 @@ describe('theme boot before first paint (#41)', () => {
     await $('#file-tree-host .file-tree').waitForDisplayed({ timeout: 30_000 })
     await $('#file-tree-host .tree-row').waitForExist({ timeout: 30_000 })
     await waitForImagesSettled('#file-tree-host', { minImages: 1 })
+    // The context view mounts independently of the explorer after Monaco loads.
+    // A populated file tree can still leave that half of the popout unpainted.
+    const emptyState = $('#file-viewer .panel-empty')
+    await expect(emptyState).toBeDisplayed({ wait: 30_000 })
+    await expect(emptyState).toHaveText('Open a file or run a task to see content here')
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'theme-boot-popout-light.png'))
 
     await browser.closeWindow()

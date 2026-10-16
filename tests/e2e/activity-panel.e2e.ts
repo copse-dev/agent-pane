@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_VIEWPORT, saveAppScreenshot } from './helpers/screenshot.ts'
 import {
   resetUserData,
   seedE2eViewport,
@@ -286,7 +286,34 @@ describe('Activity panel', function () {
       scrollAfterApproval > 0,
       `the activity list should keep its position after the update (scrollTop=${String(scrollAfterApproval)})`,
     )
-    await saveAppScreenshot('activity-panel-scroll-preserved.png')
+    await saveAppScreenshot('activity-panel-scroll-preserved.png', E2E_VIEWPORT, async () => {
+      const motion = await browser.execute((threadId) => {
+        const paths = document.querySelectorAll(
+          `.chat-row.is-running[data-thread-id="${CSS.escape(threadId)}"] .chat-running-status path`,
+        )
+        const loops = Array.from(paths).flatMap((path) =>
+          path
+            .getAnimations()
+            .filter((animation) => animation.effect?.getTiming().iterations === Infinity),
+        )
+        return loops.map((animation) => {
+          const timing = animation.effect?.getTiming()
+          return {
+            paused: animation.playState === 'paused',
+            enrolled: window.e2eCaptureAnimations?.some((saved) => saved.animation === animation),
+            time: animation.currentTime,
+            expected:
+              (timing?.delay ?? 0) +
+              (typeof timing?.duration === 'number' ? timing.duration / 2 : 0),
+          }
+        })
+      }, AUDIT_THREAD)
+      assert.equal(motion.length, 3, 'the working sidebar row retains its three running dots')
+      assert.ok(
+        motion.every((loop) => loop.paused && loop.enrolled && loop.time === loop.expected),
+        `running indicators must be pinned after framing: ${JSON.stringify(motion)}`,
+      )
+    })
     // Proof the answer reached main: A's tool runs and its turn finishes, so its
     // row lands in Recently finished while B is still working.
     const finishedRow = $(rowSelector('recent', AUTH_THREAD))
