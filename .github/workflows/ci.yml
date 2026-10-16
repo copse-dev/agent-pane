@@ -2451,16 +2451,18 @@ jobs:
     timeout-minutes: 5
     permissions: {}
     steps:
+      - name: Reject cancelled release validation
+        if: ${{ cancelled() }}
+        run: exit 1
       - name: Require complete release coverage
+        if: ${{ !cancelled() }}
         env:
-          CANCELLED: ${{ cancelled() }}
           MODE: ${{ needs.precheck.outputs.mode }}
           UNIT_MODE: ${{ needs.precheck.outputs.unit_mode }}
           SHARDS: ${{ needs.precheck.outputs.e2e_shard_total }}
           RESULTS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
-          test "$CANCELLED" = false
           test "$MODE" = full
           test "$UNIT_MODE" = full
           test "$SHARDS" = 8

@@ -177,6 +177,8 @@ describe('release full-suite contract', () => {
   })
   it('rejects every incomplete plan and prerequisite in the real aggregate shell', () => {
     const block = workflow.slice(workflow.indexOf('  full-release-validation:'))
+    assert.match(block, /if: \$\{\{ cancelled\(\) \}\}\n +run: exit 1/)
+    assert.doesNotMatch(block, /CANCELLED: \$\{\{ cancelled\(\)/)
     const shell = block.slice(block.indexOf('          set -euo pipefail')).replace(/^ {10}/gm, '')
     const results = Object.fromEntries(
       ['precheck', 'screenshot-baselines', 'check', 'bench', 'build', 'e2e', 'ci-passed'].map(
@@ -199,7 +201,6 @@ describe('release full-suite contract', () => {
       { MODE: 'skip' },
       { UNIT_MODE: 'subset' },
       { SHARDS: '7' },
-      { CANCELLED: 'true' },
     ])
       assert.notEqual(execute(overrides), 0)
     for (const name of Object.keys(results)) {
